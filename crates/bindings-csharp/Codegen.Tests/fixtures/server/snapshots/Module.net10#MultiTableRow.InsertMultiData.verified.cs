@@ -4,6 +4,17 @@
 
 partial struct MultiTableRow
 {
+    private static class __ScheduleInsertMultiDataName
+    {
+        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(InsertMultiData)
+        );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static __ScheduleInsertMultiDataName() { }
+    }
+
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateInsertMultiData(MultiTableRow data)
     {
@@ -11,10 +22,7 @@ partial struct MultiTableRow
         using var writer = new BinaryWriter(stream);
         new MultiTableRow.BSATN().Write(writer, data);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(InsertMultiData)
-            ),
+            __ScheduleInsertMultiDataName.Name,
             stream
         );
     }

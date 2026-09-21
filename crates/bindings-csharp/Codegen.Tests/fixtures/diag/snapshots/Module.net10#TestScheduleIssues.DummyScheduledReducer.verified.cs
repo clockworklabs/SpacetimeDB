@@ -4,6 +4,17 @@
 
 partial struct TestScheduleIssues
 {
+    private static class __ScheduleDummyScheduledReducerName
+    {
+        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
+            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(DummyScheduledReducer)
+        );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static __ScheduleDummyScheduledReducerName() { }
+    }
+
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateDummyScheduledReducer(
         TestScheduleIssues table
@@ -13,10 +24,7 @@ partial struct TestScheduleIssues
         using var writer = new BinaryWriter(stream);
         new TestScheduleIssues.BSATN().Write(writer, table);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(DummyScheduledReducer)
-            ),
+            __ScheduleDummyScheduledReducerName.Name,
             stream
         );
     }

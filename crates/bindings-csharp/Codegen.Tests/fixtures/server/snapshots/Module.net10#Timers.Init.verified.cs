@@ -4,6 +4,17 @@
 
 partial class Timers
 {
+    private static class __ScheduleInitName
+    {
+        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(Init)
+        );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static __ScheduleInitName() { }
+    }
+
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateInit()
     {
@@ -11,10 +22,7 @@ partial class Timers
         using var writer = new BinaryWriter(stream);
 
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(Init)
-            ),
+            __ScheduleInitName.Name,
             stream
         );
     }

@@ -6,6 +6,17 @@ namespace Test.NestingNamespaces
 {
     partial class AndClasses
     {
+        private static class __ScheduleInsertData2Name
+        {
+            internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                nameof(InsertData2)
+            );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static __ScheduleInsertData2Name() { }
+        }
+
         [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
         public static void VolatileNonatomicScheduleImmediateInsertData2(PublicTable data)
         {
@@ -13,10 +24,7 @@ namespace Test.NestingNamespaces
             using var writer = new BinaryWriter(stream);
             new PublicTable.BSATN().Write(writer, data);
             SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    nameof(InsertData2)
-                ),
+                __ScheduleInsertData2Name.Name,
                 stream
             );
         }
