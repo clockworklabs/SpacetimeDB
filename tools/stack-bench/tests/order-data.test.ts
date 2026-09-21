@@ -173,13 +173,14 @@ test('compiled duplicate checkout reconciles real order effects without requesti
   assert.equal(steps.length, 3);
   const raceIndex = criterion.steps.findIndex(step => step.do === 'callConcurrently');
   assert(criterion.steps.indexOf(steps[1]!) < raceIndex && criterion.steps.indexOf(steps[2]!) > raceIndex);
-  for (const defect of ['none', 'no-op', 'duplicate', 'wrong-owner', 'wrong-price', 'retained-cart', 'lost-prior']) {
+  for (const defect of ['none', 'placed', 'completed', 'no-op', 'duplicate', 'wrong-owner', 'wrong-price', 'retained-cart', 'lost-prior']) {
     const initial = data();
     for (const key of ['warehouse', 'stock', 'order_reservation', 'order_allocation'] as const) delete (initial as Partial<typeof initial>)[key];
     initial.order_header = [{ id: 'old', account_id: '1', total: 0, refunded: 0, status: 'cancelled' }];
     const prepared = structuredClone(initial); prepared.order_cart = [{ account_id: '1', item_id: '2', quantity: 1 }];
     const after = structuredClone(initial);
     after.order_header.push({ id: 'new', account_id: '1', total: 19.99, refunded: 0, status: 'pending' });
+    if (['placed', 'completed'].includes(defect)) after.order_header[1]!.status = defect;
     after.order_line.push({ id: 'line', order_id: 'new', item_id: '2', quantity: 1, unit_price: 19.99 });
     if (defect === 'no-op') Object.assign(after, prepared);
     if (defect === 'duplicate') after.order_header.push({ ...after.order_header[1]!, id: 'extra' });
@@ -201,7 +202,7 @@ test('compiled duplicate checkout reconciles real order effects without requesti
       } });
     for (const [index, step] of steps.entries()) {
       const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability, actors: { get: () => undefined } } });
-      assert.equal(result.status, index < 2 || defect === 'none' ? 'passed' : 'failed', defect);
+      assert.equal(result.status, index < 2 || ['none', 'placed', 'completed'].includes(defect) ? 'passed' : 'failed', defect);
     }
   }
 });

@@ -421,7 +421,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
   const order = orders[0];
   if (order) {
     same('checkout order owner', order.accountId, before.accountId);
-    same('checkout order status', order.status, 'pending');
+    if (requirePayment) same('checkout order status', order.status, 'pending');
     check('checkout order total in minor units', order.totalMinor, amount);
     if (typeof order.refundedMinor === 'number') check('checkout order refunded amount', order.refundedMinor, 0);
     // Relational orders may split one product across warehouse allocation lines.
