@@ -1023,11 +1023,19 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 ? $$"""
                     public static partial class AssemblyDescriptor
                     {
+                        private static class {{accessorIdentifier}}SqlNameCache
+                        {
+                            internal static readonly global::SpacetimeDB.SqlTableName Name =
+                                global::SpacetimeDB.Internal.Module.ResolveSqlName({{SymbolDisplay.FormatLiteral(assemblyIdentity, true)}}, {{SymbolDisplay.FormatLiteral(tableName, true)}});
+                            // Prevent eager initialization before the root installs namespace placements.
+                            static {{accessorIdentifier}}SqlNameCache() { }
+                        }
+
                         public readonly partial struct Queries
                         {
                             {{vis}} {{queryType}} {{accessorIdentifier}}()
                             {
-                                var tableName = global::SpacetimeDB.Internal.Module.ResolveSqlName({{SymbolDisplay.FormatLiteral(assemblyIdentity, true)}}, {{SymbolDisplay.FormatLiteral(tableName, true)}});
+                                var tableName = {{accessorIdentifier}}SqlNameCache.Name;
                                 return new(tableName, new {{colsTypeName}}(tableName), new {{ixColsTypeName}}(tableName));
                             }
                         }

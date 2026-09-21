@@ -487,6 +487,18 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
     public static partial class AssemblyDescriptor
     {
+        private static class DemoTableSqlNameCache
+        {
+            internal static readonly global::SpacetimeDB.SqlTableName Name =
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(
+                    "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "DemoTable"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static DemoTableSqlNameCache() { }
+        }
+
         public readonly partial struct Queries
         {
             public global::SpacetimeDB.Table<
@@ -495,10 +507,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 DemoTableIxCols
             > DemoTable()
             {
-                var tableName = global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "DemoTable"
-                );
+                var tableName = DemoTableSqlNameCache.Name;
                 return new(tableName, new DemoTableCols(tableName), new DemoTableIxCols(tableName));
             }
         }
