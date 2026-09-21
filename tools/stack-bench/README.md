@@ -20,6 +20,12 @@ the audit used accepted checkpoints and final grades to resolve the summary erro
 Newer grader changes on the current branch require their own qualification before
 they receive a new verified baseline tag. Keep this tag fixed.
 
+The current ecommerce dependency L1–L3 calibration is qualified for SpacetimeDB,
+PostgreSQL, MongoDB and Convex: 27 features, 117 checks and 186 points. Its
+[calibration](tracks/ecommerce/composition/calibrations/dependency-l3.json) binds
+the reference, defect-control and empty-app evidence. This qualifies that selected
+definition; it does not certify every aspect of production security.
+
 ## What it does
 
 1. Compiles a versioned campaign that fixes the product request, model, stacks,
@@ -52,33 +58,34 @@ received before cancellation. A lost response or request timeout is an unknown r
 not proof that the app rejected the operation or failed to commit it. Missing or unknown
 request outcomes make the response assertion inconclusive, even if another request
 returned an app error. HTTP success alone does not prove the stored business effects.
-This revised contention evidence remains draft until matching reference and defect
-controls are qualified; existing paid results are not rewritten.
+This contention behavior has matching dependency L1–L3 qualification;
+existing paid results are not rewritten.
 The prerequisite observation remains available for repair. Harness and provider
 failures remain unmeasured and cannot become app failures. The purchase-session,
 restock-race, and scheduled-restock probes use stored state or fresh reads for setup;
-separate live-update checks keep their live observers. These revised probes remain
-draft until matching reference and defect-control qualification is complete.
+separate live-update checks keep their live observers. These probes are included
+in the qualified dependency L1–L3 selection.
 
 ## Convex support
 
-Convex support is in qualification for the ecommerce dependency L1–L3 path.
+Convex support is qualified for the ecommerce dependency L1–L3 path.
 It uses a pinned, self-hosted backend in each attempt's private network. No cloud
 account is required. Apps use native Convex functions and subscriptions; the grader
 uses the declared native operations and independent database reads.
 
 The controller owns deployment credentials, reset, recovery, and cleanup. A backend
 crash also stops its application functions, so the grader measures that boundary once.
-The reference app and defect controls are not yet fully qualified. Do not use this
-candidate for a verified Convex comparison until matching qualification passes.
+The reference app and defect controls have matching qualification for this path.
+Other tracks and depths require their own supported definitions and evidence.
 
 ## Run modes
 
-The current ecommerce authentication changes are **draft**. Browser grading
+The ecommerce dependency L1–L3 account paths are qualified. Browser grading
 requires a real application session and an independently observed application-database
 write. The SpacetimeDB reference uses local password procedures and app session
-bindings. It does not require a supplied identity service. Release qualification
-for the changed account paths and credential-storage reporting remain open.
+bindings. It does not require a supplied identity service. Credential storage and
+log audits remain source-specific diagnostics. They do not certify password
+storage or logging in arbitrary generated apps.
 
 - **Sequential:** complete each selected level before starting the next. Earlier
   checks run again to catch regressions.

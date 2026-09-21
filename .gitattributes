@@ -4,3 +4,4 @@
 /docs/llms/*-details.json linguist-generated=false
 /tools/stack-bench/** text eol=lf
 /tools/stack-bench/**/*.woff2 -text -diff
+/tools/stack-bench/qualification-evidence/**/*.json -text whitespace=cr-at-eol

@@ -1,0 +1,1089 @@
+{
+  "reviewedAt": "2026-09-20T23:41:33.654Z",
+  "reviewer": "independent core_release_review",
+  "decision": "approve bounded executable equivalence for exactly the eleven proposal entries",
+  "proposal": {
+    "path": "reuse-proposal.json",
+    "sha256": "422f0edc70bb1862ce99fe17869d135335fed7e0a8d82c4a0d70ae7c2623b782",
+    "image": "sha256:b6f5352af0eb14d672014c981d4df4073b54b64714dfbc7e6b56cdf1dbefbeb1"
+  },
+  "scopes": [
+    {
+      "kind": "null",
+      "fromExecutableSha256": "74f6ed4dd580d44a4442820ea5e7ad3072ee311e74f980e6cff62ed543fcba87",
+      "toExecutableSha256": "67546c28375aca101ebfef4b23e1987ed279196b9fe4c46e12d98d80ad6b3f33"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "e4766b8ce394bd7fdc5548948820f086c590b34ccce2b7eaede5062301509c96",
+      "toExecutableSha256": "603790def10413863a113e8392d32312abd9746d50f0e309acad5eb19b0f9b29"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "23f4ca2055f96fad6646b1f8444102cdae43519165308371b13c4057b58f949f",
+      "toExecutableSha256": "ef3c41364d5a9d705cb064da4354d7c0dd47afa4933699d78a584bba663590ff"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "0dafc3a8fc1b0d85d9ce81f0c6976e4ed443e3bd69c0a4f9344f407c77bc9b23",
+      "toExecutableSha256": "a667948710d703dd4f6cf0789bdefe09d69c55fdcebb271033cf69afbc5884d5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "0dcd31979ceb977683ffe2a349cba5223bbc9ebed7a88aba7df56a2ba6a3e1fb",
+      "toExecutableSha256": "93a4a24b06a8d1a5f30f62d9d36ca613daeb8f44143832f3b366f26d76eb2d16"
+    }
+  ],
+  "validatedEntries": [
+    {
+      "kind": "null",
+      "stack": null,
+      "checks": 110,
+      "path": "local-notes/state/results/release-qualification-20260920/qualification/ecommerce-l3-2ca6eaffba3e-null.json",
+      "sha256": "da74b4d58dc817fdbb6bcbf0c9e36ae73e5ca3dbcf67f5adca396d4f01156ede",
+      "snapshot": {
+        "path": "local-notes/state/results/release-qualification-20260920/qualification/ecommerce-l3-2ca6eaffba3e-null.json.inputs.json",
+        "sha256": "a22d12a17d34bc135ed1d3d6cce29d45a3d954beee6b775ff57e4cb8627cbb4c"
+      }
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/null-b.json",
+      "sha256": "672e6b0c6ba1e395feba4a8e1805323f500506fbfb74da8f9fc49ba2e6b778e8",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/null-b.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "checks": 6,
+      "path": "local-notes/state/results/release-qualification-20260920/replacement/null.json",
+      "sha256": "124f60af67b6147d91baaf32d959c69bef77eca75e30c062d60889dab9e8f492",
+      "snapshot": {
+        "path": "local-notes/state/results/release-qualification-20260920/replacement/null.json.inputs.json",
+        "sha256": "71db44208a8933b2ad2916152d1d4a066333620797e2433dda6e25c673ab278f"
+      }
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/convex-b-controls.json",
+      "sha256": "aef3da1a11aa083c2951acf2e4f9243ee3e9dbac647c14e33efea9fc5ed07546",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/convex-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/convex-b-controls.json",
+      "sha256": "aef3da1a11aa083c2951acf2e4f9243ee3e9dbac647c14e33efea9fc5ed07546",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/convex-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/mongodb-b-controls.json",
+      "sha256": "d3342c0c4788430ff20ed205736f637d3959400fc88158a72f96f03041cd2175",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/mongodb-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/mongodb-b-controls.json",
+      "sha256": "d3342c0c4788430ff20ed205736f637d3959400fc88158a72f96f03041cd2175",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/mongodb-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/postgres-b-controls.json",
+      "sha256": "36ef40e32674cdb4602c3dadc5f5d3a1f3db7bc7dc0c3d12edaab2fdd3e8695d",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/postgres-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/postgres-b-controls.json",
+      "sha256": "36ef40e32674cdb4602c3dadc5f5d3a1f3db7bc7dc0c3d12edaab2fdd3e8695d",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/postgres-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/spacetime-b-controls.json",
+      "sha256": "d1ccd7bf69cf3bd3c7a21a900ebcdef71aeac00761dd3aa5b0e70dbe81dc1c5b",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/spacetime-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "checks": 1,
+      "path": "local-notes/state/results/login-order-effects-20260920/spacetime-b-controls.json",
+      "sha256": "d1ccd7bf69cf3bd3c7a21a900ebcdef71aeac00761dd3aa5b0e70dbe81dc1c5b",
+      "snapshot": {
+        "path": "local-notes/state/results/login-order-effects-20260920/spacetime-b-controls.json.inputs.json",
+        "sha256": "b784e3624250cd4cbe5d9198fbb24e2a8c47ca87fde5fc37b5446beda0444899"
+      }
+    }
+  ],
+  "coverage": {
+    "loginReferenceSlices": 4,
+    "loginMutationSlices": 4,
+    "originalLoginRawGrades": 25,
+    "successfulPatchedSubmissions": 21,
+    "controlsReused": 21,
+    "resumedReferenceGrades": 4,
+    "nullSlices": [
+      110,
+      1,
+      6
+    ],
+    "nullUniqueChecks": 117
+  },
+  "definitions": [
+    {
+      "stack": "postgres",
+      "controls": 6,
+      "equal": true,
+      "controlIds": [
+        "unauthenticated-direct-purchase-uses-default-account",
+        "tampered-session-can-purchase",
+        "purchase-trusts-cross-origin-cookie",
+        "signout-keeps-session",
+        "query-like-password-bypasses-signin",
+        "purchase-session-rejects-returning-login"
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "controls": 7,
+      "equal": true,
+      "controlIds": [
+        "unauthenticated-purchase-defaults-to-admin",
+        "tampered-session-can-purchase",
+        "tampered-session-commits-then-refuses",
+        "signout-keeps-session",
+        "query-like-password-bypasses-signin",
+        "purchase-session-rejects-returning-login",
+        "rejected-query-login-creates-order"
+      ]
+    },
+    {
+      "stack": "spacetime",
+      "controls": 4,
+      "equal": true,
+      "controlIds": [
+        "guest-purchase-falls-back-to-the-admin-account",
+        "signout-keeps-session",
+        "query-like-password-bypasses-signin",
+        "purchase-session-rejects-returning-login"
+      ]
+    },
+    {
+      "stack": "convex",
+      "controls": 4,
+      "equal": true,
+      "controlIds": [
+        "unauthenticated-purchase-defaults-to-admin",
+        "query-like-password-bypasses-signin",
+        "signout-keeps-session",
+        "purchase-session-rejects-returning-login"
+      ]
+    }
+  ],
+  "rawGrades": [
+    {
+      "stack": "postgres",
+      "mutation": null,
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-VVEhvK/grade.json",
+      "sha256": "bebc78ac9bdec3aa2908adc77d6398c449b14b33d0929e920a0152ef131f4ea4",
+      "score": "2/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "22b711d4d39f2ff2b0dfeedd4e703ef43ee4f796770a262f99a960ce785a1f5e"
+          }
+        }
+      ],
+      "failures": []
+    },
+    {
+      "stack": "postgres",
+      "mutation": "unauthenticated-direct-purchase-uses-default-account",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-kgxA6l/grade.json",
+      "sha256": "fd861b1995e349f75ba0ba0b661e5cec3761387e1f3ca2f6633d211d17e783be",
+      "score": "0/2",
+      "patchedSubmissions": [],
+      "failures": [
+        {
+          "actor": "guest",
+          "action": "expectActionOutcome",
+          "code": "application_failure",
+          "detail": "the buy action was accepted for guest, who must be refused"
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "mutation": "tampered-session-can-purchase",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-UmZHL1/grade.json",
+      "sha256": "0cf7548c9b867d60c39643e451435ac2217ebcfb8f3230750961579eac4e65f2",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "71b97840cc16a68e3d652c8bec32618723a0c67f6501d1b2cc3262436da29179"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 4 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "mutation": "purchase-trusts-cross-origin-cookie",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-D542Da/grade.json",
+      "sha256": "e84d4e98cc52f20bbe2223da562a9b581d676ca89594b313a098f70eb6da909a",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "4f7add306050b9f131b1a66c1453a294e29e399d23d1e20a59a944c7850212e6"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 4 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "mutation": "signout-keeps-session",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-Wy0tWx/grade.json",
+      "sha256": "7c403a5d096186bc8656b3a9ef0a070e5ac18431f4131830589904a557f65e0e",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "d555d0e70b930f8455568db9a70781af168fd3402afdcc5d36a977a659d949a3"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 4 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "mutation": "query-like-password-bypasses-signin",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-liPQBM/grade.json",
+      "sha256": "3464dd474da5bf2eb91589f2aa100121032079f3ab5a77918948b1a7fec3cc56",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "d090d339a3115e626ff68b87523d1da9d89013354a0343a71be688c98353ab3b"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 4 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "mutation": "purchase-session-rejects-returning-login",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.runs/r1/mutation-control.json.grades/invocation-9LaToL/grade.json",
+      "sha256": "e27ce80dd9549b9c591a6e0821004b8bc1f1cd1c5c38c8c73e8812ad9f464cf7",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "55aa78a286afd978a28ac0bfc3d8114c508e5e5f924c6d3aadd7970414c538e9"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": "buyer",
+          "action": "signIn",
+          "code": "application_failure",
+          "detail": "the current-user control did not become available in time"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": null,
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-faiR4Q/grade.json",
+      "sha256": "3f92699d3ca7e96fb797e587d1b0eb2cd2dbd7e776f469f0d0c935489381656b",
+      "score": "2/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "cb5febcf281f352f9def783e2563cd81c52bf10120d98991a006038a6cc3658d"
+          }
+        }
+      ],
+      "failures": []
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "unauthenticated-purchase-defaults-to-admin",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-56hLb3/grade.json",
+      "sha256": "3da6a0d1688524890cd77238c2797d82194e342d2a4c41d7c6ce37a0e105895c",
+      "score": "0/2",
+      "patchedSubmissions": [],
+      "failures": [
+        {
+          "actor": "guest",
+          "action": "expectActionOutcome",
+          "code": "application_failure",
+          "detail": "the buy action was accepted for guest, who must be refused"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "tampered-session-can-purchase",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-6enqTE/grade.json",
+      "sha256": "99345a9256dfe42728db99d8faec03da593e421d1ff920f34fb9db502152ee05",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "0df16ffd5877a9fe1cf763c3301330d87b7c507cbce229e93a49559a442da737"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 6ab05d8ef173229d5085f2b2 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "tampered-session-commits-then-refuses",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-XFBU2D/grade.json",
+      "sha256": "71c079e4d85dcea8f80a4cf9786fb0ed39df44a0ee1470164d41e24e0660207a",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "14f8945c81095fbec74633b4dcc8b5187fd9e2a76c12f3642adc65597a9e3c56"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 6ab05dbba9f63267d24b388e control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "signout-keeps-session",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-WaDxYq/grade.json",
+      "sha256": "65d60075e7bb5397debb1f631cb7d78388014cce538415fca636257f14277dbb",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "4f17e47812e76d26a9cd0ecb476b9821389879fdd4b6d5fff11ad1abed363ccc"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 6ab05de9b7e0cafe04974388 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "query-like-password-bypasses-signin",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-SZ2ypM/grade.json",
+      "sha256": "9e0d7fe48b143c4c62bd7a94340f64f2fed9b14cd56c079b3360ed57aa123c13",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "dfb7784d126a5491c4d99441e578ec3d0c51c2ab30284701110d836484fe5e52"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 6ab05e2437cbb5c5c3b03f8e control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "purchase-session-rejects-returning-login",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-fUM2K0/grade.json",
+      "sha256": "71322cf83c26d19bb6f997e42715ea0e4ed75822c7fe2704f7cd303abf890960",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "7f685c768fe408e6afa048e6b26d23d7d5fd054a2c1df91c306a6bdb949341e9"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": "buyer",
+          "action": "signIn",
+          "code": "application_failure",
+          "detail": "the current-user control did not become available in time"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "mutation": "rejected-query-login-creates-order",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.runs/r1/mutation-control.json.grades/invocation-1H3pzy/grade.json",
+      "sha256": "df782653935619d551ec7d11c6e991f510fcccaa8d4a2f4e0def921bd63a27bc",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 401,
+            "bodySha256": "43a35e5f281be8a992aa1437e241a0d0e8a0dfeb59d303e035844d50c6b22c57"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 6ab05e89b3bee90d7c2ab727 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "spacetime",
+      "mutation": null,
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-a-controls.runs/r1/mutation-control.json.grades/invocation-QtuCHA/grade.json",
+      "sha256": "3e8ae023aa4ab6ccdf4debe4939c84f873787cc4b925e81c1ccf723ca927a41d",
+      "score": "2/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "positional",
+            "status": 200,
+            "bodySha256": "a08f10ab7fb7566261e4c6c252d7a6449cd1150021dd73cbe71bfed5dd448f07"
+          }
+        }
+      ],
+      "failures": []
+    },
+    {
+      "stack": "spacetime",
+      "mutation": "guest-purchase-falls-back-to-the-admin-account",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-a-controls.runs/r1/mutation-control.json.grades/invocation-QjDupF/grade.json",
+      "sha256": "c845463343297cde6a53432c34034632e97aa9018d0974bfb295f14dff0518df",
+      "score": "0/2",
+      "patchedSubmissions": [],
+      "failures": [
+        {
+          "actor": "guest",
+          "action": "expectActionOutcome",
+          "code": "application_failure",
+          "detail": "the buy action was accepted for guest, who must be refused"
+        }
+      ]
+    },
+    {
+      "stack": "spacetime",
+      "mutation": "signout-keeps-session",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-a-controls.runs/r1/mutation-control.json.grades/invocation-Uee4lo/grade.json",
+      "sha256": "d9e3113aef3bcc2bb86a19207bcf2c81596ad2fec0460deb795be422e74fce9c",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "positional",
+            "status": 200,
+            "bodySha256": "ac3e432aa2abb1337e435406f8c337205028652d0b96880cb30dddebb269c6a5"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 4 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "spacetime",
+      "mutation": "query-like-password-bypasses-signin",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-a-controls.runs/r1/mutation-control.json.grades/invocation-At1l8f/grade.json",
+      "sha256": "fb844e85e3eb23030419ba9035b874170f758eaa2e87a703a88ce99934c34959",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "positional",
+            "status": 200,
+            "bodySha256": "cd5801cb39c8cd1bdac64fa03b6dd17a2d218a07ea710f3f2ea0727a3b66595b"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account 4 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "spacetime",
+      "mutation": "purchase-session-rejects-returning-login",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-a-controls.runs/r1/mutation-control.json.grades/invocation-ETAerM/grade.json",
+      "sha256": "2f5c5e2b7a26b1879e9afca873d9591c632864d760ce4fb13c6b6806c2195c0d",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "positional",
+            "status": 200,
+            "bodySha256": "71f56551727cec9cba20528790593e942812d2c8f8265cc4e93d2600389d378b"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": "buyer",
+          "action": "signIn",
+          "code": "application_failure",
+          "detail": "the current-user control did not become available in time"
+        }
+      ]
+    },
+    {
+      "stack": "convex",
+      "mutation": null,
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-a-controls.runs/r1/mutation-control.json.grades/invocation-KhP0BB/grade.json",
+      "sha256": "e95483aa5f78af911132eb363dc20c1ffb395b0e5f5a7ca80218b3bad5ca488d",
+      "score": "2/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "7c2d5b58b30aa56f28457a98ccd5ad6d12d26e582fb4e2200615c211dec188e7"
+          }
+        }
+      ],
+      "failures": []
+    },
+    {
+      "stack": "convex",
+      "mutation": "unauthenticated-purchase-defaults-to-admin",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-a-controls.runs/r1/mutation-control.json.grades/invocation-PDizSy/grade.json",
+      "sha256": "d50de7726679cd2e7f33ac51feffcfb50786f7c40946c26cd4376de444f42aed",
+      "score": "0/2",
+      "patchedSubmissions": [],
+      "failures": [
+        {
+          "actor": "guest",
+          "action": "expectActionOutcome",
+          "code": "application_failure",
+          "detail": "the buy action was accepted for guest, who must be refused"
+        }
+      ]
+    },
+    {
+      "stack": "convex",
+      "mutation": "query-like-password-bypasses-signin",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-a-controls.runs/r1/mutation-control.json.grades/invocation-iMPf6r/grade.json",
+      "sha256": "96dd61bbe4e5de8b78370d85467e9c008fc18efc525fb76e0cc4ee8d4e8fd44a",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "abadff10e6b71b481c5a825f1c1d9c8876eaf74eea5e29d2fb5932fc4f581b95"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account k57cdq94p6wjc8938xhkvcq24n8erqk3 control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "convex",
+      "mutation": "signout-keeps-session",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-a-controls.runs/r1/mutation-control.json.grades/invocation-EMuaJN/grade.json",
+      "sha256": "6922649561da90296d6f212912a08c97424fcefc7b1fc3fa1832084079495f33",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "9cbafc6605cc8662116b7bb393691d632eeda746a100d4a301f2624f83d6ce50"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": null,
+          "action": "dbExpectNoPurchase",
+          "code": "application_failure",
+          "detail": "the purchase orders for account k57ee1645995eznhtzbs5c0c3d8estxj control reads 1, expected exactly 0"
+        }
+      ]
+    },
+    {
+      "stack": "convex",
+      "mutation": "purchase-session-rejects-returning-login",
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-a-controls.runs/r1/mutation-control.json.grades/invocation-Veg6qJ/grade.json",
+      "sha256": "300150b5e8a393b9a5672dec55fe4d159403ad3c150f9ecd2fde1a6ab00fd2c4",
+      "score": "0/2",
+      "patchedSubmissions": [
+        {
+          "actor": "query-input",
+          "status": "passed",
+          "receipt": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "9f9f9b1b5be69fcfdafa31f75cb965be559ffc2f7b6bef892e30d0f5293cb5d6"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "actor": "buyer",
+          "action": "signIn",
+          "code": "application_failure",
+          "detail": "the current-user control did not become available in time"
+        }
+      ]
+    }
+  ],
+  "resumed": [
+    {
+      "stack": "postgres",
+      "receiptPath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-b-controls.json",
+      "receiptSha256": "36ef40e32674cdb4602c3dadc5f5d3a1f3db7bc7dc0c3d12edaab2fdd3e8695d",
+      "bundlePath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-b-controls.runs/r1/grading/bundle.json",
+      "bundleSha256": "34f2a7e8ec50bfc7740569e6dfbc4f1673da349cefb23d20bc877ada7a526873",
+      "score": "2/2",
+      "controlsReused": 6,
+      "newMutationGrades": 0,
+      "priorControl": {
+        "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/postgres-a-controls.mutation-checkpoints/postgres-b-worker-1.json.prior-fbb87dc5-db38-484c-bde4-266e0d140ebe.json",
+        "sha256": "f968854026f0bfbb8f91018a6e4d33dc1ab2d7471bd7587a35f157350e0e4619"
+      },
+      "patchedSignIn": {
+        "status": "passed",
+        "receipt": {
+          "shape": "object",
+          "status": 401,
+          "bodySha256": "7a83060a79958a749363fb53924550881f974d0cf6da8689aecb4380360c97b4"
+        }
+      }
+    },
+    {
+      "stack": "mongodb",
+      "receiptPath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-b-controls.json",
+      "receiptSha256": "d3342c0c4788430ff20ed205736f637d3959400fc88158a72f96f03041cd2175",
+      "bundlePath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-b-controls.runs/r1/grading/bundle.json",
+      "bundleSha256": "6a0b900d802deea2d5b353494131225e4b868ecdc24db69454b02ecdd61d64b1",
+      "score": "2/2",
+      "controlsReused": 7,
+      "newMutationGrades": 0,
+      "priorControl": {
+        "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/mongodb-a-controls.mutation-checkpoints/mongodb-b-worker-1.json.prior-e685c9e4-42f6-4ce2-8882-1bbff55249f6.json",
+        "sha256": "40ec6642f1219c2e42ca25a2b4d22ac2793937da94cb65f4f3d6e4162d9d7aff"
+      },
+      "patchedSignIn": {
+        "status": "passed",
+        "receipt": {
+          "shape": "object",
+          "status": 401,
+          "bodySha256": "b7e2dbc4cbefe9d9bc422dff3a5f1fc32b3874440b58eb8e12d6741f34f95d24"
+        }
+      }
+    },
+    {
+      "stack": "spacetime",
+      "receiptPath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-b-controls.json",
+      "receiptSha256": "d1ccd7bf69cf3bd3c7a21a900ebcdef71aeac00761dd3aa5b0e70dbe81dc1c5b",
+      "bundlePath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-b-controls.runs/r1/grading/bundle.json",
+      "bundleSha256": "d0e13279359183049620bfcfa0c42bdce69ba335d5b934f878287ff1106b0965",
+      "score": "2/2",
+      "controlsReused": 4,
+      "newMutationGrades": 0,
+      "priorControl": {
+        "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/spacetime-a-controls.mutation-checkpoints/spacetime-b-worker-1.json.prior-784e941e-22d4-4cb8-8a98-fbc55957f6db.json",
+        "sha256": "e59a8946fcb133108fd698a87df04f50ff272f3cbb6e9cfcd98b0d60470e31a4"
+      },
+      "patchedSignIn": {
+        "status": "passed",
+        "receipt": {
+          "shape": "positional",
+          "status": 200,
+          "bodySha256": "5169feca198fe1325a0f4b4bf013cb70eda9e816470c71f7488d89a149ad4646"
+        }
+      }
+    },
+    {
+      "stack": "convex",
+      "receiptPath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-b-controls.json",
+      "receiptSha256": "aef3da1a11aa083c2951acf2e4f9243ee3e9dbac647c14e33efea9fc5ed07546",
+      "bundlePath": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-b-controls.runs/r1/grading/bundle.json",
+      "bundleSha256": "4a4230135e161d2e87d8813fca50d4d6af94bef6079f71a6da3146d7f63773bf",
+      "score": "2/2",
+      "controlsReused": 4,
+      "newMutationGrades": 0,
+      "priorControl": {
+        "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/convex-a-controls.mutation-checkpoints/convex-b-worker-1.json.prior-5fac84ff-4f29-4c6d-bed3-45aac1485392.json",
+        "sha256": "513468479f6e0f96306db938528f75a8b1c105ea7b6c0b73a8e46aadc07c1c8c"
+      },
+      "patchedSignIn": {
+        "status": "passed",
+        "receipt": {
+          "shape": "object",
+          "status": 200,
+          "bodySha256": "2dcbe9953fa19e8368ec91f5e56842f8ee9cd7b5ce639f2837feb3391a3bd8a9"
+        }
+      }
+    }
+  ],
+  "nullEvidence": [
+    {
+      "path": "/opt/stack-bench/local-notes/state/results/release-qualification-20260920/qualification/ecommerce-l3-2ca6eaffba3e-null.json",
+      "sha256": "da74b4d58dc817fdbb6bcbf0c9e36ae73e5ca3dbcf67f5adca396d4f01156ede",
+      "checks": 110,
+      "summary": {
+        "criteria": 117,
+        "points": 186,
+        "expectedFailures": {
+          "criteria": 117,
+          "points": 186
+        },
+        "expectedFailureStages": {
+          "setup": {
+            "criteria": 109,
+            "points": 175
+          },
+          "assertion": {
+            "criteria": 8,
+            "points": 11
+          }
+        },
+        "vacuousPasses": {
+          "criteria": 0,
+          "points": 0
+        },
+        "oracleGaps": {
+          "criteria": 0,
+          "points": 0
+        },
+        "unscored": {
+          "criteria": 0,
+          "passed": 0,
+          "failed": 0,
+          "inconclusive": 0
+        }
+      },
+      "patchScenarios": [
+        {
+          "track": "ecommerce",
+          "level": 3,
+          "suite": "selected-source-007",
+          "scenario": "scenarios/01-admin-write-staff.json",
+          "feature": 103,
+          "featureName": "Only an administrator can restock",
+          "criterion": "103a",
+          "points": 1,
+          "status": "expected_fail",
+          "evidenceStatus": "blocked",
+          "failureStage": "setup",
+          "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+        },
+        {
+          "track": "ecommerce",
+          "level": 3,
+          "suite": "selected-source-007",
+          "scenario": "scenarios/01-admin-write-staff.json",
+          "feature": 103,
+          "featureName": "Only an administrator can restock",
+          "criterion": "103b",
+          "points": 2,
+          "status": "expected_fail",
+          "evidenceStatus": "blocked",
+          "failureStage": "setup",
+          "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+        },
+        {
+          "track": "ecommerce",
+          "level": 3,
+          "suite": "selected-source-023",
+          "scenario": "scenarios/01-purchase-session.json",
+          "feature": 101,
+          "featureName": "Purchase requires an account",
+          "criterion": "101a",
+          "points": 2,
+          "status": "expected_fail",
+          "evidenceStatus": "blocked",
+          "failureStage": "setup",
+          "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+        }
+      ]
+    },
+    {
+      "path": "/opt/stack-bench/local-notes/state/results/login-order-effects-20260920/null-b.json",
+      "sha256": "672e6b0c6ba1e395feba4a8e1805323f500506fbfb74da8f9fc49ba2e6b778e8",
+      "checks": 1,
+      "summary": {
+        "criteria": 1,
+        "points": 2,
+        "expectedFailures": {
+          "criteria": 1,
+          "points": 2
+        },
+        "expectedFailureStages": {
+          "setup": {
+            "criteria": 1,
+            "points": 2
+          },
+          "assertion": {
+            "criteria": 0,
+            "points": 0
+          }
+        },
+        "vacuousPasses": {
+          "criteria": 0,
+          "points": 0
+        },
+        "oracleGaps": {
+          "criteria": 0,
+          "points": 0
+        },
+        "unscored": {
+          "criteria": 0,
+          "passed": 0,
+          "failed": 0,
+          "inconclusive": 0
+        }
+      },
+      "patchScenarios": [
+        {
+          "track": "ecommerce",
+          "level": 3,
+          "suite": "selected-source-023",
+          "scenario": "scenarios/01-purchase-session.json",
+          "feature": 101,
+          "featureName": "Purchase requires an account",
+          "criterion": "101a",
+          "points": 2,
+          "status": "expected_fail",
+          "evidenceStatus": "blocked",
+          "failureStage": "setup",
+          "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+        }
+      ]
+    },
+    {
+      "path": "/opt/stack-bench/local-notes/state/results/release-qualification-20260920/replacement/null.json",
+      "sha256": "124f60af67b6147d91baaf32d959c69bef77eca75e30c062d60889dab9e8f492",
+      "checks": 6,
+      "summary": {
+        "criteria": 6,
+        "points": 6,
+        "expectedFailures": {
+          "criteria": 6,
+          "points": 6
+        },
+        "expectedFailureStages": {
+          "setup": {
+            "criteria": 6,
+            "points": 6
+          },
+          "assertion": {
+            "criteria": 0,
+            "points": 0
+          }
+        },
+        "vacuousPasses": {
+          "criteria": 0,
+          "points": 0
+        },
+        "oracleGaps": {
+          "criteria": 0,
+          "points": 0
+        },
+        "unscored": {
+          "criteria": 0,
+          "passed": 0,
+          "failed": 0,
+          "inconclusive": 0
+        }
+      },
+      "patchScenarios": []
+    }
+  ],
+  "rationale": [
+    "75cfc changes submission error precedence. Every measured patched submission completed successfully; the four returning-login failures use the ordinary unpatched path.",
+    "1a70 projects full-recipe mutation targets. The twenty-one selected login control definitions are identical. Restock target corrections are outside login scope.",
+    "743 changes only the six concurrency pack budgets. Old null reuse excludes those six checks; fresh null covers them. The access-control budget is unchanged.",
+    "The only ecommerce requestPatch scenarios are purchase-session and admin-write-staff. Their original null grades stop at ordinary setup; current login null does likewise."
+  ],
+  "limits": [
+    "Approval is limited to exact proposal digest, five executable pairs, eleven artifact/snapshot pairs, and selected check lists.",
+    "This in-memory validator audit does not update or promote calibration, alter old receipts, or accept failed full receipts.",
+    "The changed submission exception paths and corrected restock control declarations are not qualified by these reused login receipts.",
+    "Remaining 116 checks on each of four stacks still require accepted reference and mutation evidence. Final promotion requires complete validator-confirmed coverage and bound review evidence."
+  ]
+}
