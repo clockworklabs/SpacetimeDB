@@ -132,6 +132,50 @@ fn namespace_csharp_root_selected_at_publish() {
 
 #[test]
 #[serial]
+fn namespace_csharp_cross_namespace_calls() {
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // Mirror test_submodule_in_module: enter the root through the websocket API,
+            // then delegate to exported library callbacks using the same context object.
+            module
+                .send_reducer_and_recv_update(
+                    r#"{"CallReducer":{"reducer":"add_auth_user","args":"[12]","request_id":0,"flags":0}}"#.to_string(),
+                    0,
+                )
+                .await
+                .unwrap();
+            assert_eq!(read_logs(&module).await, ["Auth users: 1"]);
+            assert_eq!(
+                module.call_procedure_with_args("count_auth_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(1)
+            );
+            assert_eq!(
+                module.call_http_route_get("/root-auth-count").await.unwrap().as_ref(),
+                b"1"
+            );
+
+            // The library's own route remains registered alongside the root's route.
+            assert_eq!(module.call_http_route_get("/auth-count").await.unwrap().as_ref(), b"1");
+            assert_eq!(
+                module
+                    .call_procedure_with_args("class.count_users", "[]")
+                    .await
+                    .unwrap(),
+                AlgebraicValue::U64(0)
+            );
+            assert_eq!(
+                module.call_procedure_with_args("count_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(1),
+                "delegation must not also insert into the root or Audit table"
+            );
+        },
+    );
+}
+
+#[test]
+#[serial]
 fn namespace_csharp_mounted_dependencies() {
     init();
     CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
@@ -193,10 +237,43 @@ fn namespace_csharp_mounted_dependencies() {
             tokio::time::timeout(Duration::from_secs(10), async {
                 while let Some(message) = module.recv_message().await {
                     if let spacetimedb::client::OutboundMessage::V1(
-                        message @ spacetimedb::client::messages::SerializableMessage::Subscribe(_),
+                        spacetimedb::client::messages::SerializableMessage::Subscribe(update),
                     ) = message
                     {
-                        assert_eq!(message.num_rows(), Some(9));
+                        use spacetimedb_client_api_messages::websocket::v1::{
+                            DatabaseUpdate, FormatSwitch, WebsocketFormat,
+                        };
+                        fn table_counts<F: WebsocketFormat>(
+                            update: DatabaseUpdate<F>,
+                        ) -> std::collections::BTreeMap<String, u64> {
+                            assert_eq!(update.tables.len(), 9, "one update per subscribed table/view");
+                            update
+                                .tables
+                                .into_iter()
+                                .map(|table| (table.table_name.to_string(), table.num_rows))
+                                .collect()
+                        }
+                        assert_eq!(update.request_id, Some(99));
+                        let counts = match update.database_update {
+                            FormatSwitch::Bsatn(update) => table_counts(update),
+                            FormatSwitch::Json(update) => table_counts(update),
+                        };
+                        assert_eq!(
+                            counts,
+                            [
+                                ("users", 1),
+                                ("auth_users", 1),
+                                ("extra_rows", 1),
+                                ("MyAuth.users", 1),
+                                ("MyAuth.anonymous_users", 1),
+                                ("query_users", 1),
+                                ("query_users_right", 1),
+                                ("query_extra", 1),
+                                ("MyAuth.query_users", 1),
+                            ]
+                            .map(|(name, count)| (name.to_owned(), count))
+                            .into()
+                        );
                         return;
                     }
                 }
