@@ -1,20 +1,20 @@
 ---
-title: The Zen of SpacetimeDB
+title: The Zen of Spacetime
 slug: /intro/zen
 ---
 
-SpacetimeDB is built on 5 core principles. As you embrace these simple principles, you will find **your troubles simply melt away**. These principles guide both how we develop SpacetimeDB and how you should think about building applications with it.
+Spacetime is built on 5 core principles. As you embrace these simple principles, you will find **your troubles simply melt away**. These principles guide both how we develop Spacetime and how you should think about building applications with it.
 
 ## Everything is a Table
 
 Your entire application state lives in tables. Users, messages, game entities, sessions—all tables. There's no separate cache layer, no Redis, no in-memory state that needs to be synchronized with a database. The database *is* your state. All of your state.
 
-This simplifies your mental model dramatically and it makes the impossible possible. SpacetimeDB can hot-swap server code without disconnecting clients!
+This simplifies your mental model dramatically and it makes the impossible possible. Spacetime can hot-swap server code without disconnecting clients!
 
 When you need to store something, you define a table. When you need to query something, you query a table. When you need to update something, you update a table. When you want to restrict who can read data, you create [a view](../../00200-core-concepts/00200-functions/00500-views.md) over a table. 
 
 ```
-Traditional stack:        SpacetimeDB:
+Traditional stack:        Spacetime:
 ┌─────────────────┐       ┌─────────────────┐
 │   Application   │       │                 │
 ├─────────────────┤       │                 │
@@ -26,23 +26,23 @@ Traditional stack:        SpacetimeDB:
 
 ## Everything is Persistent
 
-SpacetimeDB persists everything by default, including the full history of any rows that have ever changed.
+Spacetime persists everything by default, including the full history of any rows that have ever changed.
 
-You will ask, does everything need to be persistent? Won't that be a lot of data? Well, you would be surprised! For example, updating 1 million player transforms 10 times per second for a year uses roughly 10 petabytes of data, uncompressed. SpacetimeDB can compress that sort of data by about 5-10x, meaning that keeping every position for every player for a game with a million concurrent players uses only about 1-2 petabytes per year. Storing that much data in Amazon S3 would only cost you between $2,300 and $5,600 per month. A fraction of the cost of a single engineer or data scientist!
+You will ask, does everything need to be persistent? Won't that be a lot of data? Well, you would be surprised! For example, updating 1 million player transforms 10 times per second for a year uses roughly 10 petabytes of data, uncompressed. Spacetime can compress that sort of data by about 5-10x, meaning that keeping every position for every player for a game with a million concurrent players uses only about 1-2 petabytes per year. Storing that much data in Amazon S3 would only cost you between $2,300 and $5,600 per month. A fraction of the cost of a single engineer or data scientist!
 
-You can of course choose to delete the historical data, but it should be **your choice** to delete data, not the database's. SpacetimeDB gives you that choice.
+You can of course choose to delete the historical data, but it should be **your choice** to delete data, not the database's. Spacetime gives you that choice.
 
-Won't it be slow to persist everything? No. SpacetimeDB is designed so that persistence guarantees only ever increase latency and never decrease throughput! Modern SSDs can write upwards of 15 GB/s of data to disk. DRAM can only do about 4x more. Let's actually use that Samsung-given bandwidth.
+Won't it be slow to persist everything? No. Spacetime is designed so that persistence guarantees only ever increase latency and never decrease throughput! Modern SSDs can write upwards of 15 GB/s of data to disk. DRAM can only do about 4x more. Let's actually use that Samsung-given bandwidth.
 
-SpacetimeDB holds all your data in memory for blazing-fast access, but automatically persists everything to disk. You get the speed of in-memory computing with the durability of a traditional database.
+Spacetime holds all your data in memory for blazing-fast access, but automatically persists everything to disk. You get the speed of in-memory computing with the durability of a traditional database.
 
 You will be tempted to ask for "ephemeral state". This is a mistake. Persistent everything allows your app to recover to the *exact* state it was in. In principle, you could even debug your production app in the state it was in in the past with a time-traveling debugger.
 
-Write your code as if memory were infinite and permanent. Insert rows freely. Query without fear. SpacetimeDB handles the persistence, you handle the logic.
+Write your code as if memory were infinite and permanent. Insert rows freely. Query without fear. Spacetime handles the persistence, you handle the logic.
 
 ## Everything is Real-Time
 
-Think of your client as a **replica** of your server. When you subscribe to data, SpacetimeDB mirrors that data to your client and keeps it synchronized automatically. You don't poll. You don't fetch. You subscribe, and the data flows.
+Think of your client as a **replica** of your server. When you subscribe to data, Spacetime mirrors that data to your client and keeps it synchronized automatically. You don't poll. You don't fetch. You subscribe, and the data flows.
 
 > "The data must flow." - Tyler
 
@@ -80,11 +80,11 @@ Perfect consistency, always.
 
 ## Everything is Programmable
 
-SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, TypeScript, or C++) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
+Spacetime doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, TypeScript, or C++) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
 
 Need custom authorization logic? Write a function. Need to validate complex business rules? Write a function. Need to transform data before storing it? Write a function.
 
-Even access control is programmable. While SpacetimeDB provides sensible defaults (public vs. private tables), you can implement any access pattern you can express in code.
+Even access control is programmable. While Spacetime provides sensible defaults (public vs. private tables), you can implement any access pattern you can express in code.
 
 Including the meta permissions to manage and control the application's deployment itself.
 
@@ -106,4 +106,4 @@ When you embrace these principles, building real-time applications becomes remar
 - **No rollback logic to maintain** - transactions handle it automatically
 - **No limitations on your logic** - it's just code
 
-This is the Zen of SpacetimeDB: a simpler way to build and live.
+This is the Zen of Spacetime: a simpler way to build and live.
