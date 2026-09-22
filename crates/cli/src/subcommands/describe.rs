@@ -142,7 +142,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         serde_json::to_string_pretty(sats::serde::SerdeWrapper::from_ref(v))
     }
 
-    // The whole-module JSON is the raw, unvalidated def, exactly as before.
+    // The whole-module JSON is the raw, unvalidated def.
     if format == Format::Json && matches!(selection, Selection::Module) {
         // TODO: validate the JSON output
         println!("{}", sats_to_json(&raw)?);
