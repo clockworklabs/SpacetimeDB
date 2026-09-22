@@ -41,14 +41,14 @@ test('check guide exposes current procedures through the real dashboard', async 
     await page.getByRole('button', { name: 'Expand visible' }).click();
     const check = page.locator('.guide-check:visible');
     assert.match(await check.innerText(), /Repeat 1000 times/);
-    await check.getByText('Exact setup and check input', { exact: true }).click();
+    await check.getByText('Technical details', { exact: true }).click();
     await page.evaluate(() => window.scrollTo(0, 0));
     const raw = JSON.parse(await check.locator('pre').innerText()) as {
       criterion: { steps: { forEach?: unknown[] }[] };
     };
     assert.equal(raw.criterion.steps.find(step => step.forEach)?.forEach?.length, 1000);
     assert.match(await check.innerText(), /dbExpectCatalogItem|committed-write barrier/);
-    await check.getByText('Exact setup and check input', { exact: true }).click();
+    await check.getByText('Technical details', { exact: true }).click();
     await page.screenshot({ path: join(evidence, 'desktop.png') });
     await page.reload();
     assert.equal(await page.getByLabel('Search checks').inputValue(), 'catalog-volume');

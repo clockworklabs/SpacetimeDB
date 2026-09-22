@@ -86,29 +86,27 @@ function procedure(steps: GuideStep[]): string {
     return `<div class="guide-step guide-indent-${indent}"><span class="guide-kind ${kind}">${
       { repeat: 'Repeat / parallel', wait: 'Wait / deadline', assert: 'Verify', action: 'Action' }[kind]
     }</span><span>${esc(text.replace(/^- /, ''))}</span></div>`;
-  }).join('') || '<p class="guide-note">No additional steps in this section.</p>';
+  }).join('');
 }
 
 function entry(check: Check): string {
   const { feature, criterion } = check;
   const search = `${check.key} ${criterion.desc} ${feature.name} ${check.source}`.toLowerCase();
+  const setup = procedure((feature.setup ?? []) as GuideStep[]);
   return `<details class="guide-check" data-key="${esc(check.key)}" data-active="${check.active}" data-search="${esc(search)}">`
     + `<summary><span class="guide-id">${esc(criterion.id)}</span><span>${esc(criterion.desc)}</span>`
     + `<span class="guide-scope">${check.active ? 'L1–L3' : 'Other'}</span></summary><div class="guide-body">`
-    + `<p class="guide-key">${esc(check.key)}</p><p>${criterion.points} ${criterion.points === 1 ? 'point' : 'points'} · Browsers: ${esc((feature.actors ?? []).join(', ') || 'none')}</p>`
-    + (criterion.statedBy ? `<p><b>Product rule:</b> ${esc(criterion.statedBy)}</p>` : '')
-    + (criterion.note ? `<p class="guide-note"><b>Note:</b> ${esc(criterion.note)}</p>` : '')
+    + (criterion.statedBy ? `<h2>Required behavior</h2><p>${esc(criterion.statedBy)}</p>` : '')
     + (criterion.provenBy ? `<p><b>Uses earlier proof:</b> ${esc(criterion.provenBy)}</p>` : '')
-    + '<h2>Setup</h2>' + procedure((feature.setup ?? []) as GuideStep[])
-    + '<h2>Check steps</h2>' + procedure(criterion.steps as GuideStep[])
-    + '<div class="guide-pass"><b>Pass rule</b><p>All required actions and assertions must succeed. '
-    + 'A failed prerequisite blocks dependent work. Unknown results and harness errors are not passes. '
-    + 'Setup and earlier criteria can be shared; the runner preserves their prerequisite order.</p></div>'
-    + '<details class="guide-evidence"><summary>Defect controls</summary>'
-    + (check.controls.length ? '<p>Declared control targets, not proof of a passing qualification run.</p><ul>'
-      + check.controls.map(control => `<li>${esc(control)}</li>`).join('') + '</ul>'
-      : '<p>No exact control target is linked here. Check calibration evidence for broader controls.</p>')
-    + '</details><details class="guide-evidence"><summary>Exact setup and check input</summary>'
+    + (setup ? '<h2>Setup</h2>' + setup : '')
+    + '<h2>Steps</h2>' + procedure(criterion.steps as GuideStep[])
+    + '<details class="guide-evidence"><summary>Technical details</summary>'
+    + `<p class="guide-key">${esc(check.key)}</p>`
+    + `<p>${criterion.points} ${criterion.points === 1 ? 'point' : 'points'} · Browsers: ${esc((feature.actors ?? []).join(', ') || 'none')}</p>`
+    + (criterion.note ? `<p class="guide-note">${esc(criterion.note)}</p>` : '')
+    + '<p><b>Declared defect controls</b> (targets, not proof of a passing qualification run):</p>'
+    + (check.controls.length ? '<ul>' + check.controls.map(control => `<li>${esc(control)}</li>`).join('') + '</ul>'
+      : '<p class="guide-note">None linked to this exact check.</p>')
     + `<p class="guide-key">${esc(check.source)} · SHA-256 ${check.sourceSha256}</p>`
     + `<pre>${esc(JSON.stringify({ actors: feature.actors, setup: feature.setup ?? [], criterion }, null, 2))}</pre>`
     + '</details></div></details>';
@@ -124,15 +122,14 @@ export function checkGuidePage(): string {
     + topbar({ page: 'check-guide', key: '', canStart: false, resumable: false, error: '' })
     + '<main class="page guide"><div class="title"><h1>Checks</h1></div>'
     + `<p class="guide-intro">What each check does, step by step. <b>${data.selected} checks</b> in the current ecommerce dependency L1–L3 selection.</p>`
-    + '<details class="guide-help"><summary>Scope and timing</summary><p>This page reads the local definitions. It does not describe a frozen historical run or certify qualification. Other selections can overlap and are not extra checks in L1–L3.</p>'
-    + '<p>Loops keep their repetition counts. The exact input includes every field. Shown waits and deadlines are authored values; omitted deadlines use grader defaults. Helpers can also wait or issue several requests. Setup can be shared, so these steps are not an elapsed-time estimate.</p>'
+    + '<details class="guide-help"><summary>How checks are graded</summary>'
+    + '<p>A check passes only when every step runs and every Verify step holds. A failed prerequisite blocks the checks that depend on it. Unknown results and harness errors are not passes. Setup can be shared between checks; the runner keeps prerequisite order.</p>'
+    + '<p>This page shows the current local definitions, not a historical run\'s frozen version, and does not certify qualification. Waits and deadlines are authored values; omitted deadlines use grader defaults, so the steps are not an elapsed-time estimate.</p>'
     + `<p class="guide-key">Recipe: ${esc(data.recipe)} · SHA-256 ${data.sha256}</p></details>`
     + '<div class="guide-toolbar"><label class="guide-search">Search checks<input type="search" data-guide-search placeholder="Catalog, stock, password, crash…"></label>'
     + '<div class="guide-controls"><label><input type="checkbox" data-guide-others> Include other selections</label>'
-    + '<button class="btn" data-guide-expand>Expand visible</button><button class="btn" data-guide-collapse>Collapse all</button>'
+    + '<button class="btn" data-guide-toggle>Expand visible</button>'
     + '<span data-guide-count role="status"></span></div></div>'
-    + '<div class="guide-legend" aria-label="Step labels"><span class="guide-kind action">Action</span>'
-    + '<span class="guide-kind assert">Verify</span><span class="guide-kind wait">Wait / deadline</span><span class="guide-kind repeat">Repeat / parallel</span></div>'
     + '<p data-guide-empty hidden>No checks match this search.</p>'
     + data.checks.map(entry).join('') + '</main></body></html>';
 }

@@ -46,9 +46,8 @@ export function topbar({ page, key, canStart, resumable, controllerOwner, error,
   return '<div class="topbar"><a class="brand" href="/">'
     + '<img src="/spacetimedb-mark.svg" alt="" width="26" height="24"><b>STACK BENCH</b></a>'
     + `<nav class="nav">${nav(page === 'campaigns' || page === 'campaign', 'Campaigns', '/')}`
-    + `${nav(page === 'plans', 'New run', '/new')}${nav(page === 'check-guide', 'Checks', '/checks')}</nav><div class="tools">${stop}${resume}${files}`
-    + `${canStart && page !== 'plans' ? '<a class="btn primary" href="/new">Start a run</a>' : ''}`
-    + '</div></div>';
+    + `${nav(page === 'check-guide', 'Checks', '/checks')}</nav><div class="tools">${stop}${resume}${files}`
+    + '<a class="btn primary" href="/new">New run</a></div></div>';
 }
 
 function shapeOf(plan: DashboardPlan): string {

@@ -22,10 +22,10 @@ function filter(): void {
 }
 search.addEventListener('input', filter);
 others.addEventListener('change', filter);
-document.querySelector('[data-guide-expand]')!.addEventListener('click', () => {
-  for (const check of checks) if (!check.hidden) check.open = true;
-});
-document.querySelector('[data-guide-collapse]')!.addEventListener('click', () => {
-  for (const check of checks) check.open = false;
+const toggle = document.querySelector<HTMLButtonElement>('[data-guide-toggle]')!;
+toggle.addEventListener('click', () => {
+  const expand = toggle.textContent === 'Expand visible';
+  for (const check of checks) check.open = expand && !check.hidden;
+  toggle.textContent = expand ? 'Collapse all' : 'Expand visible';
 });
 filter();

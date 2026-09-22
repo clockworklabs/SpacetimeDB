@@ -1269,8 +1269,9 @@ test('the client renders controls, evidence links, and every supported page', ()
   // An unreadable plan is a row whose state is invalid and whose error is a hover.
   const invalid = /<span class="state \w+" title="([^"]+)">invalid</.exec(readOnly);
   assert.ok(invalid?.[1] && invalid[1] !== 'invalid');
-  assert.equal(topbar({ page: 'campaigns', key: '', canStart: false, resumable: false, error: '' })
-    .includes('Start a run'), false);
+  // New run stays reachable read-only; its page explains that starting is unavailable.
+  assert.match(topbar({ page: 'campaigns', key: '', canStart: false, resumable: false, error: '' }),
+    /href="\/new">New run</);
 });
 
 

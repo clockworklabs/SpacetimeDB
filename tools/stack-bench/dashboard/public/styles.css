@@ -379,7 +379,6 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .guide-controls label { display: flex; align-items: center; gap: 6px; margin-right: auto; }
 .guide-controls input { accent-color: var(--green); }
 .guide-controls [role=status] { color: var(--n4); font-size: 12px; }
-.guide-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .guide-kind { font: 600 11px/1.6 var(--sans); letter-spacing: .015em; }
 .guide-kind.action { color: #9ecbff; }
 .guide-kind.assert { color: #87deb0; }
@@ -403,15 +402,11 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .guide-indent-3 { padding-left: 54px; }
 .guide-indent-4 { padding-left: 72px; }
 .guide-note { color: var(--n4); }
-.guide-pass { margin: 24px 0 14px; padding: 14px 16px; border-radius: 4px; background: var(--shade5); }
-.guide-pass > b { color: #87deb0; }
-.guide-pass p { margin: 6px 0 0; }
 .guide-evidence { border-top: 1px solid var(--shade1); }
 .guide-evidence li { margin: 8px 0; overflow-wrap: anywhere; }
 .guide pre { padding: 16px; background: var(--shade8); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--n2); font: 12px/1.7 var(--mono); }
 @media (max-width: 640px) {
   body:has(.guide) .topbar { height: auto; min-height: 48px; padding: 12px 16px; flex-wrap: wrap; gap: 12px; }
-  body:has(.guide) .topbar .tools { display: none; }
   .guide { padding-inline: 16px; }
   .guide-toolbar { position: static; }
   .guide-check > summary { gap: 10px; padding: 14px 12px; }
