@@ -755,10 +755,11 @@ function validateConclusiveResult(state: DependencyState,
   const currentNodes = new Set(selectedPromptNodeIds(state));
   if (result.applicationFailure !== undefined) {
     validateApplicationFailure(result.applicationFailure, 'result.applicationFailure');
+    // Current work keeps outcomes measured before the abort; everything else is not run.
     for (const [nodeId, checks] of actualNodes) {
-      const expectedOutcome = currentNodes.has(nodeId) ? 'fail' : 'not-run';
-      if ([...checks.values()].some(outcome => outcome !== expectedOutcome)) {
-        throw new Error(`application failure must mark ${nodeId} checks ${expectedOutcome}`);
+      const current = currentNodes.has(nodeId);
+      if ([...checks.values()].some(outcome => (outcome === 'not-run') === current)) {
+        throw new Error(`application failure must mark ${nodeId} checks ${current ? 'measured or fail' : 'not-run'}`);
       }
     }
   }

@@ -270,3 +270,24 @@ test('a typed application abort charges current work but not earlier regression 
   assert.throws(() => gradeBundleToProgressionResult(artifact(incomplete, 'bad-abort'),
     action(), conversion), /application abort is incomplete/);
 });
+
+test('an application abort keeps checks measured before it and fails the rest of current work', () => {
+  const crashed = bundle();
+  crashed.outcome = { kind: 'app_failure', phase: 'application-readiness',
+    reason: 'application did not become ready after database reset' };
+  crashed.selection.attemptedChecks = ['check.accounts'];
+  crashed.selection.reportedChecks = ['check.accounts'];
+  crashed.selection.notRun = [{ stableKey: 'check.catalog', reason: crashed.outcome.reason }];
+  crashed.suites.application.features[0]!.criteria.pop();
+  crashed.totals = { score: 1, max: 3, regression: null };
+  const result = gradeBundleToProgressionResult(artifact(crashed, 'partial-abort'), action(), conversion);
+  if (result.outcome !== 'conclusive') throw new Error('expected a conclusive result');
+  assert.deepEqual(result.nodes, [
+    { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'pass' }] },
+    { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
+  ]);
+  const zeroed = structuredClone(crashed);
+  zeroed.totals.score = 0;
+  assert.throws(() => gradeBundleToProgressionResult(artifact(zeroed, 'zeroed-abort'),
+    action(), conversion), /application abort is incomplete/);
+});

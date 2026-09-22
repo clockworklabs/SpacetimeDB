@@ -139,6 +139,38 @@ function inconclusive(attemptId: string, runId: string, sourceSha256: string,
     outcome: 'inconclusive', category, reason };
 }
 
+// Measured outcome of one check, shared by complete grades and application aborts.
+const checkOutcome = (evidence: CheckEvidence): 'pass' | 'fail' | 'blocked' | 'not-run' =>
+  evidence.status === 'passed' ? 'pass' : evidence.status === 'blocked' ? 'blocked'
+    : evidence.status === 'failed' ? 'fail' : 'not-run';
+
+function reportedEvidence(bundle: GradeBundlePayload, expectedIds: string[],
+  selectedById: Map<string, SelectedCheck>): Map<string, CheckEvidence> {
+  const evidenceById = new Map<string, CheckEvidence>();
+  for (const [suiteId, suite] of Object.entries(bundle.suites ?? {})) {
+    for (const [featureIndex, feature] of (suite?.features ?? []).entries()) {
+      for (const [criterionIndex, criterion] of (feature?.criteria ?? []).entries()) {
+        if (criterion?.stableKey === undefined) continue;
+        const at = `grade bundle ${suiteId}.features[${featureIndex}].criteria[${criterionIndex}]`;
+        if (!expectedIds.includes(criterion.stableKey)) {
+          throw new Error(`${at} reports unselected check ${criterion.stableKey}`);
+        }
+        if (evidenceById.has(criterion.stableKey)) {
+          throw new Error(`grade bundle repeats check ${criterion.stableKey}`);
+        }
+        if (criterion.points !== selectedById.get(criterion.stableKey)?.points) {
+          throw new Error(`grade bundle criterion points for ${criterion.stableKey} are ${JSON.stringify(criterion.points)}, expected ${JSON.stringify(
+            selectedById.get(criterion.stableKey)?.points)}`);
+        }
+        const checkedEvidence = validateCheckEvidence(criterion.evidence,
+          { at: `${at}.evidence` });
+        evidenceById.set(criterion.stableKey, checkedEvidence);
+      }
+    }
+  }
+  return evidenceById;
+}
+
 export function gradeBundleToProgressionResult(input: unknown, action: unknown,
   { owner, runArtifact, featureCatalogIdentity, dependencyPolicyIdentity, selectionSha256,
     sourceSha256, recipeIdentity, sequence }: GradeConversionOptions = {}): ProgressionGradeResult {
@@ -304,6 +336,10 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       'grade bundle reported checks');
     const notRun = exactKeys(selection.notRun, 'grade bundle not-run checks');
     const accounted = [...attempted, ...notRun];
+    // Checks measured before the abort keep their outcome; the rest of current work fails.
+    const measured = reportedEvidence(bundle, expectedIds, selectedById);
+    const measuredPoints = expected.reduce((total, check) => total + (currentNodes.has(check.nodeId)
+      && measured.get(check.id)?.status === 'passed' ? check.points : 0), 0);
     const score = bundle.totals?.score;
     const max = bundle.totals?.max;
     const regression = bundle.totals?.regression ?? { score: 0, max: 0 };
@@ -313,7 +349,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       || typeof bundleOutcome.reason !== 'string' || !bundleOutcome.reason
       || new Set(accounted).size !== accounted.length || !sameKeys(accounted, expectedIds)
       || reported.some(id => !attempted.includes(id))
-      || typeof score !== 'number' || !Number.isSafeInteger(score) || score !== 0
+      || typeof score !== 'number' || !Number.isSafeInteger(score) || score !== measuredPoints
       || typeof max !== 'number' || !Number.isSafeInteger(max)
       || typeof regressionScore !== 'number' || !Number.isSafeInteger(regressionScore)
       || regressionScore !== 0
@@ -329,7 +365,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       id: nodeId,
       checks: expected.filter(check => check.nodeId === nodeId)
         .map(check => ({ id: check.id,
-          outcome: currentNodes.has(nodeId) ? 'fail' : 'not-run' })),
+          outcome: !currentNodes.has(nodeId) ? 'not-run'
+            : measured.has(check.id) ? checkOutcome(measured.get(check.id)!) : 'fail' })),
     })) };
   }
 
@@ -341,28 +378,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     || !Array.isArray(selection.notRun) || selection.notRun.length !== 0) {
     throw new Error('grade bundle does not contain complete progression evidence');
   }
-  const evidenceById = new Map<string, CheckEvidence>();
-  for (const [suiteId, suite] of Object.entries(bundle.suites ?? {})) {
-    for (const [featureIndex, feature] of (suite?.features ?? []).entries()) {
-      for (const [criterionIndex, criterion] of (feature?.criteria ?? []).entries()) {
-        if (criterion?.stableKey === undefined) continue;
-        const at = `grade bundle ${suiteId}.features[${featureIndex}].criteria[${criterionIndex}]`;
-        if (!expectedIds.includes(criterion.stableKey)) {
-          throw new Error(`${at} reports unselected check ${criterion.stableKey}`);
-        }
-        if (evidenceById.has(criterion.stableKey)) {
-          throw new Error(`grade bundle repeats check ${criterion.stableKey}`);
-        }
-        if (criterion.points !== selectedById.get(criterion.stableKey)?.points) {
-          throw new Error(`grade bundle criterion points for ${criterion.stableKey} are ${JSON.stringify(criterion.points)}, expected ${JSON.stringify(
-            selectedById.get(criterion.stableKey)?.points)}`);
-        }
-        const checkedEvidence = validateCheckEvidence(criterion.evidence,
-          { at: `${at}.evidence` });
-        evidenceById.set(criterion.stableKey, checkedEvidence);
-      }
-    }
-  }
+  const evidenceById = reportedEvidence(bundle, expectedIds, selectedById);
   const missing = expectedIds.filter(id => !evidenceById.has(id));
   if (missing.length) throw new Error(`grade bundle is missing check evidence: ${missing.join(', ')}`);
   const checkEvidence = (id: string): CheckEvidence => {
@@ -403,9 +419,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     id: nodeId,
     checks: expected.filter(check => check.nodeId === nodeId).map(check => ({
       id: check.id,
-      outcome: checkEvidence(check.id).status === 'passed' ? 'pass'
-        : checkEvidence(check.id).status === 'blocked' ? 'blocked'
-        : checkEvidence(check.id).status === 'failed' ? 'fail' : 'not-run',
+      outcome: checkOutcome(checkEvidence(check.id)),
     })),
   })) };
 }

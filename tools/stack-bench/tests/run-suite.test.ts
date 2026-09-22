@@ -394,10 +394,12 @@ test('an application setup failure receives the exact current and inherited deno
     { executionId: 'inherited', points: 2 },
     { executionId: 'control', points: 0 },
   ] };
-  assert.deepEqual(applicationFailureTotals(selection, [
-    { id: 'current' }, { id: 'inherited', inherited: true }, { id: 'control' },
-  ]), { score: 0, max: 3, dirty: false, contractPass: null,
-    regression: { score: 0, max: 2 } });
+  const suites = [{ id: 'current' }, { id: 'inherited', inherited: true }, { id: 'control' }];
+  assert.deepEqual(applicationFailureTotals(selection, suites, new Set()), { score: 0, max: 3, dirty: false,
+    contractPass: null, regression: { score: 0, max: 2 } });
+  const measured = { checks: selection.checks.map((check, index) => ({ ...check, stableKey: `check-${index}` })) };
+  assert.equal(applicationFailureTotals(measured, suites, new Set(['check-0', 'check-1'])).score, 3,
+    'passes measured before the abort count; inherited regression guards stay unscored');
 });
 
 test('a new grade removes every prior grade output but keeps operator records', () => {

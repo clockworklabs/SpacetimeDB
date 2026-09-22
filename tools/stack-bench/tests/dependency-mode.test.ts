@@ -820,3 +820,12 @@ test('check categories preserve scoring and leave historical definitions unclass
     ...node, gradingChecks: node.gradingChecks.map(check => ({ ...check, category: 'browser' })),
   })) }), /category/);
 });
+
+test('an application failure keeps current checks measured before the abort', () => {
+  const state = progressionEngine.initialize(fixture());
+  const recorded = progressionEngine.recordResult(state, {
+    ...grade(state, 'partial-abort', { accounts: 'pass', catalog: 'fail' }),
+    applicationFailure: { phase: 'application-readiness', reason: 'application stopped answering' },
+  });
+  assert.equal(recorded.nodes.catalog!.repairs.used, 0);
+});

@@ -124,7 +124,7 @@ type ApplicationFetch = (url: string, init: { signal: AbortSignal }) => Promise<
 type DatabaseProvenanceDefinition = Track['databaseProvenance'];
 type DatabaseNameLease = { resources: { database?: string | null } };
 type ProvenanceWrite = { ok: true; marker: string } | { ok: false; marker: null; reason: string };
-type ApplicationFailureSelection = { checks: Array<{ executionId: string; points?: number }> };
+type ApplicationFailureSelection = { checks: Array<{ executionId: string; points?: number; stableKey?: string }> };
 type ContractLintArguments = Pick<RunArguments,
   'url' | 'level' | 'track' | 'label' | 'out' | 'bundleArtifactId' | 'credentialAliases'>;
 type BundleSelection = Selection & { attemptedChecks: string[]; reportedChecks: string[];
@@ -195,15 +195,20 @@ export function resetFailureOutcome(error: unknown): ResetOutcome {
     : { kind: 'harness_failure', phase: 'database-reset' };
 }
 
+// Passes measured before an app abort keep their points; inherited regression guards stay unscored.
 export function applicationFailureTotals(selection: ApplicationFailureSelection | null | undefined,
-  declaredSuites: Array<Pick<DeclaredSuite, 'id' | 'inherited'>>): Record<string, unknown> {
+  declaredSuites: Array<Pick<DeclaredSuite, 'id' | 'inherited'>>,
+  passed: ReadonlySet<string>): Record<string, unknown> {
   if (!selection?.checks?.length) return {};
   const inherited = new Set(declaredSuites.filter(suite => suite.inherited).map(suite => suite.id));
   const currentMax = selection.checks.filter(check => !inherited.has(check.executionId))
     .reduce((total, check) => total + Number(check.points ?? 0), 0);
   const regressionMax = selection.checks.filter(check => inherited.has(check.executionId))
     .reduce((total, check) => total + Number(check.points ?? 0), 0);
-  return { score: 0, max: currentMax, dirty: false, contractPass: null,
+  const score = selection.checks.filter(check => !inherited.has(check.executionId)
+    && check.stableKey !== undefined && passed.has(check.stableKey))
+    .reduce((total, check) => total + Number(check.points ?? 0), 0);
+  return { score, max: currentMax, dirty: false, contractPass: null,
     regression: regressionMax ? { score: 0, max: regressionMax } : null };
 }
 
@@ -932,7 +937,10 @@ async function main() {
     return result;
   };
   const recordApplicationAbort = () => {
-    bundle.totals = applicationFailureTotals(selection, declaredSuites);
+    const passed = new Set(Object.values(bundle.suites ?? {}).flatMap(suite =>
+      (isGradePayload(suite) ? suite.features : []).flatMap(feature => feature.criteria ?? [])
+        .flatMap(criterion => criterion.evidence?.status === 'passed' && criterion.stableKey ? [criterion.stableKey] : [])));
+    bundle.totals = applicationFailureTotals(selection, declaredSuites, passed);
   };
   const freshenFailureMessage = () => {
     const detail = lastResetFailure ? `: ${lastResetFailure}` : '';
