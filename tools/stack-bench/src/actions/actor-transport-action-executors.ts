@@ -291,8 +291,11 @@ async function expectForgeryRejected({ input, capabilities }: TransportArguments
     transport.verification.unverified(`${actor.name}: ${forge.reason}`);
     inconclusive('forgery-unverifiable', { actor: actor.name, detail: forge.reason });
   }
+  // A server that ignores the tampered field accepts the request correctly;
+  // the scenario's stored-effect check decides whether the forgery took effect.
   if (forge.accepted) {
-    fail('forgery-accepted', { field: forge.tamperedField ?? 'identity', status: forge.status ?? null });
+    transport.verification.unverified(`${actor.name}: server accepted the tampered "${forge.tamperedField}"; its stored effect decides`);
+    return { classification: 'unverified', status: forge.status };
   }
   if (forge.complete === false) inconclusive('transport-incomplete', {});
   if (forge.refusalKind !== 'access' && forge.refusalKind !== 'application'

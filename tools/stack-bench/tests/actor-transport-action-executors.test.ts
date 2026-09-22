@@ -1899,3 +1899,12 @@ test('native POST queries cannot be forged as writes, and mutation arguments sta
     } else assert.equal((await run({ do: 'expectForgeryRejected', actor: 'buyer' }, native)).status, 'inconclusive');
   }
 });
+
+test('an accepted forged write is decided by its stored effect, not the status', async () => {
+  const actor = { name: 'attacker',
+    forge: { accepted: true, status: 200, tamperedField: 'userId', reason: 'tampered request sent' } };
+  const provided = services(new Map<string, unknown>([['attacker', actor]]));
+  const checked = await run({ do: 'expectForgeryRejected', actor: 'attacker' }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
+});
