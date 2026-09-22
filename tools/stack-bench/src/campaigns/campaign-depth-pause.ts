@@ -24,6 +24,15 @@ const releaseSchema = identity.extend({ releasedAt: time });
 const RECEIPT = 'depth-pause.json';
 const RELEASE = 'depth-release.json';
 
+// Pause once, after the planned depth. A continuation that inherited that depth
+// was already released with its cohort and must not wait for another release.
+export function depthPauseDue(run: { levels: ReadonlyArray<{ level: number }>; pausedDurationMs?: number;
+  progressionResume?: { inheritedLevels: readonly number[] } }, pauseDepth: number, activeLevel: number): boolean {
+  return run.pausedDurationMs === undefined && activeLevel > pauseDepth
+    && run.levels.some(record => record.level === pauseDepth)
+    && !run.progressionResume?.inheritedLevels.includes(pauseDepth);
+}
+
 export function readDepthPauseContext(env = process.env): DepthPauseContext | null {
   return env.STACK_BENCH_DEPTH_PAUSE_CONTEXT
     ? contextSchema.parse(JSON.parse(env.STACK_BENCH_DEPTH_PAUSE_CONTEXT)) : null;

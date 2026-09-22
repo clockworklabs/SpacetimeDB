@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { acquireCampaignLock, releaseCampaignLock, writeCampaignRecord } from '../src/campaigns/campaign-lock.js';
-import { campaignDepthPauseStatus, continueCampaignDepth, depthPauseDurationMs,
+import { campaignDepthPauseStatus, continueCampaignDepth, depthPauseDue, depthPauseDurationMs,
   readDepthPause, validateDepthPauseEvidence, waitAtDepthBoundary } from '../src/campaigns/campaign-depth-pause.js';
 import { claimNextAttempt, initializeCampaignDirectory, writeCampaignState,
   campaignTimeBudget, type CampaignClaim } from '../src/campaigns/campaign-scheduler.js';
@@ -258,4 +258,12 @@ test('killing the pause owner preserves evidence and refuses a false live contin
     await exited;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a continuation that inherits the paused depth does not pause again', () => {
+  const run = { levels: [{ level: 1 }, { level: 2 }] };
+  assert.equal(depthPauseDue(run, 2, 3), true);
+  assert.equal(depthPauseDue({ ...run, pausedDurationMs: 5_000 }, 2, 3), false);
+  assert.equal(depthPauseDue(run, 2, 2), false);
+  assert.equal(depthPauseDue({ ...run, progressionResume: { inheritedLevels: [1, 2] } }, 2, 3), false);
 });
