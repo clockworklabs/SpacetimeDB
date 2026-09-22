@@ -780,6 +780,11 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   };
   const restoreFailures: GradeCleanupFailure[] = [];
   const closeAll = async () => {
+    for (const actor of actors.values()) {
+      for (const message of actor.consoleErrors) {
+        result.consoleErrors.push(`[${actor.name}] ${sanitiseConsoleError(message)}`);
+      }
+    }
     // The abort hook already closed this connection, or reported that closure
     // could not be confirmed. Do not hang again while collecting browser media.
     if (ctx.actionCancellation?.reason) {
@@ -834,11 +839,6 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     }
   } catch (error) {
     const classified = classifyCheckFailure(error);
-    for (const actor of actors.values()) {
-      for (const message of actor.consoleErrors) {
-        result.consoleErrors.push(`[${actor.name}] ${sanitiseConsoleError(message)}`);
-      }
-    }
     const reason = keepReason((classified.summary ?? '').trim());
     result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: initializationStartedAtMs,
       failure: error, summary: reason });
@@ -964,10 +964,6 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
         { id: criterion.id, points: criterion.points, status: evidence.status, code: evidence.code,
           phase: evidence.phase, summary: evidence.summary }];
     }
-  }
-
-  for (const actor of actors.values()) {
-    for (const e of actor.consoleErrors) result.consoleErrors.push(`[${actor.name}] ${e}`);
   }
 
   // Retain diagnostics for server-side checks that could not execute. The

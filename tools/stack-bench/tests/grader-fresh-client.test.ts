@@ -7,6 +7,43 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { ActionInconclusive } from '../src/actions/action-contract.js';
 
+test('browser diagnostics survive setup failure without changing check verdicts', async () => {
+  const server = createServer((_request, response) => response.end(`<button id="trigger">Trigger</button>
+    <span id="ready">ready</span><script>
+    document.querySelector('#trigger').onclick = () => {
+      console.error('query failed password=private-secret');
+      throw new Error('account view crashed');
+    };</script>`));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const mode of ['setup', 'assertion', 'passed'] as const) {
+      const observation = { do: 'expect', actor: 'buyer', testid: 'ready',
+        contains: mode === 'passed' ? 'ready' : 'unavailable', within: 100 };
+      const definition = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
+        name: 'browser diagnostics', features: [{ id: 1, name: 'account view', actors: ['buyer'],
+          setup: [{ do: 'click', actor: 'buyer', testid: 'trigger' }, ...(mode === 'setup' ? [observation] : [])],
+          criteria: [{ id: '1a', desc: 'account view is ready', points: 1,
+            steps: [observation] }] }] });
+      const result = await gradeFeature(browser, definition.features[0]!, {
+        url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
+      }, { runId: 'browser-diagnostics', roomName: name => name, url, actions: [], spacetime: null, nullControl: false });
+      assert.equal(result.criteria[0]!.evidence.status,
+        mode === 'setup' ? 'blocked' : mode === 'assertion' ? 'failed' : 'passed');
+      assert.equal(result.consoleErrors.filter(line => line.includes('[buyer] query failed')).length, 1);
+      assert.equal(result.consoleErrors.filter(line => line.includes('[buyer] pageerror: account view crashed')).length, 1);
+      assert.doesNotMatch(result.consoleErrors.join('\n'), /private-secret/);
+    }
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 test('an explicit reload accepts a leave-page warning but still dismisses ordinary confirmations', async () => {
   const server = createServer((_request, response) => response.end(`<button id="arm">Arm</button>
     <button id="confirm">Confirm</button><span id="answer"></span><span id="loads"></span><script>

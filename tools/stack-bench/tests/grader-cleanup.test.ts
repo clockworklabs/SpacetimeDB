@@ -74,6 +74,7 @@ test('navigation timeout is inconclusive; connection refusal blocks setup and pr
   ] as const) {
     let closed = false;
     const context = { newPage: async () => page,
+      routeWebSocket: async () => {},
       newCDPSession: async () => ({ on() {}, async send() {} }),
       close: async () => { closed = true; } };
     const page = Object.assign(new EventEmitter(), { setDefaultTimeout() {}, context: () => context,
@@ -102,10 +103,13 @@ test('navigation timeout is inconclusive; connection refusal blocks setup and pr
     assert.equal(result.criteria[0]!.evidence.phase, 'setup');
     assert.deepEqual(result.criteria[0]!.evidence.actions, []);
     assert.equal(closed, true);
-    assert.equal(result.consoleErrors.filter(line => line.includes('Navigation pending resource')).length, 20);
-    assert.match(result.consoleErrors.join('\n'), /stylesheet https:\/\/fonts.example/);
+    if (error instanceof errors.TimeoutError) {
+      assert.deepEqual(result.setupEvidence.observation,
+        { pendingResources: Array(20).fill('stylesheet https://fonts.example') });
+    }
     assert.match(result.consoleErrors.join('\n'), /redacted credential/);
-    assert.doesNotMatch(result.consoleErrors.join('\n'), /private-secret|private-|finished.example|failed.example/);
+    assert.doesNotMatch(JSON.stringify([result.consoleErrors, result.setupEvidence.observation]),
+      /private-secret|private-|finished.example|failed.example/);
     assert.equal(page.listenerCount('requestfinished'), 0);
     assert.equal(page.listenerCount('requestfailed'), 0);
     assert.equal(page.listenerCount('request'), 1); // Only the existing write recorder remains.
