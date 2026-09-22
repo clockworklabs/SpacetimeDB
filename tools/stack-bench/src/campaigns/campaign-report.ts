@@ -358,12 +358,17 @@ export function campaignFirstBuildRate(run: { levels?: Array<{ firstBuild?: { sc
     levels.reduce((sum, level) => sum + level.firstBuild!.max!, 0));
 }
 
+// Duration covers this execution only, so subtract only its throttle and operator waits.
 export function campaignActiveDurationMs(run: {
   totals?: { durationSec?: number | null; pausedDurationSec?: number | null };
-  levels?: Array<{ sessionTotals?: { providerThrottle?: { waitedMs?: number } } }>;
+  levels?: Array<{ level?: number; sessionTotals?: { providerThrottle?: { waitedMs?: number } } }>;
+  progressionResume?: { inheritedLevels?: number[] } | null;
 }): number | null {
   if (number(run.totals?.durationSec) === null) return null;
-  const wait = (run.levels ?? []).reduce((sum, level) => sum + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0);
+  const inherited = run.progressionResume?.inheritedLevels ?? [];
+  const wait = (run.levels ?? []).filter(level => !inherited.includes(level.level ?? -1))
+    .reduce((sum, level) => sum + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0)
+    + (providerWaitSummary(run)?.waitedMs ?? 0);
   return Math.max(0, run.totals!.durationSec! * 1000 - wait - (number(run.totals?.pausedDurationSec) ?? 0) * 1000);
 }
 

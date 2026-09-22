@@ -10,7 +10,7 @@ import { emptyArtifactIdentities, readArtifact, writeArtifact,
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
-import { buildCampaignReport, campaignReportCsv, exportCampaignReport, generateCampaignReport,
+import { buildCampaignReport, campaignActiveDurationMs, campaignReportCsv, exportCampaignReport, generateCampaignReport,
   campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
 import type { BenchmarkRun, RunSelection } from '../src/campaigns/campaign-report.js';
@@ -812,4 +812,16 @@ test('report output cannot cross a symbolic link inside the campaign directory',
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
   }
+});
+
+test('active time excludes this execution\'s provider waits and nothing it inherited', () => {
+  const session = (waitedMs: number) => ({ providerMetadata: { providerWaits: [{ waitedMs, disposition: 'continued' }] } });
+  assert.equal(campaignActiveDurationMs({
+    totals: { durationSec: 100 },
+    levels: [
+      { level: 1, sessionTotals: { providerThrottle: { waitedMs: 30_000 } }, buildSessions: [session(40_000)] },
+      { level: 2, sessionTotals: { providerThrottle: { waitedMs: 5_000 } }, buildSessions: [session(20_000)] },
+    ],
+    progressionResume: { inheritedLevels: [1] },
+  } as never), 75_000);
 });
