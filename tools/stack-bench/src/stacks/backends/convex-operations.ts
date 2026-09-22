@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { loadTrack, portsFor } from '../../composition/tracks.js';
 import { z } from 'zod';
-import { leaseFromEnv, type BackendLease } from '../../runtime/backend-lease.js';
+import { leaseFromEnv, loopbackHttpUri, type BackendLease } from '../../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import { requireAttemptNetwork } from '../../runtime/docker-network.js';
@@ -22,7 +22,7 @@ function target(input: NativeInput) {
   const exec: TextCommandExecutor = input.exec ?? execFileSync;
   requireAttemptNetwork(lease, exec);
   const container = assertLeasedContainer(lease.resources.container, exec, TIMEOUT, 'Convex native operation');
-  return { lease, exec, container, uri: lease.resources.serverUri };
+  return { lease, exec, container, uri: loopbackHttpUri(lease.resources.serverUri).origin };
 }
 
 export function convexAdminKey(lease: BackendLease, exec: TextCommandExecutor = execFileSync): string {
@@ -57,7 +57,10 @@ function admin(input: NativeInput) {
       `header = ${JSON.stringify('Authorization: Convex ' + key)}`,
       'header = "Content-Type: application/json"', `data = ${JSON.stringify(JSON.stringify(body))}`].join('\n');
     try {
-      return owned.exec('docker', ['exec', '-i', owned.container, 'curl', '--silent', '--show-error',
+      // Activation publishes this owned backend's port for the trusted controller.
+      // Avoid a Docker exec per request. Ignore local curl config and proxies so
+      // the admin credential only goes to the leased loopback endpoint.
+      return owned.exec('curl', ['--disable', '--noproxy', '*', '--silent', '--show-error',
         '--fail', '--max-time', String(remaining / 1000), '--config', '-'],
       { encoding: 'utf8', stdio: 'pipe', timeout: remaining, input: config });
     } catch { throw new Error('Convex native administrative request failed'); }

@@ -17,12 +17,12 @@ const rows = () => ({
 });
 function native(data: Record<string, Record<string, unknown>[]>, options: { stall?: boolean; namespaceStarted?: string; omitTable?: string; noTruncate?: boolean; noTimestamp?: boolean } = {}) {
   const calls: Record<string, unknown>[] = [];
-  const exec: TextCommandExecutor = (_command, args, commandOptions) => {
+  const exec: TextCommandExecutor = (command, args, commandOptions) => {
     assert(!args.some(arg => arg.includes('private-admin')), 'admin key must never enter argv');
     if (args[0] === 'inspect') return args.includes('{{json .State}}')
       ? JSON.stringify({ Running: true, StartedAt: options.namespaceStarted ?? 'start' }) : 'owned';
     if (args.includes('./generate_admin_key.sh')) return 'private-admin';
-    assert(args.includes('curl'));
+    assert(command === 'curl' || args.includes('curl'));
     const config = commandOptions.input!;
     assert(config.includes('Authorization: Convex private-admin'));
     const body = JSON.parse(JSON.parse(config.split('\n').find(line => line.startsWith('data = '))!.slice(7)));
