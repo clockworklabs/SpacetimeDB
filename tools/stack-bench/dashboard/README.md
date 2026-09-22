@@ -32,6 +32,13 @@ dashboard does not have a separate execution engine.
   retain their recorded status. Credentials and marked sensitive details are omitted.
 - New run (`/new`) — select workload, level, stacks, models, guidance, repetitions,
   repairs, and limits. Review the attempt count and cost cap, then start.
+  The default is progressive dependency work with SDK skills and dev workflow on,
+  when available, 240 minutes and a $50 normalized cost cap per attempt.
+  **SDK skills** and **Dev workflow** are independent
+  [guidance choices](../docs/prompting.md#guidance-profiles); compare them in
+  separate runs. Review shows work delivery separately from concurrency. When
+  repeating a study, compare the saved campaign's mode, guidance, model, repair
+  policy, and budgets before launch; do not infer them from “L3” or “3×3.”
 - Saved plans (`/plans`) — inspect the exact configuration behind each run.
 - Checks (`/checks`) — search current check definitions and inspect setup, steps,
   waits, pass rules, defect-control targets, and exact inputs. Defaults to ecommerce
@@ -50,7 +57,7 @@ Stop interrupts the active attempt; it does not pause it. Resume starts
 scheduled dependency work and does not restart a stopped sequential attempt.
 It cannot restore a lost database or agent session. A planned depth pause uses
 the CLI's `pause-status` and `continue-depth` commands and requires the original
-controller to stay running. See [pause behavior](../README.md#pause-before-a-later-depth).
+controller to stay running. See [planned depth pause](../appliance/README.md#planned-depth-pause).
 Elsewhere it runs read-only and those controls are unavailable;
 `GET /api/health` reports which mode is active.
 
@@ -99,6 +106,12 @@ Excluded attempts remain labelled in chart controls and the Runs table. Cost and
 progress-over-time charts retain their observations, with the same exclusion label.
 Live progress and total spend include unfinished work; total spend also includes
 excluded attempts. These operational values are separate from comparison metrics.
+
+For single-execution Claude Code and Codex attempts, `~$` marks a live estimate
+from completed response usage at the plan's pinned rates. Final receipts replace
+that estimate. Unsupported or incomplete usage keeps the saved cost visible. Live
+estimates do not enter scores, reports, or budget enforcement. Planned depth
+holds show their paused state; elapsed time includes those holds.
 
 ## Routes
 

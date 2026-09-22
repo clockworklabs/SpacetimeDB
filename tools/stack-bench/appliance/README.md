@@ -265,7 +265,7 @@ per-attempt cap ($90 maximum). These are proposed limits, not a cost estimate.
 It must be bound to the selected image identities, frozen, and installed under
 `plans/` before execution; setup does not install it automatically. Earlier
 levels must pass before later levels start. See the
-[research roadmap](../docs/research-roadmap.md) for collection and analysis rules.
+[study method](../docs/study-method.md) for collection and analysis rules.
 `appliance/campaign.example.json` is a model-free reference plan; changing its
 title does not make it a coding-agent campaign.
 
@@ -320,6 +320,11 @@ repair counts even when its grade did not finish; its source is kept beside
 the run and graded on resume before any further coding session. Sequential
 mode requires `batch` selection and one `total` limit.
 
+Rejecting a repair restores its accepted source and recreates the isolated
+grading database before restarting the app. A failed rollback preserves the
+accepted source, grade evidence, and repair costs, and stops the attempt as a
+harness failure.
+
 The plan, dashboard, and report show qualification status. Publish scores as
 verified comparison data only after every selected level is qualified.
 
@@ -356,6 +361,14 @@ policy; requested parallelism never changes. No worker-pool setting is needed. T
 remains 4 CPUs and 8 GiB RAM. Preflight reports the requested campaign's
 container caps and warns when their sum exceeds Docker's total allocation.
 These caps do not reserve CPU or RAM and are not measured hardware minimums.
+
+Setup selects `STACK_BENCH_RUNNER_CAPACITY=dynamic`. Admission then checks
+current host memory and CPU load instead of a fixed slot count. New claims
+reserve startup headroom for one minute so concurrent launches cannot reuse the
+same free-memory estimate. Campaigns and standalone qualification queue and retry
+when resources are busy. The pressure check is an admission snapshot, not a
+reservation against future spikes. Set a positive integer instead for a fixed
+host quota measured for your workload.
 
 Each worker has a 2-CPU/4-GiB coding container, a 1-CPU/1-GiB backend, a
 1-CPU/2-GiB browser, and a broker capped at 256 MiB when needed. Thus nine
@@ -484,8 +497,44 @@ run scheduled dependency work.
 ## Continue to a higher level
 
 To keep the same live execution, select the full target before launch and use a
-[planned depth pause](../README.md#pause-before-a-later-depth). The controller
-must remain running. This differs from the source-seeded method below.
+planned depth pause. The controller must remain running. This differs from the
+source-seeded method below.
+
+### Planned depth pause
+
+Select the full target (for example, `levels: [1, 2, 3]`) and set
+`mode.pauseAfterDepth: 2` with progressive dependency work. Each eligible
+attempt waits after its L2 work, before the L3 request. Use enough parallelism
+for the whole cohort: waiting attempts retain their processes and resource leases.
+
+```sh
+campaign pause-status <campaign-directory>
+campaign continue-depth <campaign-directory>
+```
+
+The release command waits for the cohort boundary: every attempt must be waiting
+or terminal. Failed attempts stay in the cohort. Releasing the boundary does not
+require 100% completion, grant repairs, restart earlier work, or change
+eligibility. The existing progression rules determine which L3 features can start.
+
+This keeps the same process, accepted source, live database, progression history,
+model configuration, and cumulative cost and repair budgets. Source and
+progression changes during the hold cause an error. `depth-pause.json` records
+each hold and `depth-release.json` records the cohort release. Working-time
+allowance excludes the planned wait; total wall duration and paused duration
+remain in the evidence. Cancellation still works.
+
+A controller loss is an interruption. `continue-depth` refuses a dead owner; it
+cannot restore the database or agent session after controller shutdown. Keep the
+full campaign directory for review; the partial research export omits the control
+receipts.
+
+Database timers and external services keep running during a hold. A pause cannot
+turn an already-started L2-only campaign into a predeclared L3 study; see the
+[study method](../docs/study-method.md#measures-and-analysis) before comparing
+staged and continuous attempts.
+
+### Source-seeded continuation
 
 Use a separate source-seeded campaign to continue a completed dependency campaign.
 For example, prepare an L3 campaign from its passed L2 source without starting work:

@@ -5,30 +5,13 @@ technology stacks. It runs each attempt in an isolated container, tests real
 behavior, supports optional bounded repairs, and keeps the evidence behind every result.
 
 **New here? [Start your first run](GETTING-STARTED.md).** The model-free demo needs
-only Git and Docker. The guide covers setup, results, and cleanup.
+only Git and Docker:
 
-## Verified study baseline
+```sh
+docker compose -f tools/stack-bench/appliance/demo.compose.yaml run --build --rm demo
+```
 
-Tag: **`stack-bench/astra-repairs-2026-09-14`** — commit `4e1ecc037`.
-This labels the frozen version used for the audited Astra-medium 3×3 repair study.
-Its L1–L3 qualification passed; all nine runs have complete final evidence under
-the 110-check definition. Use this baseline to identify that study's code.
-
-This is a historical study baseline, not a claim that the version has no bugs.
-It includes the documented sorting ambiguity and SpacetimeDB stage-summary error;
-the audit used accepted checkpoints and final grades to resolve the summary error.
-Newer grader changes on the current branch require their own qualification before
-they receive a new verified baseline tag. Keep this tag fixed.
-
-The current ecommerce dependency L1-L3
-[calibration](tracks/ecommerce/composition/calibrations/dependency-l3.json) is pending
-qualification after the lazy order-account reader correction: 27 features,
-117 checks and 186 points. Its earlier evidence is preserved, but does not qualify
-the changed reader. The previous
-[qualification review](qualification-evidence/ecommerce-l3-3f7f3911d/review.json)
-records targeted replacement evidence and reviewed reuse before this correction.
-The change requires affected reference and defect controls before promotion.
-Earlier paid results retain their original grader and scores.
+Then open [localhost:7331](http://localhost:7331).
 
 ## What it does
 
@@ -42,220 +25,32 @@ Earlier paid results retain their original grader and scores.
 6. Records check completion, token usage, cost, duration, source identity, and
    supporting evidence. Weighted scores remain separate from completion.
 
-Only compatible attempts with validated evidence become comparison data. Provider failures,
-harness failures, and incomplete measurements remain separate.
+Only compatible attempts with validated evidence become comparison data. Provider
+failures, harness failures, and incomplete measurements remain visible but separate.
+Results are provisional until the selected checks have current
+[qualification](reference-apps/README.md).
 
-If an app prerequisite fails, the dependent checks are reported as **blocked**.
-They receive no credit, but this is not evidence that their target assertions failed.
-Page navigation timeouts are unmeasured: external resources can delay page readiness.
-Campaign grading retries only the affected isolated suite, once, when its evidence
-is explicitly retryable and inconclusive. It preserves completed suites and both
-executions in the grade bundle and raw artifacts. Product failures, mixed
-failure/inconclusive suites, cleanup failures and harness failures do not retry.
-Qualification runs do not enable this recovery policy. If grading remains incomplete, it stops
-the attempt without treating the timeout as a failed feature or selecting later work.
-Other navigation transport failures also remain unmeasured; connection refusal
-is a measured reachability failure. Invalid selectors, grader scripts, and browser
-protocol errors are harness failures. Observation helpers must not convert these
-errors into missing controls. Concurrent actions drain every branch before returning;
-measurement failures take priority over app failures. Bundle and dependency grading
-both inspect partial observations and cleanup evidence before accepting an app abort.
-Check verdicts cannot contradict failed or unmeasured action evidence.
-Concurrent named calls retain every request outcome when cancelled, including responses
-received before cancellation. A lost response or request timeout is an unknown result,
-not proof that the app rejected the operation or failed to commit it. Missing or unknown
-request outcomes make the response assertion inconclusive, even if another request
-returned an app error. HTTP success alone does not prove the stored business effects.
-This contention behavior has matching dependency L1–L3 qualification;
-existing paid results are not rewritten.
-The prerequisite observation remains available for repair. Harness and provider
-failures remain unmeasured and cannot become app failures. The purchase-session,
-restock-race, and scheduled-restock probes use stored state or fresh reads for setup;
-separate live-update checks keep their live observers. These probes are included
-in the qualified dependency L1–L3 selection.
+## Scope
 
-## Convex support
+- **Stacks:** SpacetimeDB, PostgreSQL, and MongoDB. Self-hosted Convex supports
+  the ecommerce dependency L1–L3 path.
+- **Tracks:** [ecommerce](tracks/ecommerce/LEVELS.md) (storefront and warehouse)
+  and [chat](tracks/chat/LEVELS.md).
+- **Modes:** sequential levels, where each level must pass before the next, or a
+  dependency graph, where each feature opens once its parents pass.
+- **Agents:** Claude Code, Codex, and OpenRouter, through the
+  [appliance](appliance/README.md#provider-credentials).
 
-Convex supports the ecommerce dependency L1–L3 path. Current qualification is
-pending validation of the runtime and browser-transport fixes.
-It uses a pinned, self-hosted backend in each attempt's private network. No cloud
-account is required. Apps use native Convex functions and subscriptions; the grader
-uses the declared native operations and independent database reads.
-Login probes preserve native WebSocket calls and require matching replies.
-Authenticated replays use the observed native bearer identity or session argument;
-missing or ambiguous credential transport remains unmeasured.
+Campaign execution runs in the Linux Docker appliance. Source checks also run
+on a development machine.
 
-The controller owns deployment credentials, reset, recovery, and cleanup. A backend
-crash also stops its application functions, so the grader measures that boundary once.
-The frozen baseline has reference and defect-control evidence for this path;
-that evidence does not qualify later runtime changes automatically.
-Other tracks and depths require their own supported definitions and evidence.
+## Documentation
 
-## Run modes
+Start with [Getting started](GETTING-STARTED.md), then the
+[appliance guide](appliance/README.md) for campaigns. Everything else is in the
+[documentation index](docs/README.md).
 
-The ecommerce dependency L1–L3 account paths are qualified. Browser grading
-requires a real application session and an independently observed application-database
-write. The SpacetimeDB reference uses local password procedures and app session
-bindings. It does not require a supplied identity service. Credential storage and
-log audits remain source-specific diagnostics. They do not certify password
-storage or logging in arbitrary generated apps.
-
-- **Sequential:** complete each selected level before starting the next. Earlier
-  checks run again to catch regressions.
-- **Dependency:** each feature opens after its required parents pass. One branch
-  can stop while unrelated branches continue. `workSelection` controls whether
-  the agent gets one ready feature, all ready features, or the full graph. The
-  manifest's `repair` object targets one failed feature or all current
-  failures and sets the repair budget.
-
-`mode.unchangedFailureLimit` controls early stopping independently of the repair budget.
-The initial failure counts as one observation. To allow all five repairs per feature,
-set this limit to at least `6`; a limit of `3` can stop after two unchanged repairs.
-
-Rejecting a repair restores its accepted source and recreates the isolated grading
-database before restarting the app. This reset is between candidates, not inside
-durability probes. A failed rollback preserves the accepted source, grade evidence,
-and repair costs, and stops the attempt as a harness failure.
-
-Between isolated ecommerce and chat scenarios, every stack runs its normal application
-startup after the database reset. This includes SpacetimeDB apps that perform
-initialization outside module `init`. The harness does not guess migration names.
-The shared agent request states that startup must initialize the supplied data and
-accounts in an empty database, including after upgrades and repairs. Startup must
-preserve current quantities, prices, and user data when a database already exists.
-PostgreSQL resets recreate only the leased database, including its schema and
-migration history. Build preparation, scenario isolation, and repair rollback use
-the same reset. Durability probes restart services without resetting data.
-Earlier runs without this requirement need an audit if initialization failures
-affected their scores; the updated request does not validate those scores retroactively.
-
-New dependency plans retain previously disclosed interface contracts in upgrade
-prompts by default. Set `mode.retainPriorContracts` to `false` to opt out.
-Set `repair.budget.total` to `0` for a study with no repairs. Feature
-work stays incremental; grading rules and repair budgets stay separate. See the
-[prompting method](docs/prompting.md#dependency-progression).
-
-Set a condition's `guidanceProfile` to `neutral-dev` to request the
-`spacetime dev` watch workflow for SpacetimeDB. This opt-in profile reuses neutral
-product guidance and adds a pinned workflow skill; other stacks are unchanged.
-It does not change grading or repair policy. The default remains `neutral`.
-The `neutral`, `neutral-dev`, and `neutral-managed-dev` profiles retain the selected
-TypeScript server, TypeScript client, and CLI skills. Dev guidance adds a workflow; it does not replace the SDK
-references or start a watcher by itself.
-
-New run separates **SDK skills** and **Dev workflow**. Each can be on or off.
-Start a separate run to compare guidance choices. `neutral-no-sdk` omits both. These choices change
-SpacetimeDB guidance only; they do not start a watcher or change grading.
-
-New run defaults to progressive dependency work with SDK skills and dev workflow
-on, when available. The progressive preset allows 240 minutes and a $50 normalized
-cost cap per attempt. Repetitions, concurrency, and limits remain editable.
-Single-build work requires selecting that workload. Review shows work delivery
-separately from concurrency. When repeating a study, compare the saved campaign's
-mode, guidance, model, repair policy, and budgets before launch; do not infer them
-from “L3” or “3×3.”
-
-Appliance setup selects `STACK_BENCH_RUNNER_CAPACITY=dynamic`. Admission checks
-current host memory and CPU load instead of a fixed slot count. New claims reserve
-startup headroom for one minute so concurrent launches cannot reuse the same free
-memory estimate. Campaigns and standalone qualification queue
-and retry when resources are busy. Campaign concurrency remains explicit. Port,
-database, and workspace ownership locks and per-container limits still apply.
-The pressure check is an admission snapshot, not a reservation against future spikes.
-Numeric host quotas remain available for operators who need them.
-
-For a skill ablation, `neutral-dev-no-sdk` keeps the same backend document and
-dev workflow but omits the TypeScript server, client, and CLI reference skills.
-Label this condition separately from standard guidance in comparisons.
-
-`neutral-managed-dev` instead supplies `/deps/spacetime-dev start|status|stop`.
-The agent creates its project configuration, then starts the managed watcher.
-The helper serializes starts, reports initial readiness, and keeps a log in the
-agent home. It runs as the agent user, so normal container cleanup stops it.
-It supports one assigned database and TypeScript binding targets inside `/app`.
-Use a controller and coding image built with this support. This profile has a
-separate guidance identity; it does not change grading or repair policy.
-
-### Pause before a later depth
-
-For a planned staged run, select the full target (for example, `levels: [1, 2, 3]`)
-and set `mode.pauseAfterDepth: 2` with progressive dependency work. Each eligible
-attempt waits after its L2 work, before the L3 request. Use enough parallelism for
-the whole cohort: waiting attempts retain their processes and resource leases.
-
-Inside the same appliance release, use:
-
-```sh
-node dist/commands/campaign-cli.js pause-status /path/to/campaign
-node dist/commands/campaign-cli.js continue-depth /path/to/campaign
-```
-
-The release command waits for the cohort boundary: every attempt must be waiting
-or terminal. Failed attempts stay in the cohort. Releasing the boundary does not
-require 100% completion, grant repairs, restart earlier work, or change eligibility.
-The existing progression rules determine which L3 features can start.
-
-This keeps the same process, accepted source, live database, progression history,
-model configuration, and cumulative cost and repair budgets. Source and progression
-changes during the hold cause an error. `depth-pause.json` records each hold and
-`depth-release.json` records the cohort release. Working-time allowance excludes the
-planned wait; total wall duration and paused duration remain in the evidence.
-Cancellation still works. Keep the controller running throughout the hold.
-A controller loss is an interruption. `continue-depth` refuses a dead owner;
-it cannot restore the database or agent session after controller shutdown.
-Keep the full campaign directory for review; the partial research export omits
-the control receipts.
-
-This is a planned staged experiment, not a promise of identical model output or
-wall-clock behavior. Database timers and external services can advance during a
-hold. Cache expiry, provider changes, and changing host load can affect cost and
-duration. Keep those limits in the study protocol and verify staged versus continuous
-behavior before claiming equivalence. No checkpoint feature can retroactively turn
-an already-started L2-only campaign into a predeclared L3 study. `campaign extend`
-remains a separate source-seeded study.
-
-## Start here
-
-From a clean checkout of the delivered branch, with Docker running, use one
-command from the repository root:
-
-```sh
-docker compose -f tools/stack-bench/appliance/demo.compose.yaml run --build --rm demo
-```
-
-When the dashboard is ready, open [localhost:7331](http://localhost:7331).
-The demo runs a model-free example across three stacks and shows its results.
-It needs no provider credentials and makes no model calls. The first source
-build can take substantial time. The dashboard stays running after the example finishes.
-
-The demo uses the Docker appliance with Linux/amd64 containers. The host needs
-Git and Docker with Compose and BuildKit. See the appliance guide for resource
-requirements and the release checks that still need proof. The trusted
-controller manages Docker through its socket; coding agents do not receive it.
-
-1. Follow the [appliance guide](appliance/README.md) for requirements, results,
-   and paid campaigns.
-2. Follow the [development guide](docs/development.md) to work from source.
-3. Use the [documentation index](docs/README.md) for architecture, grading,
-   recovery, release, and track authoring.
-4. Use the [authoring guide](docs/authoring.md) to add product work and checks.
-   Review the [grading coverage map](docs/grading-coverage.md) before making
-   claims about verified results.
-
-Campaign execution and paid or subscription-backed model work run through the
-Linux appliance. Portable source checks remain available for development.
-Paid adapters share the coding runner and cost controls. Select Claude, OpenAI,
-or OpenRouter through the [appliance credential guide](appliance/README.md#openai-credentials).
-Current grading profiles are provisional until their qualification gates pass.
-
-The dashboard refreshes visible running campaigns every five seconds and follows
-saved evidence events. For single-execution Claude Code and Codex attempts, `~$` marks a
-live estimate from completed response usage at the plan's pinned rates. Final
-receipts replace that estimate. Unsupported or incomplete usage keeps the saved
-cost visible. Live estimates do not enter scores, reports, or budget enforcement.
-Planned depth holds show their paused state; elapsed time includes those holds.
-
-## Ownership
+## Layout
 
 - `tracks/` owns product requests, feature definitions, checks, and scenarios.
 - `conditions/` owns guidance and repair feedback.
@@ -263,74 +58,8 @@ Planned depth holds show their paused state; elapsed time includes those holds.
 - `src/stacks/` owns runtime stack adapters.
 - `commands/` and `src/` own the CLI and reusable benchmark logic.
 - `grader/`, `linter/`, and `reference-apps/` own validation.
+- `qualification-evidence/` holds retained qualification records.
 - `appliance/` owns deployment. `dashboard/` is an optional interface.
 
 Prompt selection and scoring selection stay separate. A behavior can be measured
 without being named in the product request.
-
-## Words
-
-One word per thing. Every surface, from the CLI to the dashboard to the
-artifacts, uses these.
-
-- **campaign**: one comparison job. A plan file fixes the product, the
-  stacks, the model, the checks, the budgets, and the repetitions; a result
-  directory holds everything it produced.
-- **attempt**: one stack building the product once inside a campaign. A
-  campaign with three stacks and one repetition has three attempts.
-- **execution**: one process run of an attempt. A retried attempt has two.
-- **session**: one conversation with the coding agent. A build session
-  writes the app; a repair session reacts to a failure report.
-- **stack**: the technology under test, such as SpacetimeDB, PostgreSQL, or
-  MongoDB. Flags still spell it `--backend`; the word is stack.
-- **level**: one rung of a sequential campaign (L1, L2). **depth**: how far
-  down the feature graph a dependency campaign has reached. They share a
-  field but never a meaning.
-- **feature**: one node of the dependency graph, the unit the agent builds
-  and the grader scores. A feature opens when its parents pass.
-- **questline**: a named path of features through the graph, such as
-  identity or fulfilment. One questline can stop while the others continue.
-- **check**: one scored criterion with a stable id such as `601b`. A
-  **gate** check must pass before the feature's descendants open; a
-  **guarantee** check costs points but never blocks.
-- **disclosure**: whether a specification is requested (in the prompt),
-  expected (not in the prompt, scored), or observed (not in the prompt, not
-  scored).
-- **first build**: the score before any repair. **repair**: one paid
-  session that reacts to a failure report, plus the regrade after it.
-  A repair candidate is accepted only under the mode's regression rules;
-  rejected source remains available as evidence.
-- **passed** and **failed** are measured outcomes; failed is the
-  application's fault. **inconclusive** means the harness could not
-  measure the check: no credit, no blame, and the reason is recorded.
-- **harness failure** and **provider failure** mean the benchmark or the
-  model provider broke; the attempt is **excluded** from comparison data,
-  as is a **contaminated** attempt whose agent read grading material.
-- **needs attention**: a campaign that stopped and needs a person.
-- **preflight**: the verifications before an attempt, each a **probe**
-  such as `registry.cache`. A **smoke** preflight starts a real coding
-  container without a model. **admission** is the record that preflight and
-  policy allowed the campaign to start.
-- **coding container**: the container the agent works in, created from the
-  **build image**. It sees the app, its stack material, and nothing else.
-- **clean source**: the accepted application source with nothing the
-  agent's process left behind. Every grade starts the app from clean source.
-- **credential broker**: the local proxy that holds the provider key so the
-  coding container never sees it. Its **cost receipt** is the proof of what
-  a session spent.
-- **lease**: the record of which containers, ports, database, and locks an
-  attempt owns, so cleanup and recovery act only on those.
-
-### Adding a coding agent
-
-Register the agent in `src/agents/agent-adapters.ts`. Claude and Codex use the
-same `commands/agent.ts` prompt and grading path. Their CLI arguments, process
-handling, and result parsing live in `container/coding-providers.ts`; their
-trusted API forwarding and usage parsing live in `container/broker-protocols.ts`.
-Add a provider there when its protocol differs. Keep authentication in
-`container/container-auth.ts`, outside the coding container.
-
-A new provider must supply normalized token usage, preserve its tool transcript
-for the shared audit, and enforce the plan's cost bound. Test it with a local
-mock upstream before a paid run. Do not copy the container runner or add
-provider conditions to prompts, grading, or campaign scheduling.

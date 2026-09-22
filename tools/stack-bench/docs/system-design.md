@@ -21,6 +21,61 @@ using chat history or operator memory.
 No layer can silently replace a decision from a layer above it. A view can
 summarize durable data, but it cannot create new run state.
 
+## Terms
+
+One word per thing. The CLI, dashboard, and artifacts use these.
+
+- **campaign**: one comparison job. A plan file fixes the product, the stacks,
+  the model, the checks, the budgets, and the repetitions; a result directory
+  holds everything it produced.
+- **attempt**: one stack building the product once inside a campaign. A
+  campaign with three stacks and one repetition has three attempts.
+- **execution**: one process run of an attempt. A retried attempt has two.
+- **session**: one conversation with the coding agent. A build session writes
+  the app; a repair session reacts to a failure report.
+- **stack**: the technology under test, such as SpacetimeDB, PostgreSQL, or
+  MongoDB. Flags still spell it `--backend`; the word is stack.
+- **level**: one rung of a sequential campaign (L1, L2). **depth**: how far down
+  the feature graph a dependency campaign has reached. They share a field but
+  never a meaning.
+- **feature**: one node of the dependency graph, the unit the agent builds and
+  the grader scores. A feature opens when its parents pass.
+- **questline**: a named path of features through the graph, such as identity
+  or fulfilment. One questline can stop while the others continue.
+- **check**: one scored criterion with a stable id such as `601b`. A **gate**
+  check must pass before the feature's descendants open; a **guarantee** check
+  costs points but never blocks.
+- **disclosure**: whether a specification is requested (in the prompt),
+  expected (not in the prompt, scored), or observed (not in the prompt, not
+  scored).
+- **first build**: the score before any repair. **repair**: one paid session
+  that reacts to a failure report, plus the regrade after it. A repair candidate
+  is accepted only under the mode's regression rules; rejected source remains
+  available as evidence.
+- **passed** and **failed** are measured outcomes; failed is the application's
+  fault. **inconclusive** means the harness could not measure the check: no
+  credit, no blame, and the reason is recorded. **blocked** means a prerequisite
+  failed, so the check was not attempted.
+- **harness failure** and **provider failure** mean the benchmark or the model
+  provider broke; the attempt is **excluded** from comparison data, as is a
+  **contaminated** attempt whose agent read grading material.
+- **qualification**: matching reference, null-control, and defect-control
+  evidence for an exact check selection. Without it, results are provisional.
+- **needs attention**: a campaign that stopped and needs a person.
+- **preflight**: the verifications before an attempt, each a **probe** such as
+  `registry.cache`. A **smoke** preflight starts a real coding container without
+  a model. **admission** is the record that preflight and policy allowed the
+  campaign to start.
+- **coding container**: the container the agent works in, created from the
+  **build image**. It sees the app, its stack material, and nothing else.
+- **clean source**: the accepted application source with nothing the agent's
+  process left behind. Every grade starts the app from clean source.
+- **credential broker**: the local proxy that holds the provider key so the
+  coding container never sees it. Its **cost receipt** is the proof of what a
+  session spent.
+- **lease**: the record of which containers, ports, database, and locks an
+  attempt owns, so cleanup and recovery act only on those.
+
 ## Data flow
 
 ```text

@@ -38,9 +38,10 @@ This checks the runner; it does not measure a coding model.
    [credential setup instructions](appliance/README.md#provider-credentials).
    There is no separate dashboard password.
 2. Open **New run**. Select the workload, level, stacks, model, reasoning effort,
-   SDK skills, dev workflow, repetitions, repairs, and limits. **Production-quality
-   app** is on by default. It adds: “Build a production-quality application suitable
-   for real users, not a prototype or demo.” You can turn it off before review.
+   SDK skills, dev workflow, repetitions, repairs, and limits
+   ([defaults](dashboard/README.md#pages)). **Production-quality app** is on by default. It adds: “Build a production-quality
+   application suitable for real users, not a prototype or demo.” You can turn it
+   off before review.
 3. Review the configuration, attempt count, and cost cap. Select **Start**.
 4. Open the run to follow its status. Keep excluded and incomplete attempts in
    your review. Provisional results are not qualified comparisons.
@@ -73,6 +74,13 @@ When no run is active, stop the Stack Bench dashboard and cache containers in
 Docker Desktop. This preserves results. Do not delete the state volume to stop
 the dashboard. For interrupted work, follow [recovery](appliance/RECOVERY.md).
 
-For CLI and external-agent use, see the
-[documented run-setup interface](dashboard/README.md#workload-setup-and-ai-access).
+## Use the CLI instead
+
+The controller's `job options`, `job prepare`, and `job start` commands run the
+same flow without the browser. `prepare` returns the same review the dashboard
+shows; `start` accepts only that review. See the
+[run-setup interface](dashboard/README.md#workload-setup-and-ai-access) for the
+selection fields, and the [appliance guide](appliance/README.md#run-a-campaign)
+for running an authored campaign file directly.
+
 For development and grading internals, use the [documentation index](docs/README.md).

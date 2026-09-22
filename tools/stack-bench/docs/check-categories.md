@@ -17,7 +17,7 @@ owns category and point metadata; this document does not maintain a second count
 
 A mixed criterion is production when passing it requires a production property. For example, a refund check that also tests duplicate refusal is production. This coarse label does not separate which assertion failed. Split such a criterion only through a reviewed definition change with new qualification evidence.
 
-Categories do not prove that a guarantee was supplied without being asked. That requires the separate [prompt disclosure audit](prompt-boundary-audit.md), including the exact delivered request, contracts, and selected skills. A production requirement can still be explicitly disclosed.
+Categories do not prove that a guarantee was supplied without being asked. That requires an audit of the exact delivered request, contracts, and selected skills against the [request boundaries](prompting.md#request-boundaries). A production requirement can still be explicitly disclosed.
 
 Feature completion counts only fully passed dependency nodes. A node with passing feature checks but unfinished guarantees is not complete. Check completion counts accepted positive-point criteria. Both use the full selected target, including blocked and unmeasured work.
 

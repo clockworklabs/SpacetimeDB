@@ -24,6 +24,62 @@ Authorization and replay checks pass only when the requested call ran and
 produced verifiable evidence. Visible UI behavior cannot replace missing server
 evidence.
 
+### Outcome rules
+
+- If an app prerequisite fails, the dependent checks are reported as **blocked**.
+  They receive no credit, but this is not evidence that their target assertions
+  failed. The prerequisite observation remains available for repair.
+- Page navigation timeouts and other navigation transport failures are
+  unmeasured: external resources can delay page readiness. Connection refusal is
+  a measured reachability failure.
+- Invalid selectors, grader scripts, and browser protocol errors are harness
+  failures. Observation helpers must not convert these errors into missing controls.
+- Harness and provider failures remain unmeasured and cannot become app failures.
+- Concurrent actions drain every branch before returning; measurement failures
+  take priority over app failures. Check verdicts cannot contradict failed or
+  unmeasured action evidence.
+- Concurrent named calls retain every request outcome when cancelled, including
+  responses received before cancellation. A lost response or request timeout is
+  an unknown result, not proof that the app rejected or failed to commit the
+  operation. Missing or unknown outcomes make the response assertion
+  inconclusive, even if another request returned an app error. HTTP success
+  alone does not prove the stored business effects.
+- Bundle and dependency grading both inspect partial observations and cleanup
+  evidence before accepting an app abort.
+- Account checks require a real application session and an independently
+  observed application-database write. Credential storage and log audits are
+  source-specific diagnostics; they do not certify password storage or logging
+  in arbitrary generated apps.
+
+Campaign grading retries only the affected isolated suite, once, when its
+evidence is explicitly retryable and inconclusive. It preserves completed suites
+and both executions in the grade bundle and raw artifacts. Product failures,
+mixed failure/inconclusive suites, cleanup failures and harness failures do not
+retry. Qualification runs do not enable this policy. If grading remains
+incomplete, it stops the attempt without treating the timeout as a failed feature
+or selecting later work.
+
+### Database reset between scenarios
+
+Between isolated scenarios, every stack runs its normal application startup
+after the database reset. This includes SpacetimeDB apps that perform
+initialization outside module `init`. The harness does not guess migration names.
+The shared agent request states that startup must initialize the supplied data
+and accounts in an empty database, and preserve current quantities, prices, and
+user data when a database already exists.
+
+PostgreSQL resets recreate only the leased database, including its schema and
+migration history. Build preparation, scenario isolation, and repair rollback
+use the same reset. Durability probes restart services without resetting data.
+
+Convex runs a pinned, self-hosted backend in each attempt's private network; no
+cloud account is required. The grader uses the declared native operations and
+independent database reads. Login probes preserve native WebSocket calls and
+require matching replies. Authenticated replays use the observed native bearer
+identity or session argument; missing or ambiguous credential transport remains
+unmeasured. A Convex backend crash also stops its application functions, so the
+grader measures that boundary once.
+
 ## Fault probes
 
 The current campaign checks do not yet include controlled checkout write rejection

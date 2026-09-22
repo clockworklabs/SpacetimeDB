@@ -123,6 +123,27 @@ The campaign changes durability to `observed`. The request again omits reload
 behavior. Stack Bench measures it after the first build, records the result as
 a diagnostic, and does not include it in the score or repair report.
 
+### Request boundaries
+
+A product request states what the product does, clearly enough that its
+semantics are not ambiguous: buyer reviews, cancellation before shipping,
+reservations, stock scheduling, and account features. "A shipped order becomes
+delivered after 60 seconds" defines a feature. Restart survival, duplicate
+execution, clock authority, and cross-account access do not need implementation
+instructions in that request. Product policy stays explicit where a reasonable
+implementation could differ, such as refund and restock rules or verified-buyer
+reviews. Measure the enforcement of that policy separately.
+
+Neutral requests do not state atomicity, conservation, exactly-once, no-reload,
+or cross-account isolation instructions. Those belong to specification packs and
+enter the request only when a study selects them as `requested`.
+
+The **Production-quality app** option adds one line to the request: “Build a
+production-quality application suitable for real users, not a prototype or
+demo.” It is on by default and recorded with the run. It changes the request,
+not the checks. Compare results with the same setting, or label the difference.
+Plans set `productionQuality: false` to opt out.
+
 ## Stack guidance
 
 Stack selection and guidance selection are separate.
@@ -132,12 +153,36 @@ Stack selection and guidance selection are separate.
   architecture, and project structure within those requirements.
 - Prescribed guidance can add design advice selected by the campaign.
 
-Neutral does not mean that the supplied skills contain no design advice.
-The `neutral-dev` profile explicitly records `designAdvice: true` and includes
-the intentional SpacetimeDB TypeScript server, TypeScript client, CLI, and dev
-skills. Keep this material intact and retain its exact text in the evidence.
-The experiment compares these delivered stack packages, not databases with
+Neutral does not mean that the supplied skills contain no design advice. The
+neutral profiles record `designAdvice: true`, and the selected SpacetimeDB skills
+are intentional study inputs. Keep their text intact and retain it in the
+evidence. The experiment compares delivered stack packages, not databases with
 identical guidance. These skills are not grader source or scenario scripts.
+
+### Guidance profiles
+
+A condition's `guidanceProfile` selects one profile from
+[`conditions/catalog.json`](../conditions/catalog.json). Only the SpacetimeDB
+material differs between the neutral profiles; other stacks are unchanged.
+
+| Profile | SpacetimeDB skills |
+|---|---|
+| `neutral` (default) | TypeScript server, TypeScript client, CLI |
+| `neutral-dev` | The same, plus the `spacetime dev` watch workflow |
+| `neutral-managed-dev` | The same, plus the managed `/deps/spacetime-dev start\|status\|stop` helper |
+| `neutral-no-sdk` | None |
+| `neutral-dev-no-sdk` | Dev workflow only |
+| `prescribed` | SDK skills plus prescribed stack documents with design advice |
+
+The dashboard's **SDK skills** and **Dev workflow** choices select among these.
+Each profile has its own guidance identity. None changes grading or repair
+policy, and none starts a watcher by itself. Label a skill ablation separately
+from standard guidance, and start a separate run to compare guidance choices.
+
+The managed helper serializes starts, reports initial readiness, and keeps a log
+in the agent home. It runs as the agent user, so normal container cleanup stops
+it. It supports one assigned database and TypeScript binding targets inside
+`/app`, and needs a controller and coding image built with this support.
 
 An abridged neutral PostgreSQL section is:
 
@@ -174,6 +219,11 @@ For example, the account contract names fields such as `signup-username` and
 `signin-submit`. An HTTP stack also exposes the account operations through HTTP.
 A reducer-based stack exposes the equivalent reducer operations. The product
 behavior stays the same while the usable interface matches the selected stack.
+
+A readiness marker must distinguish an empty result from a failed read. A
+contracted action must be the actual UI action, not a separate endpoint that can
+pass while the product is broken. A hook can reveal that an operation exists,
+but must not state the expected security or synchronization policy.
 
 Scenario files own exact test data and edge-case values. Those values do not
 belong in the product request or interface contract.

@@ -272,6 +272,16 @@ supervisor so time grants remain effective. Cancellation stops the owned process
 tree and group. Captured output is limited to 64 MiB per stream; exceeding that
 limit rejects the result.
 
+Claude and Codex use the same `commands/agent.ts` prompt and grading path.
+Their CLI arguments, process handling, and result parsing live in
+`container/coding-providers.ts`; their trusted API forwarding and usage parsing
+live in `container/broker-protocols.ts`. Add a provider there when its protocol
+differs. Keep authentication in `container/container-auth.ts`, outside the
+coding container. A new provider must supply normalized token usage, preserve
+its tool transcript for the shared audit, and enforce the plan's cost bound.
+Test it with a local mock upstream before a paid run. Do not copy the container
+runner or add provider conditions to prompts, grading, or campaign scheduling.
+
 `tests/agent-adapters.test.ts` sends a compiled visible task to an independent,
 model-free entry point in all four modes. It checks exact delivery, shared budget
 accounting and process cleanup. These tests qualify the protocol boundary, not a
