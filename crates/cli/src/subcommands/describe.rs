@@ -8,14 +8,18 @@ use crate::util::{database_identity, get_auth_header};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use spacetimedb_client_api_messages::name::PrettyPrintStyle as EnvStyle;
-use spacetimedb_lib::db::raw_def::v10::{RawProcedureDefV10, RawReducerDefV10, RawTableDefV10, RawTypeDefV10};
+use spacetimedb_lib::db::raw_def::v10::{
+    RawHttpRouteDefV10, RawProcedureDefV10, RawReducerDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+};
+use spacetimedb_lib::environment::EnvironmentDeclaration;
 use spacetimedb_lib::sats;
 use spacetimedb_schema::auto_migrate::PrettyPrintStyle;
-use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::{HttpRouteDef, ModuleDef};
 use spacetimedb_schema::describe::{
-    all_named_types, describe_module, describe_procedure, describe_procedures, describe_reducer, describe_reducers,
-    describe_table, describe_tables, describe_type, describe_types, sorted_procedures, sorted_reducers, sorted_tables,
-    sorted_types,
+    all_named_types, describe_env_var, describe_env_vars, describe_http_route, describe_http_routes, describe_module,
+    describe_procedure, describe_procedures, describe_reducer, describe_reducers, describe_table, describe_tables,
+    describe_type, describe_types, describe_view, describe_views, sorted_procedures, sorted_reducers, sorted_tables,
+    sorted_types, sorted_views,
 };
 use std::io::IsTerminal;
 
@@ -26,11 +30,11 @@ pub fn cli() -> clap::Command {
         .about(format!(
             "Describe the structure of a database or entities within it. {UNSTABLE_WARNING}"
         ))
-        .arg(
-            Arg::new("describe_parts")
-                .num_args(0..)
-                .help("Describe arguments: [DATABASE] [ENTITY_TYPE [ENTITY_NAME]]"),
-        )
+        .arg(Arg::new("describe_parts").num_args(0..).help(
+            "Describe arguments: [DATABASE] [ENTITY_TYPE [ENTITY_NAME]]. \
+                     ENTITY_TYPE is one of tables, views, reducers, procedures, routes, env or types. \
+                     A route is named by its path, and an environment variable by its key.",
+        ))
         .arg(common_args::format().help("Output format for the schema"))
         .arg(
             Arg::new("json")
@@ -53,10 +57,13 @@ pub fn cli() -> clap::Command {
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 enum EntityType {
+    EnvVar,
+    HttpRoute,
     Procedure,
     Reducer,
     Table,
     Type,
+    View,
 }
 
 /// What to describe: the whole module, every entity of one type, or a single named entity.
@@ -68,15 +75,22 @@ enum Selection<'a> {
 }
 
 /// Parses an entity type. The plural is canonical, matching the section headings of the module
-/// output, but the singular is accepted too.
+/// output, but the singular is accepted too. Environment variables are `env`, as in `ctx.env` and
+/// `spacetime publish --env-only`, with `environment` accepted too.
 fn parse_entity_type(entity_type: &str) -> anyhow::Result<EntityType> {
     match entity_type {
+        "env" | "environment" => Ok(EntityType::EnvVar),
+        "routes" | "route" => Ok(EntityType::HttpRoute),
         "procedures" | "procedure" => Ok(EntityType::Procedure),
         "reducers" | "reducer" => Ok(EntityType::Reducer),
         "tables" | "table" => Ok(EntityType::Table),
         "types" | "type" => Ok(EntityType::Type),
+        "views" | "view" => Ok(EntityType::View),
         _ => {
-            anyhow::bail!("Invalid entity_type '{entity_type}'. Expected one of: procedures, reducers, tables, types.")
+            anyhow::bail!(
+                "Invalid entity_type '{entity_type}'. \
+                 Expected one of: env, procedures, reducers, routes, tables, types, views."
+            )
         }
     }
 }
@@ -184,6 +198,31 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             }
             Format::Text => print!("{}", describe_tables(&module_def, text_style())),
         },
+        Selection::All(EntityType::View) => match format {
+            Format::Json => {
+                let views: Vec<RawViewDefV10> = sorted_views(&module_def)
+                    .into_iter()
+                    .map(|(_, _, view)| view.clone().into())
+                    .collect();
+                println!("{}", sats_to_json(&views)?)
+            }
+            Format::Text => print!("{}", describe_views(&module_def, text_style())),
+        },
+        Selection::All(EntityType::HttpRoute) => match format {
+            Format::Json => {
+                let routes: Vec<RawHttpRouteDefV10> =
+                    module_def.http_routes().iter().cloned().map(Into::into).collect();
+                println!("{}", sats_to_json(&routes)?)
+            }
+            Format::Text => print!("{}", describe_http_routes(&module_def, text_style())),
+        },
+        Selection::All(EntityType::EnvVar) => match format {
+            Format::Json => {
+                let declarations: Vec<&EnvironmentDeclaration> = module_def.environment().declarations().collect();
+                println!("{}", sats_to_json(&declarations)?)
+            }
+            Format::Text => print!("{}", describe_env_vars(&module_def, text_style())),
+        },
         Selection::All(EntityType::Type) => match format {
             Format::Json => {
                 let types: Vec<RawTypeDefV10> = sorted_types(&module_def)
@@ -223,6 +262,47 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             match format {
                 Format::Json => println!("{}", sats_to_json(&RawTableDefV10::from(table.clone()))?),
                 Format::Text => print!("{}", describe_table(&prefix, owning, table, text_style())),
+            }
+        }
+        Selection::One(EntityType::View, view_name) => {
+            let (prefix, owning, view) = module_def
+                .all_views_with_prefix()
+                .into_iter()
+                .find(|(prefix, _, v)| format!("{prefix}{}", v.name) == *view_name)
+                .context("no such view")?;
+            match format {
+                Format::Json => println!("{}", sats_to_json(&RawViewDefV10::from(view.clone()))?),
+                Format::Text => print!("{}", describe_view(&prefix, owning, view, text_style())),
+            }
+        }
+        Selection::One(EntityType::HttpRoute, path) => {
+            // A path can be routed once per method, so this can match several routes.
+            let routes: Vec<&HttpRouteDef> = module_def
+                .http_routes()
+                .iter()
+                .filter(|route| &*route.path == path)
+                .collect();
+            anyhow::ensure!(!routes.is_empty(), "no such route");
+            match format {
+                Format::Json => {
+                    let routes: Vec<RawHttpRouteDefV10> = routes.into_iter().cloned().map(Into::into).collect();
+                    println!("{}", sats_to_json(&routes)?)
+                }
+                Format::Text => {
+                    for route in routes {
+                        print!("{}", describe_http_route(route, text_style()));
+                    }
+                }
+            }
+        }
+        Selection::One(EntityType::EnvVar, key) => {
+            let declaration = module_def
+                .environment()
+                .get(key)
+                .context("no such environment variable")?;
+            match format {
+                Format::Json => println!("{}", sats_to_json(declaration)?),
+                Format::Text => print!("{}", describe_env_var(declaration, text_style())),
             }
         }
         Selection::One(EntityType::Type, type_name) => {
@@ -309,10 +389,13 @@ mod tests {
     #[test]
     fn entity_type_alone_selects_all_of_that_type() {
         for (entity_type, expected) in [
+            ("env", EntityType::EnvVar),
             ("procedures", EntityType::Procedure),
             ("reducers", EntityType::Reducer),
+            ("routes", EntityType::HttpRoute),
             ("tables", EntityType::Table),
             ("types", EntityType::Type),
+            ("views", EntityType::View),
         ] {
             assert_eq!(
                 parse_selection(&parts(&[entity_type])).unwrap(),
@@ -324,10 +407,13 @@ mod tests {
     #[test]
     fn entity_type_and_name_select_one_entity() {
         for (entity_type, name, expected) in [
+            ("env", "API_KEY", EntityType::EnvVar),
             ("procedures", "lib.count", EntityType::Procedure),
             ("reducers", "lib.add", EntityType::Reducer),
+            ("routes", "/webhook", EntityType::HttpRoute),
             ("tables", "person", EntityType::Table),
             ("types", "geo.Point", EntityType::Type),
+            ("views", "lib.active", EntityType::View),
         ] {
             assert_eq!(
                 parse_selection(&parts(&[entity_type, name])).unwrap(),
@@ -339,10 +425,13 @@ mod tests {
     #[test]
     fn singular_entity_types_are_accepted() {
         for (singular, plural) in [
+            ("environment", "env"),
             ("procedure", "procedures"),
             ("reducer", "reducers"),
+            ("route", "routes"),
             ("table", "tables"),
             ("type", "types"),
+            ("view", "views"),
         ] {
             assert_eq!(
                 parse_selection(&parts(&[singular])).unwrap(),
@@ -360,7 +449,10 @@ mod tests {
         for bad in [parts(&["Tables"]), parts(&["columns", "name"])] {
             let err = parse_selection(&bad).unwrap_err().to_string();
             assert!(err.contains("Invalid entity_type"), "{err}");
-            assert!(err.contains("procedures, reducers, tables, types"), "{err}");
+            assert!(
+                err.contains("env, procedures, reducers, routes, tables, types, views"),
+                "{err}"
+            );
         }
     }
 

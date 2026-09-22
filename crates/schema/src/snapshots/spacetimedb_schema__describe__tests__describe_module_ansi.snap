@@ -69,6 +69,12 @@ expression: "describe_module(&def, PrettyPrintStyle::AnsiColor)"
   POST /webhook → [0m[1m[36mwebhook[0m
   ANY /health → [0m[1m[36mhealth[0m
 
+[0m[1m[34mEnvironment variables[0m
+  [0m[1m[36mAPI_KEY[0m    [0m[35mString[0m
+  [0m[1m[36mLOG_LEVEL[0m  [0m[35m"debug" | "info"[0m              [0m[32moptional[0m
+  [0m[1m[36mMODE[0m       [0m[35m"development" | "production"[0m
+  [0m[1m[36mREGION[0m     [0m[35m"eu west"[0m                     [0m[32moptional[0m
+
 [0m[1m[34mTypes[0m
   [0m[1m[36mColor[0m = red | green | blue
   [0m[1m[36mDirection[0m = north | south | east | west

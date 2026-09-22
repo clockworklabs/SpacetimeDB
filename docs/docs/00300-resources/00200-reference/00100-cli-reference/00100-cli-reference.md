@@ -292,7 +292,7 @@ Run `spacetime help describe` for more detailed information.
 
 ###### **Arguments:**
 
-* `<DESCRIBE_PARTS>` — Describe arguments: [DATABASE] [ENTITY_TYPE [ENTITY_NAME]]
+* `<DESCRIBE_PARTS>` — Describe arguments: [DATABASE] [ENTITY_TYPE [ENTITY_NAME]]. ENTITY_TYPE is one of tables, views, reducers, procedures, routes, env or types. A route is named by its path, and an environment variable by its key.
 
 ###### **Options:**
 

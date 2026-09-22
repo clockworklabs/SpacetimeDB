@@ -69,6 +69,12 @@ HTTP routes
   POST /webhook → webhook
   ANY /health → health
 
+Environment variables
+  API_KEY    String
+  LOG_LEVEL  "debug" | "info"              optional
+  MODE       "development" | "production"
+  REGION     "eu west"                     optional
+
 Types
   Color = red | green | blue
   Direction = north | south | east | west

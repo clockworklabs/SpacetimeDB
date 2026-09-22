@@ -6,11 +6,12 @@
 //! name joined with `.` (`geo.shapes.Point`).
 //!
 //! [`describe_module`] renders a whole module as sections (Tables, Views, Reducers, Procedures,
-//! HTTP routes, Types, then Row-level security), omitting empty sections. [`describe_table`],
-//! [`describe_reducer`], [`describe_procedure`] and [`describe_type`] render a single entity as it
-//! appears in its section, and [`describe_tables`], [`describe_reducers`], [`describe_procedures`]
-//! and [`describe_types`] render the contents of a whole section. All of them use two-space
-//! indentation, end in a single newline, and never leave trailing whitespace. Column
+//! HTTP routes, Environment variables, Types, then Row-level security), omitting empty sections.
+//! [`describe_table`], [`describe_view`], [`describe_reducer`], [`describe_procedure`],
+//! [`describe_http_route`], [`describe_env_var`] and [`describe_type`] render a single entity as it
+//! appears in its section, and [`describe_tables`], [`describe_views`], [`describe_reducers`],
+//! [`describe_procedures`], [`describe_http_routes`], [`describe_env_vars`] and [`describe_types`]
+//! render the contents of a whole section. All of them use two-space indentation, end in a single newline, and never leave trailing whitespace. Column
 //! widths are worked out from the uncoloured text, so the `AnsiColor` and `NoColor` styles align
 //! identically.
 
@@ -22,6 +23,7 @@ use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, TableAccess};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
 use spacetimedb_lib::http::Method as HttpMethod;
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
@@ -111,8 +113,8 @@ const BUFFER_WRITE: &str = "writing to an in-memory buffer cannot fail";
 
 /// Renders the whole module as human-readable text, one section per kind of entity.
 ///
-/// The sections are Tables, Views, Reducers, Procedures, HTTP routes, Types and Row-level
-/// security, in that order. Empty sections are omitted, so an empty module renders as `""`.
+/// The sections are Tables, Views, Reducers, Procedures, HTTP routes, Environment variables, Types
+/// and Row-level security, in that order. Empty sections are omitted, so an empty module renders as `""`.
 pub fn describe_module(def: &ModuleDef, style: PrettyPrintStyle) -> String {
     let mut w = StyledWriter::new(style, INDENT_WIDTH);
     write_module(&mut w, def).expect(BUFFER_WRITE);
@@ -127,6 +129,16 @@ pub fn describe_module(def: &ModuleDef, style: PrettyPrintStyle) -> String {
 pub fn describe_table(prefix: &NamespacePath, owning: &ModuleDef, table: &TableDef, style: PrettyPrintStyle) -> String {
     let mut w = StyledWriter::new(style, INDENT_WIDTH);
     write_table_block(&mut w, prefix, owning, table).expect(BUFFER_WRITE);
+    w.into_string()
+}
+
+/// Renders a single view's row, as it appears under `Views` in [`describe_module`] but unindented.
+///
+/// `prefix` and `owning` are the namespace path and owning module returned alongside `view` by
+/// [`ModuleDef::all_views_with_prefix`].
+pub fn describe_view(prefix: &NamespacePath, owning: &ModuleDef, view: &ViewDef, style: PrettyPrintStyle) -> String {
+    let mut w = StyledWriter::new(style, INDENT_WIDTH);
+    write_view_row(&mut w, prefix, owning, view).expect(BUFFER_WRITE);
     w.into_string()
 }
 
@@ -158,6 +170,22 @@ pub fn describe_procedure(
     w.into_string()
 }
 
+/// Renders a single HTTP route's row, as it appears under `HTTP routes` in [`describe_module`] but
+/// unindented.
+pub fn describe_http_route(route: &HttpRouteDef, style: PrettyPrintStyle) -> String {
+    let mut w = StyledWriter::new(style, INDENT_WIDTH);
+    write_http_route_row(&mut w, route).expect(BUFFER_WRITE);
+    w.into_string()
+}
+
+/// Renders a single environment variable's row, as it appears under `Environment variables` in
+/// [`describe_module`] but unindented, and aligned on its own rather than with the other rows.
+pub fn describe_env_var(declaration: &EnvironmentDeclaration, style: PrettyPrintStyle) -> String {
+    let mut w = StyledWriter::new(style, INDENT_WIDTH);
+    write_env_var_rows(&mut w, &[declaration]).expect(BUFFER_WRITE);
+    w.into_string()
+}
+
 /// Renders a single named type's row, as it appears under `Types` in [`describe_module`] but
 /// unindented.
 ///
@@ -176,6 +204,18 @@ pub fn describe_type(named: &NamedType<'_>, style: PrettyPrintStyle) -> String {
 pub fn describe_tables(def: &ModuleDef, style: PrettyPrintStyle) -> String {
     let mut w = StyledWriter::new(style, INDENT_WIDTH);
     write_table_blocks(&mut w, &sorted_tables(def)).expect(BUFFER_WRITE);
+    w.into_string()
+}
+
+/// Renders every view in the module, including those in submodules, one row each as
+/// [`describe_view`] renders it, in the order [`describe_module`] lists them.
+///
+/// A module with no views renders as `""`.
+pub fn describe_views(def: &ModuleDef, style: PrettyPrintStyle) -> String {
+    let mut w = StyledWriter::new(style, INDENT_WIDTH);
+    for (prefix, owning, view) in sorted_views(def) {
+        write_view_row(&mut w, &prefix, owning, view).expect(BUFFER_WRITE);
+    }
     w.into_string()
 }
 
@@ -203,6 +243,27 @@ pub fn describe_procedures(def: &ModuleDef, style: PrettyPrintStyle) -> String {
     w.into_string()
 }
 
+/// Renders the module's HTTP routes, one row each as [`describe_http_route`] renders it, in
+/// declaration order.
+///
+/// A module with no HTTP routes renders as `""`.
+pub fn describe_http_routes(def: &ModuleDef, style: PrettyPrintStyle) -> String {
+    let mut w = StyledWriter::new(style, INDENT_WIDTH);
+    for route in def.http_routes() {
+        write_http_route_row(&mut w, route).expect(BUFFER_WRITE);
+    }
+    w.into_string()
+}
+
+/// Renders the module's environment variable declarations, one aligned row each, sorted by name.
+///
+/// A module with no environment variables renders as `""`.
+pub fn describe_env_vars(def: &ModuleDef, style: PrettyPrintStyle) -> String {
+    let mut w = StyledWriter::new(style, INDENT_WIDTH);
+    write_env_var_rows(&mut w, &def.environment().declarations().collect_vec()).expect(BUFFER_WRITE);
+    w.into_string()
+}
+
 /// Renders the named types [`describe_module`] lists under `Types`, one row each as
 /// [`describe_type`] renders it, in the same order.
 ///
@@ -221,6 +282,15 @@ pub fn sorted_tables(def: &ModuleDef) -> Vec<(NamespacePath, &ModuleDef, &TableD
     def.all_tables_with_prefix()
         .into_iter()
         .sorted_by_cached_key(|(prefix, _, table)| format!("{prefix}{}", table.name))
+        .collect_vec()
+}
+
+/// Every view in the module, including those in submodules, sorted by qualified name: the order
+/// in which [`describe_module`] and [`describe_views`] list them.
+pub fn sorted_views(def: &ModuleDef) -> Vec<(NamespacePath, &ModuleDef, &ViewDef)> {
+    def.all_views_with_prefix()
+        .into_iter()
+        .sorted_by_cached_key(|(prefix, _, view)| format!("{prefix}{}", view.name))
         .collect_vec()
 }
 
@@ -304,15 +374,13 @@ pub fn all_named_types(def: &ModuleDef) -> Vec<NamedType<'_>> {
 
 fn write_module(w: &mut StyledWriter, def: &ModuleDef) -> io::Result<()> {
     let tables = sorted_tables(def);
-    let views = def
-        .all_views_with_prefix()
-        .into_iter()
-        .sorted_by_cached_key(|(prefix, _, view)| format!("{prefix}{}", view.name))
-        .collect_vec();
+    let views = sorted_views(def);
     let reducers = sorted_reducers(def);
     let procedures = sorted_procedures(def);
     // Only the root module's routes are served, and route order matters, so keep declaration order.
     let http_routes = def.http_routes();
+    // Only the root module declares environment variables, and the schema keeps them sorted by name.
+    let env_vars = def.environment().declarations().collect_vec();
     let types = sorted_types(def);
     let row_level_security = def.row_level_security().map(|rls| &*rls.sql).sorted().collect_vec();
 
@@ -342,6 +410,12 @@ fn write_module(w: &mut StyledWriter, def: &ModuleDef) -> io::Result<()> {
     if !http_routes.is_empty() {
         write_section_header(w, &mut wrote_section, "HTTP routes")?;
         write_rows(w, http_routes, write_http_route_row)?;
+    }
+    if !env_vars.is_empty() {
+        write_section_header(w, &mut wrote_section, "Environment variables")?;
+        w.indent();
+        write_env_var_rows(w, &env_vars)?;
+        w.dedent();
     }
     if !types.is_empty() {
         write_section_header(w, &mut wrote_section, "Types")?;
@@ -529,6 +603,50 @@ fn http_method_name(method: &MethodOrAny) -> String {
             HttpMethod::Extension(name) => name.clone(),
         },
         other => format!("{other:?}").to_uppercase(),
+    }
+}
+
+/// Writes environment variable declarations as aligned rows: `NAME  type  optional`.
+///
+/// The type is `String` for any string, or the allowed values as quoted literals separated by `|`.
+/// Optional declarations are flagged rather than wrapped in `Option<...>`, because a value is
+/// always a string: the flag only says that it may be absent.
+fn write_env_var_rows(w: &mut StyledWriter, declarations: &[&EnvironmentDeclaration]) -> io::Result<()> {
+    let rows = declarations
+        .iter()
+        .map(|declaration| {
+            (
+                &*declaration.name,
+                env_var_type_name(&declaration.ty),
+                declaration.optional,
+            )
+        })
+        .collect_vec();
+    let name_width = rows.iter().map(|(name, _, _)| text_width(name)).max().unwrap_or(0) + 2;
+    let type_width = rows.iter().map(|(_, ty, _)| text_width(ty)).max().unwrap_or(0) + 2;
+    for (name, ty, optional) in rows {
+        w.write_indent()?;
+        w.write_colored(name, Some(w.colors().table_name), true)?;
+        w.write_plain(&" ".repeat(name_width - text_width(name)))?;
+        w.write_colored(&ty, Some(w.colors().column_type), false)?;
+        if optional {
+            w.write_plain(&" ".repeat(type_width - text_width(&ty)))?;
+            w.write_colored("optional", Some(w.colors().access), false)?;
+        }
+        w.write_plain("\n")?;
+    }
+    Ok(())
+}
+
+/// The spelling of an environment variable's type: `String`, `"literal"`, or `"a" | "b"`.
+///
+/// Literals are quoted and escaped like Rust strings, so an empty string or one with spaces or
+/// quotes stays unambiguous.
+fn env_var_type_name(ty: &EnvVarType) -> String {
+    match ty {
+        EnvVarType::String => "String".to_owned(),
+        EnvVarType::StringLiteral(literal) => format!("{literal:?}"),
+        EnvVarType::Union(literals) => literals.iter().map(|literal| format!("{literal:?}")).join(" | "),
     }
 }
 
@@ -1245,6 +1363,20 @@ mod tests {
         builder.add_http_route("webhook", MethodOrAny::Method(HttpMethod::Post), "/webhook");
         // Declared after `/webhook`, so the output shows declaration order is kept.
         builder.add_http_route("health", MethodOrAny::Any, "/health");
+        builder.add_environment(vec![
+            env_declaration("API_KEY", EnvVarType::String, false),
+            env_declaration(
+                "MODE",
+                EnvVarType::Union(vec!["production".into(), "development".into()]),
+                false,
+            ),
+            env_declaration("REGION", EnvVarType::StringLiteral("eu west".into()), true),
+            env_declaration(
+                "LOG_LEVEL",
+                EnvVarType::Union(vec!["info".into(), "debug".into()]),
+                true,
+            ),
+        ]);
         builder.add_row_level_security("SELECT * FROM player WHERE rank > 0");
         // Declared second but sorts first.
         builder.add_row_level_security("SELECT * FROM match_result WHERE round > 0");
@@ -1280,6 +1412,14 @@ mod tests {
             }]));
         raw.try_into()
             .expect("the describe fixture should be a valid module definition")
+    }
+
+    fn env_declaration(name: &str, ty: EnvVarType, optional: bool) -> EnvironmentDeclaration {
+        EnvironmentDeclaration {
+            name: name.into(),
+            ty,
+            optional,
+        }
     }
 
     fn table_with_prefix<'a>(def: &'a ModuleDef, name: &str) -> (NamespacePath, &'a ModuleDef, &'a TableDef) {
@@ -1410,6 +1550,85 @@ mod tests {
     }
 
     #[test]
+    fn describe_views_matches_the_module_views_section() {
+        let def = describe_fixture();
+        let module = describe_module(&def, PrettyPrintStyle::NoColor);
+        let views = describe_views(&def, PrettyPrintStyle::NoColor);
+        assert_eq!(
+            views,
+            "players_above_rank(min_rank: U32) -> Array<Player>  [public]\n\
+             top_player() -> Option<Player>  [public] [anonymous]\n"
+        );
+        assert_eq!(views, module_section(&module, "Views"));
+    }
+
+    #[test]
+    fn describe_view_renders_one_row() {
+        let def = describe_fixture();
+        let (prefix, owning, view) = sorted_views(&def)
+            .into_iter()
+            .find(|(_, _, view)| &*view.name == "top_player")
+            .expect("view should exist");
+        assert_eq!(
+            describe_view(&prefix, owning, view, PrettyPrintStyle::NoColor),
+            "top_player() -> Option<Player>  [public] [anonymous]\n"
+        );
+    }
+
+    #[test]
+    fn describe_http_routes_matches_the_module_http_routes_section() {
+        let def = describe_fixture();
+        let module = describe_module(&def, PrettyPrintStyle::NoColor);
+        let routes = describe_http_routes(&def, PrettyPrintStyle::NoColor);
+        assert_eq!(routes, "POST /webhook → webhook\nANY /health → health\n");
+        assert_eq!(routes, module_section(&module, "HTTP routes"));
+        assert_eq!(
+            describe_http_route(&def.http_routes()[1], PrettyPrintStyle::NoColor),
+            "ANY /health → health\n"
+        );
+    }
+
+    #[test]
+    fn describe_env_vars_matches_the_module_environment_section() {
+        let def = describe_fixture();
+        let module = describe_module(&def, PrettyPrintStyle::NoColor);
+        let env_vars = describe_env_vars(&def, PrettyPrintStyle::NoColor);
+        // Sorted by name, with union members sorted too.
+        assert_eq!(
+            env_vars,
+            "API_KEY    String\n\
+             LOG_LEVEL  \"debug\" | \"info\"              optional\n\
+             MODE       \"development\" | \"production\"\n\
+             REGION     \"eu west\"                     optional\n"
+        );
+        assert_eq!(env_vars, module_section(&module, "Environment variables"));
+    }
+
+    #[test]
+    fn describe_env_var_aligns_on_its_own() {
+        let def = describe_fixture();
+        let region = def.environment().get("REGION").expect("declaration should exist");
+        assert_eq!(
+            describe_env_var(region, PrettyPrintStyle::NoColor),
+            "REGION  \"eu west\"  optional\n"
+        );
+        let api_key = def.environment().get("API_KEY").expect("declaration should exist");
+        assert_eq!(
+            describe_env_var(api_key, PrettyPrintStyle::NoColor),
+            "API_KEY  String\n"
+        );
+    }
+
+    #[test]
+    fn env_var_literals_are_quoted_and_escaped() {
+        assert_eq!(env_var_type_name(&EnvVarType::StringLiteral(String::new())), "\"\"");
+        assert_eq!(
+            env_var_type_name(&EnvVarType::StringLiteral("say \"hi\"".into())),
+            "\"say \\\"hi\\\"\""
+        );
+    }
+
+    #[test]
     fn describe_types_matches_the_module_types_section() {
         let def = describe_fixture();
         let module = describe_module(&def, PrettyPrintStyle::NoColor);
@@ -1466,8 +1685,11 @@ mod tests {
     fn listings_of_an_empty_module_are_empty() {
         let def = empty_module();
         assert_eq!(describe_tables(&def, PrettyPrintStyle::NoColor), "");
+        assert_eq!(describe_views(&def, PrettyPrintStyle::NoColor), "");
         assert_eq!(describe_reducers(&def, PrettyPrintStyle::NoColor), "");
         assert_eq!(describe_procedures(&def, PrettyPrintStyle::NoColor), "");
+        assert_eq!(describe_http_routes(&def, PrettyPrintStyle::NoColor), "");
+        assert_eq!(describe_env_vars(&def, PrettyPrintStyle::NoColor), "");
         assert_eq!(describe_types(&def, PrettyPrintStyle::NoColor), "");
     }
 

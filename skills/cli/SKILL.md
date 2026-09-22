@@ -83,7 +83,7 @@ spacetime logs my-database -n 100          # up to 100 log lines
 # Describe schema
 # (without --json, output is human-readable text)
 spacetime describe my-database --json
-spacetime describe my-database tables --json   # also reducers, procedures, types
+spacetime describe my-database tables --json   # also views, reducers, procedures, routes, env, types
 spacetime describe my-database tables users --json
 spacetime describe my-database reducers my_reducer --json
 ```

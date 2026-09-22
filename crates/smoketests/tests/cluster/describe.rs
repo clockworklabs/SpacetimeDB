@@ -22,6 +22,9 @@ fn test_describe() {
         "Reducers",
         "add(name: String)",
         "say_hello()",
+        "Views",
+        "HTTP routes",
+        "Environment variables",
     ] {
         assert!(text.contains(expected), "expected {expected:?} in:\n{text}");
     }
@@ -40,9 +43,39 @@ fn test_describe() {
         "person (private)\n  Columns:\n    name  String\n"
     );
     assert_eq!(describe(&[identity, "reducers", "say_hello"]), "say_hello()\n");
+    assert_eq!(
+        describe(&[identity, "views", "nobody"]),
+        "nobody() -> Option<Person>  [public]\n"
+    );
+    assert_eq!(describe(&[identity, "routes", "/health"]), "GET /health → health\n");
+    assert_eq!(
+        describe(&[identity, "env", "LANGUAGE"]),
+        "LANGUAGE  \"en\" | \"fr\"  optional\n"
+    );
+
+    // An entity that doesn't exist is an error, not empty output.
+    for entity in [["views", "missing"], ["routes", "/missing"], ["env", "MISSING"]] {
+        let args = [
+            &["describe", "--server", test.server_url.as_str(), identity][..],
+            &entity[..],
+        ]
+        .concat();
+        let out = test.spacetime_cmd(&args);
+        assert!(!out.status.success(), "describe {entity:?} should fail");
+    }
 
     // `--format json` is the same as `--json`, for the whole module and for each entity.
-    let entities: [&[&str]; 3] = [&[], &["tables", "person"], &["reducers", "say_hello"]];
+    let entities: [&[&str]; 9] = [
+        &[],
+        &["tables", "person"],
+        &["reducers", "say_hello"],
+        &["views"],
+        &["views", "nobody"],
+        &["routes"],
+        &["routes", "/health"],
+        &["env"],
+        &["env", "LANGUAGE"],
+    ];
     for entity in entities {
         let parse = |flag: &[&str]| -> serde_json::Value {
             let args = [flag, &[identity], entity].concat();
