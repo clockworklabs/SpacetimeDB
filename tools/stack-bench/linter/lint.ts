@@ -11,6 +11,7 @@ import { parseArgs as parseNodeArgs } from 'node:util';
 import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
+import { harnessBrowserFailure } from '../src/evidence/harness-errors.js';
 
 const CHECK_TIMEOUT = 5000;
 
@@ -25,7 +26,7 @@ export interface LintHook {
 
 export interface LintResult {
   id: string;
-  status: 'PASS' | 'FAIL' | 'BLOCKED' | 'SCENARIO';
+  status: 'PASS' | 'FAIL' | 'BLOCKED' | 'SCENARIO' | 'HARNESS' | 'UNMEASURED';
   detail?: string;
 }
 
@@ -111,7 +112,18 @@ export function loadHooks(level: number, track: { contracts: string }, selectedI
 const tid = stableElementSelector;
 const uniq = Date.now().toString(36).slice(-5);
 
-async function checkHook(page: Page, hook: LintHook, results: LintResult[]): Promise<boolean> {
+// Browser, protocol, selector, and walk-script faults measure nothing about the app;
+// a navigation timeout is unmeasured (grader/README.md outcome rules).
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error ?? 'unknown error');
+
+function faultStatus(error: unknown): 'FAIL' | 'HARNESS' | 'UNMEASURED' {
+  const message = errorMessage(error);
+  if (/^page\.goto: Timeout/.test(message)) return 'UNMEASURED';
+  return harnessBrowserFailure(error) || error instanceof TypeError || error instanceof ReferenceError
+    || /Protocol error|while parsing .*selector|is not a valid selector/.test(message) ? 'HARNESS' : 'FAIL';
+}
+
+export async function checkHook(page: Page, hook: LintHook, results: LintResult[]): Promise<boolean> {
   const loc = page.locator(tid(hook.id)).first();
   try {
     if (hook.revealedBy && !(await loc.count())) {
@@ -123,11 +135,13 @@ async function checkHook(page: Page, hook: LintHook, results: LintResult[]): Pro
     });
     results.push({ id: hook.id, status: 'PASS' });
     return true;
-  } catch {
+  } catch (error) {
+    const status = faultStatus(error);
     results.push({
       id: hook.id,
-      status: 'FAIL',
-      detail: `no element matching ${tid(hook.id)} became ${hook.check} during contract stage ${JSON.stringify(hook.stage)}` +
+      status,
+      detail: status !== 'FAIL' ? errorMessage(error).split(/\r?\n/, 1)[0]
+        : `no element matching ${tid(hook.id)} became ${hook.check} during contract stage ${JSON.stringify(hook.stage)}` +
         (hook.revealedBy ? ` (after clicking ${tid(hook.revealedBy)})` : '') +
         ` — expected: ${hook.element}`,
     });
@@ -149,9 +163,9 @@ export function completeUnvisitedHooks(hooks: LintHook[], results: LintResult[])
 
 export function completeAbortedHooks(hooks: LintHook[], results: LintResult[], error: unknown): LintResult[] {
   const visited = new Set(results.map(result => result.id));
-  const detail = String(error instanceof Error ? error.message : error ?? 'unknown error')
+  const detail = errorMessage(error)
     .split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 6).join(' ').slice(0, 800);
-  results.push({ id: 'core-flow', status: 'FAIL', detail: `core flow aborted: ${detail}` });
+  results.push({ id: 'core-flow', status: faultStatus(error), detail: `core flow aborted: ${detail}` });
   for (const hook of hooks) {
     if (visited.has(hook.id)) continue;
     if (hook.stage === 'scenario') {
@@ -197,13 +211,15 @@ async function run() {
     }
   }
 
-  const failures = results.filter(r => r.status === 'FAIL' || r.status === 'BLOCKED');
+  const failures = results.filter(r => r.status !== 'PASS' && r.status !== 'SCENARIO');
   const report = {
     label: args.label ?? null,
     url: args.url,
     level: args.level,
     selectedHooks: args.hooks === undefined ? null : [...new Set(args.hooks)].sort(),
     pass: failures.length === 0,
+    harness: results.some(r => r.status === 'HARNESS'),
+    unmeasured: results.some(r => r.status === 'UNMEASURED'),
     counts: {
       lintable: results.filter(r => r.status !== 'SCENARIO').length,
       pass: results.filter(r => r.status === 'PASS').length,

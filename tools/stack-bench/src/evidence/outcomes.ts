@@ -23,6 +23,8 @@ interface OutcomeSuite {
   readonly cleanupEvidence?: CleanupEvidence;
   readonly features?: readonly OutcomeFeature[];
   readonly pass?: boolean;
+  readonly harness?: boolean;
+  readonly unmeasured?: boolean;
 }
 
 interface SelectedCheck {
@@ -189,7 +191,10 @@ export function classifyObservedChecks(bundle: OutcomeBundle): ClassifiedOutcome
   const harnessFailures = keysFor('harness_failure');
   const inconclusive = keysFor('inconclusive');
   const appFailures = keysFor('app_failure');
-  if (bundle.suites?.lint?.pass === false) appFailures.unshift('contract-lint');
+  const lint = bundle.suites?.lint;
+  if (lint?.harness) harnessFailures.unshift('contract-lint');
+  else if (lint?.unmeasured) inconclusive.unshift('contract-lint');
+  else if (lint?.pass === false) appFailures.unshift('contract-lint');
   const kind = harnessFailures.length ? 'harness_failure'
     : inconclusive.length ? 'inconclusive' : appFailures.length ? 'app_failure' : 'passed';
   return { kind, phase: 'grading', reason: null, appFailures, inconclusive, harnessFailures };

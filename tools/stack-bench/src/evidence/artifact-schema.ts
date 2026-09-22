@@ -109,7 +109,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'conditions', 'summary', 'limitations', 'contentSha256']),
   campaign_state: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'status',
     'createdAt', 'updatedAt', 'maxParallel', 'attempts', 'summary']),
-  contract_lint: new Set(['label', 'url', 'level', 'selectedHooks', 'pass', 'counts', 'results']),
+  contract_lint: new Set(['label', 'url', 'level', 'selectedHooks', 'pass', 'harness', 'unmeasured', 'counts', 'results']),
   grade: new Set(['definitionSchemaVersion', 'recipeRelease', 'recipeTask', 'label', 'url', 'level', 'runId',
     'total', 'max', 'features', 'environment', 'inconclusive', 'selection', 'packRuntime']),
   grade_bundle: new Set(['definitionSchemaVersion', 'recipeRelease', 'calibration', 'label', 'track',

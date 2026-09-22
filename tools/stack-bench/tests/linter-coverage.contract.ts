@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-import { completeAbortedHooks, completeUnvisitedHooks, loadHooks, selectHooks } from '../linter/lint.js';
+import type { Page } from 'playwright';
+import { type LintResult, checkHook, completeAbortedHooks, completeUnvisitedHooks, loadHooks, selectHooks } from '../linter/lint.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
@@ -15,11 +16,6 @@ interface TestHook {
   revealedBy?: string;
 }
 
-interface TestResult {
-  id: string;
-  status: 'PASS' | 'FAIL' | 'BLOCKED' | 'SCENARIO';
-  detail?: string;
-}
 
 test('stable element selectors support one-off ids and repeated roles', () => {
   assert.equal(stableElementSelector('account-name'),
@@ -71,7 +67,7 @@ test('contract lint fails closed when a core flow forgets a lintable stage', () 
     { id: 'forgotten', element: 'forgotten control', stage: 'operations', check: 'visible', note: '' },
     { id: 'scenario-only', element: 'scenario control', stage: 'scenario', check: 'visible', note: 'requires two actors' },
   ];
-  const results: TestResult[] = [{ id: 'seen', status: 'PASS' }];
+  const results: LintResult[] = [{ id: 'seen', status: 'PASS' }];
 
   completeUnvisitedHooks(hooks, results);
 
@@ -85,7 +81,7 @@ test('contract lint fails closed when a core flow forgets a lintable stage', () 
 
 test('contract lint does not duplicate hooks already visited by the walk', () => {
   const hooks: TestHook[] = [{ id: 'queue-depth', element: 'queue depth', stage: 'fulfilment', check: 'visible', note: '' }];
-  const results: TestResult[] = [{ id: 'queue-depth', status: 'FAIL', detail: 'missing' }];
+  const results: LintResult[] = [{ id: 'queue-depth', status: 'FAIL', detail: 'missing' }];
 
   completeUnvisitedHooks(hooks, results);
 
@@ -99,7 +95,7 @@ test('an unexpected walk error records one failure before blocking later hooks',
     { id: 'order-list', element: 'order list', stage: 'after-checkout', check: 'visible', note: '' },
     { id: 'scenario-only', element: 'scenario control', stage: 'scenario', check: 'visible', note: 'requires setup' },
   ];
-  const results: TestResult[] = [{ id: 'seen', status: 'PASS' }];
+  const results: LintResult[] = [{ id: 'seen', status: 'PASS' }];
 
   completeAbortedHooks(hooks, results, new Error('target product was not visible\nlocator details'));
 
@@ -111,4 +107,30 @@ test('an unexpected walk error records one failure before blocking later hooks',
     { id: 'order-list', status: 'BLOCKED', detail: 'core flow aborted' },
     { id: 'scenario-only', status: 'SCENARIO', detail: 'requires setup' },
   ]);
+});
+
+test('browser, script, and navigation faults in the core flow are not app failures', () => {
+  const hooks: TestHook[] = [{ id: 'cart-panel', element: 'cart panel', stage: 'cart', check: 'visible', note: '' }];
+  const coreFlow = (error: Error): string => {
+    const results: LintResult[] = [];
+    completeAbortedHooks(hooks, results, error);
+    return results[0]!.status;
+  };
+  assert.equal(coreFlow(new Error('Target page, context or browser has been closed')), 'HARNESS');
+  assert.equal(coreFlow(new TypeError('Cannot read properties of undefined')), 'HARNESS');
+  assert.equal(coreFlow(new Error('page.goto: Timeout 15000ms exceeded.')), 'UNMEASURED');
+});
+
+test('a hook fails only when its control does not appear', async () => {
+  const hook: TestHook = { id: 'cart-panel', element: 'cart panel', stage: 'cart', check: 'visible', note: '' };
+  const page = (error: Error) => ({ locator: () => ({ first: () => ({
+    count: async () => 1, waitFor: async () => { throw error; } }) }) }) as unknown as Page;
+  const timeout = Object.assign(new Error('locator.waitFor: Timeout 5000ms exceeded.'), { name: 'TimeoutError' });
+  for (const [error, status] of [[timeout, 'FAIL'],
+    [new Error('Target page, context or browser has been closed'), 'HARNESS'],
+    [new Error('Unexpected token "[" while parsing css selector'), 'HARNESS']] as const) {
+    const results: LintResult[] = [];
+    await checkHook(page(error), hook, results);
+    assert.equal(results[0]!.status, status, error.message);
+  }
 });

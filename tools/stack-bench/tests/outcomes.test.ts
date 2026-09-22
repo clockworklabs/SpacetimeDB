@@ -266,3 +266,11 @@ test('unknown outcome names fail closed', () => {
   assert.equal(ladderMayContinue({ kind: 'typo' }), false);
   assert.throws(() => runOutcomeKind('typo'), /invalid run outcome kind/);
 });
+
+test('contract lint harness and unmeasured results are not app failures', () => {
+  const graded = bundle([typed('a', 'passed', null)]);
+  const withLint = (lint: object) => classifyBundle({ ...graded, suites: { ...graded.suites, lint } });
+  assert.equal(withLint({ pass: false }).kind, 'app_failure');
+  assert.equal(withLint({ pass: false, harness: true }).kind, 'harness_failure');
+  assert.equal(withLint({ pass: false, unmeasured: true }).kind, 'inconclusive');
+});
