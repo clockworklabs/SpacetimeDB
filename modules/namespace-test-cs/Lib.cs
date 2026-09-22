@@ -70,6 +70,14 @@ public static partial class Functions
     [Reducer]
     public static void Exercise(ReducerContext ctx)
     {
+        if (
+            !ReferenceEquals(ctx.Db.User.Id, ctx.Db.User.Id)
+            || !ReferenceEquals(ctx.Db.MyAuth.User.Id, ctx.Db.MyAuth.User.Id)
+            || !ReferenceEquals(ctx.Db.MyAuth.User.ByScore, ctx.Db.MyAuth.User.ByScore)
+            || ReferenceEquals(ctx.Db.User.Id, ctx.Db.MyAuth.User.Id)
+            || ReferenceEquals(ctx.Db.MyAuth.User.Id, ctx.Db.@class.User.Id)
+        )
+            throw new Exception("Index handles must be reused within, but not across, table scopes.");
         ctx.Db.User.Insert(new User { Id = 2 });
         AuthLib.Functions.Insert(ctx, 2);
         ctx.Db.MyAuth.User.Insert(new AuthLib.User { Id = 3, Score = 43 });
