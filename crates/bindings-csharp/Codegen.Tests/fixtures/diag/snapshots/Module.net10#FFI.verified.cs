@@ -2256,7 +2256,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
 
-        public IdentityUniqueIndex Identity => new();
+        private static IdentityUniqueIndex? __Identity;
+        public IdentityUniqueIndex Identity => __Identity ??= new();
     }
 
     public readonly struct TestAutoIncNotInteger
@@ -2393,7 +2394,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
         }
 
-        public IdentityFieldUniqueIndex IdentityField => new();
+        private static IdentityFieldUniqueIndex? __IdentityField;
+        public IdentityFieldUniqueIndex IdentityField => __IdentityField ??= new();
     }
 
     public readonly struct TestDefaultFieldValues
@@ -2678,7 +2680,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             static TestIndexWithoutColumnsIndex() { }
         }
 
-        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new();
+        private static TestIndexWithoutColumnsIndex? __TestIndexWithoutColumns;
+        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns =>
+            __TestIndexWithoutColumns ??= new();
 
         public sealed class TestIndexWithEmptyColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
@@ -2693,7 +2697,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             static TestIndexWithEmptyColumnsIndex() { }
         }
 
-        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new();
+        private static TestIndexWithEmptyColumnsIndex? __TestIndexWithEmptyColumns;
+        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns =>
+            __TestIndexWithEmptyColumns ??= new();
 
         public sealed class TestUnknownColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
@@ -2708,7 +2714,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             static TestUnknownColumnsIndex() { }
         }
 
-        public TestUnknownColumnsIndex TestUnknownColumns => new();
+        private static TestUnknownColumnsIndex? __TestUnknownColumns;
+        public TestUnknownColumnsIndex TestUnknownColumns => __TestUnknownColumns ??= new();
 
         public sealed class SelfIndexingColumnIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
@@ -2753,7 +2760,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 );
         }
 
-        public SelfIndexingColumnIndex SelfIndexingColumn => new();
+        private static SelfIndexingColumnIndex? __SelfIndexingColumn;
+        public SelfIndexingColumnIndex SelfIndexingColumn => __SelfIndexingColumn ??= new();
 
         public sealed class SecondaryIndexingColumnIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
@@ -2798,7 +2806,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 );
         }
 
-        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new();
+        private static SecondaryIndexingColumnIndex? __SecondaryIndexingColumn;
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn =>
+            __SecondaryIndexingColumn ??= new();
 
         public sealed class TestUnexpectedColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
@@ -2843,7 +2853,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 );
         }
 
-        public TestUnexpectedColumnsIndex TestUnexpectedColumns => new();
+        private static TestUnexpectedColumnsIndex? __TestUnexpectedColumns;
+        public TestUnexpectedColumnsIndex TestUnexpectedColumns =>
+            __TestUnexpectedColumns ??= new();
     }
 
     public readonly struct TestScheduleWithMissingScheduleAtField
@@ -3119,7 +3131,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        public IdCorrectTypeUniqueIndex IdCorrectType => new();
+        private static IdCorrectTypeUniqueIndex? __IdCorrectType;
+        public IdCorrectTypeUniqueIndex IdCorrectType => __IdCorrectType ??= new();
     }
 
     public readonly struct TestScheduleWithWrongPrimaryKeyType
@@ -3243,7 +3256,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        public IdWrongTypeUniqueIndex IdWrongType => new();
+        private static IdWrongTypeUniqueIndex? __IdWrongType;
+        public IdWrongTypeUniqueIndex IdWrongType => __IdWrongType ??= new();
     }
 
     public readonly struct TestScheduleWithWrongScheduleAtType
@@ -3367,7 +3381,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        public IdCorrectTypeUniqueIndex IdCorrectType => new();
+        private static IdCorrectTypeUniqueIndex? __IdCorrectType;
+        public IdCorrectTypeUniqueIndex IdCorrectType => __IdCorrectType ??= new();
     }
 
     public readonly struct TestUniqueNotEquatable
@@ -3497,7 +3512,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new();
+        private static PrimaryKeyFieldUniqueIndex? __PrimaryKeyField;
+        public PrimaryKeyFieldUniqueIndex PrimaryKeyField => __PrimaryKeyField ??= new();
     }
 }
 
@@ -4279,7 +4295,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
 
-        public IdentityIndex Identity => new();
+        private static IdentityIndex? __Identity;
+        public IdentityIndex Identity => __Identity ??= new();
     }
 
     public sealed class TestAutoIncNotIntegerReadOnly
@@ -4328,7 +4345,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
         }
 
-        public IdentityFieldIndex IdentityField => new();
+        private static IdentityFieldIndex? __IdentityField;
+        public IdentityFieldIndex IdentityField => __IdentityField ??= new();
     }
 
     public sealed class TestDefaultFieldValuesReadOnly
@@ -4418,7 +4436,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 : base(__resolvedName) { }
         }
 
-        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new();
+        private static TestIndexWithoutColumnsIndex? __TestIndexWithoutColumns;
+        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns =>
+            __TestIndexWithoutColumns ??= new();
 
         public sealed class TestIndexWithEmptyColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -4436,7 +4456,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 : base(__resolvedName) { }
         }
 
-        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new();
+        private static TestIndexWithEmptyColumnsIndex? __TestIndexWithEmptyColumns;
+        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns =>
+            __TestIndexWithEmptyColumns ??= new();
 
         public sealed class TestUnknownColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -4454,7 +4476,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 : base(__resolvedName) { }
         }
 
-        public TestUnknownColumnsIndex TestUnknownColumns => new();
+        private static TestUnknownColumnsIndex? __TestUnknownColumns;
+        public TestUnknownColumnsIndex TestUnknownColumns => __TestUnknownColumns ??= new();
 
         public sealed class SelfIndexingColumnIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -4488,7 +4511,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 );
         }
 
-        public SelfIndexingColumnIndex SelfIndexingColumn => new();
+        private static SelfIndexingColumnIndex? __SelfIndexingColumn;
+        public SelfIndexingColumnIndex SelfIndexingColumn => __SelfIndexingColumn ??= new();
 
         public sealed class SecondaryIndexingColumnIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -4522,7 +4546,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 );
         }
 
-        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new();
+        private static SecondaryIndexingColumnIndex? __SecondaryIndexingColumn;
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn =>
+            __SecondaryIndexingColumn ??= new();
 
         public sealed class TestUnexpectedColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -4556,7 +4582,9 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 );
         }
 
-        public TestUnexpectedColumnsIndex TestUnexpectedColumns => new();
+        private static TestUnexpectedColumnsIndex? __TestUnexpectedColumns;
+        public TestUnexpectedColumnsIndex TestUnexpectedColumns =>
+            __TestUnexpectedColumns ??= new();
     }
 
     public sealed class TestScheduleWithMissingScheduleAtFieldReadOnly
@@ -4653,7 +4681,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
             public global::TestScheduleIssues? Find(int key) => FindSingle(key);
         }
 
-        public IdCorrectTypeIndex IdCorrectType => new();
+        private static IdCorrectTypeIndex? __IdCorrectType;
+        public IdCorrectTypeIndex IdCorrectType => __IdCorrectType ??= new();
     }
 
     public sealed class TestScheduleWithWrongPrimaryKeyTypeReadOnly
@@ -4702,7 +4731,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
             public global::TestScheduleIssues? Find(string key) => FindSingle(key);
         }
 
-        public IdWrongTypeIndex IdWrongType => new();
+        private static IdWrongTypeIndex? __IdWrongType;
+        public IdWrongTypeIndex IdWrongType => __IdWrongType ??= new();
     }
 
     public sealed class TestScheduleWithWrongScheduleAtTypeReadOnly
@@ -4751,7 +4781,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
             public global::TestScheduleIssues? Find(int key) => FindSingle(key);
         }
 
-        public IdCorrectTypeIndex IdCorrectType => new();
+        private static IdCorrectTypeIndex? __IdCorrectType;
+        public IdCorrectTypeIndex IdCorrectType => __IdCorrectType ??= new();
     }
 
     public sealed class TestUniqueNotEquatableReadOnly
@@ -4801,7 +4832,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 FindSingle(key);
         }
 
-        public PrimaryKeyFieldIndex PrimaryKeyField => new();
+        private static PrimaryKeyFieldIndex? __PrimaryKeyField;
+        public PrimaryKeyFieldIndex PrimaryKeyField => __PrimaryKeyField ??= new();
     }
 }
 
