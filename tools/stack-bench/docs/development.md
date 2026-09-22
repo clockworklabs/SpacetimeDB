@@ -58,12 +58,19 @@ npm run typecheck
 npm run test:all
 ```
 
-Use `npm test` while changing code. Run `npm run test:dashboard` when the
-dashboard read model, routes, or pages change; it writes thirty campaigns of
-fixture evidence and stays out of the unit tier. Run `npm run test:contracts`
-when tracks, prompts, reference applications, repository policies, or campaign
-definitions change. `npm run test:all` runs the unit, dashboard, and contract
-tiers after one build. Docker and qualification checks remain separate.
+What each test command runs, after its build:
+
+| Command | Files | Notes |
+|---|---|---|
+| `npm test` | `tests/*.test.ts` | Unit tier; use while changing code |
+| `npm run test:dashboard` | `tests/dashboard/*.test.ts` | Writes thirty campaigns of fixture evidence |
+| `npm run test:contracts` | `tests/*.contract.ts` | Tracks, prompts, references, repository policy, campaign definitions |
+| `npm run test:all` | The three rows above | Not integration or mutation-definition tests |
+| `npm run test:mutation-definitions` | `tests/*.mutation.ts` | Model-free |
+| `npm run test:integration` | `tests/*.integration.ts` | Serial; can own browsers, processes, ports, and Docker |
+| (manual) | `tests/dashboard/*.browser.ts` | Needs `STACK_BENCH_BROWSER_TEST_URL` pointing at an isolated appliance |
+
+Docker and qualification checks remain separate.
 Campaign and lock tests exercise native Linux `flock`. A Windows host cannot
 run those tests directly. Portable compiler and definition tests still run
 locally. For a clean branch, the existing controller Dockerfile's `source`

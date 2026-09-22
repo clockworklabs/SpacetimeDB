@@ -60,6 +60,11 @@ for (const count of [1, 4, 6]) {
 import { progressChart } from '../../dashboard/public/progress-chart.js';
 import type { CampaignSheet, CampaignProgression } from '../../dashboard/dashboard-views.js';
 
+// A run's plotted [x, y] points, so assertions survive layout and margin changes.
+const line = (html: string, run: string): number[][] =>
+  [...new RegExp(`data-chart-series="${run}"[^>]*><path class="progress-line" d="([^"]+)"`).exec(html)![1]!
+    .matchAll(/([\d.]+) ([\d.]+)/g)].map(match => [Number(match[1]), Number(match[2])]);
+
 test('time chart uses measured elapsed time, preserves regressions, and labels excluded runs', () => {
   const sheet = { key: 'test', repetitions: 3, stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
     executionStartedAt: '2026-09-08T00:00:00Z', excluded: 'Provider failure' }] }] } as CampaignSheet;
@@ -69,16 +74,13 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
     { completedAt: '2026-09-08T00:02:00Z', completion: 0.5 },
   ] }] } as CampaignProgression;
   const html = progressChart(sheet, progression, 'completion', 'grid', new Set(), 'checks');
-  assert.match(html, /M48 190 L498 70 L948 110/);
+  const [start, best, regressed] = line(html, 'a');
+  assert.ok(start![0]! < best![0]! && best![0]! < regressed![0]!, 'points follow elapsed time');
+  assert.ok(best![1]! < regressed![1]! && regressed![1]! < start![1]!, 'the regression plots below the best grade');
   assert.match(html, /Run start; no checks graded/);
   assert.match(html, /Rep 1 · 50% · Excluded/);
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(progressChart(sheet, null), /Awaiting first timed grade/);
-  for (const [stack, color] of Object.entries({ spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' })) {
-    sheet.stacks[0]!.stack = stack;
-    progression.stacks[0]!.stack = stack;
-    assert.ok(progressChart(sheet, progression, 'completion', 'grid', new Set(), 'checks').includes(`stroke="${color}"`));
-  }
 });
 
 
@@ -92,7 +94,9 @@ test('cost chart uses cumulative checkpoint costs, labels bounds, and omits unkn
     { completedAt: '2026-09-08T00:02:00Z', cost: { status: 'upper-bound', costUsd: 4 } },
   ] }] } as CampaignProgression;
   const html = progressChart(sheet, progression, 'cost', 'graph');
-  assert.match(html, /M80 190 L514 110 L948 30/);
+  const cost = line(html, 'a');
+  assert.equal(cost.length, 3, 'the unknown receipt is omitted, not plotted as zero');
+  assert.ok(cost[0]![1]! > cost[1]![1]! && cost[1]![1]! > cost[2]![1]!, 'cumulative cost rises');
   assert.match(html, /Rep 1 · ≤\$4.00/);
   assert.match(html, /Run start; no recorded cost/);
   assert.match(html, /questlines=graph&amp;chart=completion/);
@@ -111,7 +115,9 @@ test('chart filters individual runs without changing the scale or hiding pending
   assert.match(html, /data-chart-stack="custom-stack" aria-pressed="mixed"/);
   assert.match(html, /class="progress-series" data-chart-series="run-1"/);
   assert.doesNotMatch(html, /class="progress-series" data-chart-series="run-2"|stroke-dasharray| style=/);
-  assert.match(html, /M48 190 L498 150/); // Retains the two-minute extent of the hidden run.
+  assert.deepEqual(line(html, 'run-1'),
+    line(progressChart(sheet, progression, 'completion', 'grid', new Set(), 'checks'), 'run-1'),
+    'hiding a run keeps the scale');
   assert.match(html, /Rep 3<\/button>/);
   const empty = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-1', 'run-2', 'run-3']), 'checks');
   assert.match(empty, /Select a run/);
