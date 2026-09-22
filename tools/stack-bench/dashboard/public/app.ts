@@ -566,7 +566,7 @@ document.addEventListener('click', event => {
   if (event.target instanceof HTMLDialogElement) event.target.close();
   const link = (event.target as Element | null)?.closest('a');
   const href = link?.getAttribute('href') ?? '';
-  if (!href || href.startsWith('/api/') || !/^[/?]/.test(href)) return;
+  if (!href || href === '/checks' || href.startsWith('/api/') || !/^[/?]/.test(href)) return;
   event.preventDefault();
   go(href.startsWith('?') ? `${location.pathname}${href}` : href);
 });

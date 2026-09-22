@@ -33,6 +33,10 @@ dashboard does not have a separate execution engine.
 - New run (`/new`) — select workload, level, stacks, models, guidance, repetitions,
   repairs, and limits. Review the attempt count and cost cap, then start.
 - Saved plans (`/plans`) — inspect the exact configuration behind each run.
+- Checks (`/checks`) — search current check definitions and inspect setup, steps,
+  waits, pass rules, defect-control targets, and exact inputs. Defaults to ecommerce
+  dependency L1–L3; other selections are available through a filter. This reads
+  the dashboard's installed definitions, not a historical campaign's frozen grader.
 
 ## Modes
 

@@ -20,6 +20,7 @@ import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { referenceRuns } from './dashboard-reference-runs.js';
+import { checkGuidePage } from './check-guide.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import { controllerRuntimeCommand, controllerChildEnvironment } from '../appliance/controller.js';
 import { requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
@@ -37,6 +38,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/check-guide.js', ['check-guide.js', 'text/javascript; charset=utf-8']],
   ['/climb.js', ['climb.js', 'text/javascript; charset=utf-8']],
   ['/format.js', ['format.js', 'text/javascript; charset=utf-8']],
   ['/progress-chart.js', ['progress-chart.js', 'text/javascript; charset=utf-8']],
@@ -295,6 +297,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 421, { error: 'Dashboard requests must use a loopback host.' });
       }
       const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+      if (request.method === 'GET' && url.pathname === '/checks') {
+        const html = checkGuidePage();
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        response.end(html);
+        return;
+      }
       // The client routes are pages, not fragments: each serves the shell.
       const staticFile = STATIC.get(url.pathname)
         ?? (SPA_PATH.test(url.pathname) ? STATIC.get('/') : undefined);
