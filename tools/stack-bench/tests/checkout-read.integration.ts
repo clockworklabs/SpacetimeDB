@@ -107,7 +107,7 @@ for (const backend of ['postgres', 'mongodb'] as const) {
       assert.equal(after.state.orders[0]!.totalMinor, 1999);
       const pending = readOrders();
       assert.deepEqual(orderCheckoutDifferences(orderBefore, orderPrepared, pending, 1), []);
-      assert.deepEqual(pending.orders, after.state.orders.map(order => ({ ...order, refundedMinor: 0 })));
+      assert.deepEqual(pending.orders, after.state.orders.map(order => ({ ...order, accountId: 'reader', refundedMinor: 0 })));
       run(postgres ? "UPDATE orders SET status='cancelled'; UPDATE stock SET quantity=10;"
         : "db.orders.updateOne({},{$set:{status:'cancelled'}}); db.stock.updateOne({},{$set:{quantity:10}});");
       assert.deepEqual(orderCancellationDifferences(pending, readOrders()), []);

@@ -81,7 +81,7 @@ function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>
 }
 
 test('multi-item checkout reconciles every cart line, stored price and selected warehouse effect, including refused writes', async () => {
-  for (const warehouses of [false, true]) for (const reserved of warehouses ? [false, true] : [false]) for (const mode of ['accepted', 'refused', 'missing-line', 'wrong-price', 'wrong-total', 'swapped-quantity',
+  for (const lazy of [false, true]) for (const warehouses of [false, true]) for (const reserved of warehouses ? [false, true] : [false]) for (const mode of ['accepted', 'refused', 'missing-line', 'wrong-price', 'wrong-total', 'swapped-quantity',
     'extra-line', 'retained-cart', 'duplicate-order', 'refused-cart-change', 'committed-refusal', 'reject-all',
     ...(warehouses ? ['missing-stock-effect', 'swapped-stock-effects', 'unrelated-stock-change', 'missing-stock-row', 'duplicate-stock-row', 'wrong-allocation'] : [])]) {
     const raw = data();
@@ -89,7 +89,10 @@ test('multi-item checkout reconciles every cart line, stored price and selected 
     raw.stock.push({ item_id: '4', warehouse_id: '3', quantity: 10 }, { item_id: '5', warehouse_id: '3', quantity: 10 });
     const storage = { kind: 'order-data' as const, cart: true, warehouses };
     const read = () => ({ ...readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage), account: 'buyer', item: 'Keyboard' });
+    const accounts = raw.order_account;
+    if (lazy) raw.order_account = [];
     const before = read();
+    raw.order_account = accounts;
     raw.order_cart = [{ account_id: '1', item_id: '2', quantity: 1 }, { account_id: '1', item_id: '4', quantity: 2 }];
     if (reserved) {
       raw.stock[0]!.quantity = 9; raw.stock[1]!.quantity = 8;
@@ -291,10 +294,19 @@ test('order data preserves empty state, orphan effects and exact identifiers wit
   const read = () => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage);
   assert.equal(read().state.priceMinor, 1999);
   assert.deepEqual(read().state.orders, []);
+  raw.order_account = [];
+  assert.deepEqual(read().state.cart, [], 'a customer with no shopping records has an empty cart');
+  assert.deepEqual(read().state.orders, []);
+  raw.order_account = [{ id: '1', username: 'buyer' }, { id: '9', username: 'buyer' }];
+  assert.throws(read, /ambiguous/, 'two native identities must not merge into one customer');
+  raw.order_account.pop();
   raw.order_header.push({ id: '9007199254740993', account_id: '1', total: '19.99', refunded: 0, status: 'pending' });
   raw.order_line.push({ id: '5', order_id: '9007199254740993', item_id: '2', quantity: 1, unit_price: '19.99' });
   raw.order_allocation.push({ order_line_id: '5', warehouse_id: '3', quantity: 1 });
   assert.equal(read().state.orders[0]!.id, '9007199254740993');
+  raw.order_account = [];
+  assert.throws(read, /link is missing/, 'an orphan order is not an empty account');
+  raw.order_account = [{ id: '1', username: 'buyer' }];
   raw.order_line[0]!.order_id = 'absent';
   assert.equal(read().state.orphanOrderLines, 1);
   raw.order_line = [];
@@ -359,11 +371,11 @@ test('order-only purchase and cancellation reject no-op, wrong allocation and wr
   raw.order_line.push({ id: '5', order_id: '4', item_id: '2', quantity: 1, unit_price: 19.99 });
   raw.order_allocation.push({ order_line_id: '5', warehouse_id: '3', quantity: 1 });
   const after = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
-  assert.deepEqual(orderPurchaseDifferences(before, after, new Map([['1', 1]]), new Map()), []);
+  assert.deepEqual(orderPurchaseDifferences(before, after, new Map([['buyer', 1]]), new Map()), []);
   raw.warehouse = [];
   assert.throws(() => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage), /warehouse link is missing/);
   raw.warehouse = [{ id: '3' }];
-  assert(orderPurchaseDifferences(before, before, new Map([['1', 1]]), new Map()).length);
+  assert(orderPurchaseDifferences(before, before, new Map([['buyer', 1]]), new Map()).length);
   raw.order_header[0]!.status = 'cancelled';
   raw.order_header[0]!.refunded = 19.99;
   raw.stock[0]!.quantity = 10;
@@ -372,7 +384,7 @@ test('order-only purchase and cancellation reject no-op, wrong allocation and wr
   const damaged = structuredClone(cancelled); damaged.stock[1]!.quantity++;
   assert(orderCancellationDifferences(after, damaged).length, 'cancellation must not restore another product');
   const wrongPurchase = structuredClone(after); wrongPurchase.stock[1]!.quantity--;
-  assert(orderPurchaseDifferences(before, wrongPurchase, new Map([['1', 1]]), new Map()).length, 'purchase must preserve other products');
+  assert(orderPurchaseDifferences(before, wrongPurchase, new Map([['buyer', 1]]), new Map()).length, 'purchase must preserve other products');
   for (const defect of ['missing-order', 'missing-lines', 'missing-allocation']) {
     const broken = structuredClone(after);
     if (defect === 'missing-order') broken.orders = [];
@@ -432,9 +444,10 @@ for (const backend of ['postgres', 'mongodb'] as const) {
           }`);
       const read = (storage = fullStorage) => (pg ? getPostgresCheckoutState : getMongoDbCheckoutState)({ account: 'buyer', item: 'Keyboard',
         storage, app: '/not-a-reference', lease: { resources: { container: { id, name }, database: 'bench' } } });
+      run(pg ? 'DELETE FROM order_account;' : 'db.order_account.deleteMany({})');
       const before = read().state;
-      run(pg ? 'INSERT INTO order_cart VALUES(1,2,1);'
-        : "db.order_cart.insertOne({account_id:'1',item_id:'2',quantity:1})");
+      run(pg ? "INSERT INTO order_account VALUES(1,'buyer'); INSERT INTO order_cart VALUES(1,2,1);"
+        : "db.order_account.insertOne({id:'1',username:'buyer'}); db.order_cart.insertOne({account_id:'1',item_id:'2',quantity:1})");
       const prepared = read().state;
       run(pg ? `INSERT INTO order_header VALUES(9007199254740993,1,19.99,0,'pending');
           INSERT INTO order_line VALUES(5,9007199254740993,2,1,19.99);

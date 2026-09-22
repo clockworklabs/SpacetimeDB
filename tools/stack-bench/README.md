@@ -21,13 +21,14 @@ Newer grader changes on the current branch require their own qualification befor
 they receive a new verified baseline tag. Keep this tag fixed.
 
 The current ecommerce dependency L1-L3
-[calibration](tracks/ecommerce/composition/calibrations/dependency-l3.json) is qualified
-for SpacetimeDB, PostgreSQL, MongoDB and Convex: 27 features, 117 checks and 186 points.
-It binds reference, defect-control and empty-app evidence. The
+[calibration](tracks/ecommerce/composition/calibrations/dependency-l3.json) is pending
+qualification after the lazy order-account reader correction: 27 features,
+117 checks and 186 points. Its earlier evidence is preserved, but does not qualify
+the changed reader. The previous
 [qualification review](qualification-evidence/ecommerce-l3-3f7f3911d/review.json)
-records targeted replacement evidence and reviewed reuse after the Convex runtime
-and grading fixes. This qualifies the selected definition; it does not certify
-every aspect of production security. Earlier incomplete paid runs remain incomplete.
+records targeted replacement evidence and reviewed reuse before this correction.
+The change requires affected reference and defect controls before promotion.
+Earlier paid results retain their original grader and scores.
 
 ## What it does
 
