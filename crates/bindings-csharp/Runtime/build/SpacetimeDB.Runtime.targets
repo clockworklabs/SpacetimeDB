@@ -65,6 +65,8 @@
     <!-- spacetime_10.5 imports -->
     <WasmImport Include="spacetime_10.5!datastore_clear" />
 
+    <WasmImport Include="spacetime_10.6!env_get" />
+
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
   </ItemGroup>
 

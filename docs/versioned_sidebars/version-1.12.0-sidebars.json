@@ -46,9 +46,10 @@
       ]
     },
     {
-      "type": "html",
-      "value": "<div class=\"spacetime-menu-header\">Core Concepts</div>",
-      "defaultStyle": false
+      "type": "doc",
+      "id": "core-concepts/index",
+      "label": "Core Concepts",
+      "className": "spacetime-menu-header-link"
     },
     {
       "type": "category",
@@ -141,9 +142,10 @@
       ]
     },
     {
-      "type": "html",
-      "value": "<div class=\"spacetime-menu-header\">Developer Resources</div>",
-      "defaultStyle": false
+      "type": "doc",
+      "id": "resources/index",
+      "label": "Developer Resources",
+      "className": "spacetime-menu-header-link"
     },
     {
       "type": "category",

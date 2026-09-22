@@ -103,5 +103,5 @@ spacetime logs
 
 ## Next steps
 
-- See the [Chat App Tutorial](https://spacetimedb.com/docs/intro/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/intro/core-concepts/clients/typescript-reference) for detailed API docs
+- See the [Chat App Tutorial](https://spacetimedb.com/docs/tutorials/chat-app) for a complete example
+- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/clients/typescript) for detailed API docs

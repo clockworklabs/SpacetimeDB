@@ -1580,7 +1580,7 @@ log = "0.4"
         self.spacetime(&["describe", "--server", &self.server_url, identity.as_str()])
     }
 
-    /// Describes the database schema anonymously (requires --json).
+    /// Describes the database schema anonymously, passing `--json` for JSON output.
     pub fn describe_anon(&self) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
