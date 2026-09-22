@@ -436,9 +436,9 @@ namespace SpacetimeDB
             try
             {
                 CancelConnect();
-                Ws?.Abort();
-                Ws?.Dispose();
-                while (messageSendQueue.TryDequeue(out _)) { }
+                Ws.Abort();
+                Ws.Dispose();
+                messageSendQueue.Clear();
             }
             catch
             {
