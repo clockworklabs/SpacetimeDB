@@ -274,3 +274,8 @@ test('contract lint harness and unmeasured results are not app failures', () => 
   assert.equal(withLint({ pass: false, harness: true }).kind, 'harness_failure');
   assert.equal(withLint({ pass: false, unmeasured: true }).kind, 'inconclusive');
 });
+
+test('a declared inconclusive run outcome is not reported from the checks that did run', () => {
+  assert.equal(classifyBundle({ ...bundle([typed('a', 'passed', null)]),
+    outcome: { kind: 'inconclusive', phase: 'application-readiness' } }).kind, 'inconclusive');
+});

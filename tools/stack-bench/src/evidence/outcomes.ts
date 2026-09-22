@@ -206,7 +206,7 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
   const observed = classifyObservedChecks(bundle);
   if (observed.kind === 'harness_failure') return observed;
   const declaredOutcome = bundle.outcome;
-  if (declaredOutcome && ['provider_failure', 'harness_failure'].includes(declaredOutcome.kind)) {
+  if (declaredOutcome && ['provider_failure', 'harness_failure', 'inconclusive'].includes(declaredOutcome.kind)) {
     return { ...declaredOutcome, appFailures: [], inconclusive: [], harnessFailures: [] };
   }
   if (observed.kind === 'inconclusive') return observed;

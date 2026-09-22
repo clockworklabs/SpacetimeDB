@@ -572,3 +572,13 @@ test('L2 grading rechecks the exact selected L1 score without adding it to L2 po
     assert.match(scope.evaluationSha256, /^[a-f0-9]{64}$/);
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });
+
+test('a readiness probe timeout is recorded as a timeout, not a refusal', async () => {
+  const probe = (error: Error) => verifyApplicationProbe('http://app', { fetchImpl: async () => { throw error; } });
+  const timedOut = await probe(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }));
+  assert.equal(timedOut.ok, false);
+  assert.equal(timedOut.timedOut, true);
+  const refused = await probe(new TypeError('fetch failed'));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.timedOut, undefined);
+});

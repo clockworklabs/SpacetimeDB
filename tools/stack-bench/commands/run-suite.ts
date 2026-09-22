@@ -112,7 +112,7 @@ type LintPayload = {
 };
 type ActionsPayload = { missing: string[]; results: unknown[] };
 type RuntimeProvenance = { ok: boolean | null; verified: boolean; reason: string };
-type ApplicationProbeResult = { ok: boolean; detail: string | null };
+type ApplicationProbeResult = { ok: boolean; detail: string | null; timedOut?: true };
 type ResetOutcome = { kind: string; phase: string; appFailures?: string[] };
 type ApplicationFailure = ResetOutcome & { kind: 'app_failure'; reason: string };
 type DatabaseProvenance = { ok: boolean; reason: string; url?: string };
@@ -415,7 +415,8 @@ export async function verifyApplicationProbe(url: string, {
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
-    return { ok: false,
+    // A probe timeout measures nothing; only a refusal or HTTP error is app evidence.
+    return { ok: false, ...(error instanceof Error && error.name === 'TimeoutError' ? { timedOut: true } : {}),
       detail: `application did not respond: ${error instanceof Error ? error.message : String(error)}` };
   }
   if (!response.ok) {
@@ -1007,6 +1008,7 @@ async function main() {
         lastResetFailure = ready.detail;
         lastResetOutcome = applicationLeftStopped
           ? { kind: 'harness_failure', phase: 'application-readiness' }
+          : ready.timedOut ? { kind: 'inconclusive', phase: 'application-readiness' }
           : { kind: 'app_failure', phase: 'application-readiness',
             appFailures: ['application-readiness'] };
         console.log(`FAILED (${ready.detail})`);
