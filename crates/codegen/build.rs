@@ -3,6 +3,8 @@ use std::process::Command;
 // https://stackoverflow.com/questions/43753491/include-git-commit-hash-as-string-into-rust-program
 #[allow(clippy::disallowed_macros)]
 fn main() {
+    // Any rerun-if directive disables Cargo's default package scan; restore it.
+    println!("cargo:rerun-if-changed=.");
     println!("cargo:rerun-if-env-changed=SPACETIMEDB_NIX_BUILD_GIT_COMMIT");
     let git_hash = find_git_hash();
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
