@@ -4,7 +4,7 @@ import type { ClientRequest, IncomingMessage, OutgoingHttpHeaders, ServerRespons
 import { request as httpsRequest } from 'node:https';
 import type { RequestOptions } from 'node:https';
 import type { Socket } from 'node:net';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
@@ -365,10 +365,21 @@ async function main() {
       catch { stop(); }
     }, 1_000).unref();
   }
+  // A Docker broker cannot see the controller process; the controller touches this
+  // file instead, and a stale file means it died.
+  const heartbeatPath = config.heartbeatPath;
+  if (heartbeatPath) {
+    setInterval(() => { if (heartbeatStale(heartbeatPath, Date.now())) stop(); }, 5_000).unref();
+  }
   const expiresAt = config.expiresAt;
   if (expiresAt) setTimeout(stop, Math.max(1, expiresAt - Date.now())).unref();
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+}
+
+export function heartbeatStale(path: string, now: number): boolean {
+  try { return now - statSync(path).mtimeMs > 60_000; }
+  catch { return true; }
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

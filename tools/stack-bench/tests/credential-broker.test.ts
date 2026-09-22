@@ -13,7 +13,7 @@ import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
 import { brokerProtocol, imageTokenAdjustment } from '../container/broker-protocols.js';
-import { createCredentialBroker } from '../container/credential-broker.js';
+import { createCredentialBroker, heartbeatStale } from '../container/credential-broker.js';
 import { readCredentialBrokerLedger, reconcileCredentialBrokerReceipt, writeCredentialBrokerLedger }
   from '../container/credential-broker-accounting.js';
 import type { BrokerConfig, BrokerLedger, BrokerMode }
@@ -1145,5 +1145,18 @@ test('output reservations honor API caps without assuming account endpoints enfo
     assert.equal(protocol.outputLimit(payload), mode === 'api-key' ? 1024 : 128_000);
     assert.deepEqual(payload.reasoning, { effort: 'medium' });
     assert.equal(payload.model, 'gpt-6-astra');
+  }
+});
+
+test('a Docker broker treats a missing or stale controller heartbeat as controller loss', () => {
+  const root = mkdtempSync(join(tmpdir(), 'broker-heartbeat-'));
+  try {
+    const heartbeat = join(root, 'heartbeat');
+    assert.equal(heartbeatStale(heartbeat, Date.now()), true, 'missing heartbeat');
+    writeFileSync(heartbeat, '');
+    assert.equal(heartbeatStale(heartbeat, Date.now()), false, 'fresh heartbeat');
+    assert.equal(heartbeatStale(heartbeat, Date.now() + 61_000), true, 'stale heartbeat');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -70,6 +70,7 @@ export interface CredentialBrokerHandle {
   finalDiagnostics?: BrokerDiagnostics | null;
   finalLedger?: BrokerLedger | null;
   container?: CredentialBrokerContainer;
+  heartbeat?: NodeJS.Timeout;
 }
 
 export type CredentialBrokerContainer = {
@@ -178,11 +179,13 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
     const configPath = join(root, 'config.json');
     const readyPath = join(root, 'ready.json');
     const ledgerPath = join(root, 'spend-ledger.json');
+    const heartbeatPath = join(root, 'heartbeat');
+    if (docker) writeFileSync(heartbeatPath, '', { mode: 0o600 });
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = docker || networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
     const config = validateBrokerConfig({ provider: selectedAuth.provider, providerRoute, accountId: selectedAuth.accountId,
       mode: selectedAuth.mode, credential, sessionToken, readyPath,
-      ...(docker ? {} : { parentPid: process.pid }),
+      ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
       model, maxOutputTokens, maxBudgetUsd, pricingRates });
     writeFileSync(configPath, `${JSON.stringify(config)}\n`, { flag: 'wx', mode: 0o600 });
@@ -232,7 +235,10 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       || ready.port < 1 || ready.port > 65_535) throw new Error('credential broker returned an invalid port');
     if (ready.host !== listenHost) throw new Error('credential broker returned an invalid host');
     const host = docker || networkMode === 'host' ? '127.0.0.1' : 'host.docker.internal';
-    return { child, root, ledgerPath, model, maxBudgetUsd: maxBudgetUsd ?? null,
+    const heartbeat = docker ? setInterval(() => {
+      try { const time = new Date(); utimesSync(heartbeatPath, time, time); } catch { /* the broker stops itself */ }
+    }, 5_000).unref() : undefined;
+    return { child, root, ledgerPath, model, maxBudgetUsd: maxBudgetUsd ?? null, ...(heartbeat ? { heartbeat } : {}),
       sessionToken, baseUrl: `http://${host}:${ready.port}`, listenHost,
       endpointKind: docker ? 'container-credential-broker' : 'local-credential-broker', processState,
       ...(container ? { container } : {}),
@@ -369,6 +375,7 @@ export async function stopCredentialBroker(broker: CredentialBrokerHandle | null
     ledger = read('final', expected) ?? ledger;
   } catch (error) { recordError('broker-stop-error', 'shutdown', error); }
   finally {
+    clearInterval(broker.heartbeat);
     const state = broker.processState ?? {};
     if (exited) {
       try {

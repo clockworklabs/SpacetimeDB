@@ -34,6 +34,7 @@ export type BrokerConfig = {
   sessionToken: string;
   readyPath?: string;
   parentPid?: number;
+  heartbeatPath?: string;
   expiresAt?: number;
   listenHost?: '127.0.0.1' | '0.0.0.0';
   ledgerPath?: string;
@@ -117,6 +118,7 @@ const brokerConfigSchema = z.strictObject({
   sessionToken: z.string().min(16),
   readyPath: z.string().min(1).optional(),
   parentPid: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  heartbeatPath: z.string().min(1).optional(),
   expiresAt: positiveFinite.optional(),
   listenHost: z.enum(['127.0.0.1', '0.0.0.0']).optional(),
   ledgerPath: z.string().min(1).optional(),
