@@ -575,6 +575,19 @@ test('grading restarts the complete application on its public port', () => {
   assert.equal(argv.includes('--reseed-probe-expectation-json'), false);
 });
 
+test('reference qualification does not recover inconclusive suites, while paid grading can', () => {
+  const track = loadTrack('ecommerce');
+  for (const backend of ['spacetime', 'postgres', 'mongodb', 'convex']) {
+    for (const agentAdapter of ['reference-fixture', 'codex']) {
+      const args = { backend, agentAdapter, track: 'ecommerce', runIndex: 0, media: false };
+      const argv = gradeArgv(args, '/app', 'http://localhost:6573', 'qualification', 1,
+        track, 'attempt', { sourceSha256: 'a'.repeat(64) });
+      assert.equal(argv.includes('--retry-inconclusive'), agentAdapter === 'codex',
+        `${backend}/${agentAdapter}: qualification must preserve the first inconclusive result`);
+    }
+  }
+});
+
 test('Spacetime grading probes the application instead of a missing API port', () => {
   const track = loadTrack('ecommerce');
   const argv = gradeArgv({ backend: 'spacetime', track: 'ecommerce', runIndex: 0,

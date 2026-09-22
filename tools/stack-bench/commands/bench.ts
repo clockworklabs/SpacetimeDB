@@ -659,6 +659,7 @@ function checksForGrade(task: GradeRecipeTask | undefined, observation: GradeOpt
 }
 
 type GradeArguments = Pick<BenchArgs, 'backend' | 'track' | 'runIndex' | 'media' | 'recipe'> & {
+  agentAdapter?: BenchArgs['agentAdapter'];
   recipeTasks?: ReadonlyMap<number, GradeRecipeTask>;
   progression?: { identity: { policy?: string } };
   condition?: { guidance?: { credentialAliases?: Record<string, unknown> } };
@@ -692,7 +693,8 @@ export function gradeArgv(
     ...(task ? ['--recipe-task-json', JSON.stringify(task.request)] : []),
     ...(gradingCredentialAliases(args)
       ? ['--credential-aliases-json', JSON.stringify(gradingCredentialAliases(args))] : []),
-    ...(!applicationFailure && STACK_ADAPTER_REGISTRY.get(args.backend).runPolicy.resetEnabled
+    ...(!applicationFailure && args.agentAdapter !== 'reference-fixture'
+      && STACK_ADAPTER_REGISTRY.get(args.backend).runPolicy.resetEnabled
       ? ['--retry-inconclusive'] : []),
     ...(applicationFailure
       ? ['--application-failure-json', JSON.stringify(applicationFailure)] : []),
