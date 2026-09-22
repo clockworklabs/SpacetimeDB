@@ -859,20 +859,16 @@ if [[ -n "$MODEL" ]]; then
   MODEL_FLAG="--model $MODEL"
 fi
 
-# Block direct Read tool access to grading material. Bash remains available, so
-# this is not filesystem isolation.
-source "$SCRIPT_DIR/read-guard.sh"
-READ_GUARD_SETTINGS=$(write_read_guard "$APP_DIR" "$BACKEND")
-echo "[OK] Read guard written ($(grep -c '"Read(' "$READ_GUARD_SETTINGS") deny rules)"
-
 # Build args as an array so empty optional flags (model/resume) can't break the invocation.
-# --add-dir no longer names the tool root or the prompt source: the language and
-# feature content is inlined into the prompt above, so nothing outside the app
-# has to be reachable for a build to succeed.
+# Read and Edit are limited to the app directory; the language and feature content is
+# inlined into the prompt above, so nothing outside it is needed. Bash remains
+# available, so this is not filesystem isolation.
+# --setting-sources keeps the operator's user settings, plugins, and hooks out of the agent.
 CLAUDE_ARGS=(
   --print --verbose --output-format text
   --permission-mode acceptEdits
-  --settings "$READ_GUARD_SETTINGS"
+  --allowedTools Bash
+  --setting-sources project,local
   --add-dir "$APP_DIR"
   --session-id "$SESSION_ID"
 )
