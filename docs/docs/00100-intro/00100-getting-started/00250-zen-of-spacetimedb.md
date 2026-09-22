@@ -9,7 +9,7 @@ Spacetime is built on 5 core principles. As you embrace these simple principles,
 
 Your entire application state lives in tables. Users, messages, game entities, sessions—all tables. There's no separate cache layer, no Redis, no in-memory state that needs to be synchronized with a database. The database *is* your state. All of your state.
 
-This simplifies your mental model dramatically and it makes the impossible possible. Spacetime can hot-swap server code without disconnecting clients!
+You don't have to work out which copy of the data is right, or remember to update three copies when one value changes. Spacetime can even hot-swap server code without disconnecting clients!
 
 When you need to store something, you define a table. When you need to query something, you query a table. When you need to update something, you update a table. When you want to restrict who can read data, you create [a view](../../00200-core-concepts/00200-functions/00500-views.md) over a table. 
 
@@ -27,6 +27,8 @@ Traditional stack:        Spacetime:
 ## Everything is Persistent
 
 Spacetime persists everything by default, including the full history of any rows that have ever changed.
+
+The nice thing about making everything persistent is that you stop having to decide what deserves to be saved. That decision tends to look different after you've lost something.
 
 You will ask, does everything need to be persistent? Won't that be a lot of data? Well, you would be surprised! For example, updating 1 million player transforms 10 times per second for a year uses roughly 10 petabytes of data, uncompressed. Spacetime can compress that sort of data by about 5-10x, meaning that keeping every position for every player for a game with a million concurrent players uses only about 1-2 petabytes per year. Storing that much data in Amazon S3 would only cost you between $2,300 and $5,600 per month. A fraction of the cost of a single engineer or data scientist!
 
@@ -54,7 +56,9 @@ const [messages] = useTable(tables.message);
 // No polling. No refetching. Just reactive data.
 ```
 
-This changes how you think about client-server communication. Stop thinking in terms of requests and responses. Think in terms of **synchronized state** updating in real-time.
+Stop thinking in terms of requests and responses. Think in terms of **synchronized state** updating in real-time.
+
+When you add another way to change a row, you shouldn't have to remember every screen that displays it. Those screens already subscribe to the data they need.
 
 Your users should never click a refresh button.
 
@@ -74,13 +78,15 @@ fn transfer_funds(ctx: &ReducerContext, from: u64, to: u64, amount: u64) -> Resu
 }
 ```
 
+You can add another step to a reducer without figuring out how to undo all the previous database changes if it fails. This gets more valuable as your application grows.
+
 This means you can write your business logic boldly. Try things. If they fail, the database remains consistent.
 
 Perfect consistency, always.
 
 ## Everything is Programmable
 
-Spacetime doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, TypeScript, or C++) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
+Spacetime doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, TypeScript, or C++) running inside the database.
 
 Need custom authorization logic? Write a function. Need to validate complex business rules? Write a function. Need to transform data before storing it? Write a function.
 
@@ -98,12 +104,14 @@ Never settle for less than Turing complete.
 
 ## The Result
 
-When you embrace these principles, building real-time applications becomes remarkably simple:
+Here's what that takes off your plate:
 
 - **No backend servers to deploy** - your logic runs in the database
 - **No caching layer to manage** - the database is already in memory
 - **No sync code to write** - subscriptions handle it automatically
 - **No rollback logic to maintain** - transactions handle it automatically
 - **No limitations on your logic** - it's just code
+
+Each of these properties is useful on its own. But you get to stop thinking about them when you can count on them together. You write a reducer, change some tables, and the change is saved and sent to the subscribed clients that need it. Everything just works.
 
 This is the Zen of Spacetime: a simpler way to build and live.
