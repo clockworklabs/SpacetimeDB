@@ -27,9 +27,6 @@ again as the app grows. Targeting a depth does not guarantee reaching every
 selected node. Graph depths are not sequential L1/L2/L3 product releases; keep
 those experiment names and denominators separate.
 
-Exploratory paid collection can proceed while qualification is pending. A
-verified public comparison cannot.
-
 ## Study stages
 
 Set sample counts from the study's purpose; a pilot count is not a statistical
@@ -56,9 +53,7 @@ separate dataset and disclose the change.
 ### Other designs
 
 A repair-enabled dependency study is a separate experiment, with its own frozen
-allowance and all repair cost included. Its question is how much completion and
-total model cost each stack achieves under the same repair allowance. A claim
-that repairs improve results needs separate comparable repair and no-repair
+allowance and all repair cost included. A claim that repairs improve results needs separate comparable repair and no-repair
 cohorts. Comparing a repaired app with its own earlier checkpoint alone does not
 isolate feedback from additional work and model usage.
 
@@ -212,22 +207,19 @@ Blocking is a standard way to account for nuisance factors such as batch or
 host conditions ([NIST](https://www.itl.nist.gov/div898/handbook/pri/section3/pri332.htm)).
 Small-sample success-rate intervals need care; normal approximations can be
 inaccurate ([NIST](https://itl.nist.gov/div898/handbook/prc/section2/prc241.htm)).
+Correlated checks from one app are not independent experimental replicates
+([NIST](https://www.nist.gov/publications/expanding-ai-evaluation-toolbox-statistical-models)),
+and measurement validity needs documentation and independent review
+([NIST AI RMF](https://airc.nist.gov/airmf-resources/playbook/measure/)).
 
 ## Failure review and defensibility
 
-Keep each failed check as an observation. Group checks under a common cause only
-when logs, source, or a reproduction establish that cause. A group of failed
-checks is not that many distinct bugs. Mark suspected causes as unresolved. The
-[grading coverage guide](grading-coverage.md#review-a-failed-check) gives the
-review record and the regrade procedure after a grader defect.
-
-Review app, harness, provider, and interrupted outcomes separately. Where
+Review failures with the
+[grading coverage procedure](grading-coverage.md#review-a-failed-check). Where
 feasible, use the same reviewer rubric without stack labels, then disclose the
 source needed to verify the diagnosis. Do not repair generated apps manually in
-the primary dataset. Preserve the original grade before correcting a harness
-defect. A regrade of unchanged source is paired diagnostic evidence, not another
-trial. New prompt or interface requirements require a new cohort when old source
-is not compatible. Never rewrite historical results to fit a later contract.
+the primary dataset. New prompt or interface requirements require a new cohort
+when old source is not compatible.
 
 Before a public comparative claim, obtain independent external review of the
 frozen protocol, exclusions, scoring, and analysis. Record unresolved objections
@@ -235,14 +227,9 @@ and disclose reviewer affiliations. Parallel agent review is an internal check;
 it is not independent external review or replication. Do not claim replication
 until another team reproduces the method and reports its results.
 
-Before verified publication, qualify every selected check: a valid reference,
-appropriate valid alternatives, declared defect controls, and the existing
-null and release gates. Check qualification coverage for the exact reported
-selection; evidence for one recipe or depth does not qualify another. See the
-[reference qualification guide](../reference-apps/README.md) for scope and
-repetition requirements. Keep provisional evidence available with its label.
-Justify expected production requirements and check weights; do not claim that
-this finite test proves an app is production-ready.
+Verified publication requires [qualification](../reference-apps/README.md) of
+the exact reported selection. Exploratory collection can proceed before that,
+labelled provisional.
 
 ## Research pack and archive
 
@@ -296,11 +283,3 @@ Keep provider, model, agent runtime and version, tools, reasoning settings, and
 context policy distinct in the frozen condition. Compare stacks within each
 condition; do not pool different agent conditions into an unexplained stack
 average. Evidence from one model does not establish results for another.
-
-## Methods references
-
-[NIST AI RMF Measure](https://airc.nist.gov/airmf-resources/playbook/measure/)
-supports documented measurement validity and independent review.
-[NIST: Expanding the AI Evaluation Toolbox with Statistical Models](https://www.nist.gov/publications/expanding-ai-evaluation-toolbox-statistical-models)
-distinguishes fixed-benchmark accuracy from generalized performance; correlated
-checks from one app are not independent experimental replicates.
