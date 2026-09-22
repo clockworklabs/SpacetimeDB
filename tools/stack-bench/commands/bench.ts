@@ -575,7 +575,7 @@ export async function runAgent(
   const remainingBudget = args.maxBudgetUsd == null ? null
     : addCostUsd(args.maxBudgetUsd, -(args.spentBudgetUsd ?? 0));
   if (remainingBudget !== null && remainingBudget <= 0) {
-    throw new Error(`attempt cost cap of $${args.maxBudgetUsd} was exhausted before ${mode} L${level}`);
+    throw new Error(`Cost cap reached: attempt cost cap of ${args.maxBudgetUsd} was exhausted before ${mode} L${level}`);
   }
   if (remainingBudget !== null && adapter.costLimit === 'unsupported') {
     throw new Error(`agent adapter ${adapter.id} cannot enforce --max-budget-usd`);
@@ -1693,8 +1693,9 @@ async function main() {
     } catch (error) {
       await onFailure?.();
       const reason = errorMessage(error).split(/\r?\n/)[0] ?? 'agent execution failed';
-      run.outcome = { kind: 'harness_failure', phase: `agent-${mode}`,
-        reason, appFailures: [], inconclusive: [], harnessFailures: [reason] };
+      const capped = reason.startsWith('Cost cap reached:');
+      run.outcome = { kind: capped ? 'provider_failure' : 'harness_failure', phase: capped ? 'cost-cap' : `agent-${mode}`,
+        reason, appFailures: [], inconclusive: [], harnessFailures: capped ? [] : [reason] };
       run.validation.ladder.stoppedAfterLevel = run.levels.at(-1)?.level ?? null;
       run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
       if (progressionExecution) {

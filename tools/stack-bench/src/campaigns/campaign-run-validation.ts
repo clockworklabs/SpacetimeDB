@@ -315,7 +315,7 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
       mismatch(matching.outcome === 'inconclusive' && level.graded !== false,
         `levels.L${level.level}.graded`);
       const codingInterruption = matching.outcome === 'inconclusive'
-        && level.outcome?.phase === 'coding-session';
+        && ['coding-session', 'cost-cap'].includes(level.outcome?.phase ?? '');
       mismatch(codingInterruption && matching.category !== level.outcome?.kind,
         `levels.L${level.level}.progressionAttempt.category`);
       mismatch(codingInterruption && matching.reason !== level.outcome?.reason,

@@ -90,8 +90,9 @@ by batch.
 Before collection, choose a common per-attempt cap from observed usage plus a
 stated headroom allowance. The maximum campaign authorization is attempts
 multiplied by that cap, plus any explicitly authorized retries. Report the cap
-and actual spend. Reaching the cap is an outcome, not permission to increase it
-mid-study.
+and actual spend. An attempt that reaches the cap stops, is recorded as "Cost cap
+reached", and is excluded from comparison; it is not permission to increase the
+cap mid-study. Frequent cap stops mean the headroom was too small.
 
 ## Freeze the method before the main batch
 

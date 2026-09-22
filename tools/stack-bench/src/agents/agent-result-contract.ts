@@ -18,7 +18,7 @@ export interface AgentCostReceiptEntry {
 
 export interface AgentSessionFailure {
   kind: 'provider_failure' | 'harness_failure';
-  phase: 'coding-session';
+  phase: 'coding-session' | 'cost-cap';
   reason: string;
   provider: unknown;
   appFailures: [];
@@ -321,10 +321,13 @@ export function agentSessionFailure(value: unknown): AgentSessionFailure | null 
   const diagnostic = providerMetadata?.diagnostic;
   const kind = typeof failureCode === 'string' && (failureCode.startsWith('provider-') || failureCode === 'broker-budget')
     ? 'provider_failure' : 'harness_failure';
-  return { kind, phase: 'coding-session',
-    reason: typeof diagnostic === 'string' && diagnostic ? diagnostic
-      : typeof failureCode === 'string' && failureCode ? failureCode
-      : result.sessionId ? 'coding session reported failure' : 'coding session did not run',
+  const reason = typeof diagnostic === 'string' && diagnostic ? diagnostic
+    : typeof failureCode === 'string' && failureCode ? failureCode
+    : result.sessionId ? 'coding session reported failure' : 'coding session did not run';
+  // A spent cost cap is still excluded, but must not read as a provider outage.
+  const capped = failureCode === 'broker-budget';
+  return { kind, phase: capped ? 'cost-cap' : 'coding-session',
+    reason: capped ? `Cost cap reached: ${reason}` : reason,
     provider: providerMetadata?.failure ?? null,
     appFailures: [], inconclusive: [], harnessFailures: [] };
 }

@@ -336,6 +336,10 @@ test('provider failures stay separate from harness failures', () => {
   assert(failedSession);
   assert.equal(failedSession.kind, 'harness_failure');
   assert.equal(failedSession.reason, 'coding session failed: permission denied');
+  const capped = agentSessionFailure({ ok: false, sessionId: 'session-3',
+    providerMetadata: { failureCode: 'broker-budget', diagnostic: 'session budget cannot cover the next request' } });
+  assert.equal(capped?.phase, 'cost-cap');
+  assert.match(capped?.reason ?? '', /^Cost cap reached: session budget/);
 });
 
 test('malformed and duplicate agent adapters fail at registry construction', () => {
