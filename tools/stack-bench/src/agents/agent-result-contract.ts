@@ -189,6 +189,7 @@ const resultSchema = z.strictObject({
   transcript: z.strictObject({ kind: z.string().min(1), id: z.string().min(1) }).nullable().optional(),
   costReceipts: z.array(z.strictObject({ invocation: z.number().int().positive(),
     receipt: z.unknown() })).optional(),
+  unaccountedInvocations: z.number().int().positive().optional(),
 });
 
 export function validateAgentCostReceipt(value: unknown, model: string, at: string): AgentCostReceipt {
@@ -269,7 +270,7 @@ export function validateAgentResult(value: unknown, request: AgentRequest): Vali
   }
   const receiptCostUsd = costReceipts.reduce((sum, { receipt }) => sum + receipt.costUsd, 0);
   const costComplete = request.adapterCostLimit === 'non-billable'
-    || (cappedNative && costReceipts.length > 0
+    || (cappedNative && costReceipts.length > 0 && result.unaccountedInvocations === undefined
       && costReceipts.every(({ receipt }) => receipt.complete && receipt.reconciled
         && receipt.error === null && pricingRatesEqual(receipt.pricingRates, pricing?.rates))
       && Math.abs(receiptCostUsd - costUsd) <= AGENT_COST_RECEIPT_TOLERANCE_USD);

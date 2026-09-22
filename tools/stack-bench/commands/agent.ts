@@ -963,6 +963,7 @@ async function main() {
     },
     costUsd: Number((result.total_cost_usd ?? 0).toFixed(6)),
     costReceipts: result.stack_bench_cost_receipts ?? [],
+    ...(result.stack_bench_unaccounted_invocations ? { unaccountedInvocations: result.stack_bench_unaccounted_invocations } : {}),
     tokens: input + output + cacheWrite + cacheRead,
     outputTokens: output,
     usage: { input, output, cacheWrite, cacheRead },

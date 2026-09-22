@@ -576,3 +576,22 @@ test('missing-container recovery clears only the authenticated lease target', ()
     assert.equal(readBackendLease(path).resources.buildContainer, null);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('an invocation that leaves no result makes the session cost unaccounted', () => {
+  const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7b';
+  let calls = 0;
+  const coding = runCodingSessionWithRetries({ prompt: 'prompt', model: 'test-model', retryLimit: 2,
+    maxBudgetUsd: 10,
+    invoke() {
+      calls += 1;
+      if (calls === 1) {
+        throw Object.assign(new Error('provider interrupted'), { status: 1, stdout: JSON.stringify({
+          is_error: true, terminal_reason: 'api_error', api_error_status: 503, session_id: sessionId,
+          total_cost_usd: 3.5, num_turns: 4, stack_bench_cost_receipt: brokerReceipt(3.5) }) });
+      }
+      throw Object.assign(new Error('transcript reader failed'), { status: 1, stdout: '' });
+    } });
+  assert.equal(calls, 2);
+  assert.notEqual(coding.spawnError, null);
+  assert.equal(coding.result.stack_bench_unaccounted_invocations, 1);
+});

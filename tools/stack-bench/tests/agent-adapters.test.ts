@@ -310,6 +310,8 @@ test('completion validation rejects wrong identity and malformed usage', () => {
     costReceipts: [{ invocation: 1, receipt: { ...receipt, complete: false,
       reconciled: false, error: 'incomplete' } }] }, nativeRequest);
   assert.equal(failed.costComplete, false);
+  assert.equal(validateAgentResult({ ...valid, ok: false, unaccountedInvocations: 1 }, nativeRequest).costComplete,
+    false, 'an invocation without a receipt leaves the session cost unknown');
   const failedReceipt = failed.costReceipts[0];
   assert(failedReceipt);
   assert.equal(failedReceipt.receipt.error, 'incomplete');

@@ -116,6 +116,8 @@ interface CodingSessionRetryOptions {
 }
 
 interface AggregatedCodingSessionResult extends CodingSessionResult {
+  // Invocations that ran but left no parseable result, so their spend is unknown.
+  stack_bench_unaccounted_invocations?: number;
   total_cost_usd: number;
   num_turns: number;
   usage: {
@@ -384,6 +386,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
   let raw = '';
   let spawnError: string | null = null;
   const sessionResults: CodingSessionResult[] = [];
+  let unaccounted = 0;
   const interruptions: RecordedCodingSessionInterruption[] = [];
   const providerWaits: ProviderWaitRecord[] = [];
   let resumeSession: string | null = null;
@@ -416,6 +419,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
     }
     const result = parseCodingSessionResult(raw);
     if (result) sessionResults.push(result);
+    else unaccounted += 1;
     try {
       onInvocation?.({ invocation: invocation + 1, input, resumeSession,
         maxBudgetUsd: invocationBudget, recoverStoppedContainer, result, raw,
@@ -537,5 +541,6 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
   return { raw, spawnError, sessionResults, interruptions, providerWaits,
     throttle: { waits: throttleWaits, waitedMs: throttleWaitedMs,
       maxWaitMs: throttleMaxWaitMs, jitterMs: throttleJitterMs },
-    result: aggregateCodingSessionResults(sessionResults) };
+    result: { ...aggregateCodingSessionResults(sessionResults),
+      ...(unaccounted ? { stack_bench_unaccounted_invocations: unaccounted } : {}) } };
 }
