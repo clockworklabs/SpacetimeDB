@@ -1650,12 +1650,12 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
       ],
-      "desc": "A reconnect handler restores a wrong cart quantity through the native write path, producing neither the prepared cart nor a completed checkout.",
+      "desc": "A disconnect-triggered recovery worker restores a wrong cart quantity through the native write path, producing neither the prepared cart nor a completed checkout. The worker retries native calls while the backend is down; it does not wait for the browser WebSocket reconnect backoff.",
       "file": "client/src/request.ts",
       "edits": [
         {
           "find": "followAuth();\nexport async function signOut()",
-          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const line = current.cart.items[0] || current.orders[0]?.items[0];\n    if (line) await mutate('api:update_cart_quantity', { itemId: line.itemId, quantity: 2 });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+          "replace": "followAuth();\nlet recoveryStarted = false;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (isWebSocketConnected || !connectionCount || recoveryStarted) return;\n  recoveryStarted = true;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const deadline = Date.now() + 10000;\n    while (true) {\n      try {\n        const current = await state();\n        const line = current.cart.items[0] || current.orders[0]?.items[0];\n        if (!line) throw new Error('Crash control has no cart or prior order');\n        await mutate('api:update_cart_quantity', { itemId: line.itemId, quantity: 2 });\n        console.error('Crash control committed', Date.now());\n        return;\n      } catch (error) {\n        if (Date.now() >= deadline) throw error;\n        await new Promise(resolve => setTimeout(resolve, 25));\n      }\n    }\n  })().catch(error => console.error('Crash control failed', String(error)));\n});\nexport async function signOut()"
         }
       ]
     },
@@ -1665,12 +1665,12 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
       ],
-      "desc": "A recovery callback removes stock for Coffee Grinder while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
+      "desc": "A disconnect-triggered recovery worker removes stock for Coffee Grinder while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity. The worker retries native calls while the backend is down; it does not wait for the browser WebSocket reconnect backoff.",
       "file": "client/src/request.ts",
       "edits": [
         {
           "find": "followAuth();\nexport async function signOut()",
-          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n    if (priorOrder) await mutate('api:cancel_order', { orderId: priorOrder.id });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+          "replace": "followAuth();\nlet recoveryStarted = false;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (isWebSocketConnected || !connectionCount || recoveryStarted) return;\n  recoveryStarted = true;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const deadline = Date.now() + 10000;\n    while (true) {\n      try {\n        const current = await state();\n        const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n        if (!priorOrder) throw new Error('Crash control has no pending order');\n        await mutate('api:cancel_order', { orderId: priorOrder.id });\n        console.error('Crash control committed', Date.now());\n        return;\n      } catch (error) {\n        if (Date.now() >= deadline) throw error;\n        await new Promise(resolve => setTimeout(resolve, 25));\n      }\n    }\n  })().catch(error => console.error('Crash control failed', String(error)));\n});\nexport async function signOut()"
         },
         {
           "file": "convex/shop.js",
@@ -1685,12 +1685,12 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-durability.910b"
       ],
-      "desc": "A reconnect handler corrupts the total of an earlier acknowledged order through its native write path, without changing stock, allocations or cart state.",
+      "desc": "A disconnect-triggered recovery worker corrupts the total of an earlier acknowledged order through its native write path, without changing stock, allocations or cart state. The worker retries native calls while the backend is down; it does not wait for the browser WebSocket reconnect backoff.",
       "file": "client/src/request.ts",
       "edits": [
         {
           "find": "followAuth();\nexport async function signOut()",
-          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n    if (priorOrder) await mutate('api:cancel_order', { orderId: priorOrder.id });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+          "replace": "followAuth();\nlet recoveryStarted = false;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (isWebSocketConnected || !connectionCount || recoveryStarted) return;\n  recoveryStarted = true;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const deadline = Date.now() + 10000;\n    while (true) {\n      try {\n        const current = await state();\n        const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n        if (!priorOrder) throw new Error('Crash control has no pending order');\n        await mutate('api:cancel_order', { orderId: priorOrder.id });\n        console.error('Crash control committed', Date.now());\n        return;\n      } catch (error) {\n        if (Date.now() >= deadline) throw error;\n        await new Promise(resolve => setTimeout(resolve, 25));\n      }\n    }\n  })().catch(error => console.error('Crash control failed', String(error)));\n});\nexport async function signOut()"
         },
         {
           "file": "convex/shop.js",
