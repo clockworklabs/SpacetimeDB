@@ -665,13 +665,15 @@ export async function executeCampaign(campaignFile: string, directory: string,
             onCapacityWait?.(null);
             const next = claimNextAttempt(state, { admissionId: admission.id, runIndex: admission.runIndices[0] });
             if (!next.claim) throw new Error('attempt dispatch has no available worker');
-            state = next.state;
             claim = next.claim;
-            state.attempts.find(attempt => attempt.plan.id === claim.attempt.id)!.executions.at(-1)!
+            next.state.attempts.find(attempt => attempt.plan.id === claim.attempt.id)!.executions.at(-1)!
               .credentialAssignment = credentials.assignment;
             mkdirSync(dirname(credentialPath), { recursive: true });
             if (!existsSync(credentialPath)) writeFileSync(credentialPath, credentialPin, { flag: 'wx', mode: 0o600 });
-            writeCampaignState(initialized.paths.state, plan, state);
+            // Adopt the claim only once it is durable; a failed write must not leave
+            // an in-memory running execution that a later write persists.
+            writeCampaignState(initialized.paths.state, plan, next.state);
+            state = next.state;
           } catch (error) {
             if (reservation) releaseCampaignReservation(reservation);
             throw error;
