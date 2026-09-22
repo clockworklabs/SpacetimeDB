@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -66,6 +66,25 @@ function writeGrade(app: string, status: EvidenceStatus, summary: string,
     },
   });
 }
+
+// The agent owns the app directory; a planted link must not redirect a controller write.
+test('repair report replaces a planted symlink instead of writing through it', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-symlink-'));
+  try {
+    const app = join(root, 'app');
+    writeGrade(app, 'failed', 'cart total was wrong');
+    const victim = join(root, 'victim');
+    writeFileSync(victim, 'controller secret');
+    try { symlinkSync(victim, join(app, 'BUG_REPORT.md')); }
+    catch { t.skip('this host cannot create file symlinks'); return; }
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    assert.equal(readFileSync(victim, 'utf8'), 'controller secret');
+    assert.ok(lstatSync(join(app, 'BUG_REPORT.md')).isFile());
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('repair report selection follows typed evidence even when prose claims the opposite', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-selection-'));

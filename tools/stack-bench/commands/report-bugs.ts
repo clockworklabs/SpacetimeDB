@@ -5,7 +5,7 @@ import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 // Report behavior and typed observations, never implementation advice. A setup
 // failure must not be described as a failure of the later criterion.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
@@ -375,7 +375,9 @@ export function createBugReport(args: ReportBugsArgs): number {
   if (args.priorRegression) lines.push(...priorRegressionSection(args.priorRegression));
 
   const reportText = assertAgentVisibleText(lines.join('\n'));
-  writeFileSync(args.out, reportText);
+  // The agent owns this directory: replace whatever is there rather than write through a link.
+  rmSync(args.out, { force: true });
+  writeFileSync(args.out, reportText, { flag: 'wx' });
   if (args.archive) {
     mkdirSync(dirname(args.archive), { recursive: true });
     writeFileSync(args.archive, reportText);
