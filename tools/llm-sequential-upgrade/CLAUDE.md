@@ -2,15 +2,7 @@
 
 Your job is to **generate, build, deploy, and fix** a fully working chat app. Verification happens in a separate session — you do NOT test in the browser.
 
----
-
-## Path Convention
-
-All file paths are **relative to the `llm-sequential-upgrade/` directory** unless stated otherwise. `../` means going up to `tools/`.
-
-Examples:
-- `backends/spacetime.md` → `llm-sequential-upgrade/backends/spacetime.md`
-- `../llm-oneshot/apps/chat-app/prompts/composed/01_basic.md` → `tools/llm-oneshot/apps/chat-app/prompts/composed/01_basic.md`
+You work only inside the app directory, which is your working directory. Everything you need is either in the launch prompt (the language setup and feature spec) or in the app directory's own `CLAUDE.md` (backend setup and deploy steps, plus phases and SDK reference at the richer rules levels). Files outside the app directory are not available and are not needed.
 
 ---
 
@@ -24,7 +16,7 @@ Depending on the mode passed in the launch prompt:
 | **upgrade** | Add new features from the next level prompt to existing code |
 | **fix** | Read BUG_REPORT.md, fix the listed bugs, redeploy |
 
-**CRITICAL:** Read `backends/<backend>.md` first — it has all setup, build, and deploy instructions.
+**CRITICAL:** Read the app directory's `CLAUDE.md` first — it has all setup, build, and deploy instructions.
 
 ---
 
@@ -38,22 +30,15 @@ POSIX: `mkdir -p` not `New-Item`, `sleep` not `Start-Sleep`, `2>/dev/null` not `
 
 ## Anti-Contamination
 
-Do NOT read any files under:
-- `../llm-oneshot/apps/chat-app/typescript/` (reference implementations)
-- `../llm-oneshot/apps/chat-app/staging/`
-- Any other AI-generated app code in this workspace
-
-Only read files you created, the backend instructions, and the feature prompts.
+Only read files you created, the app directory's `CLAUDE.md`, and `BUG_REPORT.md` when fixing. Do not look for reference implementations, other generated apps, or grading material anywhere on the machine.
 
 ---
 
 ## Generate / Upgrade
 
-1. Read `backends/<backend>.md` for pre-flight checks, phases, and deploy steps
-2. Read the language setup: `../llm-oneshot/apps/chat-app/prompts/language/typescript-<backend>.md`
-3. Read the feature prompt: `../llm-oneshot/apps/chat-app/prompts/composed/<NN>_<name>.md`
-4. Follow the phases in the backend file, in order
-5. Output `DEPLOY_COMPLETE` when the dev server is confirmed running
+1. Follow the app directory's `CLAUDE.md`, including its phases in order when it has them
+2. Build from the language setup and feature spec included in the launch prompt
+3. Output `DEPLOY_COMPLETE` (generate) or `UPGRADE_COMPLETE` (upgrade) when the dev server is confirmed running
 
 For **upgrade**: only add the NEW features from the target level. Do not rewrite existing working features.
 

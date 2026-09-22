@@ -814,7 +814,8 @@ fi
 
 # ─── Run Claude Code ─────────────────────────────────────────────────────────
 # Run from the APP directory so CLAUDE.md auto-discovery picks up the
-# backend-specific file, not the parent llm-sequential-upgrade/CLAUDE.md.
+# backend-specific file. Ancestor CLAUDE.md files, including
+# llm-sequential-upgrade/CLAUDE.md, are loaded too.
 
 cd "$APP_DIR"
 
