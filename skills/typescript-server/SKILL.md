@@ -194,8 +194,7 @@ cause a disconnect. A disconnect alone does not mean the user signed out or thei
 application login expired. Keep connection cleanup separate from session revocation.
 
 `ctx.sender` is a SpacetimeDB identity, not necessarily an application account. Separate
-identities can authenticate to the same application account. Identity equality alone
-does not establish whether two callers belong to the same account.
+identities can authenticate to the same application account.
 
 `ctx.connectionId` is typed `ConnectionId | null`. It is present inside connection lifecycle hooks and reducers invoked over a connection, and `null` in `init` and scheduled reducers. Guard it before passing it to a helper or using it as a table key.
 
