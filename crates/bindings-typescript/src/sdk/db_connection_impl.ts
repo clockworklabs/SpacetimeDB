@@ -1170,12 +1170,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const eventContext = this.#makeEventContext(event);
 
     // The removal half: every row the cache holds from the old connection.
-    // Only tables which have been populated exist in the cache.
+    // Only tables which have been populated exist in the cache. The cache is
+    // keyed by accessor name, but table updates carry the source name.
     const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
-    for (const [tableName, table] of this.clientCache.tables) {
-      const operations = table.snapshotDeleteOperations();
+    for (const tableDef of Object.values(this.#sourceNameToTableDef)) {
+      const table = this.clientCache.tables.get(tableDef.accessorName);
+      const operations = table?.snapshotDeleteOperations() ?? [];
       if (operations.length > 0) {
-        tableUpdates.push({ tableName, operations });
+        tableUpdates.push({ tableName: tableDef.sourceName, operations });
       }
     }
 

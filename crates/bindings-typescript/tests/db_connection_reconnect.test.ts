@@ -22,7 +22,12 @@ import {
 import { WebSocketTokenError } from '../src/sdk/ws';
 import { WebsocketTestAdapterFactory } from '../src/sdk/websocket_test_adapter';
 import { DbConnection } from '../test-app/src/module_bindings';
-import { anIdentity, bobIdentity, encodeUser } from './utils';
+import {
+  anIdentity,
+  bobIdentity,
+  encodeUnindexedPlayer,
+  encodeUser,
+} from './utils';
 
 /** The disconnect/connect-error reports an application sees. */
 type ReconnectReport = {
@@ -838,6 +843,75 @@ describe('replaying subscriptions', () => {
 
     expect(deletes).toEqual(['Alice']);
     expect(harness.connection.db.user.count()).toBe(0n);
+  });
+
+  test('a table whose accessor name differs from its source name replays', async () => {
+    // The cache is keyed by accessor name (unindexedPlayer) while updates
+    // carry the source name (unindexed_player). The removal half of a
+    // replay must not mix the two up.
+    const harness = build();
+    await establish(harness);
+    harness.connection
+      .subscriptionBuilder()
+      .subscribe(['SELECT * FROM unindexed_player']);
+    await Promise.resolve();
+    const querySetId = harness.factory.current.outgoingMessages.find(
+      message => message.tag === 'Subscribe'
+    )!.value.querySetId.id;
+
+    harness.factory.current.sendToClient(
+      ServerMessage.SubscribeApplied({
+        requestId: 1,
+        querySetId: { id: querySetId },
+        rows: {
+          tables: [
+            {
+              table: 'unindexed_player',
+              rows: {
+                sizeHint: { tag: 'RowOffsets', value: [0n] },
+                rowsData: encodeUnindexedPlayer({
+                  id: 1,
+                  ownerId: anIdentity,
+                  name: 'Alice',
+                  location: { x: 1, y: 2 },
+                }),
+              },
+            },
+          ],
+        },
+      })
+    );
+    await Promise.resolve();
+    expect(harness.connection.db.unindexedPlayer.count()).toBe(1n);
+
+    const deletes: string[] = [];
+    harness.connection.db.unindexedPlayer.onDelete((_ctx, row) =>
+      deletes.push(row.name)
+    );
+
+    harness.factory.current.close();
+    await runReconnectTimer(harness);
+    harness.factory.current.acceptConnection();
+    harness.factory.current.sendToClient(initialConnection());
+    await Promise.resolve();
+
+    // The replay returns no rows: the row is gone.
+    const batch = lastSubscribeBatch(harness)!;
+    harness.factory.current.sendToClient(
+      ServerMessage.SubscribeBatchApplied({
+        requestId: batch.requestId,
+        results: [
+          {
+            querySetId: batch.sets[0].querySetId,
+            outcome: { tag: 'Applied', value: { tables: [] } },
+          },
+        ],
+      })
+    );
+    await Promise.resolve();
+
+    expect(deletes).toEqual(['Alice']);
+    expect(harness.connection.db.unindexedPlayer.count()).toBe(0n);
   });
 
   test('a rejected replayed query reports its error while the rest apply', async () => {
