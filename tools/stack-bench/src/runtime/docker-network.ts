@@ -28,6 +28,10 @@ export function recordAttemptCreation(leasePath: string, lease: BackendLease, ki
   const intent = { name: `sb-${createHash('sha256').update(lease.runId).digest('hex').slice(0, 16)}-${kind}`,
     creationToken: randomBytes(16).toString('hex') };
   updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
+    // Teardown never revisits a finished lease, so it cannot own anything new.
+    if (['released', 'stopped', 'retained'].includes(next.state)) {
+      throw new Error(`lease ${next.runId} is ${next.state} and cannot authorize a new ${kind}`);
+    }
     if (next.resources.creationIntents?.[kind]) throw new Error(`${kind} already has creation authority; recover the attempt first`);
     (next.resources.creationIntents ??= {})[kind] = intent;
     return next;

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createBackendLease, publicBackendLease, readBackendLease, validateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 
-import { attemptNetworkRules, dockerHostGatewayArguments, dockerHostServiceAddress,
+import { attemptNetworkRules, recordAttemptCreation, dockerHostGatewayArguments, dockerHostServiceAddress,
   installAttemptFirewall, createAttemptNetwork, createAttemptContainer } from '../src/runtime/docker-network.js';
 
 test('only the authenticated owned browser uses its private shared memory', () => {
@@ -251,3 +251,19 @@ for (const kind of ['backend', 'browser'] as const) {
     }
   });
 }
+
+test('a released lease cannot authorize new attempt resources', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-released-lease-'));
+  try {
+    const path = join(root, 'lease.json');
+    const lease = createBackendLease({ runId: 'released-lease-test', backend: 'mongodb',
+      track: 'ecommerce', runIndex: 0, database: 'app_ecom_run0',
+      container: { name: 'stack-bench-mongodb', id: 'database-id' } });
+    lease.state = 'released';
+    writeBackendLease(path, lease);
+    assert.throws(() => recordAttemptCreation(path, lease, 'broker'), /released/);
+    assert.equal(readBackendLease(path, { token: lease.ownershipToken }).resources.creationIntents?.broker, undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
