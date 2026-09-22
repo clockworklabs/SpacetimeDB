@@ -825,10 +825,12 @@ export function createLifecycleCapability({ restartSpec, target,
       } catch (error) {
         const value = errorShape(error);
         if (value.status === 3) inconclusive('control-refused', { target });
-        // A generated app which cannot complete its own start/stop operation
-        // has failed the application contract. Backend-control timeouts and
-        // failures to launch the harness command still provide no app evidence.
-        if (harnessProcessFailure(error) && !(application && value.code === 'ETIMEDOUT')) throw error;
+        // App faults carry generated_app_not_restartable. Otherwise a generated app
+        // that cannot complete its own start/stop has failed the contract, but the
+        // backend runtime and harness command failures provide no app evidence.
+        const appFault = value.code === 'generated_app_not_restartable'
+          || (application && !harnessProcessFailure(error));
+        if (!appFault) throw error;
         fail('app-control-failed', { mode, target,
           detail: String(value.stdout || value.message || '').trim().slice(-200) });
       }

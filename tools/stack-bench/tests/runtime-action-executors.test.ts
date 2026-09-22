@@ -388,21 +388,26 @@ test('a lifecycle operation reports the state it left only when the control comp
   assert.deepEqual(operated, ['stop', 'start']);
 });
 
-test('a generated app server timing out is an application failure, not a harness failure', async () => {
-  const timedOut = Object.assign(new Error('app start timed out'), { code: 'ETIMEDOUT' });
-  const applicationLifecycle = createLifecycleCapability({ restartSpec,
-    target: 'app-server', sleep, control: async () => { throw timedOut; } });
-  const appResult = await run({ do: 'startAppServer', settleMs: 0 },
-    services(new Map(), { applicationLifecycle }));
-  assert.equal(appResult.status, 'failed');
-  assert.match(appResult.summary ?? '', /application server could not start/);
+test('lifecycle control failures are app failures only when the app is at fault', async () => {
+  const outcome = async (target: 'app-server' | 'backend-runtime', error: Error) => {
+    const capability = createLifecycleCapability({ restartSpec, target, sleep,
+      control: async () => { throw error; } });
+    return run({ do: target === 'app-server' ? 'startAppServer' : 'restartBackend', settleMs: 0 },
+      services(new Map(), target === 'app-server'
+        ? { applicationLifecycle: capability } : { backendLifecycle: capability }));
+  };
+  const appFault = () => Object.assign(new Error('application did not start'),
+    { code: 'generated_app_not_restartable' });
+  const dockerTimeout = () => Object.assign(new Error('docker exec timed out'), { code: 'ETIMEDOUT' });
 
-  const backendLifecycle = createLifecycleCapability({ restartSpec,
-    target: 'backend-runtime', sleep,
-    control: async () => { throw timedOut; } });
-  const backendResult = await run({ do: 'restartBackend', settleMs: 0 },
-    services(new Map(), { backendLifecycle }));
-  assert.equal(backendResult.status, 'harness_failure');
+  const appStart = await outcome('app-server', appFault());
+  assert.equal(appStart.status, 'failed');
+  assert.match(appStart.summary ?? '', /application server could not start/);
+  assert.equal((await outcome('backend-runtime', appFault())).status, 'failed');
+  assert.equal((await outcome('app-server', dockerTimeout())).status, 'harness_failure');
+  assert.equal((await outcome('backend-runtime', dockerTimeout())).status, 'harness_failure');
+  assert.equal((await outcome('backend-runtime',
+    new Error('SPACETIME_BIN is unavailable: <unset>'))).status, 'harness_failure');
 });
 
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
