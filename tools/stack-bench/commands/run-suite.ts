@@ -595,8 +595,8 @@ export function codeMetrics(args: Pick<RunArguments, 'app' | 'backend'>): { serv
       if (/^(node_modules|dist|\.vite|module_bindings|drizzle)$/.test(e.name)) continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p, out);
-      // Count every supported JavaScript and TypeScript source extension.
-      else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(e.name)) out.push(p);
+      // Count supported source files; agent-planted links and FIFOs are not read.
+      else if (e.isFile() && /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(e.name)) out.push(p);
     }
     return out;
   };

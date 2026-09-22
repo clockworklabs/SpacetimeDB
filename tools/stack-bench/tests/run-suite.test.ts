@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -583,4 +583,21 @@ test('a readiness probe timeout is recorded as a timeout, not a refusal', async 
   const refused = await probe(new TypeError('fetch failed'));
   assert.equal(refused.ok, false);
   assert.equal(refused.timedOut, undefined);
+});
+
+test('code metrics read only regular files the app owns', t => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-code-metrics-link-'));
+  try {
+    const app = join(temp, 'app');
+    mkdirSync(app);
+    writeFileSync(join(app, 'index.js'), 'export const app = true;\n');
+    writeFileSync(join(temp, 'outside.txt'), 'a\nb\nc\nd\ne\nf\n');
+    try { symlinkSync(join(temp, 'outside.txt'), join(app, 'planted.js')); }
+    catch { t.skip('this host cannot create file symlinks'); return; }
+    const metrics = codeMetrics({ app, backend: 'mongodb' });
+    assert.equal(metrics.totalFiles, 1);
+    assert.equal(metrics.totalLoc, 2);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });
