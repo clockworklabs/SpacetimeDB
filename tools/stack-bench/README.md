@@ -48,7 +48,11 @@ harness failures, and incomplete measurements remain separate.
 If an app prerequisite fails, the dependent checks are reported as **blocked**.
 They receive no credit, but this is not evidence that their target assertions failed.
 Page navigation timeouts are unmeasured: external resources can delay page readiness.
-The runner retries the same source once. If grading remains incomplete, it stops
+Campaign grading retries only the affected isolated suite, once, when its evidence
+is explicitly retryable and inconclusive. It preserves completed suites and both
+executions in the grade bundle and raw artifacts. Product failures, mixed
+failure/inconclusive suites, cleanup failures and harness failures do not retry.
+Qualification runs do not enable this recovery policy. If grading remains incomplete, it stops
 the attempt without treating the timeout as a failed feature or selecting later work.
 Other navigation transport failures also remain unmeasured; connection refusal
 is a measured reachability failure. Invalid selectors, grader scripts, and browser

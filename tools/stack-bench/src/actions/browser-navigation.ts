@@ -24,6 +24,7 @@ export async function runApplicationNavigation(operation: () => Promise<unknown>
   } catch (error) {
     if (error instanceof errors.TimeoutError) {
       throw new ActionInconclusive('application navigation timed out before the page was ready', {
+        retryable: true,
         expected: 'DOMContentLoaded before the navigation deadline',
         observation: { pendingResources: [...pending.values()] },
       });
@@ -35,6 +36,7 @@ export async function runApplicationNavigation(operation: () => Promise<unknown>
     }
     if (error instanceof Error && /net::ERR_[A-Z_]+\b/.test(error.message)) {
       throw new ActionInconclusive('application navigation failed before the page was ready', {
+        retryable: true,
         expected: 'a reachable application page',
       });
     }

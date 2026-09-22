@@ -114,7 +114,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'total', 'max', 'features', 'environment', 'inconclusive', 'selection', 'packRuntime']),
   grade_bundle: new Set(['definitionSchemaVersion', 'recipeRelease', 'calibration', 'label', 'track',
     'backend', 'url', 'app', 'level', 'suites', 'totals', 'code', 'error', 'outcome', 'provenance',
-    'actions', 'selection', 'packRuntime', 'observation', 'source', 'phaseTimings']),
+    'actions', 'selection', 'packRuntime', 'observation', 'source', 'phaseTimings', 'suiteRetries']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'shard', 'ok', 'outcome', 'baseline', 'summary', 'results',
     'checkpoint', 'gradeReports', 'priorMutationControl']),
@@ -663,6 +663,13 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     if (!isObject(suites)) fail('grade_bundle payload.suites must be an object when present');
     for (const [suiteId, suite] of Object.entries(suites)) {
       if (isObject(suite)) validateGradeFeatures(suite.features, `grade_bundle payload.suites.${suiteId}.features`);
+    }
+    if (payload.suiteRetries !== undefined) {
+      const retries = asObject(payload.suiteRetries, 'grade_bundle suiteRetries must be an object');
+      for (const [suiteId, initial] of Object.entries(retries)) {
+        if (!Object.hasOwn(suites, suiteId) || !isObject(initial)) fail('grade_bundle retry has no original suite');
+        validateGradePayload(initial);
+      }
     }
   }
   if (kind === 'mutation_control') {

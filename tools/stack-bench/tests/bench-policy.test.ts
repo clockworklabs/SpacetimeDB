@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { pendingRunSnapshot, gradeWithRetry, auditFailureSummary, gradeArgv, parseAgentProcessResult }
+import { pendingRunSnapshot, auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
@@ -542,56 +542,6 @@ test('repair regression checks require earlier passes but ignore earlier failure
   ] }] } } };
   assert.equal(repairRegressionDecision(before, kept).action, 'keep');
   assert.equal(repairRegressionDecision(before, regressed).action, 'rollback-regression');
-});
-
-test('grade retries preserve evidence, retry once, and skip usable or excluded grades', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-retry-'));
-  try {
-    const app = join(root, 'app');
-    const grading = privateGradingDirectory(app);
-    const output = join(root, 'run');
-    mkdirSync(join(grading, 'media'), { recursive: true });
-    const failed = JSON.stringify({ outcome: { kind: 'harness_failure' },
-      source: { sha256: 'same-source' }, totals: { score: 171, max: 173 } });
-    const actions = JSON.stringify({ evidence: { status: 'harness_failure',
-      code: 'deadline_exceeded', phase: 'action', action: 'signIn' } });
-    writeFileSync(join(grading, 'bundle.json'), failed);
-    writeFileSync(join(grading, 'grading-selected-source-093.json'), actions);
-    writeFileSync(join(grading, 'grader-selected-source-093.stderr.log'), 'first failure');
-    writeFileSync(join(grading, 'media', 'video.webm'), 'large media');
-
-    for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
-      const calls: string[] = [];
-      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade', archiveLabel: label,
-        runGrade: gradeLabel => {
-          calls.push(gradeLabel);
-          if (gradeLabel.endsWith('-retry')) {
-            assert.equal(readFileSync(join(output, 'candidate-grades', label, 'bundle.json'), 'utf8'), failed);
-          }
-          return { outcome: { kind: label === 'l3-before-retry' ? 'incomplete' : 'harness_failure' } };
-        } });
-      assert.deepEqual(calls, ['grade', 'grade-retry']);
-    }
-    for (const retry of [true, false]) {
-      let calls = 0;
-      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade',
-        archiveLabel: 'must-not-archive', retry,
-        runGrade: () => { calls++; return { outcome: { kind: retry ? 'app_failure' : 'harness_failure' } }; } });
-      assert.equal(calls, 1);
-      assert.equal(existsSync(join(output, 'candidate-grades', 'must-not-archive')), false);
-    }
-    clearPrivateGradingEvidence(app);
-    mkdirSync(grading, { recursive: true });
-    writeFileSync(join(grading, 'bundle.json'), 'later passing grade');
-
-    for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
-      const archive = join(output, 'candidate-grades', label);
-      assert.equal(readFileSync(join(archive, 'bundle.json'), 'utf8'), failed);
-      assert.equal(readFileSync(join(archive, 'grading-selected-source-093.json'), 'utf8'), actions);
-      assert.equal(readFileSync(join(archive, 'grader-selected-source-093.stderr.log'), 'utf8'), 'first failure');
-      assert.equal(existsSync(join(archive, 'media')), false);
-    }
-  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('repair rollback restores the accepted grading evidence without another grade', () => {

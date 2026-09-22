@@ -679,7 +679,7 @@ function classifyCheckFailure(error: unknown, fallbackActor: string | null = nul
       code: error.classification, actor: fallbackActor,
       summary: error.message, finding: isFinding(error.details.finding) ? error.details.finding : null,
       observation: error.details.observation ?? null,
-      expected: error.details.expected ?? null, retryable: false };
+      expected: error.details.expected ?? null, retryable: error.details.retryable === true };
   }
   return { status: 'harness_failure', code: 'unclassified_exception', actor: fallbackActor,
     summary: errorMessage(error ?? 'unknown grader failure'),

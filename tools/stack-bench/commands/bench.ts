@@ -692,6 +692,8 @@ export function gradeArgv(
     ...(task ? ['--recipe-task-json', JSON.stringify(task.request)] : []),
     ...(gradingCredentialAliases(args)
       ? ['--credential-aliases-json', JSON.stringify(gradingCredentialAliases(args))] : []),
+    ...(!applicationFailure && STACK_ADAPTER_REGISTRY.get(args.backend).runPolicy.resetEnabled
+      ? ['--retry-inconclusive'] : []),
     ...(applicationFailure
       ? ['--application-failure-json', JSON.stringify(applicationFailure)] : []),
     ...(observation === 'scored' && args.recipeTasks && !args.progression
@@ -712,19 +714,6 @@ export function archiveCandidateGrade(appDir: string, outputDir: string, label: 
     recursive: true,
     filter: source => !/[\\/]media([\\/]|$)/.test(source),
   });
-}
-
-export async function gradeWithRetry({ appDir, outputDir, label, archiveLabel, runGrade,
-  retry = true }: {
-  appDir: string; outputDir: string; label: string; archiveLabel: string;
-  runGrade: (label: string) => GradeBundlePayload | null | Promise<GradeBundlePayload | null>;
-  retry?: boolean;
-}): Promise<GradeBundlePayload | null> {
-  const bundle = await runGrade(label);
-  if (!retry || levelGradeIsUsable(classifyBundle(bundle))) return bundle;
-  archiveCandidateGrade(appDir, outputDir, archiveLabel);
-  console.log('  grade did not complete; retrying the same source once');
-  return runGrade(`${label}-retry`);
 }
 
 function grade(
@@ -2264,11 +2253,8 @@ async function main() {
     }
     const firstBuildLabel = `${args.backend}-l${level}${featureActionSuffix}`;
     let bundle = firstBuildSource
-      ? await gradeWithRetry({ appDir, outputDir, label: firstBuildLabel,
-        archiveLabel: `l${level}${featureActionSuffix}-before-retry`,
-        retry: !materializationOutcome,
-        runGrade: label => grade(args, appDir, url, label, level, track, runId,
-          { applicationFailure: materializationOutcome }) }) : null;
+      ? grade(args, appDir, url, firstBuildLabel, level, track, runId,
+        { applicationFailure: materializationOutcome }) : null;
     let reusableRepairEvidence: {
       bundle: GradeBundlePayload;
       results: string;
@@ -2723,10 +2709,7 @@ async function main() {
       const repairedSource = `${snapshot}-accepted`;
       snapshotSource(appDir, repairedSource);
       try {
-        bundle = await gradeWithRetry({ appDir, outputDir,
-          label: `${args.backend}-l${level}-fix${repairs}`,
-          archiveLabel: `l${level}${featureActionSuffix}-repair${repairs}-before-retry`,
-          runGrade: label => gradeAcceptedSource(repairedSource, label) });
+        bundle = await gradeAcceptedSource(repairedSource, `${args.backend}-l${level}-fix${repairs}`);
       } finally {
         rmSync(repairedSource, { recursive: true, force: true });
       }

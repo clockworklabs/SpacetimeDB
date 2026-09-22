@@ -102,6 +102,7 @@ test('a stalled stylesheet leaves navigation unmeasured and the unchanged app ca
       () => page.reload({ waitUntil: 'domcontentloaded', timeout: 250 })]) {
       await assert.rejects(runApplicationNavigation(operation, page), error => {
         assert(error instanceof ActionInconclusive);
+        assert.equal(error.details.retryable, true);
         assert.deepEqual(error.details.observation, { pendingResources: [`stylesheet ${url}`] });
         return true;
       });

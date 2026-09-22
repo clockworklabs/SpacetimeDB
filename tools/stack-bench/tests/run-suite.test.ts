@@ -13,7 +13,7 @@ import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, f
   checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
   verifyApplicationDatabaseMarker,
   contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
-  verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser, preserveStartFailure }
+  verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser, preserveStartFailure, suiteMayRetry }
   from '../commands/run-suite.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
@@ -21,6 +21,28 @@ import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { readArtifactPayload } from '../src/evidence/artifacts.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+
+// Recovery must not erase product failures, ignore cleanup, or retry unknown errors.
+test('suite recovery requires exclusively passed or explicitly retryable inconclusive evidence', () => {
+  const criterion = (status: 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'harness_failure', retryable = false) => ({
+    id: status, evidence: createCheckEvidence({ status, retryable, code: 'test_result',
+      phase: status === 'blocked' ? 'setup' : 'assertion', startedAtMs: 0, completedAtMs: 1 }),
+  });
+  const grade = (...criteria: ReturnType<typeof criterion>[]) => ({ total: 0, max: 1,
+    features: [{ name: 'test', criteria }] });
+  assert.equal(suiteMayRetry(grade(criterion('inconclusive', true))), true);
+  assert.equal(suiteMayRetry(grade(criterion('passed'), criterion('inconclusive', true))), true);
+  for (const status of ['failed', 'blocked', 'harness_failure', 'inconclusive'] as const) {
+    assert.equal(suiteMayRetry(grade(criterion(status), criterion('inconclusive', true))), false, status);
+  }
+  assert.equal(suiteMayRetry(grade()), false);
+  assert.equal(suiteMayRetry(grade(criterion('passed'))), false);
+  const cleanup = grade(criterion('inconclusive', true));
+  assert.equal(suiteMayRetry({ ...cleanup, features: [{ ...cleanup.features[0]!,
+    cleanupEvidence: { status: 'harness_failure', failures: [{ stage: 'context-close' }] } }] }), false);
+  assert.equal(suiteMayRetry({ total: 0, max: 1, features: [{ name: 'missing', criteria: [{ id: 'missing' }] }] }), false);
+});
 
 const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 

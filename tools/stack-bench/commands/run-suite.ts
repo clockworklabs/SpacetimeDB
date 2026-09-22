@@ -6,7 +6,7 @@ import type { ExecFileException, ExecFileSyncOptionsWithStringEncoding } from 'n
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { measurePhase, type PhaseTiming } from '../src/evidence/phase-timing.js';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -80,6 +80,7 @@ type RunArguments = {
   out: string;
   level: string;
   reset: boolean;
+  retryInconclusive: boolean;
   media: boolean;
   runIndex: number;
   track: string;
@@ -101,8 +102,9 @@ type RunArguments = {
 };
 type GradeCriterion = { id: string; stableKey?: string; serverCheck?: string; evidence?: CheckEvidence };
 type GradeFeature = { name: string; criteria: GradeCriterion[];
-  cleanupEvidence?: { failures: Array<{ stage: string }> } };
+  cleanupEvidence?: { status?: string; failures: Array<{ stage: string }> } };
 type GradePayload = { total: number; max: number; features: GradeFeature[];
+  cleanupEvidence?: { status?: string };
   selection?: { checks?: RecipeCheck[] }; packRuntime?: PackRuntimeEvidence };
 type LintPayload = {
   pass: boolean;
@@ -134,6 +136,7 @@ type Bundle = {
   label: string; track: string; backend: string; url: string; app: string; level: number;
   observation: Observation; source?: { sha256: string };
   suites: Record<string, GradePayload | LintPayload | null>;
+  suiteRetries?: Record<string, GradePayload>;
   totals: Record<string, unknown>;
   selection: BundleSelection | null;
   code?: ReturnType<typeof codeMetrics>;
@@ -209,7 +212,7 @@ export function clearPreviousGradeOutputs(output: string): void {
     /^grading-.+\.json$/.test(name) || /^grader-.+\.(?:stdout|stderr)\.log$/.test(name)) : [];
   for (const name of [ARTIFACT_FILE.gradeBundle, ARTIFACT_FILE.contractLint,
     ARTIFACT_FILE.actions, 'media', 'failure-media',
-    'database-provenance', 'application-start.log', ...generated]) {
+    'database-provenance', 'application-start.log', 'suite-retries', ...generated]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }
 }
@@ -294,11 +297,13 @@ function parseArgs(argv: string[]): RunArguments {
     pack: { type: 'string', multiple: true }, check: { type: 'string', multiple: true },
     'restart-spec': { type: 'string' }, 'application-failure-json': { type: 'string' },
     'run-index': { type: 'string' }, 'no-reset': { type: 'boolean' },
+    'retry-inconclusive': { type: 'boolean' },
     'parent-attempt-id': { type: 'string' },
   } });
   const a: RunArguments = { app: values.app ?? '', url: values.url ?? '',
     backend: values.backend ?? '', label: values.label ?? '', out: values.out ?? '',
     level: values.level ?? '1', reset: !(values['no-reset'] ?? false),
+    retryInconclusive: values['retry-inconclusive'] ?? false,
     media: !(values['no-media'] ?? false), runIndex: Number(values['run-index'] ?? 0),
     track: values.track ?? DEFAULT_TRACK,
     packIds: (values.pack ?? []).flatMap(value => value.split(',').filter(Boolean)),
@@ -328,6 +333,10 @@ function parseArgs(argv: string[]): RunArguments {
   }
   if (a.sourceSha256 !== undefined && !/^[a-f0-9]{64}$/.test(a.sourceSha256)) {
     throw new Error('--source-sha256 must be a SHA-256 digest');
+  }
+  if (a.retryInconclusive && (!a.sourceSha256
+    || (!a.reset && STACK_ADAPTER_REGISTRY.get(a.backend).runPolicy.resetEnabled))) {
+    throw new Error('suite recovery requires a frozen --source-sha256 and reset for stateful backends');
   }
   if (a.applicationFailure && (a.applicationFailure.kind !== 'app_failure'
     || typeof a.applicationFailure.phase !== 'string' || !a.applicationFailure.phase
@@ -710,6 +719,16 @@ function checkActions(args: RunArguments): ActionsPayload | null {
   return r;
 }
 
+export function suiteMayRetry(grade: GradePayload): boolean {
+  if (grade.cleanupEvidence?.status === 'harness_failure') return false;
+  if (grade.features.some(feature => feature.cleanupEvidence?.status === 'harness_failure'
+    || feature.cleanupEvidence?.failures.length)) return false;
+  const evidence = grade.features.flatMap(feature => feature.criteria.map(criterion => criterion.evidence));
+  return evidence.some(value => value?.status === 'inconclusive' && value.retryable)
+    && evidence.every(value => value?.status === 'passed'
+      || (value?.status === 'inconclusive' && value.retryable));
+}
+
 async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
   recipeBinding: RecipeBinding | null, selectedTask: BoundRecipeTaskRequestResult | null,
   bundleArtifactId: string, selectedChecks: RecipeCheck[] = [],
@@ -721,7 +740,7 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
   const out = join(outputDirectory, `grading-${suite.id}.json`);
   rmSync(out, { force: true });
   const argv = [compiledEntrypoint('grader', 'grade.js'), '--url', args.url, '--level', args.level,
-    '--label', `${args.label}-${suite.id}`, '--out', out];
+    '--label', `${args.label}-${suite.id}${outputDirectory === args.out ? '' : '-retry'}`, '--out', out];
   if (suite.spec) argv.push('--spec', suite.spec);
   argv.push('--backend', args.backend, '--track', args.track);
   if (recipeBinding) argv.push('--expected-recipe-sha256', recipeBinding.release.contentSha256);
@@ -758,6 +777,10 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
       + `full diagnostics: ${child.stdoutName}, ${child.stderrName}`);
   }
   const r = readArtifactPayload<GradePayload>(out, { expectedKind: 'grade' });
+  if (failure) {
+    throw new Error(`grader process did not complete for ${suite.id}: ${childFailureDetail(failure, stdout)}; `
+      + `full diagnostics: ${child.stdoutName}, ${child.stderrName}`);
+  }
   if (selectedChecks.length) {
     const expected = selectedChecks.map(check => check.stableKey).sort();
     const reported = (r.selection?.checks ?? []).map(check => check.stableKey).sort();
@@ -1174,6 +1197,30 @@ async function main() {
       let r;
       try {
         r = await measure('grader', () => gradeSuite(args, suite, track, recipeBinding, selectedTask, bundleArtifactId, selectedChecks));
+        bundle.suites[suite.id] = r;
+        if (args.retryInconclusive && suiteMayRetry(r)) {
+          const recoveryDirectory = join(args.out, 'suite-retries', suite.id);
+          const initialDirectory = join(recoveryDirectory, 'initial');
+          mkdirSync(initialDirectory, { recursive: true });
+          for (const name of [`grading-${suite.id}.json`, `grader-${suite.id}.stdout.log`, `grader-${suite.id}.stderr.log`]) {
+            cpSync(join(args.out, name), join(initialDirectory, name));
+          }
+          (bundle.suiteRetries ??= {})[suite.id] = r;
+          writeBundle();
+          if (bundle.outcome?.kind === 'harness_failure') throw new Error(bundle.error);
+          console.log(`  ${suite.id}: retrying this inconclusive suite once; completed suites are retained`);
+          if (!(await freshen())) throw new Error(`suite recovery could not restore fresh state: ${freshenFailureMessage()}`);
+          // Reset/start must not modify the source selected for either execution.
+          if (hashAppSource(args.app).sha256 !== args.sourceSha256) {
+            throw new Error('application source changed before suite recovery');
+          }
+          r = await measure('grader', () => gradeSuite(args, suite, track, recipeBinding, selectedTask,
+            bundleArtifactId, selectedChecks, { outputDirectory: recoveryDirectory }));
+          // Keep the established final-grade paths for raw evidence consumers.
+          for (const name of [`grading-${suite.id}.json`, `grader-${suite.id}.stdout.log`, `grader-${suite.id}.stderr.log`, 'media', 'failure-media']) {
+            if (existsSync(join(recoveryDirectory, name))) cpSync(join(recoveryDirectory, name), join(args.out, name), { recursive: true });
+          }
+        }
       } catch (error) {
         markRemainingNotRun(`run aborted after ${suite.id} grader failure`);
         bundle.error = error instanceof Error ? error.message : String(error);
@@ -1192,7 +1239,7 @@ async function main() {
       }
       if (selection) {
         bundle.packRuntime = aggregatePackRuntime(
-          Object.values(bundle.suites).filter(isGradePayload),
+          [...Object.values(bundle.suites).filter(isGradePayload), ...Object.values(bundle.suiteRetries ?? {})],
           selectedPackDefinitions);
         const exceeded = exceededPackBudgets(bundle.packRuntime);
         if (exceeded.length) {

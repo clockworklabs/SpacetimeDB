@@ -58,6 +58,8 @@ export interface GradeBundleTotals {
 
 export interface GradeBundlePayload extends OutcomeBundle {
   suites?: Record<string, GradeBundleSuite>;
+  // Original inconclusive executions. Only suites contains the scored execution.
+  suiteRetries?: Record<string, GradeBundleSuite>;
   totals?: GradeBundleTotals;
   selection?: GradeBundleSelection | null;
   code?: unknown;
