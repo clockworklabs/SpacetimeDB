@@ -1430,9 +1430,9 @@ jobs:
         working-directory: sdks/csharp
         run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
-      - name: Run .NET tests
+      - name: Run C# SDK tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror --no-restore SpacetimeDB.ClientSDK.csproj
+        run: dotnet test -warnaserror --no-restore tests~/tests.csproj
 
       - name: Verify C# formatting
         working-directory: sdks/csharp
