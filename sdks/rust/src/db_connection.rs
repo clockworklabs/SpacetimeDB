@@ -1478,6 +1478,11 @@ async fn parse_loop<M: SpacetimeModule>(
                 query_set_id: e.query_set_id,
                 error: e.error.to_string(),
             },
+            // This SDK negotiates v2 and never sends `SubscribeBatch`,
+            // so the server should never send this response.
+            ws::v2::ServerMessage::SubscribeBatchApplied(_) => ParsedMessage::Error(
+                InternalError::new("Received SubscribeBatchApplied, which this client never requests").into(),
+            ),
             ws::v2::ServerMessage::ProcedureResult(procedure_result) => ParsedMessage::ProcedureResult {
                 request_id: procedure_result.request_id,
                 result: match procedure_result.status {
