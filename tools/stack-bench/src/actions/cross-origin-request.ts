@@ -1,5 +1,6 @@
 import type { BrowserContext, Request, Response } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
+import { runBrowserInfrastructureOperation } from '../evidence/harness-errors.js';
 
 // Use a real browser and its cookie policy. Never copy the victim's headers,
 // storage or token into the attacker page. Stored-effect checks own the verdict.
@@ -25,11 +26,14 @@ export async function crossOriginPost(context: Pick<BrowserContext, 'newPage' | 
     signal.throwIfAborted();
     // The appliance uses private/loopback addresses. Grant only this fixture's
     // network permission; keep CORS, SameSite and application defenses enabled.
-    await context.grantPermissions(['local-network-access'], { origin: origin.origin });
-    await page.route(origin.href, route => route.fulfill({
-      status: 200, contentType: 'text/html', body: '<!doctype html><title>Origin probe</title>',
-    }));
-    await page.goto(origin.href, { waitUntil: 'domcontentloaded', timeout: 10_000 });
+    // The harness serves this page itself, so a failure here is not app evidence.
+    await runBrowserInfrastructureOperation('cross-origin fixture', async () => {
+      await context.grantPermissions(['local-network-access'], { origin: origin.origin });
+      await page.route(origin.href, route => route.fulfill({
+        status: 200, contentType: 'text/html', body: '<!doctype html><title>Origin probe</title>',
+      }));
+      await page.goto(origin.href, { waitUntil: 'domcontentloaded', timeout: 10_000 });
+    });
     const actualOrigin = await page.evaluate(() => location.origin);
     if (actualOrigin !== origin.origin || actualOrigin === target.origin) {
       throw new Error('Cross-origin observer did not establish the attacker origin');

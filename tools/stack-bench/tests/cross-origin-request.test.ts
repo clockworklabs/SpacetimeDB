@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { crossOriginPost } from '../src/actions/cross-origin-request.js';
 import { ActionInconclusive } from '../src/actions/action-contract.js';
 import { isFinding } from '../src/actions/action-findings.js';
+import { harnessBrowserFailure } from '../src/evidence/harness-errors.js';
 
 test('real browser origin probes expose cookie writes despite opaque responses and keep missing responses unmeasured', async () => {
   let protectOrigin = true, writes = 0;
@@ -48,4 +49,12 @@ test('real browser origin probes expose cookie writes despite opaque responses a
   } finally {
     await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
   }
+});
+
+test('a timeout loading the harness-served origin page is a harness failure', async () => {
+  const timeout = Object.assign(new Error('page.goto: Timeout 10000ms exceeded.'), { name: 'TimeoutError' });
+  const page = { on() {}, close: async () => {}, route: async () => {}, goto: async () => { throw timeout; } };
+  const context = { newPage: async () => page, grantPermissions: async () => {} } as never;
+  await assert.rejects(crossOriginPost(context, { url: 'http://127.0.0.1:18081/api' }, 'same-site',
+    new AbortController().signal), error => harnessBrowserFailure(error) !== null);
 });
