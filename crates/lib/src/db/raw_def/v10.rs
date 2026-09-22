@@ -134,6 +134,13 @@ pub enum MethodOrAny {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSubmoduleV10 {
+    /// The namespace as written in the parent module's source, e.g. the key the
+    /// submodule is mounted under in a TypeScript `schema({ ... })` call.
+    ///
+    /// This is the *source* name. The canonical namespace stored in the database is
+    /// derived during validation, exactly like table names: the parent module's
+    /// [`CaseConversionPolicy`] is applied unless an [`ExplicitNameEntry::Namespace`]
+    /// mapping for this source name overrides it.
     pub namespace: String,
     pub module: RawModuleDefV10,
 }
@@ -161,6 +168,7 @@ pub struct NameMapping {
     /// - Tables: value from `#[spacetimedb::table(accessor = ...)]`.
     /// - Reducers/Procedures/Views: function name
     /// - Indexes: `{table_name}_{column_names}_idx_{algorithm}`
+    /// - Namespaces: the key a submodule is mounted under
     ///
     /// During validation, this may be replaced by `canonical_name`
     /// if an explicit or policy-based name is applied.
@@ -186,6 +194,8 @@ pub enum ExplicitNameEntry {
     Table(NameMapping),
     Function(NameMapping),
     Index(NameMapping),
+    /// The canonical name of a submodule namespace, keyed by [`RawSubmoduleV10::namespace`].
+    Namespace(NameMapping),
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -221,6 +231,17 @@ impl ExplicitNames {
 
     pub fn insert_index(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
         self.insert(ExplicitNameEntry::Index(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_namespace(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        canonical_name: impl Into<RawIdentifier>,
+    ) {
+        self.insert(ExplicitNameEntry::Namespace(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
         }));
@@ -1258,6 +1279,29 @@ impl RawModuleDefV10Builder {
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {
         self.explicit_names_mut().merge(names);
+    }
+
+    /// Mount `module` as a submodule under the source namespace `namespace`.
+    ///
+    /// The canonical namespace is derived during validation from this module's case
+    /// conversion policy, or taken from an explicit namespace name mapping added via
+    /// [`Self::add_explicit_names`].
+    pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {
+        let submodule = RawSubmoduleV10 {
+            namespace: namespace.into(),
+            module,
+        };
+        let existing = self.module.sections.iter_mut().find_map(|s| match s {
+            RawModuleDefV10Section::Submodules(submodules) => Some(submodules),
+            _ => None,
+        });
+        match existing {
+            Some(submodules) => submodules.push(submodule),
+            None => self
+                .module
+                .sections
+                .push(RawModuleDefV10Section::Submodules(vec![submodule])),
+        }
     }
 
     /// Set the case conversion policy for this module.

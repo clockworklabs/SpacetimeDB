@@ -10,7 +10,7 @@ use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name,
+    check_function_names_are_unique, check_scheduled_functions_exist, convert, generate_schedule_name,
     generate_unique_constraint_name, identifier, CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
@@ -26,6 +26,7 @@ pub struct ExplicitNamesLookup {
     pub tables: HashMap<RawIdentifier, RawIdentifier>,
     pub functions: HashMap<RawIdentifier, RawIdentifier>,
     pub indexes: HashMap<RawIdentifier, RawIdentifier>,
+    pub namespaces: HashMap<RawIdentifier, RawIdentifier>,
 }
 
 impl ExplicitNamesLookup {
@@ -33,6 +34,7 @@ impl ExplicitNamesLookup {
         let mut tables = HashMap::default();
         let mut functions = HashMap::default();
         let mut indexes = HashMap::default();
+        let mut namespaces = HashMap::default();
 
         for entry in ex.into_entries() {
             match entry {
@@ -45,6 +47,9 @@ impl ExplicitNamesLookup {
                 ExplicitNameEntry::Index(m) => {
                     indexes.insert(m.source_name, m.canonical_name);
                 }
+                ExplicitNameEntry::Namespace(m) => {
+                    namespaces.insert(m.source_name, m.canonical_name);
+                }
                 _ => {}
             }
         }
@@ -53,6 +58,7 @@ impl ExplicitNamesLookup {
             tables,
             functions,
             indexes,
+            namespaces,
         }
     }
 }
@@ -88,7 +94,13 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
-    let submodules = validate_submodules(def.submodules().into_iter().flat_map(|s| s.iter().cloned()).collect());
+    // The parent chooses the namespaces its submodules are mounted under, so the parent's
+    // naming policy and explicit names decide their canonical form.
+    let submodules = validate_submodules(
+        def.submodules().into_iter().flat_map(|s| s.iter().cloned()).collect(),
+        case_policy,
+        &explicit_names,
+    );
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -308,6 +320,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let mut module_def = ModuleDef {
         // Set by `apply_namespace` below.
         path: NamespacePath::root(),
+        accessor_path: NamespacePath::root(),
+        mount_accessor_name: None,
         tables,
         reducers,
         views,
@@ -329,7 +343,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     // Submodules were validated in isolation, so their defs carry root-relative names.
     // Now that the tree is assembled, qualify every name by the namespace it is mounted
     // under. This recurses, so nesting resolves at whichever level ends up outermost.
-    module_def.apply_namespace(&NamespacePath::root());
+    module_def.apply_namespace(&NamespacePath::root(), &NamespacePath::root());
     #[cfg(debug_assertions)]
     module_def.assert_namespaces_applied(&NamespacePath::root());
 
@@ -352,37 +366,79 @@ fn validate_environment(def: &RawModuleDefV10) -> Result<Option<spacetimedb_lib:
     Ok(Some(schema))
 }
 
-/// Validate that each submodule's namespace is a valid identifier of at most 63 characters,
-/// that no two submodules share the same namespace, and that no submodule declares lifecycle
-/// reducers (lifecycle reducers are only permitted in the root module).
+/// The canonical form of a submodule namespace: the explicit name if one was given,
+/// otherwise the source name with the parent's case conversion policy applied.
+/// This mirrors how table and function names are resolved.
+fn resolve_namespace_ident(
+    source: &RawIdentifier,
+    case_policy: ValidationCase,
+    explicit_names: &ExplicitNamesLookup,
+) -> Result<Identifier> {
+    let canonical = match explicit_names.namespaces.get(source) {
+        Some(canonical) => canonical.clone(),
+        None => convert(source.clone(), case_policy).into(),
+    };
+    Identifier::new(canonical).map_err(|error| ValidationError::IdentifierError { error }.into())
+}
+
+/// Validate that each submodule's namespace is a valid identifier of at most 63 characters
+/// in both its accessor and canonical forms, that no two submodules share the same canonical
+/// namespace, and that no submodule declares lifecycle reducers (lifecycle reducers are only
+/// permitted in the root module).
 /// This function will inspect each sub-submodule and recursively collect errors.
-fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Identifier, ModuleDef>> {
+///
+/// The returned map is keyed by canonical namespace; each def records the accessor
+/// namespace it was mounted under in `mount_accessor_name`.
+fn validate_submodules(
+    submodules: Vec<RawSubmoduleV10>,
+    case_policy: ValidationCase,
+    explicit_names: &ExplicitNamesLookup,
+) -> Result<IndexMap<Identifier, ModuleDef>> {
     let mut errors = vec![];
     let mut map = IndexMap::with_capacity(submodules.len());
 
     for submodule in submodules {
-        if submodule.namespace.len() > 63 {
-            errors.push(ValidationError::NamespaceTooLong {
-                namespace: submodule.namespace.clone().into(),
-                len: submodule.namespace.len(),
-            });
-        }
-
-        let namespace = match Identifier::new(RawIdentifier::from(submodule.namespace.clone())) {
-            Ok(namespace) => namespace,
+        let source = RawIdentifier::from(submodule.namespace.clone());
+        let accessor = match Identifier::new(source.clone()) {
+            Ok(accessor) => accessor,
             Err(error) => {
                 errors.push(ValidationError::IdentifierError { error });
                 continue;
             }
         };
+        let namespace = match resolve_namespace_ident(&source, case_policy, explicit_names) {
+            Ok(namespace) => namespace,
+            Err(e) => {
+                errors.extend(e.into_iter());
+                continue;
+            }
+        };
+
+        let mut too_long = false;
+        let mut checked: Vec<&Identifier> = vec![&accessor];
+        if namespace != accessor {
+            checked.push(&namespace);
+        }
+        for name in checked {
+            if name.len() > 63 {
+                errors.push(ValidationError::NamespaceTooLong {
+                    namespace: name.as_raw().clone(),
+                    len: name.len(),
+                });
+                too_long = true;
+            }
+        }
+        if too_long {
+            continue;
+        }
 
         if map.contains_key(&namespace) {
             errors.push(ValidationError::DuplicateName {
-                name: submodule.namespace.into(),
+                name: namespace.as_raw().clone(),
             });
         } else {
             match validate(submodule.module) {
-                Ok(def) => {
+                Ok(mut def) => {
                     if !def.environment().is_empty() {
                         errors.push(ValidationError::EnvironmentInSubmodule {
                             namespace: submodule.namespace.clone(),
@@ -396,6 +452,7 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Iden
                             });
                         }
                     }
+                    def.mount_accessor_name = Some(accessor);
                     map.insert(namespace, def);
                 }
                 Err(e) => errors.extend(e.into_iter()),
@@ -1185,8 +1242,8 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::v10::{
-        CaseConversionPolicy, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
-        RawSubmoduleV10,
+        CaseConversionPolicy, ExplicitNames, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder,
+        RawModuleDefV10Section, RawSubmoduleV10,
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
@@ -1646,6 +1703,174 @@ mod tests {
         assert_eq!(submodules.len(), 1);
         let submodule = submodules.get("authlib").expect("authlib submodule should exist");
         assert!(submodule.table(&expect_identifier("sessions")).is_some());
+    }
+
+    fn sessions_submodule() -> RawModuleDefV10 {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        sub.add_reducer("cleanExpiredSessions", ProductType::unit());
+        sub.finish()
+    }
+
+    /// The key a submodule is mounted under is its accessor namespace. Its canonical
+    /// namespace follows the parent's case conversion policy, exactly like a table name.
+    #[test]
+    fn submodule_namespace_is_case_converted() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        assert!(
+            def.submodules().get("myAuth").is_none(),
+            "accessor name must not be the key"
+        );
+        let sub = def
+            .submodules()
+            .get("my_auth")
+            .expect("submodule should be keyed by its snake_case canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.path().to_string(), "my_auth.");
+        assert_eq!(sub.accessor_path().to_string(), "myAuth.");
+
+        // Every def under it is keyed by the canonical path, while its alias uses the accessor path.
+        let (prefix, owning, table) = def.all_tables_with_prefix().into_iter().next().expect("table");
+        assert_eq!(prefix.to_string(), "my_auth.");
+        assert_eq!(&*prefix.join(table.name.clone()), "my_auth.sessions");
+        assert_eq!(
+            &*owning.accessor_path().join(table.accessor_name.clone()),
+            "myAuth.sessions"
+        );
+
+        assert!(def.reducer_by_name("my_auth.clean_expired_sessions").is_some());
+        assert!(def.reducer_by_name("myAuth.clean_expired_sessions").is_none());
+    }
+
+    /// An explicit namespace name is stored verbatim, bypassing the case conversion policy.
+    /// This is the escape hatch for modules that published a camelCase namespace before
+    /// namespaces were case-converted.
+    #[test]
+    fn submodule_namespace_explicit_name_overrides_policy() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("myAuth", "myAuth");
+        root.add_explicit_names(explicit);
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        assert!(def.submodules().get("my_auth").is_none());
+        let sub = def.submodules().get("myAuth").expect("explicit canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.path().to_string(), "myAuth.");
+        assert_eq!(sub.accessor_path().to_string(), "myAuth.");
+        assert!(def.reducer_by_name("myAuth.clean_expired_sessions").is_some());
+
+        // The explicit name need not resemble the accessor at all.
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("myAuth", "AuthLib");
+        root.add_explicit_names(explicit);
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+        let sub = def.submodules().get("AuthLib").expect("explicit canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.accessor_path().to_string(), "myAuth.");
+    }
+
+    /// Explicit namespace names are validated like any other identifier.
+    #[test]
+    fn submodule_namespace_explicit_name_must_be_valid() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("myAuth", "");
+        root.add_explicit_names(explicit);
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    /// `CaseConversionPolicy::None` keeps namespaces verbatim, like every other name.
+    #[test]
+    fn submodule_namespace_none_policy_keeps_source_name() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.set_case_conversion_policy(CaseConversionPolicy::None);
+        root.add_submodule("myAuth", sessions_submodule());
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        let sub = def.submodules().get("myAuth").expect("verbatim canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.path().to_string(), "myAuth.");
+    }
+
+    /// Two accessor namespaces that canonicalize to the same name are a duplicate.
+    #[test]
+    fn submodule_namespaces_colliding_after_conversion_are_rejected() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        root.add_submodule("my_auth", sessions_submodule());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            &name[..] == "my_auth"
+        });
+    }
+
+    /// Nested mounts carry both paths through every level.
+    #[test]
+    fn nested_submodule_namespaces_carry_both_paths() {
+        let mut outer = RawModuleDefV10Builder::new();
+        outer.add_submodule("myInner", sessions_submodule());
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myOuter", outer.finish());
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        let inner = def
+            .submodules()
+            .get("my_outer")
+            .and_then(|outer| outer.submodules().get("my_inner"))
+            .expect("nested submodule keyed by canonical names");
+        assert_eq!(inner.path().to_string(), "my_outer.my_inner.");
+        assert_eq!(inner.accessor_path().to_string(), "myOuter.myInner.");
+
+        let (prefix, owning, table) = def.all_tables_with_prefix().into_iter().next().expect("table");
+        assert_eq!(&*prefix.join(table.name.clone()), "my_outer.my_inner.sessions");
+        assert_eq!(
+            &*owning.accessor_path().join(table.accessor_name.clone()),
+            "myOuter.myInner.sessions"
+        );
+        assert!(def
+            .reducer_by_name("my_outer.my_inner.clean_expired_sessions")
+            .is_some());
+    }
+
+    /// Converting a `ModuleDef` back to a raw def and validating it again must preserve
+    /// both the canonical and the accessor namespace (the CLI does this for `describe`).
+    #[test]
+    fn submodule_namespaces_round_trip_through_raw_def() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        root.add_submodule("pinned", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("pinned", "PinnedLib");
+        root.add_explicit_names(explicit);
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        let raw: RawModuleDefV10 = def.into();
+        let def: ModuleDef = raw.try_into().expect("round-tripped def should validate");
+
+        let keys: Vec<_> = def.submodules().keys().map(|k| k.to_string()).collect();
+        assert_eq!(keys, ["my_auth", "PinnedLib"]);
+        assert_eq!(
+            def.submodules()["my_auth"].mount_accessor_name().map(|n| &**n),
+            Some("myAuth")
+        );
+        assert_eq!(
+            def.submodules()["PinnedLib"].mount_accessor_name().map(|n| &**n),
+            Some("pinned")
+        );
     }
 
     #[test]

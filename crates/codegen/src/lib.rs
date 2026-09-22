@@ -98,19 +98,20 @@ pub trait Lang {
 
     /// Generate a row-type file for a public table from a submodule.
     /// Uses `owning_def`'s typespace for type resolution.
-    /// Filename goes in a subdirectory named after the namespace:
-    /// e.g. `alias/table_name_table.ts` for namespace `"alias."`, table `tableName`.
+    /// Filename goes in a subdirectory named after the *accessor* namespace path:
+    /// e.g. `myLib/table_name_table.ts` for a submodule mounted as `myLib`, table `tableName`.
+    /// `namespace` is the canonical path, kept for languages that need it for wire names.
     fn generate_submodule_table_file(
         &self,
         owning_def: &ModuleDef,
-        namespace: &NamespacePath,
+        _namespace: &NamespacePath,
         table: &TableDef,
     ) -> OutputFile {
         let schema = TableSchema::from_module_def(owning_def, table, (), 0.into())
             .validated()
             .expect("Failed to generate submodule table file");
         let mut file = self.generate_table_file_from_schema(owning_def, table, schema);
-        let ns_path = namespace.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
@@ -120,7 +121,7 @@ pub trait Lang {
     fn generate_submodule_view_file(
         &self,
         owning_def: &ModuleDef,
-        namespace: &NamespacePath,
+        _namespace: &NamespacePath,
         view: &ViewDef,
     ) -> OutputFile {
         let tbl = TableDef::from(view.clone());
@@ -128,7 +129,7 @@ pub trait Lang {
             .validated()
             .expect("Failed to generate submodule view file");
         let mut file = self.generate_table_file_from_schema(owning_def, &tbl, schema);
-        let ns_path = namespace.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
@@ -138,11 +139,11 @@ pub trait Lang {
     fn generate_submodule_reducer_file(
         &self,
         owning_def: &ModuleDef,
-        prefix: &NamespacePath,
+        _prefix: &NamespacePath,
         reducer: &ReducerDef,
     ) -> OutputFile {
         let mut file = self.generate_reducer_file(owning_def, reducer);
-        let ns_path = prefix.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
@@ -152,11 +153,11 @@ pub trait Lang {
     fn generate_submodule_procedure_file(
         &self,
         owning_def: &ModuleDef,
-        prefix: &NamespacePath,
+        _prefix: &NamespacePath,
         procedure: &ProcedureDef,
     ) -> OutputFile {
         let mut file = self.generate_procedure_file(owning_def, procedure);
-        let ns_path = prefix.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }

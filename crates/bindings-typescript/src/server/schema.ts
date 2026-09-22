@@ -770,12 +770,42 @@ export interface ModuleSettings<
   CASE_CONVERSION_POLICY?: CaseConversionPolicy;
 }
 
+/**
+ * A submodule's module-namespace object, i.e. `import * as lib from 'lib'`.
+ * The default export is the submodule's schema; the other exports are its
+ * reducers, procedures, views and HTTP handlers.
+ */
 type SubmoduleNamespace = {
   default: Schema<any>;
   [key: string]: unknown;
 };
 
-type SchemaEntry = UntypedTableSchema | SubmoduleNamespace;
+/**
+ * A submodule mount that picks the canonical namespace name explicitly.
+ *
+ * The key the entry is registered under in `schema({ ... })` stays the accessor
+ * name used by module code and generated clients (`ctx.db.myAuth`), while `name`
+ * is stored verbatim as the namespace in the database (`myAuth.users` in SQL).
+ * Without `name`, the canonical namespace is derived from the key by the module's
+ * case conversion policy, e.g. `myAuth` becomes `my_auth`.
+ *
+ * @example
+ * ```ts
+ * import * as authLib from 'auth_lib';
+ * const spacetimedb = schema({
+ *   myAuth: { name: 'myAuth', module: authLib },
+ * });
+ * ```
+ */
+export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
+  {
+    /** The canonical namespace name stored in the database. */
+    name?: string;
+    /** The submodule's module-namespace object (`import * as lib from '...'`). */
+    module: M;
+  };
+
+type SchemaEntry = UntypedTableSchema | SubmoduleNamespace | SubmoduleMount;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
@@ -784,10 +814,19 @@ type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   >;
 };
 
+/** The submodule namespace object behind a schema entry, or `never` for tables. */
+type SubmoduleOfEntry<E> = E extends { default: Schema<any> }
+  ? E
+  : E extends { module: infer M extends { default: Schema<any> } }
+    ? M
+    : never;
+
 type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as H[K] extends { default: Schema<any> }
-    ? K
-    : never]: H[K] extends { default: Schema<infer S extends UntypedSchemaDef> }
+  [K in keyof H as [SubmoduleOfEntry<H[K]>] extends [never]
+    ? never
+    : K]: SubmoduleOfEntry<H[K]> extends {
+    default: Schema<infer S extends UntypedSchemaDef>;
+  }
     ? S
     : never;
 };
@@ -808,6 +847,63 @@ function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
     hasOwn(x, 'default') &&
     x.default instanceof Schema
   );
+}
+
+/**
+ * Whether `x` has the `{ name?, module }` shape of a {@link SubmoduleMount}.
+ * Checked after {@link isSubmoduleNamespace}, so a submodule that happens to
+ * export something called `module` is never mistaken for a mount wrapper.
+ */
+function isSubmoduleMount(x: unknown): x is SubmoduleMount {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'module') &&
+    !hasOwn(x, 'default') &&
+    !hasOwn(x, 'tableDef')
+  );
+}
+
+function defaultImportError(accName: string): TypeError {
+  return new TypeError(
+    `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
+  );
+}
+
+/**
+ * Resolves a schema entry to the submodule it mounts, or `undefined` for tables.
+ * Returns the module-namespace object and the explicit canonical name, if any.
+ */
+function resolveSubmoduleEntry(
+  accName: string,
+  entry: unknown
+): { submodule: SubmoduleNamespace; canonicalName?: string } | undefined {
+  if (entry instanceof Schema) {
+    throw defaultImportError(accName);
+  }
+  if (isSubmoduleNamespace(entry)) {
+    return { submodule: entry };
+  }
+  if (!isSubmoduleMount(entry)) {
+    return undefined;
+  }
+  if (entry.module instanceof Schema) {
+    throw defaultImportError(accName);
+  }
+  if (!isSubmoduleNamespace(entry.module)) {
+    throw new TypeError(
+      `schema entry '${accName}' has a \`module\` that is not a submodule namespace object; pass the result of \`import * as ${accName} from '...'\`.`
+    );
+  }
+  if (entry.name === undefined) {
+    return { submodule: entry.module };
+  }
+  if (typeof entry.name !== 'string' || entry.name.length === 0) {
+    throw new TypeError(
+      `schema entry '${accName}' has an invalid \`name\`; expected a non-empty string for the canonical namespace name.`
+    );
+  }
+  return { submodule: entry.module, canonicalName: entry.name };
 }
 
 function registerModuleExports(
@@ -851,22 +947,29 @@ export function schema<
 
     const tableSchemas: Record<string, UntypedTableDef> = {};
     for (const [accName, entry] of Object.entries(entries)) {
-      if (entry instanceof Schema) {
-        throw new TypeError(
-          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
-        );
-      }
-      if (isSubmoduleNamespace(entry)) {
+      const mount = resolveSubmoduleEntry(accName, entry);
+      if (mount !== undefined) {
+        const { submodule, canonicalName } = mount;
         const { rawDef, dispatch } =
-          entry.default.buildSubmoduleDispatch(entry);
+          submodule.default.buildSubmoduleDispatch(submodule);
+        // The key is the accessor namespace: module code and generated clients
+        // reach the submodule through it, and the runtime resolves its tables by
+        // it. The host derives the canonical namespace stored in the database
+        // from it, exactly as it does for table names, unless `name` pins one.
         dispatch.namespace = accName;
         ctx.addSubmodule({ namespace: accName, module: rawDef });
+        if (canonicalName !== undefined) {
+          ctx.moduleDef.explicitNames.entries.push({
+            tag: 'Namespace',
+            value: { sourceName: accName, canonicalName },
+          });
+        }
         ctx.submoduleDispatchInfos.push(dispatch);
         continue;
       }
       if (!isUntypedTableSchema(entry)) {
         throw new TypeError(
-          `schema entry '${accName}' must be a table or a submodule namespace object`
+          `schema entry '${accName}' must be a table, a submodule namespace object, or a \`{ name, module }\` submodule mount`
         );
       }
 
