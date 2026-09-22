@@ -26,8 +26,11 @@ function target(input: NativeInput) {
 }
 
 export function convexAdminKey(lease: BackendLease, exec: TextCommandExecutor = execFileSync): string {
-  const owned = target({ lease, exec });
-  const key = exec('docker', ['exec', owned.container, 'bash', './generate_admin_key.sh'],
+  return ownedAdminKey(target({ lease, exec }));
+}
+
+function ownedAdminKey(owned: ReturnType<typeof target>): string {
+  const key = owned.exec('docker', ['exec', owned.container, 'bash', './generate_admin_key.sh'],
     { encoding: 'utf8', stdio: 'pipe', timeout: TIMEOUT }).trim();
   if (!key || /[\r\n]/.test(key)) throw new Error('Convex admin credential is unavailable');
   return key;
@@ -46,7 +49,7 @@ export function convexApplicationEnvironment(lease: BackendLease): Record<string
 function admin(input: NativeInput) {
   const deadline = Date.now() + TIMEOUT;
   const owned = target(input);
-  const key = convexAdminKey(owned.lease, owned.exec);
+  const key = ownedAdminKey(owned);
   const post = (endpoint: string, body: unknown): string => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error('Convex native observation exceeded its time budget');

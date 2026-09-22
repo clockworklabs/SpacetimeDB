@@ -61,7 +61,7 @@ test('native order snapshots normalize only IDs and use the shared order oracle'
   const data = rows(), client = native(data);
   const result = getConvexCheckoutState({ account: 'buyer', item: 'Keyboard', lease, exec: client.exec,
     storage: { kind: 'order-data', cart: true, warehouses: true } });
-  assert.equal(result.state.accountId, 'account-native');
+  assert.equal(result.state.accountId, 'buyer');
   assert.equal(result.state.priceMinor, 1999);
   assert.equal(result.state.stock[0]!.quantity, 3);
   assert.throws(() => getConvexCheckoutState({ account: 'buyer', item: 'Keyboard', lease, exec: client.exec }),
