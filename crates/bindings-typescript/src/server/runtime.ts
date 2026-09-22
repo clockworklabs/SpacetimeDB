@@ -1345,11 +1345,17 @@ export function makeTableView(
     const numColumns = column_ids.length;
 
     const columnSet = new Set(column_ids);
+    // An index is unique only if its columns are exactly a unique constraint's
+    // columns. A proper subset is not: a prefix of a composite unique
+    // constraint can match many rows, so it needs the ranged accessors.
     const isUnique = table.constraints
       .filter(x => x.data.tag === 'Unique')
       .some(x => {
         const constraintColumns = new Set(x.data.value.columns);
-        return [...columnSet].every(column => constraintColumns.has(column));
+        return (
+          columnSet.size === constraintColumns.size &&
+          [...columnSet].every(column => constraintColumns.has(column))
+        );
       });
 
     const isPrimaryKey =
