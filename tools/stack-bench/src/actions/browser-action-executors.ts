@@ -38,7 +38,7 @@ interface Locator {
   or(locator: Locator): Locator;
   allInnerTexts(): Promise<string[]>;
   press(key: string): Promise<void>;
-  selectOption(value: string | { readonly label: string }): Promise<unknown>;
+  selectOption(value: string): Promise<unknown>;
   type(text: string, options?: unknown): Promise<void>;
   waitFor(options?: unknown): Promise<void>;
 }
@@ -296,10 +296,9 @@ async function fill({ input, capabilities, signal }: BrowserArguments<Interactio
   const tag = await loc.evaluate(element => element.tagName);
   if (tag === 'SELECT') {
     try {
-      await loc.selectOption(text).catch(async error => {
-        if (errorField(error, 'name') !== 'TimeoutError') throw error;
-        await loc.selectOption({ label: text });
-      });
+      // Playwright's string form matches either value or label. A label-only
+      // retry repeats the same wait when the option is missing or disabled.
+      await loc.selectOption(text);
     } catch (error) {
       if (errorField(error, 'name') !== 'TimeoutError') throw error;
       const options = await loc.evaluate(element => element.tagName === 'SELECT'
