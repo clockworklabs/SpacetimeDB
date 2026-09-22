@@ -160,3 +160,27 @@ test('campaign repair grant is idempotent only for the exact recorded marker', (
   }, { inspect: () => structuredClone(campaign), acquire: () => 'lock', release: () => {} }),
   /different continuation/);
 });
+
+test('replaying a grant after its continuation completed schedules nothing', () => {
+  const marker = { grantId: input.grantId, level: 1, nodeIds: ['accounts'], repairs: 2,
+    stateSha256: 'd'.repeat(64),
+    resumeFrom: 'continuations/campaign-r1-c1-a1-postgres/operator-grant-1',
+    scheduledAt: '2026-08-28T12:00:00.000Z' };
+  const campaign = campaignFixture({ marker });
+  const attempt = campaign.state.attempts[0]!;
+  attempt.status = 'completed';
+  attempt.executions.push({ id: `${attempt.plan.id}-execution2`, status: 'completed',
+    output: `attempts/${attempt.plan.id}/execution-2` });
+  let touched = false;
+  const options = {
+    inspect: () => structuredClone(campaign), acquire: () => 'lock', release: () => {},
+    prepareWorkspace: () => { touched = true; return { directory: 'x', relativePath: 'x', created: false }; },
+    grantState: () => { touched = true; return { stateSha256: 'e'.repeat(64) }; },
+    schedule: () => { touched = true; }, writeState: () => { touched = true; },
+  };
+  const result = grantCampaignDependencyRepairs('campaign-output', input, options);
+  assert.equal(touched, false);
+  assert.equal(result.execution, `attempts/${attempt.plan.id}/execution-1`);
+  assert.throws(() => grantCampaignDependencyRepairs('campaign-output', { ...input, repairs: 3 }, options),
+    /different continuation/);
+});

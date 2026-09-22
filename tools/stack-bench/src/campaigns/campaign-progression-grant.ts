@@ -247,13 +247,21 @@ export function grantCampaignDependencyRepairs(directory: string, input: unknown
     const execution = attempt.executions.at(-1);
     if (!execution) throw new Error(`campaign attempt ${desired.attemptId} has no execution`);
     const marker = execution.continuation;
-    if (marker !== undefined) {
-      const markedGrant = { grantId: marker.grantId, level: marker.level,
-        nodeIds: marker.nodeIds, repairs: marker.repairs };
+    // A grant already consumed by an earlier execution is replayed, not scheduled again.
+    const consumed = marker === undefined
+      ? attempt.executions.find(item => item.continuation?.grantId === desired.grantId) : undefined;
+    const recorded = marker ?? consumed?.continuation;
+    if (recorded !== undefined) {
+      const markedGrant = { grantId: recorded.grantId, level: recorded.level,
+        nodeIds: recorded.nodeIds, repairs: recorded.repairs };
       if (!sameGrant(markedGrant, {
         grantId: desired.grantId, level: desired.level,
         nodeIds: desired.nodeIds, repairs: desired.repairs,
       })) throw new Error(`campaign attempt ${desired.attemptId} has a different continuation`);
+      if (consumed) {
+        return { attemptId: desired.attemptId, execution: consumed.output, grant: markedGrant,
+          grantWorkspace: recorded.resumeFrom, stateSha256: recorded.stateSha256, scheduled: true };
+      }
     } else if (campaign.state.status !== 'completed' || attempt.status !== 'completed'
       || execution.status !== 'completed') {
       throw new Error('repair grants require one unextended completed campaign attempt');
