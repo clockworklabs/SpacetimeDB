@@ -935,6 +935,24 @@ public static class GeneratorSnapshotTests
                 var name = Assert.IsType<string>(field.GetValue(null));
                 Assert.StartsWith("cached.", name);
                 Assert.Same(name, field.GetValue(null));
+                if (type.BaseType!.Name != "ReadOnlyTableView`1")
+                {
+                    // Resolving a name above must not initialize a handle: this test has no host transaction.
+                    var owner = type.DeclaringType!;
+                    var accessor = Assert.Single(owner.GetProperties(System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                        .Where(property => property.PropertyType == type));
+                    var instance = owner.GetField("__" + accessor.Name, System.Reflection.BindingFlags.Static
+                        | System.Reflection.BindingFlags.NonPublic)!;
+                    Assert.True(instance.IsPrivate);
+                    Assert.False(instance.IsInitOnly);
+                    Assert.Equal(type, instance.FieldType);
+                    Assert.Null(instance.GetValue(null));
+                    Assert.Null(type.GetProperty("Instance", System.Reflection.BindingFlags.Static
+                        | System.Reflection.BindingFlags.NonPublic));
+                    Assert.Null(type.GetField("__Instance", System.Reflection.BindingFlags.Static
+                        | System.Reflection.BindingFlags.NonPublic));
+                }
             }
             foreach (var baseName in new[]
             {

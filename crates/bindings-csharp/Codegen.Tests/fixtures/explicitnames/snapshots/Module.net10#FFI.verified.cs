@@ -632,7 +632,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
             public global::DemoTable Update(global::DemoTable row) => DoUpdate(row);
         }
 
-        public IdUniqueIndex Id => new();
+        private static IdUniqueIndex? __Id;
+        public IdUniqueIndex Id => __Id ??= new();
 
         public sealed class ByIdIndex()
             : SpacetimeDB.Internal.IndexBase<global::DemoTable>(__resolvedName)
@@ -659,7 +660,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
                 DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
         }
 
-        public ByIdIndex ById => new();
+        private static ByIdIndex? __ById;
+        public ByIdIndex ById => __ById ??= new();
     }
 }
 
@@ -753,7 +755,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles
             public global::DemoTable? Find(int key) => FindSingle(key);
         }
 
-        public IdIndex Id => new();
+        private static IdIndex? __Id;
+        public IdIndex Id => __Id ??= new();
 
         public sealed class ByIdIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::DemoTable>
@@ -785,7 +788,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles
                 );
         }
 
-        public ByIdIndex ById => new();
+        private static ByIdIndex? __ById;
+        public ByIdIndex ById => __ById ??= new();
     }
 }
 
