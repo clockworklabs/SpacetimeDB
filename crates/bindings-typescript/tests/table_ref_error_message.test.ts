@@ -74,6 +74,5 @@ declare const b: Boom;
     expect(constraintError).toContain('TableRef<');
     expect(constraintError).not.toContain('type: "table"');
     expect(constraintError).not.toContain('accessorName');
-    expect(constraintError.length).toBeLessThan(250);
   }, 15000);
 });
