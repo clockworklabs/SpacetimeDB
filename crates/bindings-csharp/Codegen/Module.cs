@@ -515,6 +515,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             """
         : "";
 
+    private string IndexInstanceCache(string typeName, string identifier) => sharedContexts
+        ? $$"""
+            private static {{typeName}}? __{{identifier.TrimStart('@')}};
+            """
+        : "";
+
+    private string IndexInstance(string identifier) => sharedContexts
+        ? $"__{identifier.TrimStart('@')} ??= new()"
+        : "new()";
+
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
         var index = Members
@@ -618,7 +628,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     {{updateMethod}}
                 }
-                {{vis}} {{f.Identifier}}UniqueIndex {{f.Identifier}} => new();
+                {{IndexInstanceCache(f.Identifier + "UniqueIndex", f.Identifier)}}
+                {{vis}} {{f.Identifier}}UniqueIndex {{f.Identifier}} => {{IndexInstance(f.Identifier)}};
                 """;
         }
 
@@ -682,7 +693,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     """;
             }
 
-            yield return $"}}\n {vis} {identifierName}Index {identifierName} => new();\n";
+            yield return $"}}\n {IndexInstanceCache(identifierName + "Index", identifierName)}\n {vis} {identifierName}Index {identifierName} => {IndexInstance(identifierName)};\n";
         }
     }
 
@@ -719,7 +730,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public {{{globalName}}}? Find({{{f.Type.Name}}} key) => FindSingle(key);
                 }
 
-                public {{{f.Identifier}}}Index {{{f.Identifier}}} => new();
+                {{{IndexInstanceCache(f.Identifier + "Index", f.Identifier)}}}
+                public {{{f.Identifier}}}Index {{{f.Identifier}}} => {{{IndexInstance(f.Identifier)}}};
                 """;
         }
 
@@ -786,7 +798,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 );
             }
 
-            blocks.Add($"}}\n{vis} {identifierName}Index {identifierName} => new();");
+            blocks.Add($"}}\n{IndexInstanceCache(identifierName + "Index", identifierName)}\n{vis} {identifierName}Index {identifierName} => {IndexInstance(identifierName)};");
             yield return string.Join("\n", blocks);
         }
     }

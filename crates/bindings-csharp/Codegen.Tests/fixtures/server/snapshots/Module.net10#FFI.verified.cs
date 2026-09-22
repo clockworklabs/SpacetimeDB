@@ -1896,7 +1896,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 );
         }
 
-        internal LocationIndex Location => new();
+        private static LocationIndex? __Location;
+        internal LocationIndex Location => __Location ??= new();
     }
 
     internal readonly struct BTreeViews
@@ -2007,7 +2008,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
             public global::BTreeViews Update(global::BTreeViews row) => DoUpdate(row);
         }
 
-        internal IdUniqueIndex Id => new();
+        private static IdUniqueIndex? __Id;
+        internal IdUniqueIndex Id => __Id ??= new();
 
         internal sealed class LocationIndex()
             : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(__resolvedName)
@@ -2076,7 +2078,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 );
         }
 
-        internal LocationIndex Location => new();
+        private static LocationIndex? __Location;
+        internal LocationIndex Location => __Location ??= new();
 
         internal sealed class FactionIndex()
             : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(__resolvedName)
@@ -2121,7 +2124,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 );
         }
 
-        internal FactionIndex Faction => new();
+        private static FactionIndex? __Faction;
+        internal FactionIndex Faction => __Faction ??= new();
     }
 
     public readonly struct MultiTable1
@@ -2241,7 +2245,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
             public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
         }
 
-        public FooUniqueIndex Foo => new();
+        private static FooUniqueIndex? __Foo;
+        public FooUniqueIndex Foo => __Foo ??= new();
 
         public sealed class NameIndex()
             : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(__resolvedName)
@@ -2286,7 +2291,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 );
         }
 
-        public NameIndex Name => new();
+        private static NameIndex? __Name;
+        public NameIndex Name => __Name ??= new();
     }
 
     public readonly struct MultiTable2
@@ -2399,7 +2405,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
 
-        public BarUniqueIndex Bar => new();
+        private static BarUniqueIndex? __Bar;
+        public BarUniqueIndex Bar => __Bar ??= new();
     }
 
     public readonly struct PrivateTable
@@ -2572,7 +2579,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
             public global::PublicTable Update(global::PublicTable row) => DoUpdate(row);
         }
 
-        public IdUniqueIndex Id => new();
+        private static IdUniqueIndex? __Id;
+        public IdUniqueIndex Id => __Id ??= new();
     }
 
     internal readonly struct RegressionMultipleUniqueIndexesHadSameName
@@ -2703,7 +2711,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 FindSingle(key);
         }
 
-        internal Unique1UniqueIndex Unique1 => new();
+        private static Unique1UniqueIndex? __Unique1;
+        internal Unique1UniqueIndex Unique1 => __Unique1 ??= new();
 
         internal sealed class Unique2UniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -2732,7 +2741,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 FindSingle(key);
         }
 
-        internal Unique2UniqueIndex Unique2 => new();
+        private static Unique2UniqueIndex? __Unique2;
+        internal Unique2UniqueIndex Unique2 => __Unique2 ??= new();
     }
 
     public readonly struct SendMessageTimer
@@ -2863,7 +2873,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 DoUpdate(row);
         }
 
-        public ScheduledIdUniqueIndex ScheduledId => new();
+        private static ScheduledIdUniqueIndex? __ScheduledId;
+        public ScheduledIdUniqueIndex ScheduledId => __ScheduledId ??= new();
     }
 }
 
@@ -3108,7 +3119,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 );
         }
 
-        internal LocationIndex Location => new();
+        private static LocationIndex? __Location;
+        internal LocationIndex Location => __Location ??= new();
     }
 
     internal sealed class BTreeViewsReadOnly
@@ -3157,7 +3169,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
             public global::BTreeViews? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
 
-        public IdIndex Id => new();
+        private static IdIndex? __Id;
+        public IdIndex Id => __Id ??= new();
 
         public sealed class LocationIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeViews>
@@ -3211,7 +3224,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 );
         }
 
-        internal LocationIndex Location => new();
+        private static LocationIndex? __Location;
+        internal LocationIndex Location => __Location ??= new();
 
         public sealed class FactionIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeViews>
@@ -3247,7 +3261,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 );
         }
 
-        internal FactionIndex Faction => new();
+        private static FactionIndex? __Faction;
+        internal FactionIndex Faction => __Faction ??= new();
     }
 
     public sealed class MultiTable1ReadOnly
@@ -3296,7 +3311,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
 
-        public FooIndex Foo => new();
+        private static FooIndex? __Foo;
+        public FooIndex Foo => __Foo ??= new();
 
         public sealed class NameIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::MultiTableRow>
@@ -3332,7 +3348,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 );
         }
 
-        public NameIndex Name => new();
+        private static NameIndex? __Name;
+        public NameIndex Name => __Name ??= new();
     }
 
     public sealed class MultiTable2ReadOnly
@@ -3381,7 +3398,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
 
-        public BarIndex Bar => new();
+        private static BarIndex? __Bar;
+        public BarIndex Bar => __Bar ??= new();
     }
 
     public sealed class PrivateTableReadOnly
@@ -3454,7 +3472,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
             public global::PublicTable? Find(int key) => FindSingle(key);
         }
 
-        public IdIndex Id => new();
+        private static IdIndex? __Id;
+        public IdIndex Id => __Id ??= new();
     }
 
     internal sealed class RegressionMultipleUniqueIndexesHadSameNameReadOnly
@@ -3504,7 +3523,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 FindSingle(key);
         }
 
-        public Unique1Index Unique1 => new();
+        private static Unique1Index? __Unique1;
+        public Unique1Index Unique1 => __Unique1 ??= new();
 
         public sealed class Unique2Index
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -3530,7 +3550,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 FindSingle(key);
         }
 
-        public Unique2Index Unique2 => new();
+        private static Unique2Index? __Unique2;
+        public Unique2Index Unique2 => __Unique2 ??= new();
     }
 
     public sealed class SendMessageTimerReadOnly
@@ -3579,7 +3600,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
             public global::Timers.SendMessageTimer? Find(ulong key) => FindSingle(key);
         }
 
-        public ScheduledIdIndex ScheduledId => new();
+        private static ScheduledIdIndex? __ScheduledId;
+        public ScheduledIdIndex ScheduledId => __ScheduledId ??= new();
     }
 }
 

@@ -90,7 +90,15 @@ public static partial class Functions
         ctx.Env.Get("NAMESPACE_TEST") ?? "unset";
 
     [View(Accessor = "Users", Public = true)]
-    public static User? Users(ViewContext ctx) => ctx.Db.User.Id.Find(2);
+    public static User? Users(ViewContext ctx)
+    {
+        if (
+            !ReferenceEquals(ctx.Db.User.Id, ctx.Db.User.Id)
+            || !ReferenceEquals(ctx.Db.User.ByScore, ctx.Db.User.ByScore)
+        )
+            throw new Exception("Read-only index handles must be reused.");
+        return ctx.Db.User.Id.Find(2);
+    }
 
     [View(Accessor = "AnonymousUsers", Public = true)]
     public static User? AnonymousUsers(AnonymousViewContext ctx) => ctx.Db.User.Id.Find(2);
