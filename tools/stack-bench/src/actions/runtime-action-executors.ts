@@ -778,8 +778,10 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
   }
   let connections: { closed: number; open: string[] } | undefined;
   if (offline) {
-    await actor.page.context().setOffline(true);
+    // Cut before emulating offline: emulation holds socket events, including the close
+    // the proof waits for. The proxy refuses new connections from the cut on.
     connections = await actor.networkInterruption.interrupt();
+    await actor.page.context().setOffline(true);
     if (connections.open.length) {
       inconclusive('network-not-interrupted', { actor: input.actor,
         detail: `still open after the interruption: ${connections.open.slice(0, 3).join('; ')}` });
