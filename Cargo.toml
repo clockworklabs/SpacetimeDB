@@ -45,6 +45,7 @@ members = [
   "modules/benchmarks",
   "modules/keynote-benchmarks",
   "modules/perf-test",
+  "modules/scoped-views-bench",
   "modules/module-test",
   "modules/environment-test",
   "templates/basic-rs/spacetimedb",

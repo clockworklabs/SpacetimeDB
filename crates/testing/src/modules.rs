@@ -65,9 +65,21 @@ pub struct ModuleHandle {
     pub client: ClientConnection,
     receiver: ClientConnectionReceiver,
     pub db_identity: Identity,
+    replica_id: u64,
+    module_rx: tokio::sync::watch::Receiver<ModuleHost>,
 }
 
 impl ModuleHandle {
+    /// Connect another in-process client to the module, as `identity`.
+    pub fn connect(&self, identity: Identity, config: ClientConfig) -> (ClientConnection, ClientConnectionReceiver) {
+        let client_id = ClientActorId {
+            identity,
+            connection_id: generate_random_connection_id(),
+            name: self.env.client_actor_index().next_client_name(),
+        };
+        ClientConnection::dummy_with_receiver(client_id, config, self.replica_id, self.module_rx.clone())
+    }
+
     /// Publish a complete configuration through the standalone control API.
     pub async fn republish_environment(
         &self,
@@ -454,13 +466,15 @@ impl CompiledModule {
         // the runtime on which a module was created and then we could add impl
         // for stuff like "get logs" or "get message log"
         let (client, receiver) =
-            ClientConnection::dummy_with_receiver(client_id, ClientConfig::for_test(), instance.id, module_rx);
+            ClientConnection::dummy_with_receiver(client_id, ClientConfig::for_test(), instance.id, module_rx.clone());
 
         ModuleHandle {
             env,
             client,
             receiver,
             db_identity,
+            replica_id: instance.id,
+            module_rx,
         }
     }
 }
