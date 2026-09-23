@@ -838,9 +838,7 @@ function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
 }
 
 /**
- * Whether `x` has the `{ name?, module }` shape of a {@link SubmoduleMount}.
- * Checked after {@link isSubmoduleNamespace}, so a submodule that happens to
- * export something called `module` is never mistaken for a mount wrapper.
+ * Whether `x` has the `{ name?, module }` shape.
  */
 function isSubmoduleMount(x: unknown): x is SubmoduleMount {
   return (
