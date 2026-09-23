@@ -36,6 +36,7 @@ futures.workspace = true
 [dev-dependencies]
 env_logger.workspace = true
 serial_test.workspace = true
+spacetimedb-datastore.workspace = true
 
 [lints]
 workspace = true
