@@ -88,6 +88,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
+    let scoped_views = def.scoped_views().cloned().unwrap_or_default();
     let submodules = validate_submodules(def.submodules().into_iter().flat_map(|s| s.iter().cloned()).collect());
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
@@ -279,6 +280,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
                 attach_view_primary_keys(&mut views, view_primary_keys)?;
+                attach_view_scopes(&mut views, scoped_views)?;
                 assign_query_view_primary_keys(&tables, &mut views);
 
                 Ok((tables, types, reducers, procedures, views, http_handlers_and_routes))
@@ -995,6 +997,7 @@ impl<'a> ModuleValidatorV10<'a> {
             primary_key: None,
             return_columns,
             param_columns,
+            scope: None,
         })
     }
 }
@@ -1129,6 +1132,70 @@ fn attach_view_primary_keys(
         // Store the resolved column id on the canonical view definition. Later
         // schema construction and codegen use this just like a table primary key.
         view.primary_key = Some(column.col_id);
+    }
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
+}
+
+/// Attach scope metadata from the raw V10 `ScopedViews` section to validated [`ViewDef`]s.
+///
+/// Like `ViewPrimaryKeys`, entries refer to views by source/accessor name.
+/// A scoped view must be anonymous and take exactly one parameter, the scope key.
+/// Resolver indices must be unique and form the contiguous range `0..n`,
+/// as they index into the module's list of scope resolvers.
+fn attach_view_scopes(views: &mut IndexMap<Identifier, ViewDef>, scoped_views: Vec<RawScopedViewDefV10>) -> Result<()> {
+    let mut errors = Vec::new();
+    let mut seen = Vec::new();
+    let mut resolver_indices = Vec::new();
+
+    for scoped_view in scoped_views {
+        let RawScopedViewDefV10 {
+            view_source_name,
+            resolver_index,
+        } = scoped_view;
+
+        if seen.contains(&view_source_name) {
+            errors.push(ValidationError::RepeatedViewScope {
+                view: view_source_name.clone(),
+            });
+            continue;
+        }
+        seen.push(view_source_name.clone());
+        resolver_indices.push(resolver_index);
+
+        let Some(view) = views
+            .values_mut()
+            .find(|view| view.accessor_name.as_raw() == &view_source_name)
+        else {
+            errors.push(ValidationError::ScopedViewNotFound { view: view_source_name });
+            continue;
+        };
+
+        if !view.is_anonymous {
+            errors.push(ValidationError::ScopedViewNotAnonymous { view: view_source_name });
+            continue;
+        }
+
+        let num_params = view.params.elements.len();
+        if num_params != 1 {
+            errors.push(ValidationError::ScopedViewInvalidParams {
+                view: view_source_name,
+                num_params,
+            });
+            continue;
+        }
+
+        view.scope = Some(ViewScopeDef {
+            resolver_fn_ptr: resolver_index.into(),
+        });
+    }
+
+    let mut sorted_indices = resolver_indices.clone();
+    sorted_indices.sort_unstable();
+    if sorted_indices.iter().enumerate().any(|(i, idx)| *idx as usize != i) {
+        errors.push(ValidationError::InvalidScopeResolverIndices {
+            indices: resolver_indices,
+        });
     }
 
     ValidationErrors::add_extra_errors(Ok(()), errors)
@@ -2894,5 +2961,143 @@ mod environment_tests {
         };
         assert!(validate(empty).is_ok());
         assert!(validate(declared("INVALID-NAME")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod scoped_view_tests {
+    use super::*;
+    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_sats::{AlgebraicType, ProductType};
+
+    /// Build a module with a `Message` return type and the given views.
+    ///
+    /// Each view is `(source name, is_anonymous, params)`.
+    fn module_with_views(views: &[(&str, bool, ProductType)]) -> RawModuleDefV10Builder {
+        let mut builder = RawModuleDefV10Builder::new();
+        let message_ref = builder.add_algebraic_type(
+            [],
+            "Message",
+            AlgebraicType::product([("team_id", AlgebraicType::U64), ("text", AlgebraicType::String)]),
+            true,
+        );
+        let mut num_anon = 0;
+        let mut num_sender = 0;
+        for (name, is_anonymous, params) in views {
+            let index = if *is_anonymous { &mut num_anon } else { &mut num_sender };
+            builder.add_view(
+                RawIdentifier::new(name.to_string()),
+                *index,
+                true,
+                *is_anonymous,
+                params.clone(),
+                AlgebraicType::array(AlgebraicType::Ref(message_ref)),
+            );
+            *index += 1;
+        }
+        builder
+    }
+
+    fn team_key() -> ProductType {
+        ProductType::from([("team_id", AlgebraicType::U64)])
+    }
+
+    #[test]
+    fn scoped_view_is_attached() {
+        let mut builder = module_with_views(&[
+            ("global", true, ProductType::unit()),
+            ("team_chat", true, team_key()),
+            ("mine", false, ProductType::unit()),
+        ]);
+        builder.add_scoped_view("team_chat", 0);
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+
+        let team_chat = def.view("team_chat").unwrap();
+        assert_eq!(team_chat.scope.map(|s| s.resolver_fn_ptr), Some(0.into()));
+        assert_eq!(team_chat.instancing(), ViewInstancing::Scoped);
+        assert_eq!(team_chat.scope_key_type(), Some(&AlgebraicType::U64));
+        assert_eq!(def.view("global").unwrap().instancing(), ViewInstancing::Global);
+        assert_eq!(def.view("mine").unwrap().instancing(), ViewInstancing::PerSender);
+        assert_eq!(def.scope_resolver_count(), 1);
+        assert_eq!(def.scope_resolver_global_fn_ptr("team_chat"), Some(0.into()));
+        assert_eq!(def.scope_resolver_global_fn_ptr("global"), None);
+    }
+
+    #[test]
+    fn scoped_view_round_trips_through_raw_def() {
+        let mut builder = module_with_views(&[("team_chat", true, team_key())]);
+        builder.add_scoped_view("team_chat", 0);
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+
+        let raw = RawModuleDefV10::from(def.clone());
+        assert_eq!(raw.scoped_views().map(|s| s.len()), Some(1));
+
+        let round_tripped: ModuleDef = raw.try_into().unwrap();
+        assert_eq!(
+            round_tripped.view("team_chat").unwrap().scope,
+            def.view("team_chat").unwrap().scope
+        );
+    }
+
+    #[test]
+    fn modules_without_scoped_views_emit_no_scoped_views_section() {
+        let builder = module_with_views(&[("global", true, ProductType::unit())]);
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        assert!(RawModuleDefV10::from(def).scoped_views().is_none());
+    }
+
+    #[test]
+    fn scoped_view_not_found() {
+        let mut builder = module_with_views(&[]);
+        builder.add_scoped_view("missing", 0);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ScopedViewNotFound { view } => &view[..] == "missing");
+    }
+
+    #[test]
+    fn scoped_view_must_be_anonymous() {
+        let mut builder = module_with_views(&[("mine", false, team_key())]);
+        builder.add_scoped_view("mine", 0);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ScopedViewNotAnonymous { view } => &view[..] == "mine");
+    }
+
+    #[test]
+    fn scoped_view_must_take_one_param() {
+        let two_params = ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]);
+        let mut builder = module_with_views(&[("no_key", true, ProductType::unit()), ("two_keys", true, two_params)]);
+        builder.add_scoped_view("no_key", 0);
+        builder.add_scoped_view("two_keys", 1);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(
+            result,
+            ValidationError::ScopedViewInvalidParams { view, num_params } => &view[..] == "no_key" && *num_params == 0
+        );
+        expect_error_matching!(
+            result,
+            ValidationError::ScopedViewInvalidParams { view, num_params } => &view[..] == "two_keys" && *num_params == 2
+        );
+    }
+
+    #[test]
+    fn scoped_view_repeated() {
+        let mut builder = module_with_views(&[("team_chat", true, team_key())]);
+        builder.add_scoped_view("team_chat", 0);
+        builder.add_scoped_view("team_chat", 1);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::RepeatedViewScope { view } => &view[..] == "team_chat");
+    }
+
+    #[test]
+    fn scope_resolver_indices_must_be_dense() {
+        let mut builder = module_with_views(&[("a", true, team_key()), ("b", true, team_key())]);
+        builder.add_scoped_view("a", 0);
+        builder.add_scoped_view("b", 2);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(
+            result,
+            ValidationError::InvalidScopeResolverIndices { indices } => indices == &[0, 2]
+        );
     }
 }

@@ -105,6 +105,16 @@ pub enum ValidationError {
     },
     #[error("Primary key column {column} for view {view} not found")]
     ViewPrimaryKeyColumnNotFound { view: RawIdentifier, column: RawIdentifier },
+    #[error("View {view} referenced by scope definition not found")]
+    ScopedViewNotFound { view: RawIdentifier },
+    #[error("View {view} has multiple scope definitions")]
+    RepeatedViewScope { view: RawIdentifier },
+    #[error("Scoped view {view} must be anonymous, i.e. take an `AnonymousViewContext`")]
+    ScopedViewNotAnonymous { view: RawIdentifier },
+    #[error("Scoped view {view} must take exactly one parameter, the scope key, but takes {num_params}")]
+    ScopedViewInvalidParams { view: RawIdentifier, num_params: usize },
+    #[error("Scope resolver indices must be unique and contiguous from 0, but got {indices:?}")]
+    InvalidScopeResolverIndices { indices: Vec<u32> },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,

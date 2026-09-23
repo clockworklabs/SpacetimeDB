@@ -68,6 +68,24 @@ pub trait Schema: Sized {
 pub struct ViewDefInfo {
     pub view_id: ViewId,
     pub is_anonymous: bool,
+    /// Is this a scoped view, materialized once per scope key?
+    ///
+    /// This is not stored explicitly in the system tables.
+    /// Rather, a view is scoped iff it is anonymous and takes parameters,
+    /// the only parameter being the scope key.
+    /// See [`ViewDefInfo::infer_is_scoped`].
+    pub is_scoped: bool,
+}
+
+impl ViewDefInfo {
+    /// Infer whether a view is scoped from its persisted attributes.
+    ///
+    /// Scoped views are the only anonymous views which take parameters.
+    /// Should an anonymous view with parameters but without a scope ever exist,
+    /// treating it as scoped fails closed: with no scope resolver, no rows are selected.
+    pub fn infer_is_scoped(is_anonymous: bool, has_params: bool) -> bool {
+        is_anonymous && has_params
+    }
 }
 
 pub const VIEW_ARG_HASH_COL: ColId = ColId(0);
@@ -100,9 +118,16 @@ impl TableOrViewSchema {
         self.view_info.is_some()
     }
 
-    /// Is this schema that of an anonymous view?
+    /// Is this schema that of an anonymous view, materialized once for all callers?
     pub fn is_anonymous_view(&self) -> bool {
-        self.view_info.as_ref().is_some_and(|view_info| view_info.is_anonymous)
+        self.view_info
+            .as_ref()
+            .is_some_and(|view_info| view_info.is_anonymous && !view_info.is_scoped)
+    }
+
+    /// Is this schema that of a scoped view, materialized once per scope key?
+    pub fn is_scoped_view(&self) -> bool {
+        self.view_info.as_ref().is_some_and(|view_info| view_info.is_scoped)
     }
 
     /// Returns the [`TableSchema`] of the underlying datastore table.
@@ -276,9 +301,21 @@ impl TableSchema {
         self.view_info.is_some()
     }
 
-    /// Is this the backing table for an anonymous view?
+    /// Is this the backing table for an anonymous view, materialized once for all callers?
     pub fn is_anonymous_view(&self) -> bool {
-        self.view_info.as_ref().is_some_and(|view_info| view_info.is_anonymous)
+        self.view_info
+            .as_ref()
+            .is_some_and(|view_info| view_info.is_anonymous && !view_info.is_scoped)
+    }
+
+    /// Is this the backing table for a scoped view, materialized once per scope key?
+    pub fn is_scoped_view(&self) -> bool {
+        self.view_info.as_ref().is_some_and(|view_info| view_info.is_scoped)
+    }
+
+    /// Is this the backing table for a view materialized once per caller identity?
+    pub fn is_sender_view(&self) -> bool {
+        self.view_info.as_ref().is_some_and(|view_info| !view_info.is_anonymous)
     }
 
     /// How many private columns does this table have?
@@ -837,6 +874,7 @@ impl TableSchema {
             primary_key,
             return_columns,
             accessor_name,
+            params,
             ..
         } = view_def;
 
@@ -910,6 +948,7 @@ impl TableSchema {
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
             is_anonymous: *is_anonymous,
+            is_scoped: ViewDefInfo::infer_is_scoped(*is_anonymous, !params.elements.is_empty()),
         };
 
         TableSchema::new(

@@ -51,6 +51,23 @@ export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
 });
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
+// The tagged union or sum type for the algebraic type `EnvVarType`.
+export const EnvVarType = __t.enum('EnvVarType', {
+  String: __t.unit(),
+  StringLiteral: __t.string(),
+  Union: __t.array(__t.string()),
+});
+export type EnvVarType = __Infer<typeof EnvVarType>;
+
+export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
+  name: __t.string(),
+  get ty() {
+    return EnvVarType;
+  },
+  optional: __t.bool(),
+});
+export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
+
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
 export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Table() {
@@ -396,34 +413,11 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get Environment() {
     return __t.array(EnvironmentDeclaration);
   },
+  get ScopedViews() {
+    return __t.array(RawScopedViewDefV10);
+  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
-
-export const EnvVarType = __t.enum('EnvVarType', {
-  get String() {
-    return __t.unit();
-  },
-  get StringLiteral() {
-    return __t.string();
-  },
-  get Union() {
-    return __t.array(__t.string());
-  },
-});
-export type EnvVarType = __Infer<typeof EnvVarType>;
-
-export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
-  get name() {
-    return __t.string();
-  },
-  get ty() {
-    return EnvVarType;
-  },
-  get optional() {
-    return __t.bool();
-  },
-});
-export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {
@@ -547,6 +541,12 @@ export const RawScopedTypeNameV9 = __t.object('RawScopedTypeNameV9', {
   name: __t.string(),
 });
 export type RawScopedTypeNameV9 = __Infer<typeof RawScopedTypeNameV9>;
+
+export const RawScopedViewDefV10 = __t.object('RawScopedViewDefV10', {
+  viewSourceName: __t.string(),
+  resolverIndex: __t.u32(),
+});
+export type RawScopedViewDefV10 = __Infer<typeof RawScopedViewDefV10>;
 
 export const RawSequenceDefV10 = __t.object('RawSequenceDefV10', {
   sourceName: __t.option(__t.string()),
