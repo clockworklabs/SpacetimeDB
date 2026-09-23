@@ -11,7 +11,7 @@ TABLES
     - groupId: number (u64, primary key, autoInc)
     - title: string
 
-- membership
+- membership (public)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - userId: number (u64)

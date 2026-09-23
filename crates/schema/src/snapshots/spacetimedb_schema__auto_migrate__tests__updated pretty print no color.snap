@@ -9,7 +9,7 @@ Database Migration Plan
 ▸ Removed index Apples_id_name_idx_btree on [id, name] of table Apples
 ▸ Removed unique constraint Apples_id_key on [id] of table Apples
 ▸ Removed auto-increment constraint Apples_id_seq on column id of table Apples
-▸ Removed schedule for table Deliveries_sched calling reducer check_deliveries
+▸ Removed schedule for table Deliveries calling reducer check_deliveries
 ▸ ▸ Removed anonymous view: my_view
     Parameters:
         • x: U32
@@ -38,7 +38,7 @@ Database Migration Plan
 
 ▸ Created index Apples_id_count_idx_btree on [id, count] of table Apples
 ▸ Created auto-increment constraint Bananas_id_seq on column id of table Bananas
-▸ Created schedule for table Inspections_sched calling reducer perform_inspection
+▸ Created schedule for table Inspections calling reducer perform_inspection
 ▸ ▸ Created anonymous view: my_view
     Parameters:
         • x: U32

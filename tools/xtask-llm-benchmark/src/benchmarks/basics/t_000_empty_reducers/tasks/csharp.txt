@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines a table and these five empty reducers.
 
 TABLES
-- EmptyTable
+- EmptyTable (private)
   - Struct: EmptyTable
   - Fields:
     - Id: int (primary key)

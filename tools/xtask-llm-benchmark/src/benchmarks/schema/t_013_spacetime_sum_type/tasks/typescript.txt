@@ -9,7 +9,7 @@ TYPES
   - rectangle: Rect
 
 TABLE
-- result
+- result (public)
   - Fields:
     - id: number (i32, primary key)
     - value: Shape

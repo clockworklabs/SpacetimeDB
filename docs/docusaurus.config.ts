@@ -3,6 +3,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 import rehypeShiki, { RehypeShikiOptions } from '@shikijs/rehype';
 import bash from 'shiki/langs/bash.mjs';
 import c from 'shiki/langs/c.mjs';
+import cmake from 'shiki/langs/cmake.mjs';
 import csharp from 'shiki/langs/csharp.mjs';
 import fsharp from 'shiki/langs/fsharp.mjs';
 import json from 'shiki/langs/json.mjs';
@@ -20,6 +21,7 @@ import systemd from 'shiki/langs/systemd.mjs';
 import ogTheme from 'shiki/themes/dracula.mjs';
 import cpp from 'shiki/langs/cpp.mjs';
 import { InkeepConfig } from '@inkeep/cxkit-docusaurus';
+import { redirects } from './redirects';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -158,6 +160,7 @@ const config: Config = {
                   toml,
                   python,
                   c,
+                  cmake,
                   cpp,
                   protobuf,
                   fsharp,
@@ -181,11 +184,11 @@ const config: Config = {
   themeConfig: {
     navbar: {
       logo: {
-        alt: 'SpacetimeDB Logo',
-        src: '/images/brand.svg',
+        alt: 'Spacetime Logo',
+        src: 'https://spacetimedb.com/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
-        width: 152,
+        width: 133,
         height: 32,
       },
       hideOnScroll: false,
@@ -233,6 +236,12 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
 
   plugins: [
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        redirects,
+      },
+    ],
     [
       '@inkeep/cxkit-docusaurus',
       {

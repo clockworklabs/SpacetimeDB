@@ -24,12 +24,16 @@ use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
+
+/// Env reads may retain at most 2 MiB of value bytes outside the Wasm heap.
+/// Other outstanding byte sources count against this interface's handle limit.
+const MAX_OUTSTANDING_ENV_SOURCES: usize = 256;
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
@@ -253,7 +257,14 @@ impl WasmInstanceEnv {
         // This allows the module to avoid allocating and make a system call in those cases.
         if bytes.is_empty() {
             Ok(BytesSourceId::INVALID)
-        } else if bytes.len() > u32::MAX as usize {
+        } else {
+            self.create_present_bytes_source(bytes)
+        }
+    }
+
+    /// Allocate a valid source even for an empty value when zero means absence.
+    fn create_present_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        if bytes.len() > u32::MAX as usize {
             // There's no inherent reason we need to error here,
             // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
             // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
@@ -287,7 +298,9 @@ impl WasmInstanceEnv {
         self.mem = Some(mem);
     }
 
-    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def)
     }
 
@@ -333,7 +346,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: Identifier,
+        name: NamespacedIdentifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -368,6 +381,7 @@ impl WasmInstanceEnv {
     ///
     /// This resets the call times and clears the arguments source and error sink.
     pub fn finish_funcall(&mut self, result_sink: u32) -> (ExecutionTimings, Vec<u8>) {
+        self.instance_env.finish_funcall();
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
@@ -1572,6 +1586,34 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Read an environment value as a nullable BytesSource. Zero means missing;
+    /// a present empty string always receives a nonzero, consumable source.
+    pub fn env_get(
+        caller: Caller<'_, Self>,
+        key: WasmPtr<u8>,
+        key_len: u32,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::EnvGet, target_ptr, |caller| {
+            if key_len == 0 || key_len > spacetimedb_lib::environment::MAX_ENV_KEY_BYTES as u32 {
+                return Err(crate::error::NodesError::InvalidEnvironmentKey.into());
+            }
+            let (mem, env) = Self::mem_env(caller);
+            let key = mem.deref_str(key, key_len)?;
+            match env.instance_env.env_get(key)? {
+                None => Ok(0),
+                Some(value) => {
+                    // These buffers live on the host heap until consumed or the
+                    // invocation ends. Bound retained reads from hand-written Wasm.
+                    if env.bytes_sources.len() >= MAX_OUTSTANDING_ENV_SOURCES {
+                        return Err(crate::error::NodesError::EnvironmentSourceLimit.into());
+                    }
+                    Ok(env.create_present_bytes_source(bytes::Bytes::from(value))?.0)
+                }
+            }
+        })
+    }
+
     /// Finds the JWT payload associated with `connection_id`.
     /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
     /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
@@ -1775,16 +1817,28 @@ impl WasmInstanceEnv {
 
                 let table_id = resolved.table_id;
                 let view_def = resolved.view_def;
-                let view_name = &view_def.name;
-                let fn_ptr = view_def.fn_ptr;
+                let view_name = &resolved.view_name;
+                let fn_ptr = resolved.global_fn_ptr;
+                let sender = tx
+                    .as_ref()
+                    .expect("procedure tx missing while looking up refreshed view args")
+                    .view_instance_args(&view_call)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "failed to look up materialized view args for view {}",
+                            view_call.view_id
+                        )
+                    })?
+                    .sender();
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
-                let (next_tx, call_result) =
-                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, view_name, fn_ptr));
+                let (next_tx, call_result) = tx_slot.set(current_tx, || {
+                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender)
+                });
                 tx = Some(next_tx);
                 let return_data = call_result?;
 
-                let typespace = module_def.typespace();
+                let typespace = resolved.owning_def.typespace();
                 let row_product_type = typespace
                     .resolve(view_def.product_type_ref)
                     .resolve_refs()?
@@ -1834,13 +1888,14 @@ impl WasmInstanceEnv {
     fn call_view<'a>(
         caller: &mut Caller<'a, Self>,
         view_call: &ViewCallInfo,
-        view_name: &Identifier,
+        view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
+        sender: Option<Identity>,
     ) -> anyhow::Result<ViewReturnData> {
-        let prev_func_type = caller
+        let (prev_func_name, prev_func_type) = caller
             .data_mut()
             .instance_env
-            .swap_func_type(FuncCallType::View(view_call.clone()));
+            .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
 
         let mut nested_result_sink = None;
         let call_result = (|| -> anyhow::Result<i32> {
@@ -1863,7 +1918,7 @@ impl WasmInstanceEnv {
                 call_view_anon,
                 view_name,
                 fn_ptr.0,
-                view_call.sender,
+                sender,
                 args_source.0,
                 result_sink,
                 true,
@@ -1872,7 +1927,10 @@ impl WasmInstanceEnv {
             Ok(code)
         })();
 
-        caller.data_mut().instance_env.swap_func_type(prev_func_type);
+        caller
+            .data_mut()
+            .instance_env
+            .swap_func_context(prev_func_name, prev_func_type);
 
         let result_bytes = {
             let env = caller.data_mut();

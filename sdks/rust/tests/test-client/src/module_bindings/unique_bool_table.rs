@@ -18,6 +18,18 @@ pub struct UniqueBoolTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `unique_bool`.
+pub struct UniqueBoolTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for UniqueBoolTableAccessor {
+    type Row = UniqueBool;
+    type Handle<'db> = UniqueBoolTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.unique_bool()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `unique_bool`.
 ///
@@ -39,6 +51,18 @@ impl UniqueBoolTableAccess for super::RemoteTables {
 
 pub struct UniqueBoolInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueBoolDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for UniqueBoolTableHandle<'ctx> {
+    type Row = UniqueBool;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueBool> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
     type Row = UniqueBool;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueBoolDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueBoolDeleteCallbackId {
+        UniqueBoolDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueBoolDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueBoolTableHandle<'ctx> {
+    type InsertCallbackId = UniqueBoolInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueBoolInsertCallbackId {
+        UniqueBoolInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueBoolInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueBoolTableHandle<'ctx> {
     type DeleteCallbackId = UniqueBoolDeleteCallbackId;
 
     fn on_delete(

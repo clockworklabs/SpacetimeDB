@@ -18,6 +18,18 @@ pub struct PkI64TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_i_64`.
+pub struct PkI64TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkI64TableAccessor {
+    type Row = PkI64;
+    type Handle<'db> = PkI64TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_i_64()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_i_64`.
 ///
@@ -39,6 +51,18 @@ impl PkI64TableAccess for super::RemoteTables {
 
 pub struct PkI64InsertCallbackId(__sdk::CallbackId);
 pub struct PkI64DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for PkI64TableHandle<'ctx> {
+    type Row = PkI64;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkI64> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for PkI64TableHandle<'ctx> {
     type Row = PkI64;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for PkI64TableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkI64TableHandle<'ctx> {
+    type InsertCallbackId = PkI64InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkI64InsertCallbackId {
+        PkI64InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkI64InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkI64TableHandle<'ctx> {
+    type DeleteCallbackId = PkI64DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkI64DeleteCallbackId {
+        PkI64DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkI64DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkI64UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI64TableHandle<'ctx> {
+    type UpdateCallbackId = PkI64UpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkI64UpdateCallbackId {
+        PkI64UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkI64UpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkI64TableHandle<'ctx> {
     type UpdateCallbackId = PkI64UpdateCallbackId;
 
     fn on_update(

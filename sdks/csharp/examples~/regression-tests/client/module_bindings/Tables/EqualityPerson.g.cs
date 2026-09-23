@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class EqualityPersonHandle : RemoteTableHandle<EventContext, EqualityPerson>
         {
-            protected override string RemoteTableName => "equality_person";
+            public override string RemoteTableName => "equality_person";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {

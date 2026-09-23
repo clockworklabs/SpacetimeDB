@@ -38,8 +38,7 @@ Tokio integration is intentionally small and lives directly in [src/lib.rs](./sr
 
 Feature flags:
 
-- `tokio`: enables the Tokio runtime backend and remains in the default feature set.
-- `simulation`: enables the deterministic simulation runtime and `sim_std` helpers.
+- `simulation`: additively enables the deterministic simulation runtime and `sim_std` helpers.
 
 ## Design Principles
 

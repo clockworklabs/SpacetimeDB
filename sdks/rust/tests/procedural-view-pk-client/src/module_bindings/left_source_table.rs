@@ -18,6 +18,18 @@ pub struct LeftSourceTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `left_source`.
+pub struct LeftSourceTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for LeftSourceTableAccessor {
+    type Row = LeftSource;
+    type Handle<'db> = LeftSourceTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.left_source()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `left_source`.
 ///
@@ -39,6 +51,18 @@ impl LeftSourceTableAccess for super::RemoteTables {
 
 pub struct LeftSourceInsertCallbackId(__sdk::CallbackId);
 pub struct LeftSourceDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for LeftSourceTableHandle<'ctx> {
+    type Row = LeftSource;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = LeftSource> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for LeftSourceTableHandle<'ctx> {
     type Row = LeftSource;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for LeftSourceTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for LeftSourceTableHandle<'ctx> {
+    type InsertCallbackId = LeftSourceInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> LeftSourceInsertCallbackId {
+        LeftSourceInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: LeftSourceInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for LeftSourceTableHandle<'ctx> {
+    type DeleteCallbackId = LeftSourceDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> LeftSourceDeleteCallbackId {
+        LeftSourceDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: LeftSourceDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct LeftSourceUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for LeftSourceTableHandle<'ctx> {
+    type UpdateCallbackId = LeftSourceUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> LeftSourceUpdateCallbackId {
+        LeftSourceUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: LeftSourceUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for LeftSourceTableHandle<'ctx> {
     type UpdateCallbackId = LeftSourceUpdateCallbackId;
 
     fn on_update(

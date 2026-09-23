@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ConsumeEntityEventHandle : RemoteEventTableHandle<EventContext, ConsumeEntityEvent>
         {
-            protected override string RemoteTableName => "consume_entity_event";
+            public override string RemoteTableName => "consume_entity_event";
 
             internal ConsumeEntityEventHandle(DbConnection conn) : base(conn)
             {

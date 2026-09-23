@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    io,
+    io::{self, Seek},
     marker::PhantomData,
     mem,
     ops::{Range, RangeBounds},
@@ -748,6 +748,8 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
                 }
 
                 file.ftruncate(offset, byte_offset)?;
+                // We should be reopening the log anyway, but just in case.
+                file.seek(io::SeekFrom::End(0))?;
                 // Some filesystems require fsync after ftruncate.
                 file.fsync()?;
                 break;
@@ -878,7 +880,7 @@ impl<R: Repo> Commits<R> {
                     // Same offset: ignore if duplicate (same crc), else report a "fork".
                     } else if self.last_commit.same_offset_as(&commit) {
                         if !self.last_commit.same_checksum_as(&commit) {
-                            warn!(
+                            error!(
                                 "forked: commit={:?} last-error={:?} last-crc={:?}",
                                 commit,
                                 prev_error,
@@ -893,7 +895,7 @@ impl<R: Repo> Commits<R> {
                         }
                     // Not the expected offset: report out-of-order.
                     } else if self.last_commit.expected_offset() != &commit.min_tx_offset {
-                        warn!("out-of-order: commit={commit:?} last-error={prev_error:?}");
+                        error!("out-of-order: commit={commit:?} last-error={prev_error:?}");
                         return Some(Err(error::Traversal::OutOfOrder {
                             expected_offset: *self.last_commit.expected_offset(),
                             actual_offset: commit.min_tx_offset,

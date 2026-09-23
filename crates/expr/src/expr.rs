@@ -1,7 +1,7 @@
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::{TableId, ViewId};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
 use std::sync::Arc;
@@ -41,7 +41,7 @@ impl<T: CollectViews> CollectViews for Vec<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
-    Some(RelExpr, RawIdentifier),
+    Some(RelExpr, RawNamespacedIdentifier),
 }
 
 impl CollectViews for ProjectName {
@@ -62,7 +62,7 @@ impl ProjectName {
 
     /// What is the name of the return table?
     /// This is either the table name itself or its alias.
-    pub fn return_name(&self) -> Option<&RawIdentifier> {
+    pub fn return_name(&self) -> Option<&RawNamespacedIdentifier> {
         match self {
             Self::None(input) => input.return_name(),
             Self::Some(_, name) => Some(name),
@@ -256,7 +256,7 @@ pub struct Relvar {
     /// The table schema of this relvar
     pub schema: Arc<TableOrViewSchema>,
     /// The name of this relvar
-    pub alias: RawIdentifier,
+    pub alias: RawNamespacedIdentifier,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
 }
@@ -356,7 +356,7 @@ impl RelExpr {
 
     /// Does this expression return a single relvar?
     /// If so, return its name or equivalently its alias.
-    pub fn return_name(&self) -> Option<&RawIdentifier> {
+    pub fn return_name(&self) -> Option<&RawNamespacedIdentifier> {
         match self {
             Self::RelVar(Relvar { alias, .. }) => Some(alias),
             Self::Select(input, _) => input.return_name(),
@@ -436,7 +436,7 @@ impl Expr {
 /// A typed qualified field projection
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
-    pub table: RawIdentifier,
+    pub table: RawNamespacedIdentifier,
     pub field: usize,
     pub ty: AlgebraicType,
 }

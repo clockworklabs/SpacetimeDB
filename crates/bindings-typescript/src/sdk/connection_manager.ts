@@ -92,6 +92,98 @@ function defaultState(): ConnectionState {
 class ConnectionManagerImpl {
   #connections = new Map<string, ManagedConnection>();
 
+  constructor() {
+    // Auto-reconnect otherwise relies entirely on the browser firing
+    // `onclose` plus a `setTimeout` backoff. Both are unreliable across a
+    // backgrounded/frozen tab: the close event may never be delivered (the
+    // socket dies while the event loop is suspended), and background timers
+    // are heavily throttled or paused, so a scheduled reconnect can stall
+    // indefinitely and never resume when the window is refocused.
+    //
+    // These listeners make the manager proactively re-check liveness when the
+    // page comes back to the foreground / the network returns, bringing any
+    // stalled reconnect forward and rebuilding sockets that died silently.
+    if (
+      typeof document !== 'undefined' &&
+      typeof document.addEventListener === 'function'
+    ) {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.#handleResume();
+        }
+      });
+    }
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    ) {
+      window.addEventListener('focus', this.#handleResume);
+      window.addEventListener('online', this.#handleResume);
+      // `pageshow` fires on bfcache restores, where `visibilitychange` may not.
+      window.addEventListener('pageshow', this.#handleResume);
+    }
+  }
+
+  /**
+   * Called when the page is likely resuming from a background/frozen state:
+   * the tab became visible, the window regained focus, the network came back,
+   * or a bfcache page was restored. For each retained connection this brings a
+   * stalled reconnect forward immediately (resetting backoff) and rebuilds any
+   * socket that died silently while we were hidden.
+   */
+  #handleResume = (): void => {
+    for (const managed of this.#connections.values()) {
+      if (managed.refCount <= 0 || managed.pendingRelease) {
+        continue;
+      }
+
+      // A reconnect was scheduled but its timer is stuck behind background
+      // timer throttling / page freezing. Fire it now and reset backoff so we
+      // reconnect promptly instead of waiting out a (capped 30s, possibly
+      // paused) delay.
+      if (managed.reconnectTimer && !managed.connection) {
+        clearTimeout(managed.reconnectTimer);
+        managed.reconnectTimer = null;
+        managed.reconnectAttempt = 0;
+        if (managed.builder) {
+          this.#buildManagedConnection(managed, managed.builder);
+        }
+        continue;
+      }
+
+      // We believe we're connected, but the socket may have died silently.
+      this.#reviveIfZombie(managed);
+    }
+  };
+
+  /**
+   * If `managed` holds a connection whose socket has entered CLOSING/CLOSED
+   * without a clean `onclose` (see {@link DbConnectionImpl.isSocketClosed}),
+   * for example because it was torn down while the tab was frozen, tear it down
+   * and build a fresh one immediately, resetting backoff.
+   */
+  #reviveIfZombie(managed: ManagedConnection): void {
+    const connection = managed.connection;
+    if (
+      !connection ||
+      connection.isDisconnectRequested ||
+      !connection.isSocketClosed
+    ) {
+      return;
+    }
+
+    this.#detachCallbacks(managed, connection);
+    managed.connection = undefined;
+    // Close the dead socket in case it is only CLOSING; callbacks are already
+    // detached, so this won't trigger a duplicate reconnect.
+    connection.disconnect();
+    this.#updateState(managed, { isActive: false });
+    managed.reconnectAttempt = 0;
+    if (managed.builder) {
+      this.#buildManagedConnection(managed, managed.builder);
+    }
+  }
+
   /** Generates a unique key for a connection based on URI and module name. */
   static getKey(uri: string, moduleName: string): string {
     return `${uri}::${moduleName}`;
@@ -202,11 +294,37 @@ class ConnectionManagerImpl {
     }
   }
 
+  /**
+   * Builds a connection for `managed` from `builder`, adopting it as the
+   * entry's retained builder.
+   *
+   * `resumeSession` (the default) re-applies the session's current token to the
+   * builder first. This matters because the builder is a *long-lived template*:
+   * the application hands it over once, and every automatic rebuild — scheduled
+   * reconnect, resume-from-background, zombie-socket revival — reuses that same
+   * object. Its token, though, is a snapshot taken when the application built
+   * it, typically read out of storage at module load, before any session
+   * existed. Rebuilding from it verbatim would reconnect *anonymously* for any
+   * user whose token was issued during this page's lifetime, and the server
+   * would answer by minting a brand-new identity: a silent account switch, with
+   * no error raised on either side, curable only by a page reload.
+   *
+   * `state.token` is the token of the most recent connection (set below at
+   * build time, and again by `onConnect` when the server issues one), so
+   * re-applying it keeps every automatic rebuild on the same principal.
+   *
+   * Pass `resumeSession: false` when the caller is deliberately changing
+   * identity — see {@link rebuild} — so the builder's own token wins.
+   */
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
-    builder: DbConnectionBuilder<T>
+    builder: DbConnectionBuilder<T>,
+    { resumeSession = true }: { resumeSession?: boolean } = {}
   ): T {
     managed.builder = builder;
+    if (resumeSession && managed.state.token) {
+      builder.withToken(managed.state.token);
+    }
     const connection = builder.build();
     managed.connection = connection;
     this.#attachCallbacks(managed, builder);
@@ -292,6 +410,77 @@ class ConnectionManagerImpl {
     }
 
     return this.#buildManagedConnection(managed, builder);
+  }
+
+  /**
+   * Tears down the current connection and builds a fresh one from `builder`,
+   * preserving the entry's ref count and listener set.
+   *
+   * `retain()` deliberately ignores the builder once a connection is live —
+   * the right behaviour for ref-counting, but it blocks "reconnect with a
+   * fresh token" flows (e.g. swapping an anonymous session for a signed-in one
+   * after an auth change). `rebuild()` is the supported escape hatch: pass a
+   * builder carrying the new token and the pool swaps the live connection
+   * under the same subscribers, so framework hooks (`useTable`, `useReducer`,
+   * …) re-bind to the new connection automatically.
+   *
+   * The old connection's callbacks are detached before it is closed, so its
+   * disconnect event never leaks into pool state, and any pending auto-reconnect
+   * is cancelled (the caller is driving the reconnect explicitly). Returns the
+   * newly-built connection, or `null` if the key has no retained entry.
+   *
+   * @param key - Unique identifier for the connection (use getKey to generate)
+   * @param builder - Fresh connection builder; its handlers are rewired into the pool
+   */
+  rebuild<T extends DbConnectionImpl<any>>(
+    key: string,
+    builder: DbConnectionBuilder<T>
+  ): T | null {
+    const managed = this.#connections.get(key);
+    if (!managed || managed.refCount <= 0) {
+      return null;
+    }
+
+    // The caller is taking over the connection lifecycle explicitly; cancel a
+    // deferred release or a pending auto-reconnect so neither races the fresh
+    // connection, and reset the backoff so the next unexpected drop starts over.
+    if (managed.pendingRelease) {
+      clearTimeout(managed.pendingRelease);
+      managed.pendingRelease = null;
+    }
+    if (managed.reconnectTimer) {
+      clearTimeout(managed.reconnectTimer);
+      managed.reconnectTimer = null;
+    }
+    managed.reconnectAttempt = 0;
+
+    const connection = managed.connection;
+    if (connection) {
+      this.#detachCallbacks(managed, connection);
+      connection.disconnect();
+    }
+    managed.connection = undefined;
+
+    try {
+      // `resumeSession: false`: this is the one path that exists precisely to
+      // *change* identity, so the replacement builder's token must win over the
+      // outgoing session's.
+      return this.#buildManagedConnection(managed, builder, {
+        resumeSession: false,
+      }) as T;
+    } catch (error) {
+      // The old connection is already torn down, so a failed rebuild would
+      // otherwise leave the pool reporting a stale "live" connection. Surface
+      // the failure into pool state (matching the onConnectError shape) so
+      // subscribers see a disconnected/errored connection, then re-throw so
+      // the caller can handle it.
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError:
+          error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    }
   }
 
   release(key: string): void {

@@ -18,6 +18,18 @@ pub struct PlayerLocationTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `player_location`.
+pub struct PlayerLocationTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PlayerLocationTableAccessor {
+    type Row = PlayerLocation;
+    type Handle<'db> = PlayerLocationTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.player_location()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `player_location`.
 ///
@@ -39,6 +51,18 @@ impl PlayerLocationTableAccess for super::RemoteTables {
 
 pub struct PlayerLocationInsertCallbackId(__sdk::CallbackId);
 pub struct PlayerLocationDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for PlayerLocationTableHandle<'ctx> {
+    type Row = PlayerLocation;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PlayerLocation> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for PlayerLocationTableHandle<'ctx> {
     type Row = PlayerLocation;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for PlayerLocationTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = PlayerLocationDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerLocationDeleteCallbackId {
+        PlayerLocationDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PlayerLocationDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for PlayerLocationTableHandle<'ctx> {
+    type InsertCallbackId = PlayerLocationInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerLocationInsertCallbackId {
+        PlayerLocationInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PlayerLocationInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PlayerLocationTableHandle<'ctx> {
     type DeleteCallbackId = PlayerLocationDeleteCallbackId;
 
     fn on_delete(

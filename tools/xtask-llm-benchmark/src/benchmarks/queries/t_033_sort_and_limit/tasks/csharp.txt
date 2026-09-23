@@ -1,14 +1,14 @@
 Write a SpacetimeDB backend module in C# that defines a Player table with scores, a Leaderboard result table, and a reducer that finds the top N players by score (descending) and writes them to the result table.
 
 TABLES
-- Player
+- Player (private)
   - Struct: Player
   - Fields:
     - Id: ulong (primary key, AutoInc)
     - Name: string
     - Score: ulong
 
-- Leaderboard
+- Leaderboard (private)
   - Struct: LeaderboardEntry
   - Fields:
     - Rank: uint (primary key)

@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in C# that defines a procedural view using an index and additional filters.
+
+TABLE
+- Content (public, accessor Content)
+  - Fields:
+    - Id: ulong (primary key)
+    - Category: string (btree index)
+    - Active: bool
+    - Score: int
+
+REDUCERS
+- Seed()
+  - Insert Id 1 with Category "news", Active true, and Score 20
+  - Insert Id 2 with Category "news", Active false, and Score 20
+  - Insert Id 3 with Category "news", Active true, and Score 5
+  - Insert Id 4 with Category "sports", Active true, and Score 20
+
+VIEW
+- FeaturedContent (anonymous procedural, public)
+  - First use the Category index for "news"
+  - Then return only Active rows with Score at least 10

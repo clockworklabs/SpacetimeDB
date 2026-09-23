@@ -476,12 +476,12 @@ li.tabs__item--active,
 }
 
 .navbar__logo {
-  width: 152px;
+  width: 133px;
   height: 32px;
 }
 
 .navbar__logo img {
-  width: 152px;
+  width: 133px;
   height: 32px;
 }
 
@@ -609,7 +609,7 @@ ul.theme-doc-sidebar-menu {
   padding: 0;
 }
 
-/* Static section headers (non-clickable labels like "Getting Started", "Core Concepts") */
+/* Static section headers (non-clickable labels like "Intro") */
 .spacetime-menu-header {
   overflow: hidden;
   color: var(--clockworklabs-color-n4);
@@ -635,6 +635,23 @@ ul.theme-doc-sidebar-menu
   > .menu__list-item:not(.sidebar-ask-ai)
   > .menu__link {
   padding-left: 8px !important;
+}
+
+/* Section headers that link to their section's index page ("Core Concepts", "Developer Resources").
+   Same look as .spacetime-menu-header, but rendered as a regular sidebar doc link. */
+ul.theme-doc-sidebar-menu
+  > .menu__list-item.spacetime-menu-header-link
+  > .menu__link {
+  font-family: var(--clockworklabs-font-source);
+  letter-spacing: calc(var(--11-7px) * 0.08);
+  text-transform: uppercase;
+  padding: 24px 8px 12px 0 !important;
+}
+
+ul.theme-doc-sidebar-menu
+  > .menu__list-item.spacetime-menu-header-link
+  > .menu__link:hover {
+  background: transparent;
 }
 
 ul.theme-doc-sidebar-menu

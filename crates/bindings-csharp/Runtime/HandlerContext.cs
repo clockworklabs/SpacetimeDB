@@ -7,6 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 public abstract class HandlerContextBase
 {
     public Random Rng => txState.Rng;
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Timestamp Timestamp => txState.Timestamp;
 
     // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
@@ -35,7 +36,7 @@ public abstract class HandlerContextBase
     }
 
     protected abstract HandlerTxContextBase CreateTxContext(Internal.TxContext inner);
-    protected internal abstract LocalBase CreateLocal();
+    protected abstract LocalBase CreateLocal();
 
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
         txState.EnterTxContext(timestampMicros);
@@ -90,6 +91,7 @@ public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefresha
     void IRefreshableTxContext.Refresh(Internal.TxContext inner) => Refresh(inner);
 
     public LocalBase Db => (LocalBase)Inner.Db;
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Timestamp Timestamp => Inner.Timestamp;
     public Random Rng => Inner.Rng;
 }
@@ -99,7 +101,7 @@ internal sealed partial class RuntimeHandlerContext(Random random, Timestamp tim
 {
     private readonly RuntimeLocal _db = new();
 
-    protected internal override LocalBase CreateLocal() => _db;
+    protected override LocalBase CreateLocal() => _db;
 
     protected override HandlerTxContextBase CreateTxContext(Internal.TxContext inner) =>
         _cached ??= new RuntimeHandlerTxContext(inner);

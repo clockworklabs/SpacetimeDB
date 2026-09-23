@@ -128,4 +128,33 @@ public class Tests
             }
         });
     }
+
+    [Fact]
+    public static void BSATNHelpersDecodeListMatchesByteArray()
+    {
+        var expectedRows = new PerformanceTests.PerfRows
+        {
+            Rows =
+            [
+                new PerformanceTests.PerfRow { Id = 1 },
+                new PerformanceTests.PerfRow { Id = 2 },
+                new PerformanceTests.PerfRow { Id = 10_000 },
+            ],
+        };
+        var bytes = IStructuralReadWrite.ToBytes(new PerformanceTests.PerfRows.BSATN(), expectedRows);
+        var list = bytes.ToList();
+
+        var decodedFromBytes = BSATNHelpers.Decode<PerformanceTests.PerfRows>(bytes);
+        var decodedFromList = BSATNHelpers.Decode<PerformanceTests.PerfRows>(list);
+        var decodedFromReadOnlyList = BSATNHelpers.Decode<PerformanceTests.PerfRows>((IReadOnlyList<byte>)list);
+
+        Assert.Equal(
+            decodedFromBytes.Rows.Select(row => row.Id),
+            decodedFromList.Rows.Select(row => row.Id)
+        );
+        Assert.Equal(
+            decodedFromBytes.Rows.Select(row => row.Id),
+            decodedFromReadOnlyList.Rows.Select(row => row.Id)
+        );
+    }
 }

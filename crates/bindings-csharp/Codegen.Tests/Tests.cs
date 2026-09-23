@@ -26,18 +26,11 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    class Fixture
+    private class Fixture(string projectDir, CSharpCompilation sampleCompilation)
     {
-        private readonly string projectDir;
-        private readonly CSharpCompilation sampleCompilation;
-
-        public Fixture(string projectDir, CSharpCompilation sampleCompilation)
-        {
-            this.projectDir = projectDir;
-            this.sampleCompilation = sampleCompilation;
-        }
-
-        public CSharpCompilation SampleCompilation => sampleCompilation;
+        public CSharpCompilation SampleCompilation { get; } = sampleCompilation;
+        public CSharpParseOptions ParseOptions { get; } =
+            (CSharpParseOptions)sampleCompilation.SyntaxTrees.First().Options;
 
         public static async Task<Fixture> Compile(string name)
         {
@@ -53,7 +46,7 @@ public static class GeneratorSnapshotTests
 
         private static CSharpGeneratorDriver CreateDriver(
             IIncrementalGenerator generator,
-            LanguageVersion languageVersion
+            CSharpParseOptions parseOptions
         )
         {
             return CSharpGeneratorDriver.Create(
@@ -62,8 +55,8 @@ public static class GeneratorSnapshotTests
                     disabledOutputs: IncrementalGeneratorOutputKind.None,
                     trackIncrementalGeneratorSteps: true
                 ),
-                // Make sure that generated files are parsed with the same language version.
-                parseOptions: new(languageVersion)
+                // Make sure generated files are parsed with the same language version and feature flags.
+                parseOptions: parseOptions
             );
         }
 
@@ -71,33 +64,37 @@ public static class GeneratorSnapshotTests
             IIncrementalGenerator generator
         )
         {
-            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+            var driver = CreateDriver(generator, ParseOptions);
 
             // Store the new driver instance - it contains the results and the cache.
-            var driverAfterGen = driver.RunGenerators(sampleCompilation);
+            var driverAfterGen = driver.RunGenerators(SampleCompilation);
             var genResult = driverAfterGen.GetRunResult();
 
             // Verify the generated code against the snapshots.
             await Verify(generator.GetType().Name, genResult);
 
-            CheckCacheWorking(sampleCompilation, driverAfterGen);
+            CheckCacheWorking(SampleCompilation, driverAfterGen);
 
             return genResult.GeneratedTrees;
         }
 
         public GeneratorDriverRunResult RunGeneratorAndGetResult(IIncrementalGenerator generator)
         {
-            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
-            return driver.RunGenerators(sampleCompilation).GetRunResult();
+            var driver = CreateDriver(generator, ParseOptions);
+            return driver.RunGenerators(SampleCompilation).GetRunResult();
         }
 
         public async Task<CSharpCompilation> RunAndCheckGenerators(
             params IIncrementalGenerator[] generators
         ) =>
-            sampleCompilation.AddSyntaxTrees(
-                (await Task.WhenAll(generators.Select(RunAndCheckGenerator))).SelectMany(output =>
-                    output
-                )
+            SampleCompilation.AddSyntaxTrees(
+                (await Task.WhenAll(generators.Select(RunAndCheckGenerator)))
+                    .SelectMany(output => output)
+                    .Concat(
+                        generators.Any(generator => generator is SpacetimeDB.Codegen.Module)
+                            ? RunGeneratorAndGetResult(new EnvironmentGenerator()).GeneratedTrees
+                            : []
+                    )
             );
     }
 
@@ -241,10 +238,7 @@ public static class GeneratorSnapshotTests
         // make sure a downstream "user" file that references SpacetimeDB.Local doesn't trigger CS0436.
         var userCode =
             "namespace User; public sealed class UseLocal { public SpacetimeDB.Local Db; }";
-        var userTree = CSharpSyntaxTree.ParseText(
-            userCode,
-            new CSharpParseOptions(compilationAfterGen.LanguageVersion)
-        );
+        var userTree = CSharpSyntaxTree.ParseText(userCode, fixture.ParseOptions);
         var compilationWithUserCode = compilationAfterGen.AddSyntaxTrees(userTree);
         AssertNoCs0436Diagnostics(compilationWithUserCode);
     }
@@ -332,20 +326,24 @@ public static class GeneratorSnapshotTests
             }
             """;
 
-        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
-        var tree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "KeywordNames.cs");
+        var tree = CSharpSyntaxTree.ParseText(
+            source,
+            fixture.ParseOptions,
+            path: "KeywordNames.cs"
+        );
         var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
 
         var driver = CSharpGeneratorDriver.Create(
             [
                 new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
                 new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+                new EnvironmentGenerator().AsSourceGenerator(),
             ],
             driverOptions: new(
                 disabledOutputs: IncrementalGeneratorOutputKind.None,
                 trackIncrementalGeneratorSteps: true
             ),
-            parseOptions: parseOptions
+            parseOptions: fixture.ParseOptions
         );
 
         var runResult = driver.RunGenerators(compilation).GetRunResult();

@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines an event table for damage notifications and a reducer that publishes events to it.
 
 TABLES
-- damageEvent
+- damage_event
   - public event table (rows exist only for the duration of the transaction, set event: true)
   - Fields:
     - entityId: number (u64)
@@ -10,4 +10,4 @@ TABLES
 
 REDUCERS
 - deal_damage(ctx, { entityId: number (u64), damage: number (u32), source: string })
-  - Insert a row into the damageEvent event table
+  - Insert a row into the damage_event event table

@@ -4,7 +4,7 @@ use crate::util::{
     fmt_fn, iter_table_names_and_types, iter_tables, iter_views, print_auto_generated_file_comment,
     print_auto_generated_version_comment, CodegenVisibility,
 };
-use crate::util::{iter_indexes, iter_procedures, iter_reducers};
+use crate::util::{iter_indexes, iter_procedures, iter_reducers, iter_unique_cols};
 use crate::Lang;
 use crate::{CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
@@ -68,11 +68,110 @@ impl Lang for UnrealCpp<'_> {
 
         let mut unique_indexes = Vec::new();
         let mut multi_key_indexes = Vec::new();
+        let mut emitted_unique_index_names = HashSet::new();
+        let mut explicit_index_property_names = HashSet::new();
+
+        let mut emit_unique_index =
+            |output: &mut UnrealCppAutogen, index_name: String, f_name: &Identifier, f_ty: &AlgebraicTypeUse| {
+                if !emitted_unique_index_names.insert(index_name.clone()) {
+                    return;
+                }
+
+                let field_name = f_name.deref().to_case(Case::Pascal);
+                let field_type = cpp_ty_fmt_with_module(self.module_prefix, module, f_ty, self.module_name).to_string();
+                let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
+                let key_type = field_type.clone();
+                let field_name_lowercase = field_name.to_lowercase();
+
+                writeln!(output, "UCLASS(Blueprintable)");
+                writeln!(
+                    output,
+                    "class {} {index_class_name} : public UObject",
+                    self.get_api_macro()
+                );
+                writeln!(output, "{{");
+                writeln!(output, "    GENERATED_BODY()");
+                writeln!(output);
+                writeln!(output, "private:");
+                writeln!(output, "    // Declare an instance of your templated helper.");
+                writeln!(
+                    output,
+                    "    // It's private because the UObject wrapper will expose its functionality."
+                );
+                writeln!(
+                output,
+                "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
+            );
+                writeln!(output);
+                writeln!(output, "public:");
+                writeln!(output, "    {index_class_name}()");
+                writeln!(
+                    output,
+                    "        // Initialize the helper with the specific unique index name"
+                );
+                writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
+                writeln!(output, "    }}");
+                writeln!(output);
+                writeln!(output, "    /**");
+                writeln!(
+                    output,
+                    "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
+                );
+                writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
+                writeln!(
+                    output,
+                    "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
+                );
+                writeln!(output, "     */");
+
+                // Only mark as BlueprintCallable if the key type is Blueprint-compatible
+                if is_blueprintable(module, f_ty) {
+                    writeln!(
+                        output,
+                        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
+                    );
+                } else {
+                    writeln!(
+                        output,
+                        "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"
+                    );
+                }
+
+                writeln!(output, "    {row_struct} Find({key_type} Key)");
+                writeln!(output, "    {{");
+                writeln!(output, "        // Simply delegate the call to the internal helper");
+                writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
+                writeln!(output, "    }}");
+                writeln!(output);
+                writeln!(
+                    output,
+                    "    // A public setter to provide the cache to the helper after construction"
+                );
+                writeln!(
+                    output,
+                    "    // This is a common pattern when the cache might be created or provided by another system."
+                );
+                writeln!(
+                    output,
+                    "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
+                );
+                writeln!(output, "    {{");
+                writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
+                writeln!(output, "    }}");
+                writeln!(output, "}};");
+                writeln!(output, "/***/");
+                writeln!(output);
+
+                unique_indexes.push((index_name, index_class_name, field_type, f_name.deref().to_string()));
+            };
 
         for idx in iter_indexes(table) {
             let Some(accessor_name) = idx.accessor_name.as_ref() else {
                 continue;
             };
+
+            let index_property_name = accessor_name.deref().to_case(Case::Pascal);
+            explicit_index_property_names.insert(index_property_name.clone());
 
             // Whatever the index algorithm on the host,
             // the client can still use btrees.
@@ -80,98 +179,13 @@ impl Lang for UnrealCpp<'_> {
             if schema.is_unique(&columns) {
                 if let Some(col) = columns.as_singleton() {
                     let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                    let field_name = f_name.deref().to_case(Case::Pascal);
-                    let field_type =
-                        cpp_ty_fmt_with_module(self.module_prefix, module, f_ty, self.module_name).to_string();
-                    let index_name = accessor_name.deref().to_case(Case::Pascal);
-                    let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
-                    let key_type = field_type.clone();
-                    let field_name_lowercase = field_name.to_lowercase();
-
-                    writeln!(output, "UCLASS(Blueprintable)");
-                    writeln!(
-                        output,
-                        "class {} {index_class_name} : public UObject",
-                        self.get_api_macro()
-                    );
-                    writeln!(output, "{{");
-                    writeln!(output, "    GENERATED_BODY()");
-                    writeln!(output);
-                    writeln!(output, "private:");
-                    writeln!(output, "    // Declare an instance of your templated helper.");
-                    writeln!(
-                        output,
-                        "    // It's private because the UObject wrapper will expose its functionality."
-                    );
-                    writeln!(
-                            output,
-                            "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
-                        );
-                    writeln!(output);
-                    writeln!(output, "public:");
-                    writeln!(output, "    {index_class_name}()");
-                    writeln!(
-                        output,
-                        "        // Initialize the helper with the specific unique index name"
-                    );
-                    writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
-                    writeln!(output, "    }}");
-                    writeln!(output);
-                    writeln!(output, "    /**");
-                    writeln!(
-                        output,
-                        "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
-                    );
-                    writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
-                    writeln!(
-                        output,
-                        "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
-                    );
-                    writeln!(output, "     */");
-
-                    // Only mark as BlueprintCallable if the key type is Blueprint-compatible
-                    if is_blueprintable(module, f_ty) {
-                        writeln!(
-                            output,
-                            "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
-                        );
-                    } else {
-                        writeln!(
-                                output,
-                                "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"
-                            );
-                    }
-
-                    writeln!(output, "    {row_struct} Find({key_type} Key)");
-                    writeln!(output, "    {{");
-                    writeln!(output, "        // Simply delegate the call to the internal helper");
-                    writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
-                    writeln!(output, "    }}");
-                    writeln!(output);
-                    writeln!(
-                        output,
-                        "    // A public setter to provide the cache to the helper after construction"
-                    );
-                    writeln!(output, "    // This is a common pattern when the cache might be created or provided by another system.");
-                    writeln!(
-                        output,
-                        "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
-                    );
-                    writeln!(output, "    {{");
-                    writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
-                    writeln!(output, "    }}");
-                    writeln!(output, "}};");
-                    writeln!(output, "/***/");
-                    writeln!(output);
-
-                    unique_indexes.push((index_name, index_class_name, field_type, f_name.deref().to_string()));
+                    emit_unique_index(&mut output, index_property_name, f_name, f_ty);
                 }
             }
             // Handle non-unique BTree indexes
             else {
                 // Generate non-unique BTree index class
-                let _index_name = accessor_name.deref().to_case(Case::Pascal);
-                let index_class_name = format!("U{table_pascal}{_index_name}Index");
+                let index_class_name = format!("U{table_pascal}{index_property_name}Index");
 
                 // Get column information
                 let column_info: Vec<_> = columns
@@ -279,8 +293,14 @@ impl Lang for UnrealCpp<'_> {
                 writeln!(output);
 
                 // Store information for PostInitialize generation
-                let property_name = accessor_name.deref().to_case(Case::Pascal);
-                multi_key_indexes.push((property_name, index_class_name));
+                multi_key_indexes.push((index_property_name, index_class_name));
+            }
+        }
+
+        for (f_name, f_ty) in iter_unique_cols(module.typespace_for_generate(), &schema, product_type.unwrap()) {
+            let index_name = f_name.deref().to_case(Case::Pascal);
+            if !explicit_index_property_names.contains(&index_name) {
+                emit_unique_index(&mut output, index_name, f_name, f_ty);
             }
         }
 
@@ -1175,25 +1195,35 @@ fn generate_table_cpp(
 
     let mut unique_indexes = Vec::new();
     let mut multi_key_indexes = Vec::new();
+    let mut emitted_unique_index_names = HashSet::new();
+    let mut explicit_index_property_names = HashSet::new();
+
+    let mut add_unique_index = |index_name: String, f_name: &Identifier, f_ty: &AlgebraicTypeUse| {
+        if !emitted_unique_index_names.insert(index_name.clone()) {
+            return;
+        }
+
+        let field_type = cpp_ty_fmt_with_module(module_prefix, module, f_ty, module_name).to_string();
+        unique_indexes.push((index_name, field_type, f_name.deref().to_string()));
+    };
 
     for idx in iter_indexes(table) {
         let Some(accessor_name) = idx.accessor_name.as_ref() else {
             continue;
         };
+        let index_name = accessor_name.deref().to_case(Case::Pascal);
+        explicit_index_property_names.insert(index_name.clone());
+
         // Whatever the index algorithm on the host,
         // the client can still use btrees.
         let columns = idx.algorithm.columns();
         if schema.is_unique(&columns) {
             if let Some(col) = columns.as_singleton() {
                 let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                let _field_name = f_name.deref().to_case(Case::Pascal);
-                let field_type = cpp_ty_fmt_with_module(module_prefix, module, f_ty, module_name).to_string();
-                let index_name = accessor_name.deref().to_case(Case::Pascal);
-                unique_indexes.push((index_name, field_type, f_name.deref().to_string()));
+                add_unique_index(index_name, f_name, f_ty);
             }
         } else {
             // Non-unique BTree index
-            let index_name = accessor_name.deref().to_case(Case::Pascal);
             let index_class_name = format!("U{table_pascal}{index_name}Index");
 
             // Collect column information for AddMultiKeyBTreeIndex call
@@ -1213,6 +1243,13 @@ fn generate_table_cpp(
                 accessor_name.deref().to_string(),
                 column_info,
             ));
+        }
+    }
+
+    for (f_name, f_ty) in iter_unique_cols(module.typespace_for_generate(), schema, product_type.unwrap()) {
+        let index_name = f_name.deref().to_case(Case::Pascal);
+        if !explicit_index_property_names.contains(&index_name) {
+            add_unique_index(index_name, f_name, f_ty);
         }
     }
 

@@ -178,6 +178,9 @@ mod tests {
             "select t.* from t join s on t.c = s.d",
             "select a.* from t as a join s as b on a.c = b.d",
             "select * from t where x = :sender",
+            // Qualified columns of namespaced tables: last part is the column
+            "select * from ns.t where ns.t.a = 1",
+            r#"SELECT ns.t.* FROM "ns"."s" JOIN "ns"."t" ON "ns"."s"."a" = "ns"."t"."a""#,
         ] {
             assert!(parse_subscription(sql).is_ok());
         }

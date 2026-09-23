@@ -1,3 +1,6 @@
+// Shared decoder: `readString` is called once per string column per row.
+const textDecoder = new TextDecoder('utf-8');
+
 export default class BinaryReader {
   /**
    * The DataView used to read values from the binary data.
@@ -49,7 +52,13 @@ export default class BinaryReader {
   readUInt8Array(): Uint8Array {
     const length = this.readU32();
     this.#ensure(length);
-    return this.readBytes(length);
+    // Return an owned copy, not a view over the reader's buffer. Decoded column
+    // values are handed to user code and may be retained, but the runtime reuses
+    // this buffer across table scans, so a view would be silently invalidated by
+    // the next iter()/filter(). Callers that only consume the bytes transiently
+    // (e.g. readString) can use readBytes directly to avoid this copy.
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5490
+    return this.readBytes(length).slice();
   }
 
   readBool(): boolean {
@@ -65,7 +74,10 @@ export default class BinaryReader {
   }
 
   readBytes(length: number): Uint8Array {
-    // Create a Uint8Array view over the DataView's buffer at the current offset
+    // Returns a Uint8Array *view* over the reader's underlying buffer (no copy).
+    // The view is only valid until the runtime reuses that buffer (e.g. the next
+    // table scan). Consume it immediately or copy it (see readUInt8Array).
+    //
     // The #view.buffer is the whole ArrayBuffer, so we need to account for the
     // #view's starting position in that buffer (#view.byteOffset) and the current #offset
     const array = new Uint8Array(
@@ -182,7 +194,11 @@ export default class BinaryReader {
   }
 
   readString(): string {
-    const uint8Array = this.readUInt8Array();
-    return new TextDecoder('utf-8').decode(uint8Array);
+    const length = this.readU32();
+    this.#ensure(length);
+    // A view is safe here: TextDecoder copies the bytes synchronously, so nothing
+    // retains a reference to the reader's buffer. Avoids readUInt8Array's copy.
+    const bytes = this.readBytes(length);
+    return textDecoder.decode(bytes);
   }
 }

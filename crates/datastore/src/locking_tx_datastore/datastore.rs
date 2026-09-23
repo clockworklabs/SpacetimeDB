@@ -309,6 +309,34 @@ impl Locking {
         tx.alter_table_primary_key(table_id, primary_key)
     }
 
+    pub fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    pub fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    pub fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     pub fn alter_table_row_type_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -549,6 +577,34 @@ impl MutTxDatastore for Locking {
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()> {
         tx.drop_index(index_id)
+    }
+
+    fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
@@ -932,6 +988,7 @@ impl MutTx for Locking {
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -967,6 +1024,7 @@ impl Locking {
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -1034,6 +1092,7 @@ pub(crate) mod tests {
         ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
         ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
+    use crate::system_tables::{ST_ENV_ID, ST_ENV_NAME};
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use core::{fmt, mem};
@@ -1049,7 +1108,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;
-    use spacetimedb_sats::raw_identifier::RawIdentifier;
+    use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::identifier::Identifier;
@@ -1177,7 +1236,7 @@ pub(crate) mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                index_name: RawIdentifier::new(value.name),
+                index_name: RawNamespacedIdentifier::new(value.name),
                 index_algorithm: StIndexAlgorithm::BTree { columns: value.col },
             }
         }
@@ -1247,7 +1306,7 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1263,7 +1322,7 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1284,7 +1343,7 @@ pub(crate) mod tests {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
-                constraint_name: RawIdentifier::new(value.constraint_name),
+                constraint_name: RawNamespacedIdentifier::new(value.constraint_name),
                 table_id: value.table_id.into(),
                 constraint_data: StConstraintData::Unique {
                     columns: value.unique_columns.into(),
@@ -1500,6 +1559,7 @@ pub(crate) mod tests {
             TableRow { id: ST_TABLE_ACCESSOR_ID.into(), name: ST_TABLE_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]
@@ -1597,6 +1657,8 @@ pub(crate) mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 0, name: "table_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 1, name: "col_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
+            ColRow { table: ST_ENV_ID.into(), pos: 0, name: "key", ty: AlgebraicType::String },
+            ColRow { table: ST_ENV_ID.into(), pos: 1, name: "value", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1629,6 +1691,7 @@ pub(crate) mod tests {
             IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
+            IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1674,6 +1737,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 23, table_id: ST_INDEX_ACCESSOR_ID.into(), unique_columns: col(1), constraint_name: "st_index_accessor_accessor_name_key", },
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
+            ConstraintRow { constraint_id: 26, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2107,6 +2171,7 @@ pub(crate) mod tests {
             IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
+            IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -3203,7 +3268,7 @@ pub(crate) mod tests {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: Identifier::for_test("schedule"),
-            function_name: Identifier::for_test("reducer"),
+            function_name: Identifier::for_test("reducer").into(),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);

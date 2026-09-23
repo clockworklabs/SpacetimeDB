@@ -25,6 +25,14 @@ import {
   stdbSendMessage,
   stdbSetName,
 } from '../clients/spacetime-client.ts';
+import {
+  type MongoConfig,
+  createMongoUser,
+  createMongoRoom,
+  joinMongoRoom,
+  connectMongoClient,
+  mongoSendRest,
+} from '../clients/mongodb-client.ts';
 
 export interface RealisticOpts {
   users: number;
@@ -96,6 +104,67 @@ export async function runRealisticPostgres(cfg: PgConfig, opts: RealisticOpts): 
     ackLatencyMs: new LatencyHistogram().summary(),
     fanoutLatencyMs: fanout.summary(),
     notes: `${opts.users} users, jitter ${opts.minIntervalMs}-${opts.maxIntervalMs}ms`,
+  };
+}
+
+export async function runRealisticMongo(cfg: MongoConfig, opts: RealisticOpts): Promise<ScenarioResult> {
+  const tag = `mr${Date.now().toString(36)}`;
+  const userNames = Array.from({ length: opts.users }, (_, i) => `${tag}_u${i}`);
+  await Promise.all(userNames.map((n) => createMongoUser(cfg, n)));
+  const listenerName = `${tag}_listener`;
+  await createMongoUser(cfg, listenerName);
+  const room = await createMongoRoom(cfg, tag, listenerName);
+  await Promise.all(userNames.map((n) => joinMongoRoom(cfg, room.id, n)));
+
+  const fanout = new LatencyHistogram();
+  let received = 0;
+  let measuring = false;
+
+  // Listener measures true server→client fan-out latency under human-cadence load.
+  const listener = await connectMongoClient(cfg, listenerName, room.id, (msg) => {
+    if (!measuring) return;
+    const stamp = parseStamp(msg.text);
+    if (!stamp) return;
+    received += 1;
+    fanout.record(nsToMs(process.hrtime.bigint() - stamp.sentNs));
+  });
+
+  measuring = true;
+  const startedAt = new Date().toISOString();
+  const endTime = Date.now() + opts.durationSec * 1000;
+  let seq = 1;
+  let sent = 0;
+
+  // Users send via REST at human cadence (5-15s jitter). Well under any
+  // throttle, so this is the apples-to-apples comparison vs PG/STDB.
+  const userLoop = async (name: string): Promise<void> => {
+    while (Date.now() < endTime) {
+      try {
+        await mongoSendRest(cfg, room.id, name, stampMessage(seq++));
+        sent += 1;
+      } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, jitter(opts.minIntervalMs, opts.maxIntervalMs)));
+    }
+  };
+  await Promise.all(userNames.map(userLoop));
+
+  await new Promise((r) => setTimeout(r, 2000));
+  measuring = false;
+  listener.close();
+
+  return {
+    scenario: 'realistic-chat',
+    backend: 'mongodb',
+    startedAt,
+    durationSec: opts.durationSec,
+    writers: opts.users,
+    sent,
+    received,
+    errors: 0,
+    msgsPerSec: received / opts.durationSec,
+    ackLatencyMs: new LatencyHistogram().summary(),
+    fanoutLatencyMs: fanout.summary(),
+    notes: `${opts.users} users, jitter ${opts.minIntervalMs}-${opts.maxIntervalMs}ms (REST send, fan-out via listener socket)`,
   };
 }
 

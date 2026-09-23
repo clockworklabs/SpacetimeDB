@@ -1,14 +1,14 @@
 //! Std-hosted entry points for running the deterministic simulator in tests.
 //!
 //! The portable simulator lives in [`crate::sim`]. This module is deliberately
-//! host-specific: it installs thread-local context while a simulation is
-//! running, checks determinism by replaying a seed in fresh OS threads, and
-//! intercepts a few libc calls so std code cannot silently escape determinism.
+//! host-specific: it marks a thread as simulation-owned while hosted tests run,
+//! checks determinism by replaying a seed in fresh OS threads, and intercepts a
+//! few libc calls so std code cannot silently escape determinism.
 
 #![allow(clippy::disallowed_macros)]
 
-use alloc::boxed::Box;
 use core::{cell::Cell, future::Future};
+use std::boxed::Box;
 use std::sync::OnceLock;
 
 use crate::sim;
@@ -21,7 +21,7 @@ use crate::sim;
 /// tests that execute inside a hosted process. While the future runs, this
 /// marks the thread as inside simulation so OS thread spawns can be rejected.
 pub fn block_on<F: Future>(runtime: &mut sim::Runtime, future: F) -> F::Output {
-    let _system_thread_context = enter_simulation_thread();
+    let _guard = enter();
     runtime.block_on(future)
 }
 
@@ -68,34 +68,33 @@ fn panic_with_seed(seed: u64, payload: Box<dyn core::any::Any + Send>) -> ! {
 
 // Simulation thread context.
 
-// Ambient state used only while `sim_std::block_on` is driving a simulation.
+// Ambient hosted state used only while sim_std is driving a simulation runtime.
 //
-// The simulator itself stays explicit-handle based. This thread-local only
-// marks whether the current OS thread is owned by a running simulation so
-// host thread creation can be rejected.
+// The simulator itself stays explicit-handle based. This flag only marks the
+// current OS thread as simulation-owned so host thread creation and randomness
+// hooks can reject accidental escapes from deterministic simulation.
 thread_local! {
-    // Marks the current OS thread as simulation-owned so thread creation hooks
-    // can reject accidental escapes to the host scheduler.
     static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
 }
 
-struct SimulationThreadGuard {
-    previous: bool,
-}
+#[must_use = "simulation runtime context exits immediately unless the guard is held"]
+struct EnterGuard;
 
-fn enter_simulation_thread() -> SimulationThreadGuard {
-    let previous = IN_SIMULATION.with(|state| state.replace(true));
-    SimulationThreadGuard { previous }
+fn enter() -> EnterGuard {
+    IN_SIMULATION.with(|current| {
+        assert!(!current.replace(true), "nested hosted simulation block_on");
+    });
+    EnterGuard
 }
 
 fn in_simulation() -> bool {
     IN_SIMULATION.with(Cell::get)
 }
 
-impl Drop for SimulationThreadGuard {
+impl Drop for EnterGuard {
     fn drop(&mut self) {
-        IN_SIMULATION.with(|state| {
-            state.set(self.previous);
+        IN_SIMULATION.with(|current| {
+            assert!(current.replace(false), "simulation context guard dropped without enter");
         });
     }
 }
@@ -159,7 +158,39 @@ fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
+    unsafe extern "C" fn macos_getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
+        if flags != 0 {
+            return -1;
+        }
+
+        let mut filled = 0;
+        while filled < buflen {
+            let chunk_len = (buflen - filled).min(256);
+            if unsafe { real_getentropy()(buf.add(filled).cast(), chunk_len) } != 0 {
+                return -1;
+            }
+            filled += chunk_len;
+        }
+        buflen as isize
+    }
+
+    macos_getrandom
+}
+
+#[cfg(target_os = "macos")]
+fn real_getentropy() -> unsafe extern "C" fn(*mut libc::c_void, usize) -> libc::c_int {
+    type GetentropyFn = unsafe extern "C" fn(*mut libc::c_void, usize) -> libc::c_int;
+    static GETENTROPY: OnceLock<GetentropyFn> = OnceLock::new();
+    *GETENTROPY.get_or_init(|| unsafe {
+        let ptr = libc::dlsym(libc::RTLD_NEXT, c"getentropy".as_ptr().cast());
+        assert!(!ptr.is_null(), "failed to resolve original getentropy");
+        std::mem::transmute(ptr)
+    })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     compile_error!("unsupported OS for DST getrandom override");
 }

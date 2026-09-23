@@ -1,8 +1,6 @@
 # Backend: PostgreSQL
 
-Instructions for generating, building, and deploying the **PostgreSQL** backend.
-
-**Do NOT read SpacetimeDB SDK rule files.** This backend uses standard Node.js/TypeScript patterns.
+Standard Node.js/TypeScript backend — you only need this file from `backends/`.
 
 ---
 
@@ -186,7 +184,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   }
   ```
 
-- `client/vite.config.ts` — port **6273** (NOT 6173 — that's SpacetimeDB), proxy `/api` and `/socket.io` to `http://localhost:6001`
+- `client/vite.config.ts` — port **6273** (do not use 6173 or 6373 — they may be in use), proxy `/api` and `/socket.io` to `http://localhost:6001`
   ```typescript
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react';
@@ -273,29 +271,10 @@ Wait for both servers to be ready:
 
 ---
 
-## Key Differences from SpacetimeDB
-
-For context on what makes this backend different (this helps the benchmark comparison):
-
-| Aspect | SpacetimeDB | PostgreSQL |
-|--------|-------------|------------|
-| Real-time | Built-in subscriptions | Socket.io (manual) |
-| API layer | Reducers (auto-exposed) | Express routes (manual) |
-| Schema | `table()` + `reducer()` | Drizzle `pgTable()` |
-| Bindings | Auto-generated types | Manual type definitions |
-| Deployment | `spacetime publish` | Start Express server |
-| State sync | Automatic client cache | Manual fetch + Socket.io |
-| Online presence | Via lifecycle hooks | Manual Socket.io tracking |
-| Typing indicators | Reducer + subscription | Socket.io events |
-| Infra dependencies | SpacetimeDB only | PostgreSQL + Express + Socket.io + CORS |
-
----
-
 ## App Identity
 
-- HTML `<title>` MUST be **"PostgreSQL Chat"** (not "Chat App", not "SpacetimeDB Chat")
+- HTML `<title>` MUST be **"PostgreSQL Chat"** (not a generic "Chat App")
 - The app MUST show **"PostgreSQL Chat"** as the visible header/title in the UI
-- This distinguishes it from the SpacetimeDB version during testing
 
 ---
 
@@ -305,10 +284,4 @@ For context on what makes this backend different (this helps the benchmark compa
 |---------|------|-------|
 | PostgreSQL (Docker) | 6432 | Database |
 | Express API server | 6001 | REST + Socket.io |
-| Vite dev server | **6273** | React client — NOT 6173 (that's SpacetimeDB) |
-
----
-
-## Reference Files
-
-The language and feature prompt files are provided as absolute paths in the launch prompt. No additional reference files are needed — this backend uses standard Node.js/TypeScript patterns.
+| Vite dev server | **6273** | React client — do not use 6173 or 6373 |

@@ -199,6 +199,15 @@ impl AuthHeader {
     }
 }
 
+pub fn auth_header_from_saved_token(config: &Config, anon_identity: bool) -> AuthHeader {
+    let token = if anon_identity {
+        None
+    } else {
+        config.spacetimedb_token().cloned()
+    };
+    AuthHeader { token }
+}
+
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
 
 #[derive(Clone, Copy, PartialEq, Debug)]

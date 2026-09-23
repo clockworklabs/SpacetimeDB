@@ -18,6 +18,18 @@ pub struct SenderViewPkPlayersATableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `sender_view_pk_players_a`.
+pub struct SenderViewPkPlayersATableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for SenderViewPkPlayersATableAccessor {
+    type Row = ViewPkPlayer;
+    type Handle<'db> = SenderViewPkPlayersATableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.sender_view_pk_players_a()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `sender_view_pk_players_a`.
 ///
@@ -39,6 +51,18 @@ impl SenderViewPkPlayersATableAccess for super::RemoteTables {
 
 pub struct SenderViewPkPlayersAInsertCallbackId(__sdk::CallbackId);
 pub struct SenderViewPkPlayersADeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for SenderViewPkPlayersATableHandle<'ctx> {
+    type Row = ViewPkPlayer;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ViewPkPlayer> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for SenderViewPkPlayersATableHandle<'ctx> {
     type Row = ViewPkPlayer;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for SenderViewPkPlayersATableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for SenderViewPkPlayersATableHandle<'ctx> {
+    type InsertCallbackId = SenderViewPkPlayersAInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderViewPkPlayersAInsertCallbackId {
+        SenderViewPkPlayersAInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: SenderViewPkPlayersAInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for SenderViewPkPlayersATableHandle<'ctx> {
+    type DeleteCallbackId = SenderViewPkPlayersADeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderViewPkPlayersADeleteCallbackId {
+        SenderViewPkPlayersADeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: SenderViewPkPlayersADeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct SenderViewPkPlayersAUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for SenderViewPkPlayersATableHandle<'ctx> {
+    type UpdateCallbackId = SenderViewPkPlayersAUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> SenderViewPkPlayersAUpdateCallbackId {
+        SenderViewPkPlayersAUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: SenderViewPkPlayersAUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for SenderViewPkPlayersATableHandle<'ctx> {
     type UpdateCallbackId = SenderViewPkPlayersAUpdateCallbackId;
 
     fn on_update(

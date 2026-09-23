@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class IenumerablePlayersWithLevelsHandle : RemoteTableHandle<EventContext, PlayerAndLevel>
         {
-            protected override string RemoteTableName => "ienumerable_players_with_levels";
+            public override string RemoteTableName => "ienumerable_players_with_levels";
 
             internal IenumerablePlayersWithLevelsHandle(DbConnection conn) : base(conn)
             {

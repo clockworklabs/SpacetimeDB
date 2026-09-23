@@ -18,9 +18,12 @@ SpacetimeDB provides logging capabilities for debugging and monitoring your modu
 Use the standard `console` API to write logs from your reducers:
 
 ```typescript
-import { spacetimedb } from 'spacetimedb/server';
+import { schema, t } from 'spacetimedb/server';
 
-export const process_data = spacetimedb.reducer({ value: t.u32() }, (ctx, { value }) => {
+const spacetimedb = schema({ /* tables */ });
+export default spacetimedb;
+
+export const processData = spacetimedb.reducer({ value: t.u32() }, (ctx, { value }) => {
   console.log(`Processing data with value: ${value}`);
   
   if (value > 100) {
@@ -219,10 +222,10 @@ Use appropriate log levels for different types of messages:
 Include relevant context in your log messages:
 
 ```typescript
-export const transfer_credits = spacetimedb.reducer(
-  { to_user: t.u64(), amount: t.u32() },
-  (ctx, { to_user, amount }) => {
-    console.log(`Credit transfer: from=${ctx.sender}, to=${to_user}, amount=${amount}`);
+export const transferCredits = spacetimedb.reducer(
+  { toUser: t.u64(), amount: t.u32() },
+  (ctx, { toUser, amount }) => {
+    console.log(`Credit transfer: from=${ctx.sender}, to=${toUser}, amount=${amount}`);
     
     // ... transfer logic
   }

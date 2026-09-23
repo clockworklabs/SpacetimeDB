@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class NullStringNonnullableHandle : RemoteTableHandle<EventContext, NullStringNonNullable>
         {
-            protected override string RemoteTableName => "null_string_nonnullable";
+            public override string RemoteTableName => "null_string_nonnullable";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
             {

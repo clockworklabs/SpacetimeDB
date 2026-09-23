@@ -49,7 +49,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map_err(|e| {
                 (
                     Some(reducer),
-                    mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
+                    mod_info.module_def.reducer_by_name(reducer).map(|(id, _)| id),
                     e.into(),
                 )
             })
@@ -92,7 +92,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         }) => {
             let res = client.call_procedure(procedure, args, request_id, timer).await;
             if let Err(e) = res {
-                log::warn!("Procedure call failed: {e:#}");
+                log::warn!("Failed to send procedure response to client: {e:#}");
             }
             // `ClientConnection::call_procedure` handles sending the error message to the client if the call fails,
             // so we don't need to return an `Err` here.

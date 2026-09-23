@@ -11,7 +11,7 @@ TYPES
     - Rectangle(Rect)
 
 TABLE
-- result
+- result (public)
   - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)

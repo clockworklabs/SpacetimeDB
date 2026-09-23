@@ -1,0 +1,27 @@
+Write a SpacetimeDB backend module in Rust that maintains and exposes a materialized aggregate.
+
+TABLES
+- sale (public), struct Sale
+  - Fields:
+    - id: u64 (primary key)
+    - category: String
+    - amount: i64
+- category_total (public), struct CategoryTotal
+  - Fields:
+    - category: String (primary key)
+    - total_amount: i64
+    - sale_count: u64
+
+REDUCERS
+- exercise()
+  - This is the only exported reducer
+  - Keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted
+  - Insert books sales with ids 1 and 2 and amounts 10 and 20
+  - Update the second books sale to 25
+  - Insert and then delete a games sale with id 3
+  - Delete the first books sale
+
+VIEW
+- category_summary (public, non-anonymous query-builder)
+  - Expose all category_total rows
+  - After exercise, the only row is books with total_amount 25 and sale_count 1

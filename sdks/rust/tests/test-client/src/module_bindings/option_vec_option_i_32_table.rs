@@ -18,6 +18,18 @@ pub struct OptionVecOptionI32TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `option_vec_option_i_32`.
+pub struct OptionVecOptionI32TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OptionVecOptionI32TableAccessor {
+    type Row = OptionVecOptionI32;
+    type Handle<'db> = OptionVecOptionI32TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.option_vec_option_i_32()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `option_vec_option_i_32`.
 ///
@@ -39,6 +51,18 @@ impl OptionVecOptionI32TableAccess for super::RemoteTables {
 
 pub struct OptionVecOptionI32InsertCallbackId(__sdk::CallbackId);
 pub struct OptionVecOptionI32DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for OptionVecOptionI32TableHandle<'ctx> {
+    type Row = OptionVecOptionI32;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OptionVecOptionI32> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for OptionVecOptionI32TableHandle<'ctx> {
     type Row = OptionVecOptionI32;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for OptionVecOptionI32TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OptionVecOptionI32DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionVecOptionI32DeleteCallbackId {
+        OptionVecOptionI32DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OptionVecOptionI32DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OptionVecOptionI32TableHandle<'ctx> {
+    type InsertCallbackId = OptionVecOptionI32InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionVecOptionI32InsertCallbackId {
+        OptionVecOptionI32InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OptionVecOptionI32InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OptionVecOptionI32TableHandle<'ctx> {
     type DeleteCallbackId = OptionVecOptionI32DeleteCallbackId;
 
     fn on_delete(

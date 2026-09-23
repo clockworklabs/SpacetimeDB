@@ -3,6 +3,7 @@ import { table, schema, t } from 'spacetimedb/server';
 const user = table(
   {
     name: 'user',
+    public: true,
   },
   {
     id: t.u64().primaryKey().autoInc(),

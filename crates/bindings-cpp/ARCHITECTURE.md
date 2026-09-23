@@ -238,9 +238,9 @@ Auto-increment fields require special handling during `insert()` operations. Whe
 FIELD_PrimaryKeyAutoInc(users, id);
 // Generates both constraint registration AND auto-increment integration:
 
-// 1. Auto-increment integration function (unique per field via __LINE__)
+// 1. Auto-increment integration function (stable and scoped per table field)
 namespace SpacetimeDB { namespace detail {
-    static void autoinc_integrate_47(User& row, SpacetimeDB::bsatn::Reader& reader) {
+    static void autoinc_integrate_users_id(User& row, SpacetimeDB::bsatn::Reader& reader) {
         using FieldType = decltype(std::declval<User>().id);
         FieldType generated_value = SpacetimeDB::bsatn::deserialize<FieldType>(reader);
         row.id = generated_value;  // Update field with generated ID
@@ -248,10 +248,10 @@ namespace SpacetimeDB { namespace detail {
 }}
 
 // 2. Registration function to register the integrator
-extern "C" __attribute__((export_name("__preinit__19_autoinc_register_47")))
-void __preinit__19_autoinc_register_47() {
+extern "C" __attribute__((export_name("__preinit__19_autoinc_register_users_id")))
+void __preinit__19_autoinc_register_users_id() {
     SpacetimeDB::detail::get_autoinc_integrator<User>() = 
-        &SpacetimeDB::detail::autoinc_integrate_47;
+        &SpacetimeDB::detail::autoinc_integrate_users_id;
 }
 ```
 

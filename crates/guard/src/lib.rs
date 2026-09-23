@@ -42,7 +42,10 @@ fn target_dir() -> PathBuf {
 
 /// Returns the expected CLI binary path.
 fn cli_binary_path() -> PathBuf {
-    let profile = "release";
+    // Use CARGO_BUILD_PROFILE if set, otherwise default to release for backwards compatibility
+    let profile = env::var("CARGO_BUILD_PROFILE")
+        .or_else(|_| env::var("PROFILE"))
+        .unwrap_or_else(|_| "release".to_string());
     let cli_name = if cfg!(windows) {
         "spacetimedb-cli.exe"
     } else {

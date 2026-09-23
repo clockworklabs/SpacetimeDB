@@ -18,6 +18,18 @@ pub struct PkBoolTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_bool`.
+pub struct PkBoolTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkBoolTableAccessor {
+    type Row = PkBool;
+    type Handle<'db> = PkBoolTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_bool()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_bool`.
 ///
@@ -39,6 +51,18 @@ impl PkBoolTableAccess for super::RemoteTables {
 
 pub struct PkBoolInsertCallbackId(__sdk::CallbackId);
 pub struct PkBoolDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for PkBoolTableHandle<'ctx> {
+    type Row = PkBool;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkBool> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     type Row = PkBool;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkBoolTableHandle<'ctx> {
+    type InsertCallbackId = PkBoolInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkBoolInsertCallbackId {
+        PkBoolInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkBoolInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkBoolTableHandle<'ctx> {
+    type DeleteCallbackId = PkBoolDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkBoolDeleteCallbackId {
+        PkBoolDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkBoolDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkBoolUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
+    type UpdateCallbackId = PkBoolUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkBoolUpdateCallbackId {
+        PkBoolUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkBoolUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkBoolTableHandle<'ctx> {
     type UpdateCallbackId = PkBoolUpdateCallbackId;
 
     fn on_update(

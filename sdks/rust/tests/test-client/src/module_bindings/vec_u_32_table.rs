@@ -18,6 +18,18 @@ pub struct VecU32TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_u_32`.
+pub struct VecU32TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecU32TableAccessor {
+    type Row = VecU32;
+    type Handle<'db> = VecU32TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_u_32()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_u_32`.
 ///
@@ -39,6 +51,18 @@ impl VecU32TableAccess for super::RemoteTables {
 
 pub struct VecU32InsertCallbackId(__sdk::CallbackId);
 pub struct VecU32DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for VecU32TableHandle<'ctx> {
+    type Row = VecU32;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecU32> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for VecU32TableHandle<'ctx> {
     type Row = VecU32;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for VecU32TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecU32DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecU32DeleteCallbackId {
+        VecU32DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecU32DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecU32TableHandle<'ctx> {
+    type InsertCallbackId = VecU32InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecU32InsertCallbackId {
+        VecU32InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecU32InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecU32TableHandle<'ctx> {
     type DeleteCallbackId = VecU32DeleteCallbackId;
 
     fn on_delete(

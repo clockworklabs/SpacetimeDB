@@ -19,6 +19,18 @@ pub struct ResultEveryPrimitiveStructStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `result_every_primitive_struct_string`.
+pub struct ResultEveryPrimitiveStructStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ResultEveryPrimitiveStructStringTableAccessor {
+    type Row = ResultEveryPrimitiveStructString;
+    type Handle<'db> = ResultEveryPrimitiveStructStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.result_every_primitive_struct_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `result_every_primitive_struct_string`.
 ///
@@ -42,6 +54,18 @@ impl ResultEveryPrimitiveStructStringTableAccess for super::RemoteTables {
 
 pub struct ResultEveryPrimitiveStructStringInsertCallbackId(__sdk::CallbackId);
 pub struct ResultEveryPrimitiveStructStringDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
+    type Row = ResultEveryPrimitiveStructString;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ResultEveryPrimitiveStructString> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
     type Row = ResultEveryPrimitiveStructString;
@@ -67,6 +91,36 @@ impl<'ctx> __sdk::Table for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ResultEveryPrimitiveStructStringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultEveryPrimitiveStructStringDeleteCallbackId {
+        ResultEveryPrimitiveStructStringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ResultEveryPrimitiveStructStringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
+    type InsertCallbackId = ResultEveryPrimitiveStructStringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultEveryPrimitiveStructStringInsertCallbackId {
+        ResultEveryPrimitiveStructStringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ResultEveryPrimitiveStructStringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ResultEveryPrimitiveStructStringTableHandle<'ctx> {
     type DeleteCallbackId = ResultEveryPrimitiveStructStringDeleteCallbackId;
 
     fn on_delete(

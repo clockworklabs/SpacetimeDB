@@ -13,6 +13,11 @@ void USenderViewPkPlayersATable::PostInitialize()
     Data = MakeShared<UClientCache<FViewPkPlayerType>>();
 
     TSharedPtr<FTableCache<FViewPkPlayerType>> SenderViewPkPlayersATable = Data->GetOrAdd(TableName);
+    SenderViewPkPlayersATable->AddUniqueConstraint<uint64>("id", [](const FViewPkPlayerType& Row) -> const uint64& {
+        return Row.Id; });
+
+    Id = NewObject<USenderViewPkPlayersAIdUniqueIndex>(this);
+    Id->SetCache(SenderViewPkPlayersATable);
 
     /***/
 }

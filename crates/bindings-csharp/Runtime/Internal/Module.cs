@@ -20,6 +20,7 @@ partial class RawModuleDefV10
     private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
     private readonly List<RawViewDefV10> viewDefs = [];
     private readonly List<RawViewPrimaryKeyDefV10> viewPrimaryKeyDefs = [];
+    private readonly List<EnvironmentDeclaration> environment = [];
     private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
         new(StringComparer.Ordinal);
@@ -31,11 +32,11 @@ partial class RawModuleDefV10
     // Fix it up to a different mangling scheme if it causes problems.
     private static string GetFriendlyName(Type type) =>
         type.IsGenericType
-            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
+            ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
     private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
-        new(new List<string>(), GetFriendlyName(type));
+        new([], GetFriendlyName(type));
 
     internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
@@ -70,6 +71,9 @@ partial class RawModuleDefV10
 
     internal void RegisterHttpHandler(RawHttpHandlerDefV10 handler) => httpHandlerDefs.Add(handler);
 
+    internal bool HasHttpHandler(string sourceName) =>
+        httpHandlerDefs.Any(handler => handler.SourceName == sourceName);
+
     internal void RegisterHttpRoute(RawHttpRouteDefV10 route) => httpRouteDefs.Add(route);
 
     internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
@@ -83,8 +87,11 @@ partial class RawModuleDefV10
 
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
+    internal void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+        environment.Add(declaration);
+
     internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
-        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, columns.ToList()));
+        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         rowLevelSecurityDefs.Add(rls);
@@ -96,7 +103,7 @@ partial class RawModuleDefV10
             defaults = [];
             defaultValuesByTable.Add(table, defaults);
         }
-        defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
+        defaults.Add(new RawColumnDefaultValueV10(colId, [.. value]));
     }
 
     internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
@@ -129,9 +136,7 @@ partial class RawModuleDefV10
                     Sequences: table.Sequences,
                     TableType: table.TableType,
                     TableAccess: table.TableAccess,
-                    DefaultValues: defaults is null
-                        ? []
-                        : new List<RawColumnDefaultValueV10>(defaults),
+                    DefaultValues: defaults is null ? [] : [.. defaults],
                     IsEvent: table.IsEvent
                 )
             );
@@ -161,6 +166,7 @@ partial class RawModuleDefV10
         var sections = new List<RawModuleDefV10Section>
         {
             new RawModuleDefV10Section.Typespace(typespace),
+            new RawModuleDefV10Section.Environment(environment),
         };
 
         if (typeDefs.Count > 0)
@@ -211,9 +217,7 @@ partial class RawModuleDefV10
         if (explicitNames.Count > 0)
         {
             sections.Add(
-                new RawModuleDefV10Section.ExplicitNames(
-                    new ExplicitNames(new List<ExplicitNameEntry>(explicitNames))
-                )
+                new RawModuleDefV10Section.ExplicitNames(new ExplicitNames([.. explicitNames]))
             );
         }
         if (rowLevelSecurityDefs.Count > 0)
@@ -244,7 +248,9 @@ public static class Module
         // These constructions are never executed at runtime — they exist solely
         // to make the IL scanner compute vtables for TaggedEnum subtypes.
         // The condition is always false but the scanner must assume it could be true.
+#pragma warning disable IDE0078 // Keep this opaque to the NativeAOT IL scanner.
         if (Environment.TickCount < 0 && Environment.TickCount > 0)
+#pragma warning restore IDE0078
         {
             _ = new RawIndexAlgorithm.BTree(null!);
             _ = new RawConstraintDataV9.Unique(null!);
@@ -261,11 +267,35 @@ public static class Module
 
     private static readonly RawModuleDefV10 moduleDef = new();
 
-    private static readonly List<IReducer> reducers = [];
-    private static readonly List<IProcedure> procedures = [];
-    private static readonly List<IHttpHandler> httpHandlers = [];
-    private static readonly List<IView> viewDispatchers = [];
-    private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
+    private static class ReducerCache<R>
+        where R : IReducer, new()
+    {
+        public static readonly R Instance = new();
+    }
+
+    private static class ProcedureCache<P>
+        where P : IProcedure, new()
+    {
+        public static readonly P Instance = new();
+    }
+
+    private static class HttpHandlerCache<H>
+        where H : IHttpHandler, new()
+    {
+        public static readonly H Instance = new();
+    }
+
+    private static class ViewDispatcherCache<TDispatcher>
+        where TDispatcher : IView, new()
+    {
+        public static readonly TDispatcher Instance = new();
+    }
+
+    private static class AnonymousViewDispatcherCache<TDispatcher>
+        where TDispatcher : IAnonymousView, new()
+    {
+        public static readonly TDispatcher Instance = new();
+    }
 
     private static Func<
         Identity,
@@ -339,24 +369,21 @@ public static class Module
     public static void RegisterReducer<R>()
         where R : IReducer, new()
     {
-        var reducer = new R();
-        reducers.Add(reducer);
+        var reducer = ReducerCache<R>.Instance;
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar), reducer.Lifecycle);
     }
 
     public static void RegisterProcedure<P>()
         where P : IProcedure, new()
     {
-        var procedure = new P();
-        procedures.Add(procedure);
+        var procedure = ProcedureCache<P>.Instance;
         moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
     }
 
     public static void RegisterHttpHandler<H>()
         where H : IHttpHandler, new()
     {
-        var handler = new H();
-        httpHandlers.Add(handler);
+        var handler = HttpHandlerCache<H>.Instance;
         moduleDef.RegisterHttpHandler(handler.MakeHandlerDef());
     }
 
@@ -364,11 +391,7 @@ public static class Module
     {
         foreach (var route in router.GetRoutes())
         {
-            if (
-                !httpHandlers.Any(handler =>
-                    handler.MakeHandlerDef().SourceName == route.HandlerFunction
-                )
-            )
+            if (!moduleDef.HasHttpHandler(route.HandlerFunction))
             {
                 throw new ArgumentException(
                     $"HTTP router references unknown handler `{route.HandlerFunction}`",
@@ -396,20 +419,21 @@ public static class Module
     public static void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
     {
-        var dispatcher = new TDispatcher();
+        var dispatcher = ViewDispatcherCache<TDispatcher>.Instance;
         var def = dispatcher.MakeViewDef(typeRegistrar);
-        viewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
 
     public static void RegisterAnonymousView<TDispatcher>()
         where TDispatcher : IAnonymousView, new()
     {
-        var dispatcher = new TDispatcher();
+        var dispatcher = AnonymousViewDispatcherCache<TDispatcher>.Instance;
         var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
-        anonymousViewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
+
+    public static void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+        moduleDef.RegisterEnvironment(declaration);
 
     public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
         moduleDef.RegisterViewPrimaryKey(viewSourceName, columns);
@@ -443,9 +467,16 @@ public static class Module
 
     public static byte[] Consume(this BytesSource source)
     {
+        var buffer = Array.Empty<byte>();
+        using var stream = source.Consume(ref buffer);
+        return stream.ToArray();
+    }
+
+    internal static MemoryStream Consume(this BytesSource source, ref byte[] buffer)
+    {
         if (source == BytesSource.INVALID)
         {
-            return [];
+            return new();
         }
 
         var len = (uint)0;
@@ -460,36 +491,32 @@ public static class Module
                 throw new UnknownException(ret);
         }
 
-        var buffer = new byte[len];
-        var written = 0U;
-        // Because we've reserved space in our buffer already, this loop should be unnecessary.
-        // We expect the first call to `bytes_source_read` to always return `-1`.
-        // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
-        // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
-        // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
-        // at which point the loop will become useful again.
+        var requiredLen = checked((int)len);
+        if (buffer.Length < requiredLen)
+        {
+            Array.Resize(ref buffer, requiredLen);
+        }
+
+        var written = 0;
         while (true)
         {
-            // Write into the spare capacity of the buffer.
-            var spare = buffer.AsSpan((int)written);
-            var buf_len = (uint)spare.Length;
+            var spare = buffer.AsSpan(written);
+            var buf_len = spare.Length;
             ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
-                // Host side source exhausted, we're done.
                 case Errno.EXHAUSTED:
-                    Array.Resize(ref buffer, (int)written);
-                    return buffer;
-                // Wrote the entire spare capacity.
-                // Need to reserve more space in the buffer.
+                    return new MemoryStream(
+                        buffer,
+                        0,
+                        written,
+                        writable: false,
+                        publiclyVisible: true
+                    );
                 case Errno.OK when written == buffer.Length:
                     Array.Resize(ref buffer, buffer.Length + 1024);
                     break;
-                // Host didn't write as much as possible.
-                // Try to read some more.
-                // The host will likely not trigger this branch (current host doesn't),
-                // but a module should be prepared for it.
                 case Errno.OK:
                     break;
                 case Errno.NO_SUCH_BYTES:
@@ -500,15 +527,121 @@ public static class Module
         }
     }
 
-    private static void Write(this BytesSink sink, byte[] bytes)
+    public static void WriteBytes(BytesSink sink, ReadOnlySpan<byte> bytes) => sink.Write(bytes);
+
+    public static MemoryStream ConsumeBytes(BytesSource source, ref byte[] buffer) =>
+        source.Consume(ref buffer);
+
+    public static SpacetimeDB.HttpRequest ReadHttpRequest(
+        BytesSource request,
+        ref byte[] requestBuffer,
+        BytesSource requestBody,
+        ref byte[] requestBodyBuffer
+    )
     {
-        var start = 0U;
-        while (start != bytes.Length)
+        using var stream = ConsumeBytes(request, ref requestBuffer);
+        using var reader = new BinaryReader(stream);
+        var requestWire = new HttpRequestWire.BSATN().Read(reader);
+        EnsureNoUnreadBytes(stream, "HTTP handler request");
+
+        using var requestBodyStream = ConsumeBytes(requestBody, ref requestBodyBuffer);
+        return SpacetimeDB.HttpClient.FromWire(requestWire, requestBodyStream.ToArray());
+    }
+
+    public static void WriteHttpResponse(
+        BytesSink responseSink,
+        BytesSink responseBodySink,
+        SpacetimeDB.HttpResponse response
+    )
+    {
+        var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
+        responseSink.Write(
+            IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
+        );
+        responseBodySink.Write(responseBody);
+    }
+
+    public static IReducerContext CreateReducerContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp
+    )
+    {
+        var senderIdentity = Identity.From(
+            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
+        );
+        var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
+        var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+        var time = timestamp.ToStd();
+
+        return newReducerContext!(senderIdentity, connectionId, random, time);
+    }
+
+    public static IProcedureContext CreateProcedureContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp
+    )
+    {
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
+        var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
+        var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+        var time = timestamp.ToStd();
+
+        return newProcedureContext!(sender, connectionId, random, time);
+    }
+
+    public static SpacetimeDB.HandlerContextBase CreateHandlerContext(Timestamp timestamp)
+    {
+        var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+        var time = timestamp.ToStd();
+        return newHandlerContext!(random, time);
+    }
+
+    public static IViewContext CreateViewContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3
+    )
+    {
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
+        return newViewContext!(sender);
+    }
+
+    public static IAnonymousViewContext CreateAnonymousViewContext() => newAnonymousViewContext!();
+
+    public static void EnsureNoUnreadBytes(MemoryStream stream, string description)
+    {
+        if (stream.Position != stream.Length)
         {
-            var written = (uint)bytes.Length;
-            var buffer = bytes.AsSpan((int)start);
-            FFI.bytes_sink_write(sink, buffer, ref written);
-            start += written;
+            throw new Exception($"Unrecognised extra bytes in the {description}");
+        }
+    }
+
+    public static Errno WriteReducerError(BytesSink error, Exception e)
+    {
+        var error_str = e.Message ?? e.GetType().FullName ?? e.GetType().Name;
+        var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
+        error.Write(error_bytes);
+        return Errno.HOST_CALL_FAILURE;
+    }
+
+    private static void Write(this BytesSink sink, ReadOnlySpan<byte> bytes)
+    {
+        while (!bytes.IsEmpty)
+        {
+            var written = bytes.Length;
+            FFI.bytes_sink_write(sink, bytes, ref written);
+            bytes = bytes[written..];
         }
     }
 
@@ -527,229 +660,6 @@ public static class Module
         catch (Exception e)
         {
             Log.Error($"Error while describing the module: {e}");
-        }
-    }
-
-    public static Errno __call_reducer__(
-        uint id,
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        ulong conn_id_0,
-        ulong conn_id_1,
-        Timestamp timestamp,
-        BytesSource args,
-        BytesSink error
-    )
-    {
-        try
-        {
-            var senderIdentity = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
-            );
-            var connectionId = ConnectionId.From(
-                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
-            );
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-
-            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
-
-            using var stream = new MemoryStream(args.Consume());
-            using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, ctx);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the reducer arguments");
-            }
-            return Errno.OK; /* no exception */
-        }
-        catch (Exception e)
-        {
-            var error_str = e.Message ?? e.GetType().FullName;
-            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            error.Write(error_bytes);
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    public static Errno __call_procedure__(
-        uint id,
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        ulong conn_id_0,
-        ulong conn_id_1,
-        Timestamp timestamp,
-        BytesSource args,
-        BytesSink resultSink
-    )
-    {
-        try
-        {
-            var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
-            );
-            var connectionId = ConnectionId.From(
-                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
-            );
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-
-            var ctx = newProcedureContext!(sender, connectionId, random, time);
-
-            using var stream = new MemoryStream(args.Consume());
-            using var reader = new BinaryReader(stream);
-            var bytes = procedures[(int)id].Invoke(reader, ctx);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the procedure arguments");
-            }
-            resultSink.Write(bytes);
-
-            return Errno.OK;
-        }
-        catch (Exception e)
-        {
-            // Host contract __call_procedure__ must either return Errno.OK or trap.
-            // Returning other errno values here can put the host/runtime in an unexpected state,
-            // so we log and rethrow to trap on any exception.
-            Log.Error($"Error while invoking procedure: {e}");
-            throw;
-        }
-    }
-
-    public static Errno __call_http_handler__(
-        uint id,
-        Timestamp timestamp,
-        BytesSource request,
-        BytesSource requestBody,
-        BytesSink responseSink,
-        BytesSink responseBodySink
-    )
-    {
-        try
-        {
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-            var ctx = newHandlerContext!(random, time);
-
-            var requestBytes = request.Consume();
-            using var stream = new MemoryStream(requestBytes);
-            using var reader = new BinaryReader(stream);
-            var requestWire = new HttpRequestWire.BSATN().Read(reader);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the HTTP handler request");
-            }
-
-            var response = httpHandlers[(int)id]
-                .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
-            var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
-            responseSink.Write(
-                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
-            );
-            responseBodySink.Write(responseBody);
-
-            return Errno.OK;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking HTTP handler: {e}");
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Called by the host to execute a view when the sender calls the view identified by <paramref name="id" />.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The sender identity is passed as 4 <see cref="ulong" /> values (<paramref name="sender_0" /> through
-    /// <paramref name="sender_3" />) representing a little-endian <see cref="SpacetimeDB.Identity" />.
-    /// </para>
-    /// <para>
-    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
-    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
-    /// </para>
-    /// <para>
-    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
-    /// </para>
-    /// <para>
-    /// Note: a previous view ABI wrote the return rows directly to the sink.
-    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
-    /// between views that return row data and views that return queries.
-    /// </para>
-    /// <para>
-    /// The current ABI is identified by returning error code <c>2</c>.
-    /// </para>
-    /// </remarks>
-    public static Errno __call_view__(
-        uint id,
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        BytesSource args,
-        BytesSink rows
-    )
-    {
-        try
-        {
-            var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
-            );
-            var ctx = newViewContext!(sender);
-            using var stream = new MemoryStream(args.Consume());
-            using var reader = new BinaryReader(stream);
-            var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
-            rows.Write(bytes);
-            return (Errno)2;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking view: {e}");
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    /// <summary>
-    /// Called by the host to execute an anonymous view.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
-    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
-    /// </para>
-    /// <para>
-    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
-    /// </para>
-    /// <para>
-    /// Note: a previous view ABI wrote the return rows directly to the sink.
-    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
-    /// between views that return row data and views that return queries.
-    /// </para>
-    /// <para>
-    /// The current ABI is identified by returning error code <c>2</c>.
-    /// </para>
-    /// </remarks>
-    public static Errno __call_view_anon__(uint id, BytesSource args, BytesSink rows)
-    {
-        try
-        {
-            var ctx = newAnonymousViewContext!();
-            using var stream = new MemoryStream(args.Consume());
-            using var reader = new BinaryReader(stream);
-            var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
-            rows.Write(bytes);
-            return (Errno)2;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking anonymous view: {e}");
-            return Errno.HOST_CALL_FAILURE;
         }
     }
 }

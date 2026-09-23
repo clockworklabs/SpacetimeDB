@@ -10,7 +10,8 @@ on:
 
 jobs:
   build:
-    runs-on: spacetimedb-new-runner-2
+    # This builds and uploads the documentation site, not SpacetimeDB binaries.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,20 +25,6 @@ jobs:
         with:
           run_install: true
 
-      - name: Get pnpm store directory
-        working-directory: sdks/typescript
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
       - name: Install dependencies
         working-directory: docs
         run: pnpm install
@@ -47,7 +34,7 @@ jobs:
         run: pnpm build
 
       - name: Publish docs to S3
-        uses: shallwefootball/s3-upload-action@master
+        uses: shallwefootball/s3-upload-action@0d261a6f15b3b2e209dfebdecace4b100c04f95b # master
         with:
           aws_key_id: ${{ secrets.DOCS_AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY}}

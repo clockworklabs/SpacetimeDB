@@ -390,8 +390,40 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get ViewPrimaryKeys() {
     return __t.array(RawViewPrimaryKeyDefV10);
   },
+  get Submodules() {
+    return __t.array(RawSubmoduleV10);
+  },
+  get Environment() {
+    return __t.array(EnvironmentDeclaration);
+  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
+
+export const EnvVarType = __t.enum('EnvVarType', {
+  get String() {
+    return __t.unit();
+  },
+  get StringLiteral() {
+    return __t.string();
+  },
+  get Union() {
+    return __t.array(__t.string());
+  },
+});
+export type EnvVarType = __Infer<typeof EnvVarType>;
+
+export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
+  get name() {
+    return __t.string();
+  },
+  get ty() {
+    return EnvVarType;
+  },
+  get optional() {
+    return __t.bool();
+  },
+});
+export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {
@@ -546,6 +578,14 @@ export const RawSequenceDefV9 = __t.object('RawSequenceDefV9', {
   increment: __t.i128(),
 });
 export type RawSequenceDefV9 = __Infer<typeof RawSequenceDefV9>;
+
+export const RawSubmoduleV10 = __t.object('RawSubmoduleV10', {
+  namespace: __t.string(),
+  get module(): any {
+    return RawModuleDefV10;
+  },
+});
+export type RawSubmoduleV10 = __Infer<typeof RawSubmoduleV10>;
 
 export const RawTableDefV10 = __t.object('RawTableDefV10', {
   sourceName: __t.string(),

@@ -1,0 +1,17 @@
+Write a SpacetimeDB backend module in Rust that stores binary content and its metadata.
+
+TABLE
+- blob_record (public), struct BlobRecord
+  - Fields:
+    - id: u64 (primary key, auto-increment)
+    - owner: Identity (btree index by_owner)
+    - filename: String
+    - mime_type: String
+    - size: u64
+    - data: Vec<u8>
+
+REDUCERS
+- store_blob(filename: String, mime_type: String, data: Vec<u8>)
+  - Store the sender as owner
+  - Derive size from the byte length
+  - Insert the bytes unchanged

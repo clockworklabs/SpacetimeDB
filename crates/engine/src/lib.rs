@@ -17,6 +17,7 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::traits::TxData;
 pub use spacetimedb_lib::identity;
 pub use spacetimedb_lib::Identity;
+use spacetimedb_runtime::sync::mpsc::error::TryRecvError;
 pub use spacetimedb_sats::hash;
 use spacetimedb_schema::reducer_name::ReducerName;
 
@@ -123,8 +124,16 @@ pub fn spawn_tx_metrics_recorder(
         .spawn(async move {
             loop {
                 handle_clone.sleep(TX_METRICS_RECORDING_INTERVAL).await;
-                while let Ok(metrics) = rx.try_recv() {
-                    record_metrics(metrics);
+                loop {
+                    match rx.try_recv() {
+                        Ok(metrics) => record_metrics(metrics),
+                        // All senders have been dropped, so no more metrics can arrive.
+                        // Exit the recorder task.
+                        Err(TryRecvError::Disconnected) => return,
+                        // The queue is currently empty. Stop draining and wait until the
+                        // next recording interval.
+                        Err(TryRecvError::Empty) => break,
+                    }
                 }
             }
         })

@@ -17,6 +17,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
@@ -315,6 +316,7 @@ impl OutboundMessage {
             Self::V2(message) => match message {
                 ws_v2::ServerMessage::InitialConnection(_) => None,
                 ws_v2::ServerMessage::SubscribeApplied(_) => Some(WorkloadType::Subscribe),
+                ws_v2::ServerMessage::SubscribeBatchApplied(_) => Some(WorkloadType::Subscribe),
                 ws_v2::ServerMessage::UnsubscribeApplied(_) => Some(WorkloadType::Unsubscribe),
                 ws_v2::ServerMessage::SubscriptionError(_) => None,
                 ws_v2::ServerMessage::TransactionUpdate(_) => Some(WorkloadType::Update),
@@ -330,6 +332,16 @@ fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
     match message {
         ws_v2::ServerMessage::InitialConnection(_) => None,
         ws_v2::ServerMessage::SubscribeApplied(message) => Some(count_query_rows(&message.rows)),
+        ws_v2::ServerMessage::SubscribeBatchApplied(message) => Some(
+            message
+                .results
+                .iter()
+                .map(|result| match &result.outcome {
+                    ws_v2::SubscribeSetOutcome::Applied(rows) => count_query_rows(rows),
+                    ws_v2::SubscribeSetOutcome::Error(_) => 0,
+                })
+                .sum(),
+        ),
         ws_v2::ServerMessage::UnsubscribeApplied(message) => {
             Some(message.rows.as_ref().map(count_query_rows).unwrap_or_default())
         }
@@ -608,7 +620,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -621,7 +633,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -639,7 +651,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -652,7 +664,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }

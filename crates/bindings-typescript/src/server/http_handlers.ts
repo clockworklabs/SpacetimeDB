@@ -1,3 +1,4 @@
+import type { EnvironmentFor } from '../lib/environment';
 import type { Identity } from '../lib/identity';
 import type {
   HttpMethod,
@@ -211,11 +212,20 @@ export class Request {
   }
 }
 
+export type HandlerAliasViews<SchemaDef extends UntypedSchemaDef> =
+  SchemaDef extends {
+    namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+  }
+    ? { readonly [K in keyof NS]: HandlerContext<NS[K]> }
+    : {};
+
 export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
+  readonly env: EnvironmentFor<S>;
   readonly timestamp: Timestamp;
   readonly http: HttpClient;
   readonly identity: Identity;
   readonly random: Random;
+  readonly as: HandlerAliasViews<S>;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
@@ -228,7 +238,8 @@ export type HandlerFn<S extends UntypedSchemaDef = UntypedSchemaDef> = (
 
 export interface HttpHandlerExport<
   S extends UntypedSchemaDef = UntypedSchemaDef,
-> extends ModuleExport {
+> extends HandlerFn<S>,
+    ModuleExport {
   [httpHandlerFn]: HandlerFn<S>;
 }
 
@@ -354,24 +365,27 @@ export function makeHttpHandlerExport<S extends UntypedSchemaDef>(
   opts: HttpHandlerOpts | undefined,
   fn: HandlerFn<S>
 ): HttpHandlerExport<S> {
-  const handlerExport = {
-    [httpHandlerFn]: fn,
-    [exportContext]: ctx,
-    [registerExport](ctx: SchemaInner, exportName: string) {
-      if (exportedHttpHandlerObjects.has(handlerExport)) {
-        throw new TypeError(
-          `HTTP handler '${exportName}' was exported more than once`
+  const handlerExport: HttpHandlerExport<S> = Object.assign(
+    (...args: Parameters<HandlerFn<S>>) => fn(...args),
+    {
+      [httpHandlerFn]: fn,
+      [exportContext]: ctx,
+      [registerExport](ctx: SchemaInner, exportName: string) {
+        if (exportedHttpHandlerObjects.has(handlerExport)) {
+          throw new TypeError(
+            `HTTP handler '${exportName}' was exported more than once`
+          );
+        }
+        exportedHttpHandlerObjects.add(handlerExport);
+        registerHttpHandler(ctx, exportName, fn, opts);
+        ctx.httpHandlerExports.set(
+          handlerExport as HttpHandlerExport<UntypedSchemaDef>,
+          exportName
         );
-      }
-      exportedHttpHandlerObjects.add(handlerExport);
-      registerHttpHandler(ctx, exportName, fn, opts);
-      ctx.httpHandlerExports.set(
-        handlerExport as HttpHandlerExport<UntypedSchemaDef>,
-        exportName
-      );
-    },
-  };
-  return handlerExport as HttpHandlerExport<S>;
+      },
+    }
+  );
+  return handlerExport;
 }
 
 export function makeHttpRouterExport(

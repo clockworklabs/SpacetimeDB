@@ -18,6 +18,18 @@ pub struct ResultVecI32StringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `result_vec_i_32_string`.
+pub struct ResultVecI32StringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ResultVecI32StringTableAccessor {
+    type Row = ResultVecI32String;
+    type Handle<'db> = ResultVecI32StringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.result_vec_i_32_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `result_vec_i_32_string`.
 ///
@@ -39,6 +51,18 @@ impl ResultVecI32StringTableAccess for super::RemoteTables {
 
 pub struct ResultVecI32StringInsertCallbackId(__sdk::CallbackId);
 pub struct ResultVecI32StringDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for ResultVecI32StringTableHandle<'ctx> {
+    type Row = ResultVecI32String;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ResultVecI32String> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for ResultVecI32StringTableHandle<'ctx> {
     type Row = ResultVecI32String;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for ResultVecI32StringTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ResultVecI32StringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultVecI32StringDeleteCallbackId {
+        ResultVecI32StringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ResultVecI32StringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ResultVecI32StringTableHandle<'ctx> {
+    type InsertCallbackId = ResultVecI32StringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultVecI32StringInsertCallbackId {
+        ResultVecI32StringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ResultVecI32StringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ResultVecI32StringTableHandle<'ctx> {
     type DeleteCallbackId = ResultVecI32StringDeleteCallbackId;
 
     fn on_delete(

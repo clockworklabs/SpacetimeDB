@@ -60,6 +60,11 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     // Assert that the copied snapshot is valid.
     let pool = PagePool::new_for_test();
     let dst_snapshot_full = dst_repo.read_snapshot(src.offset, &pool)?;
+    let read_metrics = dst_snapshot_full.read_metrics;
+    assert_eq!(read_metrics.metadata.files, 1);
+    assert!(read_metrics.metadata.disk_bytes > 0);
+    assert_eq!(read_metrics.page.files + read_metrics.blob.files, total_objects);
+    assert!(read_metrics.page.disk_bytes + read_metrics.blob.disk_bytes > 0);
     Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 
     // Let's also check that running `synchronize_snapshot` again does nothing.
@@ -259,9 +264,10 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     .unwrap()?;
 
     let mut snapshot_offset = *watch.borrow();
-    while snapshot_offset < SNAPSHOT_FREQUENCY && watch.changed().await.is_ok() {
+    while snapshot_offset.is_none_or(|offset| offset < SNAPSHOT_FREQUENCY) && watch.changed().await.is_ok() {
         snapshot_offset = *watch.borrow_and_update();
     }
+    let snapshot_offset = snapshot_offset.expect("snapshot should be created");
     assert!(snapshot_offset >= SNAPSHOT_FREQUENCY);
     info!(
         "snapshot creation took {}s",

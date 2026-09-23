@@ -1,0 +1,42 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "spacetimedb-plugins",
+  "description": "SpacetimeDB plugins for Claude Code",
+  "owner": {
+    "name": "Clockwork Labs",
+    "url": "https://spacetimedb.com"
+  },
+  "plugins": [
+    {
+      "name": "spacetimedb",
+      "displayName": "SpacetimeDB",
+      "description": "SpacetimeDB skills for building modules and clients in Rust, C#, TypeScript, C++, Unity, and Unreal, plus an MCP server that lists your databases, reads schemas, runs SQL, and calls reducers with your CLI login.",
+      "author": {
+        "name": "Clockwork Labs"
+      },
+      "category": "database",
+      "homepage": "https://spacetimedb.com",
+      "source": "./skills",
+      "strict": false,
+      "skills": [
+        "./cli",
+        "./concepts",
+        "./cpp-server",
+        "./csharp-client",
+        "./csharp-server",
+        "./mcp",
+        "./rust-server",
+        "./typescript-client",
+        "./typescript-server",
+        "./unity",
+        "./unreal"
+      ],
+      "mcpServers": {
+        "spacetimedb": {
+          "command": "spacetime",
+          "args": ["mcp"]
+        }
+      }
+    }
+  ]
+}

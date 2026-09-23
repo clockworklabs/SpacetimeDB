@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   resolvePush:
-    runs-on: ubuntu-latest
+    # This only resolves GitHub event metadata and performs no checkout or build.
+    runs-on: spacetimedb-linux-small
     outputs:
       is_pr_merge: ${{ steps.resolve.outputs.is_pr_merge }}
       is_external: ${{ steps.resolve.outputs.is_external }}
@@ -29,17 +30,40 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const sha = context.sha;
-            const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
-              owner,
-              repo,
-              commit_sha: sha,
-            });
+
+            async function findAssociatedPRs() {
+              // It seems that when we do this too promptly after a PR merge then the data isn't there, so we have a retry loop.
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                core.info('Looking for associated PRs..');
+                const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                  owner,
+                  repo,
+                  commit_sha: sha,
+                });
+
+                if (prs.length > 0) {
+                  return prs;
+                }
+
+                core.info('No associated PRs found. Will check again.');
+                await new Promise((resolve) => setTimeout(resolve, 30000));
+              }
+
+              return [];
+            }
+
+            const prs = await findAssociatedPRs();
+            core.info(`Associated PR info found:`);
+            core.info(JSON.stringify(prs, null, 2));
 
             if (prs.length === 0) {
+              core.info('No associated PRs found. Treating this push as a direct/non-PR push.');
               core.setOutput('is_pr_merge', 'false');
+              core.info('Output is_pr_merge=false');
               return;
             }
             if (prs.length > 1) {
+              core.info('Multiple associated PRs found. Failing because downstream notification expects exactly one PR.');
               core.setFailed(`Expected exactly one PR associated with ${sha}, found ${prs.length}.`);
               return;
             }
@@ -57,7 +81,8 @@ jobs:
 
   discordNotification:
     needs: resolvePush
-    runs-on: ubuntu-latest
+    # This only queries pull-request checks and posts a Discord notification.
+    runs-on: spacetimedb-linux-small
     if: needs.resolvePush.outputs.is_pr_merge == 'true'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -134,7 +159,8 @@ jobs:
     needs:
       - resolvePush
       - discordNotification
-    runs-on: ubuntu-latest
+    # This failure path only posts a Discord notification.
+    runs-on: spacetimedb-linux-small
     if: ${{ always() && (needs.resolvePush.result == 'failure' || needs.discordNotification.result == 'failure') }}
     steps:
       - name: Send failure notification
@@ -149,7 +175,8 @@ jobs:
 
   warnDirectPush:
     needs: resolvePush
-    runs-on: ubuntu-latest
+    # This only formats commit metadata and posts a Discord warning.
+    runs-on: spacetimedb-linux-small
     if: needs.resolvePush.outputs.is_pr_merge != 'true'
     steps:
       - name: Warn about non-PR push
@@ -174,7 +201,8 @@ jobs:
 
   invokePrivate:
     needs: resolvePush
-    runs-on: ubuntu-latest
+    # This only dispatches the private workflow through the GitHub API.
+    runs-on: spacetimedb-linux-small
     if: needs.resolvePush.outputs.is_pr_merge == 'true'
     permissions:
       contents: read

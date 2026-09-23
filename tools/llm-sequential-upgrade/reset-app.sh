@@ -5,7 +5,7 @@
 # Usage:
 #   ./reset-app.sh <app-dir>
 #
-# This gives Playwright a clean slate — no leftover users, rooms, or messages.
+# This gives grading a clean slate — no leftover users, rooms, or messages.
 
 set -euo pipefail
 
@@ -26,11 +26,15 @@ if [[ -d "/c/Users/$_USER/AppData/Local/SpacetimeDB" ]]; then
   export PATH="$PATH:/c/Users/$_USER/AppData/Local/SpacetimeDB"
 fi
 
-# Auto-detect backend
-if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+# Auto-detect backend. Prefer the explicit marker written by run.sh at generate
+# time; fall back to directory shape for legacy apps. The marker is the only
+# reliable way to tell postgres and mongodb apart (both use a server/ dir).
+if [[ -f "$APP_DIR/.benchmark-backend" ]]; then
+  BACKEND="$(tr -d '[:space:]' < "$APP_DIR/.benchmark-backend")"
+elif [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
   BACKEND="spacetime"
 elif [[ -d "$APP_DIR/server" ]]; then
-  BACKEND="postgres"
+  BACKEND="postgres"  # legacy fallback; mongodb apps carry the marker
 else
   echo "ERROR: Cannot detect backend in $APP_DIR"
   exit 1
@@ -97,6 +101,27 @@ elif [[ "$BACKEND" == "postgres" ]]; then
   cd "$SERVER_DIR"
   npx drizzle-kit push 2>&1 | tail -3
   cd - > /dev/null
+
+  echo "  Database reset complete."
+
+elif [[ "$BACKEND" == "mongodb" ]]; then
+  echo "Resetting MongoDB database..."
+
+  MONGO_CONTAINER="${MONGO_CONTAINER:-llm-sequential-upgrade-mongodb-1}"
+  DB_NAME="chat-app"
+
+  # Find the database name from the server's DATABASE_URL (mongodb://host:port/<db>)
+  SERVER_DIR="$APP_DIR/server"
+  if [[ -f "$SERVER_DIR/.env" ]]; then
+    DB_URL=$(grep DATABASE_URL "$SERVER_DIR/.env" | head -1 | cut -d= -f2-)
+    DB_NAME=$(echo "$DB_URL" | sed 's|.*/||; s|?.*||')
+  fi
+
+  # Drop the whole database. Mongoose is schemaless and recreates collections on
+  # the next write (and indexes when the model is next initialized), so there is
+  # no migration / push step to run afterwards.
+  echo "  Dropping database $DB_NAME..."
+  docker exec "$MONGO_CONTAINER" mongosh "$DB_NAME" --quiet --eval "db.dropDatabase()" 2>&1 | tail -1
 
   echo "  Database reset complete."
 fi

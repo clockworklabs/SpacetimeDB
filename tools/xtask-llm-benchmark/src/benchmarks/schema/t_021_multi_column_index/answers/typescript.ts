@@ -2,6 +2,7 @@ import { table, schema, t } from 'spacetimedb/server';
 
 const log = table({
   name: 'log',
+  public: true,
   indexes: [{ accessor: 'byUserDay', algorithm: 'btree', columns: ['userId', 'day'] }],
 }, {
   id: t.u64().primaryKey().autoInc(),

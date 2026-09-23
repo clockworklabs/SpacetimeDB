@@ -1,8 +1,6 @@
-# Sequential Upgrade: LLM Cost-to-Done Benchmark
+# Chat App: Build Instructions
 
-You are running an automated benchmark that measures the **total cost to build a fully working chat app** — comparing SpacetimeDB vs PostgreSQL.
-
-Your job is to **generate, build, deploy, and fix** the app. Grading happens in a separate manual session — you do NOT test in the browser.
+Your job is to **generate, build, deploy, and fix** a fully working chat app. Verification happens in a separate session — you do NOT test in the browser.
 
 ---
 
@@ -30,10 +28,18 @@ Depending on the mode passed in the launch prompt:
 
 ---
 
+## Shell Syntax
+
+Windows host with both a Bash and a PowerShell tool — don't mix syntax. In the Bash tool use
+POSIX: `mkdir -p` not `New-Item`, `sleep` not `Start-Sleep`, `2>/dev/null` not `2>$null`,
+`VAR=x` not `$VAR=x`. PowerShell cmdlets in bash fail with "command not found".
+
+---
+
 ## Anti-Contamination
 
 Do NOT read any files under:
-- `../llm-oneshot/apps/chat-app/typescript/` (graded reference implementations)
+- `../llm-oneshot/apps/chat-app/typescript/` (reference implementations)
 - `../llm-oneshot/apps/chat-app/staging/`
 - Any other AI-generated app code in this workspace
 
@@ -46,7 +52,7 @@ Only read files you created, the backend instructions, and the feature prompts.
 1. Read `backends/<backend>.md` for pre-flight checks, phases, and deploy steps
 2. Read the language setup: `../llm-oneshot/apps/chat-app/prompts/language/typescript-<backend>.md`
 3. Read the feature prompt: `../llm-oneshot/apps/chat-app/prompts/composed/<NN>_<name>.md`
-4. Follow the phases in the backend file (generate backend → bindings → client → verify → deploy)
+4. Follow the phases in the backend file, in order
 5. Output `DEPLOY_COMPLETE` when the dev server is confirmed running
 
 For **upgrade**: only add the NEW features from the target level. Do not rewrite existing working features.
@@ -61,8 +67,6 @@ For **upgrade**: only add the NEW features from the target level. Do not rewrite
 4. Fix each bug, redeploy, verify the server is running
 5. Append to `ITERATION_LOG.md` (see format below)
 6. Output `FIX_COMPLETE`
-
-Do NOT do browser testing — that happens in the grading session.
 
 ---
 
@@ -85,6 +89,6 @@ Append to this file after every fix. Never overwrite.
 
 ---
 
-## Cost Tracking
+## Telemetry
 
-Cost is tracked automatically via OpenTelemetry — do NOT estimate tokens or produce a COST_REPORT.md. That is generated automatically after the session ends.
+Do NOT estimate tokens or produce a COST_REPORT.md — that's captured automatically after the session ends.

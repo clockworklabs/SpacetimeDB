@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ProcInsertsIntoHandle : RemoteTableHandle<EventContext, ProcInsertsInto>
         {
-            protected override string RemoteTableName => "proc_inserts_into";
+            public override string RemoteTableName => "proc_inserts_into";
 
             internal ProcInsertsIntoHandle(DbConnection conn) : base(conn)
             {

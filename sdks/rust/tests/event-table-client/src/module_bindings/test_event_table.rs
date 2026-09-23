@@ -18,6 +18,18 @@ pub struct TestEventTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `test_event`.
+pub struct TestEventTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for TestEventTableAccessor {
+    type Row = TestEvent;
+    type Handle<'db> = TestEventTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.test_event()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `test_event`.
 ///
@@ -39,6 +51,18 @@ impl TestEventTableAccess for super::RemoteTables {
 
 pub struct TestEventInsertCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for TestEventTableHandle<'ctx> {
+    type Row = TestEvent;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = TestEvent> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::EventTable for TestEventTableHandle<'ctx> {
     type Row = TestEvent;
     type EventContext = super::EventContext;
@@ -50,6 +74,21 @@ impl<'ctx> __sdk::EventTable for TestEventTableHandle<'ctx> {
         self.imp.iter()
     }
 
+    type InsertCallbackId = TestEventInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> TestEventInsertCallbackId {
+        TestEventInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: TestEventInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for TestEventTableHandle<'ctx> {
     type InsertCallbackId = TestEventInsertCallbackId;
 
     fn on_insert(

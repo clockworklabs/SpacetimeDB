@@ -1,4 +1,4 @@
-use crate::common_args::ClearMode;
+use crate::common_args::{parse_optional_dotnet_version, ClearMode};
 use crate::config::Config;
 use crate::generate::Language;
 use crate::spacetime_config::{
@@ -92,6 +92,13 @@ pub fn cli() -> Command {
                 .long("template")
                 .value_name("TEMPLATE")
                 .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
+        )
+        .arg(common_args::dotnet_version())
+        .arg(
+            Arg::new("native_aot")
+                .long("native-aot")
+                .action(clap::ArgAction::SetTrue)
+                .help("Build C# projects with NativeAOT-LLVM. Ignored with .NET 10 because NativeAOT-LLVM is always used."),
         )
         .arg(
             Arg::new("run")
@@ -189,6 +196,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let no_config = args.get_flag("no_config");
     let skip_publish = args.get_flag("skip_publish");
     let skip_generate = args.get_flag("skip_generate");
+    let native_aot_from_cli = args.get_flag("native_aot");
+    let dotnet_version_from_cli = args.get_one::<u8>("dotnet_version").copied();
 
     // --env defaults to "dev" for spacetime dev
     let env = args.get_one::<String>("env").map(|s| s.as_str()).unwrap_or("dev");
@@ -404,6 +413,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 project_name_default: database_name_from_cli_for_init.clone(),
                 database_name_default: database_name_from_cli_for_init.clone(),
                 skip_next_steps: true,
+                native_aot: native_aot_from_cli,
+                dotnet_version: dotnet_version_from_cli,
                 ..Default::default()
             };
             let created_project_path = init::exec_with_options(&mut config, &init_options).await?;
@@ -552,6 +563,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
         publish_configs = vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?];
     }
+
+    let native_aot = native_aot_from_cli
+        || publish_configs.iter().any(|config_entry| {
+            config_entry
+                .get_config_value("native_aot")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        });
+    if native_aot {
+        common_args::ensure_nativeaot_supported_on_host(Some(
+            dotnet_version_from_cli.unwrap_or_else(init::resolve_default_dotnet_major),
+        ))?;
+    }
+
+    let dotnet_version = dotnet_version_from_cli.map(|major| major.to_string());
 
     if !no_config {
         let db_to_persist = database_name_from_cli_for_init.as_deref().or_else(|| {
@@ -746,6 +772,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         using_spacetime_config,
         server_from_cli,
         force,
+        dotnet_version.as_deref(),
+        native_aot,
         skip_publish,
         skip_generate,
     )
@@ -860,6 +888,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     using_spacetime_config,
                     server_from_cli,
                     force,
+                    dotnet_version.as_deref(),
+                    native_aot,
                     skip_publish,
                     skip_generate,
                 )
@@ -1006,12 +1036,21 @@ async fn generate_build_and_publish(
     using_spacetime_config: bool,
     server: Option<&str>,
     yes: bool,
+    dotnet_version: Option<&str>,
+    native_aot: bool,
     skip_publish: bool,
     skip_generate: bool,
 ) -> Result<(), anyhow::Error> {
     println!("{}", "Building...".cyan());
-    let (_path_to_program, _host_type) =
-        tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
+    let (_path_to_program, _host_type) = tasks::build(
+        spacetimedb_dir,
+        Some(Path::new("src")),
+        false,
+        None,
+        native_aot,
+        parse_optional_dotnet_version(dotnet_version)?,
+    )
+    .context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
     // For TypeScript client, always update .env.local with the database name
@@ -1047,23 +1086,23 @@ async fn generate_build_and_publish(
             );
         } else {
             println!("{}", "Generating module bindings from spacetime.json...".cyan());
-            generate::exec_from_entries(
-                generate_configs.to_vec(),
-                crate::generate::extract_descriptions,
-                yes,
-                config_dir,
-            )
-            .await?;
+            let generate_configs =
+                with_dotnet_version_for_dev(generate_configs.to_vec(), dotnet_version, publish_configs);
+            generate::exec_from_entries(generate_configs, crate::generate::extract_descriptions, yes, config_dir)
+                .await?;
         }
     } else {
         let resolved_client_language = generate::resolve_language(spacetimedb_dir, client_language.copied())?;
 
         println!("{}", "Generating module bindings...".cyan());
-        let generate_entry = generate::build_generate_entry(
+        let mut generate_entry = generate::build_generate_entry(
             Some(spacetimedb_dir),
             Some(resolved_client_language),
             Some(module_bindings_dir),
         );
+        if let Some(version) = dotnet_version {
+            generate_entry.insert("dotnet-version".to_string(), json!(version));
+        }
         generate::exec_from_entries(
             vec![generate_entry],
             crate::generate::extract_descriptions,
@@ -1118,6 +1157,21 @@ async fn generate_build_and_publish(
             publish_entry.insert("build-options".to_string(), json!(build_opts));
         }
 
+        if let Some(version) =
+            dotnet_version.or_else(|| config_entry.get_config_value("dotnet_version").and_then(|v| v.as_str()))
+        {
+            publish_entry.insert("dotnet-version".to_string(), json!(version));
+        }
+
+        if native_aot
+            || config_entry
+                .get_config_value("native_aot")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        {
+            publish_entry.insert("native-aot".to_string(), json!(true));
+        }
+
         // Forward break-clients if set
         if config_entry
             .get_config_value("break_clients")
@@ -1134,6 +1188,47 @@ async fn generate_build_and_publish(
     println!("{}", "---".dimmed());
 
     Ok(())
+}
+
+fn with_dotnet_version_for_dev(
+    mut entries: Vec<HashMap<String, serde_json::Value>>,
+    dotnet_version: Option<&str>,
+    publish_configs: &[CommandConfig<'_>],
+) -> Vec<HashMap<String, serde_json::Value>> {
+    if let Some(version) = dotnet_version {
+        for entry in &mut entries {
+            entry.insert("dotnet-version".to_string(), json!(version));
+        }
+        return entries;
+    }
+
+    for entry in &mut entries {
+        if entry.contains_key("dotnet-version") || entry.contains_key("dotnet_version") {
+            continue;
+        }
+
+        let matching_publish_config = entry
+            .get("module-path")
+            .or_else(|| entry.get("module_path"))
+            .and_then(|module_path| module_path.as_str())
+            .and_then(|module_path| {
+                publish_configs.iter().find(|config| {
+                    config
+                        .get_config_value("module_path")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|publish_module_path| publish_module_path == module_path)
+                })
+            })
+            .or_else(|| publish_configs.first().filter(|_| publish_configs.len() == 1));
+
+        if let Some(version) = matching_publish_config
+            .and_then(|config| config.get_config_value("dotnet_version"))
+            .cloned()
+        {
+            entry.insert("dotnet-version".to_string(), version);
+        }
+    }
+    entries
 }
 
 async fn select_database(config: &Config, server: &str, token: &str) -> Result<String, anyhow::Error> {
@@ -1954,6 +2049,108 @@ mod tests {
 
         assert!(matches.get_flag("skip_publish"));
         assert!(matches.get_flag("skip_generate"));
+    }
+
+    #[test]
+    fn test_dev_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let cmd = cli();
+        let matches = cmd.clone().get_matches_from(vec!["dev", "--dotnet-version", "8"]);
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(8));
+    }
+
+    #[test]
+    fn test_dev_cli_parses_native_aot() {
+        let matches = cli().get_matches_from(vec!["dev", "--native-aot"]);
+
+        assert!(matches.get_flag("native_aot"));
+    }
+
+    #[test]
+    fn test_dev_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli().try_get_matches_from(["dev", "--dotnet-version", "9"]).is_err());
+    }
+
+    #[test]
+    fn test_with_dotnet_version_for_dev_updates_generate_entries_with_cli_override() {
+        let mut entry = HashMap::new();
+        entry.insert("language".to_string(), json!("csharp"));
+
+        let entries = with_dotnet_version_for_dev(vec![entry], Some("10"), &[]);
+
+        assert_eq!(entries[0].get("dotnet-version"), Some(&json!("10")));
+    }
+
+    #[test]
+    fn test_with_dotnet_version_for_dev_replaces_existing_entry_with_cli_override() {
+        let mut entry = HashMap::new();
+        entry.insert("language".to_string(), json!("csharp"));
+        entry.insert("dotnet-version".to_string(), json!("8"));
+
+        let entries = with_dotnet_version_for_dev(vec![entry], Some("10"), &[]);
+
+        assert_eq!(entries[0].get("dotnet-version"), Some(&json!("10")));
+    }
+
+    #[test]
+    fn test_with_dotnet_version_for_dev_leaves_entries_unchanged_without_override_or_publish_config() {
+        let mut entry = HashMap::new();
+        entry.insert("language".to_string(), json!("typescript"));
+
+        let entries = with_dotnet_version_for_dev(vec![entry], None, &[]);
+
+        assert_eq!(entries[0].get("dotnet-version"), None);
+    }
+
+    #[test]
+    fn test_with_dotnet_version_for_dev_inherits_target_level_dotnet_version() {
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish"]);
+        let publish_config = CommandConfig::new(
+            &publish_schema,
+            HashMap::from([
+                ("database".to_string(), json!("test-db")),
+                ("module-path".to_string(), json!("./spacetimedb")),
+                ("dotnet-version".to_string(), json!("8")),
+            ]),
+            &publish_args,
+        )
+        .unwrap();
+
+        let mut entry = HashMap::new();
+        entry.insert("language".to_string(), json!("csharp"));
+        entry.insert("module-path".to_string(), json!("./spacetimedb"));
+
+        let entries = with_dotnet_version_for_dev(vec![entry], None, &[publish_config]);
+
+        assert_eq!(entries[0].get("dotnet-version"), Some(&json!("8")));
+    }
+
+    #[test]
+    fn test_with_dotnet_version_for_dev_keeps_generate_entry_dotnet_version() {
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish"]);
+        let publish_config = CommandConfig::new(
+            &publish_schema,
+            HashMap::from([
+                ("database".to_string(), json!("test-db")),
+                ("module-path".to_string(), json!("./spacetimedb")),
+                ("dotnet-version".to_string(), json!("8")),
+            ]),
+            &publish_args,
+        )
+        .unwrap();
+
+        let mut entry = HashMap::new();
+        entry.insert("language".to_string(), json!("csharp"));
+        entry.insert("module-path".to_string(), json!("./spacetimedb"));
+        entry.insert("dotnet-version".to_string(), json!("10"));
+
+        let entries = with_dotnet_version_for_dev(vec![entry], None, &[publish_config]);
+
+        assert_eq!(entries[0].get("dotnet-version"), Some(&json!("10")));
     }
 
     #[test]

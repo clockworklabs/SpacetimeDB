@@ -156,3 +156,90 @@ describe('BinaryReader/Writer', () => {
     expect(deserializedTransactionUpdate).toEqual(transactionUpdate);
   });
 });
+
+describe('readUInt8Array buffer ownership', () => {
+  // BSATN layout for `array<u8>`: u32 length (LE) followed by that many bytes.
+  const encode = (bytes: number[]): Uint8Array =>
+    new Uint8Array([bytes.length, 0, 0, 0, ...bytes]);
+
+  test('returns an owned copy that survives later mutation of the reader buffer', () => {
+    const buffer = encode([1, 2, 3]);
+    const value = new BinaryReader(buffer).readUInt8Array();
+    expect([...value]).toEqual([1, 2, 3]);
+
+    // Simulate the runtime reusing the scan buffer for a subsequent table scan:
+    // it overwrites the bytes the value was read from. A view would change here;
+    // an owned copy must not.
+    buffer.fill(0xff);
+    expect([...value]).toEqual([1, 2, 3]);
+  });
+
+  test('does not share the reader backing ArrayBuffer', () => {
+    const buffer = encode([1, 2, 3]);
+    const value = new BinaryReader(buffer).readUInt8Array();
+    expect(value.buffer).not.toBe(buffer.buffer);
+  });
+
+  test('readString still decodes correctly', () => {
+    const bytes = [...new TextEncoder().encode('héllo ☃')];
+    const value = new BinaryReader(encode(bytes)).readString();
+    expect(value).toBe('héllo ☃');
+  });
+});
+
+describe('writeString', () => {
+  // BSATN layout for `string`: u32 byte length (LE) followed by UTF-8 bytes.
+  const expected = (value: string): number[] => {
+    const utf8 = new TextEncoder().encode(value);
+    return [
+      utf8.length & 0xff,
+      (utf8.length >> 8) & 0xff,
+      (utf8.length >> 16) & 0xff,
+      (utf8.length >> 24) & 0xff,
+      ...utf8,
+    ];
+  };
+  const written = (value: string, initialCapacity = 8): number[] => {
+    const writer = new BinaryWriter(initialCapacity);
+    writer.writeString(value);
+    return [...writer.getBuffer()];
+  };
+
+  test.each([
+    ['empty', ''],
+    ['ascii', 'hello world'],
+    ['ascii at the fast-path boundary', '\x7f'],
+    ['latin-1', 'héllo'],
+    ['cjk', '日本語'],
+    ['astral (surrogate pair)', 'emoji 🎉 mix'],
+    ['ascii prefix then non-ascii', 'ascii then ÿ'],
+    ['long ascii', 'x'.repeat(10_000)],
+    ['long non-ascii', 'ü'.repeat(10_000)],
+  ])('%s encodes like TextEncoder', (_name, value) => {
+    expect(written(value)).toEqual(expected(value));
+  });
+
+  test('grows the buffer from a tiny initial capacity', () => {
+    expect(written('hello world', 1)).toEqual(expected('hello world'));
+    expect(written('héllo', 1)).toEqual(expected('héllo'));
+  });
+
+  test('round-trips through readString', () => {
+    for (const value of ['', 'plain', 'héllo ☃', '🎉'.repeat(100)]) {
+      const writer = new BinaryWriter(4);
+      writer.writeString(value);
+      expect(new BinaryReader(writer.getBuffer()).readString()).toBe(value);
+    }
+  });
+
+  test('consecutive writes stay contiguous', () => {
+    const writer = new BinaryWriter(4);
+    writer.writeString('ab');
+    writer.writeString('ç');
+    writer.writeU8(7);
+    const reader = new BinaryReader(writer.getBuffer());
+    expect(reader.readString()).toBe('ab');
+    expect(reader.readString()).toBe('ç');
+    expect(reader.readU8()).toBe(7);
+  });
+});

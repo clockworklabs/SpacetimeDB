@@ -78,6 +78,37 @@ fn resets() {
     }
 }
 
+#[test]
+fn reset_then_resume() {
+    enable_logging();
+
+    let root = tempdir().unwrap();
+    let mut clog = Commitlog::open(CommitLogDir::from_path_unchecked(root.path()), <_>::default(), None).unwrap();
+
+    let payload = gen_payload();
+    for i in 0..10 {
+        clog.commit([(i, payload)]).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    clog = clog.reset_to(4).unwrap();
+
+    let payload2 = gen_payload();
+    for i in 5..10 {
+        clog.commit([(i, payload2)]).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    let txs = clog
+        .transactions(&payload::ArrayDecoder)
+        .map(Result::unwrap)
+        .collect::<Vec<_>>();
+
+    assert_eq!(txs.len(), 10);
+    assert!(txs[..5].iter().all(|tx| tx.txdata == payload));
+    assert!(txs[5..].iter().all(|tx| tx.txdata == payload2));
+}
+
 /// Try to generate commitlogs that will be amenable to compression -
 /// random data doesn't compress well, so try and have there be repetition
 fn compressible_payloads() -> impl Iterator<Item = [u8; 256]> {
@@ -221,10 +252,14 @@ fn resume_small_trailing_garbage() {
         }
     }
 
+    let last_segment_offset = {
+        let segments = repo.existing_offsets().unwrap();
+        segments.last().copied().unwrap()
+    };
+
     // Add some extra bytes, less than the commit header length.
     let last_segment_size = {
-        let segments = repo.existing_offsets().unwrap();
-        let mut last_segment = repo.open_segment_writer(segments.last().copied().unwrap()).unwrap();
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
         last_segment.write_all(&[67u8; commit::Header::LEN - 1]).unwrap();
         last_segment.flush().unwrap();
         last_segment.sync_all().unwrap();
@@ -232,10 +267,10 @@ fn resume_small_trailing_garbage() {
     };
     {
         let mut clog = commitlog::Generic::open(&repo, <_>::default()).unwrap();
-
+        // The segment list should be unchanged.
+        assert_eq!(&last_segment_offset, repo.existing_offsets().unwrap().last().unwrap());
         // The extra bytes should have been truncated away.
-        let segments = repo.existing_offsets().unwrap();
-        let mut last_segment = repo.open_segment_writer(segments.last().copied().unwrap()).unwrap();
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
         assert_eq!(
             last_segment.segment_len().unwrap(),
             last_segment_size - (commit::Header::LEN - 1) as u64

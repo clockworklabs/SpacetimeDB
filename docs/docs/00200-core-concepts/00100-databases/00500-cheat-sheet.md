@@ -80,13 +80,13 @@ const score = table(
   {
     name: 'score',
     indexes: [{
-      name: 'idx',
+      accessor: 'idx',
       algorithm: 'btree',
-      columns: ['player_id', 'level'],
+      columns: ['playerId', 'level'],
     }],
   },
   {
-    player_id: t.u64(),
+    playerId: t.u64(),
     level: t.u32(),
   }
 );
@@ -118,7 +118,7 @@ public partial struct Player
 
 // Multi-column index (use new[] for attribute params — collection expressions invalid in attributes)
 [SpacetimeDB.Table(Accessor = "Score")]
-[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Index.BTree(Accessor = "Idx", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public ulong PlayerId;
@@ -216,12 +216,12 @@ const spacetimedb = schema({ player });
 export default spacetimedb;
 
 // Basic reducer
-export const create_player = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
+export const createPlayer = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
   ctx.db.player.insert({ id: 0n, username, score: 0 });
 });
 
 // With error handling
-export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
+export const updateScore = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
   const player = ctx.db.player.id.find(id);
   if (!player) throw new Error('Player not found');
   player.score += points;
@@ -405,17 +405,22 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: (): any => send_reminder },
+  { name: 'reminder' },
   {
     id: t.u64().primaryKey().autoInc(),
     message: t.string(),
-    scheduled_at: t.scheduleAt(),
+    scheduledAt: t.scheduleAt(),
   }
 );
 
-export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (ctx, { arg }) => {
-  console.log(`Reminder: ${arg.message}`);
-});
+// `onSchedule` binds the reducer to the schedule table
+export const sendReminder = spacetimedb.reducer(
+  { onSchedule: reminder },
+  { arg: reminder.rowType },
+  (ctx, { arg }) => {
+    console.log(`Reminder: ${arg.message}`);
+  }
+);
 ```
 
 </TabItem>
@@ -490,7 +495,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder reminder) {
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const fetch_data = spacetimedb.procedure(
+export const fetchData = spacetimedb.procedure(
   { url: t.string() },
   t.string(),
   (ctx, { url }) => {
@@ -600,29 +605,29 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-export const my_player = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
+export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-export const top_players = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
+export const topPlayers = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Procedural view with update callbacks.
 // The returned row type has exactly one `.primaryKey()` column.
-export const top_players_with_updates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
+export const topPlayersWithUpdates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
+export const bottomPlayers = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
 
 // Count rows in a table.
-export const player_count = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
+export const playerCount = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
   count: t.u64(),
 })), ctx => {
   return [{ count: ctx.db.player.count() }];
@@ -775,7 +780,7 @@ SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousView
 ```typescript
 ctx.db                  // Database access
 ctx.sender              // Identity of caller
-ctx.connectionId        // ConnectionId | undefined
+ctx.connectionId        // ConnectionId | null
 ctx.timestamp           // Timestamp
 ctx.databaseIdentity    // Module's identity
 ```
@@ -878,6 +883,9 @@ LOG_DEBUG("Debug: " + msg);
 7. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
 8. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
 9. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
+10. **Row fields are camelCase** — Generated client row fields convert snake_case column names: `trip_id` → `row.tripId`.
+11. **Await reducer calls** — Client reducer calls return `Promise<void>` that rejects with `SenderError` on failure; `await` or `.catch()` them.
+12. **Throw `SenderError` in reducers** — A plain `Error` surfaces as an internal error, not a reducer error.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -913,20 +921,21 @@ spacetime login                          # Authenticate
 # Module management
 spacetime build                          # Build module
 spacetime publish <NAME>                 # Publish module
-spacetime publish --delete-data <NAME>   # Reset database
+spacetime publish <NAME> --delete-data         # Reset database
 spacetime delete <NAME>                  # Delete database
 
 # Database operations
 spacetime logs <NAME>                    # View logs
 spacetime logs --follow <NAME>           # Stream logs
 spacetime sql <NAME> "SELECT * FROM t"   # Run SQL query
-spacetime describe <NAME>                # Show schema
+spacetime describe <NAME>                # Show schema (human-readable)
+spacetime describe <NAME> --json         # Show schema as JSON (machine-readable)
 spacetime call <NAME> reducer arg1 arg2  # Call reducer
 
 # Code generation
-spacetime generate --lang rust <NAME>    # Generate Rust client
-spacetime generate --lang csharp <NAME>  # Generate C# client
-spacetime generate --lang ts <NAME>      # Generate TypeScript client
+spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb
+spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 ## Common Types

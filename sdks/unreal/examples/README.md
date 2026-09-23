@@ -1,6 +1,6 @@
 ﻿## Quickstart Chat Module Version
-This quickstart chat Client is built on from the [C# Module Quickstart](https://spacetimedb.com/docs/modules/c-sharp/quickstart). \
-If you have started with the [Rust Module Quickstart](https://spacetimedb.com/docs/modules/rust/quickstart) the reducer names will differ, send_message instead of SendMessage and set_name instead of SetName. /
+This quickstart chat Client is built on from the [C# Module Quickstart](https://spacetimedb.com/docs/quickstarts/c-sharp). \
+If you have started with the [Rust Module Quickstart](https://spacetimedb.com/docs/quickstarts/rust) the reducer names will differ, send_message instead of SendMessage and set_name instead of SetName. /
 
 
 

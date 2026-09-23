@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class IenumerablePlayersFromIterHandle : RemoteTableHandle<EventContext, Player>
         {
-            protected override string RemoteTableName => "ienumerable_players_from_iter";
+            public override string RemoteTableName => "ienumerable_players_from_iter";
 
             internal IenumerablePlayersFromIterHandle(DbConnection conn) : base(conn)
             {

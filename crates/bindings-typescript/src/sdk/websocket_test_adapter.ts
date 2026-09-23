@@ -11,6 +11,12 @@ import {
 class WebsocketTestAdapter implements WebSocketAdapter {
   protocol: string = '';
 
+  // WebSocket.CLOSED (3) / WebSocket.OPEN (1). Uses literals rather than the
+  // `WebSocket` global, which is not defined when these tests run under Node.
+  get readyState(): number {
+    return this.closed ? 3 : 1;
+  }
+
   messageQueue: Uint8Array<ArrayBuffer>[];
   outgoingMessages: ClientMessage[];
   closed: boolean;

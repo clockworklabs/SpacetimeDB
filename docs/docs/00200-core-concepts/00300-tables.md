@@ -220,24 +220,26 @@ The table `name` in your schema is used **verbatim** in SQL queries and subscrip
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-The accessor name is converted from snake_case to camelCase:
+The accessor is the key passed to `schema({...})`, verbatim. By convention the key matches the table `name`:
 
 ```typescript
 // Table definition
-const player_scores = table(
+const playerScores = table(
   { name: 'player_scores', public: true },
   { /* columns */ }
 );
 
-// Accessor uses camelCase
+const spacetimedb = schema({ playerScores });
+
+// Accessor is the schema key, verbatim
 ctx.db.playerScores.insert({ /* ... */ });
 ```
 
-| Table Name | Accessor |
+| Schema Key | Accessor |
 |------------|----------|
-| `'user'` | `ctx.db.user` |
-| `'player_scores'` | `ctx.db.playerScores` |
-| `'game_session'` | `ctx.db.gameSession` |
+| `user` | `ctx.db.user` |
+| `player_scores` | `ctx.db.player_scores` |
+| `game_session` | `ctx.db.game_session` |
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -319,7 +321,7 @@ Use idiomatic naming conventions for each language:
 
 | Language | Convention | Example Table | Example Accessor |
 |----------|------------|---------------|------------------|
-| **TypeScript** | snake_case | `'player_score'` | `ctx.db.playerScore` |
+| **TypeScript** | snake_case | `'player_score'` | `ctx.db.player_score` |
 | **C#** | PascalCase | `Accessor = "PlayerScore"` | `ctx.Db.PlayerScore` |
 | **Rust** | lower_snake_case | `name = player_score` | `ctx.db.player_score()` |
 | **C++** | lower_snake_case | `player_score` | `ctx.db[player_score]` |
@@ -409,8 +411,8 @@ const playerColumns = {
 };
 
 // Create two tables with the same schema
-const Player = table({ name: 'Player', public: true }, playerColumns);
-const LoggedOutPlayer = table({ name: 'LoggedOutPlayer' }, playerColumns);
+const player = table({ name: 'player', public: true }, playerColumns);
+const loggedOutPlayer = table({ name: 'logged_out_player' }, playerColumns);
 ```
 
 </TabItem>

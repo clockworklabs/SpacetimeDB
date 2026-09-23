@@ -14,11 +14,6 @@ public interface IProcedure
     /// Creates a procedure definition for registration with the module system.
     /// </summary>
     RawProcedureDefV10 MakeProcedureDef(ITypeRegistrar registrar);
-
-    /// <summary>
-    /// Invokes the procedure with the given arguments and context.
-    /// </summary>
-    byte[] Invoke(BinaryReader reader, IProcedureContext ctx);
 }
 
 /// <summary>
@@ -63,9 +58,9 @@ public static class ProcedureExtensions
         {
             FFI.volatile_nonatomic_schedule_immediate(
                 name_bytes,
-                (uint)name_bytes.Length,
+                name_bytes.Length,
                 args_bytes,
-                (uint)args_bytes.Length
+                args_bytes.Length
             );
         }
         catch (Exception ex)

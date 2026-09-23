@@ -85,7 +85,7 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -104,7 +104,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::num::NonZeroUsize;
@@ -381,7 +381,7 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.instance_env.start_funcall(name, ts, func_type);
     }
 
@@ -400,18 +400,19 @@ impl JsInstanceEnv {
     /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
     fn finish_funcall(&mut self) -> ExecutionTimings {
+        self.instance_env.finish_funcall();
         let total_duration = self.reducer_start().elapsed();
         let func_name = self.log_record_function().unwrap_or("<unknown>").to_owned();
 
         let leftover_iters = self.iters.len();
         if leftover_iters > 0 {
-            log::warn!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
             self.iters.clear();
         }
 
         let leftover_timing_spans = self.timing_spans.len();
         if leftover_timing_spans > 0 {
-            log::warn!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
             self.timing_spans.clear();
         }
 
@@ -424,7 +425,9 @@ impl JsInstanceEnv {
         }
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def);
     }
 
@@ -475,11 +478,13 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
+            environment,
         })
         .await
     }
@@ -535,8 +540,12 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.request(InitDatabaseRequest { program }).await
+    pub async fn init_database(
+        &self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<InitDatabaseResult> {
+        self.request(InitDatabaseRequest { program, environment }).await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
@@ -620,6 +629,7 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
 }
 
@@ -662,7 +672,8 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
-    } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
+        environment: std::collections::BTreeMap<String, String>,
+    } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
 
 js_main_request! {
@@ -804,6 +815,7 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
@@ -862,8 +874,9 @@ enum JsMainWorkerRequest {
     },
     /// See [`JsMainInstance::init_database`].
     InitDatabase {
-        reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
+        reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
     },
 }
 
@@ -890,13 +903,13 @@ static_assert_size!(CallReducerParams, 192);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
     if reply_tx.send(Ok(value)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
 fn send_worker_panic_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, panic: JsPanicPayload) {
     if reply_tx.send(Err(panic)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
@@ -950,7 +963,7 @@ fn handle_detached_worker_request(
             }
         }
         Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
+            log::error!("detached JS worker request `{ctx}` panicked");
             on_panic();
             WorkerRequestOutcome::Fatal
         }
@@ -1398,15 +1411,16 @@ fn handle_main_worker_request(
             program,
             old_module_info,
             policy,
+            environment,
         } => handle_worker_request("update_database", reply_tx, || {
-            let res = instance_common.update_database(program, old_module_info, policy, inst);
+            let res = instance_common.update_database(program, old_module_info, policy, environment, inst);
             (res, false)
         }),
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
                 let (res, trapped) = call_reducer(None, params);
-                (res, trapped)
+                (res.result, trapped)
             })
         }
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
@@ -1458,7 +1472,10 @@ fn handle_main_worker_request(
             caller_auth,
             caller_connection_id,
         } => handle_worker_request("call_identity_connected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = call_identity_connected(caller_auth, caller_connection_id, &info, call_reducer, &mut trapped);
             (res, trapped)
@@ -1468,7 +1485,10 @@ fn handle_main_worker_request(
             caller_identity,
             caller_connection_id,
         } => handle_worker_request("call_identity_disconnected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = ModuleHost::call_identity_disconnected_inner(
                 caller_identity,
@@ -1481,20 +1501,25 @@ fn handle_main_worker_request(
         }),
         JsMainWorkerRequest::DisconnectClient { reply_tx, client_id } => {
             handle_worker_request("disconnect_client", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let call_reducer = |tx, params| {
+                    let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                    (res.result, trapped)
+                };
                 let mut trapped = false;
                 let res = ModuleHost::disconnect_client_inner(client_id, &info, call_reducer, &mut trapped);
                 (res, trapped)
             })
         }
-        JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
-            handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
-                    init_database(replica_ctx, &info.module_def, program, call_reducer);
-                (res, trapped)
-            })
-        }
+        JsMainWorkerRequest::InitDatabase {
+            reply_tx,
+            program,
+            environment,
+        } => handle_worker_request("init_database", reply_tx, || {
+            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
+                init_database(replica_ctx, &info.module_def, program, environment, call_reducer);
+            (res, trapped)
+        }),
     }
 }
 
@@ -1641,7 +1666,7 @@ where
                                 .send(Err(anyhow::anyhow!("JS worker panicked during startup")))
                                 .is_err()
                             {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("JS worker panicked while recreating isolate");
@@ -1651,7 +1676,7 @@ where
                     Ok(Err(err)) => {
                         if let Some(result_tx) = startup_result_tx.take() {
                             if result_tx.send(Err(err)).is_err() {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("failed to restart JS worker: {err:#}");
@@ -1659,12 +1684,15 @@ where
                         return;
                     }
                     Ok(Ok((crf, module_common))) => {
-                        env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
+                        env_on_isolate_unwrap(scope).set_module_def(
+                            module_common.info().module_def.clone(),
+                            module_common.info().module_hash,
+                        );
 
                         if let Some(result_tx) = startup_result_tx.take()
                             && result_tx.send(Ok(module_common.clone())).is_err()
                         {
-                            log::error!("startup result receiver disconnected");
+                            log::warn!("startup result receiver disconnected");
                             return;
                         }
 
@@ -1863,8 +1891,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        env_on_isolate_unwrap(self.scope).set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        env_on_isolate_unwrap(self.scope).set_module_def(module_def, module_hash);
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {

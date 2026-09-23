@@ -2,6 +2,7 @@ import { table, schema, t } from 'spacetimedb/server';
 
 const result = table({
   name: 'result',
+  public: true,
 }, {
   id: t.i32().primaryKey(),
   sum: t.i32(),

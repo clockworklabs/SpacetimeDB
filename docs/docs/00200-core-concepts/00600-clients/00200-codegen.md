@@ -57,10 +57,10 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 
 ```bash
 mkdir -p src/module_bindings
-spacetime generate --lang rust --out-dir client/src/module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang rust --out-dir src/module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
-This generates Rust files in `client/src/module_bindings/`. Import them in your client with:
+This generates Rust files in `src/module_bindings/`. Import them in your client with:
 
 ```rust
 mod module_bindings;
@@ -104,14 +104,14 @@ For example, a `user` table becomes:
 
 ```typescript
 // Generated type
-export default __t.object("User", {
+export default __t.row({
   id: __t.u64(),
   name: __t.string(),
-  email: __t.string(),
+  emailAddress: __t.string(),
 });
 
 // Access via DbConnection
-conn.db.User
+conn.db.user
 ```
 
 </TabItem>
@@ -123,7 +123,7 @@ public partial class User
 {
     public ulong Id;
     public string Name;
-    public string Email;
+    public string EmailAddress;
 }
 
 // Access via DbConnection
@@ -138,7 +138,7 @@ conn.Db.User
 pub struct User {
     pub id: u64,
     pub name: String,
-    pub email: String,
+    pub email_address: String,
 }
 
 // Access via DbConnection
@@ -162,7 +162,7 @@ struct FUser
     FString Name;
     
     UPROPERTY(BlueprintReadWrite)
-    FString Email;
+    FString EmailAddress;
 };
 
 // Access via DbConnection
@@ -171,6 +171,8 @@ Context.Db->User
 
 </TabItem>
 </Tabs>
+
+Note that generated names follow each language's conventions, including field names: a column declared as `email_address` in your module becomes `emailAddress` in TypeScript and `EmailAddress` in C#.
 
 See the [Tables](../00300-tables.md) documentation for details on defining tables in your module.
 
@@ -189,7 +191,7 @@ For example, a `create_user` reducer becomes:
 
 ```typescript
 // Call the reducer
-conn.reducers.createUser({ name, email });
+await conn.reducers.createUser({ name, email });
 
 // Register a callback to observe reducer invocations
 conn.reducers.onCreateUser((ctx, { name, email }) => {
@@ -232,9 +234,7 @@ conn.reducers().on_create_user(|ctx, name, email| {
 Context.Reducers->CreateUser(TEXT("Alice"), TEXT("alice@example.com"));
 
 // Register a callback to observe reducer invocations
-FOnCreateUserDelegate Callback;
-BIND_DELEGATE_SAFE(Callback, this, AMyActor, OnCreateUser);
-Context.Reducers->OnCreateUser(Callback);
+Context.Reducers->OnCreateUser.AddDynamic(this, &AMyActor::OnCreateUser);
 
 // Callback function (must be UFUNCTION)
 UFUNCTION()
