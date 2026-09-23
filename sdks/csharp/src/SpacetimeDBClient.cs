@@ -1225,7 +1225,7 @@ namespace SpacetimeDB
                     break;
 
                 case ServerMessage.OneOffQueryResult:
-                    // Completed by the parser independently of FrameTick.
+                    /* OneOffQuery is async and handles its own responses */
                     break;
                 case ServerMessage.ProcedureResult(var procedureResult):
                     var procedureEventContext = ToProcedureEventContext(new ProcedureEvent(
