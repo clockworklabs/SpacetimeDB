@@ -301,7 +301,8 @@
         "unmentioned"
       ],
       "requiresFeatures": [
-        "ecommerce.feature.warehouse-admin"
+        "ecommerce.feature.warehouse-admin",
+        "ecommerce.feature.accounts"
       ]
     },
     {

@@ -456,6 +456,7 @@ test('cross-feature grading requirements stay separate from product dependencies
     'sales-dashboard:ecommerce.spec.transactional-integrity.books-balance.107a:warehouse-admin',
     'sales-dashboard:ecommerce.spec.transactional-integrity.books-balance.107b:warehouse-admin',
     'stock-transfers:ecommerce.inventory-operations.stock-conservation.202d:purchasing',
+    'warehouse-admin:ecommerce.spec.access-control.warehouse-write-boundary.103b:accounts',
   ]);
 });
 

@@ -73,7 +73,7 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     }
   }
   await username.fill(user);
-  if (!input.expectFailure && await username.inputValue() !== user) {
+  if (await username.inputValue() !== user) {
     inconclusive('invalid-input', { detail: 'signup input changed the requested username; use a compatible scenario account name' });
   }
   await actor.page.locator(browser.testId('signup-password')).first().fill(password);

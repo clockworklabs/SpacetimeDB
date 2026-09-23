@@ -784,6 +784,35 @@ test('signup reaches direct and shared-dialog forms but rejects missing hooks an
   } finally { await browser.close(); }
 });
 
+test('a refusal-tolerant signup still delivers the exact account name or stays unmeasured', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const actor = { page, loc: (id: string) => page.locator(`#${id}`) };
+    for (const maxlength of [0, 3]) {
+      await page.setContent(`<form id="signup" onsubmit="event.preventDefault(); window.submitted = true">
+        <input id="signup-username" ${maxlength ? `maxlength="${maxlength}"` : ''}><input id="signup-password">
+        <button id="signup-submit">Sign up</button></form>`);
+      await page.evaluate(() => Reflect.deleteProperty(window, 'submitted'));
+      const result = await executeAction(ACTION_REGISTRY, 'signUp',
+        { do: 'signUp', actor: 'ordinary', name: 'ordinary', expectFailure: true }, {
+          capabilities: {
+            actors: { get: () => actor },
+            'browser-interaction': { defaultWithin: 300, scopedUser: (name: string) => `${name}-scope`,
+              testId: (id: string) => `#${id}`, sleep: async () => {} },
+          },
+        });
+      if (maxlength) {
+        assert.equal(result.status, 'inconclusive', 'a field that changes the typed name cannot test that account');
+        assert.equal(await page.evaluate(() => Reflect.get(window, 'submitted')), undefined);
+      } else {
+        assert.equal(result.status, 'passed', result.summary ?? JSON.stringify(result));
+        assert.equal(await page.evaluate(() => Reflect.get(window, 'submitted')), true);
+      }
+    }
+  } finally { await browser.close(); }
+});
+
 test('signin opens a hidden form before the toggle in DOM order and accepts an already visible form', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
