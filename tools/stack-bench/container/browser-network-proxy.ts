@@ -37,8 +37,11 @@ function viteToken(authority: string, token: string): Promise<boolean> {
 export function startNetworkProxy(reply: (value: object) => void, exit: (code: number) => void) {
   let server: Server | undefined, expected = '', cut = false, port = 0;
   const owned = new Map<Socket, string | null>(); // socket -> the Vite token it carries, if tooling
-  const own = (socket: Socket) => {
+  // Where each browser-side connection goes, as host:port plus path (never the query).
+  const targets = new Map<Socket, string>();
+  const own = (socket: Socket, target?: string) => {
     owned.set(socket, null);
+    if (target) targets.set(socket, target);
     socket.on('close', () => owned.delete(socket));
     socket.on('error', () => {});
   };
@@ -63,7 +66,7 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
         res.writeHead(400).end();
         return;
       }
-      own(req.socket);
+      own(req.socket, `${target.hostname}:${target.port || 80}${target.pathname}`);
       const upstream = httpRequest(target, { method: req.method, headers: endToEnd(req.headers) }, answer => {
         res.writeHead(answer.statusCode ?? 502, endToEnd(answer.headers));
         answer.pipe(res);
@@ -88,7 +91,7 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
         client.end('HTTP/1.1 400 Bad Request\r\n\r\n');
         return;
       }
-      own(client);
+      own(client, req.url);
       const upstream = connect(targetPort, host);
       own(upstream);
       upstream.on('error', () => client.destroy());
@@ -98,6 +101,7 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
         const first = async (chunk: Buffer) => {
           const line = chunk.toString('latin1', 0, Math.min(chunk.length, 4096)).split('\r\n')[0] ?? '';
           const path = /^GET (\S+) HTTP\/1\.1$/.exec(line)?.[1];
+          if (path?.startsWith('/')) targets.set(client, `${req.url}${path.split('?')[0]}`);
           const token = path?.startsWith('/') ? new URL(path, 'http://tunnel').searchParams.get('token') : null;
           if (token && await viteToken(req.url!, token)) { owned.set(client, token); owned.set(upstream, token); }
           if (client.destroyed || upstream.destroyed) return;
@@ -125,11 +129,12 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
     if (cmd === 'cut') {
       // Refuse first, then close, so nothing races through the cut.
       cut = true;
-      let closed = 0;
-      const tooling = new Set<string>();
+      const tooling = new Set<string>(), closed: string[] = [];
       for (const [socket, token] of owned) {
-        if (token) tooling.add(token);
-        else { socket.destroy(); closed += 1; }
+        if (token) { tooling.add(token); continue; }
+        socket.destroy();
+        const target = targets.get(socket);
+        if (target) closed.push(target);
       }
       return reply({ id, ok: true, closed, tooling: [...tooling] });
     }

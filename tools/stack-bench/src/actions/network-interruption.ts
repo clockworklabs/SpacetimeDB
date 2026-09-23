@@ -22,7 +22,7 @@ export interface NetworkInterruption {
 const SETTLE_MS = 5000;
 const COMMAND_TIMEOUT_MS = 10_000;
 
-type Reply = { id?: number; ok?: boolean; port?: number; closed?: number; tooling?: string[] };
+type Reply = { id?: number; ok?: boolean; port?: number; closed?: string[]; tooling?: string[] };
 
 // Start before the actor's context exists; register dispose() with its cleanup at once.
 export async function startNetworkInterruption(): Promise<NetworkInterruption> {
@@ -102,19 +102,37 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
     },
     async interrupt() {
       cutting = true;
-      const { closed = 0, tooling = [] } = await command('cut');
-      // The browser itself must see every application connection end. A Vite dev
-      // server's reload socket is tooling (cutting it reloads the page); the proxy
-      // exempted only sockets whose token that server's own client module carries.
+      const { closed = [], tooling = [] } = await command('cut');
+      // Every application connection must be seen to end by the browser or by the proxy.
+      // A Vite dev server's reload socket is tooling (cutting it reloads the page); the
+      // proxy exempted only sockets whose token that server's own client module carries.
       const application = (socket: WebSocket) => !tooling.includes(new URL(socket.url()).searchParams.get('token') ?? '');
       // Name what stayed open by origin and path only; queries can carry credentials.
       const where = (url: string) => { const parsed = new URL(url); return `${parsed.origin}${parsed.pathname}`; };
-      const open = () => [...[...sockets].filter(application).map(socket => `websocket ${where(socket.url())}${openedDuringCut.has(socket) ? ' (opened during the cut)' : ''}`),
-        ...[...inFlight].map(request => `${request.resourceType()} ${request.method()} ${where(request.url())}`)];
+      // Emulated offline can hold a close event until the network returns, so a connection
+      // also counts as cut when the proxy closed one to the same host, port and path (an
+      // encrypted tunnel shows only its host and port).
+      const cutByProxy = (tally: Map<string, number>, url: string) => {
+        const parsed = new URL(url);
+        const authority = `${parsed.hostname}:${parsed.port || (/^(https|wss):$/.test(parsed.protocol) ? 443 : 80)}`;
+        for (const target of [`${authority}${parsed.pathname}`, authority]) {
+          const count = tally.get(target) ?? 0;
+          if (count) { tally.set(target, count - 1); return true; }
+        }
+        return false;
+      };
+      const open = () => {
+        const tally = new Map<string, number>();
+        for (const target of closed) tally.set(target, (tally.get(target) ?? 0) + 1);
+        return [...[...sockets].filter(application).filter(socket => !cutByProxy(tally, socket.url()))
+          .map(socket => `websocket ${where(socket.url())}${openedDuringCut.has(socket) ? ' (opened during the cut)' : ''}`),
+        ...[...inFlight].filter(request => !cutByProxy(tally, request.url()))
+          .map(request => `${request.resourceType()} ${request.method()} ${where(request.url())}`)];
+      };
       for (const end = Date.now() + SETTLE_MS; open().length && Date.now() < end;) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
-      return { closed, open: open() };
+      return { closed: closed.length, open: open() };
     },
     async restore() { await command('restore'); cutting = false; },
     dispose,
