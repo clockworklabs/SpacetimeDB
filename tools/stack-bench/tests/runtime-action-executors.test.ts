@@ -619,7 +619,7 @@ test('the null control can skip direct database writes', async () => {
   assert.equal(result.status, 'passed');
 });
 
-const interruption = { interrupt: async () => ({ closed: 1, open: 0 }), restore: async () => {} };
+const interruption = { interrupt: async () => ({ closed: 1, open: [] }), restore: async () => {} };
 
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {
   const offlineStates: boolean[] = [];

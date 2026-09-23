@@ -14,7 +14,7 @@ export interface NetworkInterruption {
   // Context options that route the actor's traffic, loopback included, through the proxy.
   readonly proxy: NonNullable<BrowserContextOptions['proxy']>;
   attach(context: BrowserContext): void;
-  interrupt(): Promise<{ closed: number; open: number }>;
+  interrupt(): Promise<{ closed: number; open: string[] }>;
   restore(): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -95,8 +95,11 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
       // server's reload socket is tooling (cutting it reloads the page); the proxy
       // exempted only sockets whose token that server's own client module carries.
       const application = (socket: WebSocket) => !tooling.includes(new URL(socket.url()).searchParams.get('token') ?? '');
-      const open = () => [...sockets].filter(application).length + inFlight.size;
-      for (const end = Date.now() + SETTLE_MS; open() && Date.now() < end;) {
+      // Name what stayed open by origin and path only; queries can carry credentials.
+      const where = (url: string) => { const parsed = new URL(url); return `${parsed.origin}${parsed.pathname}`; };
+      const open = () => [...[...sockets].filter(application).map(socket => `websocket ${where(socket.url())}`),
+        ...[...inFlight].map(request => `${request.resourceType()} ${request.method()} ${where(request.url())}`)];
+      for (const end = Date.now() + SETTLE_MS; open().length && Date.now() < end;) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       return { closed, open: open() };

@@ -88,7 +88,7 @@ test('going offline closes open sockets, never delivers held updates, and keeps 
     const loadedAt = await windowValue(page, 'loadedAt');
     const offline = await setOffline(true);
     assert.equal(offline.status, 'passed', offline.summary ?? '');
-    assert.equal((offline.observation as { open: number }).open, 0);
+    assert.deepEqual((offline.observation as { open: string[] }).open, []);
     app.send('during');
     await page.waitForTimeout(300);
     const online = await setOffline(false, 800);

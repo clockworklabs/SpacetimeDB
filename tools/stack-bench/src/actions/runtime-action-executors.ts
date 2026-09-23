@@ -776,13 +776,13 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
     inconclusive('network-not-interrupted', { actor: input.actor,
       detail: 'this client was not opened with an interruptible network' });
   }
-  let connections: { closed: number; open: number } | undefined;
+  let connections: { closed: number; open: string[] } | undefined;
   if (offline) {
     await actor.page.context().setOffline(true);
     connections = await actor.networkInterruption.interrupt();
-    if (connections.open > 0) {
+    if (connections.open.length) {
       inconclusive('network-not-interrupted', { actor: input.actor,
-        detail: `${connections.open} application connection(s) stayed open through the interruption` });
+        detail: `still open after the interruption: ${connections.open.slice(0, 3).join('; ')}` });
     }
   } else {
     // Reopen forwarding while emulation still blocks the page, then restore the page's network.
