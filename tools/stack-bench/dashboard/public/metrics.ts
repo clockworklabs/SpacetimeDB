@@ -110,17 +110,17 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
     level.firstScore !== null && level.firstAbort === null);
   const abortedFirst = levels.filter(level => level.firstAbort).length;
   const firstMax = sum(scored, level => level.firstScore.max);
-  const finalMax = sum(levels, level => level.finalScore.max);
+  const finalMax = sum(levels, level => level.finalScore.max) + (run.unreachedPoints ?? 0);
   return {
     first: run.firstBuildRate ?? null,
     final: sum(levels, level => level.finalScore.score) / finalMax,
     repairs: sum(levels, level => level.used ?? 0),
     spend: attempt.measuredCost?.status === 'exact' ? attempt.measuredCost.costUsd : null,
     duration: run.activeDurationSec ?? null,
-    scope: `${attempt.comparisonKey ?? ''}:sequential:${levels.map(level => level.level).join(',')}`,
+    scope: `${attempt.comparisonKey ?? ''}:sequential`,
     abortedFirst,
     // Do not show a partial first-build sum when the complete rate is unknown.
-    raw: { first: run.firstBuildRate != null && firstMax ? { score: sum(scored, l => l.firstScore.score), max: firstMax } : null,
+    raw: { first: run.firstBuildRate != null && firstMax ? { score: sum(scored, l => l.firstScore.score), max: firstMax + (run.unreachedPoints ?? 0) } : null,
       final: { score: sum(levels, l => l.finalScore.score), max: finalMax } },
   };
 }

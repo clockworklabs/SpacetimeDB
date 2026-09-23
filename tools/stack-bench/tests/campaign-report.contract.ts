@@ -169,20 +169,20 @@ test('seeded campaign reports identify parent work excluded from continuation co
 test('correction metrics separate successful cost from unresolved spend', () => {
   const corrected = campaignRunMetrics({ outcome: { kind: 'passed' },
     levels: [{ firstBuild: { score: 5, max: 10 }, repairCostUsd: 1.25,
-      repairSessions: [costSession(1.25)] }], totals: {} });
+      repairSessions: [costSession(1.25)] }], totals: {} }, []);
   assert.equal(corrected.correctionSuccessRate, 1);
   assert.equal(corrected.correctionCostUsd, 1.25);
   assert.equal(corrected.correctionSpendUsd, 1.25);
 
   const unresolved = campaignRunMetrics({ outcome: { kind: 'app_failure' },
     levels: [{ firstBuild: { score: 5, max: 10 }, repairCostUsd: 2,
-      repairSessions: [costSession(2)] }], totals: {} });
+      repairSessions: [costSession(2)] }], totals: {} }, []);
   assert.equal(unresolved.correctionSuccessRate, 0);
   assert.equal(unresolved.correctionCostUsd, null);
   assert.equal(unresolved.correctionSpendUsd, 2);
 
   const unaided = campaignRunMetrics({ outcome: { kind: 'passed' },
-    levels: [{ firstBuild: { score: 10, max: 10 }, repairCostUsd: 0 }], totals: {} });
+    levels: [{ firstBuild: { score: 10, max: 10 }, repairCostUsd: 0 }], totals: {} }, []);
   assert.equal(unaided.correctionSuccessRate, null);
   assert.equal(unaided.correctionCostUsd, null);
   assert.equal(unaided.correctionSpendUsd, null);
@@ -323,12 +323,12 @@ test('historical zero-usage actions remain ineligible and keep earlier bounded c
 
 test('campaign metrics do not treat incomplete cost as comparable evidence', () => {
   const incomplete = campaignRunMetrics({ outcome: { kind: 'passed' }, levels: [],
-    totals: { costUsd: 4.25, costComplete: false, durationSec: 30 } });
+    totals: { costUsd: 4.25, costComplete: false, durationSec: 30 } }, []);
   assert.equal(incomplete.totalCostUsd, null);
   assert.equal(incomplete.totalDurationMs, 30_000);
 
   const zero = campaignRunMetrics({ outcome: { kind: 'passed' }, levels: [],
-    totals: { costUsd: 0, costComplete: true } });
+    totals: { costUsd: 0, costComplete: true } }, []);
   assert.equal(zero.totalCostUsd, 0);
 });
 
@@ -338,7 +338,7 @@ test('dependency campaign final score is passed points over all points, with the
       uniqueChecks: { gradedPoints: 16, availablePoints: 20, percentage: 70 } } },
     levels: [{ firstBuild: { score: 4, max: 10 }, score: 10, max: 10 }],
     totals: { score: 30, max: 30 },
-  });
+  }, []);
   assert.equal(metrics.finalScoreRate, 0.7);
   assert.equal(metrics.questlineAverageRate, 0.625);
   assert.equal(metrics.finalCoverageRate, 0.8);
@@ -348,7 +348,7 @@ test('dependency campaign final score is passed points over all points, with the
       uniqueChecks: { gradedPoints: 16, availablePoints: 20, percentage: null } } },
     levels: [{ firstBuild: { score: 4, max: 10 }, score: 10, max: 10 }],
     totals: { score: 30, max: 30 },
-  });
+  }, []);
   assert.equal(active.finalScoreRate, null);
   assert.equal(active.questlineAverageRate, null);
   assert.equal(active.finalCoverageRate, null);
@@ -408,7 +408,7 @@ test('reported duration excludes provider throttle waits and tokens travel with 
       usage: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, thinking: null } }],
     totals: { score: 9, max: 9, costUsd: 1, costComplete: true, tokens: 2_400_000,
       durationSec: 100 },
-  });
+  }, []);
   assert.equal(metrics.totalDurationMs, 85_000);
   assert.equal(metrics.totalTokens, 2_400_000);
 });
@@ -421,7 +421,7 @@ test('score rates keep inconclusive points separate from measurement coverage', 
   const metrics = campaignRunMetrics({ outcome: inconclusive, levels: [{
     firstBuild: { score: 8, max: 9, outcome: inconclusive },
     score: 9, max: 9, selection, outcome: inconclusive, repairCostUsd: 1,
-  }], totals: { score: 9, max: 9 } });
+  }], totals: { score: 9, max: 9 } }, []);
   assert.equal(metrics.firstBuildScoreRate, 0.888889);
   assert.equal(metrics.finalScoreRate, 1);
   assert.equal(metrics.firstBuildCoverageRate, 0.9);
@@ -430,7 +430,7 @@ test('score rates keep inconclusive points separate from measurement coverage', 
   const unmapped = campaignRunMetrics({ outcome: inconclusive, levels: [{
     firstBuild: { score: 8, max: 9, outcome: inconclusive },
     score: 9, max: 9, selection: { checks: [] }, outcome: inconclusive,
-  }], totals: { score: 9, max: 9 } });
+  }], totals: { score: 9, max: 9 } }, []);
   assert.equal(unmapped.firstBuildCoverageRate, null);
   assert.equal(unmapped.finalCoverageRate, null);
 });
@@ -463,7 +463,7 @@ test('observed-only first-build behavior remains separate from scored results an
     outcome: { kind: 'app_failure' },
   };
 
-  const scored = campaignRunMetrics(evidence);
+  const scored = campaignRunMetrics(evidence, []);
   const observed = campaignRunFirstBuildObservations(evidence);
   assert.ok(observed);
   assert.equal(scored.firstBuildScoreRate, 1);
@@ -834,4 +834,12 @@ test('a continued attempt measures time and tokens across its execution chain, l
     progressionResume: { priorRunId: 'run-1', inheritedLevels: [1] } };
   assert.deepEqual(campaignMeasuredRunWork(continued, [prior, continued]), { durationMs: 150_000, tokens: 1_500 });
   assert.deepEqual(campaignMeasuredRunWork(continued, [continued]), { durationMs: null, tokens: null });
+});
+
+test('a sequential attempt that stops early is scored against every planned level', () => {
+  const stopped = { outcome: { kind: 'app_failure' }, totals: { score: 9, max: 10 },
+    levels: [{ level: 1, score: 9, max: 10, firstBuild: { score: 6, max: 10 } }] } as BenchmarkRun;
+  const metrics = campaignRunMetrics(stopped, [1, 2, 3].map(level => ({ level, selection: { scoredPoints: 10 } })));
+  assert.equal(metrics.finalScoreRate, 0.3);
+  assert.equal(metrics.firstBuildScoreRate, 0.2);
 });

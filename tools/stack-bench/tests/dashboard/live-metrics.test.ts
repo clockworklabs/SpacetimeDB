@@ -20,8 +20,8 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
       { level: 2, firstBuild: { score: 10, max: 10 }, buildSessions: [session(1)] },
     ] };
   const cost = campaignMeasuredRunCost(measured, [failed, measured]);
-  const report = campaignRunMetrics(measured as Parameters<typeof campaignRunMetrics>[0]);
-  const first = campaignFirstBuildRate(measured), active = campaignActiveDurationMs(measured);
+  const report = campaignRunMetrics(measured as Parameters<typeof campaignRunMetrics>[0], []);
+  const first = campaignFirstBuildRate(measured, []), active = campaignActiveDurationMs(measured);
   assert.equal(first, 0.75); assert.equal(active, 70_000);
   const spend = executionSpend([failed, measured].map(run => ({ cost: runCostEvidence(run, 'execution') })));
   const attempt: MetricAttempt = { id: 'measured', stack: 'example', status: 'completed', execution: null,
@@ -37,6 +37,7 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
   assert.equal(row.costPerValidRun, report.totalCostUsd);
   assert.equal(row.costPerValidRun, 3); assert.equal(row.spendSoFar, 5);
   assert.equal(attemptMetrics({ ...attempt, result: { ...attempt.result!, firstBuildRate: null } })!.raw.first, null);
+  assert.equal(attemptMetrics({ ...attempt, result: { ...attempt.result!, unreachedPoints: 10 } })!.final, 0.5);
   const resumed = { id: 'resumed', progressionResume: { priorRunId: 'measured', inheritedLevels: [1, 2] },
     totals: { currentExecutionCostUsd: 1 }, levels: [{ level: 3, buildSessions: [session(1)] }] };
   assert.deepEqual(campaignMeasuredRunCost(resumed, [failed, measured, resumed]), { status: 'exact', costUsd: 4 });

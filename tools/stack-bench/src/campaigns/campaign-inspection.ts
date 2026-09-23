@@ -10,7 +10,7 @@ import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
-import { campaignCohortKey, campaignComparisonKey, executionSpend, campaignFirstBuildRate,
+import { campaignCohortKey, campaignComparisonKey, executionSpend, campaignFirstBuildRate, campaignUnreachedPoints,
   campaignActiveDurationMs, campaignMeasuredRunCost } from './campaign-report.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recordedExecutionSpend, type RunCheckpoint } from '../evidence/run-checkpoints.js';
@@ -99,6 +99,7 @@ export interface CampaignRunLevelResult {
 
 export interface CampaignRunResult {
   firstBuildRate?: number | null;
+  unreachedPoints?: number;
   activeDurationSec?: number | null;
   measurementClassification?: ReturnType<typeof classifyCampaignExecution>;
   completion?: CheckCompletion | null;
@@ -149,7 +150,8 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
       costComplete: cost.status !== 'unknown',
       durationSec: run.totals?.durationSec ?? null,
       activeDurationSec: activeDurationMs === null ? null : activeDurationMs / 1000,
-      firstBuildRate: campaignFirstBuildRate(run),
+      firstBuildRate: campaignFirstBuildRate(run, attempt.condition.requested.levels),
+      unreachedPoints: campaignUnreachedPoints(run, attempt.condition.requested.levels),
       cleanup: run.backendLease?.state ?? null,
       levels: (run.levels ?? []).map(level => {
         const sessions = [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),

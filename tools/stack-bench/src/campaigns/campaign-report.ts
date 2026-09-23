@@ -351,11 +351,25 @@ function summarize(values: Array<number | null | undefined>, dispersion: string)
     min: present[0]!, max: present.at(-1)! };
 }
 
-export function campaignFirstBuildRate(run: { levels?: Array<{ firstBuild?: { score?: number; max?: number } | null }> }): number | null {
+type PlannedLevels = ReadonlyArray<{ level: number; selection: { scoredPoints: number } }>;
+
+// A sequential attempt that stops early scores zero on the levels it never
+// reached, so it cannot outscore one that went further.
+export function campaignUnreachedPoints(run: { progressionStatus?: unknown; levels?: Array<{ level?: number }> },
+  planned: PlannedLevels): number {
+  if (run.progressionStatus !== undefined) return 0;
+  const reached = new Set((run.levels ?? []).map(level => level.level));
+  return planned.filter(level => !reached.has(level.level))
+    .reduce((sum, level) => sum + level.selection.scoredPoints, 0);
+}
+
+export function campaignFirstBuildRate(run: { progressionStatus?: unknown;
+  levels?: Array<{ level?: number; firstBuild?: { score?: number; max?: number } | null }> },
+  planned: PlannedLevels): number | null {
   const levels = run.levels ?? [];
   if (!levels.length || levels.some(level => number(level.firstBuild?.score) === null || number(level.firstBuild?.max) === null)) return null;
   return ratio(levels.reduce((sum, level) => sum + level.firstBuild!.score!, 0),
-    levels.reduce((sum, level) => sum + level.firstBuild!.max!, 0));
+    levels.reduce((sum, level) => sum + level.firstBuild!.max!, campaignUnreachedPoints(run, planned)));
 }
 
 // Duration covers this execution only, so subtract only its throttle and operator waits.
@@ -405,7 +419,7 @@ export function campaignMeasuredRunWork(run: unknown, runs: readonly unknown[]):
   return { durationMs: durations.includes(null) ? null : durations.reduce<number>((a, b) => a + b!, 0), tokens };
 }
 
-export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | null> {
+export function campaignRunMetrics(run: BenchmarkRun, planned: PlannedLevels): Record<string, number | null> {
   const cost = runCostEvidence(run);
   const levels = run.levels ?? [];
   const completeFirstBuild = levels.length > 0 && levels.every(level =>
@@ -448,9 +462,10 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
     checkCompletionRate: run.progressionStatus !== undefined && !terminal ? null
       : run.progressionStatus?.score?.completion?.rate
         ?? run.checkpoints?.findLast(checkpoint => checkpoint.accepted)?.completion.rate ?? null,
-    firstBuildScoreRate: campaignFirstBuildRate(run),
+    firstBuildScoreRate: campaignFirstBuildRate(run, planned),
     finalScoreRate: progressionScore === undefined
-      ? ratio(number(run.totals?.score), number(run.totals?.max))
+      ? ratio(number(run.totals?.score), number(run.totals?.max) === null ? null
+        : run.totals!.max! + campaignUnreachedPoints(run, planned))
       : ratio(progressionScore, 100),
     questlineAverageRate: ratio(questlineAverage, 100),
     firstBuildCoverageRate: firstDeclaredMaxima.length
@@ -930,7 +945,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         providerWaits: readProviderWaits?.(attempt.plan, execution) ?? providerWaitSummary(run),
         evidence: run
           ? `${execution.output}/${ARTIFACT_FILE.run}` : CAMPAIGN_FILE.state,
-        metrics: run ? campaignRunMetrics(run) : null,
+        metrics: run ? campaignRunMetrics(run, attempt.plan.condition.requested.levels) : null,
         firstBuildObservations: run ? campaignRunFirstBuildObservations(run) : null,
       };
     });
