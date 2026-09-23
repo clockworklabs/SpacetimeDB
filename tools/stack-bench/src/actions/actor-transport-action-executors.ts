@@ -27,6 +27,7 @@ import {
   classifyNamedActionResponse,
 } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
+import { capturedConvexMutation } from '../stacks/backends/convex-browser-session.js';
 
 export { createNamedActionsCapability } from './named-action-runtime.js';
 export type { ConcurrentCallResult } from './named-action-runtime.js';
@@ -317,6 +318,35 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
       { status: 0, text: '' }).responseContract !== 'convex-query'
       && `${candidate.method} ${candidate.url} ${JSON.stringify(candidate.body)}`.toLowerCase().includes(needle));
   if (!write) {
+    if (!input.namedAction && input.actor === input.from && input.swap && input.match === input.swap.find) {
+      const captured = capturedConvexMutation(source.page, transport.expand(input.swap.find), transport.expand(input.swap.with));
+      if (captured) {
+        const named = capabilities['named-actions'];
+        const request = namedActionRequest(named, { id: captured.path, reducer: captured.path }, { values: captured.args });
+        if (!request?.url || request.responseContract !== 'convex-mutation'
+            || JSON.parse(request.body ?? '{}').path !== captured.path) {
+          replayUnavailable(actor, 'the captured native mutation could not be bound to this deployment');
+        }
+        if (![new URL(request.url).origin, new URL(source.page.url()).origin].includes(captured.origin)) {
+          replayUnavailable(actor, 'the captured mutation came from another origin');
+        }
+        const mine = await browserCredentials(actor, request.url);
+        if (!mine) replayUnavailable(actor, 'the captured mutation has no current caller credentials');
+        const bound = bindBrowserRequest(actor, { ...request, applicationOrigin: captured.origin }, mine)(
+          { 'Content-Type': 'application/json', ...mine });
+        try {
+          const response = await named.fetch(request.url, { method: request.method ?? 'POST', ...bound, signal });
+          const classified = classifyNamedActionResponse(named, request, { status: response.status, text: await response.text() });
+          actor.replay = { ...classified, accepted: classified.ok, status: response.status,
+            url: request.url, method: request.method ?? 'POST' };
+        } catch (error) {
+          if (harnessBrowserFailure(error)) throw error;
+          actor.replay = { accepted: false, status: 0, complete: false };
+        }
+        await transport.sleep(input.settleMs ?? 2000, signal);
+        return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status, capturedNativeMutation: true };
+      }
+    }
     if (input.namedAction) {
       const named = capabilities['named-actions'];
       const action = input.namedAction;

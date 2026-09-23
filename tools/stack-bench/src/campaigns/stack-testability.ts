@@ -49,17 +49,17 @@ function stepsForCheck(plan: CompiledRecipePlan, key: string): CompiledStep[] {
   throw new Error(`selected check ${key} has no scenario steps`);
 }
 
-// A replay or forgery without a named action re-issues a captured HTTP
-// write. A reducer stack issues its writes as reducer calls, which the
-// harness does not capture, so only a named action can carry the replay.
-function readsCapturedHttpWrite(step: CompiledStep): boolean {
+// Convex also supports one confirmed native mutation with an exact argument
+// replacement for the same actor. Other unbound replays still need HTTP capture.
+function readsCapturedHttpWrite(step: CompiledStep, transport: StackGradingSupport['transport']): boolean {
   switch (step.do) {
     case 'forgeWrite':
     case 'expectForgeryRejected':
     case 'replayConcurrently':
       return true;
     case 'replayAs':
-      return step.namedAction === undefined;
+      return step.namedAction === undefined && !(transport === 'convex' && step.actor === step.from
+        && step.swap !== undefined && step.match === (step.swap as { find?: unknown }).find);
     default:
       return false;
   }
@@ -90,7 +90,7 @@ export function resolveStackTestability(input: StackTestabilityInput): StackTest
           report({ stack: stack.id, check, action,
             reason: `needs the ${capability} capability, which ${stack.id} does not provide` });
         }
-        if (readsCapturedHttpWrite(step) && stack.grading.transport !== 'http') {
+        if (readsCapturedHttpWrite(step, stack.grading.transport) && stack.grading.transport !== 'http') {
           report({ stack: stack.id, check, action,
             reason: `re-issues a captured HTTP write, and ${stack.id} issues writes as reducer calls; give the step a named action` });
         }

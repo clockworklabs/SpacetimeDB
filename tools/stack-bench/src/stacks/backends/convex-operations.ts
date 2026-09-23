@@ -201,7 +201,7 @@ export function convexNamedActionRequest({ action, input, url }: { action: Named
   const values = supplied.values ?? supplied.body ?? Object.fromEntries(params.map((param, index) => [param.name, args[index]]));
   const lease = leaseFromEnv(process.env, { backend: 'convex', active: true }).lease;
   const request = convexFunctionRequest({ deploymentUrl: lease.resources.serverUri!, kind: 'mutation',
-    path: `api:${action.reducer}`, args: values });
+    path: action.reducer.includes(':') ? action.reducer : `api:${action.reducer}`, args: values });
   return { ...request, responseContract: 'convex-mutation' as const,
     ...(url ? { applicationOrigin: new URL(url).origin } : {}) };
 }

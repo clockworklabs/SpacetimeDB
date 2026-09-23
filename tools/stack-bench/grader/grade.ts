@@ -55,7 +55,7 @@ import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
 import { startNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
-import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
+import { recordConvexSession, recordConvexMutationResult } from '../src/stacks/backends/convex-browser-session.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
   CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
@@ -322,7 +322,7 @@ export class Actor {
     // Capture wire data separately from what the application renders.
     page.on('websocket', ws => {
       ws.on('framesent', f => {
-        recordConvexSession(page, ws.url(), f.payload);
+        recordConvexSession(page, ws.url(), f.payload, ws);
         const p = typeof f.payload === 'string' ? f.payload : '';
         const m = p.match(/^\d+(\[.*\])$/s);
         if (!m) return;
@@ -337,7 +337,10 @@ export class Actor {
       // compression: a binary wire format still carries message text as
       // inline UTF-8 bytes, so a substring search finds it without the
       // harness knowing the encoding.
-      ws.on('framereceived', f => this.record(f.payload));
+      ws.on('framereceived', f => {
+        recordConvexMutationResult(page, ws, f.payload);
+        this.record(f.payload);
+      });
     });
     page.on('request', req => {
       if (req.method() === 'GET' || req.method() === 'OPTIONS') return;
