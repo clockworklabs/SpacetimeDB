@@ -288,7 +288,7 @@ jobs:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
     runs-on: spacetimedb-linux
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
@@ -317,9 +317,83 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
+      - &smoketest-dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Node.js and pnpm are required for the TypeScript smoketests.
+      - &smoketest-node
+        name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - &smoketest-pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - &smoketest-typescript-deps
+        name: Install TypeScript SDK dependencies
+        run: pnpm --filter spacetimedb install
+
+      - &smoketest-emscripten
+        name: Install emscripten (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
+          cd $env:USERPROFILE\emsdk
+          .\emsdk install 4.0.21
+          .\emsdk activate 4.0.21
+
+      - &smoketest-dotnet-workloads
+        name: Update dotnet workloads
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Fail properly if any individual command fails
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode manifests
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
+          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
+          dotnet workload install wasi-experimental
+          Remove-Item global.json
+
+      - &download-build-artifacts
+        name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
+          path: build-artifacts
+
+      - &extract-build-artifacts
+        name: Extract build artifacts
+        shell: bash
+        run: |
+          archive_path="${PWD}/build-artifacts/build-support.tar.gz"
+          exe_suffix=""
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            exe_suffix=".exe"
+          fi
+          mkdir -p "${CARGO_TARGET_DIR}"
+          cd "${CARGO_TARGET_DIR}"
+          tar -xzf "${archive_path}"
+          test -f "release/spacetimedb-cli${exe_suffix}"
+          test -f "release/spacetimedb-standalone${exe_suffix}"
+
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
+          if [ -f ~/emsdk/emsdk_env.sh ]; then
+            source ~/emsdk/emsdk_env.sh
+          fi
           cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           archive_path="${PWD}/smoketest-support.tar.gz"
@@ -333,6 +407,7 @@ jobs:
 
           tar -czf "${archive_path}" \
             "debug/ci-smoketests${EXE_SUFFIX}" \
+            smoketest-precompiled \
             "${precompiled_modules[@]}"
 
       - *show-sccache-stats
@@ -362,7 +437,7 @@ jobs:
     needs: [upload-build-artifacts-windows]
     name: Build smoketests (Windows)
     runs-on: spacetimedb-windows-runner
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
@@ -395,29 +470,11 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      # Node.js and pnpm are required for the TypeScript smoketests.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Install TypeScript SDK dependencies
-        run: pnpm --filter spacetimedb install
-
-      - name: Install emscripten (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
-          cd $env:USERPROFILE\emsdk
-          .\emsdk install 4.0.21
-          .\emsdk activate 4.0.21
+      - *smoketest-dotnet
+      - *smoketest-node
+      - *smoketest-pnpm
+      - *smoketest-typescript-deps
+      - *smoketest-emscripten
 
       - name: Install psql
         if: runner.os == 'Windows'
@@ -431,24 +488,7 @@ jobs:
           # See https://github.com/clockworklabs/SpacetimeDB/pull/4399 for more background.
           Get-Command psql
 
-      - name: Update dotnet workloads
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Fail properly if any individual command fails
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-
-          cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
-          dotnet workload config --update-mode manifests
-          dotnet workload update --from-previous-sdk
-          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
-          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
-          dotnet workload install wasi-experimental
-          Remove-Item global.json
+      - *smoketest-dotnet-workloads
 
       - name: Override NuGet packages
         shell: bash
@@ -461,27 +501,8 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - &download-build-artifacts
-        name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
-          path: build-artifacts
-
-      - &extract-build-artifacts
-        name: Extract build artifacts
-        shell: bash
-        run: |
-          archive_path="${PWD}/build-artifacts/build-support.tar.gz"
-          exe_suffix=""
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            exe_suffix=".exe"
-          fi
-          mkdir -p "${CARGO_TARGET_DIR}"
-          cd "${CARGO_TARGET_DIR}"
-          tar -xzf "${archive_path}"
-          test -f "release/spacetimedb-cli${exe_suffix}"
-          test -f "release/spacetimedb-standalone${exe_suffix}"
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
       - name: Download smoketest build
         uses: actions/download-artifact@v4

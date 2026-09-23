@@ -9,4 +9,5 @@ duct.workspace = true
 clap.workspace = true
 tempfile.workspace = true
 spacetimedb-guard.workspace = true
+spacetimedb-smoketests = { path = "../../../../crates/smoketests" }
 ci-common = { path = "../../common" }

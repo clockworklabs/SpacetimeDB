@@ -10,7 +10,7 @@ cargo smoketest
 
 This command:
 1. Builds `spacetimedb-cli` and `spacetimedb-standalone` binaries
-2. Builds the Rust fixture workspace in `crates/smoketests/modules/` to WASM
+2. Builds the Rust, TypeScript, C#, and C++ fixtures in `crates/smoketests/modules/`
 3. Runs all smoketests in parallel using nextest (or cargo test if nextest isn't installed)
 
 To run specific tests:
@@ -50,10 +50,9 @@ you MUST rebuild before running tests:
 # Option 1: Use cargo smoketest (always rebuilds first)
 cargo smoketest
 
-# Option 2: Manually rebuild, then run tests directly
-cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
-cargo build --manifest-path crates/smoketests/modules/Cargo.toml --workspace --release --target wasm32-unknown-unknown
-CARGO_BUILD_PROFILE=debug cargo nextest run -p spacetimedb-smoketests
+# Option 2: Prepare binaries and fixtures, then run tests directly
+cargo smoketest prepare
+cargo nextest run -p spacetimedb-smoketests
 ```
 
 **If you run `cargo nextest run` or `cargo test` directly without rebuilding,
@@ -62,7 +61,7 @@ or, worse, tests that pass when they shouldn't.
 
 To check which binary you're testing against:
 ```bash
-ls -la target/debug/spacetimedb-cli*  # Check modification time
+ls -la target/release/spacetimedb-cli*  # Check modification time
 ```
 
 ### Why This Design?
@@ -76,16 +75,23 @@ Pre-building avoids this entirely.
 Standard `cargo test` also works, but you must rebuild first:
 
 ```bash
-cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
-cargo build --manifest-path crates/smoketests/modules/Cargo.toml --workspace --release --target wasm32-unknown-unknown
-CARGO_BUILD_PROFILE=debug cargo test -p spacetimedb-smoketests
+cargo smoketest prepare
+cargo test -p spacetimedb-smoketests
 ```
 
 ## Test Performance
 
-Rust fixtures are compiled once during warmup and reused across tests. Ordinary
-tests then start a server and publish the selected WASM without invoking Cargo.
-Tests of build diagnostics explicitly compile temporary modules.
+Fixtures are compiled once during preparation and reused across tests. Ordinary
+tests start a server and publish the selected WASM or JavaScript artifact without
+invoking a compiler. Tests of build diagnostics explicitly compile temporary modules.
+
+Preparation needs pnpm for TypeScript, .NET 10 for C#, and Emscripten for C++.
+Local runs skip languages whose toolchains are unavailable; selecting one of their
+fixtures then fails with a preparation hint. Use `cargo smoketest --dotnet=false`
+to disable C# preparation and tests. CI archive preparation requires every enabled
+toolchain. Non-Rust artifacts go in `target/smoketest-precompiled` (or under
+`CARGO_TARGET_DIR`) and must travel with the Rust WASM files in the support archive.
+The archive also preserves disabled C# support.
 
 When running tests in parallel, resource contention increases individual test times but reduces overall runtime.
 
@@ -114,6 +120,11 @@ Place the table and `add` reducer in the fixture's `src/lib.rs`. Use
 tests. If no module is selected, publishing uses the precompiled `noop` fixture.
 `autopublish(false)` leaves the database unpublished and does not need that fixture
 until a publish is requested.
+
+For TypeScript, C#, or C++, add the source under the corresponding language
+directory in `crates/smoketests/modules/` and register it in `src/prepare.rs`.
+Use the same named selection interface shown above. Tutorial fixtures read the
+current documentation during preparation, so changes to the examples are tested.
 
 For tests that expect Rust build failures, use `build_rust_module(source, extra_deps)`
 and assert the specific diagnostic in its raw output. This helper runs

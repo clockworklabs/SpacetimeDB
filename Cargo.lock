@@ -1013,6 +1013,7 @@ dependencies = [
  "clap 4.5.50",
  "duct",
  "spacetimedb-guard",
+ "spacetimedb-smoketests",
  "tempfile",
 ]
 
