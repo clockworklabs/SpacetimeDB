@@ -939,6 +939,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
     {
         public const string LifecycleReducers =
             "Reducers.TestDuplicateReducerKind1 (Init), Reducers.TestDuplicateReducerKind2 (Init)";
+        public const string RootOnlyDeclarations = "row-level security filters";
         public const int ReducerCount = 8;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;

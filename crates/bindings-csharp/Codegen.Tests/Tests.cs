@@ -558,6 +558,45 @@ public static class GeneratorSnapshotTests
                 "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"public\")]",
                 lifecycle));
         }
+
+        foreach (var (source, declaration) in new[]
+        {
+            ("""
+                #pragma warning disable STDB_UNSTABLE
+                public static class Rules {
+                    [SpacetimeDB.ClientVisibilityFilter]
+                    public static readonly SpacetimeDB.Filter Visible =
+                        new SpacetimeDB.Filter.Sql("SELECT * FROM Entry");
+                }
+                """, "row-level security filters"),
+            ("[SpacetimeDB.Env] public struct Settings { public string SECRET; }", "environment variables"),
+        })
+        {
+            var dependency = Emit(Generate(Create("RestrictedDependency",
+                "[SpacetimeDB.Table] public partial struct Entry { public uint Id; }\n" + source)));
+            var result = CSharpGeneratorDriver.Create(
+                [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
+            ).RunGenerators(Create("RestrictedConsumer",
+                "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"Auth\")]",
+                dependency)).GetRunResult();
+            Assert.Contains(result.Diagnostics, diagnostic =>
+                diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.GetMessage().Contains("RestrictedDependency")
+                && diagnostic.GetMessage().Contains("'Auth'")
+                && diagnostic.GetMessage().Contains(declaration)
+                && diagnostic.GetMessage().Contains("root scope"));
+            Generate(Create("FlatConsumer", "", dependency));
+            Generate(Create("PublicConsumer",
+                "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"public\")]",
+                dependency));
+        }
+
+        // Empty environment schemas contain no keys and are permitted by the host.
+        var emptyEnvironment = Emit(Generate(Create("EmptyEnvironment",
+            "[SpacetimeDB.Env] public struct Settings { }")));
+        Generate(Create("EmptyEnvironmentConsumer",
+            "[assembly: SpacetimeDB.Namespace(typeof(Settings), Accessor = \"Auth\")]",
+            emptyEnvironment));
     }
 
 #endif
