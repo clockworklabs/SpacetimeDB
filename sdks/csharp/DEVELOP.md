@@ -63,6 +63,20 @@ while a `User` row in the `MyAuth` database namespace becomes
 `Game.Bindings.MyAuth.User`. Their table handles remain `conn.Db.User` and
 `conn.Db.MyAuth.User`, respectively.
 
+Generated bindings and the SDK retain the C# 9 / .NET Standard 2.1 baseline;
+the module's C# 14 extension properties are not used in clients. Namespace
+containers share one connection and table cache.
+
+Typed queries such as `q.From.MyAuth.User()` quote namespace and table segments
+separately. Raw SQL must use the same database namespace, for example
+`SELECT * FROM "MyAuth"."user"` for a table whose SQL name is `user`.
+There is no separate namespace alias or SQL-level namespace name.
+
+The C# client also supports schemas produced by TypeScript submodules. This does
+not mean a C# module can reference a TypeScript module as an assembly dependency,
+nor establish namespace support in other client SDKs. Module-side restrictions
+are documented in the [C# bindings README](../../crates/bindings-csharp/README.md#current-restrictions).
+
 ### Runtime Structure
 
 Most of the core logic of the SDK lives in [`DbConnectionBase<...>`](./src/SpacetimeDBClient.cs). This handles:

@@ -6,6 +6,11 @@ namespace SpacetimeDB
     /// The consuming module chooses the placement; the marker may be any accessible type.
     /// Requires .NET 10 and C# 14.
     /// </summary>
+    /// <remarks>
+    /// An assembly may be mounted only once. Dependencies cannot declare mounts.
+    /// Named namespaces cannot contain lifecycle reducers, RLS filters, or nonempty
+    /// environment declarations. Dependencies without a mount register automatically in public.
+    /// </remarks>
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
     public sealed class NamespaceAttribute(System.Type marker) : Attribute
     {
