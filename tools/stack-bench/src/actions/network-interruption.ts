@@ -75,6 +75,8 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
   catch (error) { await dispose(); throw error; }
 
   const sockets = new Set<WebSocket>();
+  const openedDuringCut = new WeakSet<WebSocket>();
+  let cutting = false;
   const inFlight = new Set<Request>();
   return {
     // `<-loopback>` removes Chromium's implicit loopback bypass, so local apps go through it too.
@@ -86,6 +88,7 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
         const forget = () => { for (const socket of document) sockets.delete(socket); document.clear(); };
         page.on('websocket', socket => {
           sockets.add(socket);
+          if (cutting) openedDuringCut.add(socket);
           document.add(socket);
           socket.on('close', () => { sockets.delete(socket); document.delete(socket); });
         });
@@ -98,6 +101,7 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
       context.on('requestfailed', request => inFlight.delete(request));
     },
     async interrupt() {
+      cutting = true;
       const { closed = 0, tooling = [] } = await command('cut');
       // The browser itself must see every application connection end. A Vite dev
       // server's reload socket is tooling (cutting it reloads the page); the proxy
@@ -105,14 +109,14 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
       const application = (socket: WebSocket) => !tooling.includes(new URL(socket.url()).searchParams.get('token') ?? '');
       // Name what stayed open by origin and path only; queries can carry credentials.
       const where = (url: string) => { const parsed = new URL(url); return `${parsed.origin}${parsed.pathname}`; };
-      const open = () => [...[...sockets].filter(application).map(socket => `websocket ${where(socket.url())}`),
+      const open = () => [...[...sockets].filter(application).map(socket => `websocket ${where(socket.url())}${openedDuringCut.has(socket) ? ' (opened during the cut)' : ''}`),
         ...[...inFlight].map(request => `${request.resourceType()} ${request.method()} ${where(request.url())}`)];
       for (const end = Date.now() + SETTLE_MS; open().length && Date.now() < end;) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       return { closed, open: open() };
     },
-    async restore() { await command('restore'); },
+    async restore() { await command('restore'); cutting = false; },
     dispose,
   };
 }
