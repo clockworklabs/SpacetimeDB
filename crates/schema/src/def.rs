@@ -228,9 +228,6 @@ impl ModuleDef {
     }
 
     /// The accessor namespace path this module is mounted under, empty for the root.
-    ///
-    /// This is what module code and generated clients use to reach the module's items,
-    /// e.g. `ctx.db.myAuth`, whereas [`Self::path`] is what the database stores, e.g. `my_auth`.
     pub fn accessor_path(&self) -> &NamespacePath {
         &self.accessor_path
     }
@@ -1266,15 +1263,13 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
         }
 
-        // Submodules are emitted under their accessor namespace, with the canonical
-        // namespace pinned through ExplicitNames so re-validation is a no-op.
         let submodules: Vec<_> = submodules
             .into_iter()
             .map(|(namespace, module)| {
-                let accessor = module.mount_accessor_name().cloned().unwrap_or_else(|| namespace.clone());
-                explicit_names.insert_namespace(RawIdentifier::from(accessor.clone()), RawIdentifier::from(namespace));
+                let accessor = module.mount_accessor_name().unwrap_or(&namespace).to_string();
+                explicit_names.insert_namespace(accessor.clone(), namespace);
                 RawSubmoduleV10 {
-                    namespace: accessor.to_string(),
+                    namespace: accessor,
                     module: module.into(),
                 }
             })
