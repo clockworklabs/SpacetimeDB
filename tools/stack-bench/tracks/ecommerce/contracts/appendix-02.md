@@ -11,7 +11,7 @@ Rules:
 - Values are exactly as listed in kebab-case.
 - An element that is hidden until a menu/toggle opens still counts, as long as it is in the DOM after its toggle is clicked.
 - Do not add element IDs beyond this list to elements that could be confused with these.
-- Each exposed server operation completes every valid request, including requests that overlap, without relying on the browser to retry it.
+- Each exposed server operation completes every valid request, including requests that overlap, without relying on the browser to retry it. A business refusal, such as insufficient stock, still completes the request.
 
 | Element ID | Element |
 |---|---|

@@ -6,7 +6,8 @@ once. These attributes do not prescribe the layout, data model, libraries, or
 transport.
 
 Each exposed server operation completes every valid request, including requests
-that overlap, without relying on the browser to retry it.
+that overlap, without relying on the browser to retry it. A business refusal, such as
+insufficient stock, still completes the request.
 
 ## Catalog controls
 
