@@ -19,8 +19,8 @@ function native(data: Record<string, Record<string, unknown>[]>, options: { stal
   const calls: Record<string, unknown>[] = [];
   const exec: TextCommandExecutor = (command, args, commandOptions) => {
     assert(!args.some(arg => arg.includes('private-admin')), 'admin key must never enter argv');
-    if (args[0] === 'inspect') return args.includes('{{json .State}}')
-      ? JSON.stringify({ Running: true, StartedAt: options.namespaceStarted ?? 'start' }) : 'owned';
+    if (args[0] === 'inspect') return JSON.stringify({ Id: 'owned',
+      State: { Running: true, StartedAt: options.namespaceStarted ?? 'start' } });
     if (args.includes('./generate_admin_key.sh')) return 'private-admin';
     assert(command === 'curl' || args.includes('curl'));
     const config = commandOptions.input!;

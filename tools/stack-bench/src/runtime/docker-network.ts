@@ -232,14 +232,19 @@ export function installAttemptFirewall(leasePath: string, lease: BackendLease,
   });
 }
 
-export function requireAttemptNetwork(lease: BackendLease, exec: TextCommandExecutor = execFileSync): string {
+export function requireAttemptNetwork(lease: BackendLease, exec: TextCommandExecutor = execFileSync,
+  container?: Pick<BackendLeaseContainer, 'name' | 'id'>): string {
   const network = lease.resources.network;
   if (!network?.namespaceContainerId || !network.firewallSha256 || !network.firewallInstalledAt) {
     throw new Error('attempt network is not isolated; activation or authenticated recovery is required');
   }
-  const state = JSON.parse(exec('docker', ['inspect', '--format', '{{json .State}}', network.namespaceContainerId],
-    { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 }));
-  if (!state.Running || state.StartedAt !== network.namespaceStartedAt) {
+  const inspected = JSON.parse(exec('docker', ['inspect', '--format', container ? '{{json .}}' : '{{json .State}}',
+    container?.name ?? network.namespaceContainerId], { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 }));
+  if (container && (inspected.Id !== container.id || inspected.Id !== network.namespaceContainerId)) {
+    throw new Error(`${container.name} changed after lease creation; refusing native operation`);
+  }
+  const state = container ? inspected.State : inspected;
+  if (!state?.Running || state.StartedAt !== network.namespaceStartedAt) {
     throw new Error('attempt namespace anchor stopped or restarted; recover the entire attempt');
   }
   return `container:${network.namespaceContainerId}`;

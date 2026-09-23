@@ -3,7 +3,6 @@ import { loadTrack, portsFor } from '../../composition/tracks.js';
 import { z } from 'zod';
 import { leaseFromEnv, loopbackHttpUri, type BackendLease } from '../../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
-import { assertLeasedContainer } from '../backend-reset-guard.js';
 import { requireAttemptNetwork } from '../../runtime/docker-network.js';
 import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
@@ -20,8 +19,8 @@ function target(input: NativeInput) {
     throw new Error('Convex operation requires its authenticated native backend lease');
   }
   const exec: TextCommandExecutor = input.exec ?? execFileSync;
-  requireAttemptNetwork(lease, exec);
-  const container = assertLeasedContainer(lease.resources.container, exec, TIMEOUT, 'Convex native operation');
+  requireAttemptNetwork(lease, exec, lease.resources.container);
+  const container = lease.resources.container.id;
   return { lease, exec, container, uri: loopbackHttpUri(lease.resources.serverUri).origin };
 }
 
