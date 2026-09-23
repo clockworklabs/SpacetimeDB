@@ -767,8 +767,6 @@ fn auto_migrate_table<'def>(
     if old.primary_key != new.primary_key {
         plan.steps.push(AutoMigrateStep::ChangePrimaryKey(key));
     }
-    // The stored alias is the accessor namespace joined with the accessor name, so a change
-    // to either part means the alias must be rewritten.
     if old.accessor_name != new.accessor_name || old_owning.accessor_path() != new_owning.accessor_path() {
         plan.steps.push(AutoMigrateStep::ChangeTableAccessorName(key));
     }
