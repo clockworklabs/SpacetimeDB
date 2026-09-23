@@ -11,7 +11,7 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
 import { campaignCohortKey, campaignComparisonKey, executionSpend, campaignFirstBuildRate, campaignUnreachedPoints,
-  campaignActiveDurationMs, campaignMeasuredRunCost } from './campaign-report.js';
+  campaignMeasuredRunCost, campaignMeasuredRunWork } from './campaign-report.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recordedExecutionSpend, type RunCheckpoint } from '../evidence/run-checkpoints.js';
 import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
@@ -99,7 +99,6 @@ export interface CampaignRunResult {
   firstBuildRate?: number | null;
   unreachedPoints?: number;
   regressions?: number;
-  activeDurationSec?: number | null;
   measurementClassification?: ReturnType<typeof classifyCampaignExecution>;
   completion?: CheckCompletion | null;
   cost?: CostEvidence;
@@ -149,7 +148,6 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
     const run = readArtifactPayload<BenchmarkRunPayload>(path, { expectedKind: 'benchmark_run' });
     validateCampaignRun(plan, attempt, run, { resultDir: dirname(path) });
     const cost = runCostEvidence(run, 'execution');
-    const activeDurationMs = campaignActiveDurationMs(run);
     const incompleteMeasurement = (run.progressionStatus !== undefined
       && run.progressionStatus.phase !== 'terminal') || (run.outcome?.inconclusive?.length ?? 0) > 0;
     return {
@@ -164,7 +162,6 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
       costUsd: cost.status === 'exact' ? cost.costUsd : null,
       costComplete: cost.status !== 'unknown',
       durationSec: run.totals?.durationSec ?? null,
-      activeDurationSec: activeDurationMs === null ? null : activeDurationMs / 1000,
       firstBuildRate: campaignFirstBuildRate(run, attempt.condition.requested.levels),
       unreachedPoints: campaignUnreachedPoints(run, attempt.condition.requested.levels),
       regressions: checkpointRegressions(run.checkpoints ?? []),
@@ -460,6 +457,9 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
     } catch { return { cost: { status: 'unknown' as const, costUsd: null } }; }
   });
   const dependency = dependencyProgress(plan, attempt.plan, executionDirectory);
+  // Cost and time both cover a continued attempt's whole execution chain, as in the export.
+  const measuredRun = execution ? costRuns.get(execution.id) : null;
+  const measuredDurationMs = campaignMeasuredRunWork(measuredRun, [...costRuns.values()]).durationMs;
   return {
     id: attempt.plan.id,
     cohortKey: campaignCohortKey(attempt.plan),
@@ -467,7 +467,8 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
     variantLabel: `${attempt.plan.model} / ${attempt.plan.guidance} / ${attempt.plan.condition.id}`,
     cost: costs.at(-1)?.cost ?? { status: 'unknown' as const, costUsd: null },
     spend: executionSpend(costs),
-    measuredCost: campaignMeasuredRunCost(execution ? costRuns.get(execution.id) : null, [...costRuns.values()]),
+    measuredCost: campaignMeasuredRunCost(measuredRun, [...costRuns.values()]),
+    measuredDurationSec: measuredDurationMs === null ? null : measuredDurationMs / 1000,
     completion: dependency?.score?.completion ?? result?.completion ?? null,
     stack: attempt.plan.stack,
     model: attempt.plan.model,

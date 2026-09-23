@@ -6,7 +6,7 @@ import { attemptMetrics, compareCampaign, outputSilentMinutes, type MetricAttemp
 import { recordedExecutionSpend } from '../../src/evidence/run-checkpoints.js';
 import { runCostEvidence } from '../../src/evidence/cost-proof.js';
 import { campaignActiveDurationMs, campaignFirstBuildRate, campaignMeasuredRunCost,
-  campaignRunMetrics, executionSpend } from '../../src/campaigns/campaign-report.js';
+  campaignMeasuredRunWork, campaignRunMetrics, executionSpend } from '../../src/campaigns/campaign-report.js';
 
 test('dashboard and export share retry, prior-repair, wait and pause definitions', () => {
   const session = (costUsd: number) => ({ costUsd, costComplete: true,
@@ -25,8 +25,8 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
   assert.equal(first, 0.75); assert.equal(active, 70_000);
   const spend = executionSpend([failed, measured].map(run => ({ cost: runCostEvidence(run, 'execution') })));
   const attempt: MetricAttempt = { id: 'measured', stack: 'example', status: 'completed', execution: null,
-    dependency: null, measuredCost: cost, spend, result: {
-      firstBuildRate: first, activeDurationSec: active! / 1000, durationSec: 100,
+    dependency: null, measuredCost: cost, measuredDurationSec: active! / 1000, spend, result: {
+      firstBuildRate: first, durationSec: 100,
       levels: [{ level: 2, firstScore: { score: 10, max: 10 }, firstAbort: null,
         finalScore: { score: 10, max: 10 }, used: 1, repairStatus: null, outcome: null,
         durationSec: 100, costUsd: 3, cost, failures: [], repairs: null, continued: false }],
@@ -42,6 +42,13 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
     totals: { currentExecutionCostUsd: 1 }, levels: [{ level: 3, buildSessions: [session(1)] }] };
   assert.deepEqual(campaignMeasuredRunCost(resumed, [failed, measured, resumed]), { status: 'exact', costUsd: 4 });
   assert.equal(campaignMeasuredRunCost(resumed, [resumed]).status, 'unknown');
+  // A continued attempt's dashboard time is the export's chain time, not its latest execution.
+  const continued = { ...resumed, totals: { ...resumed.totals, durationSec: 50 } };
+  const chainMs = campaignMeasuredRunWork(continued, [measured, continued]).durationMs!;
+  assert.equal(chainMs, 120_000);
+  const chainRow = compareCampaign({ attempts: [{ ...attempt, id: 'continued',
+    measuredDurationSec: chainMs / 1000 }] }).rows[0]!;
+  assert.equal(chainRow.duration, 120);
 });
 
 test('live spend validates recorded sessions without treating them as final execution cost', () => {

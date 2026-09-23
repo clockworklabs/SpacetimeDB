@@ -28,6 +28,7 @@ export interface MetricAttempt {
   dependency: DependencyProgress | null;
   spend?: CostEvidence;
   measuredCost?: CostEvidence;
+  measuredDurationSec?: number | null;
   completion?: CheckCompletion | null;
   comparisonKey?: string;
 }
@@ -92,7 +93,7 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
       final: unique.percentage / 100,
       repairs: dependency.history?.repairAttempts ?? 0,
       spend: attempt.measuredCost?.status === 'exact' ? attempt.measuredCost.costUsd : null,
-      duration: run.activeDurationSec ?? null,
+      duration: attempt.measuredDurationSec ?? null,
       scope: `${attempt.comparisonKey ?? ''}:dependency:${dependency.nodes.length}:${available}`,
       abortedFirst: 0,
       raw: { first: null, final: unique.passedPoints == null
@@ -116,7 +117,7 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
     final: sum(levels, level => level.finalScore.score) / finalMax,
     repairs: sum(levels, level => level.used ?? 0),
     spend: attempt.measuredCost?.status === 'exact' ? attempt.measuredCost.costUsd : null,
-    duration: run.activeDurationSec ?? null,
+    duration: attempt.measuredDurationSec ?? null,
     scope: `${attempt.comparisonKey ?? ''}:sequential`,
     abortedFirst,
     // Do not show a partial first-build sum when the complete rate is unknown.
