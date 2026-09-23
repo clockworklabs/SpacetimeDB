@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, constants, mkdirSync, openSync, rmSync, writeSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { killDetachedTree } from './platform.js';
+import { killDetachedTree, killReapedGroup } from './platform.js';
 
 export interface CapturedProcessLog {
   path: string;
@@ -222,7 +222,7 @@ export function runBounded(command: string, argv: readonly string[],
       clearInterval(wallTimer);
       if (forceTimer) clearTimeout(forceTimer);
       signal?.removeEventListener('abort', cancel);
-      if (child.pid) killDetachedTree(child.pid);
+      if (child.pid) killReapedGroup(child.pid);
       const captured = streams ? Object.fromEntries(Object.entries(streams).map(([name, state]) => {
         closeSync(state.fd);
         return [name, { path: state.path, sha256: state.hash.digest('hex'), bytes: state.bytes,

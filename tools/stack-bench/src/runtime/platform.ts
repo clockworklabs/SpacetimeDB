@@ -151,7 +151,18 @@ export function killDetachedTree(pid: string | number | null | undefined): void 
   // Descendants can start their own process groups. Kill them before the parent
   // exits; the original group also catches children already reparented to init.
   killTree(pid);
-  try { process.kill(-Number(pid), 'SIGKILL'); }
+  killReapedGroup(Number(pid));
+}
+
+/**
+ * Kill what remains of a detached child's process group after the child was
+ * reaped. Its pid may already belong to another process, so never walk a tree
+ * from it; a group id stays reserved while any member lives. Windows has no
+ * such group, and taskkill cannot start a tree from an exited process.
+ */
+export function killReapedGroup(pid: number): void {
+  if (isWindows) return;
+  try { process.kill(-pid, 'SIGKILL'); }
   catch { /* group already exited */ }
 }
 
