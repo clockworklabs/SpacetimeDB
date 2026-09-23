@@ -360,6 +360,7 @@ public partial class ReconnectTests
         Drop(conn);
         Assert.IsType<Status.UnknownResult>(Assert.Single(conn.ReducerResults));
         Assert.IsType<UnknownResultException>(procedureError);
+        Assert.True(SpinWait.SpinUntil(() => query.IsCompleted, TimeSpan.FromSeconds(5)));
         Assert.IsType<UnknownResultException>(query.Exception!.InnerException);
         Assert.Throws<InvalidOperationException>(() => ((IDbConnection)conn).InternalCallReducer(new Args()));
         Assert.Throws<InvalidOperationException>(() => ((IDbConnection)conn).InternalCallProcedure<Args, Row>(new(), (_, _) => { }));

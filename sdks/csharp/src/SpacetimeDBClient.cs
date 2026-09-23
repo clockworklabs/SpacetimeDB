@@ -548,6 +548,11 @@ namespace SpacetimeDB
                         dbOps = ParseTransactionUpdate(transactionUpdate);
                         break;
                     case ServerMessage.OneOffQueryResult(var resp):
+                        // Queries do not mutate the client cache and must complete without FrameTick.
+                        // Recheck after decoding in case the socket was replaced while parsing.
+                        if (!isClosing && unparsed.generation == socketGeneration &&
+                            waitingOneOffQueries.TryRemove(resp.RequestId, out var completion))
+                            completion.TrySetResult(resp);
                         break;
                     case ServerMessage.ReducerResult(var reducerResult):
                         if (!stats.ReducerRequestTracker.FinishTrackingRequest(reducerResult.RequestId, unparsed.timestamp))
@@ -787,9 +792,8 @@ namespace SpacetimeDB
                     HandleInitialConnection(initialConnection);
                     break;
 
-                case ServerMessage.OneOffQueryResult(var result):
-                    if (waitingOneOffQueries.TryRemove(result.RequestId, out var completion))
-                        completion.TrySetResult(result);
+                case ServerMessage.OneOffQueryResult:
+                    // Completed by the parser independently of FrameTick.
                     break;
                 case ServerMessage.ProcedureResult(var procedureResult):
                     var procedureEventContext = ToProcedureEventContext(new ProcedureEvent(
@@ -898,7 +902,7 @@ namespace SpacetimeDB
             }
 
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
-            var resultSource = new TaskCompletionSource<OneOffQueryResult>();
+            var resultSource = new TaskCompletionSource<OneOffQueryResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             waitingOneOffQueries[requestId] = resultSource;
 
             try
@@ -916,7 +920,8 @@ namespace SpacetimeDB
                 throw;
             }
 
-            var result = await resultSource.Task;
+            // Keep row decoding off the caller's synchronization context (e.g. Unity's main thread).
+            var result = await resultSource.Task.ConfigureAwait(false);
 
             if (!stats.OneOffRequestTracker.FinishTrackingRequest(requestId))
             {
