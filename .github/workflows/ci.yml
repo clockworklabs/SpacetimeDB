@@ -106,19 +106,10 @@ jobs:
         name: Set Cargo target directory
         shell: bash
         run: |
-          # The self-hosted Windows runner root, matching $RunnerDir in
-          # clockworklabs/infra runner-manager.sh.j2 and the warmed layout
-          # created by warm-cache-windows.ps1.
-          windows_runner_work="C:/actions-runner/_work"
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
             cargo_target_dir="${HOME}/actions-runner/_work/target"
-          elif [[ "${RUNNER_OS}" == "Windows" && -d "${windows_runner_work}" ]]; then
-            # Our Windows image ships a warmed target outside the workspace,
-            # because checkout wipes GITHUB_WORKSPACE on every run -- that one
-            # `else` branch was the entire reason Windows built cold. The
-            # directory only exists on the self-hosted image, so GitHub-hosted
-            # windows-latest (the update-flow job) still falls through below.
-            cargo_target_dir="${windows_runner_work}/target"
+          elif [[ "${RUNNER_OS}" == "Windows" && -d "C:/actions-runner/_work" ]]; then
+            cargo_target_dir="C:/actions-runner/_work/target"
           else
             # Forward slashes keep the Windows path compatible with Cargo,
             # PowerShell, GitHub Actions, and Git Bash filesystem commands.
@@ -128,21 +119,14 @@ jobs:
 
       - &configure-sccache
         name: Configure sccache
-        if: runner.os == 'Linux' || runner.os == 'Windows'
         shell: bash
         run: |
-          # `command -v` decides whether this runner was warmed at all, so an
-          # unwarmed image degrades to a cold-but-working build. It cannot
-          # supply RUSTC_WRAPPER on Windows though: it reports an MSYS path
-          # (/c/sccache/sccache.exe) that Cargo, a native Windows process,
-          # cannot execute. Hence the explicit per-OS paths below, which are
-          # written by the warm scripts in clockworklabs/infra.
           if command -v sccache >/dev/null 2>&1; then
             if [[ "${RUNNER_OS}" == "Windows" ]]; then
               sccache_bin="C:/sccache/sccache.exe"
               sccache_dir="C:/actions-runner/_work/sccache"
             else
-              sccache_bin="/usr/local/bin/sccache"
+              sccache_bin="$(command -v sccache)"
               sccache_dir="${HOME}/.cache/sccache"
             fi
             # sccache cannot cache incremental compilation artifacts, so
@@ -267,7 +251,7 @@ jobs:
 
       - &show-sccache-stats
         name: Show sccache statistics
-        if: always() && (runner.os == 'Linux' || runner.os == 'Windows')
+        if: always()
         shell: bash
         run: |
           if command -v sccache >/dev/null 2>&1; then
