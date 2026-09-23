@@ -1279,11 +1279,6 @@ impl RawModuleDefV10Builder {
         self.explicit_names_mut().merge(names);
     }
 
-    /// Mount `module` as a submodule under the source namespace `namespace`.
-    ///
-    /// The canonical namespace is derived during validation from this module's case
-    /// conversion policy, or taken from an explicit namespace name mapping added via
-    /// [`Self::add_explicit_names`].
     pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {
         let submodule = RawSubmoduleV10 {
             namespace: namespace.into(),
