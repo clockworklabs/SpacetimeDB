@@ -104,8 +104,12 @@ fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
         !code.contains("my_lib: {"),
         "the canonical namespace must not be used as an accessor key"
     );
-    // The SDK keys its accessor map by `toCamelCase(wireName)`, so `my_lib.lib_insert`
-    // is registered as `myLib.libInsert`; the tree entry must look it up by that key.
+    // The schema entry registers the reducer under an explicit accessor key, the accessor
+    // path plus the camelCase accessor name, and the tree entry looks it up by that same key.
+    assert!(
+        code.contains(r#", "myLib.libInsert"),"#),
+        "submodule reducer schema should pass its accessor key explicitly"
+    );
     assert!(
         code.contains(r#"libInsert: __reducerAccessors["myLib.libInsert"]"#),
         "namespace tree entries must use the SDK's accessor-map key for the canonical wire name"

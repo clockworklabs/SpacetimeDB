@@ -380,7 +380,11 @@ impl Lang for TypeScript {
             // `reducer.name` is already qualified; do not prefix it again.
             let wire_name = reducer.name.to_string();
             let args_type = submodule_reducer_args_type_name(owning.accessor_path(), &reducer.accessor_name);
-            writeln!(out, "__reducerSchema(\"{wire_name}\", {args_type}),");
+            let accessor_key = submodule_accessor_key(owning, &reducer.accessor_name);
+            writeln!(
+                out,
+                "__reducerSchema(\"{wire_name}\", {args_type}, \"{accessor_key}\"),"
+            );
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -403,9 +407,10 @@ impl Lang for TypeScript {
         for (prefix, owning, procedure) in &ns_procedures {
             let wire_name = format!("{}{}", prefix, procedure.name);
             let args_type = submodule_procedure_args_type_name(owning.accessor_path(), &procedure.accessor_name);
+            let accessor_key = submodule_accessor_key(owning, &procedure.accessor_name);
             writeln!(
                 out,
-                "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType),"
+                "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType, \"{accessor_key}\"),"
             );
         }
         out.dedent(1);
@@ -1367,37 +1372,18 @@ fn submodule_ns_path(namespace: &NamespacePath) -> String {
     namespace.join_segments("/")
 }
 
-/// The key the SDK registers a reducer or procedure under in its accessor map.
-///
-/// Mirrors the SDK's `toCamelCase(wireName)`: runs of `_`/`-` become a single separator,
-/// the character after each separator is upper-cased, and the first character is lower-cased.
-/// Dots are kept verbatim, so `"my_lib.lib_insert"` → `"myLib.libInsert"`.
-fn sdk_accessor_key(wire_name: &str) -> String {
-    let mut out = String::with_capacity(wire_name.len());
-    let mut pending_separator = false;
-    for c in wire_name.chars() {
-        if c == '_' || c == '-' {
-            pending_separator = true;
-            continue;
-        }
-        if pending_separator {
-            pending_separator = false;
-            if c.is_ascii_alphanumeric() {
-                out.extend(c.to_uppercase());
-                continue;
-            }
-            out.push('_');
-        }
-        out.push(c);
-    }
-    if pending_separator {
-        out.push('_');
-    }
-    let mut chars = out.chars();
-    match chars.next() {
-        Some(first) => first.to_lowercase().chain(chars).collect(),
-        None => out,
-    }
+/// The key under which a submodule reducer or procedure is registered in the SDK's
+/// accessor map. This corresponds to the owning module's accessor path and the camelCase
+/// accessor name, joined by `.`, e.g. `myLib.libInsert`.
+fn submodule_accessor_key(owning: &ModuleDef, accessor_name: &str) -> String {
+    owning
+        .accessor_path()
+        .segments()
+        .iter()
+        .map(|segment| segment.to_string())
+        .chain(std::iter::once(accessor_name.to_case(Case::Camel)))
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 /// TypeScript import symbol for a submodule namespace reducer/procedure.
@@ -1492,9 +1478,9 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
 }
 
 /// Build namespace tree for submodule reducers (uses `.` path separator).
-/// Object keys follow the accessor path; `flat_key` is the SDK's accessor-map key, which
-/// the SDK derives from the canonical wire name (see [`sdk_accessor_key`]). Dots are kept
-/// verbatim, so bracket notation is required.
+/// Object keys follow the accessor path; `flat_key` is the accessor-map key the schema
+/// entry was registered under (see [`submodule_accessor_key`]). It contains dots, so
+/// bracket notation is required.
 fn build_reducer_ns_tree<'a>(
     ns_reducers: &[(NamespacePath, &'a ModuleDef, &'a ReducerDef)],
 ) -> BTreeMap<String, NsTree> {
@@ -1503,7 +1489,7 @@ fn build_reducer_ns_tree<'a>(
         if !is_reducer_invokable(reducer) {
             continue;
         }
-        let flat_key = sdk_accessor_key(&reducer.name);
+        let flat_key = submodule_accessor_key(owning, &reducer.accessor_name);
         let local = reducer.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
@@ -1520,8 +1506,8 @@ fn build_procedure_ns_tree<'a>(
     ns_procedures: &[(NamespacePath, &'a ModuleDef, &'a ProcedureDef)],
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (prefix, owning, procedure) in ns_procedures {
-        let flat_key = sdk_accessor_key(&format!("{}{}", prefix, procedure.name));
+    for (_, owning, procedure) in ns_procedures {
+        let flat_key = submodule_accessor_key(owning, &procedure.accessor_name);
         let local = procedure.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
@@ -1740,20 +1726,3 @@ fn gen_and_print_imports<'a>(
 
 //     field_name
 // }
-
-#[cfg(test)]
-mod tests {
-    use super::sdk_accessor_key;
-
-    /// Must match the SDK's `toCamelCase`, which is what keys the client accessor map.
-    #[test]
-    fn sdk_accessor_key_matches_sdk_to_camel_case() {
-        assert_eq!(sdk_accessor_key("lib_insert"), "libInsert");
-        assert_eq!(sdk_accessor_key("my_lib.lib_insert"), "myLib.libInsert");
-        assert_eq!(sdk_accessor_key("my_outer.my_inner.do_it"), "myOuter.myInner.doIt");
-        assert_eq!(sdk_accessor_key("MyLib.lib_insert"), "myLib.libInsert");
-        assert_eq!(sdk_accessor_key("lib.libInsert"), "lib.libInsert");
-        assert_eq!(sdk_accessor_key("some__identifier-name"), "someIdentifierName");
-        assert_eq!(sdk_accessor_key("a_1b"), "a1b");
-    }
-}

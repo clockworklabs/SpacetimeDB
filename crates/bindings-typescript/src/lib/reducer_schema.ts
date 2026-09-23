@@ -10,6 +10,7 @@ import type { CamelCase } from './type_util';
 export type ReducerSchema<
   ReducerName extends string,
   Params extends ParamsObj | RowObj,
+  AccessorName extends string = CamelCase<ReducerName>,
 > = {
   /**
    * The name of the reducer.
@@ -17,9 +18,10 @@ export type ReducerSchema<
   readonly reducerName: ReducerName;
 
   /**
-   * The accessor name for the reducer.
+   * The key the reducer is exposed under on the client, e.g. `ctx.reducers.<accessorName>`.
+   * Defaults to the camelCase form of `reducerName`; generated bindings pass it explicitly.
    */
-  readonly accessorName: CamelCase<ReducerName>;
+  readonly accessorName: AccessorName;
 
   /**
    * The TypeBuilder representation of the reducer's parameter type.
