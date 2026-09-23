@@ -157,7 +157,6 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         // V9 has no submodules, so every def is at the root.
         path: NamespacePath::root(),
         accessor_path: NamespacePath::root(),
-        mount_accessor_name: None,
         tables,
         reducers,
         views,

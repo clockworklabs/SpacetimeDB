@@ -321,7 +321,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         // Set by `apply_namespace` below.
         path: NamespacePath::root(),
         accessor_path: NamespacePath::root(),
-        mount_accessor_name: None,
         tables,
         reducers,
         views,
@@ -387,8 +386,8 @@ fn resolve_namespace_ident(
 /// permitted in the root module).
 /// This function will inspect each sub-submodule and recursively collect errors.
 ///
-/// The returned map is keyed by canonical namespace; each def records the accessor
-/// namespace it was mounted under in `mount_accessor_name`.
+/// The returned map is keyed by canonical namespace; each def's `accessor_path` is seeded
+/// with the accessor namespace it was mounted under, to be completed by `apply_namespace`.
 fn validate_submodules(
     submodules: Vec<RawSubmoduleV10>,
     case_policy: ValidationCase,
@@ -452,7 +451,7 @@ fn validate_submodules(
                             });
                         }
                     }
-                    def.mount_accessor_name = Some(accessor);
+                    def.accessor_path = NamespacePath::root().child(accessor);
                     map.insert(namespace, def);
                 }
                 Err(e) => errors.extend(e.into_iter()),

@@ -122,9 +122,6 @@ pub struct ModuleDef {
     /// The accessor namespace path this module is mounted under, empty for the root.
     accessor_path: NamespacePath,
 
-    /// The accessor name this module is mounted under in its parent, `None` for the root.
-    mount_accessor_name: Option<Identifier>,
-
     /// The tables of the module definition.
     tables: IdentifierMap<TableDef>,
 
@@ -240,7 +237,7 @@ impl ModuleDef {
 
     /// The accessor name this module is mounted under in its parent, `None` for the root.
     pub fn mount_accessor_name(&self) -> Option<&Identifier> {
-        self.mount_accessor_name.as_ref()
+        self.accessor_path.segments().last()
     }
 
     /// The tables of the module definition.
@@ -345,8 +342,8 @@ impl ModuleDef {
         }
         for (namespace, submodule) in &mut self.submodules {
             let accessor = submodule
-                .mount_accessor_name
-                .clone()
+                .mount_accessor_name()
+                .cloned()
                 .unwrap_or_else(|| namespace.clone());
             submodule.apply_namespace(&path.child(namespace.clone()), &accessor_path.child(accessor));
         }
@@ -1053,7 +1050,6 @@ impl From<ModuleDef> for RawModuleDefV9 {
             raw_module_def_version: _,
             submodules: _,
             accessor_path: _,
-            mount_accessor_name: _,
             environment: _,
         } = val;
 
@@ -1116,7 +1112,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
             raw_module_def_version: _,
             submodules,
             accessor_path: _,
-            mount_accessor_name: _,
             environment,
         } = val;
 
@@ -1276,7 +1271,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
         let submodules: Vec<_> = submodules
             .into_iter()
             .map(|(namespace, module)| {
-                let accessor = module.mount_accessor_name.clone().unwrap_or_else(|| namespace.clone());
+                let accessor = module.mount_accessor_name().cloned().unwrap_or_else(|| namespace.clone());
                 explicit_names.insert_namespace(RawIdentifier::from(accessor.clone()), RawIdentifier::from(namespace));
                 RawSubmoduleV10 {
                     namespace: accessor.to_string(),
