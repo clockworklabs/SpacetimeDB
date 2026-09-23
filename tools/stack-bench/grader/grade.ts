@@ -44,6 +44,7 @@ import {
 } from '../src/actions/runtime-action-executors.js';
 import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import type { LeasedDatabase } from '../src/stacks/backend-reset-guard.js';
+import { createMongoDbOrderDataReader } from '../src/stacks/backends/mongodb-operations.js';
 import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec, prepareRuntimeCrash }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
@@ -124,6 +125,7 @@ type GradeRunContext = {
   savedReader?: { path: string; sha256: string };
   checkoutActivity?: { unsettled: boolean };
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
+  mongoOrderReader?: ReturnType<typeof createMongoDbOrderDataReader>;
   actionCancellation?: { reason: string | null };
   runId: string;
   roomName: (base: string) => string;
@@ -588,7 +590,10 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     'backend-lifecycle': createLifecycleCapability({
       restartSpec: ctx.restartSpec,
       target: 'backend-runtime',
-      control: controlBackendRuntime,
+      control: async (...args) => {
+        await closeMongoOrderReader(ctx);
+        return controlBackendRuntime(...args);
+      },
       sleep: abortableSleep,
     }),
     'browser-interaction': runtimeValues,
@@ -606,6 +611,15 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       databaseLease: ctx.databaseLease,
       skip: ctx.nullControl,
       expand: (value: string) => String(expand(value, ctx)),
+      readMongoDbOrders: async input => {
+        if (!ctx.databaseLease) throw new Error('MongoDB observation requires an authenticated lease');
+        const reader = ctx.mongoOrderReader ??= createMongoDbOrderDataReader({ lease: ctx.databaseLease });
+        try { return await reader.read(input); }
+        catch (error) {
+          await closeMongoOrderReader(ctx);
+          throw error;
+        }
+      },
     }),
     'database-write': createDatabaseWriteCapability({
       backend: ctx.backend,
@@ -616,13 +630,20 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     }),
     'named-actions': namedActions,
     'process-crash': Object.freeze({ combinedBoundary: !ctx.nullControl && ['spacetime', 'convex'].includes(ctx.restartSpec?.backend ?? ''),
-      prepare: (target: 'application' | 'database') => {
+      prepare: async (target: 'application' | 'database') => {
       if (!ctx.restartSpec || ctx.nullControl) throw new Error('process crash requires an owned grading runtime');
+      await closeMongoOrderReader(ctx);
       return prepareRuntimeCrash(ctx.restartSpec, target);
     } }),
     subprocess: Object.freeze({ sleep: abortableSleep }),
     'transport-observation': transportObservation,
   });
+}
+
+async function closeMongoOrderReader(ctx: GradeRunContext): Promise<void> {
+  const reader = ctx.mongoOrderReader;
+  await reader?.close();
+  if (ctx.mongoOrderReader === reader) delete ctx.mongoOrderReader;
 }
 
 function applicationLifecycle(ctx: GradeRunContext) {
@@ -791,6 +812,8 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   };
   const restoreFailures: GradeCleanupFailure[] = [];
   const closeAll = async () => {
+    try { await closeMongoOrderReader(ctx); }
+    catch (error) { restoreFailures.push({ actor: null, stage: 'database-reader-close', reason: keepReason(errorMessage(error)) }); }
     // Interruption proxies run where the browser runs; close them even after cancellation closed the browser.
     await Promise.all(interruptions.splice(0).map(interruption => interruption.dispose()));
     for (const actor of actors.values()) {
@@ -801,7 +824,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     // The abort hook already closed this connection, or reported that closure
     // could not be confirmed. Do not hang again while collecting browser media.
     if (ctx.actionCancellation?.reason) {
-      const failures = [{ actor: null, stage: 'browser-cancel', reason: ctx.actionCancellation.reason }];
+      const failures = [...restoreFailures, { actor: null, stage: 'browser-cancel', reason: ctx.actionCancellation.reason }];
       result.cleanupEvidence = { status: 'harness_failure', failures };
       return failures;
     }

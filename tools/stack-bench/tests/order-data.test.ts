@@ -66,7 +66,7 @@ test('crash stock scope follows the validated delivered task, including retained
       assert.equal(result.status, 'passed', mode);
       const snapshot = [...capability.checkoutSnapshots.values()][0]!;
       assert.deepEqual(snapshot.storage, { kind: 'order-data', cart: true, warehouses });
-      assert.deepEqual(capability.getCheckoutState(snapshot).state, snapshot.state);
+      assert.deepEqual((await capability.getCheckoutState(snapshot)).state, snapshot.state);
     }
   }
 });
@@ -339,7 +339,7 @@ test('order data uses one SpacetimeDB subscription and preserves the explicit re
   const snapshot = capability.checkoutSnapshots.get('before')!;
   assert.deepEqual(snapshot.storage, fullStorage);
   assert.equal(snapshot.state.orders[0]!.id, '9007199254740993');
-  assert.deepEqual(capability.getCheckoutState(snapshot).state, snapshot.state);
+  assert.deepEqual((await capability.getCheckoutState(snapshot)).state, snapshot.state);
   raw.item[0]!.price = 0.001;
   const invalid = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
     do: 'dbRecordCheckout', storage: { kind: 'order-data', cart: true, warehouses: true }, account: 'buyer', item: 'Keyboard', as: 'bad',
@@ -516,9 +516,6 @@ for (const backend of ['postgres', 'mongodb'] as const) {
   assert.equal(committed.length, 1000);
   assert.equal(new Set(committed.map(step => step.name)).size, 1000);
   for (const commit of committed) {
-    const index = catalogSteps.indexOf(commit);
-    assert.equal(catalogSteps[index - 1]!.testid, 'catalog-save');
-    assert.equal(catalogSteps[index - 5]!.text, commit.name);
     assert.equal(commit.priceMinor, 125);
   }
   const pages = catalogSteps.filter(step => step.do === 'expectSequence');

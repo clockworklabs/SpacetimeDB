@@ -38,8 +38,8 @@ export const loseCheckoutResponse = actionImplementation(async ({ input, capabil
     throw new Error('response loss requires matching native before/cart snapshots');
   }
   const gate = capabilities['response-loss'].get(input.actor);
-  let committed: ReturnType<typeof database.getCheckoutState> | undefined;
-  let lastObserved: ReturnType<typeof database.getCheckoutState> | undefined;
+  let committed: Awaited<ReturnType<typeof database.getCheckoutState>> | undefined;
+  let lastObserved: Awaited<ReturnType<typeof database.getCheckoutState>> | undefined;
   let failure: unknown;
   gate.arm();
   try {
@@ -48,7 +48,7 @@ export const loseCheckoutResponse = actionImplementation(async ({ input, capabil
     const deadline = evidenceNowMs() + 10_000;
     do {
       signal.throwIfAborted();
-      lastObserved = database.getCheckoutState(before);
+      lastObserved = await database.getCheckoutState(before, signal);
       if (lastObserved.scope !== 'orders' || !isDeepStrictEqual(before.schemaSha256, lastObserved.schemaSha256)) {
         throw new Error('response-loss observer changed scope or schema');
       }

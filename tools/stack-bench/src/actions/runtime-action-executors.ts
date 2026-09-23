@@ -101,7 +101,7 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-read': {
     getStock(input: { item: string; warehouse?: string }):
       { quantity: number } | Promise<{ quantity: number }>;
-    getCheckoutState(input: { account: string; item: string; storage?: OrderDataSelection }): CheckoutSnapshot;
+    getCheckoutState(input: { account: string; item: string; storage?: OrderDataSelection }, signal?: AbortSignal): CheckoutSnapshot | Promise<CheckoutSnapshot>;
     readonly checkoutSnapshots: Map<string, CheckoutSnapshot & { account: string; item: string }>;
   };
   readonly 'browser-observation': {
@@ -196,9 +196,9 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
   return { ...value, key: input.as };
 }
 
-async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: OrderDataSelection }>) {
+async function dbRecordCheckout({ input, capabilities, signal }: ActionArguments<{ account: string; item: string; as: string; storage?: OrderDataSelection }>) {
   const database = capabilities['database-read'];
-  const snapshot = { ...database.getCheckoutState(input), recordedAtMs: evidenceNowMs() };
+  const snapshot = { ...await database.getCheckoutState(input, signal), recordedAtMs: evidenceNowMs() };
   if (snapshot.storage?.warehouses !== false && !snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
   database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
   return { ...snapshot, key: input.as };
@@ -214,17 +214,17 @@ async function dbExpectCatalogItem({ input, capabilities, signal }: ActionArgume
     throw new Error('catalog creation requires native catalog evidence');
   }
   if (before.catalog.some(row => row.name === input.name)) throw new Error('catalog creation name already exists in the baseline');
-  const read = () => {
-    const value = database.getCheckoutState(before);
+  const read = async () => {
+    const value = await database.getCheckoutState(before, signal);
     if (value.scope !== before.scope || !value.catalog
       || JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) throw new Error('catalog reader changed during creation');
     return value.catalog.filter(row => row.name === input.name);
   };
   const deadline = Date.now() + (input.within ?? 0);
-  let matches = read();
+  let matches = await read();
   while (!matches.length && Date.now() < deadline) {
     await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
-    matches = read();
+    matches = await read();
   }
   const observation = { before: input.before, name: input.name, matches, schemaSha256: before.schemaSha256 };
   const mismatch = matches.length !== 1
@@ -257,14 +257,14 @@ export function checkoutExpectation(quantity: CheckoutQuantity, snapshots: reado
   });
 }
 
-async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string;
+async function dbExpectCheckout({ input, capabilities, signal }: ActionArguments<{ before: string; prepared: string;
   quantity: CheckoutQuantity; actor?: string; alongsideAdd?: string }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   const prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
   if (before.account !== prepared.account || before.item !== prepared.item) throw new Error('checkout snapshots select different data');
-  const after = database.getCheckoutState(before);
+  const after = await database.getCheckoutState(before, signal);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
   if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
@@ -299,7 +299,7 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   return observation;
 }
 
-async function dbExpectOperation({ input, capabilities }: ActionArguments<{
+async function dbExpectOperation({ input, capabilities, signal }: ActionArguments<{
   before: string; otherBefore: string; actor: string;
   operation: 'buy' | 'cart-add' | 'cart-update' | 'checkout' | 'cancel' | 'restock' | 'transfer' | 'reconnect';
 }>) {
@@ -307,7 +307,7 @@ async function dbExpectOperation({ input, capabilities }: ActionArguments<{
   const before = database.checkoutSnapshots.get(input.before), otherBefore = database.checkoutSnapshots.get(input.otherBefore);
   if (!before || !otherBefore) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
   if (before.state.accountId === otherBefore.state.accountId) throw new Error('history needs two distinct customer accounts');
-  const after = database.getCheckoutState(before), otherAfter = database.getCheckoutState(otherBefore);
+  const after = await database.getCheckoutState(before, signal), otherAfter = await database.getCheckoutState(otherBefore, signal);
   const catalog = (snapshot: CheckoutSnapshot) => JSON.stringify(snapshot.catalog?.toSorted((a, b) => a.itemId.localeCompare(b.itemId)));
   for (const snapshot of [before, otherBefore, after, otherAfter]) {
     if (snapshot.scope !== 'orders' || !snapshot.storage?.cart || !snapshot.storage.warehouses || !snapshot.catalog) {
@@ -369,7 +369,7 @@ async function dbExpectOperation({ input, capabilities }: ActionArguments<{
   return observation;
 }
 
-async function dbExpectCancellation({ input, capabilities }: ActionArguments<{
+async function dbExpectCancellation({ input, capabilities, signal }: ActionArguments<{
   before: string; shipping?: 'wins' | 'competes';
 }>) {
   const database = capabilities['database-read'];
@@ -378,7 +378,7 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{
   if (before.scope === 'orders' && before.storage?.kind !== 'order-data') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
   if (before.storage && !before.storage.warehouses) throw new Error('cancellation reconciliation requires warehouse evidence');
   if (input.shipping && before.scope !== 'orders') throw new Error('shipping reconciliation requires native order-data evidence');
-  const after = database.getCheckoutState(before);
+  const after = await database.getCheckoutState(before, signal);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
     throw new Error('checkout reader schema changed during cancellation');
   }
@@ -395,11 +395,11 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{
   return observation;
 }
 
-async function dbExpectNoPurchase({ input, capabilities }: ActionArguments<{ before: string }>) {
+async function dbExpectNoPurchase({ input, capabilities, signal }: ActionArguments<{ before: string }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-  const after = database.getCheckoutState(before);
+  const after = await database.getCheckoutState(before, signal);
   if (before.scope !== after.scope || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
     throw new Error('purchase reader changed during the test');
   }
@@ -414,7 +414,7 @@ async function dbExpectNoPurchase({ input, capabilities }: ActionArguments<{ bef
   return observation;
 }
 
-async function dbExpectPurchase({ input, capabilities }: ActionArguments<{ before: string; actor: string; stockBefore: string }>) {
+async function dbExpectPurchase({ input, capabilities, signal }: ActionArguments<{ before: string; actor: string; stockBefore: string }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   const stockBefore = capabilities['browser-observation'].recorded.get(input.stockBefore);
@@ -425,7 +425,7 @@ async function dbExpectPurchase({ input, capabilities }: ActionArguments<{ befor
   if (call.action !== 'buy' || before.scope !== 'orders' || before.storage?.kind !== 'order-data') {
     throw new Error('direct purchase reconciliation requires a buy response and order-data snapshot');
   }
-  const after = database.getCheckoutState(before);
+  const after = await database.getCheckoutState(before, signal);
   if (after.scope !== before.scope || JSON.stringify(after.schemaSha256) !== JSON.stringify(before.schemaSha256)) {
     throw new Error('purchase reader changed during the test');
   }
@@ -445,7 +445,7 @@ async function dbExpectPurchase({ input, capabilities }: ActionArguments<{ befor
   return observation;
 }
 
-async function dbExpectPurchaseCount({ input, capabilities }: ActionArguments<{
+async function dbExpectPurchaseCount({ input, capabilities, signal }: ActionArguments<{
   before: string[]; purchasesEach: number;
 }>) {
   const database = capabilities['database-read'];
@@ -459,14 +459,15 @@ async function dbExpectPurchaseCount({ input, capabilities }: ActionArguments<{
   if (accepted.size !== snapshots.length) throw new Error('purchase count requires distinct accounts');
   if (snapshots.some(({ before }) => before.state.itemId !== snapshots[0]!.before.state.itemId
     || before.state.priceMinor !== snapshots[0]!.before.state.priceMinor)) throw new Error('purchase count requires the same product and price');
-  const after = snapshots.map(({ key, before }) => {
-    const value = database.getCheckoutState(before);
+  const after = [];
+  for (const { key, before } of snapshots) {
+    const value = await database.getCheckoutState(before, signal);
     if (value.scope !== before.scope || JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) {
       throw new Error('purchase reader changed during the test');
     }
-    return { key, ...value, differences: orderPurchaseDifferences(before.state, value.state,
-      accepted, new Map(), before.storage!.warehouses) };
-  });
+    after.push({ key, ...value, differences: orderPurchaseDifferences(before.state, value.state,
+      accepted, new Map(), before.storage!.warehouses) });
+  }
   const observation = { before: input.before, purchasesEach: input.purchasesEach, after };
   const difference = after.flatMap(row => row.differences)[0];
   if (difference) {
@@ -477,7 +478,7 @@ async function dbExpectPurchaseCount({ input, capabilities }: ActionArguments<{
   return observation;
 }
 
-async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
+async function dbExpectPurchases({ input, capabilities, signal }: ActionArguments<{
   before: Record<string, string>; purchases: number;
 }>) {
   const database = capabilities['database-read'];
@@ -514,14 +515,15 @@ async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   }
   const count = [...accepted.values()].reduce((sum, value) => sum + value, 0);
   if (count !== input.purchases) differences.push({ control: 'purchase progress', observed: count, expected: input.purchases });
-  const after = snapshots.map(({ actor, before }) => {
-    const value = database.getCheckoutState(before);
+  const after = [];
+  for (const { actor, before } of snapshots) {
+    const value = await database.getCheckoutState(before, signal);
     if (JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) throw new Error('purchase reader schema changed');
     if (value.scope !== before.scope) throw new Error('checkout scope changed during purchase');
     const compare = before.scope === 'orders' ? orderPurchaseDifferences : purchaseDifferences;
     differences.push(...compare(before.state, value.state, accepted, restocked));
-    return { actor, ...value };
-  });
+    after.push({ actor, ...value });
+  }
   const observation = { before: input.before, after, differences, history };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
@@ -898,10 +900,11 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 }
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
-  savedReader, contractIds,
+  savedReader, contractIds, readMongoDbOrders,
   checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
   checkoutActivity = { unsettled: false },
   exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
+    readMongoDbOrders?: (input: { account: string; item: string; storage: OrderDataStorage; signal?: AbortSignal }) => Promise<CheckoutSnapshot>;
     contractIds?: readonly string[];
     savedReader?: { path: string; sha256: string };
     checkoutActivity?: { unsettled: boolean };
@@ -912,7 +915,7 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
     // A client disconnect cannot stop an HTTP handler retrying after a DB crash.
     // This grade cannot safely compare later global state; reset in a new grade.
     markCheckoutUnsettled() { checkoutActivity.unsettled = true; },
-    getCheckoutState(input: { account: string; item: string; storage?: OrderDataSelection }): CheckoutSnapshot {
+    getCheckoutState(input: { account: string; item: string; storage?: OrderDataSelection }, signal?: AbortSignal): CheckoutSnapshot | Promise<CheckoutSnapshot> {
       requireSettled();
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');
@@ -927,16 +930,22 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
         const read = backend === 'postgres' ? getSavedPostgresCheckoutState : getSavedMongoDbCheckoutState;
         return read({ ...selection, reader: savedReader, lease: databaseLease });
       }
-      try {
-        if (adapter.id === 'convex') return adapter.databaseRead.getCheckoutState(selection);
-        if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
-        if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
-        return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
-      } catch (error) {
+      const handleError = (error: unknown): never => {
         if (errorShape(error).orderDataInterface === true) {
           fail('interface-invalid', { action: 'read orders', attribute: 'order data', detail: databaseWriteFailureDetail(error) });
         }
         throw error;
+      };
+      try {
+        if (adapter.id === 'convex') return adapter.databaseRead.getCheckoutState(selection);
+        if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
+        if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
+        if (adapter.id === 'mongodb' && selection.storage && readMongoDbOrders) {
+          return readMongoDbOrders({ ...selection, storage: selection.storage, signal }).catch(handleError);
+        }
+        return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
+      } catch (error) {
+        return handleError(error);
       }
     },
     getStock(input: { item: string; warehouse?: string }) {

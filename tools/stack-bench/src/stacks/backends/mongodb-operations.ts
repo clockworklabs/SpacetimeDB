@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
 import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
@@ -26,32 +26,155 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const streams = (error: unknown, ...keys: readonly string[]): string =>
   record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
 
+const orderDataReadScript = `
+  function readOrderData(columns) {
+    const session=db.getMongo().startSession();
+    const store=session.getDatabase(db.getName());
+    try {
+      const names=db.getCollectionNames(), result={};
+      session.startTransaction({readConcern:{level:'snapshot'}});
+      for (const [table, fields] of Object.entries(columns)) {
+        if (!names.includes(table)) throw new Error('ORDER_DATA_MISSING:'+table);
+        result[table]=store.getCollection(table).find({}).toArray().map(row=>Object.fromEntries(fields.map(field=>{
+          let value=field==='id' ? row.id ?? row._id : row[field];
+          if (value && value._bsontype) {
+            value=value.toString();
+            if (field==='quantity') value=Number(value);
+          }
+          return [field,value];
+        })));
+      }
+      session.commitTransaction();
+      return result;
+    } finally { session.endSession(); }
+  }
+`;
+
+export function createMongoDbOrderDataReader({ lease, exec = execFileSync }: {
+  lease: LeasedDatabase; exec?: TextCommandExecutor;
+}) {
+  assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data reader start');
+  const script = `${orderDataReadScript}
+    const input=require('readline').createInterface({input:process.stdin});
+    input.on('line', line=>{
+      let id;
+      try {
+        const request=JSON.parse(line);
+        id=request.id;
+        print(JSON.stringify({id,result:readOrderData(request.columns)}));
+      } catch(error) { print(JSON.stringify({id,error:String(error)})); }
+    });
+    new Promise(resolve=>input.once('close',resolve));`;
+  const child = spawn('docker', ['exec', '-i', lease.resources.container.id,
+    ...mongoShell(lease), '--quiet', '--eval', script],
+  { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  let pending: { id: number; resolve(value: unknown): void; reject(error: Error): void } | null = null;
+  let nextId = 0, closed = false;
+  let closeTask: Promise<void> | undefined;
+  let output = Buffer.alloc(0);
+  const exited = new Promise<void>(resolve => child.once('close', () => resolve()));
+  const fail = (error: Error) => { pending?.reject(error); pending = null; };
+  const broken = (message: string) => {
+    closed = true;
+    fail(new Error(message));
+    void close().catch(() => {});
+  };
+  const onLine = (line: string) => {
+    if (!pending) { broken('MongoDB order reader returned an unsolicited reply'); return; }
+    let reply: unknown;
+    try { reply = JSON.parse(line); }
+    catch { broken('MongoDB order reader returned invalid JSON'); return; }
+    if (!record(reply) || reply.id !== pending.id || !('result' in reply || 'error' in reply)) {
+      broken('MongoDB order reader returned an invalid reply'); return;
+    }
+    const current = pending;
+    pending = null;
+    if (typeof reply.error === 'string') current.reject(/ORDER_DATA_MISSING:/.test(reply.error)
+      ? orderDataError('required order data collection is missing') : new Error(reply.error));
+    else if ('result' in reply) current.resolve(reply.result);
+    else current.reject(new Error('MongoDB order reader returned an invalid reply'));
+  };
+  // execFileSync's prior stdout limit was 1 MiB. Reject a larger or unterminated reply.
+  child.stdout.on('data', (chunk: Buffer) => {
+    if (closed) return;
+    output = Buffer.concat([output, chunk]);
+    if (output.length > 1024 * 1024) { broken('MongoDB order reader reply is too large'); return; }
+    for (let end: number; (end = output.indexOf(10)) !== -1;) {
+      const line = output.subarray(0, end).toString('utf8').trimEnd();
+      output = Buffer.from(output.subarray(end + 1));
+      onLine(line);
+      if (closed) return;
+    }
+  });
+  child.stderr.resume();
+  child.on('error', () => broken('MongoDB order reader process failed'));
+  child.on('close', () => broken(output.length
+    ? 'MongoDB order reader returned a partial reply' : 'MongoDB order reader process closed'));
+  child.stdin.on('error', () => broken('MongoDB order reader input failed'));
+  let serial: Promise<unknown> = Promise.resolve();
+  const waitForExit = async () => {
+    let timer: ReturnType<typeof setTimeout>;
+    try {
+      return await Promise.race([exited.then(() => true),
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2_000); })]);
+    } finally { clearTimeout(timer!); }
+  };
+  const close = () => closeTask ??= (async () => {
+    closed = true;
+    fail(new Error('MongoDB order reader closed'));
+    child.stdin.end();
+    if (!await waitForExit()) {
+      child.kill();
+      await waitForExit();
+      throw new Error('MongoDB order reader needed a forced stop; remote cleanup is unconfirmed');
+    }
+    if (child.exitCode !== 0) throw new Error('MongoDB order reader exited without clean cleanup');
+  })();
+  const read = ({ account, item, storage, signal }: {
+    account: string; item: string; storage: OrderDataStorage; signal?: AbortSignal;
+  }) => {
+    const task = serial.then(async () => {
+      try {
+        if (closed) throw new Error('MongoDB order reader is closed');
+        signal?.throwIfAborted();
+        assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data read');
+        signal?.throwIfAborted();
+        const id = ++nextId;
+        const raw = await new Promise<unknown>((resolve, reject) => {
+          pending = { id, resolve, reject };
+          const timer = setTimeout(() => pending?.id === id && broken('MongoDB order reader timed out'), WRITE_TIMEOUT_MS);
+          const abort = () => broken('MongoDB order reader was cancelled');
+          signal?.addEventListener('abort', abort, { once: true });
+          const settle = (value: unknown, error?: Error) => {
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', abort);
+            if (error) reject(error); else resolve(value);
+          };
+          pending.resolve = value => settle(value);
+          pending.reject = error => settle(undefined, error);
+          child.stdin.write(`${JSON.stringify({ id, columns: orderDataColumns(storage) })}\n`);
+        });
+        return readOrderDataSnapshot(raw, account, item, storage);
+      } catch (error) {
+        await close();
+        throw error;
+      }
+    });
+    serial = task.catch(() => {});
+    return task;
+  };
+  return { read, close };
+}
+
 export function getMongoDbCheckoutState({ account, item, app, lease, storage, exec = execFileSync }: {
   account: string; item: string; app: string; lease: LeasedDatabase; storage?: OrderDataStorage; exec?: TextCommandExecutor;
 }) {
   if (storage?.kind === 'order-data') {
     const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data read');
     const script = `
+      ${orderDataReadScript}
       const columns=${JSON.stringify(orderDataColumns(storage))};
-      const session=db.getMongo().startSession();
-      const store=session.getDatabase(db.getName());
-      try {
-        const names=db.getCollectionNames(), result={};
-        session.startTransaction({readConcern:{level:'snapshot'}});
-        for (const [table, fields] of Object.entries(columns)) {
-          if (!names.includes(table)) throw new Error('ORDER_DATA_MISSING:'+table);
-          result[table]=store.getCollection(table).find({}).toArray().map(row=>Object.fromEntries(fields.map(field=>{
-            let value=field==='id' ? row.id ?? row._id : row[field];
-            if (value && value._bsontype) {
-              value=value.toString();
-              if (field==='quantity') value=Number(value);
-            }
-            return [field,value];
-          })));
-        }
-        session.commitTransaction();
-        print(JSON.stringify(result));
-      } finally { session.endSession(); }
+      print(JSON.stringify(readOrderData(columns)));
     `;
     let output: string;
     try {

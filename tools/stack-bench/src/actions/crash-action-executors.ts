@@ -192,9 +192,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       throw new ActionHarnessFailure('database recovery was not verified', { observation });
     }
     const deadline = Date.now() + 20_000;
-    let after: ReturnType<typeof database.getCheckoutState>;
+    let after: Awaited<ReturnType<typeof database.getCheckoutState>>;
     while (true) {
-      try { after = database.getCheckoutState(prepared); break; }
+      try { after = await database.getCheckoutState(prepared, signal); break; }
       catch (error) {
         if (Date.now() >= deadline || signal.aborted) throw new ActionHarnessFailure('stored state unavailable after recovery', {
           observation: { ...observation, readError: error instanceof Error ? error.message : String(error) },
