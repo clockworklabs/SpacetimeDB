@@ -29,7 +29,7 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
       firstBuildRate: first, activeDurationSec: active! / 1000, durationSec: 100,
       levels: [{ level: 2, firstScore: { score: 10, max: 10 }, firstAbort: null,
         finalScore: { score: 10, max: 10 }, used: 1, repairStatus: null, outcome: null,
-        durationSec: 100, costUsd: 3, cost, failures: [], regressions: 0, repairs: null, continued: false }],
+        durationSec: 100, costUsd: 3, cost, failures: [], repairs: null, continued: false }],
     } };
   const row = compareCampaign({ attempts: [attempt] }).rows[0]!;
   assert.equal(row.first, report.firstBuildScoreRate);
@@ -75,7 +75,7 @@ test('cost per valid run uses only completed comparable runs with complete exact
     spend: { status: 'exact', costUsd: 2 }, measuredCost: { status: 'exact', costUsd: 2 }, result: { levels: [{
       level: 1, firstScore: null, firstAbort: null, finalScore: { score: 5, max: 10 },
       used: 0, repairStatus: null, outcome: null, durationSec: null, costUsd: 2,
-      cost: { status: 'exact', costUsd: 2 }, failures: [], regressions: 0, repairs: null, continued: false,
+      cost: { status: 'exact', costUsd: 2 }, failures: [], repairs: null, continued: false,
     }] },
   };
   const second = { ...run, id: 'second', spend: { status: 'exact' as const, costUsd: 10 }, measuredCost: { status: 'exact' as const, costUsd: 10 } };

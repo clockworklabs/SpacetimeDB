@@ -91,8 +91,6 @@ export interface CampaignRunLevelResult {
   durationSec: number | null;
   costUsd: number | null;
   failures: string[];
-  // Checks that passed and then failed: the regression suite's missing points.
-  regressions: number;
   repairs: { used: number } | null;
   continued: boolean;
 }
@@ -100,6 +98,7 @@ export interface CampaignRunLevelResult {
 export interface CampaignRunResult {
   firstBuildRate?: number | null;
   unreachedPoints?: number;
+  regressions?: number;
   activeDurationSec?: number | null;
   measurementClassification?: ReturnType<typeof classifyCampaignExecution>;
   completion?: CheckCompletion | null;
@@ -114,6 +113,22 @@ export interface CampaignRunResult {
   durationSec?: number | null;
   cleanup?: string | null;
   levels?: CampaignRunLevelResult[];
+}
+
+// Checks that passed in one kept grade and failed in a later one, counted like
+// dependency mode. Rejected repairs were rolled back, and a check that was not
+// measured keeps its last outcome.
+export function checkpointRegressions(checkpoints: readonly RunCheckpoint[]): number {
+  const last = new Map<string, string>();
+  const regressed = new Set<string>();
+  for (const checkpoint of checkpoints) {
+    if (!checkpoint.accepted) continue;
+    for (const check of checkpoint.checks) {
+      if (check.status === 'failed' && last.get(check.id) === 'passed') regressed.add(check.id);
+      if (check.status === 'passed' || check.status === 'failed') last.set(check.id, check.status);
+    }
+  }
+  return regressed.size;
 }
 
 export function firstGradeAbort(firstBuild: (Score & { outcome?: RunOutcome }) | null | undefined): {
@@ -152,6 +167,7 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
       activeDurationSec: activeDurationMs === null ? null : activeDurationMs / 1000,
       firstBuildRate: campaignFirstBuildRate(run, attempt.condition.requested.levels),
       unreachedPoints: campaignUnreachedPoints(run, attempt.condition.requested.levels),
+      regressions: checkpointRegressions(run.checkpoints ?? []),
       cleanup: run.backendLease?.state ?? null,
       levels: (run.levels ?? []).map(level => {
         const sessions = [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),
@@ -170,8 +186,6 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
         outcome: level.outcome?.kind ?? null,
         durationSec: level.durationSec ?? null,
         costUsd: cost.status === 'exact' ? cost.costUsd : null,
-        regressions: level.regression
-          ? Math.max(0, (level.regression.max ?? 0) - (level.regression.score ?? 0)) : 0,
         repairs: level.repair?.nodeRepairs
           ? { used: level.repair.nodeRepairs.reduce((total, node) => total + (node.used ?? 0), 0) }
           : null,

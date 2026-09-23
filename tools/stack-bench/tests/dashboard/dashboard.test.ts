@@ -22,7 +22,7 @@ import { parseRunProgress, attemptPause,
   discoverCampaigns, discoverPlans, readCampaignArtifactBody, readJsonLines,
   resolveCampaignArtifact, summarizeCampaign,
 } from '../../dashboard/dashboard-model.js';
-import { campaignFacts, firstGradeAbort, inspectCampaignSummary }
+import { campaignFacts, checkpointRegressions, firstGradeAbort, inspectCampaignSummary }
   from '../../src/campaigns/campaign-inspection.js';
 import { attemptExcluded, compareCampaign } from '../../dashboard/public/metrics.js';
 import { createDashboardServer, parseDashboardArgs } from '../../dashboard/dashboard-server.js';
@@ -179,6 +179,16 @@ test('dashboard calls dependency graph position depth', () => {
 === mongodb-l2-first (mongodb) ===
 `, { dependency: true });
   assert.equal(progress.phase, 'Grading the first depth 2 build');
+});
+
+test('a regression is a kept pass that later fails, not an unmeasured or never-passed check', () => {
+  const point = (accepted: boolean, checks: Record<string, 'passed' | 'failed' | 'unmeasured'>) =>
+    ({ accepted, checks: Object.entries(checks).map(([id, status]) => ({ id, status })) }) as Parameters<typeof checkpointRegressions>[0][number];
+  assert.equal(checkpointRegressions([
+    point(true, { kept: 'passed', never: 'failed', aborted: 'passed', rolledBack: 'passed' }),
+    point(false, { kept: 'passed', never: 'failed', aborted: 'passed', rolledBack: 'failed' }),
+    point(true, { kept: 'failed', never: 'failed', aborted: 'unmeasured', rolledBack: 'passed' }),
+  ]), 1);
 });
 
 test('an aborted first grade is classified, not treated as a scored zero', () => {

@@ -419,7 +419,7 @@ function dependencyRepairs(plan: CompiledCampaignPlan,
 
 function attemptRegressions(attempt: InspectedAttempt): number {
   if (attempt.dependency) return attempt.dependency.regressions ?? 0;
-  return (attempt.result?.levels ?? []).reduce((total, level) => total + level.regressions, 0);
+  return attempt.result?.regressions ?? 0;
 }
 
 // Continued: the attempt resumed on a repair grant, so its first grade is a
