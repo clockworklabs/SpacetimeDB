@@ -120,15 +120,9 @@ pub struct ModuleDef {
     path: NamespacePath,
 
     /// The accessor namespace path this module is mounted under, empty for the root.
-    ///
-    /// Segment for segment this parallels `path`, but holds the names module code and
-    /// generated clients use (`ctx.db.myAuth`) rather than the canonical names stored in
-    /// the database (`my_auth`). Maintained by [`ModuleDef::apply_namespace`].
     accessor_path: NamespacePath,
 
     /// The accessor name this module is mounted under in its parent, `None` for the root.
-    ///
-    /// The canonical name it is mounted under is its key in the parent's `submodules`.
     mount_accessor_name: Option<Identifier>,
 
     /// The tables of the module definition.
