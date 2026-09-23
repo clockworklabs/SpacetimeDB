@@ -10,7 +10,7 @@
       "actors": ["subscriber", "admin"],
       "setup": [
         {"do":"signUp","actor":"subscriber","name":"stock-subscriber"},
-        {"do":"click","actor":"subscriber","testid":"notification-settings","unlessVisible":"notification-stock"},
+        {"do":"click","actor":"subscriber","testid":"notification-settings","unlessVisible":"notification-order"},
         {"do":"click","actor":"subscriber","testid":"notification-stock"},
         {"do":"expect","actor":"subscriber","testid":"notification-stock","attribute":"data-state","value":"on"},
         {"do":"click","actor":"subscriber","testid":"notification-save"},
