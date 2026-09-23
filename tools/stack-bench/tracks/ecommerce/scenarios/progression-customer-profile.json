@@ -69,6 +69,13 @@
             { "do": "reload", "actor": "other", "settleMs": 0 },
             { "do": "signUp", "actor": "other", "name": "profile-other" },
             { "do": "click", "actor": "other", "testid": "profile-link" },
+            { "do": "fill", "actor": "other", "testid": "profile-name", "text": "Blake Reed" },
+            { "do": "fill", "actor": "other", "testid": "profile-address", "text": "9 Harbor Road" },
+            { "do": "click", "actor": "other", "testid": "profile-save" },
+            { "do": "reload", "actor": "other", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "other", "name": "profile-other", "readyTestid": "current-user" },
+            { "do": "click", "actor": "other", "testid": "profile-link" },
+            { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "9 Harbor Road", "within": 10000 },
             { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}", "absent": true },
             { "do": "expectNotReceived", "actor": "other", "contains": "14 Market Street {user:profilemarker}" }
           ]

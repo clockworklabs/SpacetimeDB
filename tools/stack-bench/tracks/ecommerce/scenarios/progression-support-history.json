@@ -74,6 +74,15 @@
             { "do": "reload", "actor": "other", "settleMs": 0 },
             { "do": "ensureSignedIn", "actor": "other", "name": "support-other", "readyTestid": "current-user" },
             { "do": "click", "actor": "other", "testid": "support-link" },
+            { "do": "fill", "actor": "other", "testid": "support-email", "text": "other@example.com" },
+            { "do": "fill", "actor": "other", "testid": "support-subject", "text": "Other ticket" },
+            { "do": "fill", "actor": "other", "testid": "support-message", "text": "Separate account issue." },
+            { "do": "click", "actor": "other", "testid": "support-submit" },
+            { "do": "expect", "actor": "other", "testid": "support-reference", "nonEmpty": true },
+            { "do": "reload", "actor": "other", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "other", "name": "support-other", "readyTestid": "current-user" },
+            { "do": "click", "actor": "other", "testid": "support-link" },
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Other ticket", "within": 10000 },
             { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}", "absent": true },
             { "do": "expectNotReceived", "actor": "other", "contains": "Private ticket {user:privateticketmarker}" }
           ]

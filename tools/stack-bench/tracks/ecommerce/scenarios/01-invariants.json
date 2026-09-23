@@ -44,12 +44,14 @@
           "desc": "an order cannot be placed in someone else's name by editing the request",
           "points": 2,
           "steps": [
+            { "do": "click", "actor": "victim", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             { "do": "click", "actor": "attacker", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
             { "do": "wait", "actor": "attacker", "ms": 1500 },
             { "do": "forgeWrite", "actor": "attacker", "fromActor": "victim", "settleMs": 2500 },
             { "do": "expectForgeryRejected", "actor": "attacker" },
             {"do":"click","actor":"victim","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "victim", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "victim", "testid": "order-item", "contains": "Coffee Grinder", "count": 1 },
             { "do": "expect", "actor": "victim", "testid": "order-item", "contains": "Desk Lamp", "absent": true }
           ],
           "statedBy": "knowing someone's username must never grant access to it"

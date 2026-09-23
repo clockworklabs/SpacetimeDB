@@ -2215,6 +2215,15 @@
                 "statedBy": "knowing someone's username must never grant access to it",
                 "steps": [
                   {
+                    "actor": "victim",
+                    "do": "click",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
                     "actor": "attacker",
                     "do": "click",
                     "in": {
@@ -2250,6 +2259,13 @@
                     "actor": "victim",
                     "do": "click",
                     "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "victim",
+                    "contains": "Coffee Grinder",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "order-item"
                   },
                   {
                     "absent": true,
