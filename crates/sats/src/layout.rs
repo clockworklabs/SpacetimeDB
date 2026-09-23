@@ -60,6 +60,15 @@ impl Size {
     pub const fn len(self) -> usize {
         self.0 as usize
     }
+
+    /// Computes `self - rhs`, returning `None` if underflow occurred.
+    #[inline]
+    pub const fn checked_sub(self, rhs: Self) -> Option<Self> {
+        match self.0.checked_sub(rhs.0) {
+            Some(v) => Some(Self(v)),
+            None => None,
+        }
+    }
 }
 
 impl Mul<usize> for Size {
