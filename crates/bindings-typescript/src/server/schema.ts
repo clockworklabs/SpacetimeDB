@@ -789,9 +789,7 @@ type SubmoduleNamespace = {
  */
 export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
   {
-    /** The canonical namespace name stored in the database. */
     name?: string;
-    /** The submodule's module-namespace object (`import * as lib from '...'`). */
     module: M;
   };
 
