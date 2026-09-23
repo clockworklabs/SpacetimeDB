@@ -18,7 +18,7 @@ export type ReducerSchema<
   readonly reducerName: ReducerName;
 
   /**
-   * The key the reducer is exposed under on the client, e.g. `ctx.reducers.<accessorName>`.
+   * The key under which the reducer is exposed on the client, e.g. `ctx.reducers.<accessorName>`.
    * Defaults to the camelCase form of `reducerName`; generated bindings pass it explicitly.
    */
   readonly accessorName: AccessorName;
