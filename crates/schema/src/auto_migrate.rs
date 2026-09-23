@@ -20,7 +20,7 @@ use spacetimedb_sats::{
     raw_identifier::RawIdentifier,
     AlgebraicType, WithTypespace,
 };
-use termcolor_formatter::{ColorScheme, TermColorFormatter};
+use termcolor_formatter::TermColorFormatter;
 use thiserror::Error;
 mod formatter;
 mod termcolor_formatter;
@@ -69,23 +69,17 @@ impl<'def> MigratePlan<'def> {
     }
 
     pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
-        use PrettyPrintStyle::*;
         match self {
             MigratePlan::Manual(_) => {
                 anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
             }
 
-            MigratePlan::Auto(plan) => match style {
-                NoColor => {
-                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::Never);
-                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
-                }
-                AnsiColor => {
-                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::AlwaysAnsi);
-                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
-                }
+            MigratePlan::Auto(plan) => {
+                let mut fmt = TermColorFormatter::new(style);
+                format_plan(&mut fmt, plan)
+                    .map(|_| fmt.into_string())
+                    .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
             }
-            .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}")),
         }
     }
 }
