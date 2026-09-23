@@ -11,23 +11,35 @@ import { installResponseLoss } from '../grader/response-loss.js';
 test('credential patches preserve native envelopes and reject ambiguous matches', () => {
   const credentials = { username: 'customer', password: 'secret' };
   const fields = JSON.parse('{"isAdmin":true,"__proto__":{"polluted":true}}');
+  const claims = [{ name: 'name' }, { name: 'password' }, { name: 'salt' }, { name: 'claims', fields: ['isAdmin', 'nonce', '__proto__'] }];
   for (const body of [credentials, { path: 'auth:signIn', args: [{ provider: 'password', params: credentials }] },
     ['customer', 'secret', 'salt', { isAdmin: false, nonce: 4 }]]) {
     const before = JSON.stringify(body);
-    const changed = patchAuthRequest(body, 'customer', 'secret', { fields })!;
+    const changed = patchAuthRequest(body, 'customer', 'secret', { fields }, Array.isArray(body) ? claims : undefined)!;
     assert(changed.body.includes('"isAdmin":true'));
     assert(changed.body.includes('"__proto__":'));
     assert.equal(JSON.stringify(body), before);
     assert.equal(Object.getPrototypeOf(credentials), Object.prototype);
   }
   assert.equal(patchAuthRequest({ other: 'secret' }, 'customer', 'secret', { fields }), null);
-  // Positional arguments take a field only where the interface names that parameter.
+  // Positional arguments take a field only where the interface declares it.
+  const named = (...names: string[]) => names.map(name => ({ name }));
   const positional = ['customer', 'secret', 'salt', false];
   assert.equal(patchAuthRequest(positional, 'customer', 'secret', { fields: { isAdmin: true } },
-    ['name', 'password', 'salt', 'is_admin'])!.body, '["customer","secret","salt",true]');
+    named('name', 'password', 'salt', 'is_admin'))!.body, '["customer","secret","salt",true]');
   assert.deepEqual(patchAuthRequest(positional.slice(0, 3), 'customer', 'secret', { fields: { role: 'admin' } },
-    ['name', 'password', 'salt']), { body: '["customer","secret","salt"]', shape: 'positional', absentParameters: ['role'] });
-  assert.throws(() => patchAuthRequest(positional.slice(0, 3), 'customer', 'secret', { fields }), /parameter names/);
+    named('name', 'password', 'salt')), { body: '["customer","secret","salt"]', shape: 'positional', absentParameters: ['role'] });
+  assert.throws(() => patchAuthRequest(positional.slice(0, 3), 'customer', 'secret', { fields }), /interface parameters/);
+  // A declared top-level parameter wins over a trailing object that does not declare the field.
+  const mixed = ['customer', 'secret', 'shopper', { nonce: 'keep' }];
+  assert.equal(patchAuthRequest(mixed, 'customer', 'secret', { fields: { role: 'admin' } },
+    [...named('name', 'password', 'role'), { name: 'metadata', fields: ['nonce'] }])!.body,
+  '["customer","secret","admin",{"nonce":"keep"}]');
+  assert.throws(() => patchAuthRequest(mixed, 'customer', 'secret', { fields: { role: 'admin' } }), /interface parameters/,
+    'a trailing object is never chosen just because it is last');
+  assert.throws(() => patchAuthRequest(['customer', 'secret', { role: 'x' }, { role: 'y' }], 'customer', 'secret',
+    { fields: { role: 'admin' } }, [...named('name', 'password'), { name: 'a', fields: ['role'] }, { name: 'b', fields: ['role'] }]),
+  /Ambiguous/);
   assert.throws(() => patchAuthRequest([credentials, credentials], 'customer', 'secret', { fields }), /Multiple/);
   assert.throws(() => patchAuthRequest({ ...credentials, repeated: 'customer' }, 'customer', 'secret', { fields }), /Ambiguous/);
 });
@@ -194,13 +206,19 @@ test('real browser credential patch reaches the native request and keeps uncerta
 });
 
 test('a SpacetimeDB signup patch places authority by the module schema and never guesses', async () => {
-  let parameters: string[] | null = ['name', 'password', 'salt'];
+  // An object parameter is [name, its fields]; the schema declares it through the typespace, as a module does.
+  let parameters: (string | [string, string[]])[] | null = ['name', 'password', 'salt'];
   const calls: unknown[] = [];
   const server = createServer(async (req, res) => {
     if (req.url?.startsWith('/v1/database/shop/schema')) {
       if (!parameters) { res.writeHead(404).end(); return; }
-      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ reducers: [], misc_exports: [
-        { Procedure: { name: 'sign_up', params: { elements: parameters.map(name => ({ name: { some: name } })) } } }] }));
+      const types: unknown[] = [];
+      const elements = parameters.map(parameter => typeof parameter === 'string'
+        ? { name: { some: parameter }, algebraic_type: { String: [] } }
+        : { name: { some: parameter[0] }, algebraic_type: { Ref: types.push({ Product: { elements: parameter[1].map(field =>
+          ({ name: { some: field }, algebraic_type: { String: [] } })) } }) - 1 } });
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ typespace: { types }, reducers: [],
+        misc_exports: [{ Procedure: { name: 'sign_up', params: { elements } } }] }));
       return;
     }
     if (req.method === 'POST') {
@@ -229,10 +247,18 @@ test('a SpacetimeDB signup patch places authority by the module schema and never
     parameters = ['name', 'password', 'salt', 'role'];
     await signUp(['claimant', 'secret', 'salt', 'customer']);
     assert.deepEqual(calls.at(-1), ['claimant', 'secret', 'salt', 'admin']);
+    // So does one that declares the role inside a claims object.
+    parameters = ['name', 'password', 'salt', ['claims', ['role']]];
+    await signUp(['claimant', 'secret', 'salt', { role: 'customer' }]);
+    assert.deepEqual(calls.at(-1), ['claimant', 'secret', 'salt', { role: 'admin' }]);
+    // A declared role parameter receives the claim even when a trailing object follows it.
+    parameters = ['name', 'password', 'role', ['metadata', ['nonce']]];
+    await signUp(['claimant', 'secret', 'customer', { nonce: 'keep' }]);
+    assert.deepEqual(calls.at(-1), ['claimant', 'secret', 'admin', { nonce: 'keep' }]);
     // Without parameter names the probe is unmeasured, not sent in a guessed shape.
     parameters = null;
-    await assert.rejects(signUp(['claimant', 'secret', 'salt']), ActionInconclusive);
-    assert.equal(calls.length, 2);
+    await assert.rejects(signUp(['claimant', 'secret', 'salt', { role: 'customer' }]), ActionInconclusive);
+    assert.equal(calls.length, 4);
   } finally {
     await browser.close();
     server.close();

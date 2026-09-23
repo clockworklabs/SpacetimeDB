@@ -73,11 +73,15 @@ export async function installAuthWebSocketCapture(page: Page): Promise<void> {
 const sameIdentifier = (left: unknown, right: string): boolean => typeof left === 'string'
   && left.toLowerCase().replaceAll('_', '') === right.toLowerCase().replaceAll('_', '');
 
+// A positional parameter, and the field names its declared object type establishes.
+export type CallParameter = { readonly name: string; readonly fields?: readonly string[] };
+
 // Locate values submitted by the real form, not a guessed route or credential key.
-// Positional arguments name nothing, so their fields go by the interface's own
-// parameter names; a field the interface has no parameter for is reported, not sent.
+// Positional arguments name nothing, so a field goes where the interface declares
+// it: a parameter of that name, or the one object parameter whose type declares it.
+// A field the interface does not declare is reported, not sent.
 export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch,
-  parameterNames?: readonly string[]) {
+  parameters?: readonly CallParameter[]) {
   const fields = patch.fields ?? {};
   if (Object.keys(patch).some(key => key !== 'fields' && key !== 'password') || Array.isArray(fields)
     || typeof fields !== 'object' || !Object.keys(fields).length && !Object.hasOwn(patch, 'password')) {
@@ -107,16 +111,25 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
   }
   const absentParameters: string[] = [];
   if (Array.isArray(container)) {
-    const last = container.at(-1);
-    if (last && typeof last === 'object' && !Array.isArray(last)) {
-      container[container.length - 1] = { ...last, ...fields };
-    } else if (Object.keys(fields).length) {
-      if (parameterNames?.length !== container.length) throw new Error('Positional credential fields need parameter names');
-      for (const [key, value] of Object.entries(fields)) {
-        const index = parameterNames.findIndex(name => sameIdentifier(name, key));
-        if (index < 0) absentParameters.push(key);
-        else container[index] = value;
-      }
+    if (Object.keys(fields).length && parameters?.length !== container.length) {
+      throw new Error('Positional credential fields need the interface parameters');
+    }
+    for (const [key, value] of Object.entries(fields)) {
+      const index = parameters!.findIndex(parameter => sameIdentifier(parameter.name, key));
+      const owners = parameters!.flatMap((parameter, at) => {
+        const field = parameter.fields?.find(name => sameIdentifier(name, key));
+        return field ? [{ at, field }] : [];
+      });
+      if (index >= 0) container[index] = value;
+      else if (owners.length === 1) {
+        const { at, field } = owners[0]!, argument = container[at];
+        if (!argument || typeof argument !== 'object' || Array.isArray(argument)) {
+          throw new Error('Declared credential field has no object argument');
+        }
+        container[at] = Object.defineProperty({ ...argument }, field,
+          { value, enumerable: true, writable: true, configurable: true });
+      } else if (owners.length) throw new Error('Ambiguous credential field location');
+      else absentParameters.push(key);
     }
   } else for (const [key, value] of Object.entries(fields)) {
     Object.defineProperty(container, key, { value, enumerable: true, writable: true, configurable: true });
@@ -126,8 +139,8 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
 }
 
 // A SpacetimeDB function call sends positional arguments; its module schema
-// names them. Read it through the page's own network, as the browser sees it.
-async function callParameterNames(request: Request): Promise<string[] | undefined> {
+// names them and their object types. Read it through the page's own network.
+async function callParameters(request: Request): Promise<CallParameter[] | undefined> {
   const call = new URL(request.url()).pathname.match(/^\/v1\/database\/([^/]+)\/call\/([^/]+)$/);
   if (!call) return undefined;
   try {
@@ -143,10 +156,22 @@ async function callParameterNames(request: Request): Promise<string[] | undefine
       if (sameIdentifier(entry.name, name) && Array.isArray(entry.params?.elements)) found.push(entry.params.elements);
       for (const child of Object.values(value)) visit(child);
     };
-    visit(await response.json());
-    const names = found.length === 1 ? found[0]!.map(element =>
-      (element as { name?: { some?: unknown } } | null)?.name?.some) : [];
-    return names.length && names.every(item => typeof item === 'string') ? names as string[] : undefined;
+    const schema = await response.json() as { typespace?: { types?: unknown[] } };
+    visit(schema);
+    type Type = { Ref?: unknown; Product?: { elements?: unknown } } | undefined;
+    type Element = { name?: { some?: unknown }; algebraic_type?: Type } | null;
+    const names = (elements: unknown[]) => {
+      const list = elements.map(element => (element as Element)?.name?.some);
+      return list.every(item => typeof item === 'string') ? list as string[] : undefined;
+    };
+    // An object type is inline or a reference into the module's typespace.
+    const fields = (element: Element) => {
+      const type = element?.algebraic_type, resolved = typeof type?.Ref === 'number'
+        ? schema.typespace?.types?.[type.Ref] as Type : type;
+      return Array.isArray(resolved?.Product?.elements) ? names(resolved.Product.elements) : undefined;
+    };
+    if (found.length !== 1 || !found[0]!.length) return undefined;
+    return names(found[0]!)?.map((name, at) => ({ name, fields: fields(found[0]![at] as Element) }));
   } catch { return undefined; }
 }
 
@@ -176,9 +201,9 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     let body: unknown;
     try { body = request.postDataJSON(); } catch { return route.fallback(); }
     let changed: ReturnType<typeof patchAuthRequest>;
-    const names = Array.isArray(body) && Object.keys(patch.fields ?? {}).length
-      ? await callParameterNames(request) : undefined;
-    try { changed = patchAuthRequest(body, username, password, patch, names); }
+    const parameters = Array.isArray(body) && Object.keys(patch.fields ?? {}).length
+      ? await callParameters(request) : undefined;
+    try { changed = patchAuthRequest(body, username, password, patch, parameters); }
     catch { error = true; return route.abort(); }
     if (!changed) return route.fallback();
     const contentType = request.headers()['content-type']?.split(';')[0]?.trim();
