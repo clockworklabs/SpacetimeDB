@@ -24,6 +24,7 @@ export type InconclusiveFindingKind =
   | 'assertion-without-action' | 'unknown-action' | 'action-without-parameters'
   | 'no-session' | 'unresolved-action' | 'replay-unavailable'
   | 'forgery-unverifiable' | 'not-observed' | 'transport-incomplete' | 'nothing-contended' | 'observation-window-missed'
+  | 'network-not-interrupted'
   | 'no-backend-control' | 'control-refused' | 'database-write-failed'
   | 'stock-read-unavailable'
   | 'unsupported-backend' | 'app-directory-unknown' | 'invalid-input';
@@ -137,6 +138,7 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
       + ` unsupported streams: ${f.capture.unsupportedStreams}; pending bodies: ${f.capture.pendingBodies};`
       + ` retained bytes: ${f.capture.retainedBytes})` : ''),
   'nothing-contended': () => 'the requests never contended',
+  'network-not-interrupted': f => `could not interrupt the network for ${f.actor}`,
   'observation-window-missed': () => 'the timing observation window was missed',
   'no-backend-control': f => `no control over ${target(f.target)} was supplied`,
   'control-refused': f => `control over ${target(f.target)} was refused on this host`,
@@ -260,6 +262,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
     }).optional(),
   }) }),
   z.strictObject({ kind: z.literal('nothing-contended'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('network-not-interrupted'), fields: z.strictObject({ actor: z.string(), detail: z.string() }) }),
   z.strictObject({ kind: z.literal('observation-window-missed'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('no-backend-control'), fields: z.strictObject({ target: targetSchema }) }),
   z.strictObject({ kind: z.literal('control-refused'), fields: z.strictObject({ target: targetSchema }) }),

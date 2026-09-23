@@ -619,11 +619,13 @@ test('the null control can skip direct database writes', async () => {
   assert.equal(result.status, 'passed');
 });
 
+const interruption = { interrupt: async () => ({ closed: 1, unrouted: 0 }), restore: () => ({ refused: 0 }) };
+
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {
   const offlineStates: boolean[] = [];
   const waits: number[] = [];
   let browserOnline = true;
-  const actor = { page: {
+  const actor = { networkInterruption: interruption, page: {
     evaluate: async () => browserOnline,
     context: () => ({
     setOffline: async (value: boolean) => {
@@ -648,7 +650,7 @@ test('offline lifecycle preserves settling time and verifies browser network sta
 });
 
 test('offline lifecycle fails closed when browser network state does not change', async () => {
-  const actor = { page: { evaluate: async () => true,
+  const actor = { networkInterruption: interruption, page: { evaluate: async () => true,
     context: () => ({ setOffline: async () => {} }) } };
   const result = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 1 },
     services(new Map([['a', actor]])));

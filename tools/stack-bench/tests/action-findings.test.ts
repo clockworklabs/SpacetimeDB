@@ -75,6 +75,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'not-observed': finding('not-observed', { actor: 'owner' }),
   'transport-incomplete': finding('transport-incomplete', {}),
   'nothing-contended': finding('nothing-contended', { detail: DETAIL }),
+  'network-not-interrupted': finding('network-not-interrupted', { actor: 'buyer', detail: DETAIL }),
   'no-backend-control': finding('no-backend-control', { target: 'backend-runtime' }),
   'control-refused': finding('control-refused', { target: 'app-server' }),
   'database-write-failed': finding('database-write-failed', { detail: DETAIL }),

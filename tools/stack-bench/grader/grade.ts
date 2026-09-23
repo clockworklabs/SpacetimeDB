@@ -54,6 +54,7 @@ import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
+import { installNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
 import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
@@ -293,6 +294,7 @@ export class Actor {
   lastWsWrite: ActorWebSocketWrite | null = null;
   annotate = false;
   responseLoss?: Awaited<ReturnType<typeof installResponseLoss>>;
+  networkInterruption?: NetworkInterruption;
 
   constructor(name: string, page: Page, context: BrowserContext) {
     this.name = name;
@@ -815,6 +817,9 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   const initializationStartedAtMs = evidenceNowMs();
   try {
     if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
+    // Actors this feature takes offline route their sockets through the harness.
+    const offlineActors = new Set([...feature.setup ?? [], ...feature.criteria.flatMap(criterion => criterion.steps)]
+      .filter(step => step.do === 'setOffline').map(step => step.actor));
     for (const name of feature.actors!) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
@@ -823,6 +828,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
           args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
         ));
       contexts.push({ context, name, page: null });
+      const networkInterruption = offlineActors.has(name) ? await installNetworkInterruption(context) : undefined;
       if (args.trace) {
         await runBrowserInfrastructureOperation('trace start', () =>
           context.tracing.start({ screenshots: true, snapshots: true }));
@@ -832,6 +838,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
       const actor = new Actor(name, page, context);
+      actor.networkInterruption = networkInterruption;
       await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);

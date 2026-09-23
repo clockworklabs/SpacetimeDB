@@ -15,6 +15,7 @@ import type {
   ActionImplementation,
 } from './action-contract.js';
 import { actorFor, fail, inconclusive } from './actor-action-runtime.js';
+import type { NetworkInterruption } from './network-interruption.js';
 import type { ActionCall } from './actor-action-runtime.js';
 import { evidenceDisposition } from '../evidence/check-evidence.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
@@ -60,6 +61,7 @@ interface Actor {
     evaluate<Result>(callback: () => Result): Promise<Result>;
   };
   readonly writes?: readonly CapturedWrite[];
+  readonly networkInterruption?: NetworkInterruption;
   loc(testid: string, options?: unknown): Locator;
 }
 
@@ -769,14 +771,24 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
   const actor = actorFor(capabilities, input.actor);
   const browser = capabilities['browser-interaction'];
   const offline = input.offline !== false;
+  // Emulation alone pauses an open WebSocket and later delivers what it held.
+  if (!actor.networkInterruption) {
+    inconclusive('network-not-interrupted', { actor: input.actor,
+      detail: 'this client was not opened with an interruptible network' });
+  }
   await actor.page.context().setOffline(offline);
+  const sockets = offline ? await actor.networkInterruption.interrupt() : actor.networkInterruption.restore();
+  if ('unrouted' in sockets && sockets.unrouted > 0) {
+    inconclusive('network-not-interrupted', { actor: input.actor,
+      detail: `${sockets.unrouted} WebSocket connection(s) bypassed the interruption` });
+  }
   await browser.sleep(input.settleMs ?? 500, signal);
   const browserOnline = await actor.page.evaluate(() => navigator.onLine);
   if (browserOnline === offline) {
     throw new Error(`setOffline requested browser network ${offline ? 'offline' : 'online'}, `
       + `but navigator.onLine remained ${browserOnline}`);
   }
-  return { offline, browserOnline };
+  return { offline, browserOnline, ...sockets };
 }
 
 async function closeClient({ input, capabilities }: ActionArguments<ActorInput>) {
