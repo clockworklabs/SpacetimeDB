@@ -193,7 +193,6 @@ pub enum ExplicitNameEntry {
     Table(NameMapping),
     Function(NameMapping),
     Index(NameMapping),
-    /// The canonical name of a submodule namespace, keyed by [`RawSubmoduleV10::namespace`].
     Namespace(NameMapping),
 }
 
