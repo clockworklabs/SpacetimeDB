@@ -77,10 +77,10 @@ test('slices require each check exactly once in every required evidence populati
 test('saved slices validate real artifacts and reject incomplete or mismatched evidence', t => {
   const path = join(root, 'composition/calibrations/dependency-l3.json');
   const entry: CalibrationEvidence = { kind: 'mutation', stack: 'postgres', repetition: 1,
-    path: 'qualification-evidence/ecommerce-l3-e804c1302/postgres-targeted.json',
+    path: 'tests/fixtures/qualification-evidence/ecommerce-l3-e804c1302/postgres-targeted.json',
     sha256: 'efc4a7f4df5f664fca9457c5746508f53db02b52f51a9ad5281c337a44c29bed',
     slice: { checks: ['ecommerce.progression.review-access-specifications.review-eligibility-direct.618a'],
-      snapshot: { path: 'qualification-evidence/ecommerce-l3-e804c1302/current-inputs.json',
+      snapshot: { path: 'tests/fixtures/qualification-evidence/ecommerce-l3-e804c1302/current-inputs.json',
         sha256: '85f21bfeb1160f3889cb10bd3c3819a12dba46428d82e055e25af268f82b3f45' } } };
   const saved = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, entry.slice!.snapshot.path), 'utf8'));
   const savedDocuments = validateQualificationDocuments(saved.documents);
@@ -180,7 +180,7 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   writeFileSync(mutationPath, JSON.stringify(saved.mutations.postgres));
 
   const nullEntry: CalibrationEvidence = { ...entry, kind: 'null', stack: undefined,
-    path: 'qualification-evidence/ecommerce-l3-e804c1302/null-targeted.json',
+    path: 'tests/fixtures/qualification-evidence/ecommerce-l3-e804c1302/null-targeted.json',
     sha256: '8ad52d3b9f0274cae90761a0e46f7184a111852ab511a4e90702c1cd02677b58' };
   const nullArtifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, nullEntry.path), 'utf8'));
   const nullPlan = structuredClone(plan);
@@ -197,10 +197,10 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   assert.throws(() => validateQualificationSlice(nullArtifact, nullEntry, nullContext), /source fixture differs/);
 
   const stale: CalibrationEvidence = { ...entry, kind: 'reference',
-    path: 'qualification-evidence/ecommerce-l3-7cd96d01b/postgres-reference.json',
+    path: 'tests/fixtures/qualification-evidence/ecommerce-l3-7cd96d01b/postgres-reference.json',
     sha256: 'baaba1487f36fa51907c8ff4fc866997fc2625097e7fe333b3d2250801ed9baf',
     slice: { checks: entry.slice!.checks,
-      snapshot: { path: 'qualification-evidence/ecommerce-l3-e804c1302/previous-inputs.json',
+      snapshot: { path: 'tests/fixtures/qualification-evidence/ecommerce-l3-e804c1302/previous-inputs.json',
         sha256: 'ef95150fbc546ecbdc6a6e3c7a2ee0b4945dce127b9ad43fac3fc0971f3f01a5' } } };
   const previousArtifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, stale.path), 'utf8'));
   assert.throws(() => validateQualificationSlice(previousArtifact, stale, context), /changed check/);
