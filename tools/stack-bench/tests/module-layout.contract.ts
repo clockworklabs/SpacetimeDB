@@ -48,8 +48,11 @@ test('tracked production areas contain no tmp-named scratch modules', () => {
   assert.deepEqual(scratch, []);
 });
 
-test('the authored project contains TypeScript, not JavaScript implementation files', () => {
+test('the authored harness contains TypeScript, not JavaScript implementation files', () => {
+  // Reference apps and app fixtures are application source in their stack's own
+  // form; a Convex app, for example, deploys JavaScript functions.
   const authoredJavaScript = filesBelow(ROOT)
+    .filter(path => !/^(reference-apps|tests[\\/]fixtures)[\\/]/.test(relative(ROOT, path)))
     .filter(path => ['.js', '.mjs'].includes(extname(path)))
     .map(path => relative(ROOT, path));
   assert.deepEqual(authoredJavaScript, []);
