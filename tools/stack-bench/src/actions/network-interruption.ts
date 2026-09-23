@@ -59,9 +59,15 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
   });
   const dispose = async () => {
     await command('dispose').catch(() => {});
+    stopped = true;
     child.stdin.end();
-    // Closing the pipe ends the remote helper; the local client must not outlive it.
-    if (!stopped) child.kill();
+    // Closing the pipe ends the remote helper; wait for it, and never let the local client outlive it.
+    const exited = () => child.exitCode !== null || child.signalCode !== null;
+    if (!exited()) {
+      await Promise.race([new Promise(resolve => child.once('exit', resolve)),
+        new Promise(resolve => setTimeout(resolve, COMMAND_TIMEOUT_MS))]);
+    }
+    if (!exited()) child.kill();
   };
   const username = 'stack-bench', password = randomBytes(24).toString('hex');
   let port: number | undefined;

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { connect } from 'node:net';
 import type { Socket } from 'node:net';
 import test from 'node:test';
 import { chromium } from 'playwright';
@@ -185,4 +186,18 @@ test('a root/token app socket is cut, and an unproven cut is unmeasured', async 
     await browser.close();
     app.close();
   }
+});
+
+test('a disposed interruption releases its listener and cannot report a cut', async () => {
+  const interruption = await startNetworkInterruption();
+  const port = Number(new URL(interruption.proxy.server).port);
+  await interruption.dispose();
+  const probe = await new Promise<string>(resolve => {
+    const socket = connect(port, '127.0.0.1');
+    socket.on('connect', () => { socket.destroy(); resolve('open'); });
+    socket.on('error', error => resolve((error as NodeJS.ErrnoException).code ?? 'error'));
+  });
+  assert.equal(probe, 'ECONNREFUSED');
+  await assert.rejects(interruption.interrupt(), /stopped/);
+  await assert.rejects(interruption.restore(), /stopped/);
 });
