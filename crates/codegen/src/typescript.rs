@@ -1503,7 +1503,6 @@ fn build_reducer_ns_tree<'a>(
         if !is_reducer_invokable(reducer) {
             continue;
         }
-        // `reducer.name` is already qualified with the canonical namespace.
         let flat_key = sdk_accessor_key(&reducer.name);
         let local = reducer.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
