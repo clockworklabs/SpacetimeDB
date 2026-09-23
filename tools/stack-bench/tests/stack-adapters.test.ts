@@ -25,6 +25,7 @@ const FULL_GRADING_CAPABILITIES = [
   'database-read',
   'named-actions',
   'process-crash',
+  'response-loss',
   'subprocess',
   'transport-observation',
 ];

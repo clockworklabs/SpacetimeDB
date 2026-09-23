@@ -103,8 +103,9 @@ const namedReducerCalls = [
 test('the SpacetimeDB progression backend covers every graph feature', () => {
   const graph = progressionGraph();
   assert.deepEqual(Object.keys(backendMarkers).sort(), graph.nodes.map(node => node.id).sort());
-  const source = `${read(join(appRoot, 'backend', 'spacetimedb', 'src', 'schema.ts'))}\n`
-    + read(join(appRoot, 'backend', 'spacetimedb', 'src', 'index.ts'));
+  const moduleRoot = join(appRoot, 'backend', 'spacetimedb', 'src');
+  const source = readdirSync(moduleRoot).filter(name => name.endsWith('.ts'))
+    .map(name => read(join(moduleRoot, name))).join('\n');
   for (const node of graph.nodes) {
     const marker = backendMarkers[node.id];
     assert(marker, `${node.id} must have an implementation marker`);

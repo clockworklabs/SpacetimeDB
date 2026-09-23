@@ -195,7 +195,7 @@ test('progression reference audit reports incomplete graph coverage without hidi
   assert.equal(report.ok, false);
   assert.equal(report.actions.length, 1);
   assert.equal(report.graphOwned.coveredNodes, 4);
-  assert.equal(report.graphOwned.coveredChecks, 9);
+  assert.equal(report.graphOwned.coveredChecks, 10);
   assert.equal(report.graphOwned.complete, false);
   assert.equal(report.finalCatalogAudit.checks, release.checkCatalog.length);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
