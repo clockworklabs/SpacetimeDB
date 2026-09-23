@@ -2,13 +2,11 @@ import { createHash } from 'node:crypto';
 import { backendResourceLockKeys, readBackendLease, updateBackendLease, verifyBackendResourceClaims }
   from '../../runtime/backend-lease.js';
 import type { BackendLease } from '../../runtime/backend-lease.js';
-import { releaseBackendLease } from '../../runtime/backend-teardown.js';
 import { CODING_CONTAINER_CONTROL_DIR } from '../../runtime/coding-container-policy.js';
 import { attemptDocker, createAttemptNetwork, createAttemptContainer, installAttemptFirewall,
   createAttemptBrowser, requireAttemptNetwork } from '../../runtime/docker-network.js';
 import { sleepSync } from '../../runtime/platform.js';
 import type { StackRunPorts } from '../stack-adapter-contract.js';
-import { stopHostedHost } from '../stack-teardown-operations.js';
 import { hostedRecordedProcessStopScript } from '../hosted-lifecycle.js';
 import { answers, waitFor } from '../lifecycle-readiness.js';
 import { leaseFromEnv } from '../../runtime/backend-lease.js';
@@ -135,11 +133,6 @@ export async function controlConvex({ leasePath, leaseToken, ports, mode }: Conv
   }
   startConvexProcess(lease, ports.express!);
   updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'active'; return next; });
-}
-
-export function releaseConvex(leasePath: string, leaseToken: string): boolean {
-  readBackendLease(leasePath, { token: leaseToken, backend: 'convex' });
-  return releaseBackendLease(leasePath, leaseToken, { hostTeardown: stopHostedHost });
 }
 
 export async function resetConvex(): Promise<void> {

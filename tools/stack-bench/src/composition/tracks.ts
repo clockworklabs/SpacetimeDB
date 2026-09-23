@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { RESTRICTED_PORTS } from './product-config.js';
 import { compileTrackManifest } from './definition-compiler.js';
 import type { StackRunPorts } from '../stacks/stack-adapter-contract.js';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import { stackPorts } from '../stacks/stack-ports.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 
@@ -135,8 +135,7 @@ export function portsFor(track: TrackDefinition, backend: string, runIndex: numb
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`--run-index must be an integer from 0 through ${RUN_INDEX_CAP}`);
   }
-  const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-  const ports = adapter.ports.forRun({
+  const ports = stackPorts(backend).forRun({
     trackOffset: track.portOffset,
     runIndex,
   });

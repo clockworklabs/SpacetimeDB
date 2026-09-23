@@ -14,7 +14,8 @@ import type { ReservationLease } from '../src/runtime/backend-lease.js';
 import { borrowCampaignReservation, delegateCampaignReservation, closeCampaignDelegation,
   releaseCampaignReservation } from '../src/campaigns/campaign-admission.js';
 import { attemptDocker, requireAttemptNetwork } from '../src/runtime/docker-network.js';
-import { activateConvex, controlConvex, recoverConvex, releaseConvex, CONVEX_PROCESS_RECORD } from '../src/stacks/backends/convex-lifecycle.js';
+import { activateConvex, controlConvex, recoverConvex, CONVEX_PROCESS_RECORD } from '../src/stacks/backends/convex-lifecycle.js';
+import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { prepareProcessCrash } from '../src/stacks/process-crash.js';
 
 // Run inside the Linux controller with its normal lock directory and Docker socket.
@@ -187,7 +188,7 @@ test('Convex campaign-delegated launch, warm restart, full reset, and exact clea
           siblingVolumes = JSON.parse(attemptDocker(['inspect', '--format', '{{json .Mounts}}', partial.resources.container.id]))
             .filter((mount: { Type: string }) => mount.Type === 'volume').map((mount: { Name: string }) => mount.Name);
         }
-        assert.equal(releaseConvex(siblingPath, sibling.ownershipToken), true);
+        assert.equal(releaseBackendLease(siblingPath, sibling.ownershipToken), true);
         const released = readBackendLease(siblingPath);
         record.finalLease = publicBackendLease(released);
         assert.equal(released.state, 'released');
@@ -203,7 +204,7 @@ test('Convex campaign-delegated launch, warm restart, full reset, and exact clea
     const jwks = await fetch(`http://127.0.0.1:${ports.express}/.well-known/jwks.json`);
     assert.equal(jwks.status, 200);
     assert.equal((await jwks.json() as { keys: unknown[] }).keys.length, 1);
-    assert.throws(() => releaseConvex(path, 'wrong-token'), /ownership token does not match/);
+    assert.throws(() => releaseBackendLease(path, 'wrong-token'), /ownership token does not match/);
     assert.equal(attemptDocker(['inspect', '--format', '{{.State.Running}}', backend.id]), 'true');
     const processRecord = attemptDocker(['exec', backend.id, 'cat', CONVEX_PROCESS_RECORD]);
     const [pid, started] = processRecord.split(' ');
@@ -263,7 +264,7 @@ test('Convex campaign-delegated launch, warm restart, full reset, and exact clea
   } finally {
     try {
       if (existsSync(path)) {
-        assert.equal(releaseConvex(path, lease.ownershipToken), true, 'Exact owned cleanup must succeed');
+        assert.equal(releaseBackendLease(path, lease.ownershipToken), true, 'Exact owned cleanup must succeed');
         const final = readBackendLease(path);
         evidence.finalLease = publicBackendLease(final);
         assert.equal(final.state, 'released');

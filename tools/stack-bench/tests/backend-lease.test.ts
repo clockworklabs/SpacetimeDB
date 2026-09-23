@@ -22,7 +22,6 @@ import {
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
 import { processIdentity } from '../src/runtime/platform.js';
-import { releaseConvex } from '../src/stacks/backends/convex-lifecycle.js';
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) =>
@@ -166,12 +165,12 @@ test('private Convex lifecycle releases before first creation intent and preserv
     track: 'ecommerce', runIndex: 0, serverUri: 'http://127.0.0.1:14310' });
   try {
     writeBackendLease(path, lease);
-    assert.throws(() => releaseConvex(path, 'wrong-token'), /ownership token does not match/);
+    assert.throws(() => releaseBackendLease(path, 'wrong-token'), /ownership token does not match/);
     assert.equal(releaseBackendLease(path, lease.ownershipToken, { hostTeardown: () => false }), false);
     assert.equal(readBackendLease(path).state, 'created');
-    assert.equal(releaseConvex(path, lease.ownershipToken), true);
+    assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
     assert.equal(readBackendLease(path).state, 'released');
-    assert.equal(releaseConvex(path, lease.ownershipToken), true);
+    assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
     assert.throws(() => createBackendLease({ ...lease, serverUri: 'https://production.example:443' }), /must use http/);
     assert.throws(() => createBackendLease({ ...lease, serverUri: 'http://localhost' }), /explicit loopback port/);
     assert.throws(() => createBackendLease({ ...lease, serverUri: 'http://127.0.0.1:14310',
@@ -191,7 +190,7 @@ test('private host teardown refusal retains resource locks', { skip: process.pla
     assert.equal(releaseBackendLease(path, lease.ownershipToken, { hostTeardown: () => false }), false);
     assert(existsSync(lock.path));
     assert.equal(readBackendLease(path).resources.locks[0]?.releasedAt, undefined);
-    assert.equal(releaseConvex(path, lease.ownershipToken), true);
+    assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
     assert(!existsSync(lock.path));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

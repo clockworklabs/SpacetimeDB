@@ -7,7 +7,8 @@ import test from 'node:test';
 import { createBackendLease, claimBackendResources, backendResourceLockKeys, resourceLockScope, readBackendLease }
   from '../src/runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
-import { activateConvex, controlConvex, releaseConvex, CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
+import { activateConvex, controlConvex, CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
+import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { readConvexTables } from '../src/stacks/backends/convex-operations.js';
 
 // Failure cases defined before the transport change: stale ownership must still
@@ -63,7 +64,7 @@ test('Convex native observer preserves ownership and lifecycle behavior over its
     throw error;
   } finally {
     try {
-      releaseConvex(leasePath, lease.ownershipToken);
+      releaseBackendLease(leasePath, lease.ownershipToken);
       receipt.cleanup = readBackendLease(leasePath).state;
       assert.equal(receipt.cleanup, 'released');
     } catch (error) {

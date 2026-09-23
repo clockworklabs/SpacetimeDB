@@ -10,7 +10,8 @@ import { backendResourceLockKeys, claimBackendResources, createBackendLease, pub
   readBackendLease, resourceLockScope } from '../src/runtime/backend-lease.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
 import { attemptDocker, requireAttemptNetwork } from '../src/runtime/docker-network.js';
-import { activateConvex, releaseConvex } from '../src/stacks/backends/convex-lifecycle.js';
+import { activateConvex } from '../src/stacks/backends/convex-lifecycle.js';
+import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 
 test('private Convex fixture deploys as the normal coding user with owned credentials', {
   skip: process.env.STACK_BENCH_CONVEX_OWNED_TEST !== '1', timeout: 180_000,
@@ -111,7 +112,7 @@ test('private Convex fixture deploys as the normal coding user with owned creden
   } finally {
     try {
       if (existsSync(leasePath)) {
-        assert.equal(releaseConvex(leasePath, lease.ownershipToken), true);
+        assert.equal(releaseBackendLease(leasePath, lease.ownershipToken), true);
         const final = readBackendLease(leasePath);
         evidence.finalLease = publicBackendLease(final);
         assert.equal(final.state, 'released');
