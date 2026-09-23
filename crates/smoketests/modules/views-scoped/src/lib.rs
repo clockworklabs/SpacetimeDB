@@ -1,4 +1,6 @@
-use spacetimedb::{log, AnonymousViewContext, Identity, Query, ReducerContext, SpacetimeType, Table, ViewContext};
+use spacetimedb::{
+    log, AnonymousViewContext, Identity, ProcedureContext, Query, ReducerContext, SpacetimeType, Table, ViewContext,
+};
 
 #[spacetimedb::table(accessor = player)]
 pub struct Player {
@@ -95,6 +97,18 @@ pub fn set_team(ctx: &ReducerContext, team_id: u64) {
     if let Some(player) = ctx.db.player().identity().find(ctx.sender()) {
         ctx.db.player().identity().update(Player { team_id, ..player });
     }
+}
+
+/// Like `set_team`, but from a procedure,
+/// whose transaction refreshes views from within the procedure's guest call.
+#[spacetimedb::procedure]
+pub fn set_team_proc(ctx: &mut ProcedureContext, team_id: u64) {
+    let sender = ctx.sender();
+    ctx.with_tx(|tx| {
+        if let Some(player) = tx.db.player().identity().find(sender) {
+            tx.db.player().identity().update(Player { team_id, ..player });
+        }
+    });
 }
 
 #[spacetimedb::reducer]

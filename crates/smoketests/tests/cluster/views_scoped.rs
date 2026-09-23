@@ -90,6 +90,17 @@ export const set_team = spacetimedb.reducer({ teamId: t.u64() }, (ctx, { teamId 
   }
 });
 
+export const set_team_proc = spacetimedb.procedure({ teamId: t.u64() }, t.unit(), (ctx, { teamId }) => {
+  const sender = ctx.sender;
+  ctx.withTx(tx => {
+    const player = tx.db.players.identity.find(sender);
+    if (player) {
+      tx.db.players.identity.update({ ...player, teamId });
+    }
+  });
+  return {};
+});
+
 export const move_to = spacetimedb.reducer({ chunkX: t.i32(), chunkY: t.i32() }, (ctx, { chunkX, chunkY }) => {
   const player = ctx.db.players.identity.find(ctx.sender);
   if (player) {
@@ -472,4 +483,35 @@ fn test_typescript_scoped_view_with_composite_key_follows_player() {
             {"deletes": [], "inserts": [{"name": "bush"}]},
         ])
     );
+}
+
+/// Switch teams from a procedure, and check that the subscriber moves to the new team's chat.
+fn check_procedure_moves_subscriber(test: &Smoketest) {
+    test.call("send", &["1", "\"red one\""]).unwrap();
+    test.call("send", &["2", "\"blue one\""]).unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+
+    let sub = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.call("set_team_proc", &["2"]).unwrap();
+
+    assert_eq!(
+        json!(project(sub.collect().unwrap(), "team_chat", &["text"])),
+        json!([{"deletes": [{"text": "red one"}], "inserts": [{"text": "blue one"}]}])
+    );
+}
+
+#[test]
+fn test_scoped_view_moves_subscriber_from_procedure() {
+    let test = Smoketest::builder().precompiled_module("views-scoped").build();
+    check_procedure_moves_subscriber(&test);
+}
+
+#[test]
+fn test_typescript_scoped_view_moves_subscriber_from_procedure() {
+    let test = typescript_test();
+    check_procedure_moves_subscriber(&test);
 }
