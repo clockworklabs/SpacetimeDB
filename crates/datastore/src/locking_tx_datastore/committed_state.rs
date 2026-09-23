@@ -778,9 +778,10 @@ impl CommittedState {
         }
 
         if let Some(sequence_checkpoints) = tx_state.sequence_checkpoints {
-            for (sequence_id, sequence) in *sequence_checkpoints {
-                if seq_state.get_sequence_mut(sequence_id).is_some() {
-                    seq_state.insert(sequence);
+            for (sequence_id, checkpoint) in *sequence_checkpoints {
+                if let Some(sequence) = seq_state.get_sequence_mut(sequence_id) {
+                    sequence.update_value(checkpoint.value);
+                    sequence.update_allocation(checkpoint.allocated);
                 }
             }
         }

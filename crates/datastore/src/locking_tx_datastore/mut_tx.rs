@@ -5,7 +5,7 @@ use super::{
     sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView},
     tx::TxId,
-    tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
+    tx_state::{IndexIdMap, PendingSchemaChange, SequenceCheckpoint, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::{
@@ -2114,7 +2114,10 @@ fn get_next_sequence_value(
             .sequence_checkpoints
             .get_or_insert_with(Default::default)
             .entry(seq_id)
-            .or_insert_with(|| sequence.clone());
+            .or_insert_with(|| SequenceCheckpoint {
+                value: sequence.get_value(),
+                allocated: sequence.get_allocated(),
+            });
         let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
         seq_row.allocated = new_allocated;
         seq_row

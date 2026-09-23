@@ -77,12 +77,25 @@ pub(super) struct TxState {
     /// This is stored as a `ThinVec` as it would be very uncommon to add anything to this list.
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 
-    /// Original live sequence states for sequences mutated during this transaction.
+    /// Original sequence cursors for sequences allocated during this transaction.
     ///
-    /// Sequence allocation updates are written through the normal row path to `st_sequence`,
-    /// so the durable metadata change rolls back with the rest of `TxState`. The process-local
-    /// sequence cursor lives outside those row tables, so rollback must restore it explicitly.
-    pub(super) sequence_checkpoints: Option<Box<IntMap<SequenceId, Sequence>>>,
+    /// Allocation also updates `st_sequence`, and that row update rolls back with
+    /// `TxState`. The live sequence cursor is stored separately from table rows,
+    /// so rollback must restore it from this checkpoint.
+    pub(super) sequence_checkpoints: Option<Box<IntMap<SequenceId, SequenceCheckpoint>>>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct SequenceCheckpoint {
+    pub(super) value: i128,
+    pub(super) allocated: i128,
+}
+
+impl MemoryUsage for SequenceCheckpoint {
+    fn heap_usage(&self) -> usize {
+        let Self { value, allocated } = self;
+        value.heap_usage() + allocated.heap_usage()
+    }
 }
 
 static_assert_size!(TxState, 104);
