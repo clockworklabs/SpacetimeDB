@@ -186,8 +186,6 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 
     /// Submodules, keyed by the canonical namespace they are registered under.
-    ///
-    /// Each submodule's accessor namespace is available via [`ModuleDef::mount_accessor_name`].
     submodules: IndexMap<Identifier, ModuleDef>,
 
     /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
