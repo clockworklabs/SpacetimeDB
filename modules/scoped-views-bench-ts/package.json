@@ -1,0 +1,13 @@
+{
+  "name": "scoped-views-bench-ts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The TypeScript version of the scoped-views-bench module",
+  "scripts": {
+    "build": "cargo spacetime build",
+    "publish": "cargo spacetime publish"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:^"
+  }
+}

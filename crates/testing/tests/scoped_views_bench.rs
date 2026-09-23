@@ -20,6 +20,8 @@
 //!
 //! Set `SCOPED_VIEWS_BENCH_CONFIGS` to a comma-separated list of `{teams}x{players per team}`,
 //! e.g. `20x5,1x250`, to override the configurations measured.
+//! Set `SCOPED_VIEWS_BENCH_LANG=typescript` to measure the TypeScript module `scoped-views-bench-ts`
+//! rather than the Rust module `scoped-views-bench`.
 
 use spacetimedb::client::{
     ClientConfig, ClientConnection, ClientConnectionReceiver, OutboundMessage, Protocol, WsVersion,
@@ -277,7 +279,12 @@ fn format_duration(duration: Duration) -> String {
 #[test]
 #[ignore = "benchmark; run explicitly with --ignored"]
 fn scoped_views_bench() {
-    let module = CompiledModule::compile("scoped-views-bench", CompilationMode::Release);
+    let module_name = match std::env::var("SCOPED_VIEWS_BENCH_LANG").as_deref() {
+        Ok("typescript") => "scoped-views-bench-ts",
+        Ok("rust") | Err(_) => "scoped-views-bench",
+        Ok(lang) => panic!("unknown SCOPED_VIEWS_BENCH_LANG `{lang}`, expected `rust` or `typescript`"),
+    };
+    let module = CompiledModule::compile(module_name, CompilationMode::Release);
 
     let configs = match std::env::var("SCOPED_VIEWS_BENCH_CONFIGS") {
         Ok(list) => list

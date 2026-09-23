@@ -19,6 +19,7 @@ packages:
   - 'templates/bun-ts'
   - 'templates/keynote-2'
   - 'modules/benchmarks-ts'
+  - 'modules/scoped-views-bench-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'
   - 'modules/sdk-test-connect-disconnect-ts'
