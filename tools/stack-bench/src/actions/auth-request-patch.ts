@@ -73,13 +73,17 @@ export async function installAuthWebSocketCapture(page: Page): Promise<void> {
 const sameIdentifier = (left: unknown, right: string): boolean => typeof left === 'string'
   && left.toLowerCase().replaceAll('_', '') === right.toLowerCase().replaceAll('_', '');
 
-// A positional parameter, and the field names its declared object type establishes.
-export type CallParameter = { readonly name: string; readonly fields?: readonly string[] };
+// A positional parameter: the field names its declared object type establishes, whether
+// that object is optional (sent as `{ some: object }`), and whether its type could hold
+// fields the schema does not show directly (open).
+export type CallParameter = { readonly name: string; readonly fields?: readonly string[]; readonly optional?: boolean;
+  readonly open?: boolean };
 
 // Locate values submitted by the real form, not a guessed route or credential key.
 // Positional arguments name nothing, so a field goes where the interface declares
 // it: a parameter of that name, or the one object parameter whose type declares it.
-// A field the interface does not declare is reported, not sent.
+// A field the interface provably lacks is reported, not sent; a type that could
+// hide it leaves the location unknown.
 export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch,
   parameters?: readonly CallParameter[]) {
   const fields = patch.fields ?? {};
@@ -122,13 +126,17 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
       });
       if (index >= 0) container[index] = value;
       else if (owners.length === 1) {
-        const { at, field } = owners[0]!, argument = container[at];
+        const { at, field } = owners[0]!, optional = parameters![at]!.optional;
+        // An absent optional object is not built here: its other required values would be invented.
+        const argument = optional ? (container[at] as { some?: unknown } | null)?.some : container[at];
         if (!argument || typeof argument !== 'object' || Array.isArray(argument)) {
           throw new Error('Declared credential field has no object argument');
         }
-        container[at] = Object.defineProperty({ ...argument }, field,
+        const changed = Object.defineProperty({ ...argument }, field,
           { value, enumerable: true, writable: true, configurable: true });
+        container[at] = optional ? { some: changed } : changed;
       } else if (owners.length) throw new Error('Ambiguous credential field location');
+      else if (parameters!.some(parameter => parameter.open)) throw new Error('Credential field location unknown');
       else absentParameters.push(key);
     }
   } else for (const [key, value] of Object.entries(fields)) {
@@ -137,6 +145,9 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
   return { body: JSON.stringify(copy), shape: Array.isArray(container) ? 'positional' : 'object',
     ...(absentParameters.length ? { absentParameters } : {}) };
 }
+
+const SCALARS = new Set(['Bool', 'I8', 'U8', 'I16', 'U16', 'I32', 'U32', 'I64', 'U64', 'I128', 'U128',
+  'I256', 'U256', 'F32', 'F64', 'String']);
 
 // A SpacetimeDB function call sends positional arguments; its module schema
 // names them and their object types. Read it through the page's own network.
@@ -158,20 +169,46 @@ async function callParameters(request: Request): Promise<CallParameter[] | undef
     };
     const schema = await response.json() as { typespace?: { types?: unknown[] } };
     visit(schema);
-    type Type = { Ref?: unknown; Product?: { elements?: unknown } } | undefined;
-    type Element = { name?: { some?: unknown }; algebraic_type?: Type } | null;
+    type Element = { name?: { some?: unknown }; algebraic_type?: unknown } | null;
     const names = (elements: unknown[]) => {
       const list = elements.map(element => (element as Element)?.name?.some);
       return list.every(item => typeof item === 'string') ? list as string[] : undefined;
     };
-    // An object type is inline or a reference into the module's typespace.
-    const fields = (element: Element) => {
-      const type = element?.algebraic_type, resolved = typeof type?.Ref === 'number'
-        ? schema.typespace?.types?.[type.Ref] as Type : type;
-      return Array.isArray(resolved?.Product?.elements) ? names(resolved.Product.elements) : undefined;
+    // A type is inline or a reference into the module's typespace; an unresolved one stays unknown.
+    const resolve = (type: unknown) => {
+      const ref = (type as { Ref?: unknown } | null)?.Ref;
+      return (typeof ref === 'number' ? schema.typespace?.types?.[ref] : type) as Record<string, unknown> | undefined;
+    };
+    const members = (type: Record<string, unknown> | undefined, kind: 'Product' | 'Sum') => {
+      const list = (type?.[kind] as { elements?: unknown; variants?: unknown } | undefined)?.[kind === 'Product' ? 'elements' : 'variants'];
+      return Array.isArray(list) ? list as Element[] : undefined;
+    };
+    // Plain values cannot hold a named field: scalars, units, and choices among plain values (an optional string).
+    const plain = (type: unknown, depth = 0): boolean => {
+      const resolved = resolve(type);
+      if (!resolved || depth > 8) return false;
+      if (Object.keys(resolved).some(key => SCALARS.has(key))) return true;
+      if (members(resolved, 'Product')?.length === 0) return true;
+      return members(resolved, 'Sum')?.every(variant => plain(variant?.algebraic_type, depth + 1)) ?? false;
+    };
+    const object = (type: unknown) => {
+      const elements = members(resolve(type), 'Product'), fields = elements && names(elements);
+      return fields && { fields, open: !elements.every(item => plain(item?.algebraic_type)) };
+    };
+    // An option is a choice of `some` object or unit `none`.
+    const option = (type: unknown) => {
+      const variants = members(resolve(type), 'Sum');
+      const some = variants?.find(variant => variant?.name?.some === 'some');
+      return variants?.length === 2 && some && variants.some(variant => variant?.name?.some === 'none'
+        && members(resolve(variant.algebraic_type), 'Product')?.length === 0) ? object(some.algebraic_type) : undefined;
+    };
+    const describe = (name: string, { algebraic_type: type }: NonNullable<Element>): CallParameter => {
+      if (plain(type)) return { name };
+      const direct = object(type), found = direct ?? option(type);
+      return found ? { name, fields: found.fields, optional: !direct, open: found.open } : { name, open: true };
     };
     if (found.length !== 1 || !found[0]!.length) return undefined;
-    return names(found[0]!)?.map((name, at) => ({ name, fields: fields(found[0]![at] as Element) }));
+    return names(found[0]!)?.map((name, at) => describe(name, (found[0]![at] ?? {}) as NonNullable<Element>));
   } catch { return undefined; }
 }
 
@@ -228,7 +265,8 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     try { result = await browserApplicationBoundary(submit)(undefined); }
     catch (error) { submissionFailure = { error }; }
     await Promise.all(pending);
-    if (submissionFailure && !(submissionFailure.error instanceof ActionApplicationFailure)) {
+    // A request the probe aborted itself explains whatever failure followed it.
+    if (!error && submissionFailure && !(submissionFailure.error instanceof ActionApplicationFailure)) {
       throw submissionFailure.error;
     }
     if (error || matches !== 1 || !receipt || receipt.status !== undefined && receipt.status >= 300 && receipt.status < 400) {

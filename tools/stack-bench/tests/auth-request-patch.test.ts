@@ -40,6 +40,11 @@ test('credential patches preserve native envelopes and reject ambiguous matches'
   assert.throws(() => patchAuthRequest(['customer', 'secret', { role: 'x' }, { role: 'y' }], 'customer', 'secret',
     { fields: { role: 'admin' } }, [...named('name', 'password'), { name: 'a', fields: ['role'] }, { name: 'b', fields: ['role'] }]),
   /Ambiguous/);
+  // A type that could hide the field leaves its location unknown; an exact top-level target is still proven.
+  assert.throws(() => patchAuthRequest(['customer', 'secret', { some: { role: 'x' } }], 'customer', 'secret',
+    { fields: { role: 'admin' } }, [...named('name', 'password'), { name: 'claims', open: true }]), /location unknown/);
+  assert.equal(patchAuthRequest(['customer', 'secret', 'shopper', {}], 'customer', 'secret', { fields: { role: 'admin' } },
+    [...named('name', 'password', 'role'), { name: 'claims', open: true }])!.body, '["customer","secret","admin",{}]');
   assert.throws(() => patchAuthRequest([credentials, credentials], 'customer', 'secret', { fields }), /Multiple/);
   assert.throws(() => patchAuthRequest({ ...credentials, repeated: 'customer' }, 'customer', 'secret', { fields }), /Ambiguous/);
 });
@@ -207,14 +212,17 @@ test('real browser credential patch reaches the native request and keeps uncerta
 
 test('a SpacetimeDB signup patch places authority by the module schema and never guesses', async () => {
   // An object parameter is [name, its fields]; the schema declares it through the typespace, as a module does.
-  let parameters: (string | [string, string[]])[] | null = ['name', 'password', 'salt'];
+  // [name, type] gives a raw schema type, with any referenced types in `typespace`.
+  let parameters: (string | [string, string[] | object])[] | null = ['name', 'password', 'salt'];
+  let typespace: unknown[] = [];
   const calls: unknown[] = [];
   const server = createServer(async (req, res) => {
     if (req.url?.startsWith('/v1/database/shop/schema')) {
       if (!parameters) { res.writeHead(404).end(); return; }
-      const types: unknown[] = [];
+      const types: unknown[] = [...typespace];
       const elements = parameters.map(parameter => typeof parameter === 'string'
         ? { name: { some: parameter }, algebraic_type: { String: [] } }
+        : !Array.isArray(parameter[1]) ? { name: { some: parameter[0] }, algebraic_type: parameter[1] }
         : { name: { some: parameter[0] }, algebraic_type: { Ref: types.push({ Product: { elements: parameter[1].map(field =>
           ({ name: { some: field }, algebraic_type: { String: [] } })) } }) - 1 } });
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ typespace: { types }, reducers: [],
@@ -259,6 +267,36 @@ test('a SpacetimeDB signup patch places authority by the module schema and never
     parameters = null;
     await assert.rejects(signUp(['claimant', 'secret', 'salt', { role: 'customer' }]), ActionInconclusive);
     assert.equal(calls.length, 4);
+    // Optional claims: the role goes inside the object the app sent.
+    const field = (name: string, algebraic_type: object) => ({ name: { some: name }, algebraic_type });
+    typespace = [{ Sum: { variants: [field('some', { Product: { elements: [field('role', { String: [] }),
+      field('nonce', { String: [] })] } }), field('none', { Product: { elements: [] } })] } }];
+    parameters = ['name', 'password', ['claims', { Ref: 0 }]];
+    await signUp(['claimant', 'secret', { some: { role: 'customer', nonce: 'keep' } }]);
+    assert.deepEqual(calls.at(-1), ['claimant', 'secret', { some: { role: 'admin', nonce: 'keep' } }]);
+    // Types the reader cannot see into are not proof of absence, and an absent option is not built:
+    // each leaves the probe unmeasured and sends nothing.
+    for (const [claims, argument] of [[{ Ref: 0 }, { none: [] }], [{ Ref: 9 }, { role: 'customer' }],
+      [{ Product: { elements: [field('settings', { Product: { elements: [field('role', { String: [] })] } })] } },
+        { settings: { role: 'customer' } }]] as const) {
+      parameters = ['name', 'password', ['claims', claims]];
+      await assert.rejects(signUp(['claimant', 'secret', argument]), ActionInconclusive);
+    }
+    assert.equal(calls.length, 5);
+    // A page whose own submit throws on the aborted request is still unmeasured, not a harness failure.
+    parameters = ['name', 'password', ['claims', { Ref: 9 }]];
+    await assert.rejects(withAuthRequestPatch(page, 'claimant', 'secret', { fields: { role: 'admin' } },
+      () => page.evaluate(() => fetch('/v1/database/shop/call/sign_up', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(['claimant', 'secret', { some: { role: 'customer' } }]) }).then(response => response.status))),
+    ActionInconclusive);
+    assert.equal(calls.length, 5);
+    // An optional plain value cannot hold the field, so absence stays measurable.
+    parameters = ['name', 'password', ['nickname', { Sum: { variants: [field('some', { String: [] }),
+      field('none', { Product: { elements: [] } })] } }]];
+    const optional = await signUp(['claimant', 'secret', { some: 'pat' }]);
+    assert.deepEqual(calls.at(-1), ['claimant', 'secret', { some: 'pat' }]);
+    assert.deepEqual(optional.requestPatch.absentParameters, ['role']);
   } finally {
     await browser.close();
     server.close();
