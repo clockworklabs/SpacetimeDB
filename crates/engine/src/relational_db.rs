@@ -2454,16 +2454,19 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
-    use spacetimedb_datastore::locking_tx_datastore::ViewInstanceArgs;
+    use spacetimedb_datastore::locking_tx_datastore::{ViewInstanceArgs, ViewScopeKey};
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
+    use spacetimedb_datastore::traits::ViewScopeChange;
     use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_lib::Timestamp;
+    use spacetimedb_lib::{bsatn::to_vec, unscoped_view_arg_hash_value};
     use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_sats::buffer::BufReader;
@@ -2513,6 +2516,44 @@ mod tests {
         );
         let raw = builder.finish();
         raw.try_into().expect("table validation failed")
+    }
+
+    /// A module with the scoped view `team_chat`, whose scope key is a `u64`.
+    fn scoped_view_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "message",
+            AlgebraicType::product([("text", AlgebraicType::String)]),
+            true,
+        );
+        builder.add_view(
+            "team_chat",
+            0,
+            true,
+            true,
+            ProductType::from([("team_id", AlgebraicType::U64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_scoped_view("team_chat", 0);
+        builder.finish().try_into().expect("module validation failed")
+    }
+
+    fn setup_scoped_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId)> {
+        let module_def = scoped_view_module_def();
+        let view_def = module_def.view("team_chat").unwrap();
+        let mut tx = begin_mut_tx(stdb);
+        let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        stdb.commit_tx(tx)?;
+        Ok((view_id, table_id))
+    }
+
+    fn team_scope(team_id: u64) -> ViewScopeKey {
+        ViewScopeKey::from_args_bsatn(to_vec(&product![team_id]).unwrap())
+    }
+
+    fn body_subscribers(tx: &MutTxId, view_id: ViewId, scope: &ViewScopeKey) -> Vec<(Identity, u64)> {
+        tx.active_subscribers_for_view_call(&ViewCallInfo::scope_body(view_id, scope))
     }
 
     fn table_auto_inc() -> TableSchema {
@@ -2611,7 +2652,7 @@ mod tests {
 
         let mut tx = begin_mut_tx(stdb);
         let args = ViewInstanceArgs::Sender(sender);
-        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, sender)?;
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, sender)?;
         stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
@@ -2709,7 +2750,7 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let args = ViewInstanceArgs::Sender(Identity::ONE);
-        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, Identity::ONE)?;
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, Identity::ONE)?;
         stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
@@ -2756,6 +2797,101 @@ mod tests {
             subscribers.is_empty(),
             "view lifecycle subscribers should be empty after reopening the database"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_scoped_view_schema_survives_reopen() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (_, table_id) = setup_scoped_view(&stdb)?;
+
+        let is_scoped = |stdb: &TestDB| -> ResultTest<bool> {
+            let tx = begin_tx(stdb);
+            Ok(stdb.schema_for_table(&tx, table_id)?.is_scoped_view())
+        };
+        assert!(is_scoped(&stdb)?);
+        let stdb = stdb.reopen()?;
+        assert!(is_scoped(&stdb)?, "scopedness should be inferred from persisted state");
+        Ok(())
+    }
+
+    #[test]
+    fn test_scoped_view_rescoping_moves_subscribers() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (view_id, table_id) = setup_scoped_view(&stdb)?;
+        let (alice, bob) = (Identity::ONE, Identity::ZERO);
+        let (red, blue) = (team_scope(1), team_scope(2));
+
+        // Alice and Bob both resolve to the red team and share its materialization.
+        let mut tx = begin_mut_tx(&stdb);
+        for player in [alice, bob] {
+            assert_eq!(tx.set_view_scope(view_id, player, Some(red.clone()))?, None);
+            let resolver = ViewCallInfo::scope_resolver(view_id, player);
+            tx.subscribe_view(resolver, ViewInstanceArgs::ScopeResolver(player), player)?;
+            let body = ViewCallInfo::scope_body(view_id, &red);
+            tx.subscribe_view(body, ViewInstanceArgs::ScopeBody(red.clone()), player)?;
+        }
+        let red_call = ViewCallInfo::scope_body(view_id, &red);
+        stdb.materialize_view_call(&mut tx, table_id, red_call.clone(), vec![product!["hi red"]])?;
+        let (_, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+        assert!(
+            tx_data.view_scope_changes().is_empty(),
+            "resolving the scope of a new subscriber is not a change"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        assert_eq!(tx.view_scope(view_id, alice), Some(Some(red.clone())));
+        assert_eq!(tx.view_scope_arg_hash(view_id, alice), red.arg_hash());
+        assert_eq!(
+            tx.view_instance_args(&red_call),
+            Some(ViewInstanceArgs::ScopeBody(red.clone()))
+        );
+        drop(tx);
+
+        // Alice switches to the blue team, which is not yet materialized.
+        let mut tx = begin_mut_tx(&stdb);
+        assert_eq!(
+            tx.set_view_scope(view_id, alice, Some(blue.clone()))?,
+            Some(blue.clone())
+        );
+        // Resolving the same scope again is a no-op.
+        assert_eq!(tx.set_view_scope(view_id, alice, Some(blue.clone()))?, None);
+        let (_, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+        assert_eq!(
+            tx_data.view_scope_changes(),
+            [ViewScopeChange {
+                view_id,
+                subscriber: alice,
+                arg_hash: blue.arg_hash(),
+            }]
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        assert_eq!(body_subscribers(&tx, view_id, &red), [(bob, 1)]);
+        assert_eq!(body_subscribers(&tx, view_id, &blue), [(alice, 1)]);
+        drop(tx);
+
+        // Bob leaves the game, so his resolver returns no scope.
+        let mut tx = begin_mut_tx(&stdb);
+        assert_eq!(tx.set_view_scope(view_id, bob, None)?, None);
+        assert_eq!(tx.view_scope_arg_hash(view_id, bob), unscoped_view_arg_hash_value());
+        let (_, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+        assert_eq!(
+            tx_data.view_scope_changes(),
+            [ViewScopeChange {
+                view_id,
+                subscriber: bob,
+                arg_hash: unscoped_view_arg_hash_value(),
+            }]
+        );
+
+        // Nobody is left on the red team, and unsubscribing follows Alice to the blue team.
+        let mut tx = begin_mut_tx(&stdb);
+        assert_eq!(body_subscribers(&tx, view_id, &red), []);
+        tx.unsubscribe_scoped_view(view_id, alice)?;
+        tx.unsubscribe_scoped_view(view_id, bob)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(subscribers.is_empty(), "unexpected subscribers: {subscribers:?}");
         Ok(())
     }
 

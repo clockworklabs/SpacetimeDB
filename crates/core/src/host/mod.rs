@@ -21,6 +21,7 @@ pub mod wasmtime;
 // Visible for integration testing.
 pub mod instance_env;
 pub mod v8; // only pub for testing
+mod view_refresh;
 mod wasm_common;
 
 pub use disk_storage::DiskStorage;

@@ -538,8 +538,10 @@ impl CommittedState {
         self.view_instances.iter()
     }
 
-    fn merge_view_instances(&mut self, view_instances: ViewInstanceTxState) {
-        for (call, state) in view_instances.into_changes() {
+    fn merge_view_instances(&mut self, tx_data: &mut TxData, view_instances: ViewInstanceTxState) {
+        let (changes, scope_changes) = view_instances.into_changes();
+        tx_data.set_view_scope_changes(scope_changes);
+        for (call, state) in changes {
             match state {
                 Some(state) => {
                     self.view_instances.insert(call, state);
@@ -586,7 +588,7 @@ impl CommittedState {
         // which implies `tx_data` already contains inserts and deletes for view tables
         // so that we can pass updated set of table ids.
         self.merge_read_sets(read_sets);
-        self.merge_view_instances(view_instances);
+        self.merge_view_instances(&mut tx_data, view_instances);
 
         // Store in `tx_data` which of the updated tables are ephemeral.
         // NOTE: This must be called before `tx_consumes_offset`, so that

@@ -1,25 +1,29 @@
 #![allow(clippy::too_many_arguments)]
 
 use super::wasmtime_module::{
-    call_view_export, decode_view_result_sink_code, CallViewAnonType, CallViewType, ViewResultSinkError,
+    call_view_export, call_view_scope_export, decode_view_result_sink_code, CallViewAnonType, CallViewScopeType,
+    CallViewType, ViewResultSinkError,
 };
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::error::NodesError;
-use crate::host::instance_env::{ChunkPool, InstanceEnv};
+use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
+use crate::host::module_host::ResolvedViewForRefresh;
+use crate::host::view_refresh::{refresh_view_calls, ViewComputer};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::{
-    deserialize_view_rows, run_query_for_view, ExecutionTimings, ViewResult, ViewReturnData,
+    decode_scope_key, deserialize_view_rows, run_query_for_view, ExecutionTimings, ViewResult, ViewReturnData,
 };
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
+use crate::host::ArgsTuple;
 use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context as _};
 use prometheus::IntGauge;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewScopeKey};
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
@@ -101,6 +105,8 @@ pub(super) struct WasmInstanceEnv {
 
     /// A cached `__call_view_anon__` export used by procedures to refresh views.
     call_view_anon: Option<CallViewAnonType>,
+    /// A cached `__call_view_scope__` export used by procedures to refresh scoped views.
+    call_view_scope: Option<CallViewScopeType>,
 
     /// The `Mem` associated to this instance. At construction time,
     /// this is always `None`. The `Mem` instance is extracted from the
@@ -219,6 +225,7 @@ impl WasmInstanceEnv {
             module_def: None,
             call_view: None,
             call_view_anon: None,
+            call_view_scope: None,
             mem: None,
             bytes_sources: IntMap::default(),
             next_bytes_source_id: NonZeroU32::new(1).unwrap(),
@@ -304,9 +311,15 @@ impl WasmInstanceEnv {
         self.module_def = Some(module_def)
     }
 
-    pub fn set_call_view_exports(&mut self, call_view: Option<CallViewType>, call_view_anon: Option<CallViewAnonType>) {
+    pub fn set_call_view_exports(
+        &mut self,
+        call_view: Option<CallViewType>,
+        call_view_anon: Option<CallViewAnonType>,
+        call_view_scope: Option<CallViewScopeType>,
+    ) {
         self.call_view = call_view;
         self.call_view_anon = call_view_anon;
+        self.call_view_scope = call_view_scope;
     }
 
     /// Record an observation in [`Self::linear_memory_size_metric`].
@@ -1804,79 +1817,18 @@ impl WasmInstanceEnv {
         };
 
         let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
-        let mut tx = Some(tx);
-        let mut tx_slot = caller.data().instance_env.tx.clone();
+        let tx_slot = caller.data().instance_env.tx.clone();
+        let mut computer = ProcedureViewComputer {
+            caller: &mut *caller,
+            tx_slot,
+        };
+        let (tx, res) = refresh_view_calls(&mut computer, tx, &module_def, views_for_refresh);
 
-        for view_call in views_for_refresh {
-            let res: anyhow::Result<()> = (|| {
-                let resolved = crate::host::module_host::resolve_view_for_refresh(
-                    tx.as_ref().expect("procedure tx missing during view refresh"),
-                    &module_def,
-                    &view_call,
-                )?;
-
-                let table_id = resolved.table_id;
-                let view_def = resolved.view_def;
-                let view_name = &resolved.view_name;
-                let fn_ptr = resolved.global_fn_ptr;
-                let sender = tx
-                    .as_ref()
-                    .expect("procedure tx missing while looking up refreshed view args")
-                    .view_instance_args(&view_call)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "failed to look up materialized view args for view {}",
-                            view_call.view_id
-                        )
-                    })?
-                    .sender();
-
-                let current_tx = tx.take().expect("procedure tx missing during view refresh");
-                let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender)
-                });
-                tx = Some(next_tx);
-                let return_data = call_result?;
-
-                let typespace = resolved.owning_def.typespace();
-                let row_product_type = typespace
-                    .resolve(view_def.product_type_ref)
-                    .resolve_refs()?
-                    .into_product()
-                    .map_err(|_| anyhow!("Error resolving row type for view"))?;
-
-                let rows = match ViewResult::from_return_data(return_data)? {
-                    ViewResult::Rows(bytes) => deserialize_view_rows(view_def.product_type_ref, bytes, typespace)
-                        .map_err(|err| anyhow!(err.to_string()))?,
-                    ViewResult::RawSql(query) => run_query_for_view(
-                        tx.as_mut().expect("procedure tx missing while running view query"),
-                        &query,
-                        &row_product_type,
-                        &view_call,
-                        *caller.data().instance_env.database_identity(),
-                    )?,
-                };
-
-                let stdb = caller.data().instance_env.relational_db().clone();
-                stdb.materialize_view_call(
-                    tx.as_mut()
-                        .expect("procedure tx missing while materializing refreshed view"),
-                    table_id,
-                    view_call.clone(),
-                    rows,
-                )?;
-
-                Ok(())
-            })();
-
-            if let Err(err) = res {
-                let tx = tx.expect("procedure tx missing while rolling back failed view refresh");
-                caller.data_mut().instance_env.rollback_procedure_tx(tx);
-                return Err(WasmError::Wasm(err));
-            }
+        if let Err(err) = res {
+            caller.data_mut().instance_env.rollback_procedure_tx(tx);
+            return Err(WasmError::Wasm(err));
         }
-
-        Ok(tx.expect("procedure tx missing after view refresh"))
+        Ok(tx)
     }
 
     /// Execute a view and return its payload.
@@ -1891,28 +1843,15 @@ impl WasmInstanceEnv {
         view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
+        args: bytes::Bytes,
     ) -> anyhow::Result<ViewReturnData> {
-        let (prev_func_name, prev_func_type) = caller
-            .data_mut()
-            .instance_env
-            .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
-
-        let mut nested_result_sink = None;
-        let call_result = (|| -> anyhow::Result<i32> {
-            let (args_source, result_sink) = {
-                let env = caller.data_mut();
-                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
-                let result_sink = env.create_bytes_sink();
-                (args_source, result_sink)
-            };
-            nested_result_sink = Some(result_sink);
-
+        Self::call_view_export_nested(caller, view_call, view_name, |caller, result_sink| {
+            let args_source = caller.data_mut().create_bytes_source(args)?;
             let (call_view, call_view_anon) = {
                 let env = caller.data();
                 (env.call_view.clone(), env.call_view_anon.clone())
             };
-
-            let code = call_view_export(
+            call_view_export(
                 &mut *caller,
                 call_view,
                 call_view_anon,
@@ -1922,20 +1861,56 @@ impl WasmInstanceEnv {
                 args_source.0,
                 result_sink,
                 true,
-            )?;
+            )
+        })
+    }
 
-            Ok(code)
-        })();
+    /// Execute the scope resolver of a scoped view for `sender` and return its payload.
+    ///
+    /// Like [`Self::call_view`], but for scope resolvers.
+    fn call_view_scope<'a>(
+        caller: &mut Caller<'a, Self>,
+        view_call: &ViewCallInfo,
+        view_name: &NamespacedIdentifier,
+        fn_ptr: ViewFnPtr,
+        sender: Identity,
+    ) -> anyhow::Result<ViewReturnData> {
+        Self::call_view_export_nested(caller, view_call, view_name, |caller, result_sink| {
+            let call_view_scope = caller.data().call_view_scope.clone();
+            call_view_scope_export(
+                &mut *caller,
+                call_view_scope,
+                view_name,
+                fn_ptr.0,
+                sender,
+                result_sink,
+                true,
+            )
+        })
+    }
+
+    /// Call a view export with `call`, which is passed a fresh result sink,
+    /// while the active function type is set to `view_call` for dependency tracking.
+    fn call_view_export_nested<'a>(
+        caller: &mut Caller<'a, Self>,
+        view_call: &ViewCallInfo,
+        view_name: &NamespacedIdentifier,
+        call: impl FnOnce(&mut Caller<'a, Self>, u32) -> anyhow::Result<i32>,
+    ) -> anyhow::Result<ViewReturnData> {
+        let (prev_func_name, prev_func_type) = caller
+            .data_mut()
+            .instance_env
+            .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
+
+        let result_sink = caller.data_mut().create_bytes_sink();
+        let call_result = call(caller, result_sink);
 
         caller
             .data_mut()
             .instance_env
             .swap_func_context(prev_func_name, prev_func_type);
 
-        let result_bytes = {
-            let env = caller.data_mut();
-            env.take_bytes_sink(nested_result_sink.expect("nested view result sink missing"))
-        };
+        let result_bytes = caller.data_mut().take_bytes_sink(result_sink);
         let code = call_result?;
 
         decode_view_result_sink_code(code, result_bytes).map_err(|err| match err {
@@ -2122,5 +2097,90 @@ impl ModuleBacktrace for wasmtime::WasmBacktrace {
                 func_name: f.func_name(),
             })
             .collect()
+    }
+}
+
+/// Computes views while a procedure commits a transaction, from within the procedure's guest call.
+struct ProcedureViewComputer<'c, 'a> {
+    caller: &'c mut Caller<'a, WasmInstanceEnv>,
+    tx_slot: TxSlot,
+}
+
+impl ViewComputer for ProcedureViewComputer<'_, '_> {
+    type Error = anyhow::Error;
+
+    fn compute_view(
+        &mut self,
+        tx: MutTxId,
+        view: &ResolvedViewForRefresh<'_>,
+        call: &ViewCallInfo,
+        sender: Option<Identity>,
+        args: ArgsTuple,
+    ) -> (MutTxId, anyhow::Result<()>) {
+        let Self { caller, tx_slot } = self;
+        let (mut tx, return_data) = tx_slot.set(tx, || {
+            WasmInstanceEnv::call_view(
+                caller,
+                call,
+                &view.view_name,
+                view.global_fn_ptr,
+                sender,
+                args.get_bsatn().clone(),
+            )
+        });
+        let res = (|| {
+            let view_def = view.view_def;
+            let typespace = view.owning_def.typespace();
+            let row_product_type = typespace
+                .resolve(view_def.product_type_ref)
+                .resolve_refs()?
+                .into_product()
+                .map_err(|_| anyhow!("Error resolving row type for view"))?;
+
+            let rows = match ViewResult::from_return_data(return_data?)? {
+                ViewResult::Rows(bytes) => deserialize_view_rows(view_def.product_type_ref, bytes, typespace)
+                    .map_err(|err| anyhow!(err.to_string()))?,
+                ViewResult::RawSql(query) => run_query_for_view(
+                    &mut tx,
+                    &query,
+                    &row_product_type,
+                    call,
+                    *caller.data().instance_env.database_identity(),
+                )?,
+            };
+
+            let stdb = caller.data().instance_env.relational_db().clone();
+            stdb.materialize_view_call(&mut tx, view.table_id, call.clone(), rows)?;
+            Ok(())
+        })();
+        (tx, res)
+    }
+
+    fn resolve_scope(
+        &mut self,
+        tx: MutTxId,
+        view: &ResolvedViewForRefresh<'_>,
+        resolver_fn_ptr: ViewFnPtr,
+        call: &ViewCallInfo,
+        subscriber: Identity,
+    ) -> (MutTxId, anyhow::Result<Option<ViewScopeKey>>) {
+        let Self { caller, tx_slot } = self;
+        let (mut tx, return_data) = tx_slot.set(tx, || {
+            WasmInstanceEnv::call_view_scope(caller, call, &view.view_name, resolver_fn_ptr, subscriber)
+        });
+        let res = (|| {
+            let key_type = view
+                .view_def
+                .scope_key_type()
+                .ok_or_else(|| anyhow!("view `{}` is not scoped", view.view_name))?;
+            let scope = decode_scope_key(return_data?, key_type, view.owning_def.typespace())?;
+            tx.replace_view_read_set(call.clone());
+            Ok(scope)
+        })();
+        (tx, res)
+    }
+
+    fn error(&mut self, err: anyhow::Error) -> anyhow::Error {
+        err
     }
 }

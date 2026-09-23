@@ -3,7 +3,7 @@ use super::error::{ErrorOrException, ExcResult, ExceptionThrown, PinTryCatch, Th
 use super::exception_already_thrown;
 use crate::host::wasm_common::abi::parse_abi_version;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ScopeResolverOp, ViewOp, ViewReturnData,
 };
 use spacetimedb_lib::VersionTuple;
 use v8::{callback_scope, ArrayBuffer, Context, FixedArray, Local, Module, PinScope};
@@ -113,6 +113,22 @@ pub(super) fn call_call_view_anon(
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view_anon(scope, hooks, op),
         AbiVersion::V2 => v2::call_call_view_anon(scope, hooks, op),
+    }
+}
+
+/// Calls the registered `__call_view_scope__` function hook.
+///
+/// Scoped views are only supported by the V2 ABI.
+pub(super) fn call_call_view_scope(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: ScopeResolverOp<'_>,
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
+    match hooks.abi {
+        AbiVersion::V1 => Err(ErrorOrException::Err(anyhow::anyhow!(
+            "scoped views are not supported by modules using the V1 ABI"
+        ))),
+        AbiVersion::V2 => v2::call_call_view_scope(scope, hooks, op),
     }
 }
 

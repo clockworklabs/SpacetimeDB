@@ -61,7 +61,8 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_http_handler, call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon,
-    call_describe_module, get_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    call_call_view_scope, call_describe_module, get_hooks, process_thrown_exception, resolve_sys_module, FnRet,
+    HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
@@ -82,7 +83,7 @@ use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
     HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
-    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    ReducerExecuteResult, ReducerOp, ScopeResolverOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
@@ -1911,6 +1912,12 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
         common_call(self, budget, op, |scope, hooks, op| {
             call_call_view_anon(scope, hooks, op)
+        })
+    }
+
+    fn call_view_scope(&mut self, op: ScopeResolverOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self, budget, op, |scope, hooks, op| {
+            call_call_view_scope(scope, hooks, op)
         })
     }
 

@@ -239,9 +239,36 @@ pub struct TxData {
     /// `None` implies that `inserts` and `deletes` are both empty,
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
+
+    /// Subscribers of scoped views whose scope changed in this transaction.
+    ///
+    /// This is derived state for subscription updates, and is not persisted.
+    view_scope_changes: Vec<ViewScopeChange>,
+}
+
+/// A subscriber of a scoped view was moved to a different scope.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ViewScopeChange {
+    /// The scoped view.
+    pub view_id: ViewId,
+    /// The subscriber whose scope changed.
+    pub subscriber: Identity,
+    /// The arg hash of the subscriber's new scope,
+    /// or the unscoped arg hash if they are no longer in any scope.
+    pub arg_hash: AlgebraicValue,
 }
 
 impl TxData {
+    /// Record the scoped view subscribers whose scope changed in this transaction.
+    pub fn set_view_scope_changes(&mut self, changes: Vec<ViewScopeChange>) {
+        self.view_scope_changes = changes;
+    }
+
+    /// Returns the scoped view subscribers whose scope changed in this transaction.
+    pub fn view_scope_changes(&self) -> &[ViewScopeChange] {
+        &self.view_scope_changes
+    }
+
     /// Set `tx_offset` as the expected on-disk transaction offset of this transaction.
     pub fn set_tx_offset(&mut self, tx_offset: u64) {
         self.tx_offset = Some(tx_offset);

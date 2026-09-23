@@ -22,6 +22,8 @@ pub const CALL_VIEW_DUNDER: &str = "__call_view__";
 
 pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";
 
+pub const CALL_VIEW_SCOPE_DUNDER: &str = "__call_view_scope__";
+
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like

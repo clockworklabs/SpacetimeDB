@@ -13,6 +13,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
+use crate::host::view_refresh::{materialize_scoped_view, refresh_view_calls, InstanceViewComputer, ViewComputer};
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -48,7 +49,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs, ViewScopeKey};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_engine::sql::rls::RowLevelExpr;
@@ -66,7 +67,7 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef, ViewInstancing};
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
@@ -1173,6 +1174,8 @@ pub struct CallViewParams {
     /// this will be the caller of the reducer.
     pub caller: Identity,
     pub sender: Option<Identity>,
+    /// The instance of the view being computed.
+    pub call: ViewCallInfo,
     pub args: ArgsTuple,
     pub row_type: AlgebraicTypeRef,
     pub timestamp: Timestamp,
@@ -1182,6 +1185,32 @@ pub struct CallViewParams {
     ///
     /// Wrapped in an `Arc` so per-instance view calls don't deep-clone the typespace.
     pub view_typespace: Arc<Typespace>,
+}
+
+pub struct CallScopeResolverParams {
+    /// The name of the scoped view.
+    pub view_name: NamespacedIdentifier,
+    pub view_id: ViewId,
+    /// The globally-offset index of the view's scope resolver.
+    pub fn_ptr: ViewFnPtr,
+    /// See [`CallViewParams::caller`].
+    pub caller: Identity,
+    /// The subscriber whose scope is resolved.
+    pub sender: Identity,
+    /// The resolver's instance for `sender`.
+    pub call: ViewCallInfo,
+    /// The type of the view's scope key.
+    pub key_type: AlgebraicType,
+    pub timestamp: Timestamp,
+    /// See [`CallViewParams::view_typespace`].
+    pub view_typespace: Arc<Typespace>,
+}
+
+/// The result of calling the scope resolver of a scoped view.
+pub struct ScopeResolverCallResult {
+    pub result: ViewCallResult,
+    /// The scope key returned by the resolver, if its call succeeded and returned one.
+    pub scope: Option<ViewScopeKey>,
 }
 
 pub(crate) struct ResolvedViewForRefresh<'a> {
@@ -1196,6 +1225,8 @@ pub(crate) struct ResolvedViewForRefresh<'a> {
     /// The `ModuleDef` that owns this view. Use this (not the root def) to resolve
     /// type-index references in the `ViewDef`.
     pub owning_def: &'a ModuleDef,
+    /// For a scoped view, the globally-offset index of its scope resolver.
+    pub scope_resolver_fn_ptr: Option<ViewFnPtr>,
 }
 
 /// Lookup a module's [`ViewDef`] and check for consistency among
@@ -1205,9 +1236,18 @@ pub(crate) fn resolve_view_for_refresh<'a>(
     module_def: &'a ModuleDef,
     view_call: &ViewCallInfo,
 ) -> anyhow::Result<ResolvedViewForRefresh<'a>> {
+    resolve_view(tx, module_def, view_call.view_id)
+}
+
+/// Lookup a module's [`ViewDef`] and check for consistency among `st_view` and the [`ModuleDef`].
+pub(crate) fn resolve_view<'a>(
+    tx: &MutTxId,
+    module_def: &'a ModuleDef,
+    view_id: ViewId,
+) -> anyhow::Result<ResolvedViewForRefresh<'a>> {
     let st_view = tx
-        .lookup_st_view(view_call.view_id)
-        .with_context(|| format!("failed to look up view {}", view_call.view_id))?;
+        .lookup_st_view(view_id)
+        .with_context(|| format!("failed to look up view {view_id}"))?;
 
     let view_id = st_view.view_id;
     let table_id = st_view
@@ -1235,6 +1275,8 @@ pub(crate) fn resolve_view_for_refresh<'a>(
         ));
     }
 
+    let scope_resolver_fn_ptr = module_def.scope_resolver_global_fn_ptr(&st_view.view_name);
+
     Ok(ResolvedViewForRefresh {
         view_id,
         table_id,
@@ -1242,6 +1284,7 @@ pub(crate) fn resolve_view_for_refresh<'a>(
         view_name: st_view.view_name.into(),
         global_fn_ptr,
         owning_def,
+        scope_resolver_fn_ptr,
     })
 }
 
@@ -2990,44 +3033,93 @@ impl ModuleHost {
     /// Passing [`Workload::Sql`] will update the instance's last-used timestamp.
     /// Passing [`Workload::Subscribe`] will also increment the subscriber's refcount.
     pub fn materialize_views<I: WasmInstance>(
-        mut tx: MutTxId,
+        tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         view_collector: &impl CollectViews,
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
-        use FunctionArgs::*;
+        Self::materialize_views_filtered(tx, instance, view_collector, caller, workload, false)
+    }
+
+    /// Materialize the scoped views read by `view_collector` for `caller`,
+    /// running their scope resolvers for `caller`,
+    /// but without subscribing `caller` to them.
+    ///
+    /// This is used to learn the scopes of `caller` before registering their subscriptions,
+    /// which are keyed by those scopes.
+    pub fn materialize_scoped_views<I: WasmInstance>(
+        tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        view_collector: &impl CollectViews,
+        caller: Identity,
+    ) -> Result<(MutTxId, bool), ViewCallError> {
+        // Materializing like a one-off query marks the instances as used,
+        // so that they count as materialized when `caller` subscribes to them.
+        Self::materialize_views_filtered(tx, instance, view_collector, caller, Workload::Sql, true)
+    }
+
+    fn materialize_views_filtered<I: WasmInstance>(
+        mut tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        view_collector: &impl CollectViews,
+        caller: Identity,
+        workload: Workload,
+        only_scoped: bool,
+    ) -> Result<(MutTxId, bool), ViewCallError> {
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
+        let module_def = instance.common.info().module_def.clone();
         for view_id in view_ids {
-            let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name: NamespacedIdentifier = st_view_row.view_name.into();
-            let view_id = st_view_row.view_id;
-            let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
-            let is_anonymous = st_view_row.is_anonymous;
-            let args = if is_anonymous {
-                ViewInstanceArgs::Anonymous
-            } else {
-                ViewInstanceArgs::Sender(caller)
-            };
-            let view_call = ViewCallInfo::from_args(view_id, args);
-            let sender = args.sender();
-            let is_materialized = tx.is_view_materialized(&view_call)?;
-            if !is_materialized {
-                let (res, trapped) =
-                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
-                tx = res.tx;
-                if trapped {
-                    return Ok((tx, true));
+            let view = resolve_view(&tx, &module_def, view_id).map_err(|_| ViewCallError::NoSuchView)?;
+            if only_scoped && view.view_def.instancing() != ViewInstancing::Scoped {
+                continue;
+            }
+            let mut computer = InstanceViewComputer::new(instance, caller, Timestamp::now());
+
+            // The instances which `caller` observes.
+            // A failure to compute an instance leaves its rows empty, and is otherwise ignored here.
+            let instances = match view.view_def.instancing() {
+                ViewInstancing::Global | ViewInstancing::PerSender => {
+                    let args = match view.view_def.instancing() {
+                        ViewInstancing::Global => ViewInstanceArgs::Anonymous,
+                        _ => ViewInstanceArgs::Sender(caller),
+                    };
+                    let view_call = ViewCallInfo::from_args(view_id, &args);
+                    if !tx.is_view_materialized(&view_call)? {
+                        let sender = args.sender();
+                        (tx, _) = computer.compute_view(tx, &view, &view_call, sender, ArgsTuple::nullary());
+                    }
+                    vec![(view_call, args)]
                 }
+                ViewInstancing::Scoped => {
+                    (tx, _) = materialize_scoped_view(&mut computer, tx, &view, caller);
+                    let resolver = (
+                        ViewCallInfo::scope_resolver(view_id, caller),
+                        ViewInstanceArgs::ScopeResolver(caller),
+                    );
+                    let body = tx.view_scope(view_id, caller).flatten().map(|scope| {
+                        (
+                            ViewCallInfo::scope_body(view_id, &scope),
+                            ViewInstanceArgs::ScopeBody(scope),
+                        )
+                    });
+                    [resolver].into_iter().chain(body).collect()
+                }
+            };
+            if computer.trapped {
+                return Ok((tx, true));
             }
-            // If this is a sql call, we only update this view's "last called" timestamp
-            if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_call.clone(), args)?;
-            }
-            // If this is a subscribe call, we also increment this view's subscriber count
-            if let Workload::Subscribe = workload {
-                tx.subscribe_view(view_call, args, caller)?;
+
+            for (view_call, args) in instances {
+                // If this is a sql call, we only update this view's "last called" timestamp
+                if let Workload::Sql = workload {
+                    tx.update_view_timestamp(view_call.clone(), args.clone())?;
+                }
+                // If this is a subscribe call, we also increment this view's subscriber count
+                if let Workload::Subscribe = workload {
+                    tx.subscribe_view(view_call, args, caller)?;
+                }
             }
         }
         Ok((tx, false))
@@ -3056,153 +3148,16 @@ impl ModuleHost {
         caller: Identity,
         timestamp: Timestamp,
     ) -> (ViewCallResult, u32, bool) {
-        let mut tx = tx;
-        let module_def = &instance.common.info().module_def;
-        let mut outcome = ViewOutcome::Success;
-        let mut energy_used = FunctionBudget::ZERO;
-        let mut total_duration = Duration::ZERO;
-        let mut call_duration = Duration::ZERO;
-        let mut abi_duration = Duration::ZERO;
-        let mut trapped = false;
-        let mut num_views_evaluated = 0;
-        for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
-            let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
-                Ok(resolved) => resolved,
-                Err(err) => {
-                    outcome = ViewOutcome::Failed(format!("failed to resolve view: {err}"));
-                    break;
-                }
-            };
-            let sender = match tx.view_instance_args(&view_call) {
-                Some(args) => args.sender(),
-                None => {
-                    outcome = ViewOutcome::Failed(format!(
-                        "failed to look up materialized view args for view {}",
-                        view_call.view_id
-                    ));
-                    break;
-                }
-            };
-            let ResolvedViewForRefresh {
-                view_id,
-                table_id,
-                view_def,
-                view_name,
-                global_fn_ptr,
-                owning_def,
-            } = resolved;
-            let args = match FunctionArgs::Nullary.into_tuple_for_def(owning_def, view_def) {
-                Ok(args) => args,
-                Err(err) => {
-                    outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
-                    break;
-                }
-            };
-
-            let (result, trap) = Self::call_view_inner(
-                instance,
-                tx,
-                &view_name,
-                view_id,
-                table_id,
-                global_fn_ptr,
-                caller,
-                sender,
-                args,
-                view_def.product_type_ref,
-                timestamp,
-                Arc::new(owning_def.typespace().clone()),
-            );
-            num_views_evaluated += 1;
-
-            // Increment execution stats
-            tx = result.tx;
-            outcome = result.outcome;
-            energy_used += result.execution_budget_used;
-            total_duration += result.total_duration;
-            abi_duration += result.abi_duration;
-            call_duration += result.call_duration;
-            trapped |= trap;
-
-            // Terminate early if execution failed
-            if !matches!(outcome, ViewOutcome::Success) || trapped {
-                break;
-            }
-        }
-        (
-            ViewCallResult {
-                outcome,
-                tx,
-                execution_budget_used: energy_used,
-                total_duration,
-                abi_duration,
-                call_duration,
-            },
-            num_views_evaluated,
-            trapped,
-        )
+        let module_def = instance.common.info().module_def.clone();
+        let calls = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+        let mut computer = InstanceViewComputer::new(instance, caller, timestamp);
+        let (tx, _) = refresh_view_calls(&mut computer, tx, &module_def, calls);
+        let num_views_evaluated = computer.num_views_evaluated;
+        let trapped = computer.trapped;
+        (computer.into_result(tx), num_views_evaluated, trapped)
     }
 
-    fn call_view<I: WasmInstance>(
-        instance: &mut RefInstance<'_, I>,
-        tx: MutTxId,
-        view_name: &NamespacedIdentifier,
-        view_id: ViewId,
-        table_id: TableId,
-        args: FunctionArgs,
-        caller: Identity,
-        sender: Option<Identity>,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        Self::call_view_at(
-            instance,
-            tx,
-            view_name,
-            view_id,
-            table_id,
-            args,
-            caller,
-            sender,
-            Timestamp::now(),
-        )
-    }
-
-    fn call_view_at<I: WasmInstance>(
-        instance: &mut RefInstance<'_, I>,
-        tx: MutTxId,
-        view_name: &NamespacedIdentifier,
-        view_id: ViewId,
-        table_id: TableId,
-        args: FunctionArgs,
-        caller: Identity,
-        sender: Option<Identity>,
-        timestamp: Timestamp,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let module_def = &instance.common.info().module_def;
-        let (global_fn_ptr, view_def, owning_def) = module_def
-            .view_by_name_with_global_fn_ptr(view_name)
-            .ok_or(ViewCallError::NoSuchView)?;
-        let row_type = view_def.product_type_ref;
-        let args = args
-            .into_tuple_for_def(owning_def, view_def)
-            .map_err(InvalidViewArguments)?;
-
-        Ok(Self::call_view_inner(
-            instance,
-            tx,
-            view_name,
-            view_id,
-            table_id,
-            global_fn_ptr,
-            caller,
-            sender,
-            args,
-            row_type,
-            timestamp,
-            Arc::new(owning_def.typespace().clone()),
-        ))
-    }
-
-    fn call_view_inner<I: WasmInstance>(
+    pub(crate) fn call_view_inner<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
         name: &NamespacedIdentifier,
@@ -3211,6 +3166,7 @@ impl ModuleHost {
         fn_ptr: ViewFnPtr,
         caller: Identity,
         sender: Option<Identity>,
+        call: ViewCallInfo,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
         timestamp: Timestamp,
@@ -3225,6 +3181,7 @@ impl ModuleHost {
             fn_ptr,
             caller,
             sender,
+            call,
             args,
             row_type,
             view_typespace,

@@ -12,23 +12,27 @@ use super::super::{
     util::make_uint8array,
     JsInstanceEnv,
 };
-use super::{call_call_view, call_call_view_anon, get_registered_hooks, HookFunctions};
+use super::{call_call_view, call_call_view_anon, call_call_view_scope, get_registered_hooks, HookFunctions};
 use crate::database_logger::{LogLevel, Record};
-use crate::error::NodesError;
-use crate::host::instance_env::InstanceEnv;
+use crate::db::relational_db::RelationalDB;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
+use crate::host::module_host::ResolvedViewForRefresh;
+use crate::host::view_refresh::{refresh_view_calls, ViewComputer};
 use crate::host::wasm_common::module_host_actor::{
-    deserialize_view_rows, run_query_for_view, AnonymousViewOp, HttpHandlerOp, ProcedureOp, ViewOp, ViewResult,
-    ViewReturnData,
+    decode_scope_key, deserialize_view_rows, run_query_for_view, AnonymousViewOp, HttpHandlerOp, ProcedureOp,
+    ScopeResolverOp, ViewOp, ViewResult, ViewReturnData,
 };
 use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
+use crate::host::ArgsTuple;
 use anyhow::Context;
 use bytes::Bytes;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewScopeKey};
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::NamespacedIdentifier;
+use std::sync::Arc;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
 /// Calls the `__call_procedure__` function `fun`.
@@ -745,143 +749,107 @@ fn refresh_views(
     module_def: &ModuleDef,
 ) -> SysCallResult<MutTxId> {
     let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
-    let stdb = get_env(scope)?.instance_env.relational_db().clone();
-    let database_identity = *get_env(scope)?.instance_env.database_identity();
-    let mut tx_slot = get_env(scope)?.instance_env.tx.clone();
-    let mut tx = Some(tx);
+    let env = get_env(scope)?;
+    let stdb = env.instance_env.relational_db().clone();
+    let database_identity = *env.instance_env.database_identity();
+    let tx_slot = env.instance_env.tx.clone();
 
-    for view_call in views_for_refresh {
-        let res: SysCallResult<()> = (|| {
-            let resolved = crate::host::module_host::resolve_view_for_refresh(
-                tx.as_ref().expect("procedure tx missing during view refresh"),
-                module_def,
-                &view_call,
-            )
-            .map_err(|err| TypeError(format!("view refresh failed after procedure call: {err}")).throw(scope))?;
+    let mut computer = ProcedureViewComputer {
+        scope: &mut *scope,
+        hooks,
+        tx_slot,
+        stdb,
+        database_identity,
+    };
+    let (tx, res) = refresh_view_calls(&mut computer, tx, module_def, views_for_refresh);
 
-            let table_id = resolved.table_id;
-            let view_def = resolved.view_def;
-            let view_name = &resolved.view_name;
-            let fn_ptr = resolved.global_fn_ptr;
-            let sender = tx
-                .as_ref()
-                .expect("procedure tx missing while looking up refreshed view args")
-                .view_instance_args(&view_call)
-                .ok_or_else(|| {
-                    TypeError(format!(
-                        "failed to look up materialized view args for view {}",
-                        view_call.view_id
-                    ))
-                    .throw(scope)
-                })?
-                .sender();
-
-            let current_tx = tx.take().expect("procedure tx missing during view refresh");
-            let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr, sender)
-            });
-            tx = Some(next_tx);
-            let return_data = call_result?;
-
-            let typespace = resolved.owning_def.typespace();
-            let row_product_type = typespace
-                .resolve(view_def.product_type_ref)
-                .resolve_refs()
-                .map_err(|err| {
-                    TypeError(format!(
-                        "failed resolving row type for refreshed view `{}`: {err}",
-                        view_def.name
-                    ))
-                    .throw(scope)
-                })?
-                .into_product()
-                .map_err(|_| {
-                    TypeError(format!(
-                        "failed resolving row product type for refreshed view `{}`",
-                        view_def.name
-                    ))
-                    .throw(scope)
-                })?;
-
-            let rows = match ViewResult::from_return_data(return_data).map_err(|err| {
-                TypeError(format!(
-                    "failed parsing result for refreshed view `{}`: {err}",
-                    view_def.name
-                ))
-                .throw(scope)
-            })? {
-                ViewResult::Rows(bytes) => {
-                    deserialize_view_rows(view_def.product_type_ref, bytes, typespace).map_err(NodesError::from)?
-                }
-                ViewResult::RawSql(query) => run_query_for_view(
-                    tx.as_mut().expect("procedure tx missing while running view query"),
-                    &query,
-                    &row_product_type,
-                    &view_call,
-                    database_identity,
-                )
-                .map_err(|err| {
-                    TypeError(format!(
-                        "failed running query for refreshed view `{}`: {err}",
-                        view_def.name
-                    ))
-                    .throw(scope)
-                })?,
-            };
-
-            stdb.materialize_view_call(
-                tx.as_mut()
-                    .expect("procedure tx missing while materializing refreshed view"),
-                table_id,
-                view_call.clone(),
-                rows,
-            )
-            .map_err(NodesError::from)?;
-
-            Ok(())
-        })();
-
-        if let Err(err) = res {
-            let tx = tx.expect("procedure tx missing while rolling back failed view refresh");
-            get_env(scope)?.instance_env.rollback_procedure_tx(tx);
-            return Err(err);
-        }
+    if let Err(err) = res {
+        get_env(scope)?.instance_env.rollback_procedure_tx(tx);
+        return Err(err);
     }
-
-    Ok(tx.expect("procedure tx missing after refreshing views"))
+    Ok(tx)
 }
 
-/// Execute a view and return its payload.
-///
-/// This helper is used by [`refresh_views`] while a procedure transaction is being committed.
-/// It temporarily sets the active function type to the target view for dependency tracking,
-/// invokes the applicable JS hook, restores the previous function type, and returns [`ViewReturnData`].
-fn call_view(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
-    view_call: &ViewCallInfo,
-    view_name: &NamespacedIdentifier,
-    table_id: TableId,
-    fn_ptr: ViewFnPtr,
-    sender: Option<Identity>,
-) -> SysCallResult<ViewReturnData> {
-    let (prev_func_name, prev_func_type) = get_env(scope)?
-        .instance_env
-        .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
+/// Computes views while a procedure commits a transaction, from within the procedure's guest call.
+struct ProcedureViewComputer<'a, 's, 'i, 'h> {
+    scope: &'a mut PinScope<'s, 'i>,
+    hooks: &'a HookFunctions<'h>,
+    tx_slot: TxSlot,
+    stdb: Arc<RelationalDB>,
+    database_identity: Identity,
+}
 
-    let result = {
-        let args = crate::host::ArgsTuple::nullary();
-        match sender {
+impl ProcedureViewComputer<'_, '_, '_, '_> {
+    /// Convert `err` into an exception thrown for a failure to refresh `view`.
+    fn throw(&mut self, view: &NamespacedIdentifier, err: impl std::fmt::Display) -> SysCallError {
+        TypeError(format!(
+            "failed refreshing view `{view}` during procedure commit: {err}"
+        ))
+        .throw(self.scope)
+        .into()
+    }
+
+    /// Call a view hook while the active function type is set to `call` for dependency tracking.
+    fn call_hook(
+        &mut self,
+        tx: MutTxId,
+        view_name: &NamespacedIdentifier,
+        call: &ViewCallInfo,
+        hook: impl FnOnce(
+            &mut PinScope<'_, '_>,
+            &HookFunctions<'_>,
+        ) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>>,
+    ) -> (MutTxId, SysCallResult<ViewReturnData>) {
+        let Self {
+            scope, hooks, tx_slot, ..
+        } = self;
+        let (tx, result) = tx_slot.set(tx, || {
+            let (prev_func_name, prev_func_type) = get_env(scope)?
+                .instance_env
+                .swap_func_context(Some(view_name.clone()), FuncCallType::View(call.clone()));
+            let result = hook(scope, hooks);
+            get_env(scope)?
+                .instance_env
+                .swap_func_context(prev_func_name, prev_func_type);
+            Ok(result)
+        });
+        let result = result.and_then(|result| {
+            result.map_err(|err| match err {
+                ErrorOrException::Err(err) => TypeError(format!(
+                    "failed executing refreshed view `{view_name}` during procedure commit: {err}"
+                ))
+                .throw(scope)
+                .into(),
+                ErrorOrException::Exception(exc) => exc.into(),
+            })
+        });
+        (tx, result)
+    }
+}
+
+impl ViewComputer for ProcedureViewComputer<'_, '_, '_, '_> {
+    type Error = SysCallError;
+
+    fn compute_view(
+        &mut self,
+        tx: MutTxId,
+        view: &ResolvedViewForRefresh<'_>,
+        call: &ViewCallInfo,
+        sender: Option<Identity>,
+        args: ArgsTuple,
+    ) -> (MutTxId, SysCallResult<()>) {
+        let (mut tx, return_data) = self.call_hook(tx, &view.view_name, call, |scope, hooks| match sender {
             Some(sender) => call_call_view(
                 scope,
                 hooks,
                 ViewOp {
-                    name: view_name,
-                    view_id: view_call.view_id,
-                    table_id,
-                    fn_ptr,
+                    name: &view.view_name,
+                    view_id: view.view_id,
+                    table_id: view.table_id,
+                    fn_ptr: view.global_fn_ptr,
                     args: &args,
                     sender: &sender,
+                    call,
                     timestamp: Timestamp::now(),
                 },
             ),
@@ -889,28 +857,89 @@ fn call_view(
                 scope,
                 hooks,
                 AnonymousViewOp {
-                    name: view_name,
-                    view_id: view_call.view_id,
-                    table_id,
-                    fn_ptr,
+                    name: &view.view_name,
+                    view_id: view.view_id,
+                    table_id: view.table_id,
+                    fn_ptr: view.global_fn_ptr,
                     args: &args,
+                    call,
                     timestamp: Timestamp::now(),
                 },
             ),
-        }
-    };
+        });
+        let return_data = match return_data {
+            Ok(return_data) => return_data,
+            Err(err) => return (tx, Err(err)),
+        };
 
-    get_env(scope)?
-        .instance_env
-        .swap_func_context(prev_func_name, prev_func_type);
+        let res = (|| -> anyhow::Result<()> {
+            let view_def = view.view_def;
+            let typespace = view.owning_def.typespace();
+            let row_product_type = typespace
+                .resolve(view_def.product_type_ref)
+                .resolve_refs()
+                .context("failed resolving row type")?
+                .into_product()
+                .map_err(|_| anyhow::anyhow!("failed resolving row product type"))?;
+            let rows = match ViewResult::from_return_data(return_data).context("failed parsing result")? {
+                ViewResult::Rows(bytes) => deserialize_view_rows(view_def.product_type_ref, bytes, typespace)?,
+                ViewResult::RawSql(query) => {
+                    run_query_for_view(&mut tx, &query, &row_product_type, call, self.database_identity)
+                        .context("failed running query")?
+                }
+            };
+            self.stdb
+                .materialize_view_call(&mut tx, view.table_id, call.clone(), rows)?;
+            Ok(())
+        })();
+        let res = res.map_err(|err| self.throw(&view.view_name, format!("{err:#}")));
+        (tx, res)
+    }
 
-    result.map_err(|err| match err {
-        ErrorOrException::Err(err) => TypeError(format!(
-            "failed executing refreshed view `{}` during procedure commit: {err}",
-            view_name
-        ))
-        .throw(scope)
-        .into(),
-        ErrorOrException::Exception(exc) => exc.into(),
-    })
+    fn resolve_scope(
+        &mut self,
+        tx: MutTxId,
+        view: &ResolvedViewForRefresh<'_>,
+        resolver_fn_ptr: ViewFnPtr,
+        call: &ViewCallInfo,
+        subscriber: Identity,
+    ) -> (MutTxId, SysCallResult<Option<ViewScopeKey>>) {
+        let (mut tx, return_data) = self.call_hook(tx, &view.view_name, call, |scope, hooks| {
+            call_call_view_scope(
+                scope,
+                hooks,
+                ScopeResolverOp {
+                    name: &view.view_name,
+                    view_id: view.view_id,
+                    fn_ptr: resolver_fn_ptr,
+                    sender: &subscriber,
+                    call,
+                    timestamp: Timestamp::now(),
+                },
+            )
+        });
+        let return_data = match return_data {
+            Ok(return_data) => return_data,
+            Err(err) => return (tx, Err(err)),
+        };
+        let res = view
+            .view_def
+            .scope_key_type()
+            .context("view is not scoped")
+            .and_then(|key_type| decode_scope_key(return_data, key_type, view.owning_def.typespace()));
+        let res = match res {
+            Ok(scope) => {
+                tx.replace_view_read_set(call.clone());
+                Ok(scope)
+            }
+            Err(err) => Err(self.throw(&view.view_name, format!("{err:#}"))),
+        };
+        (tx, res)
+    }
+
+    fn error(&mut self, err: anyhow::Error) -> SysCallError {
+        TypeError(format!("view refresh failed after procedure call: {err}"))
+            .throw(self.scope)
+            .into()
+    }
 }

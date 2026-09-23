@@ -55,6 +55,9 @@ pub(in super::super) fn set_registered_hooks(scope: &mut PinScope<'_, '_>, hooks
     if let Some(call_view_anon) = hooks.call_view_anon {
         to_register.push((ModuleHookKey::CallAnonymousView, call_view_anon));
     }
+    if let Some(call_view_scope) = hooks.call_view_scope {
+        to_register.push((ModuleHookKey::CallViewScope, call_view_scope));
+    }
     if let Some(call_procedure) = hooks.call_procedure {
         to_register.push((ModuleHookKey::CallProcedure, call_procedure));
     }
@@ -86,6 +89,7 @@ pub(in super::super) enum ModuleHookKey {
     CallHttpHandler,
     GetErrorConstructor,
     SenderErrorClass,
+    CallViewScope,
 }
 
 impl ModuleHookKey {
@@ -97,7 +101,7 @@ impl ModuleHookKey {
 }
 
 /// Context embedder slot holding the receiver (`this`) value used for hook calls.
-pub(super) const RECV_SLOT_INDEX: i32 = ModuleHookKey::SenderErrorClass as i32 + 1;
+pub(super) const RECV_SLOT_INDEX: i32 = ModuleHookKey::CallViewScope as i32 + 1;
 
 /// Holds the `AbiVersion` used by the module
 /// and the module hooks registered by the module
@@ -146,6 +150,8 @@ pub(in super::super) struct HookFunctions<'scope> {
     pub call_reducer: Local<'scope, Function>,
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
+    /// Scoped views were added after the V2 ABI was released, so this is optional even for V2.
+    pub call_view_scope: Option<Local<'scope, Function>>,
     pub call_procedure: Option<Local<'scope, Function>>,
     pub call_http_handler: Option<Local<'scope, Function>>,
 }
@@ -176,6 +182,7 @@ pub(in super::super) fn get_registered_hooks<'scope>(
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),
+        call_view_scope: get(ModuleHookKey::CallViewScope),
         call_procedure: get(ModuleHookKey::CallProcedure),
         call_http_handler: get(ModuleHookKey::CallHttpHandler),
     })

@@ -530,6 +530,7 @@ pub(super) fn call_call_view(
         table_id: _,
         name: _,
         sender,
+        call: _,
         timestamp: _,
         args: view_args,
     } = op;
@@ -589,6 +590,7 @@ pub(super) fn call_call_view_anon(
         view_id: _,
         table_id: _,
         name: _,
+        call: _,
         timestamp: _,
         args: view_args,
     } = op;

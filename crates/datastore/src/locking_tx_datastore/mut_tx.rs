@@ -32,7 +32,7 @@ use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow}
 use crate::{execution_context::Workload, system_tables::StViewRow};
 use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
-    traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
+    traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags, ViewScopeChange},
 };
 use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
@@ -45,7 +45,8 @@ use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     empty_view_arg_hash_value,
     metrics::ExecutionMetrics,
-    sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
+    scoped_view_arg_hash_value, sender_view_arg_hash_value, unscoped_view_arg_hash_value, ConnectionId, Identity,
+    Timestamp,
 };
 use spacetimedb_primitives::{
     col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
@@ -55,14 +56,14 @@ use spacetimedb_sats::{
     memory_usage::MemoryUsage,
     raw_identifier::{RawIdentifier, RawNamespacedIdentifier},
     ser::Serialize,
-    AlgebraicValue, ProductType, ProductValue,
+    u256, AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     identifier::{Identifier, NamespacePath, NamespacedIdentifier},
     reducer_name::ReducerName,
     schema::{
-        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema, ViewDefInfo,
         VIEW_ARG_HASH_COL,
     },
     table_name::TableName,
@@ -104,11 +105,50 @@ impl ViewCallInfo {
         }
     }
 
-    pub fn from_args(view_id: ViewId, args: ViewInstanceArgs) -> Self {
+    /// The instance of a scoped view's body for the scope `key`.
+    pub fn scope_body(view_id: ViewId, key: &ViewScopeKey) -> Self {
+        Self {
+            view_id,
+            arg_hash: key.arg_hash(),
+        }
+    }
+
+    /// The instance of a scoped view's resolver for `subscriber`.
+    ///
+    /// Resolver instances materialize no rows.
+    /// They exist to track the resolver's read set and the subscriber's current scope.
+    pub fn scope_resolver(view_id: ViewId, subscriber: Identity) -> Self {
+        Self::sender(view_id, subscriber)
+    }
+
+    pub fn from_args(view_id: ViewId, args: &ViewInstanceArgs) -> Self {
         match args {
             ViewInstanceArgs::Anonymous => Self::anonymous(view_id),
-            ViewInstanceArgs::Sender(sender) => Self::sender(view_id, sender),
+            ViewInstanceArgs::Sender(sender) => Self::sender(view_id, *sender),
+            ViewInstanceArgs::ScopeBody(key) => Self::scope_body(view_id, key),
+            ViewInstanceArgs::ScopeResolver(subscriber) => Self::scope_resolver(view_id, *subscriber),
         }
+    }
+}
+
+/// The scope key of a scoped view, as the BSATN-encoded arguments tuple `(key,)` of the view's body.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ViewScopeKey(Arc<[u8]>);
+
+impl ViewScopeKey {
+    /// Wrap the BSATN encoding of the arguments tuple `(key,)` of a scoped view's body.
+    pub fn from_args_bsatn(args_bsatn: impl Into<Arc<[u8]>>) -> Self {
+        Self(args_bsatn.into())
+    }
+
+    /// The BSATN encoding of the arguments tuple `(key,)` of the scoped view's body.
+    pub fn args_bsatn(&self) -> &Arc<[u8]> {
+        &self.0
+    }
+
+    /// The arg hash of the rows materialized for this scope.
+    pub fn arg_hash(&self) -> AlgebraicValue {
+        scoped_view_arg_hash_value(&self.0)
     }
 }
 
@@ -118,33 +158,52 @@ impl MemoryUsage for ViewCallInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewInstanceArgs {
+    /// The single instance of an anonymous view.
     Anonymous,
+    /// The instance of a view for a `sender`.
     Sender(Identity),
+    /// The instance of a scoped view's body for a scope key.
+    ScopeBody(ViewScopeKey),
+    /// The instance of a scoped view's resolver for a subscriber.
+    ScopeResolver(Identity),
 }
 
 impl ViewInstanceArgs {
-    pub fn sender(self) -> Option<Identity> {
+    /// The identity passed to the guest as the caller when computing this instance, if any.
+    pub fn sender(&self) -> Option<Identity> {
         match self {
-            Self::Anonymous => None,
-            Self::Sender(sender) => Some(sender),
+            Self::Anonymous | Self::ScopeBody(_) => None,
+            Self::Sender(sender) | Self::ScopeResolver(sender) => Some(*sender),
         }
     }
 }
 
-impl MemoryUsage for ViewInstanceArgs {}
+impl MemoryUsage for ViewInstanceArgs {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::ScopeBody(key) => key.0.len(),
+            _ => 0,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct ViewInstanceState {
     pub(super) args: ViewInstanceArgs,
     pub(super) active_subscribers: HashMap<Identity, u64>,
     pub(super) last_used: Timestamp,
+    /// For the instance of a scoped view's resolver,
+    /// the scope which the resolver last returned, if any.
+    pub(super) resolved_scope: Option<ViewScopeKey>,
 }
 
 impl MemoryUsage for ViewInstanceState {
     fn heap_usage(&self) -> usize {
         self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>()
+            + self.args.heap_usage()
+            + self.resolved_scope.as_ref().map_or(0, |key| key.0.len())
     }
 }
 
@@ -159,6 +218,7 @@ impl ViewInstanceState {
             args,
             active_subscribers: HashMap::default(),
             last_used,
+            resolved_scope: None,
         }
     }
 
@@ -178,6 +238,8 @@ impl ViewInstanceState {
 #[derive(Default)]
 pub(super) struct ViewInstanceTxState {
     changes: HashMap<ViewCallInfo, Option<ViewInstanceState>>,
+    /// Subscribers of scoped views whose scope changed in this transaction.
+    scope_changes: Vec<ViewScopeChange>,
 }
 
 impl ViewInstanceTxState {
@@ -225,8 +287,8 @@ impl ViewInstanceTxState {
         calls
     }
 
-    pub(super) fn into_changes(self) -> HashMap<ViewCallInfo, Option<ViewInstanceState>> {
-        self.changes
+    pub(super) fn into_changes(self) -> (HashMap<ViewCallInfo, Option<ViewInstanceState>>, Vec<ViewScopeChange>) {
+        (self.changes, self.scope_changes)
     }
 }
 
@@ -459,8 +521,9 @@ pub struct MutTxId {
 
 // Grew by one word when `ReducerName` became fully qualified: it now holds a
 // `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
+// Grew by a `Vec` when `ViewInstanceTxState` started recording scoped view scope changes.
 // One per transaction, not per row.
-static_assert_size!(MutTxId, 576);
+static_assert_size!(MutTxId, 608);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -3001,14 +3064,137 @@ impl MutTxId {
 
     /// Returns the stored arguments needed to execute this materialized view argument.
     pub fn view_instance_args(&self, call: &ViewCallInfo) -> Option<ViewInstanceArgs> {
-        self.get_view_instance(call).map(|state| state.args)
+        self.get_view_instance(call).map(|state| state.args.clone())
     }
 
     /// Returns all materialized view instances for `view_id`.
     pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
         self.effective_view_instances_for_view(view_id)
-            .map(|(_, state)| state.args)
+            .map(|(_, state)| state.args.clone())
             .collect()
+    }
+
+    /// Returns the scope which the resolver of the scoped view `view_id` last returned for `subscriber`.
+    ///
+    /// Returns `None` if the resolver has not run for `subscriber`,
+    /// i.e. its instance is not materialized,
+    /// and `Some(None)` if it returned no scope.
+    pub fn view_scope(&self, view_id: ViewId, subscriber: Identity) -> Option<Option<ViewScopeKey>> {
+        self.get_view_instance(&ViewCallInfo::scope_resolver(view_id, subscriber))
+            .map(|state| state.resolved_scope.clone())
+    }
+
+    /// Returns the arg hash of the rows which `subscriber` observes in the scoped view `view_id`.
+    ///
+    /// This is the arg hash of the scope which the resolver last returned for `subscriber`,
+    /// or the unscoped arg hash, which selects no rows,
+    /// if it returned no scope or has not run for `subscriber`.
+    pub fn view_scope_arg_hash(&self, view_id: ViewId, subscriber: Identity) -> AlgebraicValue {
+        match self.view_scope(view_id, subscriber).flatten() {
+            Some(key) => key.arg_hash(),
+            None => unscoped_view_arg_hash_value(),
+        }
+    }
+
+    /// Returns the arg hashes of the rows which `subscriber` observes
+    /// in each of `view_ids` which is a scoped view, sorted by view id.
+    ///
+    /// See [`Self::view_scope_arg_hash`].
+    pub fn view_scopes_for(
+        &self,
+        view_ids: impl IntoIterator<Item = ViewId>,
+        subscriber: Identity,
+    ) -> Result<Vec<(ViewId, u256)>> {
+        let mut view_scopes = Vec::new();
+        for view_id in view_ids {
+            let is_anonymous = self.lookup_st_view(view_id)?.is_anonymous;
+            if ViewDefInfo::infer_is_scoped(is_anonymous, self.is_view_parameterized(view_id)?) {
+                let arg_hash = self.view_scope_arg_hash(view_id, subscriber);
+                let arg_hash = **arg_hash.as_u256().expect("view arg hashes are u256");
+                view_scopes.push((view_id, arg_hash));
+            }
+        }
+        view_scopes.sort_by_key(|(view_id, _)| *view_id);
+        Ok(view_scopes)
+    }
+
+    /// Record `scope` as the result of running the resolver of the scoped view `view_id` for `subscriber`,
+    /// creating the resolver's instance if it does not exist.
+    ///
+    /// If the subscriber has active subscriptions to the view and `scope` differs from their previous scope,
+    /// their subscriptions are moved from the instance of the view's body for the previous scope
+    /// to the instance for `scope`, and the change is recorded for subscription updates.
+    ///
+    /// Returns the new scope if its body's instance must be materialized by the caller,
+    /// because the subscriptions moved to an instance which was not previously materialized.
+    pub fn set_view_scope(
+        &mut self,
+        view_id: ViewId,
+        subscriber: Identity,
+        scope: Option<ViewScopeKey>,
+    ) -> Result<Option<ViewScopeKey>> {
+        let resolver_call = ViewCallInfo::scope_resolver(view_id, subscriber);
+        let mut resolver = self
+            .get_view_instance_cloned(&resolver_call)
+            .unwrap_or_else(|| ViewInstanceState::new(ViewInstanceArgs::ScopeResolver(subscriber), Timestamp::now()));
+
+        let previous_scope = std::mem::replace(&mut resolver.resolved_scope, scope.clone());
+        let num_subscriptions = resolver.active_subscribers.get(&subscriber).copied().unwrap_or(0);
+        self.view_instances.set(resolver_call, resolver);
+
+        if previous_scope == scope || num_subscriptions == 0 {
+            return Ok(None);
+        }
+
+        let now = Timestamp::now();
+        if let Some(previous_scope) = previous_scope {
+            let previous_call = ViewCallInfo::scope_body(view_id, &previous_scope);
+            if let Some(mut previous) = self.get_view_instance_cloned(&previous_call) {
+                if let Some(count) = previous.active_subscribers.get_mut(&subscriber) {
+                    *count = count.saturating_sub(num_subscriptions);
+                    if *count == 0 {
+                        previous.active_subscribers.remove(&subscriber);
+                    }
+                }
+                previous.last_used = now;
+                self.view_instances.set(previous_call, previous);
+            }
+        }
+
+        let mut needs_materialization = None;
+        let arg_hash = match &scope {
+            Some(scope) => {
+                let call = ViewCallInfo::scope_body(view_id, scope);
+                let mut body = self.get_view_instance_cloned(&call).unwrap_or_else(|| {
+                    needs_materialization = Some(scope.clone());
+                    ViewInstanceState::new(ViewInstanceArgs::ScopeBody(scope.clone()), now)
+                });
+                *body.active_subscribers.entry(subscriber).or_default() += num_subscriptions;
+                body.last_used = now;
+                self.view_instances.set(call, body);
+                scope.arg_hash()
+            }
+            None => unscoped_view_arg_hash_value(),
+        };
+
+        self.view_instances.scope_changes.push(ViewScopeChange {
+            view_id,
+            subscriber,
+            arg_hash,
+        });
+
+        Ok(needs_materialization)
+    }
+
+    /// Decrement this subscriber's refcount for the scoped view `view_id`,
+    /// i.e. for its resolver's instance and the instance of its body for the subscriber's current scope.
+    pub fn unsubscribe_scoped_view(&mut self, view_id: ViewId, subscriber: Identity) -> Result<()> {
+        let scope = self.view_scope(view_id, subscriber).flatten();
+        self.unsubscribe_view(ViewCallInfo::scope_resolver(view_id, subscriber), subscriber)?;
+        if let Some(scope) = scope {
+            self.unsubscribe_view(ViewCallInfo::scope_body(view_id, &scope), subscriber)?;
+        }
+        Ok(())
     }
 
     /// Returns active subscribers for a materialized view.
@@ -3022,6 +3208,20 @@ impl MutTxId {
                     .map(|(identity, count)| (*identity, *count))
             })
             .collect()
+    }
+
+    /// Returns active subscribers for a single materialized view instance, sorted by identity.
+    #[cfg(any(test, feature = "test"))]
+    pub fn active_subscribers_for_view_call(&self, call: &ViewCallInfo) -> Vec<(Identity, u64)> {
+        let mut subscribers = self.get_view_instance(call).map_or_else(Vec::new, |state| {
+            state
+                .active_subscribers
+                .iter()
+                .map(|(identity, count)| (*identity, *count))
+                .collect()
+        });
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        subscribers
     }
 
     /// Updates the `last_used` timestamp for a materialized view argument.
@@ -3041,7 +3241,7 @@ impl MutTxId {
     ) -> Result<()> {
         let mut state = self
             .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, last_used));
+            .unwrap_or_else(|| ViewInstanceState::new(args.clone(), last_used));
         state.args = args;
         state.last_used = last_used;
         self.view_instances.set(call, state);
@@ -3052,7 +3252,7 @@ impl MutTxId {
     pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
         let mut state = self
             .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
+            .unwrap_or_else(|| ViewInstanceState::new(args.clone(), Timestamp::now()));
         state.args = args;
         *state.active_subscribers.entry(subscriber).or_default() += 1;
         state.last_used = Timestamp::now();
