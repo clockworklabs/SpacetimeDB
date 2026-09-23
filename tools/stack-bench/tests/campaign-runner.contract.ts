@@ -1329,8 +1329,11 @@ test('capacity wait retries while an existing attempt is active and wakes on can
           execute: async (_command, _argv, options) => {
             started++;
             if (started === 1) {
+              // A real attempt's child process keeps the event loop alive while it runs.
+              const child = setInterval(() => {}, 60_000);
               options.signal?.addEventListener('abort', releaseFirst, { once: true });
               await first;
+              clearInterval(child);
               options.signal?.removeEventListener('abort', releaseFirst);
             } else releaseFirst();
             return { code: 1, timedOut: false, cancelled: cancel };
