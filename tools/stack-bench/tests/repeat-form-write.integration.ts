@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { Actor } from '../grader/grade.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
+import { classifyResponseContract } from '../src/actions/named-action-runtime.js';
 
 // Failure cases, before implementation: partial/duplicate matches, unconfirmed
 // responses, non-JSON bodies, foreign origins and absent capture use the form.
@@ -24,14 +25,16 @@ test('repeat form write selects UI before sending, never after an uncertain writ
       if (body.name.startsWith('New') && mode === 'refused') { res.writeHead(403).end(); return; }
       rows.push(body);
       if (mode === 'lost' && body.name.startsWith('New')) { res.destroy(); return; }
-      res.setHeader('Content-Type', 'application/json'); res.end('{}');
+      res.setHeader('Content-Type', 'application/json'); res.end(mode.startsWith('convex-')
+        ? JSON.stringify({ status: 'success', value: null }) : '{}');
     } else {
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Set-Cookie', 'session=current; Path=/');
       res.end(`<input data-role="name"><button data-role="save">Save</button><script>
         window.formSubmits=0;
         document.querySelector('button').onclick=async()=>{window.formSubmits++;
-          await fetch('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},
+          await fetch('/api/products',{method:'POST',headers:{'Content-Type':'application/json',
+            ...${JSON.stringify(mode)}.startsWith('convex-')?{Authorization:'Bearer caller-session'}:{}},
           body:JSON.stringify({name:document.querySelector('input').value,price:1.25,category:'Volume',
             ...${JSON.stringify(mode)}==='changing-argument'?{nonce:window.formSubmits}:{}})});};
       </script>`);
@@ -42,7 +45,7 @@ test('repeat form write selects UI before sending, never after an uncertain writ
   const browser = await chromium.launch();
   let result = 'failed';
   try {
-    for (mode of ['accepted', 'missing', 'partial', 'duplicate', 'duplicate-value', 'non-json', 'unconfirmed', 'foreign', 'changing-argument', 'refused', 'lost']) {
+    for (mode of ['accepted', 'convex-http', 'convex-query', 'missing', 'partial', 'duplicate', 'duplicate-value', 'non-json', 'unconfirmed', 'foreign', 'changing-argument', 'refused', 'lost']) {
       calls = 0; rows.length = 0;
       const context = await browser.newContext();
       try {
@@ -68,9 +71,13 @@ test('repeat form write selects UI before sending, never after an uncertain writ
           control: 'Control product',
           fields: [{ testid: 'name', text: 'New "product" $1' }], submit: 'save',
         }, { capabilities: { actors: { get: () => actor }, 'browser-interaction': interaction,
-          'transport-observation': interaction, 'named-actions': { fetch } } });
+          'transport-observation': interaction, 'named-actions': { fetch,
+            classifyResponse: (request: { url: string }, response: { status: number; text: string }) =>
+              classifyResponseContract({ ...request, responseContract: mode === 'convex-http' ? 'convex-mutation'
+                : mode === 'convex-query' ? 'convex-query' : 'http' }, response),
+          } } });
         await page.waitForTimeout(50);
-        const replay = ['accepted', 'refused', 'lost'].includes(mode);
+        const replay = ['accepted', 'convex-http', 'refused', 'lost'].includes(mode);
         assert.equal(await page.evaluate(() => (window as unknown as { formSubmits: number }).formSubmits), replay ? 2 : 3, mode);
         assert.equal(calls, 3, `${mode}: a replay must never retry`);
         assert.equal(outcome.status, mode === 'refused' ? 'failed' : mode === 'lost' ? 'inconclusive' : 'passed', JSON.stringify(outcome));

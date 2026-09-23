@@ -115,10 +115,12 @@ async function repeatFormWrite({ input, capabilities, signal }:
         headers: replayHeaders(write) } : null;
     };
     const write = capturedHttp(find), control = capturedHttp(transport.expand(input.control));
+    // The adapter recognizes Convex HTTP mutations only at the leased endpoint.
+    const contract = write ? classifyNamedActionResponse(named, write, { status: 0, text: '' }).responseContract : null;
     if (write && isDeepStrictEqual(write, control)
-      && new URL(write.url).origin === new URL(actor.page.url()).origin
-      && classifyNamedActionResponse(named, write, { status: 0, text: '' }).responseContract === 'http') {
-      request = { url: write.url, method: write.method, responseContract: 'http',
+      && (contract === 'convex-mutation'
+        || contract === 'http' && new URL(write.url).origin === new URL(actor.page.url()).origin)) {
+      request = { url: write.url, method: write.method, responseContract: contract,
         body: JSON.stringify(write.body) };
       headers = write.headers;
     }
