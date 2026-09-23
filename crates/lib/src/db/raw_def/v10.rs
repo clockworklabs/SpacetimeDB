@@ -134,13 +134,12 @@ pub enum MethodOrAny {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSubmoduleV10 {
-    /// The namespace as written in the parent module's source, e.g. the key the
-    /// submodule is mounted under in a TypeScript `schema({ ... })` call.
+    /// The namespace as written in the parent module's source, aka the accessor name.
     ///
-    /// This is the *source* name. The canonical namespace stored in the database is
-    /// derived during validation, exactly like table names: the parent module's
-    /// [`CaseConversionPolicy`] is applied unless an [`ExplicitNameEntry::Namespace`]
-    /// mapping for this source name overrides it.
+    /// The canonical namespace stored in the database is derived during validation,
+    /// exactly like table names: the parent module's [`CaseConversionPolicy`] is
+    /// applied unless an [`ExplicitNameEntry::Namespace`] mapping for this accessor
+    /// name overrides it.
     pub namespace: String,
     pub module: RawModuleDefV10,
 }
