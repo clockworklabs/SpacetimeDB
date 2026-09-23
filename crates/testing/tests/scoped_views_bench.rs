@@ -49,6 +49,10 @@ const CONFIGS: &[(usize, usize)] = &[
     (20, 50),
     (50, 20),
     (100, 10),
+    // The worst case for scoped views: every player alone in their scope.
+    (100, 1),
+    (500, 1),
+    (1000, 1),
 ];
 /// Messages in each team's chat before any player subscribes,
 /// so that every configuration measures teams with the same history.
@@ -85,6 +89,8 @@ impl ViewKind {
 }
 
 struct Measurement {
+    /// Mean latency of subscribing to the view, including materializing it for the subscriber.
+    subscribe: Duration,
     /// Mean latency of sending a message, including refreshing views and evaluating updates.
     send: Duration,
     /// Mean time from sending a message until every player on the team received its update.
@@ -140,6 +146,22 @@ async fn recv_update(rx: &mut ClientConnectionReceiver) {
     }
 }
 
+/// Wait until `rx` receives the rows of its subscription.
+async fn recv_subscribe_applied(rx: &mut ClientConnectionReceiver) {
+    let mut buf = Vec::with_capacity(1);
+    loop {
+        let received = tokio::time::timeout(RECV_TIMEOUT, rx.recv_many(&mut buf, 1))
+            .await
+            .expect("timed out waiting for the subscription to apply");
+        assert_eq!(received, 1, "client receiver closed");
+        match buf.remove(0) {
+            OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_)) => return,
+            OutboundMessage::V2(ws_v2::ServerMessage::SubscriptionError(err)) => panic!("subscription failed: {err:?}"),
+            _ => {}
+        }
+    }
+}
+
 /// Discard any messages already sent to `rx`, returning how many there were.
 async fn drain(rx: &mut ClientConnectionReceiver) -> usize {
     let mut buf = Vec::new();
@@ -174,17 +196,22 @@ async fn measure(module: &ModuleHandle, view: ViewKind, teams: usize, players_pe
     // Connect every player, put them on their team, and subscribe them to the view.
     // Player `i` is on team `i % teams`.
     let mut players = Vec::with_capacity(teams * players_per_team);
+    let mut subscribe = Duration::ZERO;
     for i in 0..teams * players_per_team {
         let team = (i % teams) as u64;
         let identity = Identity::from_u256(u256::from(i as u128 + 1));
         let (client, rx) = module.connect(identity, v2_config());
         call(&client, "join", product![team]).await;
-        let subscribe = ws_v2::Subscribe {
+        let subscribe_request = ws_v2::Subscribe {
             request_id: 0,
             query_set_id: ws_v2::QuerySetId::new(0),
             query_strings: [format!("SELECT * FROM {}", view.table()).into()].into(),
         };
-        client.subscribe_v2(subscribe, Instant::now()).await.unwrap();
+        let mut rx = rx;
+        let start = Instant::now();
+        client.subscribe_v2(subscribe_request, Instant::now()).await.unwrap();
+        recv_subscribe_applied(&mut rx).await;
+        subscribe += start.elapsed();
         players.push(Player { team, client, rx });
     }
     for player in &mut players {
@@ -235,6 +262,7 @@ async fn measure(module: &ModuleHandle, view: ViewKind, teams: usize, players_pe
     }
 
     Measurement {
+        subscribe: subscribe / (teams * players_per_team) as u32,
         send: send / MESSAGES as u32,
         delivered: delivered / MESSAGES as u32,
         moved: moved / MOVES as u32,
@@ -272,8 +300,9 @@ fn scoped_views_bench() {
             });
             let measurement = rx.recv().unwrap();
             eprintln!(
-                "{teams:>3} teams x {players_per_team:>3} players, {:>8}: send {}, delivered {}, move {}, view rows {}",
+                "{teams:>4} teams x {players_per_team:>3} players, {:>8}: subscribe {}, send {}, delivered {}, move {}, view rows {}",
                 view.name(),
+                format_duration(measurement.subscribe),
                 format_duration(measurement.send),
                 format_duration(measurement.delivered),
                 format_duration(measurement.moved),
@@ -284,13 +313,16 @@ fn scoped_views_bench() {
     }
 
     println!();
-    println!("| Teams | Players per team | Subscribers | View | Send latency | Delivered to team | Switch team | View rows |");
-    println!("|---:|---:|---:|---|---:|---:|---:|---:|");
+    println!(
+        "| Teams | Players per team | Subscribers | View | Subscribe | Send latency | Delivered to team | Switch team | View rows |"
+    );
+    println!("|---:|---:|---:|---|---:|---:|---:|---:|---:|");
     for (teams, players_per_team, view, measurement) in results {
         println!(
-            "| {teams} | {players_per_team} | {} | {} | {} | {} | {} | {} |",
+            "| {teams} | {players_per_team} | {} | {} | {} | {} | {} | {} | {} |",
             teams * players_per_team,
             view.name(),
+            format_duration(measurement.subscribe),
             format_duration(measurement.send),
             format_duration(measurement.delivered),
             format_duration(measurement.moved),
