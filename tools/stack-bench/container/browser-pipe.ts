@@ -9,7 +9,7 @@ import type { LaunchOptions } from 'playwright';
 import { compiledEntrypoint } from '../src/package-root.js';
 import { readBackendLease } from '../src/runtime/backend-lease.js';
 
-function browserContainer(): string | null {
+export function browserContainer(): string | null {
   const path = process.env.STACK_BENCH_LEASE;
   if (!path) {
     if (process.env.STACK_BENCH_APPLIANCE === '1') throw new Error('browser requires a private attempt lease');

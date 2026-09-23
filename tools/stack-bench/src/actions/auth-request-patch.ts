@@ -3,7 +3,6 @@ import type { Page, Request, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
 import { ActionApplicationFailure } from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
-import { hasNetworkInterruption } from './network-interruption.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
@@ -22,8 +21,6 @@ const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
 // Install before navigation: Playwright cannot route an already-open socket.
 // Context routing lets the later response-loss gate replace this passive route.
 export async function installAuthWebSocketCapture(page: Page): Promise<void> {
-  // An interruptible context already routes every socket; a second route would bypass it.
-  if (hasNetworkInterruption(page.context())) return;
   const state: { active?: SocketPatch } = {};
   socketPatches.set(page, state);
   await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {

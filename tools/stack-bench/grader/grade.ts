@@ -54,7 +54,7 @@ import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
-import { installNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
+import { startNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
 import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
@@ -771,6 +771,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     unverified: [], verified: [], actionEvidence: [] };
   const actors = new Map();
   const contexts: ActorContextEntry[] = [];
+  const interruptions: NetworkInterruption[] = [];
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
 
   // A feature is worth what its criteria are worth. An explicit `max` is only
@@ -782,6 +783,8 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   };
   const restoreFailures: GradeCleanupFailure[] = [];
   const closeAll = async () => {
+    // Interruption proxies run where the browser runs; close them even after cancellation closed the browser.
+    await Promise.all(interruptions.splice(0).map(interruption => interruption.dispose()));
     for (const actor of actors.values()) {
       for (const message of actor.consoleErrors) {
         result.consoleErrors.push(`[${actor.name}] ${sanitiseConsoleError(message)}`);
@@ -817,18 +820,23 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   const initializationStartedAtMs = evidenceNowMs();
   try {
     if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
-    // Actors this feature takes offline route their sockets through the harness.
+    // Actors this feature takes offline send their traffic through a harness proxy.
     const offlineActors = new Set([...feature.setup ?? [], ...feature.criteria.flatMap(criterion => criterion.steps)]
       .filter(step => step.do === 'setOffline').map(step => step.actor));
     for (const name of feature.actors!) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
+      const networkInterruption = offlineActors.has(name)
+        ? await runBrowserInfrastructureOperation('network interruption start', () => startNetworkInterruption())
+        : undefined;
+      if (networkInterruption) interruptions.push(networkInterruption);
       const context = await runBrowserInfrastructureOperation('context creation', () =>
-        browser.newContext(
-          args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
-        ));
+        browser.newContext({
+          ...(args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}),
+          ...(networkInterruption ? { proxy: networkInterruption.proxy } : {}),
+        }));
       contexts.push({ context, name, page: null });
-      const networkInterruption = offlineActors.has(name) ? await installNetworkInterruption(context) : undefined;
+      networkInterruption?.attach(context);
       if (args.trace) {
         await runBrowserInfrastructureOperation('trace start', () =>
           context.tracing.start({ screenshots: true, snapshots: true }));

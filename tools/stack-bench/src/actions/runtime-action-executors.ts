@@ -776,15 +776,18 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
     inconclusive('network-not-interrupted', { actor: input.actor,
       detail: 'this client was not opened with an interruptible network' });
   }
-  await actor.page.context().setOffline(offline);
-  const sockets = offline ? await actor.networkInterruption.interrupt() : actor.networkInterruption.restore();
-  if ('unrouted' in sockets && sockets.unrouted > 0) {
-    inconclusive('network-not-interrupted', { actor: input.actor,
-      detail: `${sockets.unrouted} WebSocket connection(s) bypassed the interruption` });
-  }
-  if ('open' in sockets && sockets.open > 0) {
-    inconclusive('network-not-interrupted', { actor: input.actor,
-      detail: `${sockets.open} HTTP request(s) stayed open through the interruption` });
+  let connections: { closed: number; open: number } | undefined;
+  if (offline) {
+    await actor.page.context().setOffline(true);
+    connections = await actor.networkInterruption.interrupt();
+    if (connections.open > 0) {
+      inconclusive('network-not-interrupted', { actor: input.actor,
+        detail: `${connections.open} application connection(s) stayed open through the interruption` });
+    }
+  } else {
+    // Reopen forwarding while emulation still blocks the page, then restore the page's network.
+    await actor.networkInterruption.restore();
+    await actor.page.context().setOffline(false);
   }
   await browser.sleep(input.settleMs ?? 500, signal);
   const browserOnline = await actor.page.evaluate(() => navigator.onLine);
@@ -792,7 +795,7 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
     throw new Error(`setOffline requested browser network ${offline ? 'offline' : 'online'}, `
       + `but navigator.onLine remained ${browserOnline}`);
   }
-  return { offline, browserOnline, ...sockets };
+  return { offline, browserOnline, ...connections };
 }
 
 async function closeClient({ input, capabilities }: ActionArguments<ActorInput>) {

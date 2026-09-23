@@ -2,32 +2,36 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import test from 'node:test';
 import { chromium } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
-import { installNetworkInterruption } from '../src/actions/network-interruption.js';
+import { startNetworkInterruption } from '../src/actions/network-interruption.js';
+import type { NetworkInterruption } from '../src/actions/network-interruption.js';
 
-// A page that reconnects its socket whenever it closes, like a live-update client.
-const PAGE = `<script>
-  window.received = []; window.devReceived = [];
-  // A dev server's reload socket, which the interruption must leave alone.
-  new WebSocket('ws://' + location.host + '/?token=dev').onmessage = event => window.devReceived.push(event.data);
-  const connect = () => {
-    const ws = new WebSocket('ws://' + location.host + '/ws');
-    ws.onmessage = event => window.received.push(event.data);
-    ws.onclose = () => setTimeout(connect, 100);
-  };
-  connect();
-</script>`;
-
-test('going offline closes open sockets, refuses reconnects, and never delivers held updates', async () => {
-  const sockets = new Set<Socket>();
-  // The dev server's client module carries its socket token, as Vite serves it.
-  const server = createServer((req, res) => req.url === '/@vite/client'
-    ? res.writeHead(200, { 'Content-Type': 'text/javascript' }).end('const wsToken = "dev";')
-    : res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE));
+// A fixture app server: its own page, WebSocket upgrades, and a live value it can push.
+async function fixture(page: string, http: (req: IncomingMessage, res: ServerResponse, value: () => string) => boolean = () => false) {
+  let value = '1';
+  const sockets = new Set<Socket>(), streams = new Set<() => void>(), waiters = new Set<() => void>();
+  const server = createServer((req, res) => {
+    const path = new URL(req.url!, 'http://fixture').pathname;
+    if (path === '/@vite/client') { res.writeHead(200, { 'Content-Type': 'text/javascript' }).end('const wsToken = "dev";'); return; }
+    if (path === '/events' || path === '/stream') {
+      res.writeHead(200, { 'Content-Type': path === '/events' ? 'text/event-stream' : 'text/plain' });
+      const send = () => res.write(path === '/events' ? `retry: 300\ndata: ${value}\n\n` : `${value}\n`);
+      send(); streams.add(send); res.on('close', () => streams.delete(send)); return;
+    }
+    if (path === '/poll') {
+      if (new URL(req.url!, 'http://fixture').searchParams.get('since') !== value) { res.end(value); return; }
+      const answer = () => { waiters.delete(answer); res.end(value); };
+      waiters.add(answer); res.on('close', () => waiters.delete(answer)); return;
+    }
+    if (http(req, res, () => value)) return;
+    res.writeHead(200, { 'Content-Type': 'text/html' }).end(page);
+  });
   server.on('upgrade', (req, socket: Socket) => {
     const accept = createHash('sha1').update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
@@ -37,140 +41,148 @@ test('going offline closes open sockets, refuses reconnects, and never delivers 
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
-  const send = (text: string) => { for (const socket of sockets) socket.write(Buffer.concat([Buffer.from([0x81, text.length]), Buffer.from(text)])); };
-  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-  const received = (page: import('playwright').Page) => page.evaluate(() => (window as unknown as { received: string[] }).received);
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const context = await browser.newContext();
-    const networkInterruption = await installNetworkInterruption(context);
-    const page = await context.newPage();
-    await page.goto(url);
-    await wait(300);
-    const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
-    const service = { defaultWithin: 1000, sleep: async (ms: number) => wait(ms) };
-    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service };
-    const offline = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 300 },
-      { capabilities });
-    assert.equal(offline.status, 'passed', offline.summary ?? '');
-    assert.equal((offline.observation as { unrouted: number }).unrouted, 0);
-    assert.equal((offline.observation as { closed: number }).closed, 1);
-    send('during');
-    await wait(300);
-    const online = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', offline: false,
-      settleMs: 500 }, { capabilities });
-    assert.equal(online.status, 'passed', online.summary ?? '');
-    assert((online.observation as { refused: number }).refused > 0, 'reconnects during the interruption are refused');
-    send('after');
-    await wait(300);
-    assert.deepEqual(await received(page), ['after'], 'the held update is never delivered; the reconnected page receives new ones');
-    assert.deepEqual(await page.evaluate(() => (window as unknown as { devReceived: string[] }).devReceived),
-      ['during', 'after'], 'the dev-server socket stays connected through the interruption');
-
-    // A client opened without the harness route cannot prove an interruption.
-    const plain = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 0 },
-      { capabilities: { ...capabilities, actors: { get: () => ({ ...actor, networkInterruption: undefined }) } } });
-    assert.equal(plain.status, 'inconclusive');
-
-    // A socket another route handles bypasses the interruption, so the cut is unproven.
-    const bypassed = await browser.newContext();
-    const bypassInterruption = await installNetworkInterruption(bypassed);
-    await bypassed.routeWebSocket('**/ws', route => { route.connectToServer(); });
-    const bypassPage = await bypassed.newPage();
-    await bypassPage.goto(url);
-    await wait(300);
-    const unproven = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 0 },
-      { capabilities: { ...capabilities, actors: { get: () => ({ ...actor, page: bypassPage, networkInterruption: bypassInterruption }) } } });
-    assert.equal(unproven.status, 'inconclusive');
-  } finally {
-    await browser.close();
-    server.close();
-    for (const socket of sockets) socket.destroy();
-  }
-});
-
-test('going offline lets in-flight requests finish and flags one that never does', async () => {
-  const server = createServer((req, res) => {
-    if (req.url === '/poll') { setTimeout(() => res.end('polled'), 800); return; }
-    if (req.url === '/stream') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }).write('data: open\n\n'); return; }
-    res.writeHead(200, { 'Content-Type': 'text/html' }).end('<p>app</p>');
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
-  const browser = await chromium.launch({ headless: true });
-  const service = { defaultWithin: 1000, sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
-  const goOffline = async (path: string) => {
-    const context = await browser.newContext();
-    const networkInterruption = await installNetworkInterruption(context);
-    const page = await context.newPage();
-    await page.goto(url);
-    await page.evaluate(path => { void fetch(path).then(response => response.text()).then(text => { (window as unknown as { body: string }).body = text; }); }, path);
-    await page.waitForTimeout(100);
-    const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
-    const result = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 0 },
-      { capabilities: { actors: { get: () => actor }, 'browser-interaction': service } });
-    return { result, body: await page.evaluate(() => (window as unknown as { body?: string }).body) };
+  const frame = (text: string) => Buffer.concat([Buffer.from([0x81, text.length]), Buffer.from(text)]);
+  return {
+    url: `http://127.0.0.1:${(server.address() as { port: number }).port}/`,
+    set(next: string) { value = next; for (const send of streams) send(); for (const answer of [...waiters]) answer(); },
+    send(text: string) { for (const socket of sockets) socket.write(frame(text)); },
+    close() { for (const socket of sockets) socket.destroy(); server.closeAllConnections(); server.close(); },
   };
+}
+
+// One interruptible actor, driven through the real setOffline action.
+async function interruptibleActor(browser: Browser, url: string, route = true) {
+  const networkInterruption = await startNetworkInterruption();
+  const context = await browser.newContext(route ? { proxy: networkInterruption.proxy } : {});
+  networkInterruption.attach(context);
+  const page = await context.newPage();
+  await page.goto(url);
+  await page.waitForTimeout(500);
+  const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
+  const capabilities = { actors: { get: () => actor },
+    'browser-interaction': { defaultWithin: 1000, sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) } };
+  const setOffline = (offline: boolean, settleMs = 300) => executeAction(ACTION_REGISTRY, 'setOffline',
+    { do: 'setOffline', actor: 'buyer', offline, settleMs }, { capabilities });
+  return { page, networkInterruption, setOffline };
+}
+
+const windowValue = (page: Page, key: string) => page.evaluate(name => Reflect.get(window, name), key);
+
+test('going offline closes open sockets, never delivers held updates, and keeps the dev reload socket', async () => {
+  const app = await fixture(`<script>
+    window.received = []; window.devReceived = []; window.loadedAt = Date.now();
+    new WebSocket('ws://' + location.host + '/?token=dev').onmessage = event => window.devReceived.push(event.data);
+    const connect = () => {
+      const ws = new WebSocket('ws://' + location.host + '/ws');
+      ws.onmessage = event => window.received.push(event.data);
+      ws.onclose = () => setTimeout(connect, 100);
+    };
+    connect();
+  </script>`);
+  const browser = await chromium.launch({ headless: true });
+  let interruption: NetworkInterruption | undefined;
   try {
-    const poll = await goOffline('/poll');
-    assert.equal(poll.result.status, 'passed', poll.result.summary ?? '');
-    assert.equal(poll.body, 'polled', 'the long poll completed before the cut');
-    const stream = await goOffline('/stream');
-    assert.equal(stream.result.status, 'inconclusive', 'an open event stream survives offline emulation');
+    const { page, networkInterruption, setOffline } = await interruptibleActor(browser, app.url);
+    interruption = networkInterruption;
+    const loadedAt = await windowValue(page, 'loadedAt');
+    const offline = await setOffline(true);
+    assert.equal(offline.status, 'passed', offline.summary ?? '');
+    assert.equal((offline.observation as { open: number }).open, 0);
+    app.send('during');
+    await page.waitForTimeout(300);
+    const online = await setOffline(false, 800);
+    assert.equal(online.status, 'passed', online.summary ?? '');
+    app.send('after');
+    await page.waitForTimeout(300);
+    assert.deepEqual(await windowValue(page, 'received'), ['after'], 'the held update is never delivered; the reconnected page receives new ones');
+    assert.deepEqual(await windowValue(page, 'devReceived'), ['during', 'after'], 'the dev reload socket stays connected');
+    assert.equal(await windowValue(page, 'loadedAt'), loadedAt, 'the page was not reloaded');
   } finally {
+    await interruption?.dispose();
     await browser.close();
-    server.closeAllConnections();
-    server.close();
+    app.close();
   }
 });
 
-test('a socket shaped like the dev reload socket is still cut unless the dev server vouches for its token', async () => {
-  const sockets = new Set<Socket>();
-  const server = createServer((_req, res) => res.writeHead(200, { 'Content-Type': 'text/html' }).end(`<script>
+// EventSource, a held long poll, and a streamed fetch, each with or without its own recovery.
+const streamingPage = (recover: boolean) => `<script>
+  window.loadedAt = Date.now(); window.state = { sse: null, poll: null, stream: null };
+  const es = new EventSource('/events');
+  es.onmessage = e => { state.sse = e.data; };
+  es.onerror = () => { if (!${recover}) es.close(); };
+  (async function poll(since) {
+    try { const value = await (await fetch('/poll?since=' + since)).text(); state.poll = value; poll(value); }
+    catch { if (${recover}) setTimeout(() => poll(since), 300); }
+  })('0');
+  (async function stream() {
+    try {
+      const reader = (await fetch('/stream')).body.getReader(), decoder = new TextDecoder();
+      for (;;) { const { value, done } = await reader.read(); if (done) break;
+        const text = decoder.decode(value).trim().split(/\\s+/).pop(); if (text) state.stream = text; }
+    } catch {}
+    if (${recover}) setTimeout(stream, 300);
+  })();
+</script>`;
+
+for (const recover of [true, false]) {
+  test(`going offline cuts event streams, long polls and streamed fetches (${recover ? 'recovering' : 'no recovery'} client)`, async () => {
+    const app = await fixture(streamingPage(recover));
+    const browser = await chromium.launch({ headless: true });
+    let interruption: NetworkInterruption | undefined;
+    try {
+      const { page, networkInterruption, setOffline } = await interruptibleActor(browser, app.url);
+      interruption = networkInterruption;
+      await page.waitForTimeout(500);
+      const loadedAt = await windowValue(page, 'loadedAt');
+      const offline = await setOffline(true);
+      assert.equal(offline.status, 'passed', offline.summary ?? '');
+      app.set('2');
+      await page.waitForTimeout(800);
+      assert.deepEqual(await windowValue(page, 'state'), { sse: '1', poll: '1', stream: '1' }, 'nothing is delivered during the cut');
+      await setOffline(false, 3000);
+      assert.deepEqual(await windowValue(page, 'state'), recover
+        ? { sse: '2', poll: '2', stream: '2' } : { sse: '1', poll: '1', stream: '1' });
+      assert.equal(await windowValue(page, 'loadedAt'), loadedAt, 'the page was not reloaded');
+    } finally {
+      await interruption?.dispose();
+      await browser.close();
+      app.close();
+    }
+  });
+}
+
+test('a root/token app socket is cut, and an unproven cut is unmeasured', async () => {
+  const app = await fixture(`<script>
     window.received = []; window.closes = 0;
     const ws = new WebSocket('ws://' + location.host + '/?token=application-session');
     ws.onmessage = event => window.received.push(event.data);
     ws.onclose = () => window.closes++;
-  </script>`));
-  server.on('upgrade', (req, socket: Socket) => {
-    const accept = createHash('sha1').update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
-    socket.write(`HTTP/1.1 101 Switching Protocols
-Upgrade: websocket
-Connection: Upgrade
-Sec-WebSocket-Accept: ${accept}
-
-`);
-    sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
-    socket.on('error', () => {});
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  </script>`);
   const browser = await chromium.launch({ headless: true });
+  const interruptions: NetworkInterruption[] = [];
   try {
-    const context = await browser.newContext();
-    const networkInterruption = await installNetworkInterruption(context);
-    const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
-    await page.waitForTimeout(300);
-    const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
-    const capabilities = { actors: { get: () => actor },
-      'browser-interaction': { defaultWithin: 1000, sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) } };
-    const offline = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'viewer', settleMs: 100 },
-      { capabilities });
+    const cut = await interruptibleActor(browser, app.url);
+    interruptions.push(cut.networkInterruption);
+    const offline = await cut.setOffline(true);
     assert.equal(offline.status, 'passed', offline.summary ?? '');
-    assert.equal((offline.observation as { closed: number }).closed, 1);
-    for (const socket of sockets) socket.write(Buffer.from([0x81, 8, ...Buffer.from('stock:52')]));
-    await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'viewer', offline: false, settleMs: 300 },
-      { capabilities });
-    assert.deepEqual(await page.evaluate(() => (window as unknown as { received: string[]; closes: number }).received), []);
-    assert.equal(await page.evaluate(() => (window as unknown as { closes: number }).closes), 1,
-      'an app without reconnect code stays disconnected');
+    app.send('stock:52');
+    await cut.setOffline(false);
+    assert.deepEqual(await windowValue(cut.page, 'received'), []);
+    assert.equal(await windowValue(cut.page, 'closes'), 1, 'an app without reconnect code stays disconnected');
+
+    // A context whose traffic does not pass through the proxy keeps its socket: unmeasured.
+    const bypassed = await interruptibleActor(browser, app.url, false);
+    interruptions.push(bypassed.networkInterruption);
+    assert.equal((await bypassed.setOffline(true, 0)).status, 'inconclusive');
+
+    // An actor opened without an interruption cannot prove one.
+    const plain = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 0 },
+      { capabilities: { actors: { get: () => ({ page: cut.page, loc: () => { throw new Error('unused'); } }) },
+        'browser-interaction': { defaultWithin: 1000, sleep: async () => {} } } });
+    assert.equal(plain.status, 'inconclusive');
   } finally {
+    for (const interruption of interruptions) await interruption.dispose();
     await browser.close();
-    server.close();
-    for (const socket of sockets) socket.destroy();
+    app.close();
   }
 });

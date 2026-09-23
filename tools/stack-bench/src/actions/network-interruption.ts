@@ -1,82 +1,101 @@
-import type { BrowserContext, Page, Request, WebSocketRoute } from 'playwright';
+import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { createInterface } from 'node:readline';
+import type { BrowserContext, BrowserContextOptions, Page, Request, WebSocket } from 'playwright';
+import { browserContainer } from '../../container/browser-pipe.js';
+import { compiledEntrypoint } from '../package-root.js';
 
-// Offline emulation holds an open WebSocket's messages and releases them later;
-// the socket never disconnects, and an HTTP request already in flight (a long
-// poll, an event stream) still completes. Route an actor's sockets through the
-// harness so going offline closes them and refuses reconnects until the network
-// returns, and let in-flight requests finish before the cut.
+// Offline emulation holds an open WebSocket's messages and releases them later,
+// and lets an HTTP request already in flight (a long poll, an event stream) keep
+// delivering. An interruptible actor's context therefore sends all its traffic
+// through a harness proxy that runs where the browser runs. Going offline refuses
+// new connections and closes the existing ones, as a network outage would.
 export interface NetworkInterruption {
-  interrupt(): Promise<{ closed: number; unrouted: number; open: number }>;
-  restore(): { refused: number };
+  // Context options that route the actor's traffic, loopback included, through the proxy.
+  readonly proxy: NonNullable<BrowserContextOptions['proxy']>;
+  attach(context: BrowserContext): void;
+  interrupt(): Promise<{ closed: number; open: number }>;
+  restore(): Promise<void>;
+  dispose(): Promise<void>;
 }
 
-const interruptible = new WeakSet<BrowserContext>();
-const DRAIN_MS = 5000;
+const SETTLE_MS = 5000;
+const COMMAND_TIMEOUT_MS = 10_000;
 
-// A Vite dev server's reload socket is tooling, not the app, and cutting it makes
-// Vite reload the whole page. It stays open only when its token is the one the same
-// server's client module carries; a URL shape alone could be an app socket.
-async function viteReloadSocket(context: BrowserContext, url: URL): Promise<boolean> {
-  const token = url.searchParams.get('token');
-  if (!token) return false;
-  try {
-    const client = await context.request.get(new URL('@vite/client', url.href.replace(/^ws/, 'http')).href,
-      { timeout: 5000, maxRedirects: 0 });
-    return client.ok() && (await client.text()).includes(`const wsToken = ${JSON.stringify(token)}`);
-  } catch { return false; }
-}
+type Reply = { id?: number; ok?: boolean; port?: number; closed?: number; tooling?: string[] };
 
-export const hasNetworkInterruption = (context: BrowserContext): boolean => interruptible.has(context);
-
-// Install before the context opens a page, so every socket passes through the route.
-export async function installNetworkInterruption(context: BrowserContext): Promise<NetworkInterruption> {
-  interruptible.add(context);
-  const routed = new Set<{ page: WebSocketRoute; server: WebSocketRoute }>();
-  let offline = false;
-  let refused = 0;
-  // Every socket a page opens must reach the route; one that did not could keep delivering.
-  let opened = 0;
-  let routedCount = 0;
-  const track = (page: Page) => page.on('websocket', () => { opened += 1; });
-  context.on('page', track);
-  const inFlight = new Set<Request>();
-  context.on('request', request => inFlight.add(request));
-  context.on('requestfinished', request => inFlight.delete(request));
-  context.on('requestfailed', request => inFlight.delete(request));
-  await context.routeWebSocket(() => true, async page => {
-    routedCount += 1;
-    const tooling = await viteReloadSocket(context, new URL(page.url()));
-    if (offline && !tooling) {
-      refused += 1;
-      void page.close({ code: 1001, reason: 'network unavailable' }).catch(() => {});
-      return;
-    }
-    const pair = { page, server: page.connectToServer() };
-    if (!tooling) routed.add(pair);
-    page.onMessage(data => pair.server.send(data));
-    pair.server.onMessage(data => page.send(data));
-    page.onClose((code, reason) => { routed.delete(pair); void pair.server.close({ code, reason }).catch(() => {}); });
-    pair.server.onClose((code, reason) => { routed.delete(pair); void page.close({ code, reason }).catch(() => {}); });
+// Start before the actor's context exists; register dispose() with its cleanup at once.
+export async function startNetworkInterruption(): Promise<NetworkInterruption> {
+  const container = browserContainer();
+  const helper = compiledEntrypoint('container', 'browser-network-proxy.js');
+  const child = container
+    ? spawn('docker', ['exec', '-i', container, 'node', helper], { stdio: ['pipe', 'pipe', 'ignore'] })
+    : spawn(process.execPath, [helper], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const waiting = new Map<number, (reply: Reply | null) => void>();
+  let next = 0, stopped = false;
+  createInterface({ input: child.stdout }).on('line', line => {
+    let reply: Reply;
+    try { reply = JSON.parse(line); } catch { return; }
+    waiting.get(reply.id ?? -1)?.(reply);
+    waiting.delete(reply.id ?? -1);
   });
+  const stop = () => { stopped = true; for (const settle of waiting.values()) settle(null); waiting.clear(); };
+  child.on('exit', stop);
+  child.on('error', stop);
+  child.stdin.on('error', () => {});
+  const command = (cmd: string, extra: object = {}) => new Promise<Reply>((done, fail) => {
+    if (stopped) { fail(new Error('the network interruption proxy has stopped')); return; }
+    const id = ++next;
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      fail(new Error(`the network interruption proxy did not acknowledge ${cmd}`));
+    }, COMMAND_TIMEOUT_MS);
+    waiting.set(id, reply => {
+      clearTimeout(timer);
+      if (reply?.ok) done(reply);
+      else fail(new Error(`the network interruption proxy failed ${cmd}`));
+    });
+    child.stdin.write(`${JSON.stringify({ id, cmd, ...extra })}\n`);
+  });
+  const dispose = async () => {
+    await command('dispose').catch(() => {});
+    child.stdin.end();
+    // Closing the pipe ends the remote helper; the local client must not outlive it.
+    if (!stopped) child.kill();
+  };
+  const username = 'stack-bench', password = randomBytes(24).toString('hex');
+  let port: number | undefined;
+  try { ({ port } = await command('config', { user: username, pass: password })); }
+  catch (error) { await dispose(); throw error; }
+
+  const sockets = new Set<WebSocket>();
+  const inFlight = new Set<Request>();
   return {
+    // `<-loopback>` removes Chromium's implicit loopback bypass, so local apps go through it too.
+    proxy: { server: `http://127.0.0.1:${port}`, bypass: '<-loopback>', username, password },
+    attach(context) {
+      const track = (page: Page) => page.on('websocket', socket => {
+        sockets.add(socket);
+        socket.on('close', () => sockets.delete(socket));
+      });
+      context.on('page', track);
+      context.on('request', request => inFlight.add(request));
+      context.on('requestfinished', request => inFlight.delete(request));
+      context.on('requestfailed', request => inFlight.delete(request));
+    },
     async interrupt() {
-      // The caller already blocks new requests. A socket cut mid-handshake (an
-      // HTTP-to-WebSocket upgrade) is not an outage the app can observe cleanly.
-      for (const end = Date.now() + DRAIN_MS; inFlight.size && Date.now() < end;) {
+      const { closed = 0, tooling = [] } = await command('cut');
+      // The browser itself must see every application connection end. A Vite dev
+      // server's reload socket is tooling (cutting it reloads the page); the proxy
+      // exempted only sockets whose token that server's own client module carries.
+      const application = (socket: WebSocket) => !tooling.includes(new URL(socket.url()).searchParams.get('token') ?? '');
+      const open = () => [...sockets].filter(application).length + inFlight.size;
+      for (const end = Date.now() + SETTLE_MS; open() && Date.now() < end;) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
-      offline = true;
-      const pairs = [...routed];
-      routed.clear();
-      await Promise.all(pairs.flatMap(pair => [
-        pair.page.close({ code: 1001, reason: 'network unavailable' }).catch(() => {}),
-        pair.server.close({ code: 1001, reason: 'network unavailable' }).catch(() => {}),
-      ]));
-      return { closed: pairs.length, unrouted: Math.max(0, opened - routedCount), open: inFlight.size };
+      return { closed, open: open() };
     },
-    restore() {
-      offline = false;
-      return { refused };
-    },
+    async restore() { await command('restore'); },
+    dispose,
   };
 }
