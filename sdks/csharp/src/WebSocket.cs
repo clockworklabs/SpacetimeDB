@@ -35,7 +35,10 @@ namespace SpacetimeDB
         {
             // .NET Standard does not expose the handshake response status directly.
             var match = System.Text.RegularExpressions.Regex.Match(error.Message, @"status code '(\d{3})'");
-            if (match.Success) return new ConnectException(int.Parse(match.Groups[1].Value), error);
+            if (match.Success)
+            {
+                return new ConnectException(int.Parse(match.Groups[1].Value), error);
+            }
             return error.WebSocketErrorCode is WebSocketError.UnsupportedProtocol or WebSocketError.NotAWebSocket or WebSocketError.HeaderError
                 ? new ConnectionProtocolException("Invalid WebSocket handshake.", error) : error;
         }
@@ -121,7 +124,10 @@ namespace SpacetimeDB
     [AOT.MonoPInvokeCallback(typeof(Action<int>))]
     private static void WebGLOnOpen(int socketId)
     {
-        if (webglSockets.TryGetValue(socketId, out var socket)) socket.HandleWebGLOpen(socketId);
+        if (webglSockets.TryGetValue(socketId, out var socket))
+        {
+            socket.HandleWebGLOpen(socketId);
+        }
     }
 
     [AOT.MonoPInvokeCallback(typeof(Action<int, IntPtr, int>))]
@@ -130,7 +136,10 @@ namespace SpacetimeDB
         try {
             byte[] data = new byte[length];
             Marshal.Copy(dataPtr, data, 0, length);
-            if (webglSockets.TryGetValue(socketId, out var socket)) socket.HandleWebGLMessage(socketId, data);
+            if (webglSockets.TryGetValue(socketId, out var socket))
+            {
+                socket.HandleWebGLMessage(socketId, data);
+            }
         } catch (Exception e) {
             UnityEngine.Debug.LogError($"Error handling message: {e}");
         }
@@ -141,7 +150,10 @@ namespace SpacetimeDB
     {
         try {
             string reason = Marshal.PtrToStringUTF8(reasonPtr);
-            if (webglSockets.TryGetValue(socketId, out var socket)) socket.HandleWebGLClose(socketId, code, reason);
+            if (webglSockets.TryGetValue(socketId, out var socket))
+            {
+                socket.HandleWebGLClose(socketId, code, reason);
+            }
             webglSockets.Remove(socketId);
         } catch (Exception e) {
             UnityEngine.Debug.LogError($"Error handling close: {e}");
@@ -151,13 +163,19 @@ namespace SpacetimeDB
     [AOT.MonoPInvokeCallback(typeof(Action<int>))]
     private static void WebGLOnError(int socketId)
     {
-        if (webglSockets.TryGetValue(socketId, out var socket)) socket.HandleWebGLError(socketId);
+        if (webglSockets.TryGetValue(socketId, out var socket))
+        {
+            socket.HandleWebGLError(socketId);
+        }
     }
 
     [AOT.MonoPInvokeCallback(typeof(Action<int, int>))]
     private static void OnSocketIdReceived(int requestId, int socketId)
     {
-        if (!webglRequests.TryGetValue(requestId, out var socket)) return;
+        if (!webglRequests.TryGetValue(requestId, out var socket))
+        {
+            return;
+        }
         webglRequests.Remove(requestId);
         if (socketId >= 0)
         {
@@ -188,15 +206,24 @@ namespace SpacetimeDB
         public virtual async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light, bool? confirmedReads, ConnectionId? sessionId = null)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (_isConnecting || _isConnected) return;
+            if (_isConnecting || _isConnected)
+            {
+                return;
+            }
 
             _isConnecting = true;
             _cancelConnectRequested = false;
             try
             {
                 var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
-                if (sessionId.HasValue) uri += $"&session_id={sessionId.Value}";
-                if (light) uri += "&light=true";
+                if (sessionId.HasValue)
+                {
+                    uri += $"&session_id={sessionId.Value}";
+                }
+                if (light)
+                {
+                    uri += "&light=true";
+                }
                 if (confirmedReads.HasValue)
                 {
                     // Ensure to transmit the bool as lowercase.
@@ -234,7 +261,10 @@ namespace SpacetimeDB
         // Events will be handled via UnitySendMessage callbacks
 #else
             var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
-            if (sessionId.HasValue) uri += $"&session_id={sessionId.Value}";
+            if (sessionId.HasValue)
+            {
+                uri += $"&session_id={sessionId.Value}";
+            }
             if (light)
             {
                 uri += "&light=true";
@@ -353,7 +383,10 @@ namespace SpacetimeDB
                 }
                 catch (Exception ex)
                 {
-                    if (OnClose != null) dispatchQueue.Enqueue(() => OnClose(ex));
+                    if (OnClose != null)
+                    {
+                        dispatchQueue.Enqueue(() => OnClose(ex));
+                    }
                     return;
                 }
             }
@@ -464,7 +497,9 @@ namespace SpacetimeDB
                 var messageBSATN = new ClientMessage.BSATN();
                 var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
                 if (WebSocket_Send(_webglSocketId, encodedMessage, encodedMessage.Length) != 0)
+                {
                     throw new InvalidOperationException("WebSocket send failed.");
+                }
             }
             catch (Exception e)
             {
@@ -506,7 +541,10 @@ namespace SpacetimeDB
             catch (Exception e)
             {
                 senderTask = null;
-                if (OnSendError != null) dispatchQueue.Enqueue(() => OnSendError(e));
+                if (OnSendError != null)
+                {
+                    dispatchQueue.Enqueue(() => OnSendError(e));
+                }
             }
         }
 
@@ -531,7 +569,9 @@ namespace SpacetimeDB
                 }
                 _isConnected = true;
                 if (OnConnect != null)
+                {
                     dispatchQueue.Enqueue(() => OnConnect());
+                }
             }
         }
 

@@ -97,7 +97,10 @@ namespace SpacetimeDB
                 payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
                 using var stream = new MemoryStream(Convert.FromBase64String(payload));
                 var claims = (Claims)new DataContractJsonSerializer(typeof(Claims)).ReadObject(stream)!;
-                if (claims.Exp is not double exp || double.IsNaN(exp) || double.IsInfinity(exp)) return true;
+                if (claims.Exp is not double exp || double.IsNaN(exp) || double.IsInfinity(exp))
+                {
+                    return true;
+                }
                 var margin = Math.Max(30, claims.Iat is double iat ? (exp - iat) * 0.05 : 0);
                 return exp - now.ToUnixTimeMilliseconds() / 1000.0 <= margin;
             }

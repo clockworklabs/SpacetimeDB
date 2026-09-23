@@ -79,7 +79,10 @@ namespace SpacetimeDB
         public DbConnectionBuilder<DbConnection> WithAutomaticReconnect(AutomaticReconnectOptions? options = null)
         {
             automaticReconnect = true;
-            if (options != null) reconnectDelays = ReconnectPolicy.Resolve(options);
+            if (options != null)
+            {
+                reconnectDelays = ReconnectPolicy.Resolve(options);
+            }
             return this;
         }
 
@@ -268,7 +271,10 @@ namespace SpacetimeDB
 
             foreach (var entry in pendingReducerCalls.ToArray())
             {
-                if (!pendingReducerCalls.TryRemove(entry.Key, out var pending) || !automaticReconnect) continue;
+                if (!pendingReducerCalls.TryRemove(entry.Key, out var pending) || !automaticReconnect)
+                {
+                    continue;
+                }
                 try
                 {
                     var reducerEvent = new ReducerEvent<Reducer>(default, new Status.UnknownResult(default),
@@ -308,7 +314,9 @@ namespace SpacetimeDB
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (SpacetimeDBNetworkManager._instance != null)
+            {
                 SpacetimeDBNetworkManager._instance.StartCoroutine(ParseMessages());
+            }
 #endif
 
 #if !(UNITY_WEBGL && !UNITY_EDITOR)
@@ -495,11 +503,15 @@ namespace SpacetimeDB
 #if UNITY_WEBGL && !UNITY_EDITOR
                 yield return null;
                 while (_parseQueue.Count > 0)
+                {
 #endif
                 try
                 {
                     var message = _parseQueue.Take(_parseCancellationToken);
-                    if (message.generation != socketGeneration) continue;
+                    if (message.generation != socketGeneration)
+                    {
+                        continue;
+                    }
                     ParsedMessage parsedMessage;
                     try
                     {
@@ -531,6 +543,9 @@ namespace SpacetimeDB
                     return;
 #endif
                 }
+#if UNITY_WEBGL && !UNITY_EDITOR
+                }
+#endif
             }
 
             ParsedMessage ParseMessage(UnparsedMessage unparsed)
@@ -557,7 +572,9 @@ namespace SpacetimeDB
                         foreach (var result in batch.Results)
                         {
                             if (result.Outcome is SubscribeSetOutcome.Applied(var rows))
+                            {
                                 ParseSubscribeRows(rows, dbOps);
+                            }
                         }
                         break;
                     case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
@@ -581,7 +598,9 @@ namespace SpacetimeDB
                         // Recheck after decoding in case the socket was replaced while parsing.
                         if (!isClosing && unparsed.generation == socketGeneration &&
                             waitingOneOffQueries.TryRemove(resp.RequestId, out var completion))
+                        {
                             completion.TrySetResult(resp);
+                        }
                         break;
                     case ServerMessage.ReducerResult(var reducerResult):
                         if (!stats.ReducerRequestTracker.FinishTrackingRequest(reducerResult.RequestId, unparsed.timestamp))
@@ -624,7 +643,10 @@ namespace SpacetimeDB
 
         public void Disconnect()
         {
-            if (isClosing) return;
+            if (isClosing)
+            {
+                return;
+            }
             EndConnection();
             onDisconnect?.Invoke(null, null);
         }
@@ -696,7 +718,10 @@ namespace SpacetimeDB
 
         private void EnqueueMessage(byte[] bytes, DateTime timestamp, int generation)
         {
-            if (isClosing || generation != socketGeneration) return;
+            if (isClosing || generation != socketGeneration)
+            {
+                return;
+            }
             _parseQueue.Add(new UnparsedMessage
             {
                 bytes = bytes,
@@ -709,21 +734,32 @@ namespace SpacetimeDB
         private void EnqueueSocketAction(Action action, int generation)
         {
             if (!isClosing && generation == socketGeneration)
+            {
                 _parseQueue.Add(new UnparsedMessage { action = action, generation = generation });
+            }
         }
 
         private void StartSocket()
         {
-            if (isClosing) return;
+            if (isClosing)
+            {
+                return;
+            }
             connectionClosed = false;
             onConnectInvoked = false;
             initialConnectionId = null;
-            if (hasEverConnected) ConnectionId = ConnectionId.Random();
+            if (hasEverConnected)
+            {
+                ConnectionId = ConnectionId.Random();
+            }
             socketGeneration++;
             webSocket?.Abort();
             webSocket = CreateWebSocket();
             Log.Info($"SpacetimeDBClient: Connecting to {connectionOptions.Uri} {connectionOptions.Database}");
-            if (IsTesting) return;
+            if (IsTesting)
+            {
+                return;
+            }
             var socket = webSocket;
             var connectionId = ConnectionId;
             var generation = socketGeneration;
@@ -761,12 +797,18 @@ namespace SpacetimeDB
                 Log.Error("Received InitialConnection with an unexpected identity or connection ID.");
                 return;
             }
-            if (onConnectInvoked) return;
+            if (onConnectInvoked)
+            {
+                return;
+            }
             var reconnect = hasEverConnected;
             Identity = initial.Identity;
             initialConnectionId = initial.ConnectionId;
             ConnectionId = initial.ConnectionId;
-            if (string.IsNullOrEmpty(retainedToken)) retainedToken = initial.Token;
+            if (string.IsNullOrEmpty(retainedToken))
+            {
+                retainedToken = initial.Token;
+            }
             hasEverConnected = true;
             onConnectInvoked = true;
             reconnectAttempt = 0;
@@ -781,14 +823,23 @@ namespace SpacetimeDB
             }
             finally
             {
-                if (!automaticReconnect) onConnect = null;
+                if (!automaticReconnect)
+                {
+                    onConnect = null;
+                }
                 if (!isClosing && automaticReconnect)
                 {
-                    if (reconnect) ReplaySubscriptions();
+                    if (reconnect)
+                    {
+                        ReplaySubscriptions();
+                    }
                     else
                     {
                         preparingReplay = false;
-                        foreach (var id in subscriptions.Keys.ToArray()) SendSubscription(id, subscriptionQueries[id]);
+                        foreach (var id in subscriptions.Keys.ToArray())
+                        {
+                            SendSubscription(id, subscriptionQueries[id]);
+                        }
                     }
                 }
             }
@@ -796,7 +847,10 @@ namespace SpacetimeDB
 
         private void HandleSocketFailure(Exception? error)
         {
-            if (isClosing || connectionClosed) return;
+            if (isClosing || connectionClosed)
+            {
+                return;
+            }
             var established = onConnectInvoked;
             connectionClosed = true;
             onConnectInvoked = false;
@@ -812,9 +866,15 @@ namespace SpacetimeDB
             NextReconnect? next = null;
             if (automaticReconnect && hasEverConnected && !terminal)
             {
-                if (authError) forceTokenRefresh = true;
+                if (authError)
+                {
+                    forceTokenRefresh = true;
+                }
                 var sessionBusy = !established && error is WebSocket.CloseException { Code: 4000 };
-                if (!sessionBusy) reconnectAttempt = reconnectAttempt == int.MaxValue ? int.MaxValue : reconnectAttempt + 1;
+                if (!sessionBusy)
+                {
+                    reconnectAttempt = reconnectAttempt == int.MaxValue ? int.MaxValue : reconnectAttempt + 1;
+                }
                 var delay = ReconnectPolicy.Delay(sessionBusy ? 1 : reconnectAttempt, reconnectRandom.NextDouble(), reconnectMinDelay, reconnectMaxDelay);
                 reconnectAt = ReconnectClock() + delay.TotalSeconds;
                 next = new NextReconnect(reconnectAttempt, delay);
@@ -824,24 +884,45 @@ namespace SpacetimeDB
                 EndConnection();
             }
             FailPendingOperations(automaticReconnect ? new UnknownResultException() : new OperationCanceledException("Connection closed."));
-            foreach (var id in unsubscribeRequested.ToArray()) EndSubscription(id);
-            if (isClosing && next != null) return;
-            if (established) onDisconnect?.Invoke(error, next);
-            else onConnectError?.Invoke(error ?? new SpacetimeDBException("Connection closed before InitialConnection."), next);
+            foreach (var id in unsubscribeRequested.ToArray())
+            {
+                EndSubscription(id);
+            }
+            if (isClosing && next != null)
+            {
+                return;
+            }
+            if (established)
+            {
+                onDisconnect?.Invoke(error, next);
+            }
+            else
+            {
+                onConnectError?.Invoke(error ?? new SpacetimeDBException("Connection closed before InitialConnection."), next);
+            }
         }
 
         private void TickReconnect()
         {
-            if (isClosing) return;
+            if (isClosing)
+            {
+                return;
+            }
             if (tokenTask != null)
             {
-                if (!tokenTask.IsCompleted) return;
+                if (!tokenTask.IsCompleted)
+                {
+                    return;
+                }
                 var completed = tokenTask;
                 tokenTask = null;
                 try
                 {
                     retainedToken = completed.GetAwaiter().GetResult();
-                    if (string.IsNullOrEmpty(retainedToken)) throw new InvalidOperationException("Token provider returned an empty token.");
+                    if (string.IsNullOrEmpty(retainedToken))
+                    {
+                        throw new InvalidOperationException("Token provider returned an empty token.");
+                    }
                     forceTokenRefresh = false;
                     usedFreshToken = true;
                     StartSocket();
@@ -853,7 +934,10 @@ namespace SpacetimeDB
                 }
                 return;
             }
-            if (reconnectAt is not double due || ReconnectClock() < due) return;
+            if (reconnectAt is not double due || ReconnectClock() < due)
+            {
+                return;
+            }
             reconnectAt = null;
             usedFreshToken = false;
             if (tokenProvider != null && (forceTokenRefresh || ReconnectPolicy.TokenNeedsRefresh(retainedToken, DateTimeOffset.UtcNow)))
@@ -868,7 +952,10 @@ namespace SpacetimeDB
                     HandleSocketFailure(error);
                 }
             }
-            else StartSocket();
+            else
+            {
+                StartSocket();
+            }
         }
 
         private void EndConnection()
@@ -904,7 +991,10 @@ namespace SpacetimeDB
 
         private void EndSubscription(uint id)
         {
-            if (!subscriptions.TryGetValue(id, out var handle)) return;
+            if (!subscriptions.TryGetValue(id, out var handle))
+            {
+                return;
+            }
             RemoveSubscription(id);
             try { handle.OnEnded(MakeSubscriptionEventContext()); }
             catch (Exception error) { Log.Exception(error); }
@@ -947,11 +1037,17 @@ namespace SpacetimeDB
             }
             replayRequestId = null;
             replayQueryIds = null;
-            foreach (var table in Db.AllTables) table.AddSnapshotDeletes(update);
+            foreach (var table in Db.AllTables)
+            {
+                table.AddSnapshotDeletes(update);
+            }
             ApplyUpdate(ToEventContext(new Event<Reducer>.SubscribeApplied()), update);
             foreach (var result in batch.Results)
             {
-                if (!subscriptions.TryGetValue(result.QuerySetId.Id, out var handle)) continue;
+                if (!subscriptions.TryGetValue(result.QuerySetId.Id, out var handle))
+                {
+                    continue;
+                }
                 try
                 {
                     if (result.Outcome is SubscribeSetOutcome.Error(var message))
@@ -959,7 +1055,10 @@ namespace SpacetimeDB
                         RemoveSubscription(result.QuerySetId.Id);
                         handle.OnError(ToErrorContext(new SpacetimeDBException(message)));
                     }
-                    else handle.OnApplied(MakeSubscriptionEventContext());
+                    else
+                    {
+                        handle.OnApplied(MakeSubscriptionEventContext());
+                    }
                 }
                 catch (Exception error)
                 {
@@ -991,7 +1090,10 @@ namespace SpacetimeDB
 
         private void ApplyMessage(ParsedMessage parsed)
         {
-            if (parsed.generation != socketGeneration || isClosing) return;
+            if (parsed.generation != socketGeneration || isClosing)
+            {
+                return;
+            }
             if (parsed.action != null)
             {
                 parsed.action();
@@ -1149,7 +1251,10 @@ namespace SpacetimeDB
 
         void IDbConnection.InternalCallReducer<T>(T args)
         {
-            if (automaticReconnect && !IsActive) throw new InvalidOperationException("Not connected to server.");
+            if (automaticReconnect && !IsActive)
+            {
+                throw new InvalidOperationException("Not connected to server.");
+            }
             if (webSocket?.IsConnected != true)
             {
                 Log.Error("Cannot call reducer, not connected to server!");
@@ -1183,7 +1288,10 @@ namespace SpacetimeDB
             TArgs args,
             ProcedureCallback<TReturn> callback)
         {
-            if (automaticReconnect && !IsActive) throw new InvalidOperationException("Not connected to server.");
+            if (automaticReconnect && !IsActive)
+            {
+                throw new InvalidOperationException("Not connected to server.");
+            }
             if (webSocket?.IsConnected != true)
             {
                 Log.Error("Cannot call procedure, not connected to server!");
@@ -1208,14 +1316,22 @@ namespace SpacetimeDB
                 Log.Error("Cannot subscribe, not connected to server!");
                 return null;
             }
-            if (isClosing) throw new InvalidOperationException("Connection closed.");
+            if (isClosing)
+            {
+                throw new InvalidOperationException("Connection closed.");
+            }
             var querySetId = querySetIdAllocator.Next();
             subscriptions[querySetId] = handle;
             // Copy once: callers may mutate their array before the asynchronous send or replay.
             var queries = querySqls.ToList();
-            if (automaticReconnect) subscriptionQueries[querySetId] = queries;
+            if (automaticReconnect)
+            {
+                subscriptionQueries[querySetId] = queries;
+            }
             if (!automaticReconnect || (IsActive && !preparingReplay))
+            {
                 SendSubscription(querySetId, queries);
+            }
             return new QuerySetId(querySetId);
         }
 

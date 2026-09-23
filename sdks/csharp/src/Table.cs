@@ -297,12 +297,17 @@ namespace SpacetimeDB
 
         void IRemoteTableHandle.AddSnapshotDeletes(ParsedDatabaseUpdate update)
         {
-            if (IsEventTable) return;
+            if (IsEventTable)
+            {
+                return;
+            }
             var delta = ((ParsedTableUpdate)update.UpdateForTable(this)).Delta;
             foreach (var entry in Entries.Entries)
             {
                 for (var i = 0u; i < Entries.Multiplicity(entry.Key); i++)
+                {
                     delta.Remove(entry.Key, entry.Value);
+                }
             }
         }
 
