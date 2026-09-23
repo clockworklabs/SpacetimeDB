@@ -5,6 +5,9 @@ a one-off element. Use `data-role` when the same interface can
 appear more than once. These attributes do not prescribe the layout, data
 model, libraries, or transport.
 
+Each exposed server operation completes every valid request, including requests that
+overlap, without relying on the browser to retry it.
+
 <!-- interface:http -->
 For error responses, use HTTP 401 or 403 for access errors and 400, 409, or 422 for input errors.
 <!-- /interface -->

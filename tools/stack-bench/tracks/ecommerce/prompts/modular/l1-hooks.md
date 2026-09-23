@@ -5,6 +5,9 @@ one-off element. Use `data-role` when the same interface can appear more than
 once. These attributes do not prescribe the layout, data model, libraries, or
 transport.
 
+Each exposed server operation completes every valid request, including requests
+that overlap, without relying on the browser to retry it.
+
 ## Catalog controls
 
 | Element ID | Observable element |
