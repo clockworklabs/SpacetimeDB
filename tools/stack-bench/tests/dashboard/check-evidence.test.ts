@@ -53,7 +53,9 @@ test('check details retain measured and unmeasured evidence without leaking cred
   writeArtifact(join(output, 'l1-fix1-grading', 'bundle.json'), bundle);
   rmSync(join(output, 'l1-fix1-grading', 'bundle.json'));
   const incomplete = read();
-  assert.equal(incomplete.grades[1]?.error, 'grade bundle is missing');
+  // Oldest first: the final grade comes after every repair grade.
+  assert.deepEqual(incomplete.grades.map(grade => grade.id), ['l1-fix1-grading', 'grading']);
+  assert.equal(incomplete.grades[0]?.error, 'grade bundle is missing');
   assert.equal(incomplete.checks[0]?.observations.length, 2);
-  assert.equal(incomplete.checks[0]?.observations[1], null);
+  assert.equal(incomplete.checks[0]?.observations[0], null);
 });

@@ -664,7 +664,8 @@ function gradeDirectories(executionDirectory: string): AttemptCheckGrade[] {
       return { id: entry.name, level: level === null ? null : Number(level),
         round: match?.[3] === undefined ? 0 : Number(match[3]), score: null };
     })
-    .sort((left, right) => (left.level ?? 0) - (right.level ?? 0)
+    // The final `grading` directory has no level and comes after every level's grades.
+    .sort((left, right) => (left.level ?? Infinity) - (right.level ?? Infinity)
       || (left.round ?? 0) - (right.round ?? 0));
 }
 
