@@ -981,18 +981,19 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     const latest = executions.at(-1);
     const latestRun = latest ? runs.get(latest.id) : undefined;
     const dependency = attempt.plan.mode?.id === 'dependency';
-    let rawPoints = false;
-    const checkpoints = executions.flatMap((execution, index) => {
+    const points = executions.flatMap((execution, index) => {
       const scored = dependency ? scoreCheckpoints?.(attempt.plan, attempt.executions[index]!) ?? null : null;
-      return (runs.get(execution.id)?.checkpoints ?? []).map(checkpoint => {
-        const completion = scored?.(checkpoint) ?? null;
-        if (!completion) rawPoints = true;
-        return { ...checkpoint, completion: completion ?? checkpoint.completion,
-          excluded: execution.status === 'invalid',
-          evidence: { ...checkpoint.evidence, path: `${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${checkpoint.evidence.path}` },
-          cost: sumCostEvidence([checkpoint.executionCost, ...executions.slice(0, index).map(item => item.cost)]) };
-      });
-    }).map((checkpoint, index) => ({ ...checkpoint, sequence: index + 1 }));
+      return (runs.get(execution.id)?.checkpoints ?? []).map(checkpoint => ({ execution, index, checkpoint,
+        completion: scored?.(checkpoint) ?? null }));
+    });
+    // One basis per curve: when any point cannot be replayed, every point stays raw.
+    const rawPoints = points.some(point => !point.completion);
+    const checkpoints = points.map(({ execution, index, checkpoint, completion }, at) => ({ ...checkpoint,
+      completion: rawPoints ? checkpoint.completion : completion!,
+      excluded: execution.status === 'invalid',
+      evidence: { ...checkpoint.evidence, path: `${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${checkpoint.evidence.path}` },
+      cost: sumCostEvidence([checkpoint.executionCost, ...executions.slice(0, index).map(item => item.cost)]),
+      sequence: at + 1 }));
     const selected = attempt.plan.condition.requested.levels.flatMap(level =>
       (level.selection.scoredChecks ?? []).map(check => ({ id: check.stableKey, points: check.points })));
     const accepted = latestRun?.checkpoints?.findLast(checkpoint => checkpoint.accepted);

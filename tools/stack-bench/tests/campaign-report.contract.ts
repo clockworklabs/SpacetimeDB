@@ -863,6 +863,8 @@ test('dependency curve points use progression scoring, or say they are raw', () 
     evidence: { path: 'checkpoints/1.json', sha256: 'c'.repeat(64) },
     cost: { status: 'exact', costUsd: 1 }, executionCost: { status: 'exact', costUsd: 1 }, completion: raw,
     checks: [{ id: 'a', status: 'passed' }, { id: 'b', status: 'passed' }] }];
+  graded.checkpoints.push({ ...graded.checkpoints[0]!, sequence: 2,
+    evidence: { path: 'checkpoints/2.json', sha256: 'd'.repeat(64) } });
   const state = finishCampaignExecution(claimed.state, claimed.claim.executionId, { exitCode: 0, run: graded }, { now: created });
   for (const attempt of state.attempts) attempt.plan.mode = { ...attempt.plan.mode, id: 'dependency' };
   // A raw pass can be a blocked descendant under the dependency rules.
@@ -877,6 +879,10 @@ test('dependency curve points use progression scoring, or say they are raw', () 
   const unreplayed = attemptFor(() => null);
   assert.deepEqual(unreplayed.attempt.curve.checkpoints[0]!.completion, raw);
   assert.equal(unreplayed.attempt.curveBasis, 'raw');
+  // One unreplayable point keeps the whole series raw rather than mixing bases.
+  const partial = attemptFor(() => checkpoint => checkpoint.sequence === 1 ? scored : null);
+  assert.deepEqual(partial.attempt.curve.checkpoints.map(point => point.completion), [raw, raw]);
+  assert.equal(partial.attempt.curveBasis, 'raw');
   assert.match(renderCampaignHtml(unreplayed.report), /curve shows raw grade outcomes/);
   assert.doesNotMatch(renderCampaignHtml(progression.report), /curve shows raw grade outcomes/);
 });
