@@ -26,12 +26,15 @@ use spacetimedb_data_structures::map::{
     HashMap, HashSet, IntMap,
 };
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::traits::ViewScopeChange;
 use spacetimedb_durability::TxOffset;
+use spacetimedb_execution::{RelValue, Row};
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
+use spacetimedb_lib::{hash_unscoped_view_args, AlgebraicValue, ConnectionId, Identity, ProductValue};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::u256;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
@@ -66,6 +69,10 @@ pub struct Plan {
     hash: QueryHash,
     sql: String,
     plans: Vec<SubscriptionPlan>,
+    /// For a plan bound to the scopes of the scoped views it reads,
+    /// the identity included in its hash, if its result also depends on the caller's identity.
+    /// See [`QueryHash::from_string_and_view_scopes`].
+    scope_hash_identity: Option<Identity>,
 }
 
 impl CollectViews for Plan {
@@ -79,7 +86,40 @@ impl CollectViews for Plan {
 impl Plan {
     /// Create a new subscription plan to be cached
     pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String) -> Self {
-        Self { plans, hash, sql: text }
+        Self {
+            plans,
+            hash,
+            sql: text,
+            scope_hash_identity: None,
+        }
+    }
+
+    /// Create a new subscription plan bound to the scopes of the scoped views it reads.
+    ///
+    /// `hash` must be computed by [`QueryHash::from_string_and_view_scopes`]
+    /// with `scope_hash_identity` and the scopes to which `plans` are bound.
+    pub fn new_scoped(
+        plans: Vec<SubscriptionPlan>,
+        hash: QueryHash,
+        text: String,
+        scope_hash_identity: Option<Identity>,
+    ) -> Self {
+        Self {
+            plans,
+            hash,
+            sql: text,
+            scope_hash_identity,
+        }
+    }
+
+    /// The hash of this plan's query bound to the scopes `view_scopes` rather than its own.
+    pub fn hash_for_view_scopes(&self, view_scopes: &[(ViewId, u256)]) -> QueryHash {
+        QueryHash::from_string_and_view_scopes(&self.sql, self.scope_hash_identity, view_scopes)
+    }
+
+    /// The arg hashes of the scopes to which the scoped views read by this plan are bound, sorted by view id.
+    pub fn view_scopes(&self) -> &[(ViewId, u256)] {
+        self.plans.first().map_or(&[][..], |plan| plan.params().view_scopes())
     }
 
     /// Returns the query hash for this subscription
@@ -589,6 +629,96 @@ struct ComputedQueries {
     event: Arc<ModuleEvent>,
     caller: Option<Arc<ClientConnectionSender>>,
     module_def_version: RawModuleDefVersion,
+}
+
+/// The updates computed for a transaction, before they are sent to the send worker.
+#[derive(Default)]
+struct ComputedUpdates {
+    updates: Vec<ClientUpdate>,
+    errs: Vec<(ClientId, Box<str>)>,
+    v2_updates: Vec<V2ClientUpdate>,
+    v2_errs: Vec<(SubscriptionIdV2, Box<str>)>,
+    metrics: ExecutionMetrics,
+}
+
+/// The subscriptions of clients to queries over scoped views which must move to a different scope,
+/// keyed by the client and the query they are subscribed to, and mapped to the query they must move to.
+type Rescoped = HashMap<(ClientId, QueryHash), Query>;
+
+/// Clients whose subscriptions to a query over scoped views could not be moved to a different scope.
+type RescopingErrors = Vec<((ClientId, QueryHash), Box<str>)>;
+
+/// Compiles a query over scoped views for a subscriber, binding it to their scopes.
+pub type RebindQuery<'a> = dyn FnMut(&Plan, Identity, Vec<(ViewId, u256)>) -> Result<Plan, DBError> + 'a;
+
+/// The rows a subscriber loses and gains when moving between scopes, as `(deletes, inserts)`.
+type RescopeDiff = Arc<(Vec<ProductValue>, Vec<ProductValue>)>;
+
+/// Convert a row returned by `plan` into the row sent to clients,
+/// i.e. excluding the private columns of views.
+fn client_row(plan: &SubscriptionPlan, row: Row<'_>) -> anyhow::Result<ProductValue> {
+    if plan.is_view() {
+        let cols = ColList::from_iter(plan.num_private_cols()..plan.num_cols());
+        Ok(row.project_product(&cols)?)
+    } else {
+        Ok(row.to_product_value())
+    }
+}
+
+/// Returns the difference between the rows of `old` before the transaction `tx`
+/// and the rows of `new` after it, as `(deletes, inserts)`.
+///
+/// This is the update for a client whose subscription moves from `old` to `new` in `tx`.
+/// Like [`eval_delta`], this implements bag semantics.
+fn rescope_diff(
+    tx: &DeltaTx,
+    metrics: &mut ExecutionMetrics,
+    old: &Plan,
+    new: &Plan,
+) -> anyhow::Result<(Vec<ProductValue>, Vec<ProductValue>)> {
+    // For each row, its count after the move less its count before it.
+    let mut counts: HashMap<ProductValue, i64> = HashMap::new();
+    let mut add_rows = |plan: &SubscriptionPlan, metrics: &mut ExecutionMetrics, sign: i64| {
+        let mut rows = Vec::new();
+        plan.base_plan().execute(tx, plan.params(), metrics, &mut |row| {
+            rows.push(client_row(plan, row)?);
+            Ok(())
+        })?;
+        for row in rows {
+            *counts.entry(row).or_default() += sign;
+        }
+        anyhow::Ok(())
+    };
+    // The rows of `new` after the transaction.
+    for plan in new.plans_fragments() {
+        add_rows(plan, metrics, 1)?;
+    }
+    // Less the rows of `old` before the transaction,
+    // which are its rows after the transaction, less those it inserted, plus those it deleted.
+    for plan in old.plans_fragments() {
+        add_rows(plan, metrics, -1)?;
+    }
+    for plan in old.plans_fragments() {
+        if let Some(delta) = eval_delta(tx, metrics, plan)? {
+            let to_product_value = |row: RelValue<'_>| match row {
+                RelValue::Row(row) => row.to_product_value(),
+                RelValue::Projection(row) => row,
+            };
+            for row in delta.inserts {
+                *counts.entry(to_product_value(row)).or_default() += 1;
+            }
+            for row in delta.deletes {
+                *counts.entry(to_product_value(row)).or_default() -= 1;
+            }
+        }
+    }
+
+    let (mut deletes, mut inserts) = (Vec::new(), Vec::new());
+    for (row, count) in counts {
+        let rows = if count < 0 { &mut deletes } else { &mut inserts };
+        rows.extend(std::iter::repeat_n(row, count.unsigned_abs() as usize));
+    }
+    Ok((deletes, inserts))
 }
 
 // Wraps a sender so that it will increment a gauge.
@@ -1369,6 +1499,321 @@ impl SubscriptionManager {
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> (ExecutionMetrics, Vec<SubscriptionIdV2>) {
+        let computed = self.compute_updates(tx, bsatn_rlb_pool, &event, &HashSet::default());
+        self.send_computed_updates(tx_offset, computed, module_def_version, event, caller)
+    }
+
+    /// Like [`Self::eval_updates_sequential`],
+    /// but also moves the subscriptions of scoped view subscribers whose scope changed in the transaction.
+    ///
+    /// Each such subscription is moved from its query bound to the subscriber's previous scope
+    /// to the same query bound to their new scope,
+    /// which `rebind` compiles if no other subscriber shares it.
+    /// Rather than the update of its previous query,
+    /// the subscriber receives the difference between the rows of its previous query before the transaction
+    /// and the rows of its new query after the transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub fn eval_updates_with_rescoping(
+        &mut self,
+        (tx, tx_offset): (&DeltaTx, TransactionOffset),
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        module_def_version: RawModuleDefVersion,
+        event: Arc<ModuleEvent>,
+        caller: Option<Arc<ClientConnectionSender>>,
+        scope_changes: &[ViewScopeChange],
+        rebind: &mut RebindQuery<'_>,
+    ) -> (ExecutionMetrics, Vec<SubscriptionIdV2>) {
+        let (rescoped, rebind_errs) = self.plan_rescoping(scope_changes, rebind);
+        let excluded = rescoped
+            .keys()
+            .copied()
+            .chain(rebind_errs.iter().map(|(key, _)| *key))
+            .collect::<HashSet<_>>();
+
+        let mut computed = self.compute_updates(tx, bsatn_rlb_pool, &event, &excluded);
+        self.compute_rescoped_updates(tx, bsatn_rlb_pool, &rescoped, &mut computed);
+        self.push_rescoping_errors(&rebind_errs, &mut computed);
+
+        let results = self.send_computed_updates(tx_offset, computed, module_def_version, event, caller);
+        self.move_rescoped_subscriptions(&rescoped);
+        results
+    }
+
+    /// Determine which subscriptions must move to a different scope,
+    /// because their subscribers' scopes for scoped views they read changed in `scope_changes`,
+    /// compiling the queries they move to with `rebind` if no other subscriber shares them.
+    fn plan_rescoping(
+        &self,
+        scope_changes: &[ViewScopeChange],
+        rebind: &mut RebindQuery<'_>,
+    ) -> (Rescoped, RescopingErrors) {
+        // The new scope of each subscriber for each scoped view.
+        // A later change supersedes an earlier one.
+        let mut new_scopes: HashMap<Identity, BTreeMap<ViewId, u256>> = HashMap::new();
+        for change in scope_changes {
+            let arg_hash = **change.arg_hash.as_u256().expect("view arg hashes are u256");
+            new_scopes
+                .entry(change.subscriber)
+                .or_default()
+                .insert(change.view_id, arg_hash);
+        }
+
+        let mut rescoped = Rescoped::new();
+        let mut errs = RescopingErrors::new();
+        // The connections of an identity share its scopes, so they move to the same queries.
+        let mut moves: HashMap<(QueryHash, Identity), Result<Query, Box<str>>> = HashMap::new();
+
+        for (client_id, ci) in &self.clients {
+            if ci.dropped.load(Ordering::Acquire) {
+                continue;
+            }
+            let Some(scopes) = new_scopes.get(&client_id.0) else {
+                continue;
+            };
+            let hashes = ci
+                .subscription_ref_count
+                .keys()
+                .chain(&ci.legacy_subscriptions)
+                .copied()
+                .collect::<HashSet<_>>();
+
+            for old_hash in hashes {
+                let Some(qstate) = self.queries.get(&old_hash) else {
+                    continue;
+                };
+                let old = &qstate.query;
+                let scoped_view_ids = old.scoped_view_ids();
+                if !scoped_view_ids.iter().any(|view_id| scopes.contains_key(view_id)) {
+                    continue;
+                }
+
+                let old_scopes = old.view_scopes();
+                let view_scopes = scoped_view_ids
+                    .into_iter()
+                    .map(|view_id| {
+                        let old_scope = || {
+                            old_scopes
+                                .binary_search_by_key(&view_id, |(view_id, _)| *view_id)
+                                .map(|i| old_scopes[i].1)
+                                .unwrap_or_else(|_| hash_unscoped_view_args().to_u256())
+                        };
+                        (view_id, scopes.get(&view_id).copied().unwrap_or_else(old_scope))
+                    })
+                    .collect::<Vec<_>>();
+                let new_hash = old.hash_for_view_scopes(&view_scopes);
+                if new_hash == old_hash {
+                    continue;
+                }
+
+                let new = moves
+                    .entry((old_hash, client_id.0))
+                    .or_insert_with(|| match self.queries.get(&new_hash) {
+                        Some(qstate) => Ok(qstate.query.clone()),
+                        None => rebind(old, client_id.0, view_scopes)
+                            .map(Arc::new)
+                            .map_err(|err| err.to_string().into()),
+                    })
+                    .clone();
+                match new {
+                    Ok(new) => {
+                        rescoped.insert((*client_id, old_hash), new);
+                    }
+                    Err(err) => errs.push(((*client_id, old_hash), err)),
+                }
+            }
+        }
+
+        (rescoped, errs)
+    }
+
+    /// Compute the updates for the subscriptions in `rescoped`,
+    /// each being the difference between the rows of the query it moves from before the transaction
+    /// and the rows of the query it moves to after the transaction.
+    fn compute_rescoped_updates(
+        &self,
+        tx: &DeltaTx,
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        rescoped: &Rescoped,
+        computed: &mut ComputedUpdates,
+    ) {
+        let mut diffs: HashMap<(QueryHash, QueryHash), Result<RescopeDiff, Box<str>>> = HashMap::new();
+
+        for (&(client_id, old_hash), new) in rescoped {
+            let Some(old_state) = self.queries.get(&old_hash) else {
+                continue;
+            };
+            let old = &old_state.query;
+            let diff = diffs
+                .entry((old_hash, new.hash()))
+                .or_insert_with(|| {
+                    rescope_diff(tx, &mut computed.metrics, old, new)
+                        .map(Arc::new)
+                        .map_err(|err| {
+                            DBError::WithSql {
+                                sql: new.sql.as_str().into(),
+                                error: Box::new(DBError::Other(err)),
+                            }
+                            .to_string()
+                            .into()
+                        })
+                })
+                .clone();
+            let diff = match diff {
+                Ok(diff) => diff,
+                Err(err) => {
+                    self.push_rescoping_errors(&[((client_id, old_hash), err)], computed);
+                    continue;
+                }
+            };
+            let (deletes, inserts) = &*diff;
+            if (deletes.is_empty() && inserts.is_empty()) || new.returns_event_table() {
+                continue;
+            }
+
+            let updates = UpdatesRelValue {
+                deletes: deletes.iter().cloned().map(RelValue::from).collect(),
+                inserts: inserts.iter().cloned().map(RelValue::from).collect(),
+            };
+            let table_id = new.subscribed_table_id();
+            let table_name = new.subscribed_table_name().clone();
+
+            if old_state.all_v1_clients().any(|id| *id == client_id) {
+                let client = &self.clients[&client_id].outbound_ref;
+                let update = match client.config.protocol {
+                    Protocol::Binary => {
+                        let (update, num_rows, num_bytes) = updates.encode::<ws_v1::BsatnFormat>(bsatn_rlb_pool);
+                        computed.metrics.bytes_sent_to_clients += num_bytes;
+                        ws_v1::FormatSwitch::Bsatn(ws_v1::SingleQueryUpdate { update, num_rows })
+                    }
+                    Protocol::Text => {
+                        let (update, num_rows, num_bytes) =
+                            updates.encode::<ws_v1::JsonFormat>(&JsonRowListBuilderFakePool);
+                        computed.metrics.bytes_sent_to_clients += num_bytes;
+                        ws_v1::FormatSwitch::Json(ws_v1::SingleQueryUpdate { update, num_rows })
+                    }
+                };
+                computed.updates.push(ClientUpdate {
+                    id: client_id,
+                    table_id,
+                    table_name: table_name.clone(),
+                    update,
+                });
+            }
+
+            let query_set_ids = old_state
+                .v2_subscriptions
+                .iter()
+                .filter(|(id, _)| *id == client_id)
+                .map(|(_, query_set_id)| *query_set_id)
+                .collect::<Vec<_>>();
+            if !query_set_ids.is_empty() {
+                let (deletes, _) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                    bsatn_rlb_pool.take_row_list_builder(),
+                    updates.deletes.iter(),
+                );
+                let (inserts, _) = <ws_v1::BsatnFormat as BuildableWebsocketFormat>::encode_list(
+                    bsatn_rlb_pool.take_row_list_builder(),
+                    updates.inserts.iter(),
+                );
+                computed.metrics.bytes_sent_to_clients += deletes.num_bytes() + inserts.num_bytes();
+                let rows = TableUpdateRows::PersistentTable(ws_v2::PersistentTableRows { inserts, deletes });
+                for query_set_id in query_set_ids {
+                    computed.v2_updates.push(V2ClientUpdate {
+                        id: client_id,
+                        query_set_id,
+                        table_name: table_name.clone(),
+                        rows: rows.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Report `errs` to the affected subscriptions.
+    fn push_rescoping_errors(&self, errs: &[((ClientId, QueryHash), Box<str>)], computed: &mut ComputedUpdates) {
+        for ((client_id, hash), err) in errs {
+            let Some(qstate) = self.queries.get(hash) else {
+                continue;
+            };
+            if qstate.all_v1_clients().any(|id| id == client_id) {
+                computed.errs.push((*client_id, err.clone()));
+            }
+            for subscription_id in qstate.v2_subscriptions.iter().filter(|(id, _)| id == client_id) {
+                computed.v2_errs.push((*subscription_id, err.clone()));
+            }
+        }
+    }
+
+    /// Move the subscriptions in `rescoped` to the queries they map to,
+    /// by re-registering each subscription which contains one of them.
+    fn move_rescoped_subscriptions(&mut self, rescoped: &Rescoped) {
+        let client_ids = rescoped.keys().map(|(client_id, _)| *client_id).collect::<HashSet<_>>();
+        for client_id in client_ids {
+            let Some(ci) = self.clients.get(&client_id) else {
+                continue;
+            };
+            let client = ci.outbound_ref.clone();
+            let is_moved = |hash: &QueryHash| rescoped.contains_key(&(client_id, *hash));
+            let moved_query = |hash: &QueryHash| {
+                rescoped
+                    .get(&(client_id, *hash))
+                    .cloned()
+                    .unwrap_or_else(|| self.queries[hash].query.clone())
+            };
+
+            let v1 = ci
+                .v1_subscriptions
+                .iter()
+                .filter(|(_, hashes)| hashes.iter().any(is_moved))
+                .map(|((_, query_id), hashes)| (*query_id, hashes.iter().map(moved_query).collect::<Vec<_>>()))
+                .collect::<Vec<_>>();
+            let v2 = ci
+                .v2_subscriptions
+                .iter()
+                .filter(|(_, hashes)| hashes.iter().any(is_moved))
+                .map(|((_, query_set_id), hashes)| (*query_set_id, hashes.iter().map(moved_query).collect::<Vec<_>>()))
+                .collect::<Vec<_>>();
+            let legacy = ci
+                .legacy_subscriptions
+                .iter()
+                .any(is_moved)
+                .then(|| ci.legacy_subscriptions.iter().map(moved_query).collect::<Vec<_>>());
+
+            for (query_id, queries) in v1 {
+                let res = self
+                    .remove_subscription(client_id, query_id)
+                    .and_then(|_| self.add_subscription_multi(client.clone(), queries, query_id));
+                if let Err(err) = res {
+                    tracing::warn!(?client_id, ?query_id, "failed to move subscription to new scope: {err}");
+                }
+            }
+            for (query_set_id, queries) in v2 {
+                let res = self
+                    .remove_subscription_v2(client_id, query_set_id)
+                    .and_then(|_| self.add_subscription_v2(client.clone(), queries, query_set_id));
+                if let Err(err) = res {
+                    tracing::warn!(
+                        ?client_id,
+                        ?query_set_id,
+                        "failed to move subscription to new scope: {err}"
+                    );
+                }
+            }
+            if let Some(queries) = legacy {
+                self.set_legacy_subscription(client.clone(), queries);
+            }
+        }
+    }
+
+    /// Compute the updates of every query affected by the transaction,
+    /// except for the subscriptions of the clients to the queries in `excluded`.
+    fn compute_updates(
+        &self,
+        tx: &DeltaTx,
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        event: &ModuleEvent,
+        excluded: &HashSet<(ClientId, QueryHash)>,
+    ) -> ComputedUpdates {
         //let span = tracing::info_span!("eval_incr").entered();
 
         let (updates, errs, mut metrics) = if self.queries.is_empty() {
@@ -1376,7 +1821,7 @@ impl SubscriptionManager {
             <_>::default()
         } else {
             let tables = &event.status.database_update().unwrap().tables;
-            self.eval_updates_sequential_inner(tx, bsatn_rlb_pool, tables)
+            self.eval_updates_sequential_inner(tx, bsatn_rlb_pool, tables, excluded)
         };
 
         let (v2_updates, v2_errs, metrics_v2) = if self.queries.is_empty() {
@@ -1384,9 +1829,35 @@ impl SubscriptionManager {
             <_>::default()
         } else {
             let tables = &event.status.database_update().unwrap().tables;
-            self.eval_updates_sequential_inner_v2(tx, bsatn_rlb_pool, tables)
+            self.eval_updates_sequential_inner_v2(tx, bsatn_rlb_pool, tables, excluded)
         };
         metrics.merge(metrics_v2);
+
+        ComputedUpdates {
+            updates,
+            errs,
+            v2_updates,
+            v2_errs,
+            metrics,
+        }
+    }
+
+    /// Send the `computed` updates to the send worker.
+    fn send_computed_updates(
+        &self,
+        tx_offset: TransactionOffset,
+        computed: ComputedUpdates,
+        module_def_version: RawModuleDefVersion,
+        event: Arc<ModuleEvent>,
+        caller: Option<Arc<ClientConnectionSender>>,
+    ) -> (ExecutionMetrics, Vec<SubscriptionIdV2>) {
+        let ComputedUpdates {
+            updates,
+            errs,
+            v2_updates,
+            v2_errs,
+            metrics,
+        } = computed;
 
         let failed_v2_subscriptions: HashSet<SubscriptionIdV2> = v2_errs.iter().map(|(id, _)| *id).collect();
         let queries = ComputedQueries {
@@ -1417,6 +1888,7 @@ impl SubscriptionManager {
         tx: &DeltaTx,
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
         tables: &[DatabaseTableUpdate],
+        excluded: &HashSet<(ClientId, QueryHash)>,
     ) -> V2EvalUpdatesResult {
         #[derive(Default)]
         struct FoldState {
@@ -1492,7 +1964,7 @@ impl SubscriptionManager {
                     .plans_fragments()
                     .map(move |plan_fragment| (qstate, plan_fragment, hash))
             })
-            .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
+            .fold(FoldState::default(), |mut acc, (qstate, plan, hash)| {
                 let table_name = plan.subscribed_table_name().clone();
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
@@ -1522,6 +1994,9 @@ impl SubscriptionManager {
                             plan.returns_event_table(),
                         );
                         for &(client_id, query_set_id) in qstate.v2_subscriptions.iter() {
+                            if excluded.contains(&(client_id, hash)) {
+                                continue;
+                            }
                             acc.updates.push(V2ClientUpdate {
                                 id: client_id,
                                 query_set_id,
@@ -1545,6 +2020,7 @@ impl SubscriptionManager {
         tx: &DeltaTx,
         bsatn_rlb_pool: &BsatnRowListBuilderPool,
         tables: &[DatabaseTableUpdate],
+        excluded: &HashSet<(ClientId, QueryHash)>,
     ) -> (Vec<ClientUpdate>, Vec<(ClientId, Box<str>)>, ExecutionMetrics) {
         use ws_v1::FormatSwitch::{Bsatn, Json};
 
@@ -1650,7 +2126,10 @@ impl SubscriptionManager {
                     ws_v1::SingleQueryUpdate { update, num_rows }
                 }
 
-                let clients_for_query = qstate.all_v1_clients();
+                let hash = qstate.query.hash();
+                let clients_for_query = qstate
+                    .all_v1_clients()
+                    .filter(move |id| !excluded.contains(&(**id, hash)));
 
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {

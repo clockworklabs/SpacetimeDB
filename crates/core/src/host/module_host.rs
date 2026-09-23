@@ -3425,6 +3425,15 @@ impl ModuleHost {
 
         let return_table = || optimized.first().and_then(|plan| plan.return_table());
 
+        // Scoped views select the rows of the caller's scopes.
+        let mut scoped_view_ids = optimized
+            .iter()
+            .flat_map(|plan| plan.scoped_view_ids())
+            .collect::<Vec<_>>();
+        scoped_view_ids.sort();
+        scoped_view_ids.dedup();
+        let view_scopes = tx.view_scopes_for(scoped_view_ids, auth.caller());
+
         let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
         let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
         let num_private_cols = return_table()
@@ -3442,7 +3451,7 @@ impl ModuleHost {
         // string, so narrow here rather than changing those message types.
         let table_name = RawIdentifier::new(&*table_name);
         let delta_tx = DeltaTx::from(tx);
-        let params = ExecutionParams::from_auth(auth);
+        let params = ExecutionParams::from_auth(auth).with_view_scopes(view_scopes);
         let plan_fragments = optimized.iter();
         let (rows, _, metrics) = if returns_view_table {
             execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, &delta_tx, &params, rlb_pool)

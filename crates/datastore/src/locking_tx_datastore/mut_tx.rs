@@ -3186,6 +3186,11 @@ impl MutTxId {
         Ok(needs_materialization)
     }
 
+    /// Did the scope of any subscriber of a scoped view change in this transaction?
+    pub fn has_view_scope_changes(&self) -> bool {
+        !self.view_instances.scope_changes.is_empty()
+    }
+
     /// Decrement this subscriber's refcount for the scoped view `view_id`,
     /// i.e. for its resolver's instance and the instance of its body for the subscriber's current scope.
     pub fn unsubscribe_scoped_view(&mut self, view_id: ViewId, subscriber: Identity) -> Result<()> {

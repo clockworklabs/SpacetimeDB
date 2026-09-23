@@ -1,3 +1,4 @@
+use super::ViewCallInfo;
 use super::{
     committed_state::CommittedState,
     datastore::{Result, TxMetrics},
@@ -8,8 +9,9 @@ use crate::{error::IndexError, execution_context::ExecutionContext};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_primitives::{ColList, IndexId, TableId};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_lib::{unscoped_view_arg_hash_value, Identity};
+use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
+use spacetimedb_sats::{u256, AlgebraicValue};
 use spacetimedb_schema::{reducer_name::ReducerName, schema::TableSchema};
 use spacetimedb_table::{
     table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter},
@@ -125,6 +127,37 @@ impl StateView for TxId {
 }
 
 impl TxId {
+    /// Returns the arg hashes of the rows which `subscriber` observes
+    /// in each of the scoped views `view_ids`, sorted by view id.
+    ///
+    /// This reads the scope which each view's resolver last returned for `subscriber`,
+    /// selecting no rows for a view whose resolver returned no scope or has not run for `subscriber`.
+    /// Unlike [`super::MutTxId::view_scopes_for`], it does not run resolvers,
+    /// so it only observes scopes materialized by prior subscriptions or queries.
+    pub fn view_scopes_for(
+        &self,
+        view_ids: impl IntoIterator<Item = ViewId>,
+        subscriber: Identity,
+    ) -> Vec<(ViewId, u256)> {
+        let mut view_scopes = view_ids
+            .into_iter()
+            .map(|view_id| {
+                let resolver = ViewCallInfo::scope_resolver(view_id, subscriber);
+                let arg_hash = match self
+                    .committed_state_shared_lock
+                    .view_instance(&resolver)
+                    .and_then(|state| state.resolved_scope.as_ref())
+                {
+                    Some(scope) => scope.arg_hash(),
+                    None => unscoped_view_arg_hash_value(),
+                };
+                (view_id, **arg_hash.as_u256().expect("view arg hashes are u256"))
+            })
+            .collect::<Vec<_>>();
+        view_scopes.sort_by_key(|(view_id, _)| *view_id);
+        view_scopes
+    }
+
     fn with_index<'a, R>(
         &'a self,
         table_id: TableId,

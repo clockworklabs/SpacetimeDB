@@ -61,7 +61,7 @@ pub(crate) fn compile_query_for_view_scopes<Tx: Datastore + StateView>(
     let identity = (auth.bypass_rls() || compiled.reads_sender).then(|| auth.caller());
     let hash = QueryHash::from_string_and_view_scopes(input, identity, &view_scopes);
     Ok(CompiledQuery {
-        plan: Plan::new(compiled.plans, hash, input.to_owned()),
+        plan: Plan::new_scoped(compiled.plans, hash, input.to_owned(), identity),
         physical_plans: compiled.physical_plans,
     })
 }

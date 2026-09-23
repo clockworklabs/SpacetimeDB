@@ -22,7 +22,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::{collect_table_update, collect_table_update_for_view, execute_plans};
 use crate::worker_metrics::WORKER_METRICS;
 use core::panic;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
@@ -42,6 +42,8 @@ use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
+use spacetimedb_primitives::ViewId;
+use spacetimedb_sats::u256;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::schema::ViewDefInfo;
 use spacetimedb_table::static_assert_size;
@@ -2117,11 +2119,17 @@ impl ModuleSubscriptions {
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
-        let subscriptions = {
+        // If the transaction moves subscribers of scoped views to different scopes,
+        // their subscriptions must move too, which requires a write lock.
+        let mut subscriptions = {
             // How contended is the lock?
             let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
             let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
-            self.subscriptions.read()
+            if tx.has_view_scope_changes() && matches!(event.status, EventStatus::Committed(_)) {
+                SubscriptionsGuard::Write(self.subscriptions.write())
+            } else {
+                SubscriptionsGuard::Read(self.subscriptions.read())
+            }
         };
 
         let stdb = &self.relational_db;
@@ -2182,13 +2190,32 @@ impl ModuleSubscriptions {
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
-        let (update_metrics, failed_v2_subscriptions) = subscriptions.eval_updates_sequential(
-            (&delta_read_tx, tx_offset),
-            &self.bsatn_rlb_pool,
-            self.module_def_version(),
-            event.clone(),
-            caller,
-        );
+        let (update_metrics, failed_v2_subscriptions) = match &mut subscriptions {
+            SubscriptionsGuard::Read(subscriptions) => subscriptions.eval_updates_sequential(
+                (&delta_read_tx, tx_offset),
+                &self.bsatn_rlb_pool,
+                self.module_def_version(),
+                event.clone(),
+                caller,
+            ),
+            SubscriptionsGuard::Write(subscriptions) => {
+                let owner = stdb.owner_identity();
+                let mut rebind = |plan: &Plan, subscriber: Identity, view_scopes: Vec<(ViewId, u256)>| {
+                    let auth = AuthCtx::new(owner, subscriber);
+                    compile_query_for_view_scopes(&auth, &*read_tx, plan.sql(), view_scopes).map(|query| query.plan)
+                };
+                subscriptions.eval_updates_with_rescoping(
+                    (&delta_read_tx, tx_offset),
+                    &self.bsatn_rlb_pool,
+                    self.module_def_version(),
+                    event.clone(),
+                    caller,
+                    tx_data.view_scope_changes(),
+                    &mut rebind,
+                )
+            }
+        };
+        drop(delta_read_tx);
         drop(subscriptions);
         // For subscriptions that had an error, we have send the client an error message,
         // but we also need to remove the subscription so that we don't keep trying to send updates.
@@ -2411,6 +2438,23 @@ impl ModuleSubscriptions {
     }
 }
 
+/// A lock on the [`SubscriptionManager`], for reading or writing.
+enum SubscriptionsGuard<'a> {
+    Read(RwLockReadGuard<'a, SubscriptionManager>),
+    Write(RwLockWriteGuard<'a, SubscriptionManager>),
+}
+
+impl std::ops::Deref for SubscriptionsGuard<'_> {
+    type Target = SubscriptionManager;
+
+    fn deref(&self) -> &SubscriptionManager {
+        match self {
+            Self::Read(guard) => guard,
+            Self::Write(guard) => guard,
+        }
+    }
+}
+
 /// Extra parameters for [`ModuleSubscriptions::guard_tx`].
 #[derive(Default)]
 struct GuardTxOptions {
@@ -2481,17 +2525,20 @@ mod tests {
     use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
-    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+    use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs, ViewScopeKey};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::metrics::ExecutionMetrics;
     use spacetimedb_lib::{bsatn, ConnectionId, ProductType, ProductValue, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_primitives::ViewId;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::ModuleDef;
     use std::future::Future;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
@@ -4916,5 +4963,201 @@ mod tests {
         assert_tx_update_for_table(rx_for_b.recv(), table_id, &schema, [product![2_u8]], []).await;
 
         Ok(())
+    }
+
+    /// The protocols through which clients subscribe, for tests which cover each of them.
+    #[derive(Clone, Copy, Debug)]
+    enum SubscribeProtocol {
+        V1Single,
+        V1Multi,
+        V1Legacy,
+        V2,
+    }
+
+    /// Create the scoped view `team_chat`, keyed by a team id, whose rows are `(text: String)`.
+    fn create_team_chat(db: &RelationalDB) -> anyhow::Result<(ViewId, TableId)> {
+        let mut builder = RawModuleDefV10Builder::new();
+        let message = builder.add_algebraic_type(
+            [],
+            "message",
+            AlgebraicType::product([("text", AlgebraicType::String)]),
+            true,
+        );
+        builder.add_view(
+            "team_chat",
+            0,
+            true,
+            true,
+            ProductType::from([("team_id", AlgebraicType::U64)]),
+            AlgebraicType::array(AlgebraicType::Ref(message)),
+        );
+        builder.add_scoped_view("team_chat", 0);
+        let module_def: ModuleDef = builder.finish().try_into()?;
+        let view_def = module_def.view("team_chat").unwrap();
+        Ok(
+            db.with_auto_commit(spacetimedb_datastore::execution_context::Workload::Internal, |tx| {
+                db.create_view(tx, &module_def, view_def)
+            })?,
+        )
+    }
+
+    fn team(team_id: u64) -> ViewScopeKey {
+        ViewScopeKey::from_args_bsatn(bsatn::to_vec(&product![team_id]).unwrap())
+    }
+
+    fn chat(texts: &[&str]) -> Vec<ProductValue> {
+        texts.iter().map(|text| product![text.to_string()]).collect()
+    }
+
+    /// Materialize the chat of `team` as `texts`, and mark its instance as materialized.
+    fn set_team_chat(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        (view_id, table_id): (ViewId, TableId),
+        team: &ViewScopeKey,
+        texts: &[&str],
+    ) -> anyhow::Result<()> {
+        let call = ViewCallInfo::scope_body(view_id, team);
+        tx.update_view_timestamp(call.clone(), ViewInstanceArgs::ScopeBody(team.clone()))?;
+        db.materialize_view_call(tx, table_id, call, chat(texts))?;
+        Ok(())
+    }
+
+    /// Pull a message from `rx` and assert that it updates `team_chat` with `inserts` and `deletes`.
+    async fn expect_team_chat_update(
+        protocol: SubscribeProtocol,
+        rx: &mut ClientConnectionReceiver,
+        table_id: TableId,
+        inserts: Vec<ProductValue>,
+        deletes: Vec<ProductValue>,
+    ) {
+        let schema = ProductType::from([AlgebraicType::String]);
+        match protocol {
+            SubscribeProtocol::V2 => {
+                assert_v2_tx_update_for_table(
+                    rx.recv(),
+                    ws_v2::QuerySetId::new(1),
+                    "team_chat",
+                    &schema,
+                    inserts,
+                    deletes,
+                )
+                .await
+            }
+            _ => assert_tx_update_for_table(rx.recv(), table_id, &schema, inserts, deletes).await,
+        }
+    }
+
+    /// A player on the red team subscribes to the scoped view `team_chat`,
+    /// then switches to the blue team.
+    /// The player must receive the difference between the two teams' chats,
+    /// omitting the messages they have in common,
+    /// and afterwards receive updates to the blue team's chat but not the red team's.
+    async fn check_rescoping(protocol: SubscribeProtocol) -> anyhow::Result<()> {
+        let db = relational_db()?;
+        let view = create_team_chat(&db)?;
+        let (view_id, table_id) = view;
+        let (red, blue) = (team(1), team(2));
+
+        let client_id = client_id_from_u8(1);
+        let player = client_id.identity;
+        let (sender, mut rx) = match protocol {
+            SubscribeProtocol::V2 => v2_client_connection(client_id, &db),
+            _ => client_connection(client_id, &db),
+        };
+        let auth = AuthCtx::new(db.owner_identity(), player);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        // The player is on the red team.
+        // Without a module, emulate what subscribing to the view does in `ModuleHost::materialize_views`.
+        let mut tx = begin_mut_tx(&db);
+        tx.set_view_scope(view_id, player, Some(red.clone()))?;
+        let resolver = ViewCallInfo::scope_resolver(view_id, player);
+        tx.subscribe_view(resolver, ViewInstanceArgs::ScopeResolver(player), player)?;
+        let red_call = ViewCallInfo::scope_body(view_id, &red);
+        tx.subscribe_view(red_call, ViewInstanceArgs::ScopeBody(red.clone()), player)?;
+        // Both teams received an announcement, which the player keeps seeing when switching teams.
+        set_team_chat(&db, &mut tx, view, &red, &["red one", "announcement"])?;
+        set_team_chat(&db, &mut tx, view, &blue, &["blue one", "announcement"])?;
+        db.commit_tx(tx)?;
+
+        let sql = "select * from team_chat";
+        let mut counter = 0;
+        match protocol {
+            SubscribeProtocol::V1Single => subscribe_single(&subs, auth, sql, sender, &mut counter).await?,
+            SubscribeProtocol::V1Multi => {
+                subscribe_multi(&subs, auth, &[sql], sender, &mut counter).await?;
+            }
+            SubscribeProtocol::V1Legacy => {
+                let subscribe = ws_v1::Subscribe {
+                    query_strings: [sql.into()].into(),
+                    request_id: 0,
+                };
+                subs.add_legacy_subscriber(None, sender, auth, subscribe, Instant::now(), None)
+                    .await?;
+            }
+            SubscribeProtocol::V2 => {
+                let subscribe = ws_v2::Subscribe {
+                    request_id: 1,
+                    query_set_id: ws_v2::QuerySetId::new(1),
+                    query_strings: [sql.into()].into(),
+                };
+                subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+                    None,
+                    sender,
+                    auth,
+                    subscribe,
+                    Instant::now(),
+                    None,
+                )?;
+            }
+        }
+        // The initial rows of the subscription.
+        rx.recv().await.expect("expected the initial subscription update");
+
+        // The player switches to the blue team.
+        let mut tx = begin_mut_tx(&db);
+        assert_eq!(tx.set_view_scope(view_id, player, Some(blue.clone()))?, None);
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        expect_team_chat_update(protocol, &mut rx, table_id, chat(&["blue one"]), chat(&["red one"])).await;
+
+        // A message to the red team is not received...
+        let mut tx = begin_mut_tx(&db);
+        set_team_chat(&db, &mut tx, view, &red, &["red one", "announcement", "red two"])?;
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        // ...but one to the blue team is.
+        let mut tx = begin_mut_tx(&db);
+        set_team_chat(&db, &mut tx, view, &blue, &["blue one", "announcement", "blue two"])?;
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        expect_team_chat_update(protocol, &mut rx, table_id, chat(&["blue two"]), vec![]).await;
+
+        // The player leaves, so is in no team.
+        let mut tx = begin_mut_tx(&db);
+        tx.set_view_scope(view_id, player, None)?;
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        let blue_chat = chat(&["blue one", "announcement", "blue two"]);
+        expect_team_chat_update(protocol, &mut rx, table_id, vec![], blue_chat).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_v1_single_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V1Single).await
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_v1_multi_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V1Multi).await
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_legacy_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V1Legacy).await
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_v2_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V2).await
     }
 }
