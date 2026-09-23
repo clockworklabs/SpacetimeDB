@@ -590,6 +590,66 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 .Select(a => new TableIndex(this, a, diag))
                 .ToImmutableArray()
         );
+        if (sharedContexts)
+            ValidateGeneratedNames(diag, typeSyntax.GetLocation());
+    }
+
+    private void ValidateGeneratedNames(DiagReporter diag, Location location)
+    {
+        var names = new GeneratedNames((scope, name, first, second) =>
+            diag.Report(ErrorDescriptor.GeneratedNameCollision, (location, scope, name, first, second)));
+        foreach (var table in TableAccessors)
+        {
+            var owner = $"table '{table.Name}' on '{FullName}'";
+            var writable = $"{TableHandlesNamespace}.{table.Name}";
+            var readOnly = $"{ViewHandlesNamespace}.{table.Name}ReadOnly";
+            names.Add(writable, table.Identifier, "enclosing table handle");
+            names.Add(readOnly, table.Identifier + "ReadOnly", "enclosing read-only handle");
+            foreach (var member in new[] { "LookupName", "ReadGenFields", "MakeTableDesc", "MakeScheduleDesc", "Count", "Iter", "Insert", "Delete", "Clear" })
+                names.Add(writable, member, "generated table member");
+            foreach (var member in new[] { "__resolvedName", "Count", "Iter" })
+                names.Add(readOnly, member, "generated read-only table member");
+
+            void Index(string identifier, bool unique, string contributor)
+            {
+                foreach (var scope in new[] { writable, readOnly })
+                {
+                    names.Add(scope, identifier, contributor);
+                    names.Add(scope, "__" + identifier.TrimStart('@'), $"cache field for {contributor}");
+                    names.Add(scope, identifier + (unique && scope == writable ? "UniqueIndex" : "Index"),
+                        $"index type for {contributor}");
+                }
+            }
+            foreach (var constraint in GetConstraints(table, ColumnAttrs.Unique).Where(c => c.Col.IsEquatable))
+                Index(constraint.Col.Identifier, true, $"unique column '{constraint.Col.Name}' of {owner}");
+            foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
+                Index(index.AccessorIdentifier, false, $"index '{index.AccessorName}' of {owner}");
+
+            foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
+                if (table.Name == container)
+                    names.Add(container, container, "enclosing descriptor container");
+            foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
+                names.Add(container, table.Identifier, owner);
+            if (table.Name is "GetType" or "ToString" or "Equals" or "GetHashCode")
+                diag.Report(ErrorDescriptor.GeneratedNameCollision,
+                    (location, "context database/query receiver", table.Name, "existing receiver member", owner));
+            var cols = table.Identifier + "Cols";
+            names.Add(cols, cols, "enclosing query columns type");
+            foreach (var column in Members)
+                names.Add(cols, column.Identifier, $"column '{column.Name}' of {owner}");
+            var ixCols = table.Identifier + "IxCols";
+            names.Add(ixCols, ixCols, "enclosing indexed query columns type");
+            var indexedPositions = new HashSet<int>(
+                GetConstraints(table, ColumnAttrs.PrimaryKey | ColumnAttrs.Unique).Select(c => c.Pos));
+            foreach (var index in GetIndexes(table))
+                foreach (var column in index.Columns.Array)
+                    indexedPositions.Add(column.Index);
+            foreach (var position in indexedPositions)
+            {
+                var column = Members[position];
+                names.Add(ixCols, column.Identifier, $"indexed column '{column.Name}' of {owner}");
+            }
+        }
     }
 
     protected override ColumnDeclaration ConvertMember(
@@ -2743,6 +2803,19 @@ public class Module : IIncrementalGenerator
                     rlsFilters,
                     columnDefaultValues
                 ) = inputs;
+
+                if (sharedContexts)
+                {
+                    var generatedNames = new GeneratedNames((scope, name, first, second) =>
+                        context.ReportDiagnostic(ErrorDescriptor.GeneratedNameCollision.ToDiag(
+                            (Location.None, scope, name, first, second))));
+                    foreach (var table in tableAccessors)
+                    {
+                        var owner = $"table '{table.TableAccessorName}' on '{table.TableName}'";
+                        generatedNames.Add(extensionNamespaceName, EscapeIdentifier(table.TableAccessorName + "Cols"), owner);
+                        generatedNames.Add(extensionNamespaceName, EscapeIdentifier(table.TableAccessorName + "IxCols"), owner);
+                    }
+                }
 
                 string ConsumerAccessors(string container)
                 {

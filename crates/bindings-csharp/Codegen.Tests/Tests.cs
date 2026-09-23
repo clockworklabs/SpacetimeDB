@@ -461,6 +461,8 @@ public static class GeneratorSnapshotTests
             Reject(Mount(accessor: name), "database identifier");
         foreach (var name in new[] { "st", "ST", "spacetimedb", "pg_catalog", "PG_temp" })
             Reject(Mount(accessor: name), "reserved");
+        foreach (var name in new[] { "GetType", "ToString", "Equals", "GetHashCode" })
+            Reject(Mount(accessor: name), "receiver member");
         foreach (var accessor in new[] { "", "a.b", "a-b", "1auth", "@class", " auth" })
             Reject(Mount(accessor: accessor), "C# identifier");
         Reject("[assembly: SpacetimeDB.Namespace(typeof(Auth.Marker))]", "C# identifier");
@@ -507,6 +509,67 @@ public static class GeneratorSnapshotTests
         Assert.Empty(Run(Mount()).GetRunResult().Diagnostics);
 #endif
     }
+
+#if NET10_0_OR_GREATER
+    [Fact]
+    public static async Task NamespaceGeneratedNameCollisions()
+    {
+        var fixture = await Fixture.Compile("server");
+        (Compilation Output, ImmutableArray<Diagnostic> Diagnostics) Generate(string source)
+        {
+            var compilation = CSharpCompilation.Create(
+                "CollisionProof",
+                [CSharpSyntaxTree.ParseText("global using System; global using System.IO; global using System.Collections.Generic;\n" + source, fixture.ParseOptions)],
+                fixture.SampleCompilation.References,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            );
+            CSharpGeneratorDriver.Create(
+                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions
+            ).RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+            return (output, diagnostics);
+        }
+        foreach (var (accessor, fields, symbol) in new[]
+        {
+            ("User", "[SpacetimeDB.Unique] public uint Count;", "Count"),
+            ("User", "[SpacetimeDB.Unique] public uint Id; [SpacetimeDB.Unique] public uint __Id;", "__Id"),
+            ("User", "[SpacetimeDB.Unique] public uint Id; [SpacetimeDB.Unique] public uint IdUniqueIndex;", "IdUniqueIndex"),
+            ("User", "public uint UserCols;", "UserCols"),
+            ("User", "[SpacetimeDB.PrimaryKey] public uint UserIxCols;", "UserIxCols"),
+            ("Tables", "public uint Id;", "Tables"),
+            ("ReadOnlyTables", "public uint Id;", "ReadOnlyTables"),
+            ("Queries", "public uint Id;", "Queries"),
+            ("GetType", "public uint Id;", "GetType"),
+        })
+        {
+            var (_, diagnostics) = Generate($$"""
+                [SpacetimeDB.Table(Accessor = "{{accessor}}")]
+                public partial struct Row { {{fields}} }
+                """);
+            Assert.DoesNotContain(diagnostics, d => d.Id == "CS8785");
+            Assert.True(diagnostics.Any(d => d.GetMessage().Contains("Generated C# name")
+                && d.GetMessage().Contains(symbol) && d.Location.IsInSource),
+                $"Expected collision for {accessor}.{symbol}: {string.Join("\n", diagnostics)}");
+        }
+        var (_, crossTableDiagnostics) = Generate("""
+            [SpacetimeDB.Table(Accessor = "User")]
+            [SpacetimeDB.Table(Accessor = "UserIx")]
+            public partial struct Row { public uint Id; }
+            """);
+        Assert.Contains(crossTableDiagnostics, d => d.GetMessage().Contains("UserIxCols")
+            && d.GetMessage().Contains("table 'User'") && d.GetMessage().Contains("table 'UserIx'"));
+
+        var (valid, validDiagnostics) = Generate("""
+            [SpacetimeDB.Table(Accessor = "First")]
+            [SpacetimeDB.Table(Accessor = "Second")]
+            public partial struct Row { [SpacetimeDB.Unique] public uint @class; }
+            """);
+        Assert.Empty(validDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        using var dll = new MemoryStream();
+        var emitted = valid.Emit(dll);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+    }
+#endif
 
     [Fact]
     public static async Task TypeGeneratorOnClient()
