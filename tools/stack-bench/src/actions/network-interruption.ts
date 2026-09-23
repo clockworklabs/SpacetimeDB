@@ -10,6 +10,10 @@ export interface NetworkInterruption {
 
 const interruptible = new WeakSet<BrowserContext>();
 
+// A dev server's reload socket (Vite: the root path with a token) is tooling,
+// not the app. Cutting it makes Vite reload the whole page, so it stays open.
+const devServerSocket = (url: URL): boolean => url.pathname === '/' && url.searchParams.has('token');
+
 export const hasNetworkInterruption = (context: BrowserContext): boolean => interruptible.has(context);
 
 // Install before the context opens a page, so every socket passes through the route.
@@ -21,9 +25,11 @@ export async function installNetworkInterruption(context: BrowserContext): Promi
   // Every socket a page opens must reach the route; one that did not could keep delivering.
   let opened = 0;
   let routedCount = 0;
-  const track = (page: Page) => page.on('websocket', () => { opened += 1; });
+  const track = (page: Page) => page.on('websocket', socket => {
+    if (!devServerSocket(new URL(socket.url()))) opened += 1;
+  });
   context.on('page', track);
-  await context.routeWebSocket('**/*', page => {
+  await context.routeWebSocket(url => !devServerSocket(url), page => {
     routedCount += 1;
     if (offline) {
       refused += 1;

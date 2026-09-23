@@ -11,7 +11,9 @@ import { installNetworkInterruption } from '../src/actions/network-interruption.
 
 // A page that reconnects its socket whenever it closes, like a live-update client.
 const PAGE = `<script>
-  window.received = [];
+  window.received = []; window.devReceived = [];
+  // A dev server's reload socket, which the interruption must leave alone.
+  new WebSocket('ws://' + location.host + '/?token=dev').onmessage = event => window.devReceived.push(event.data);
   const connect = () => {
     const ws = new WebSocket('ws://' + location.host + '/ws');
     ws.onmessage = event => window.received.push(event.data);
@@ -60,6 +62,8 @@ test('going offline closes open sockets, refuses reconnects, and never delivers 
     send('after');
     await wait(300);
     assert.deepEqual(await received(page), ['after'], 'the held update is never delivered; the reconnected page receives new ones');
+    assert.deepEqual(await page.evaluate(() => (window as unknown as { devReceived: string[] }).devReceived),
+      ['during', 'after'], 'the dev-server socket stays connected through the interruption');
 
     // A client opened without the harness route cannot prove an interruption.
     const plain = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 0 },
