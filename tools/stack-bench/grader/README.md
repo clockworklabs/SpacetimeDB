@@ -52,13 +52,15 @@ evidence.
   sent. If the request cannot be captured, its parameters cannot be read, or the
   field's location is ambiguous, the step is unmeasured. An ordinary sign-in
   never stands in for the probe.
-- Going offline closes the actor's WebSockets and refuses reconnects until the
-  network returns; only a Vite dev server's own reload socket, recognised by the
-  token its client module carries, stays open. In-flight HTTP requests get up to
-  five seconds to finish first. A request still open after that (an event
-  stream, or a long poll the server holds longer) cannot be cut, so the step is
-  unmeasured: reconnect checks currently measure WebSocket and short-request
-  transports only.
+- An actor that goes offline sends all its traffic through a harness proxy that
+  runs where its browser runs. Going offline refuses new connections and closes
+  the existing ones, WebSockets and in-flight HTTP alike (event streams, long
+  polls, streamed responses), then emulates offline in the browser. The step is
+  measured only when the browser itself sees every application connection end
+  within five seconds; otherwise it is unmeasured. A Vite dev server's own reload
+  socket stays open, and only when the dev server's client module carries its
+  token. A dev server behind TLS cannot be identified that way and is not
+  supported. Other actors keep their network.
 - Concurrent actions drain every branch before returning; measurement failures
   take priority over app failures. Check verdicts cannot contradict failed or
   unmeasured action evidence.
