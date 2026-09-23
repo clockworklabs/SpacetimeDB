@@ -200,15 +200,6 @@
       "requiresFeatures": ["ecommerce.l2.sales-dashboard", "ecommerce.feature.purchasing"]
     },
     {
-      "id": "stock-transfers",
-      "source": "scenarios/02-transfer-totals.json",
-      "feature": 2,
-      "criteria": ["2b"],
-      "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.l2.stock-transfers-features"]
-    },
-    {
       "id": "managed-support",
       "source": "scenarios/progression-managed-support-shared.json",
       "feature": 613,

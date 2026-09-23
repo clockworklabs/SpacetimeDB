@@ -21,14 +21,14 @@ const calibration = compileCalibrationFile('composition/calibrations/sequential-
 test('L2 calibration binds every scored check to an exact defect per backend', () => {
   const scoredKeys = release.checkCatalog.filter(check => check.points > 0)
     .map(check => check.stableKey).sort();
-  assert.equal(scoredKeys.length, 73);
+  assert.equal(scoredKeys.length, 70);
 
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     const mutation = calibration.mutations.find(entry => entry.backend === backend);
     assert(mutation, `${backend} must have an exact mutation manifest`);
     const covered = [...new Set(mutation.targets.flatMap(target => target.stableKeys))]
       .filter(stableKey => scoredKeys.includes(stableKey)).sort();
-    assert.deepEqual(covered, scoredKeys, `${backend} must cover all 73 scored stable keys`);
+    assert.deepEqual(covered, scoredKeys, `${backend} must cover all 70 scored stable keys`);
   }
 
   assert.deepEqual(calibration.controls.map(control => [control.stableKey, control.role]), [

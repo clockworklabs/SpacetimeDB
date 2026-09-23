@@ -232,9 +232,7 @@
       "gradingGroups": [
         "ecommerce.l2.stock-transfers-features#transfer",
         "ecommerce.progression.inventory-conservation-specifications#stock-conservation-contention",
-        "ecommerce.progression.inventory-conservation-specifications#stock-conservation-directional",
         "ecommerce.progression.operations-access-specifications#operator-transfer-authorization",
-        "ecommerce.spec.live-state#stock-transfers",
         "ecommerce.spec.transactional-integrity#stock-transfer-overdraw"
       ],
       "dependencies": [
@@ -255,7 +253,6 @@
         "ecommerce.l2.order-cancellation-features#cancellation-core",
         "ecommerce.l2.order-cancellation-features#cancellation-history",
         "ecommerce.progression.inventory-conservation-specifications#stock-conservation-cancel",
-        "ecommerce.progression.inventory-conservation-specifications#stock-conservation-fresh-client",
         "ecommerce.progression.inventory-conservation-specifications#stock-conservation-history",
         "ecommerce.progression.cancellation-accounting-specifications#cancellation-accounting",
         "ecommerce.progression.operations-access-specifications#order-owner-direct"
@@ -433,7 +430,6 @@
       ],
       "gradingGroups": [
         "ecommerce.l3.deferred-access-specifications#customer-refused",
-        "ecommerce.l3.deferred-durability-specifications#restock-restart",
         "ecommerce.l3.deferred-integrity-specifications#restock-once",
         "ecommerce.l3.scheduled-restocks-features#applies",
         "ecommerce.l3.scheduled-restocks-features#cancels",

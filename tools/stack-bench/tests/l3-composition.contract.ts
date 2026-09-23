@@ -107,7 +107,7 @@ test('L3 product work and production specifications are separate modules', () =>
 });
 
 test('every L3 scored check has isolated setup and one criterion', () => {
-  assert.equal(selected.length, 22);
+  assert.equal(selected.length, 21);
   const stableKeys = new Set();
 
   for (const { pack, check } of selected) {
@@ -326,8 +326,8 @@ test('the cumulative L3 recipe adds every L3 check', () => {
     join(trackRoot, 'composition', 'recipes', 'sequential-l3.json'),
     { trackRoot },
   );
-  assert.equal(plan.checks.length, 97);
-  assert.equal(plan.scoring.points, 179);
+  assert.equal(plan.checks.length, 93);
+  assert.equal(plan.scoring.points, 170);
 
   const plannedKeys = new Set(plan.checks.map(check => check.stableKey));
   const expectedL3Keys = selected.flatMap(({ pack, check }) => {
@@ -340,7 +340,7 @@ test('the cumulative L3 recipe adds every L3 check', () => {
       return `${pack.stableId ?? pack.id}.${check.stableId ?? check.id}.${criterion.id}`;
     });
   });
-  assert.equal(expectedL3Keys.length, 22);
+  assert.equal(expectedL3Keys.length, 21);
   assert(expectedL3Keys.every(key => plannedKeys.has(key)));
 
   const reservationHooks = plan.recipe.task.contracts.find(fragment =>

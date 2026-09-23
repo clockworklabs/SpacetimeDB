@@ -521,7 +521,7 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 116);
+  assert.equal(selection.grader.checkKeys.length, 112);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>

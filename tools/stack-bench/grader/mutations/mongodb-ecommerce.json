@@ -521,8 +521,7 @@
       "id": "cancel-does-not-restore-stock-fresh-client",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
       "targets": [
-        "ecommerce.inventory-operations.stock-conservation.202b",
-        "ecommerce.inventory-operations.stock-conservation.202c"
+        "ecommerce.inventory-operations.stock-conservation.202b"
       ],
       "desc": "Cancellation changes order state but skips restoration, so a fresh client reads the persisted shortfall.",
       "file": "server/src/index.ts",
@@ -695,7 +694,6 @@
       "id": "transfer-debits-source-without-crediting-existing-destination",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
-        "ecommerce.inventory-operations.stock-conservation.202a",
         "ecommerce.inventory-operations.warehouse-transfer.2a",
         "ecommerce.operations-access.operator-authorization.201a"
       ],
@@ -710,9 +708,9 @@
     },
     {
       "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals.json",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
-        "ecommerce.inventory-operations.warehouse-transfer.2b"
+        "ecommerce.inventory-operations.warehouse-transfer.2a"
       ],
       "desc": "A transfer debits the source but adds zero to the existing destination, so the two live warehouse totals do not move in opposite directions.",
       "file": "server/src/index.ts",
@@ -973,9 +971,9 @@
     },
     {
       "id": "scheduled-restock-never-becomes-due-after-restart",
-      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
       "targets": [
-        "ecommerce.l3.deferred-durability.restart-survival.311a"
+        "ecommerce.l3.server-time.server-time.312a"
       ],
       "desc": "Application startup discards pending restocks. Ordinary timer execution remains intact; completed and cancelled work is retained.",
       "file": "server/src/index.ts",
@@ -2142,9 +2140,9 @@
     },
     {
       "id": "transfer-totals-omit-destination-credit-live",
-      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals.json",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
-        "ecommerce.spec.live-state.stock-transfers.2b"
+        "ecommerce.inventory-operations.warehouse-transfer.2a"
       ],
       "desc": "A transfer debits the source but adds zero to the destination, so the two live warehouse totals do not move in opposite directions.",
       "file": "server/src/index.ts",

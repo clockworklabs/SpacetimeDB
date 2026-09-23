@@ -260,7 +260,6 @@
       ],
       "includeCheckGroups": [
         "warehouse-transfer-corrected",
-        "warehouse-transfer-independent",
         "operational-views-low-stock",
         "operational-views-core",
         "operational-views-kept-purchases"
@@ -273,9 +272,7 @@
         "guarantee"
       ],
       "includeCheckGroups": [
-        "stock-conservation-directional",
         "stock-conservation-cancel",
-        "stock-conservation-fresh-client",
         "stock-conservation-contention",
         "warehouse-transfer-overdraw"
       ]
@@ -368,7 +365,6 @@
       "ecommerce.operations-access.fulfilment-queue.1d": 1,
       "ecommerce.operations-access.fulfilment-queue.1e": 2,
       "ecommerce.inventory-operations.warehouse-transfer.2a": 3,
-      "ecommerce.inventory-operations.warehouse-transfer.2b": 2,
       "ecommerce.returns-pricing.cancellation-and-return.3a": 3,
       "ecommerce.returns-pricing.cancellation-and-return.3b": 1,
       "ecommerce.returns-pricing.cancellation-and-return.3c": 3,
@@ -380,9 +376,7 @@
       "ecommerce.inventory-operations.operational-views.5d": 1,
       "ecommerce.operations-access.operator-authorization.201a": 2,
       "ecommerce.operations-access.operator-authorization.201b": 2,
-      "ecommerce.inventory-operations.stock-conservation.202a": 2,
       "ecommerce.inventory-operations.stock-conservation.202b": 2,
-      "ecommerce.inventory-operations.stock-conservation.202c": 1,
       "ecommerce.returns-pricing.refund-accounting.203a": 3,
       "ecommerce.returns-pricing.refund-accounting.203b": 2,
       "ecommerce.operations-access.operator-authorization.201c": 2,

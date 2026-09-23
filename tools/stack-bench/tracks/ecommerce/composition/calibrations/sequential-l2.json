@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/sequential-l2.json",
     "id": "ecommerce.sequential-l2",
-    "meaningSha256": "0d6fa4952fd63aa26d96f4ccaed42ed8f37a65f6cdd17af6f1cde20f3039266e",
-    "executionSha256": "9d6cfa4120e5a5b0ad79ba3e9763b22a81eef180d6899ea21895b383f6ed8f80",
-    "contentSha256": "cf93865a6b3edac0f7288c8322c0cdb396cb8eadc557d78247dc1637754776b3"
+    "meaningSha256": "bcbb5d304c01e9f2920c5c5b4ffaf27e9d1beaa0bc326f546f7dafcecf3c59f4",
+    "executionSha256": "39df987f1b48dffb4f733d24971ea8eef38ed6fb5e9891e25a8a70fdf223ab64",
+    "contentSha256": "4a610d755264bc72dde2c7f3f64323a8b9d4ebe4ba264e74dd42a55cc9c2a889"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "562fc602a04ab25a2eabe111cb04fb4b497e872df57b84845328bb5668b11dae",
+      "sha256": "9bceeec87334c9b6f33a838044c0b20910f443a0c7bfa5383879e7c4d3628157",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "5d3d8bc9cef109b1f5b779320d393c4bd9c6b0153ce0f249ceafc4a31663c13a",
+      "sha256": "9c55470eb93ac3d40ae790003e6d35cba04660f4db8d2120994c7f439d0e409e",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "fad0ac4eb8dd227e0854bda0099d6a58499a6ac076886bef3fe46f6f61396ed5",
+      "sha256": "98ecffd59c2a2ca441032832a86fe490a33bd64008c6e25cd4af455e05d26c2e",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -136,7 +136,6 @@
       "ecommerce.operations-access.fulfilment-queue.1e",
       "ecommerce.returns-pricing.cancellation-and-return.3b",
       "ecommerce.inventory-operations.stock-conservation.202b",
-      "ecommerce.inventory-operations.stock-conservation.202c",
       "ecommerce.operations-access.operator-authorization.201c",
       "ecommerce.inventory-operations.stock-conservation.202d",
       "ecommerce.operations-access.order-owner.204a",
@@ -145,8 +144,6 @@
       "ecommerce.inventory-operations.operational-views.5d",
       "ecommerce.operations-access.operator-authorization.201a",
       "ecommerce.operations-access.operator-authorization.201b",
-      "ecommerce.inventory-operations.stock-conservation.202a",
-      "ecommerce.inventory-operations.warehouse-transfer.2b",
       "ecommerce.spec.state-durability.account-state-recovery.105b",
       "ecommerce.spec.state-durability.account-state-recovery.105a",
       "ecommerce.spec.transactional-integrity.books-balance.107a",

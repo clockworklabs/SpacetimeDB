@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "backend-lifecycle"],
   "evidence": ["browser-observation", "database-observation"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 720000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 632000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l3.durable-reservations", "path": "prompts/modular/l3-specifications.md", "order": 3100, "from": "## Durable reservations", "until": "## Durable restocks", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.reservations-features"] },
@@ -21,7 +21,6 @@
     "contracts": []
   },
   "checks": [
-    { "id": "restock-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 311, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
     { "id": "reservation-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 314, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.reservations-features"] },
     { "id": "delivery-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 315, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.order-delivery-features"] },
     { "id": "cart-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 316, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.cart-expiration-features"] }

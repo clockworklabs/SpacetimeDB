@@ -36,7 +36,7 @@ test('session-survival criteria observe the signed-in user without restoring the
   // or apply this rule to independent data-retention checks that permit re-authentication.
   for (const [name, id] of [
     ['01-account-reload.json', '1e'], ['01-features.json', '1e'],
-    ['01-invariants.json', '105a'], ['progression-account-state-reload.json', '105a'],
+    ['01-invariants.json', '105a'],
   ] as const) {
     const criterion = scenario(name).features.flatMap(feature => feature.criteria)
       .find(criterion => criterion.id === id);

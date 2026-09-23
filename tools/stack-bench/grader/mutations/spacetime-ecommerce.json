@@ -778,8 +778,7 @@
       "id": "cancel-does-not-restore-stock-fresh-client",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
       "targets": [
-        "ecommerce.inventory-operations.stock-conservation.202b",
-        "ecommerce.inventory-operations.stock-conservation.202c"
+        "ecommerce.inventory-operations.stock-conservation.202b"
       ],
       "desc": "The serialized cancellation reducer skips allocation restoration, so a fresh client reads the persisted shortfall.",
       "file": "backend/spacetimedb/src/index.ts",
@@ -959,7 +958,6 @@
       "id": "transfer-debits-source-without-crediting-existing-destination",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
-        "ecommerce.inventory-operations.stock-conservation.202a",
         "ecommerce.inventory-operations.warehouse-transfer.2a",
         "ecommerce.operations-access.operator-authorization.201a"
       ],
@@ -974,9 +972,9 @@
     },
     {
       "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals.json",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
-        "ecommerce.inventory-operations.warehouse-transfer.2b"
+        "ecommerce.inventory-operations.warehouse-transfer.2a"
       ],
       "desc": "The serialized transfer debits the source but writes the existing destination quantity back unchanged.",
       "file": "backend/spacetimedb/src/index.ts",
@@ -1139,9 +1137,9 @@
     },
     {
       "id": "scheduled-restock-execution-queue-is-process-local",
-      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
       "targets": [
-        "ecommerce.l3.deferred-durability.restart-survival.311a"
+        "ecommerce.l3.server-time.server-time.312a"
       ],
       "desc": "Keep manual restock execution IDs only in the V8 process. Ordinary timers work, but restart loses the execution queue while pending rows remain. Isolate replacement can also lose this queue.",
       "file": "backend/spacetimedb/src/index.ts",
@@ -2225,9 +2223,9 @@
     },
     {
       "id": "warehouse-totals-are-frozen-at-page-load",
-      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals.json",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
-        "ecommerce.spec.live-state.stock-transfers.2b"
+        "ecommerce.inventory-operations.warehouse-transfer.2a"
       ],
       "desc": "The per-warehouse totals are computed once from the first stock snapshot and never recomputed, so a transfer moves neither warehouse figure while the dashboard is open.",
       "file": "client/src/App.tsx",

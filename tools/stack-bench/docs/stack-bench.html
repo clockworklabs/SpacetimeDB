@@ -1534,12 +1534,10 @@
       <div class="atk-panel" id="c16">
         <div class="atk-head"><span>Stock is conserved however it moves</span><span>admin &middot; customer</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">202a</span><span class="what">a transfer changes where stock is, never how much there is</span></div>
           <div class="step"><span class="actor">202b</span><span class="what">a sale and its cancellation leave the shelf exactly as they found it</span></div>
-          <div class="step"><span class="actor">202c</span><span class="what">a fresh client sees the same totals, so nothing was only corrected in one browser</span></div>
           <div class="step"><span class="actor">202d</span><span class="what">a transfer racing a purchase loses no unit between the rows: total = before − sold, exactly, however the two interleave</span></div>
         </div>
-        <div class="atk-verdict">4 checks, and the store has to hold every one</div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
       </div>
       <div class="atk-panel" id="c17">
         <div class="atk-head"><span>The books still balance once money can flow backwards</span><span>admin &middot; customer</span></div>
@@ -1559,10 +1557,9 @@
       <div class="atk-panel" id="c19">
         <div class="atk-head"><span>Scheduled work survives a restart</span><span>admin &middot; watcher</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">311a</span><span class="what">a restock scheduled before a restart still fires after it, once, at its own time; the observation checks restart survival, not the implementation algorithm</span></div>
           <div class="step"><span class="actor">311b</span><span class="what">it fired exactly once; the restart did not replay it</span></div>
         </div>
-        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
       <div class="atk-panel" id="c20">
         <div class="atk-head"><span>A restart does not make pending work fire early</span><span>admin &middot; watcher</span></div>

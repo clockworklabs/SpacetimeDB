@@ -46,8 +46,8 @@ test('restart probe proves ordinary scheduled execution before measuring restart
 
 for (const backend of ['mongodb', 'postgres']) {
   test(`${backend} restart-loss control preserves timers and removes only pending work at startup`, () => {
-    const mutation = mutationManifest(backend).mutations.find(candidate =>
-      candidate.targets?.includes('ecommerce.l3.deferred-durability.restart-survival.311a'));
+    const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === (backend === 'postgres'
+      ? 'progression-restock-does-not-survive-restart' : 'scheduled-restock-never-becomes-due-after-restart'));
     assert(mutation);
     const fixture = fixtures.get(backend)!;
     assert(fixture.targetPath);
