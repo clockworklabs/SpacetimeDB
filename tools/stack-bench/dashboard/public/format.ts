@@ -107,12 +107,15 @@ export function modelLabel(model?: string): string {
   return ({ 'claude-sonnet-5': 'Sonnet 5', 'claude-fable-5-1': 'Fable 5.1', 'claude-opus-5': 'Opus 5', 'gpt-5.6-sol': 'Sol', 'gpt-6-astra': 'Astra' } as Record<string, string>)[model ?? ''] ?? model ?? '';
 }
 
+// A finished attempt that does not count shows why instead of its completion.
+export function excludedLabel(attempt: Pick<SheetAttempt, 'status' | 'excluded'>): string | null {
+  if (!attempt.excluded || attempt.status === 'running' || attempt.status === 'pending') return null;
+  return attempt.status === 'completed' ? 'Excluded' : 'Incomplete';
+}
+
 export function completionLabel(attempt: Pick<SheetAttempt, 'status' | 'excluded' | 'completion'>,
   completion: Pick<NonNullable<SheetAttempt['completion']>, 'passed' | 'selected'> | null = attempt.completion): string {
-  if (attempt.excluded && attempt.status !== 'running' && attempt.status !== 'pending') {
-    return attempt.status === 'completed' ? 'Excluded' : 'Incomplete';
-  }
-  return completion ? ratio(completion.passed, completion.selected) : DASH;
+  return excludedLabel(attempt) ?? (completion ? ratio(completion.passed, completion.selected) : DASH);
 }
 
 export function runLabel(attempt: Pick<SheetAttempt, "repetition" | "model" | "effort">, showRepetition = true): string {

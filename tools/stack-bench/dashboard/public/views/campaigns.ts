@@ -2,7 +2,7 @@
 
 import type { CampaignSheet, OverviewCampaign, OverviewEntry, OverviewPage, SheetAttempt }
   from '../../dashboard-views.js';
-import { DASH, esc, pct, phrase, shape, since, spend, stackLabel, statusWord } from '../format.js';
+import { DASH, esc, excludedLabel, pct, phrase, shape, since, spend, stackLabel, statusWord } from '../format.js';
 import type { ReferenceRun } from '../../dashboard-reference-runs.js';
 
 import type { CampaignFilter } from '../../dashboard-views.js';
@@ -32,7 +32,7 @@ function lane(sheet: CampaignSheet, stack: string, attempt: SheetAttempt): strin
     + `${esc(stackLabel(stack))} <span class="lane-repetition">· Rep ${attempt.repetition}</span></a>`
     + `<div class="lane-variant">${esc(attempt.variant)}</div></div>`
     + `<div class="lane-metric" title="Checks passed / all selected checks"><span class="lane-label">Completion</span>`
-    + `<span class="big">${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span></div>`
+    + `<span class="big">${excludedLabel(attempt) ?? pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span></div>`
     + `<div class="lane-metric" title="API-equivalent cost from recorded usage. Pending usage is not zero cost."><span class="lane-label">Cost</span>`
     + `<span>${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</span></div>`
     + `<span class="phase${warn ? ' warn' : ''}">${esc(phrase(attempt))}</span></div>`;

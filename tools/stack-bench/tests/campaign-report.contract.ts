@@ -161,6 +161,7 @@ test('seeded campaign reports identify parent work excluded from continuation co
   assert(report.limitations.some(item => item.includes('parent-campaign at L2')
     && item.includes('exclude the parent build') && item.includes('source retains prior repairs')));
   assert.match(renderCampaignHtml(report), /Seeded continuation from/);
+  assert.doesNotMatch(renderCampaignHtml(report), /Check completion: 0\//, 'a pending attempt is not a measured zero');
   delete attempt.extension;
   assert(!buildCampaignReport(plan, state, () => { throw new Error('no execution'); })
     .limitations.some(item => item.startsWith('Seeded continuation from')));
@@ -654,10 +655,13 @@ test('dependency HTML distinguishes accepted completion from raw grade outcomes'
   const plan = examplePlan();
   const state = createCampaignState(plan);
   for (const attempt of state.attempts) attempt.plan.mode = { ...attempt.plan.mode, id: 'dependency' };
-  const report = buildCampaignReport(plan, state, () => { throw new Error('pending'); });
+  const built = buildCampaignReport(plan, state, () => { throw new Error('pending'); });
+  const { contentSha256: _built, ...body } = built;
+  body.attempts[0]!.completion = { selected: 9, passed: 2, failed: 3, blocked: 1, unmeasured: 3, rate: 0.222222 };
+  const report = { ...body, contentSha256: sha256(canonicalDefinitionJson(body)) };
   const completion = structuredClone(report.attempts[0]!.completion);
   const html = renderCampaignHtml(report);
-  assert.ok(html.includes(`0/${completion.selected}`));
+  assert.ok(html.includes(`2/${completion.selected}`));
   assert.ok(html.includes(`${completion.unmeasured} without an accepted outcome`));
   assert.match(html, /does not separate prerequisite deferral from missing conclusive evidence/);
   assert.deepEqual(report.attempts[0]!.completion, completion);

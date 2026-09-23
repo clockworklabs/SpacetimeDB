@@ -1113,10 +1113,11 @@ export function renderCampaignHtml(report: CampaignReport,
     ? '<div class="warn"><strong>Provisional scores.</strong> Grading qualification is pending.</div>'
     : '';
   const curves = report.attempts.map(attempt => `<section><h3>${escape(attempt.id)}</h3>`
-    + `<p>Check completion: ${attempt.completion.passed}/${attempt.completion.selected}`
-    + ` (${escape(formatRate(attempt.completion.rate))}). ${attempt.completion.failed} failed, `
-    + `${attempt.completion.blocked} blocked, ${attempt.completion.unmeasured} `
-    + `${attempt.mode.id === 'dependency' ? 'without an accepted outcome' : 'unmeasured'}.</p>`
+    + (attempt.completion.unmeasured === attempt.completion.selected ? '<p>Check completion: not measured.</p>'
+      : `<p>Check completion: ${attempt.completion.passed}/${attempt.completion.selected}`
+      + ` (${escape(formatRate(attempt.completion.rate))}). ${attempt.completion.failed} failed, `
+      + `${attempt.completion.blocked} blocked, ${attempt.completion.unmeasured} `
+      + `${attempt.mode.id === 'dependency' ? 'without an accepted outcome' : 'unmeasured'}.</p>`)
     + (attempt.mode.id === 'dependency'
       ? '<p>Blocked descendants receive no completion credit, even when a raw check passed. A guarantee may be deferred after a prerequisite fails. '
         + 'The saved summary does not separate prerequisite deferral from missing conclusive evidence in the unmeasured count. '
