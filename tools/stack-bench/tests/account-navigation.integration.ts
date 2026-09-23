@@ -863,7 +863,7 @@ test('delayed filters and optional navigation use update deadlines without hidin
   } finally { await browser.close(); }
 });
 
-test('a stack with typed credential arguments runs a request-patch step unmodified', async () => {
+test('a request-patch step is unmeasured where credentials cannot be intercepted', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -879,8 +879,8 @@ test('a stack with typed credential arguments runs a request-patch step unmodifi
     const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
     const result = await executeAction(ACTION_REGISTRY, 'signUp', { do: 'signUp', actor: 'claimant', name: 'claimant',
       exact: true, requestPatch: { fields: { role: 'admin' } } }, { capabilities });
-    assert.equal(result.status, 'passed', result.summary ?? '');
-    assert.equal((result.observation as { requestPatch?: string }).requestPatch, 'not-applicable');
+    assert.equal(result.status, 'inconclusive', result.summary ?? '');
     assert.equal(intercepted, false);
+    assert.equal(await page.locator('#current-user').count(), 0, 'no ordinary sign-up stands in for the probe');
   } finally { await browser.close(); }
 });

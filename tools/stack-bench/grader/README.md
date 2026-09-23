@@ -44,9 +44,9 @@ evidence.
   `ConvexError`. SpacetimeDB's HTTP reply does not separate a deliberate
   reducer error from a panic, so a panicking reducer also counts as a refusal.
   An HTTP 500 does not.
-- Stacks that pass credentials as typed reducer arguments (SpacetimeDB) run a
-  request-tampering sign-in or sign-up step unmodified: there are no free-form
-  fields to tamper with.
+- A request-tampering sign-in or sign-up step is unmeasured on stacks whose
+  credentials travel as reducer arguments over the SDK socket (SpacetimeDB): the
+  harness cannot modify that request, and an ordinary sign-in proves nothing.
 - Concurrent actions drain every branch before returning; measurement failures
   take priority over app failures. Check verdicts cannot contradict failed or
   unmeasured action evidence.

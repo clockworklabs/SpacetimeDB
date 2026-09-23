@@ -6,7 +6,7 @@ import {
   inconclusive,
   pad,
 } from './actor-action-runtime.js';
-import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
+import type { ActorActionArguments, BrowserActorCapabilities, BrowserCapability } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { withAuthRequestPatch, type AuthRequestPatch } from './auth-request-patch.js';
 
@@ -42,15 +42,23 @@ interface ManyMessagesInput {
   readonly prefix: string;
 }
 
+// The harness cannot rewrite reducer arguments sent over the SDK socket, and a
+// typed reducer can still accept a role or a query-like string. The probe is
+// unmeasured there, never replaced by an ordinary sign-in.
+function requirePatchableCredentials(browser: BrowserCapability): void {
+  if (!browser.credentialRequestsInspectable) {
+    inconclusive('replay-unavailable', { actor: 'authentication form',
+      detail: 'credential requests travel as reducer arguments the harness cannot modify' });
+  }
+}
+
 async function signUp({ input, capabilities, signal }: ChatArguments<AccountInput>): Promise<Record<string, unknown>> {
   const actor = actorFor(capabilities, input.actor);
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
-  if (input.requestPatch && !browser.credentialRequestsInspectable) {
-    return { ...await signUp({ input: { ...input, requestPatch: undefined }, capabilities, signal }), requestPatch: 'not-applicable' };
-  }
   if (input.requestPatch) {
+    requirePatchableCredentials(browser);
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
       user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }));
@@ -96,12 +104,8 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
   const currentUser = actor.page.locator(browser.testId('current-user')).first();
-  // Typed reducer arguments have no free-form fields to tamper with, so the
-  // step runs unmodified: the outcome a correct application gives a patched request.
-  if (input.requestPatch && !browser.credentialRequestsInspectable) {
-    return { ...await signIn({ input: { ...input, requestPatch: undefined }, capabilities, signal }), requestPatch: 'not-applicable' };
-  }
   if (input.requestPatch) {
+    requirePatchableCredentials(browser);
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
       user, password, input.requestPatch, () => signIn({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }));
