@@ -15,6 +15,7 @@ import {
   RUNTIME_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/runtime-action-executors.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { inspectBuildContainer } from '../src/stacks/hosted-lifecycle.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -408,6 +409,14 @@ test('lifecycle control failures are app failures only when the app is at fault'
   assert.equal((await outcome('backend-runtime', dockerTimeout())).status, 'harness_failure');
   assert.equal((await outcome('backend-runtime',
     new Error('SPACETIME_BIN is unavailable: <unset>'))).status, 'harness_failure');
+  // A replaced container is lost ownership, not an application that cannot start.
+  const lease = { resources: { buildContainer: { owned: true, name: 'owned-app', id: 'a'.repeat(64) } } };
+  const lostOwnership = (() => {
+    try { inspectBuildContainer(lease as never, (() => 'b'.repeat(64)) as never); }
+    catch (error) { return error as Error; }
+    throw new Error('a replaced container was accepted');
+  })();
+  assert.equal((await outcome('app-server', lostOwnership)).status, 'harness_failure');
 });
 
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {

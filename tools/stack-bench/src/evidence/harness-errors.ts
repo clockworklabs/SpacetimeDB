@@ -17,9 +17,18 @@ const errorDetails = (error: unknown): ErrorDetails =>
     ? error as ErrorDetails
     : {};
 
+const HARNESS_CONTROL = 'harness_control';
+
+// A control refusal owned by the harness, such as a lost container lease or an
+// invalid control request. It says nothing about the generated application.
+export function harnessControlError(message: string): Error {
+  return Object.assign(new Error(message), { code: HARNESS_CONTROL });
+}
+
 export function harnessProcessFailure(error: unknown): string | null {
   if (!error) return null;
   const value = errorDetails(error);
+  if (value.code === HARNESS_CONTROL) return String(value.message);
   const detail = `${String(value.message ?? '')}\n${String(value.stderr ?? '')}\n${String(value.stdout ?? '')}`;
   if (/No such container:/i.test(detail)) {
     return 'database container selected by the harness is unavailable';

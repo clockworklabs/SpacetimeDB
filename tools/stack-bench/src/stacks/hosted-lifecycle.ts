@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { readBackendLease, updateBackendLease } from '../runtime/backend-lease.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
+import { harnessControlError } from '../evidence/harness-errors.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentExecOptions, codingContainerWorkspaceHandoffCommands }
   from '../runtime/coding-container-policy.js';
@@ -46,10 +47,10 @@ const { uid: APP_UID, gid: APP_GID } = CODING_CONTAINER_AGENT;
 export function inspectBuildContainer(lease: { resources: { buildContainer?: unknown } },
   exec: TextCommandExecutor = execFileSync): BackendLeaseContainer {
   const container = lease.resources.buildContainer;
-  if (!isOwnedContainer(container)) throw new Error('lease has no owned build container');
+  if (!isOwnedContainer(container)) throw harnessControlError('lease has no owned build container');
   const actual = exec('docker', ['inspect', '--format', '{{.Id}}', container.name],
     { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS }).trim();
-  if (actual !== container.id) throw new Error(`${container.name} changed after lease creation; refusing control`);
+  if (actual !== container.id) throw harnessControlError(`${container.name} changed after lease creation; refusing control`);
   return container;
 }
 
@@ -163,14 +164,14 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   environment = {}, signal, handoffWorkspace = false,
   exec = execFileSync }: HostedApplicationControlInput): Promise<void> {
   if (mode !== 'start' && mode !== 'stop' && mode !== 'restart') {
-    throw new Error(`unsupported application control mode ${String(mode)}`);
+    throw harnessControlError(`unsupported application control mode ${String(mode)}`);
   }
   const abort = signal ?? null;
   if (!/^[a-z][a-z0-9-]*$/.test(stack)) {
-    throw new Error('application control requires a valid stack id');
+    throw harnessControlError('application control requires a valid stack id');
   }
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error('application control requires a port and probe');
+    throw harnessControlError('application control requires a port and probe');
   }
   const container = inspectBuildContainer(lease, exec);
   const url = `http://127.0.0.1:${port}${probe}`;
@@ -191,7 +192,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
     handoffHostedWorkspace(lease, exec);
   }
   if (mode === 'stop') return;
-  if (typeof app !== 'string') throw new Error('application control requires an app directory');
+  if (typeof app !== 'string') throw harnessControlError('application control requires an app directory');
   exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted application port is still owned by $pids" >&2; exit 4; }'],
@@ -199,7 +200,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   const launch = hostedLaunchCommand(app);
   const environmentArgs = Object.entries(environment).flatMap(([key, value]) => {
     if (!/^[A-Z][A-Z0-9_]*$/.test(key) || typeof value !== 'string' || /[\r\n\0]/.test(value)) {
-      throw new Error(`invalid hosted runtime environment entry ${key}`);
+      throw harnessControlError(`invalid hosted runtime environment entry ${key}`);
     }
     return ['-e', key];
   });
