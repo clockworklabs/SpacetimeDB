@@ -862,25 +862,3 @@ test('delayed filters and optional navigation use update deadlines without hidin
     }
   } finally { await browser.close(); }
 });
-
-test('a request-patch step is unmeasured where credentials cannot be intercepted', async () => {
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage();
-    let intercepted = false;
-    await page.route('http://typed.test/**', route => route.fulfill({ contentType: 'text/html', body:
-      `<input id="signup-username"><input id="signup-password"><button id="signup-submit"
-        onclick="document.body.insertAdjacentHTML('beforeend', '<span id=current-user>claimant</span>')">Sign up</button>` }));
-    await page.goto('http://typed.test');
-    const actor = { page: Object.assign(page, { route: async () => { intercepted = true; } }),
-      loc: (id: string) => page.locator(stableElementSelector(id)).first() };
-    const service = { defaultWithin: 500, credentialRequestsInspectable: false, scopedUser: (name: string) => name,
-      expand: (text: string) => text, testId: stableElementSelector, sleep: async () => {} };
-    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
-    const result = await executeAction(ACTION_REGISTRY, 'signUp', { do: 'signUp', actor: 'claimant', name: 'claimant',
-      exact: true, requestPatch: { fields: { role: 'admin' } } }, { capabilities });
-    assert.equal(result.status, 'inconclusive', result.summary ?? '');
-    assert.equal(intercepted, false);
-    assert.equal(await page.locator('#current-user').count(), 0, 'no ordinary sign-up stands in for the probe');
-  } finally { await browser.close(); }
-});

@@ -44,9 +44,12 @@ evidence.
   `ConvexError`. SpacetimeDB's HTTP reply does not separate a deliberate
   reducer error from a panic, so a panicking reducer also counts as a refusal.
   An HTTP 500 does not.
-- A request-tampering sign-in or sign-up step is unmeasured on stacks whose
-  credentials travel as reducer arguments over the SDK socket (SpacetimeDB): the
-  harness cannot modify that request, and an ordinary sign-in proves nothing.
+- A request-tampering sign-in or sign-up step modifies the credential request the
+  app actually sends. Positional arguments, such as a SpacetimeDB function call,
+  take an added field only where the module schema names that parameter; a
+  field with no parameter is recorded as absent and the request goes as sent. If
+  the request cannot be captured or its parameters cannot be read, the step is
+  unmeasured. An ordinary sign-in never stands in for the probe.
 - Concurrent actions drain every branch before returning; measurement failures
   take priority over app failures. Check verdicts cannot contradict failed or
   unmeasured action evidence.

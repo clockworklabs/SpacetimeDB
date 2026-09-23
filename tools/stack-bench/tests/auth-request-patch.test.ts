@@ -12,7 +12,7 @@ test('credential patches preserve native envelopes and reject ambiguous matches'
   const credentials = { username: 'customer', password: 'secret' };
   const fields = JSON.parse('{"isAdmin":true,"__proto__":{"polluted":true}}');
   for (const body of [credentials, { path: 'auth:signIn', args: [{ provider: 'password', params: credentials }] },
-    ['customer', 'secret', 'salt'], ['customer', 'secret', 'salt', { isAdmin: false, nonce: 4 }]]) {
+    ['customer', 'secret', 'salt', { isAdmin: false, nonce: 4 }]]) {
     const before = JSON.stringify(body);
     const changed = patchAuthRequest(body, 'customer', 'secret', { fields })!;
     assert(changed.body.includes('"isAdmin":true'));
@@ -21,6 +21,13 @@ test('credential patches preserve native envelopes and reject ambiguous matches'
     assert.equal(Object.getPrototypeOf(credentials), Object.prototype);
   }
   assert.equal(patchAuthRequest({ other: 'secret' }, 'customer', 'secret', { fields }), null);
+  // Positional arguments take a field only where the interface names that parameter.
+  const positional = ['customer', 'secret', 'salt', false];
+  assert.equal(patchAuthRequest(positional, 'customer', 'secret', { fields: { isAdmin: true } },
+    ['name', 'password', 'salt', 'is_admin'])!.body, '["customer","secret","salt",true]');
+  assert.deepEqual(patchAuthRequest(positional.slice(0, 3), 'customer', 'secret', { fields: { role: 'admin' } },
+    ['name', 'password', 'salt']), { body: '["customer","secret","salt"]', shape: 'positional', absentParameters: ['role'] });
+  assert.throws(() => patchAuthRequest(positional.slice(0, 3), 'customer', 'secret', { fields }), /parameter names/);
   assert.throws(() => patchAuthRequest([credentials, credentials], 'customer', 'secret', { fields }), /Multiple/);
   assert.throws(() => patchAuthRequest({ ...credentials, repeated: 'customer' }, 'customer', 'secret', { fields }), /Ambiguous/);
 });
@@ -183,5 +190,51 @@ test('real browser credential patch reaches the native request and keeps uncerta
     await context.close();
   } finally {
     await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test('a SpacetimeDB signup patch places authority by the module schema and never guesses', async () => {
+  let parameters: string[] | null = ['name', 'password', 'salt'];
+  const calls: unknown[] = [];
+  const server = createServer(async (req, res) => {
+    if (req.url?.startsWith('/v1/database/shop/schema')) {
+      if (!parameters) { res.writeHead(404).end(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ reducers: [], misc_exports: [
+        { Procedure: { name: 'sign_up', params: { elements: parameters.map(name => ({ name: { some: name } })) } } }] }));
+      return;
+    }
+    if (req.method === 'POST') {
+      let raw = ''; for await (const chunk of req) raw += chunk;
+      calls.push(JSON.parse(raw));
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('true'); return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html' }).end('<body>shop</body>');
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(); await page.goto(url);
+    const signUp = (args: unknown[]) => withAuthRequestPatch(page, 'claimant', 'secret', { fields: { role: 'admin' } },
+      () => page.evaluate(async args => {
+        try { return (await fetch('/v1/database/shop/call/sign_up', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer native' }, body: JSON.stringify(args) })).status; }
+        catch { return 0; }
+      }, args));
+    // The reference interface has no authority parameter: the schema proves it, and the request goes as sent.
+    const correct = await signUp(['claimant', 'secret', 'salt']);
+    assert.deepEqual(calls.at(-1), ['claimant', 'secret', 'salt']);
+    assert.deepEqual(correct.requestPatch.absentParameters, ['role']);
+    // A defective interface that accepts a role receives the claim where it declared it.
+    parameters = ['name', 'password', 'salt', 'role'];
+    await signUp(['claimant', 'secret', 'salt', 'customer']);
+    assert.deepEqual(calls.at(-1), ['claimant', 'secret', 'salt', 'admin']);
+    // Without parameter names the probe is unmeasured, not sent in a guessed shape.
+    parameters = null;
+    await assert.rejects(signUp(['claimant', 'secret', 'salt']), ActionInconclusive);
+    assert.equal(calls.length, 2);
+  } finally {
+    await browser.close();
+    server.close();
   }
 });

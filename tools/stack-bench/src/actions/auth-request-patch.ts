@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Page, Route } from 'playwright';
+import type { Page, Request, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
 import { ActionApplicationFailure } from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
@@ -9,7 +9,8 @@ export interface AuthRequestPatch {
   readonly password?: unknown;
 }
 
-type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string; transport?: 'convex-websocket' };
+type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string; transport?: 'convex-websocket';
+  absentParameters?: string[] };
 type SocketPatch = {
   change(body: unknown): ReturnType<typeof patchAuthRequest>;
   receipt(value: PatchReceipt): void;
@@ -65,8 +66,15 @@ export async function installAuthWebSocketCapture(page: Page): Promise<void> {
   });
 }
 
+// Module case conversion may render one identifier as signUp, sign_up, or signup.
+const sameIdentifier = (left: unknown, right: string): boolean => typeof left === 'string'
+  && left.toLowerCase().replaceAll('_', '') === right.toLowerCase().replaceAll('_', '');
+
 // Locate values submitted by the real form, not a guessed route or credential key.
-export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch) {
+// Positional arguments name nothing, so their fields go by the interface's own
+// parameter names; a field the interface has no parameter for is reported, not sent.
+export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch,
+  parameterNames?: readonly string[]) {
   const fields = patch.fields ?? {};
   if (Object.keys(patch).some(key => key !== 'fields' && key !== 'password') || Array.isArray(fields)
     || typeof fields !== 'object' || !Object.keys(fields).length && !Object.hasOwn(patch, 'password')) {
@@ -94,15 +102,49 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
     Object.defineProperty(container, passwordKey,
       { value: patch.password, enumerable: true, writable: true, configurable: true });
   }
+  const absentParameters: string[] = [];
   if (Array.isArray(container)) {
     const last = container.at(-1);
     if (last && typeof last === 'object' && !Array.isArray(last)) {
       container[container.length - 1] = { ...last, ...fields };
-    } else if (Object.keys(fields).length) container.push({ ...fields });
+    } else if (Object.keys(fields).length) {
+      if (parameterNames?.length !== container.length) throw new Error('Positional credential fields need parameter names');
+      for (const [key, value] of Object.entries(fields)) {
+        const index = parameterNames.findIndex(name => sameIdentifier(name, key));
+        if (index < 0) absentParameters.push(key);
+        else container[index] = value;
+      }
+    }
   } else for (const [key, value] of Object.entries(fields)) {
     Object.defineProperty(container, key, { value, enumerable: true, writable: true, configurable: true });
   }
-  return { body: JSON.stringify(copy), shape: Array.isArray(container) ? 'positional' : 'object' };
+  return { body: JSON.stringify(copy), shape: Array.isArray(container) ? 'positional' : 'object',
+    ...(absentParameters.length ? { absentParameters } : {}) };
+}
+
+// A SpacetimeDB function call sends positional arguments; its module schema
+// names them. Read it through the page's own network, as the browser sees it.
+async function callParameterNames(request: Request): Promise<string[] | undefined> {
+  const call = new URL(request.url()).pathname.match(/^\/v1\/database\/([^/]+)\/call\/([^/]+)$/);
+  if (!call) return undefined;
+  try {
+    const response = await request.frame().page().context().request.get(
+      new URL(`/v1/database/${call[1]}/schema?version=9`, request.url()).href,
+      { headers: request.headers().authorization ? { authorization: request.headers().authorization! } : {}, timeout: 10_000 });
+    if (!response.ok()) return undefined;
+    const name = decodeURIComponent(call[2]!);
+    const found: unknown[][] = [];
+    const visit = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      const entry = value as { name?: unknown; params?: { elements?: unknown } };
+      if (sameIdentifier(entry.name, name) && Array.isArray(entry.params?.elements)) found.push(entry.params.elements);
+      for (const child of Object.values(value)) visit(child);
+    };
+    visit(await response.json());
+    const names = found.length === 1 ? found[0]!.map(element =>
+      (element as { name?: { some?: unknown } } | null)?.name?.some) : [];
+    return names.length && names.every(item => typeof item === 'string') ? names as string[] : undefined;
+  } catch { return undefined; }
 }
 
 export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unroute'>,
@@ -131,7 +173,9 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     let body: unknown;
     try { body = request.postDataJSON(); } catch { return route.fallback(); }
     let changed: ReturnType<typeof patchAuthRequest>;
-    try { changed = patchAuthRequest(body, username, password, patch); }
+    const names = Array.isArray(body) && Object.keys(patch.fields ?? {}).length
+      ? await callParameterNames(request) : undefined;
+    try { changed = patchAuthRequest(body, username, password, patch, names); }
     catch { error = true; return route.abort(); }
     if (!changed) return route.fallback();
     const contentType = request.headers()['content-type']?.split(';')[0]?.trim();
@@ -141,8 +185,9 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
       try {
         // Preserve the actual route, headers and native envelope. No retries or redirects.
         const response = await route.fetch({ postData: changed.body, maxRedirects: 0, maxRetries: 0, timeout: 30_000 });
-        receipt = { shape: changed.shape, status: response.status(),
-          bodySha256: createHash('sha256').update(changed.body).digest('hex') };
+        const { body: sentBody, ...described } = changed;
+        receipt = { ...described, status: response.status(),
+          bodySha256: createHash('sha256').update(sentBody).digest('hex') };
         await route.fulfill({ response });
       } catch { error = true; await route.abort().catch(() => {}); }
     })();
