@@ -782,6 +782,10 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
     inconclusive('network-not-interrupted', { actor: input.actor,
       detail: `${sockets.unrouted} WebSocket connection(s) bypassed the interruption` });
   }
+  if ('open' in sockets && sockets.open > 0) {
+    inconclusive('network-not-interrupted', { actor: input.actor,
+      detail: `${sockets.open} HTTP request(s) stayed open through the interruption` });
+  }
   await browser.sleep(input.settleMs ?? 500, signal);
   const browserOnline = await actor.page.evaluate(() => navigator.onLine);
   if (browserOnline === offline) {

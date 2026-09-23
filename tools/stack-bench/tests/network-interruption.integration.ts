@@ -86,3 +86,39 @@ test('going offline closes open sockets, refuses reconnects, and never delivers 
     for (const socket of sockets) socket.destroy();
   }
 });
+
+test('going offline lets in-flight requests finish and flags one that never does', async () => {
+  const server = createServer((req, res) => {
+    if (req.url === '/poll') { setTimeout(() => res.end('polled'), 800); return; }
+    if (req.url === '/stream') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }).write('data: open\n\n'); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html' }).end('<p>app</p>');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+  const browser = await chromium.launch({ headless: true });
+  const service = { defaultWithin: 1000, sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+  const goOffline = async (path: string) => {
+    const context = await browser.newContext();
+    const networkInterruption = await installNetworkInterruption(context);
+    const page = await context.newPage();
+    await page.goto(url);
+    await page.evaluate(path => { void fetch(path).then(response => response.text()).then(text => { (window as unknown as { body: string }).body = text; }); }, path);
+    await page.waitForTimeout(100);
+    const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
+    const result = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'buyer', settleMs: 0 },
+      { capabilities: { actors: { get: () => actor }, 'browser-interaction': service } });
+    return { result, body: await page.evaluate(() => (window as unknown as { body?: string }).body) };
+  };
+  try {
+    const poll = await goOffline('/poll');
+    assert.equal(poll.result.status, 'passed', poll.result.summary ?? '');
+    assert.equal(poll.body, 'polled', 'the long poll completed before the cut');
+    const stream = await goOffline('/stream');
+    assert.equal(stream.result.status, 'inconclusive', 'an open event stream survives offline emulation');
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    server.close();
+  }
+});
