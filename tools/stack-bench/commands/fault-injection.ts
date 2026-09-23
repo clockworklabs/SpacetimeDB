@@ -8,12 +8,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:f
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
+import { buildContainerName } from '../container/reconcile-build-container.js';
 import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 
@@ -92,13 +93,15 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<Exit
 async function assertRefusesUnleasedCollision() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-container-collision-'));
   const app = join(root, 'app');
-  const name = `stack-bench-${basename(root)}`;
+  const runId = `collision-${process.pid}`;
+  // Plant the foreign container under the exact name the launcher will claim.
+  const name = buildContainerName({ runId, resources: {} });
   const leasePath = join(root, ARTIFACT_FILE.backendLease);
   let foreign = null;
   try {
     mkdirSync(app, { recursive: true });
     foreign = startContainer(name);
-    const lease = createBackendLease({ runId: `collision-${process.pid}`, backend: 'spacetime',
+    const lease = createBackendLease({ runId, backend: 'spacetime',
       track: 'fault-injection', runIndex: 0, serverUri: 'http://127.0.0.1:1',
       module: `collision-${process.pid}`, dataDir: join(root, 'data') });
     lease.state = 'active';

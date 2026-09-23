@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { killTree, pidsOnPort, processIdentity } from '../src/runtime/platform.js';
+import { buildContainerName } from '../container/reconcile-build-container.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { fetchStatus } from '../src/runtime/readiness.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
@@ -77,7 +78,7 @@ async function main() {
   const port = await freePort();
   const uri = `http://127.0.0.1:${port}`;
   const module = `stackbench-container-smoke-${process.pid}`;
-  const containerName = `stack-bench-${basename(root)}`;
+  const containerName = buildContainerName({ runId: basename(root), resources: {} });
   const leasePath = join(root, ARTIFACT_FILE.backendLease);
   let host: ChildProcess | null = null;
   let dev: ChildProcess | null = null;
