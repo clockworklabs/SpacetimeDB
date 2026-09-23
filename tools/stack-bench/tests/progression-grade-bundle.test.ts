@@ -265,6 +265,14 @@ test('a typed application abort charges current work but not earlier regression 
     { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'not-run' }] },
     { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
   ]);
+  const earlierFailure = structuredClone(failed);
+  earlierFailure.selection.attemptedChecks = ['check.accounts'];
+  earlierFailure.selection.reportedChecks = ['check.accounts'];
+  earlierFailure.selection.notRun = [{ stableKey: 'check.catalog', reason: failed.outcome!.reason }];
+  earlierFailure.suites.application.features[0]!.criteria[0]!.evidence = evidence('failed');
+  const measured = gradeBundleToProgressionResult(artifact(earlierFailure, 'earlier-failure'), selected, conversion);
+  if (measured.outcome !== 'conclusive') throw new Error('expected a conclusive result');
+  assert.deepEqual(measured.nodes[0], { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'fail' }] });
   const incomplete = structuredClone(failed);
   incomplete.selection.notRun.pop();
   assert.throws(() => gradeBundleToProgressionResult(artifact(incomplete, 'bad-abort'),

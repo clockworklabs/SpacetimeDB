@@ -36,8 +36,8 @@ evidence.
   failures. Observation helpers must not convert these errors into missing controls.
 - Harness and provider failures remain unmeasured and cannot become app failures.
 - If the app itself stops answering mid-grading, checks measured before that keep
-  their outcomes and the rest of the current work fails. Earlier features'
-  regression checks are recorded as not run. A readiness probe that times out is
+  their outcomes, the rest of the current work fails, and earlier features'
+  unreached checks are recorded as not run. A readiness probe that times out is
   unmeasured, not an app failure.
 - Concurrent actions drain every branch before returning; measurement failures
   take priority over app failures. Check verdicts cannot contradict failed or

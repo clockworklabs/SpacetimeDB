@@ -829,3 +829,15 @@ test('an application failure keeps current checks measured before the abort', ()
   });
   assert.equal(recorded.nodes.catalog!.repairs.used, 0);
 });
+
+test('an application failure keeps earlier failures measured before the abort', () => {
+  let state = progressionEngine.initialize(fixture());
+  state = progressionEngine.recordResult(state, grade(state, 'initial', {}));
+  const aborted = { ...grade(state, 'abort', { accounts: 'fail', catalog: 'not-run', ownership: 'fail', search: 'fail' }),
+    applicationFailure: { phase: 'application-readiness', reason: 'application stopped answering' } };
+  const recorded = progressionEngine.recordResult(state, aborted);
+  assert.deepEqual(Object.values(recorded.nodes.accounts!.checks), ['fail', 'fail']);
+  assert.deepEqual(Object.values(recorded.nodes.catalog!.checks), ['pass']);
+  assert.throws(() => progressionEngine.recordResult(state, { ...aborted,
+    ...grade(state, 'unrun', { ownership: 'not-run' }) }), /measured or fail/);
+});

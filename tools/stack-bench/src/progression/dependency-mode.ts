@@ -49,7 +49,7 @@ const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed'] as const);
 type CheckOutcome = 'pass' | 'fail' | 'blocked' | 'not-run';
 const failedCheck = (outcome: unknown): boolean => outcome === 'fail' || outcome === 'blocked';
 // A check that has not been measured yet stays null; an application abort
-// leaves non-current checks at their prior value.
+// leaves earlier checks it did not reach at their prior value.
 type StoredCheckOutcome = Exclude<CheckOutcome, 'not-run'> | null;
 
 interface SourceEvidence extends Record<string, unknown> {
@@ -755,11 +755,10 @@ function validateConclusiveResult(state: DependencyState,
   const currentNodes = new Set(selectedPromptNodeIds(state));
   if (result.applicationFailure !== undefined) {
     validateApplicationFailure(result.applicationFailure, 'result.applicationFailure');
-    // Current work keeps outcomes measured before the abort; everything else is not run.
-    for (const [nodeId, checks] of actualNodes) {
-      const current = currentNodes.has(nodeId);
-      if ([...checks.values()].some(outcome => (outcome === 'not-run') === current)) {
-        throw new Error(`application failure must mark ${nodeId} checks ${current ? 'measured or fail' : 'not-run'}`);
+    // Current work is measured or failed; earlier work may be not run.
+    for (const nodeId of currentNodes) {
+      if ([...actualNodes.get(nodeId)?.values() ?? []].includes('not-run')) {
+        throw new Error(`application failure must mark ${nodeId} checks measured or fail`);
       }
     }
   }

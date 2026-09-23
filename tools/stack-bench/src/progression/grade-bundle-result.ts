@@ -336,8 +336,10 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       'grade bundle reported checks');
     const notRun = exactKeys(selection.notRun, 'grade bundle not-run checks');
     const accounted = [...attempted, ...notRun];
-    // Checks measured before the abort keep their outcome; the rest of current work fails.
-    const measured = reportedEvidence(bundle, expectedIds, selectedById);
+    // Checks measured before the abort keep their outcome; the rest of current
+    // work fails and earlier work is not run.
+    const measured = new Map([...reportedEvidence(bundle, expectedIds, selectedById)]
+      .filter(([id]) => reported.includes(id)));
     const measuredPoints = expected.reduce((total, check) => total + (currentNodes.has(check.nodeId)
       && measured.get(check.id)?.status === 'passed' ? check.points : 0), 0);
     const score = bundle.totals?.score;
@@ -365,8 +367,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       id: nodeId,
       checks: expected.filter(check => check.nodeId === nodeId)
         .map(check => ({ id: check.id,
-          outcome: !currentNodes.has(nodeId) ? 'not-run'
-            : measured.has(check.id) ? checkOutcome(measured.get(check.id)!) : 'fail' })),
+          outcome: measured.has(check.id) ? checkOutcome(measured.get(check.id)!)
+            : currentNodes.has(nodeId) ? 'fail' : 'not-run' })),
     })) };
   }
 
