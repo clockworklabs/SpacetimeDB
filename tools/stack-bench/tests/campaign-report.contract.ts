@@ -838,6 +838,10 @@ test('a continued attempt measures time and tokens across its execution chain, l
     progressionResume: { priorRunId: 'run-1', inheritedLevels: [1] } };
   assert.deepEqual(campaignMeasuredRunWork(continued, [prior, continued]), { durationMs: 150_000, tokens: 1_500 });
   assert.deepEqual(campaignMeasuredRunWork(continued, [continued]), { durationMs: null, tokens: null });
+  const unrecorded = { ...continued, levels: [continued.levels[0]!, { level: 2 }] };
+  assert.equal(campaignMeasuredRunWork(unrecorded, [prior, unrecorded]).tokens, null, 'missing usage is not zero');
+  const idle = { ...continued, levels: [continued.levels[0]!, { level: 2, sessionTotals: { tokens: 0 } }] };
+  assert.equal(campaignMeasuredRunWork(idle, [prior, idle]).tokens, 1_000, 'measured zero stays zero');
 });
 
 test('a sequential attempt that stops early is scored against every planned level', () => {

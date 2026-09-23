@@ -414,9 +414,12 @@ export function campaignMeasuredRunWork(run: unknown, runs: readonly unknown[]):
   const tokens = chain.flatMap(item => {
     const inherited: unknown[] = isRecord(item.progressionResume) && Array.isArray(item.progressionResume.inheritedLevels)
       ? item.progressionResume.inheritedLevels : [];
-    return (Array.isArray(item.levels) ? item.levels : []).filter(level => isRecord(level) && !inherited.includes(level.level));
-  }).reduce((total: number, level) => total + (number(level.sessionTotals?.tokens) ?? 0), 0);
-  return { durationMs: durations.includes(null) ? null : durations.reduce<number>((a, b) => a + b!, 0), tokens };
+    return (Array.isArray(item.levels) ? item.levels : []).filter(level => isRecord(level) && !inherited.includes(level.level))
+      .map(level => number(level.sessionTotals?.tokens));
+  });
+  // A level without a token record is missing evidence, not zero usage.
+  return { durationMs: durations.includes(null) ? null : durations.reduce<number>((a, b) => a + b!, 0),
+    tokens: tokens.includes(null) ? null : tokens.reduce<number>((a, b) => a + b!, 0) };
 }
 
 export function campaignRunMetrics(run: BenchmarkRun, planned: PlannedLevels): Record<string, number | null> {
