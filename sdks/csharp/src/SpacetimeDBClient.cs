@@ -595,6 +595,7 @@ namespace SpacetimeDB
 
         public void Disconnect()
         {
+            if (isClosing) return;
             EndConnection();
             onDisconnect?.Invoke(null, null);
         }
