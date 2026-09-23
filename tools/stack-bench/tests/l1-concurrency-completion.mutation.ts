@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -17,8 +17,11 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
-  'sequential-l1.json'));
+const RECIPES = join(TRACK, 'composition', 'recipes');
+const release = buildRecipeRelease(join(RECIPES, 'sequential-l1.json'));
+// Shared manifests describe every recipe; each qualification keeps only its own targets.
+const recipeCheckKeys = new Set(readdirSync(RECIPES).flatMap(name =>
+  buildRecipeRelease(join(RECIPES, name)).checkCatalog.map(check => check.stableKey)));
 
 function prepareReferenceSource(args: ReferenceFixtureSelector & { app: string }) {
   const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
@@ -178,12 +181,11 @@ test(`${entry.backend} binds the current L1 mutation inventory to its effective 
       for (const mutation of manifest.mutations.filter(candidate =>
         mutationTargetKeys(candidate).some(key => releaseKeys.has(key)))) {
         for (const key of mutationTargetKeys(mutation)) {
-          assert(releaseKeys.has(key),
-          `${mutation.id} must target an exact check in the current release`);
+          assert(recipeCheckKeys.has(key), `${mutation.id} target ${key} is not a check in any recipe`);
         }
-        assert(mutation.file, `${mutation.id} must declare a source file`);
         for (const edit of mutationFileEdits(mutation)) {
           const file = edit.file;
+          assert(file, `${mutation.id} must declare a source file for each edit`);
           const source = readFileSync(join(app, file), 'utf8');
           assert.equal(source.split(edit.find).length - 1, 1,
             `${mutation.id} anchor must match exactly once`);
