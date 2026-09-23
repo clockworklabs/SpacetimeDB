@@ -4,7 +4,7 @@ use super::module_subscription_manager::{
     from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
     SubscriptionManager, TransactionOffset,
 };
-use super::query::{compile_query_with_hashes, CompiledQuery};
+use super::query::{compile_query_for_view_scopes, compile_query_with_hashes, CompiledQuery};
 use super::tx::DeltaTx;
 use super::TableUpdateType;
 use crate::client::messages::{
@@ -43,6 +43,7 @@ use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
 use spacetimedb_schema::def::RawModuleDefVersion;
+use spacetimedb_schema::schema::ViewDefInfo;
 use spacetimedb_table::static_assert_size;
 use std::{
     ops::Range,
@@ -782,8 +783,24 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
 
+        let mut instance = instance;
+        let mut queries = [query];
+        let (mut_tx, scope_trapped, bound) = self.bind_view_scopes(
+            mut_tx,
+            instance.as_deref_mut(),
+            &auth,
+            &mut queries,
+            &mut physical_plans,
+        )?;
+        let [query] = queries;
+        if let Err(err) = bound {
+            let _ = send_err_msg(format!("{err}, executing: `{}`", query.sql()).into());
+            return Ok((None, scope_trapped));
+        }
+
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &query, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         return_on_err_with_sql_bool!(
             self.check_new_query_row_limit(std::slice::from_ref(&query), &physical_plans, &tx, &auth),
@@ -1634,6 +1651,30 @@ impl ModuleSubscriptions {
             }
         }
 
+        // Bind the queries which read scoped views to the sender's scopes,
+        // as their scopes determine under which hashes they are registered.
+        let mut instance = instance;
+        let mut scope_trapped = false;
+        let mut bound_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
+        let mut bound_sets = Vec::with_capacity(compiled_sets.len());
+        for (index, mut queries) in compiled_sets {
+            let (tx, trapped, bound) = self.bind_view_scopes(
+                bound_tx,
+                instance.as_deref_mut(),
+                &auth,
+                &mut queries,
+                &mut physical_plans,
+            )?;
+            bound_tx = tx;
+            scope_trapped |= trapped;
+            match bound {
+                Ok(()) => bound_sets.push((index, queries)),
+                Err(err) => outcomes[index] = ws_v2::SubscribeSetOutcome::Error(err.to_string().into()),
+            }
+        }
+        let compiled_sets = bound_sets;
+        let (mut_tx, _) = self.guard_mut_tx(bound_tx, <_>::default());
+
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
         // and `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still
@@ -1682,6 +1723,7 @@ impl ModuleSubscriptions {
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &registered_queries, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         // Evaluate every registered set at the single transaction offset above.
         // A set which fails has its registration removed,
@@ -1788,6 +1830,20 @@ impl ModuleSubscriptions {
             return Ok((None, false));
         }
 
+        let mut instance = instance;
+        let (mut queries, mut physical_plans) = (queries, physical_plans);
+        let (mut_tx, scope_trapped, bound) = self.bind_view_scopes(
+            mut_tx,
+            instance.as_deref_mut(),
+            &auth,
+            &mut queries,
+            &mut physical_plans,
+        )?;
+        if let Err(err) = bound {
+            send_err_msg(err.to_string().into());
+            return Ok((None, scope_trapped));
+        }
+
         let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -1812,6 +1868,7 @@ impl ModuleSubscriptions {
 
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         if let Err(err) = self.check_new_query_row_limit(&queries, &physical_plans, &tx, &auth) {
             self.remove_failed_subscription(
@@ -1937,8 +1994,20 @@ impl ModuleSubscriptions {
             subscription_metrics,
         )?;
 
+        let mut instance = instance;
+        let (mut queries, mut physical_plans) = (queries, physical_plans);
+        let (mut_tx, scope_trapped, bound) = self.bind_view_scopes(
+            mut_tx,
+            instance.as_deref_mut(),
+            &auth,
+            &mut queries,
+            &mut physical_plans,
+        )?;
+        bound?;
+
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         self.check_new_query_row_limit(&queries, &physical_plans, &tx, &auth)?;
 
@@ -2175,6 +2244,60 @@ impl ModuleSubscriptions {
 
     /// We unsubscribe from views by decrementing the subscriber count in the view lifecycle state.
     /// Views without any subscribers are cleaned up async.
+    /// Bind the queries in `queries` which read scoped views to the scopes of `auth.caller()`.
+    ///
+    /// Such queries are compiled without scopes, which are only known once the caller's scope resolvers have run.
+    /// This runs them, materializing the views of the caller's scopes,
+    /// and recompiles each such query for those scopes, updating `physical_plans` accordingly.
+    /// The hash of a recompiled query identifies its scopes,
+    /// so that it is shared by every subscriber in the same scopes.
+    ///
+    /// Returns the transaction, whether a view trapped, and whether compiling the queries succeeded.
+    /// Returns an error, consuming the transaction, if the views could not be materialized.
+    fn bind_view_scopes<I: WasmInstance>(
+        &self,
+        mut tx: MutTxId,
+        instance: Option<&mut RefInstance<'_, I>>,
+        auth: &AuthCtx,
+        queries: &mut [Arc<Plan>],
+        physical_plans: &mut HashMap<QueryHash, Vec<ProjectPlan>>,
+    ) -> Result<(MutTxId, bool, Result<(), DBError>), DBError> {
+        let caller = auth.caller();
+        let scoped = queries
+            .iter()
+            .enumerate()
+            .filter(|(_, query)| query.reads_scoped_view())
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        if scoped.is_empty() {
+            return Ok((tx, false, Ok(())));
+        }
+
+        let mut trapped = false;
+        if let Some(instance) = instance {
+            let scoped_queries = scoped.iter().map(|&i| queries[i].clone()).collect::<Vec<_>>();
+            (tx, trapped) = ModuleHost::materialize_scoped_views(tx, instance, &scoped_queries, caller)?;
+        }
+
+        for i in scoped {
+            let query = &queries[i];
+            let view_scopes = match tx.view_scopes_for(query.scoped_view_ids(), caller) {
+                Ok(view_scopes) => view_scopes,
+                Err(err) => return Ok((tx, trapped, Err(err.into()))),
+            };
+            match compile_query_for_view_scopes(auth, &tx, query.sql(), view_scopes) {
+                Ok(compiled) => {
+                    physical_plans.remove(&query.hash());
+                    physical_plans.insert(compiled.plan.hash(), compiled.physical_plans);
+                    queries[i] = Arc::new(compiled.plan);
+                }
+                Err(err) => return Ok((tx, trapped, Err(err))),
+            }
+        }
+
+        Ok((tx, trapped, Ok(())))
+    }
+
     fn _unsubscribe_views(
         tx: &mut MutTxId,
         view_collector: &impl CollectViews,
@@ -2184,6 +2307,12 @@ impl ModuleSubscriptions {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let is_anonymous = tx.lookup_st_view(view_id)?.is_anonymous;
+            if ViewDefInfo::infer_is_scoped(is_anonymous, tx.is_view_parameterized(view_id)?) {
+                // The subscriber's scope may have changed since they subscribed,
+                // so look it up rather than recomputing it.
+                tx.unsubscribe_scoped_view(view_id, sender)?;
+                continue;
+            }
             let view_call = if is_anonymous {
                 ViewCallInfo::anonymous(view_id)
             } else {

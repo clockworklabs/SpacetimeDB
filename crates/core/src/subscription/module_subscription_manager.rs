@@ -146,6 +146,23 @@ impl Plan {
     pub fn returns_event_table(&self) -> bool {
         self.plans.iter().any(|p| p.returns_event_table())
     }
+
+    /// Does this plan read from a scoped view?
+    pub fn reads_scoped_view(&self) -> bool {
+        self.plans.iter().any(|p| !p.scoped_view_ids().is_empty())
+    }
+
+    /// Returns the scoped views which this plan reads, sorted and deduplicated.
+    pub fn scoped_view_ids(&self) -> Vec<ViewId> {
+        let mut view_ids = self
+            .plans
+            .iter()
+            .flat_map(|p| p.scoped_view_ids().iter().copied())
+            .collect::<Vec<_>>();
+        view_ids.sort();
+        view_ids.dedup();
+        view_ids
+    }
 }
 
 /// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.

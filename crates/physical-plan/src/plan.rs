@@ -37,11 +37,31 @@ pub trait ParamResolver {
 
 /// A runtime parameter slot in a physical plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParamSlot(pub u16);
+pub struct ParamSlot(pub u32);
 
 pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
 pub const PARAM_VIEW_ARG_HASH_EMPTY: ParamSlot = ParamSlot(1);
 pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
+
+impl ParamSlot {
+    /// Slots with this bit set hold the arg hash of the caller's scope for a scoped view,
+    /// whose [`ViewId`] is in the remaining bits.
+    const SCOPED_VIEW_BIT: u32 = 1 << 31;
+
+    /// The slot holding the arg hash of the caller's scope for the scoped view `view_id`.
+    pub const fn scoped_view(view_id: ViewId) -> Self {
+        Self(Self::SCOPED_VIEW_BIT | view_id.0)
+    }
+
+    /// If this slot holds the arg hash of the caller's scope for a scoped view, returns the view's id.
+    pub const fn as_scoped_view(self) -> Option<ViewId> {
+        if self.0 & Self::SCOPED_VIEW_BIT != 0 {
+            Some(ViewId(self.0 & !Self::SCOPED_VIEW_BIT))
+        } else {
+            None
+        }
+    }
+}
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -135,6 +155,13 @@ impl ProjectPlan {
     pub fn reads_from_view(&self, anonymous: bool) -> bool {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
+        }
+    }
+
+    /// Returns the ids of the scoped views which this plan reads, sorted and deduplicated.
+    pub fn scoped_view_ids(&self) -> Vec<ViewId> {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.scoped_view_ids(),
         }
     }
 
@@ -248,6 +275,20 @@ impl ProjectListPlan {
             Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
             Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
         }
+    }
+
+    /// Returns the ids of the scoped views which this plan reads, sorted and deduplicated.
+    pub fn scoped_view_ids(&self) -> Vec<ViewId> {
+        let mut view_ids = match self {
+            Self::Limit(plan, _) => plan.scoped_view_ids(),
+            Self::Name(plans) => plans.iter().flat_map(|plan| plan.scoped_view_ids()).collect(),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => {
+                plans.iter().flat_map(|plan| plan.scoped_view_ids()).collect()
+            }
+        };
+        view_ids.sort();
+        view_ids.dedup();
+        view_ids
     }
 
     /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
@@ -569,10 +610,10 @@ impl PhysicalPlan {
     fn expand_views(self) -> Self {
         match self {
             Self::TableScan(scan, label) if scan.schema.is_view() => {
-                let param = if scan.schema.is_anonymous_view() {
-                    PARAM_VIEW_ARG_HASH_EMPTY
-                } else {
-                    PARAM_VIEW_ARG_HASH_SENDER
+                let param = match scan.schema.view_info {
+                    Some(info) if info.is_scoped => ParamSlot::scoped_view(info.view_id),
+                    _ if scan.schema.is_anonymous_view() => PARAM_VIEW_ARG_HASH_EMPTY,
+                    _ => PARAM_VIEW_ARG_HASH_SENDER,
                 };
                 let arg_hash = PhysicalExpr::Param(param, AlgebraicType::U256);
                 Self::Filter(
@@ -1156,17 +1197,43 @@ impl PhysicalPlan {
         self.return_table().is_some_and(|schema| schema.is_view())
     }
 
-    /// Does this plan read from an (anonymous) view?
+    /// Does this plan read from an anonymous view, if `anonymous`,
+    /// or else from a view materialized per caller identity?
+    ///
+    /// Scoped views are neither; see [`Self::scoped_view_ids`].
     pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        let reads = |schema: &TableSchema| {
+            if anonymous {
+                schema.is_anonymous_view()
+            } else {
+                schema.is_sender_view()
+            }
+        };
         self.any(&|plan| match plan {
-            Self::TableScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
-            Self::TableScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
-            Self::IxScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
-            Self::IxScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
-            Self::IxJoin(join, _) if anonymous => join.rhs.is_anonymous_view(),
-            Self::IxJoin(join, _) => join.rhs.is_view() && !join.rhs.is_anonymous_view(),
+            Self::TableScan(scan, _) => reads(&scan.schema),
+            Self::IxScan(scan, _) => reads(&scan.schema),
+            Self::IxJoin(join, _) => reads(&join.rhs),
             _ => false,
         })
+    }
+
+    /// Returns the ids of the scoped views which this plan reads, sorted and deduplicated.
+    pub fn scoped_view_ids(&self) -> Vec<ViewId> {
+        let mut view_ids = vec![];
+        let mut visit = |schema: &TableSchema| {
+            if let Some(info) = schema.view_info.filter(|info| info.is_scoped) {
+                view_ids.push(info.view_id);
+            }
+        };
+        self.visit(&mut |plan| match plan {
+            Self::TableScan(scan, _) => visit(&scan.schema),
+            Self::IxScan(scan, _) => visit(&scan.schema),
+            Self::IxJoin(join, _) => visit(&join.rhs),
+            _ => {}
+        });
+        view_ids.sort();
+        view_ids.dedup();
+        view_ids
     }
 
     /// Does this plan use an event table as the lookup (rhs) table in a semi-join?

@@ -14,9 +14,11 @@ use crate::subscription::module_subscription_actor::{commit_and_broadcast_event,
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_engine::relational_db::RelationalDB;
+use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -101,6 +103,11 @@ fn run_inner<I: WasmInstance>(
                 None => (tx, false),
             };
 
+            // Select the rows of the caller's scopes from any scoped views.
+            let mut view_ids = HashSet::default();
+            stmt.collect_views(&mut view_ids);
+            let view_scopes = tx.view_scopes_for(view_ids, auth.caller())?;
+
             let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
@@ -118,7 +125,7 @@ fn run_inner<I: WasmInstance>(
             });
 
             // Evaluate the query
-            let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+            let rows = execute_select_stmt(&auth, stmt, view_scopes, &DeltaTx::from(&*tx), &mut metrics, |plan| {
                 check_row_limit(
                     &[&plan],
                     &db,

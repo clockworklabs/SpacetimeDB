@@ -2,13 +2,14 @@ use anyhow::Result;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use spacetimedb_lib::{
-    hash_empty_view_args, hash_sender_view_args, identity::AuthCtx, query::Delta, AlgebraicType, Identity,
+    hash_empty_view_args, hash_sender_view_args, hash_unscoped_view_args, identity::AuthCtx, query::Delta,
+    AlgebraicType, Identity,
 };
 use spacetimedb_physical_plan::plan::{
     ParamResolver, ParamSlot, ProjectField, TupleField, PARAM_SENDER, PARAM_VIEW_ARG_HASH_EMPTY,
     PARAM_VIEW_ARG_HASH_SENDER,
 };
-use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
@@ -18,11 +19,14 @@ use spacetimedb_table::{static_assert_size, table::RowRef};
 pub mod dml;
 pub mod pipelined;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ExecutionParams {
     sender: Identity,
     empty_view_arg_hash: u256,
     sender_view_arg_hash: u256,
+    /// The arg hash of the sender's scope for each scoped view read by the plan, sorted by view id.
+    /// A scoped view without an entry selects no rows.
+    view_scopes: Vec<(ViewId, u256)>,
 }
 
 impl ExecutionParams {
@@ -31,16 +35,46 @@ impl ExecutionParams {
             sender,
             empty_view_arg_hash: hash_empty_view_args().to_u256(),
             sender_view_arg_hash: hash_sender_view_args(sender).to_u256(),
+            view_scopes: Vec::new(),
         }
     }
 
     pub fn from_auth(auth: &AuthCtx) -> Self {
         Self::from_sender(auth.caller())
     }
+
+    /// Bind the scoped views read by the plan to the arg hashes of the sender's scopes.
+    pub fn with_view_scopes(mut self, view_scopes: impl IntoIterator<Item = (ViewId, u256)>) -> Self {
+        self.view_scopes = view_scopes.into_iter().collect();
+        self.view_scopes.sort_by_key(|(view_id, _)| *view_id);
+        self.view_scopes.dedup_by_key(|(view_id, _)| *view_id);
+        self
+    }
+
+    /// The arg hashes of the sender's scopes for the scoped views read by the plan, sorted by view id.
+    pub fn view_scopes(&self) -> &[(ViewId, u256)] {
+        &self.view_scopes
+    }
+
+    /// The arg hash of the sender's scope for the scoped view `view_id`,
+    /// or the unscoped arg hash, which selects no rows, if it is not bound.
+    fn view_scope(&self, view_id: ViewId) -> u256 {
+        match self.view_scopes.binary_search_by_key(&view_id, |(view_id, _)| *view_id) {
+            Ok(i) => self.view_scopes[i].1,
+            Err(_) => hash_unscoped_view_args().to_u256(),
+        }
+    }
 }
 
 impl ParamResolver for ExecutionParams {
     fn resolve_param(&self, param: ParamSlot, ty: &AlgebraicType) -> AlgebraicValue {
+        if let Some(view_id) = param.as_scoped_view() {
+            assert!(
+                matches!(ty, AlgebraicType::U256),
+                "unsupported type for scoped view arg hash: {ty:?}"
+            );
+            return AlgebraicValue::U256(self.view_scope(view_id).into());
+        }
         match param {
             PARAM_SENDER if ty.is_identity() => self.sender.into(),
             PARAM_SENDER if ty.is_bytes() => AlgebraicValue::Bytes(self.sender.to_be_byte_array().into()),
