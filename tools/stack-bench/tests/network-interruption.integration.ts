@@ -85,6 +85,9 @@ test('going offline closes open sockets, never delivers held updates, and keeps 
   try {
     const { page, networkInterruption, setOffline } = await interruptibleActor(browser, app.url);
     interruption = networkInterruption;
+    // A reloaded document's sockets end without a close event; they must not count as open.
+    await page.reload();
+    await page.waitForTimeout(500);
     const loadedAt = await windowValue(page, 'loadedAt');
     const offline = await setOffline(true);
     assert.equal(offline.status, 'passed', offline.summary ?? '');

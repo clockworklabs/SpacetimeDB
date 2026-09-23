@@ -80,10 +80,18 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
     // `<-loopback>` removes Chromium's implicit loopback bypass, so local apps go through it too.
     proxy: { server: `http://127.0.0.1:${port}`, bypass: '<-loopback>', username, password },
     attach(context) {
-      const track = (page: Page) => page.on('websocket', socket => {
-        sockets.add(socket);
-        socket.on('close', () => sockets.delete(socket));
-      });
+      const track = (page: Page) => {
+        const document = new Set<WebSocket>();
+        // A navigated-away or closed document's sockets end without a close event.
+        const forget = () => { for (const socket of document) sockets.delete(socket); document.clear(); };
+        page.on('websocket', socket => {
+          sockets.add(socket);
+          document.add(socket);
+          socket.on('close', () => { sockets.delete(socket); document.delete(socket); });
+        });
+        page.on('framenavigated', frame => { if (frame === page.mainFrame()) forget(); });
+        page.on('close', forget);
+      };
       context.on('page', track);
       context.on('request', request => inFlight.add(request));
       context.on('requestfinished', request => inFlight.delete(request));
