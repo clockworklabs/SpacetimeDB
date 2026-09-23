@@ -10,7 +10,7 @@ import { emptyArtifactIdentities, readArtifact, writeArtifact,
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
-import { buildCampaignReport, campaignActiveDurationMs, campaignReportCsv, exportCampaignReport, generateCampaignReport,
+import { buildCampaignReport, campaignActiveDurationMs, campaignMeasuredRunWork, campaignReportCsv, exportCampaignReport, generateCampaignReport,
   campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
 import type { BenchmarkRun, RunSelection } from '../src/campaigns/campaign-report.js';
@@ -824,4 +824,14 @@ test('active time excludes this execution\'s provider waits and nothing it inher
     ],
     progressionResume: { inheritedLevels: [1] },
   } as never), 75_000);
+});
+
+test('a continued attempt measures time and tokens across its execution chain, like its cost', () => {
+  const prior = { id: 'run-1', totals: { durationSec: 100 },
+    levels: [{ level: 1, sessionTotals: { tokens: 1_000 } }] };
+  const continued = { id: 'run-2', totals: { durationSec: 50 },
+    levels: [{ level: 1, sessionTotals: { tokens: 1_000 } }, { level: 2, sessionTotals: { tokens: 500 } }],
+    progressionResume: { priorRunId: 'run-1', inheritedLevels: [1] } };
+  assert.deepEqual(campaignMeasuredRunWork(continued, [prior, continued]), { durationMs: 150_000, tokens: 1_500 });
+  assert.deepEqual(campaignMeasuredRunWork(continued, [continued]), { durationMs: null, tokens: null });
 });

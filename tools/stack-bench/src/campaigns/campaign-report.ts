@@ -372,16 +372,37 @@ export function campaignActiveDurationMs(run: {
   return Math.max(0, run.totals!.durationSec! * 1000 - wait - (number(run.totals?.pausedDurationSec) ?? 0) * 1000);
 }
 
+// A continued run and the prior runs it resumed, or null when a link is missing or cyclic.
+function executionChain(run: unknown, runs: readonly unknown[]): Record<string, unknown>[] | null {
+  const chain: Record<string, unknown>[] = [];
+  for (let current: unknown = run; ;) {
+    if (!isRecord(current) || chain.includes(current)) return null;
+    chain.push(current);
+    if (!current.progressionResume) return chain;
+    const priorId = isRecord(current.progressionResume) ? current.progressionResume.priorRunId : null;
+    current = runs.find(candidate => isRecord(candidate) && candidate.id === priorId);
+  }
+}
+
 // Independent failed executions belong to campaign spend, not measured-run cost.
-export function campaignMeasuredRunCost(run: unknown, runs: readonly unknown[], seen = new Set<string>()): CostEvidence {
-  if (!isRecord(run)) return { status: 'unknown', costUsd: null };
-  if (!run.progressionResume) return runCostEvidence(run, 'execution');
-  const priorId = isRecord(run.progressionResume) ? run.progressionResume.priorRunId : null;
-  if (typeof priorId !== 'string' || seen.has(priorId)) return { status: 'unknown', costUsd: null };
-  const prior = runs.find(candidate => isRecord(candidate) && candidate.id === priorId);
-  if (!prior) return { status: 'unknown', costUsd: null };
-  seen.add(priorId);
-  return sumCostEvidence([runCostEvidence(run, 'execution'), campaignMeasuredRunCost(prior, runs, seen)]);
+export function campaignMeasuredRunCost(run: unknown, runs: readonly unknown[]): CostEvidence {
+  const chain = executionChain(run, runs);
+  return chain ? sumCostEvidence(chain.map(item => runCostEvidence(item, 'execution')))
+    : { status: 'unknown', costUsd: null };
+}
+
+// A continued attempt's time and tokens span the same chain as its cost; each
+// execution counts only the levels it did not inherit.
+export function campaignMeasuredRunWork(run: unknown, runs: readonly unknown[]): { durationMs: number | null; tokens: number | null } {
+  const chain = executionChain(run, runs);
+  if (!chain) return { durationMs: null, tokens: null };
+  const durations = chain.map(item => campaignActiveDurationMs(item as Parameters<typeof campaignActiveDurationMs>[0]));
+  const tokens = chain.flatMap(item => {
+    const inherited: unknown[] = isRecord(item.progressionResume) && Array.isArray(item.progressionResume.inheritedLevels)
+      ? item.progressionResume.inheritedLevels : [];
+    return (Array.isArray(item.levels) ? item.levels : []).filter(level => isRecord(level) && !inherited.includes(level.level));
+  }).reduce((total: number, level) => total + (number(level.sessionTotals?.tokens) ?? 0), 0);
+  return { durationMs: durations.includes(null) ? null : durations.reduce<number>((a, b) => a + b!, 0), tokens };
 }
 
 export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | null> {
@@ -927,7 +948,9 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     const outcomes = new Map<string, CheckStatus>((accepted?.checks ?? []).map(check => [check.id, check.status]));
     const completion = latestRun?.progressionStatus?.score?.completion ?? checkCompletion(selected, outcomes);
     const validCost = latestRun ? campaignMeasuredRunCost(latestRun, [...runs.values()]) : undefined;
+    const work = latestRun ? campaignMeasuredRunWork(latestRun, [...runs.values()]) : undefined;
     const metrics = latest?.status === 'completed' ? { ...latest.metrics,
+      totalDurationMs: work?.durationMs ?? null, totalTokens: work?.tokens ?? null,
       totalCostUsd: validCost?.status === 'exact' ? validCost.costUsd : null,
       totalCostUpperBoundUsd: validCost?.status === 'upper-bound' ? validCost.costUsd : null } : null;
     const groups = plan.featureCatalog?.definition.questlines.map(group => {
