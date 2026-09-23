@@ -3278,6 +3278,19 @@ impl ModuleHost {
         )?
     }
 
+    pub async fn update_environment(
+        &self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        call_instance!(
+            self,
+            "<update_database>",
+            environment,
+            |environment, inst| inst.update_environment(environment),
+            |environment, inst| inst.update_environment(environment).await,
+        )?
+    }
+
     pub async fn exit(&self) {
         // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
         self.closed.store(true, std::sync::atomic::Ordering::Relaxed);

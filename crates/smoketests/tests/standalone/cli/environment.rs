@@ -496,7 +496,7 @@ fn cli_environment_preservation_and_environment_only_updates() {
         .contains(&json!("SMOKE_REQUIRED")));
     for (body, status) in [
         (
-            json!({"environment":{"SMOKE_REQUIRED":"stale-replacement"},"expected_module_version":"00".repeat(32)}),
+            json!({"environment":{"SMOKE_REQUIRED":"stale-replacement"},"expected_module_hash":"00".repeat(32)}),
             409,
         ),
         (json!({"environment":{"SMOKE_REQUIRED":"missing-version"}}), 400),

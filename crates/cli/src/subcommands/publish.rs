@@ -6,9 +6,12 @@ use anyhow::{ensure, Context};
 use clap::Arg;
 use clap::ArgAction::{self, Set, SetTrue};
 use clap::{value_parser, ArgMatches, ValueEnum};
+use headers::HeaderMapExt;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
+use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
+use spacetimedb_lib::environment::EnvironmentRemove;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -355,65 +358,42 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
 #[derive(Default)]
 struct EnvironmentOptions {
     only: bool,
-    remove: Vec<String>,
-    replace: bool,
+    remove: EnvironmentRemove,
 }
 
 impl EnvironmentOptions {
     fn from_args(args: &ArgMatches) -> anyhow::Result<Self> {
-        let options = Self {
-            only: args.get_flag("env_only"),
-            remove: args
-                .get_many::<String>("unset_env")
-                .map(|keys| keys.cloned().collect())
-                .unwrap_or_default(),
-            replace: args.get_flag("replace_env"),
+        let remove = if args.get_flag("replace_env") {
+            EnvironmentRemove::All
+        } else if let Some(remove) = args.get_many::<String>("unset_env") {
+            let remove = remove.cloned().collect::<Vec<_>>();
+            ensure!(
+                remove.len() <= spacetimedb_lib::environment::MAX_ENV_VARS,
+                "Too many environment removals"
+            );
+            for key in &remove {
+                spacetimedb_lib::environment::validate_key(key)?;
+            }
+            EnvironmentRemove::Keys(remove)
+        } else {
+            EnvironmentRemove::No
         };
-        ensure!(
-            options.remove.len() <= spacetimedb_lib::environment::MAX_ENV_VARS,
-            "Too many environment removals"
-        );
-        for key in &options.remove {
-            spacetimedb_lib::environment::validate_key(key)?;
-        }
-        Ok(options)
+        Ok(Self {
+            only: args.get_flag("env_only"),
+            remove,
+        })
     }
 
     fn validate_values(&self, values: &std::collections::BTreeMap<String, String>) -> anyhow::Result<()> {
-        ensure!(
-            !self.replace || self.remove.is_empty(),
-            "--replace-env cannot be combined with --unset-env"
-        );
-        for key in &self.remove {
-            ensure!(
-                !values.contains_key(key),
-                "Environment key {key:?} is both supplied and removed"
-            );
+        if let EnvironmentRemove::Keys(remove) = &self.remove {
+            for key in remove {
+                ensure!(
+                    !values.contains_key(key),
+                    "Environment key {key:?} is both supplied and removed"
+                );
+            }
         }
         Ok(())
-    }
-}
-
-fn publication_body(
-    module: &spacetimedb_schema::def::ModuleDef,
-    bytes: Vec<u8>,
-    environment: std::collections::BTreeMap<String, String>,
-    options: &EnvironmentOptions,
-) -> anyhow::Result<(&'static str, Vec<u8>)> {
-    options.validate_values(&environment)?;
-    if module.environment_declared() || !environment.is_empty() || !options.remove.is_empty() || options.replace {
-        let body = spacetimedb_client_api_messages::publish::PublishRequest {
-            module: Some(bytes),
-            environment,
-            environment_remove: options.remove.clone(),
-            environment_replace: options.replace,
-            expected_module_version: None,
-        }
-        .encode()?;
-        Ok((spacetimedb_client_api_messages::publish::CONTENT_TYPE, body))
-    } else {
-        // Preserve older servers for ordinary modules without environment changes.
-        Ok(("application/octet-stream", bytes))
     }
 }
 
@@ -765,13 +745,15 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
-        let (content_type, payload) =
-            publication_body(&module_schema, program_bytes, environment.values, environment_options)?;
-        let res = builder
-            .header(reqwest::header::CONTENT_TYPE, content_type)
-            .body(payload)
-            .send()
-            .await?;
+        let mut request = builder.body(program_bytes).build()?;
+        request
+            .headers_mut()
+            .typed_insert(SpacetimeEnvironment(environment.values));
+        request
+            .headers_mut()
+            .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
+
+        let res = client.execute(request).await?;
         anyhow::ensure!(res.status().is_success(), "Publish failed with HTTP {}", res.status());
         let response: PublishResult = res
             .json()

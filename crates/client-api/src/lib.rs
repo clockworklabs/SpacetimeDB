@@ -17,7 +17,7 @@ use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::environment::EnvironmentUpdate;
+use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentUpdate};
 use spacetimedb_lib::{Hash, ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
@@ -209,18 +209,20 @@ impl Host {
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
         environment: spacetimedb_lib::environment::EnvironmentUpdate,
-        expected_module_version: Option<spacetimedb_lib::Hash>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(
-                database,
-                host_type,
-                self.replica_id,
-                program_bytes,
-                policy,
-                environment,
-                expected_module_version,
-            )
+            .update_module_host(database, host_type, self.replica_id, program_bytes, policy, environment)
+            .await
+    }
+
+    pub async fn update_environment(
+        &self,
+        database: Database,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_environment(database, self.replica_id, environment, expected_module_hash)
             .await
     }
 }
@@ -330,7 +332,12 @@ pub trait ControlStateWriteAccess: Send + Sync {
 
     /// Remove all data from a database, and reset it according to the
     /// given [DatabaseResetDef].
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
+    async fn reset_database(
+        &self,
+        caller_identity: &Identity,
+        spec: DatabaseResetDef,
+        environment: EnvironmentMap,
+    ) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -372,9 +379,10 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn update_environment(
         &self,
         publisher: &Identity,
+        database_identity: &Identity,
         environment: EnvironmentUpdate,
-        expected_module_version: Hash,
-    ) -> anyhow::Result<()>;
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateDatabaseResult>;
 }
 
 #[async_trait]
@@ -456,8 +464,13 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).delete_database(caller_identity, database_identity).await
     }
 
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
-        (**self).reset_database(caller_identity, spec).await
+    async fn reset_database(
+        &self,
+        caller_identity: &Identity,
+        spec: DatabaseResetDef,
+        environment: EnvironmentMap,
+    ) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec, environment).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -505,11 +518,12 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     async fn update_environment(
         &self,
         publisher: &Identity,
+        database_identity: &Identity,
         environment: EnvironmentUpdate,
-        expected_module_version: Hash,
-    ) -> anyhow::Result<()> {
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
         (**self)
-            .update_environment(publisher, environment, expected_module_version)
+            .update_environment(publisher, database_identity, environment, expected_module_hash)
             .await
     }
 }

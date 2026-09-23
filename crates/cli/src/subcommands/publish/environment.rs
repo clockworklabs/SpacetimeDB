@@ -4,8 +4,10 @@ use std::ffi::OsString;
 
 pub(super) use crate::schema_extract::{inspect, read_program};
 use anyhow::Context;
+use headers::HeaderMapExt;
 use serde_json::Value;
-use spacetimedb_lib::environment::EnvironmentSchema;
+use spacetimedb_client_api_messages::publish::SpacetimeEnvironmentRemove;
+use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentSchema};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
@@ -88,7 +90,7 @@ pub(super) async fn publish_only(
     options: &super::EnvironmentOptions,
 ) -> anyhow::Result<()> {
     use crate::util::{add_auth_header_opt, get_auth_header, y_or_n};
-    use spacetimedb_client_api_messages::publish::{EnvironmentMetadata, PublishRequest, CONTENT_TYPE};
+    use spacetimedb_client_api_messages::publish::EnvironmentMetadata;
 
     let host = config.get_host_url(server)?;
     let server_url = reqwest::Url::parse(&host)?;
@@ -106,14 +108,12 @@ pub(super) async fn publish_only(
         const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') },
     )
     .to_string();
-    let url = format!("{host}/v1/database/{encoded}");
+    let url = format!("{host}/v1/database/{encoded}/environment");
     // Neither credentials nor publish bodies may be forwarded to redirect destinations.
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let response = add_auth_header_opt(client.get(format!("{url}/environment")), &auth)
-        .send()
-        .await?;
+    let response = add_auth_header_opt(client.get(&url), &auth).send().await?;
     anyhow::ensure!(
         response.status().is_success(),
         "Cannot read environment schema: HTTP {}",
@@ -124,18 +124,20 @@ pub(super) async fn publish_only(
     let resolved = resolve(&schema, input, |key| std::env::var_os(key))?;
     options.validate_values(&resolved.values)?;
     print!("{}", resolved.display());
-    let request = PublishRequest {
-        module: None,
-        environment: resolved.values,
-        environment_remove: options.remove.clone(),
-        environment_replace: options.replace,
-        expected_module_version: Some(metadata.module_version),
+    let request = if let EnvironmentRemove::All = options.remove {
+        client.put(url)
+    } else {
+        client.patch(url)
     };
-    let response = add_auth_header_opt(client.put(url), &auth)
-        .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
-        .body(request.encode()?)
-        .send()
-        .await?;
+    let mut request = add_auth_header_opt(request, &auth)
+        .query(&[("expected_module_hash", &metadata.module_hash)])
+        .build()?;
+    if let EnvironmentRemove::Keys(_) = options.remove {
+        request
+            .headers_mut()
+            .typed_insert(SpacetimeEnvironmentRemove(options.remove.clone()));
+    }
+    let response = client.execute(request).await?;
     anyhow::ensure!(
         response.status().is_success(),
         "Environment publish failed with HTTP {}",

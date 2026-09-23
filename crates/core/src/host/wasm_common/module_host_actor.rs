@@ -505,6 +505,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .update_database(program, old_module_info, policy, environment, &mut self.instance)
     }
 
+    pub fn update_environment(
+        &mut self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.common.update_environment(environment, &mut self.instance)
+    }
+
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
         let (res, trapped) = self.call_reducer_with_tx(None, params);
         self.trapped = trapped;
@@ -821,7 +828,7 @@ impl InstanceCommon {
 
     /// Apply an environment publication using the installed module instance. No
     /// initialization, migration, program replacement, or scheduler restart occurs.
-    fn update_environment<I: WasmInstance>(
+    pub(crate) fn update_environment<I: WasmInstance>(
         &mut self,
         environment: std::collections::BTreeMap<String, String>,
         inst: &mut I,

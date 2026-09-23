@@ -9,7 +9,7 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 ## At a glance
 
 | Route                                                                                              | Description                                       |
-|----------------------------------------------------------------------------------------------------|---------------------------------------------------|
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | [`POST /v1/database`](#post-v1database)                                                            | Publish a new database given its module code.     |
 | [`PUT /v1/database/:name_or_identity`](#put-v1databasename_or_identity)                            | Publish to a database given its module code.      |
 | [`GET /v1/database/:name_or_identity`](#get-v1databasename_or_identity)                            | Get a JSON description of a database.             |
@@ -118,11 +118,11 @@ A missing required value returns HTTP 400 with `Content-Type: application/json` 
 
 Optional fields `environment_remove` (an array of keys) and `environment_replace` (a boolean, default `false`) request explicit deletion or complete replacement. A key cannot be both supplied and removed. Replacement uses only the supplied map, deleting every unspecified declared and undeclared key, and rejects any nonempty removal list. Invalid updates leave the database unchanged.
 
-To update an existing database without a module, omit `module` and provide `expected_module_version` from `GET /v1/database/{name_or_identity}/environment`. That authorized endpoint returns `module_version`, `declarations`, and `stored_keys`, without secret values. Each declaration contains `name`, `optional`, and `ty`: `"String"`, `{"StringLiteral":"value"}`, or `{"Union":["a","b"]}`. Metadata comes from one database version. For example:
+To update an existing database without a module, omit `module` and provide `expected_module_hash` from `GET /v1/database/{name_or_identity}/environment`. That authorized endpoint returns `module_version`, `declarations`, and `stored_keys`, without secret values. Each declaration contains `name`, `optional`, and `ty`: `"String"`, `{"StringLiteral":"value"}`, or `{"Union":["a","b"]}`. Metadata comes from one database version. For example:
 
 ```json
 {
-  "expected_module_version": "<module hash from environment metadata>",
+  "expected_module_hash": "<module hash from environment metadata>",
   "environment": { "FUTURE_KEY": "development-only-value" },
   "environment_remove": ["OLD_OPTIONAL_KEY"],
   "environment_replace": false

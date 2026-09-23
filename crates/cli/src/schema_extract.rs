@@ -43,16 +43,7 @@ fn inspect_blocking(extractor: PathBuf, bytes: Vec<u8>, host_type: String) -> an
 }
 
 pub(crate) fn read_program(path: &std::path::Path) -> anyhow::Result<Vec<u8>> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::fs::File::open(path)?
-        .take(spacetimedb_client_api_messages::publish::MAX_MODULE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)?;
-    ensure!(
-        bytes.len() <= spacetimedb_client_api_messages::publish::MAX_MODULE_BYTES,
-        "Module exceeds publish size limit"
-    );
-    Ok(bytes)
+    Ok(std::fs::read(path)?)
 }
 
 const MAX_SCHEMA_BYTES: u64 = 16 * 1024 * 1024;

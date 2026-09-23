@@ -8047,6 +8047,7 @@ dependencies = [
  "futures",
  "git2",
  "glob",
+ "headers",
  "http",
  "ignore",
  "indicatif",
