@@ -770,11 +770,6 @@ export interface ModuleSettings<
   CASE_CONVERSION_POLICY?: CaseConversionPolicy;
 }
 
-/**
- * A submodule's module-namespace object, i.e. `import * as lib from 'lib'`.
- * The default export is the submodule's schema; the other exports are its
- * reducers, procedures, views and HTTP handlers.
- */
 type SubmoduleNamespace = {
   default: Schema<any>;
   [key: string]: unknown;
@@ -783,17 +778,12 @@ type SubmoduleNamespace = {
 /**
  * A submodule mount that picks the canonical namespace name explicitly.
  *
- * The key the entry is registered under in `schema({ ... })` stays the accessor
- * name used by module code and generated clients (`ctx.db.myAuth`), while `name`
- * is stored verbatim as the namespace in the database (`myAuth.users` in SQL).
- * Without `name`, the canonical namespace is derived from the key by the module's
- * case conversion policy, e.g. `myAuth` becomes `my_auth`.
  *
  * @example
  * ```ts
  * import * as authLib from 'auth_lib';
  * const spacetimedb = schema({
- *   myAuth: { name: 'myAuth', module: authLib },
+ *   myAuth: { name: 'myAuth', module: authLib }, // force canonical name to 'myAuth' instead of 'my_auth'
  * });
  * ```
  */
