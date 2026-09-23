@@ -68,6 +68,7 @@ const ACTION_CATEGORY = {
   expectElapsed: 'timing',
   reload: 'browser-interaction',
   replayAs: 'transport',
+  repeatFormWrite: 'transport',
   replayConcurrently: 'concurrency',
   restartBackend: 'lifecycle',
   runScript: 'application-process',
@@ -136,6 +137,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   loseCheckoutResponse: ['actors', 'response-loss', 'database-read', 'clock'],
   expectCallOutcomes: ['actors', 'named-actions'],
   replayAs: ['actors', 'named-actions', 'transport-observation'],
+  repeatFormWrite: ['actors', 'named-actions', 'transport-observation', 'browser-interaction'],
   forgeWrite: ['actors', 'named-actions', 'transport-observation'],
   startAppServer: ['application-lifecycle'],
   stopAppServer: ['application-lifecycle'],
@@ -173,7 +175,8 @@ export function actionPlugin(id: string): ActionPlugin {
     compile: (input: unknown) =>
       compileActionInput(input, { source: `action:${id}`, expectedAction: id }),
     capabilities,
-    timeoutMs: policy.timeoutMs,
+    // The setup fallback performs the four catalog fills and one submit.
+    timeoutMs: actionId === 'repeatFormWrite' ? 300_000 : policy.timeoutMs,
     // Recovery may be inside an existing 120-second synchronous Docker call.
     ...(actionId === 'crashCheckout' ? { cancellationDrainMs: 150_000 } : {}),
     sensitivity: [...(sensitivity ?? []), ...policy.sensitivity],

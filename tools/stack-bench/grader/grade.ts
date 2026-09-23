@@ -68,6 +68,7 @@ import type { TrackAction } from '../src/composition/tracks.js';
 
 type JsonRecord = Record<string, unknown>;
 type ActorWrite = {
+  confirmed?: boolean;
   url: string;
   method: string;
   headers: Record<string, string>;
@@ -355,7 +356,11 @@ export class Actor {
       } catch { /* bodyless, e.g. a DELETE */ }
       // Forging needs a body to tamper with; replaying does not — a privileged
       // action is often a bare DELETE whose meaning is entirely in the URL.
-      const write = { url, method: req.method(), headers: req.headers(), body };
+      const write: ActorWrite = { url, method: req.method(), headers: req.headers(), body };
+      // Only a fully received successful response can supply bulk setup replay.
+      void req.response().then(async response => {
+        if (response && await response.finished() === null) write.confirmed = response.ok();
+      }).catch(() => { write.confirmed = false; });
       this.writes.push(write);
       if (this.writes.length > 200) this.writes.shift();
       if (body && typeof body === 'object') {

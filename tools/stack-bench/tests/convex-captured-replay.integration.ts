@@ -29,7 +29,17 @@ test('native UI mutation replay uses a confirmed request and preserves its busin
       if (accepted) rows.push(body.args);
       res.end(JSON.stringify(accepted ? { status: 'success', value: null }
         : { status: 'error', errorMessage: 'refused', errorData: null }));
-    } else res.end('<body>Product form</body>');
+    } else if (req.url === '/form') {
+      const chunks = []; for await (const part of req) chunks.push(part);
+      rows.push(JSON.parse(Buffer.concat(chunks).toString())); res.end('{}');
+    } else {
+      res.setHeader('Content-Type', 'text/html');
+      res.end(`<input data-role="name"><button data-role="save">Save</button><script>
+        window.formSubmits=0; document.querySelector('button').onclick=async()=>{
+          window.formSubmits++; await fetch('/form',{method:'POST',body:JSON.stringify({
+            name:document.querySelector('input').value,price:1.25,category:'Volume',variants:['Standard'],token:'caller-session'})});};
+      </script>`);
+    }
   }).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -47,13 +57,13 @@ test('native UI mutation replay uses a confirmed request and preserves its busin
   const observations: unknown[] = [];
   let result = 'failed';
   try {
-    for (mode of ['accepted', 'other-module', 'bearer', 'foreign-origin', 'encoded-value', 'rejected', 'wrong-id', 'ambiguous', 'duplicate-value', 'query', 'disconnect', 'signed-out', 'replay-refused', 'lost-reply']) {
+    for (const action of ['replayAs', 'repeatFormWrite']) for (mode of ['accepted', 'other-module', 'bearer', 'foreign-origin', 'encoded-value', 'rejected', 'wrong-id', 'ambiguous', 'duplicate-value', 'query', 'disconnect', 'signed-out', 'replay-refused', 'lost-reply']) {
       rows.length = 0;
       const context = await browser.newContext();
       try {
         const page = await context.newPage(), actor = new Actor('admin', page, context);
         await actor.ready; await page.goto(url);
-        await page.evaluate(async ({ url, mode }) => {
+        await page.evaluate(async ({ url, mode, action }) => {
           Object.assign(window, { getSessionToken: () => mode === 'signed-out' ? null : 'caller-session' });
           const socket = new WebSocket(url.replace('http:', 'ws:').replace('127.0.0.1', mode === 'foreign-origin' ? 'localhost' : '127.0.0.1') + '/api/1.0.0/sync');
           Object.assign(window, { replayTestSocket: socket });
@@ -66,10 +76,17 @@ test('native UI mutation replay uses a confirmed request and preserves its busin
             type: mode === 'query' ? 'ModifyQuerySet' : 'Mutation', requestId: n,
             udfPath: mode === 'other-module' ? 'catalog/products:create' : 'api:create_product', args: [args],
           }));
-        }, { url, mode });
+          if (action === 'repeatFormWrite') socket.send(JSON.stringify({
+            type: mode === 'query' ? 'ModifyQuerySet' : 'Mutation', requestId: 10,
+            udfPath: mode === 'other-module' ? 'catalog/products:create' : 'api:create_product',
+            args: [{ ...args, name: 'Control product' }],
+          }));
+        }, { url, mode, action });
         // The fixture intentionally emits unmatched responses and disconnects.
         await page.waitForTimeout(100);
-        const capabilities = { actors: { get: () => actor }, 'transport-observation': {
+        const capabilities = { actors: { get: () => actor }, 'browser-interaction': {
+          defaultWithin: 1000, expand: (s: string) => s, sleep: async () => {},
+        }, 'transport-observation': {
           defaultWithin: 1000, expand: (s: string) => s, sleep: async () => {},
           verification: { verified: () => {}, unverified: () => {} },
         }, 'named-actions': {
@@ -79,22 +96,32 @@ test('native UI mutation replay uses a confirmed request and preserves its busin
           }),
           fetch,
         } };
-        const replay = await executeAction(ACTION_REGISTRY, 'replayAs', {
+        const replay = await executeAction(ACTION_REGISTRY, action, action === 'repeatFormWrite' ? {
+          do: action, actor: 'admin', match: 'Original product', replacement: 'New "product" $1',
+          control: 'Control product',
+          fields: [{ testid: 'name', text: 'New "product" $1' }], submit: 'save',
+        } : {
           do: 'replayAs', actor: 'admin', from: 'admin', match: 'Original product',
           swap: { find: 'Original product', with: 'New "product" $1' }, settleMs: 0,
         }, { capabilities });
         const accepted = ['accepted', 'other-module', 'bearer'].includes(mode);
         const supported = accepted || ['replay-refused', 'lost-reply'].includes(mode);
-        assert.equal(replay.status, supported ? 'passed' : 'inconclusive', `${mode}: ${JSON.stringify(replay)}`);
-        if (supported) {
+        const fallback = action === 'repeatFormWrite' && !supported;
+        const expected = action === 'repeatFormWrite'
+          ? mode === 'lost-reply' ? 'inconclusive' : mode === 'replay-refused' ? 'failed' : 'passed'
+          : supported ? 'passed' : 'inconclusive';
+        assert.equal(replay.status, expected, `${action} ${mode}: ${JSON.stringify(replay)}`);
+        assert.equal(await page.evaluate(() => (window as unknown as { formSubmits: number }).formSubmits), fallback ? 1 : 0);
+        if (supported && action === 'replayAs') {
           const outcome = await executeAction(ACTION_REGISTRY, 'expectReplayCompleted', {
             do: 'expectReplayCompleted', actor: 'admin', requireAccepted: true,
           }, { capabilities });
           assert.equal(outcome.status, accepted ? 'passed' : mode === 'lost-reply' ? 'inconclusive' : 'failed');
         }
-        assert.deepEqual(rows, accepted || mode === 'lost-reply' ? [{ name: 'New "product" $1', category: 'Volume',
+        await page.waitForTimeout(30);
+        assert.deepEqual(rows, accepted || fallback || mode === 'lost-reply' ? [{ name: 'New "product" $1', category: 'Volume',
           price: 1.25, variants: ['Standard'], ...(mode === 'bearer' ? {} : { token: 'caller-session' }) }] : []);
-        observations.push({ mode, status: replay.status, writes: rows.length });
+        observations.push({ action, mode, status: replay.status, writes: rows.length });
       } finally { await context.close(); }
     }
     result = 'passed';

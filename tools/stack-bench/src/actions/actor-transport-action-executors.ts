@@ -1,4 +1,4 @@
-import { actionImplementation } from './action-contract.js';
+import { actionImplementation, ActionInconclusive } from './action-contract.js';
 import {
   actorFor,
   fail,
@@ -13,7 +13,7 @@ import type {
   HeaderRecord,
   TransportActorCapabilities,
 } from './actor-action-runtime.js';
-import { browserApplicationBoundary } from './browser-action-executors.js';
+import { browserApplicationBoundary, BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import { createParser } from 'eventsource-parser';
 import { RUN_SCRIPT_ACTION_IMPLEMENTATION } from './application-process-action-executors.js';
@@ -27,7 +27,10 @@ import {
   classifyNamedActionResponse,
 } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
+import type { NamedActionRequest } from './named-action-runtime.js';
 import { capturedConvexMutation } from '../stacks/backends/convex-browser-session.js';
+import { isFinding } from './action-findings.js';
+import { isDeepStrictEqual } from 'node:util';
 
 export { createNamedActionsCapability } from './named-action-runtime.js';
 export type { ConcurrentCallResult } from './named-action-runtime.js';
@@ -72,6 +75,98 @@ interface ReplayCapabilities extends TransportCapabilities {
 type TransportArguments<Input extends ActorInput> =
   ActorActionArguments<Input, TransportCapabilities>;
 type ReplayArguments = ActorActionArguments<ReplayInput, ReplayCapabilities>;
+
+interface RepeatFormInput extends ActorInput {
+  readonly match: string;
+  readonly control: string;
+  readonly replacement: string;
+  readonly fields: readonly { testid: string; text: string }[];
+  readonly submit: string;
+  readonly settleMs?: number;
+}
+
+// Setup only: the scenario must independently check the stored effect after
+// each write. Unsupported capture selects the original form BEFORE any replay.
+async function repeatFormWrite({ input, capabilities, signal }:
+  ActorActionArguments<RepeatFormInput, ReplayCapabilities & { readonly 'browser-interaction': unknown }>) {
+  const actor = actorFor(capabilities, input.actor), named = capabilities['named-actions'];
+  const transport = transportFor(capabilities);
+  const find = transport.expand(input.match), replacement = transport.expand(input.replacement);
+  let request: NamedActionRequest | null = null;
+  let headers: HeaderRecord = {};
+  const native = capturedConvexMutation(actor.page, find, replacement);
+  const nativeControl = capturedConvexMutation(actor.page, transport.expand(input.control), replacement);
+  if (native && isDeepStrictEqual(native, nativeControl)) {
+    const candidate = namedActionRequest(named, { id: native.path, reducer: native.path }, { values: native.args });
+    if (candidate?.url && candidate.responseContract === 'convex-mutation'
+      && JSON.parse(candidate.body ?? '{}').path === native.path
+      && [new URL(candidate.url).origin, new URL(actor.page.url()).origin].includes(native.origin)) {
+      request = { ...candidate, applicationOrigin: native.origin };
+    }
+  } else {
+    const capturedHttp = (name: string) => {
+      const occurrences = (value: unknown): number => value === name ? 1 : value && typeof value === 'object'
+        ? Object.values(value).reduce<number>((sum, child) => sum + occurrences(child), 0) : 0;
+      const matches = actor.writes.filter(write => occurrences(write.body) > 0);
+      const write = matches.length === 1 ? matches[0] : undefined;
+      return write?.confirmed && occurrences(write.body) === 1
+        && /^application\/json(?:;|$)/i.test(write.headers['content-type'] ?? '') ? { ...write,
+        body: JSON.parse(JSON.stringify(write.body, (_key, value) => value === name ? replacement : value)),
+        headers: replayHeaders(write) } : null;
+    };
+    const write = capturedHttp(find), control = capturedHttp(transport.expand(input.control));
+    if (write && isDeepStrictEqual(write, control)
+      && new URL(write.url).origin === new URL(actor.page.url()).origin
+      && classifyNamedActionResponse(named, write, { status: 0, text: '' }).responseContract === 'http') {
+      request = { url: write.url, method: write.method, responseContract: 'http',
+        body: JSON.stringify(write.body) };
+      headers = write.headers;
+    }
+  }
+  let credentials: HeaderRecord | null = null;
+  let bound: ReturnType<ReturnType<typeof bindBrowserRequest>> | null = null;
+  try {
+    credentials = request?.url ? await browserCredentials(actor, request.url) : null;
+    if (request && credentials) bound = bindBrowserRequest(actor, request, credentials)(replayHeaders({ headers }, credentials));
+  } catch (error) {
+    if (!(error instanceof ActionInconclusive) || !isFinding(error.details.finding)
+      || error.details.finding.kind !== 'replay-unavailable') throw error;
+  }
+  // Do not preserve old caller headers when current context cannot replace them.
+  if (Object.keys(headers).some(key => REQUEST_CONTEXT_HEADER.test(key)
+    && !Object.keys(credentials ?? {}).some(current => current.toLowerCase() === key.toLowerCase()))) request = null;
+  if (!request?.url || !bound) {
+    const observations = [];
+    for (const field of input.fields) observations.push(await BROWSER_ACTION_IMPLEMENTATIONS.fill({
+      input: { do: 'fill', actor: input.actor, ...field }, capabilities: { ...capabilities }, signal,
+    }));
+    observations.push(await BROWSER_ACTION_IMPLEMENTATIONS.click({
+      input: { do: 'click', actor: input.actor, testid: input.submit, settleMs: input.settleMs }, capabilities: { ...capabilities }, signal,
+    }));
+    return { method: 'ui', reason: 'no uniquely confirmed supported write with current credentials', observations };
+  }
+  // Once sent, a lost response is unknown. It must never enter the form path.
+  let response;
+  try {
+    if (request.responseContract === 'convex-mutation') {
+      const reply = await named.fetch(request.url, { method: request.method ?? 'POST', ...bound, signal });
+      response = { status: reply.status, text: await reply.text() };
+    } else {
+      const reply = await actor.page.request.fetch(request.url, { method: request.method, headers: bound.headers,
+        data: bound.body, maxRetries: 0, maxRedirects: 0 });
+      response = { status: reply.status(), text: await reply.text!() };
+    }
+  } catch (error) {
+    if (harnessBrowserFailure(error)) throw error;
+    inconclusive('transport-incomplete', {});
+  }
+  const classified = classifyNamedActionResponse(named, request, response);
+  if (!classified.complete) inconclusive('transport-incomplete', {});
+  if (!classified.ok) fail('call-error', { action: 'repeatFormWrite', actor: input.actor,
+    status: response.status, required: 'accepted', operation: null });
+  return { method: request.responseContract === 'convex-mutation' ? 'convex-mutation' : 'http',
+    status: response.status, accepted: true };
+}
 
 const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i;
 const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
@@ -556,5 +651,6 @@ export const ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS = Object.freeze({
   expectReplayRejected: actionImplementation(expectReplayRejected),
   forgeWrite: actionImplementation(browserApplicationBoundary(forgeWrite)),
   replayAs: actionImplementation(browserApplicationBoundary(replayAs)),
+  repeatFormWrite: actionImplementation(browserApplicationBoundary(repeatFormWrite)),
   runScript: RUN_SCRIPT_ACTION_IMPLEMENTATION,
 });

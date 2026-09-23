@@ -250,6 +250,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
   reload: fields({ ...actor, settleMs: number }, { application: boolean }),
   replayAs: fields({ ...actor, from: nonEmptyString, match: string },
     { swap: object, namedAction: object, namedTarget: object, ...settle }),
+  repeatFormWrite: fields({ ...actor, match: nonEmptyString, control: nonEmptyString, replacement: nonEmptyString,
+    fields: anyArray, submit: nonEmptyString }, { ...settle }),
   replayConcurrently: fields({ ...actors, settleMs: nonNegativeNumber },
     { match: string, method: nonEmptyString }),
   restartBackend: fields({ settleMs: nonNegativeNumber }),
@@ -432,6 +434,17 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     if (validator && !validator(value)) fail(`${at}.${name}`, 'has the wrong type or value');
   }
   if (step.in) validateLocator(step.in, `${at}.in`);
+  if (step.do === 'repeatFormWrite') {
+    if (new Set([step.match, step.control, step.replacement]).size !== 3) fail(at, 'form replay names must be distinct');
+    if (!Array.isArray(step.fields) || !step.fields.length) fail(`${at}.fields`, 'must contain form fields');
+    for (const [index, field] of step.fields.entries()) {
+      strictObject(field, `${at}.fields[${index}]`, new Set(['testid', 'text']));
+      if (!nonEmptyString(field.testid) || !string(field.text)) fail(at, 'form fields need testid and text');
+    }
+    if (step.fields.filter(field => field.text === step.replacement).length !== 1) {
+      fail(at, 'exactly one form field must contain the replacement');
+    }
+  }
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
   if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
   if ((step.do === 'crashCheckout' || step.do === 'confirmCheckout') && object(step.namedAction) && step.namedAction.id !== 'checkout') {

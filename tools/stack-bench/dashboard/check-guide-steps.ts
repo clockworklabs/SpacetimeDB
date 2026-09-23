@@ -61,6 +61,7 @@ const meanings: Record<string, (s: GuideStep) => string> = {
   clickConcurrently: s => `In browsers ${(s.actors ?? []).join(', ')}, click ${target(s)} concurrently.`,
   expectCallOutcomes: s => `Check all recorded concurrent request outcomes${s.accepted !== undefined ? `; require exactly ${s.accepted} accepted calls` : ''}; unknown outcomes remain inconclusive rather than assumed refusals.`,
   replayAs: s => `Replay the observed ${s.namedAction?.id ?? s.action ?? s.match ?? 'write'} from ${s.from ?? 'the source actor'} with ${s.actor}'s authority${s.namedTarget ? ', selecting the declared target entity' : ''}.`,
+  repeatFormWrite: s => `Compare ${s.actor}'s confirmed form writes for ${q(s.match)} and ${q(s.control)}. Repeat only if they differ solely in that value, replacing it with ${q(s.replacement)}. Otherwise fill and submit the form. Choose the path before sending; never retry an uncertain or rejected write. The next database check must confirm the stored product.`,
   replayConcurrently: s => `Replay recorded writes concurrently from ${(s.actors ?? []).join(', ')}.`,
   expectReplayRejected: s => `Require the replay by ${s.actor} to be rejected. Later state assertions, where present, check its effects.`,
   expectReplayCompleted: s => `Require ${s.actor}'s replay to complete${s.requireAccepted ? ' and be accepted' : ''}.`,
