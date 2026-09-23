@@ -15,7 +15,7 @@ test('baseline checkout retains completion evidence and cannot confirm queued or
     const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
       do: 'confirmCheckout', actor: 'buyer',
     }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { markCheckoutUnsettled: () => { unsettled = true; } },
       'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
         request: () => ({ url: 'http://app/checkout', method: 'POST' }), fetch: async () => {
@@ -117,7 +117,7 @@ test('baseline SpacetimeDB checkout records native completion or refusal and clo
     const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
       do: 'confirmCheckout', actor: 'buyer',
     }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { markCheckoutUnsettled: () => assert.fail('native completion or refusal must settle') },
       'named-actions': { spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' }, now: Date.now,
         resolve: () => ({ id: 'checkout', reducer: 'checkout' }),
@@ -178,7 +178,7 @@ test('crash setup rejects missing cart scope, changed scope and old native reser
       do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
       requests: 1, offsetMs: 0, target: 'database',
     }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { checkoutSnapshots: new Map([['before', wrap(before, false)], ['prepared', wrap(prepared, true)]]) },
       'named-actions': { resolve: () => ({ id: 'checkout' }), request: () => ({ url: 'http://app/checkout' }),
         fetch: async () => assert.fail('invalid crash setup must not submit checkout') },
@@ -235,7 +235,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
         ...(mode !== 'disconnected-database' ? { reuseCombinedFrom: 'database' } : {}) } : {}),
       requests: 1, offsetMs: 0, target: mode === 'disconnected-database' ? 'database' : 'application',
     }, { signal: cancellation.signal, onAbort: async () => {}, capabilities: {
-      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
         markCheckoutUnsettled: () => { unsettled = true; },
         getCheckoutState: () => { if (mode === 'cancelled-read') throw new Error('reader is not ready'); return wrap(after); } },
@@ -349,7 +349,7 @@ test('combined native crash reconciles lost responses with stored state and reje
       quantity: multi ? [{ item: 'First', quantity: 1 }, { item: 'Second', quantity: 1 }] : 1,
       requests: 1, offsetMs: 0, target: 'database',
     }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] },
         writes: [{ url: 'http://app/api/mutation', headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
         markCheckoutUnsettled: () => assert.fail('verified combined process kill leaves no original database writer'),
@@ -402,7 +402,7 @@ test('native checkout requires classified completion and retains the actual HTTP
     const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
       do: 'confirmCheckout', actor: 'buyer',
     }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] },
         writes: [{ url: 'http://app/api/mutation', headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { markCheckoutUnsettled: () => { unsettled = true; } },
       'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
