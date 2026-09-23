@@ -133,7 +133,7 @@ namespace SpacetimeDB
         private uint? replayRequestId;
         private HashSet<uint>? replayQueryIds;
         private readonly Random reconnectRandom = new();
-        private readonly Dictionary<uint, string[]> subscriptionQueries = new();
+        private readonly Dictionary<uint, List<string>> subscriptionQueries = new();
         private readonly HashSet<uint> unsubscribeRequested = new();
         private event Action<Exception, NextReconnect?>? onConnectError;
         private event Action<Exception?, NextReconnect?>? onDisconnect;
@@ -262,7 +262,7 @@ namespace SpacetimeDB
                     else
                     {
                         preparingReplay = false;
-                        foreach (var id in subscriptions.Keys.ToArray()) SendSubscription(id);
+                        foreach (var id in subscriptions.Keys.ToArray()) SendSubscription(id, subscriptionQueries[id]);
                     }
                 }
             }
@@ -363,10 +363,10 @@ namespace SpacetimeDB
 #endif
         }
 
-        private void SendSubscription(uint id)
+        private void SendSubscription(uint id, List<string> queries)
         {
             webSocket.Send(new ClientMessage.Subscribe(new Subscribe(
-                stats.SubscriptionRequestTracker.StartTrackingRequest(), new QuerySetId(id), subscriptionQueries[id].ToList())));
+                stats.SubscriptionRequestTracker.StartTrackingRequest(), new QuerySetId(id), queries)));
         }
 
         private void RemoveSubscription(uint id)
@@ -396,7 +396,7 @@ namespace SpacetimeDB
                 handle.RebindQuerySetId(new QuerySetId(id));
                 subscriptions[id] = handle;
                 subscriptionQueries[id] = queries;
-                sets.Add(new SubscribeSet(new QuerySetId(id), queries.ToList()));
+                sets.Add(new SubscribeSet(new QuerySetId(id), queries));
             }
             preparingReplay = false;
             replayRequestId = stats.SubscriptionRequestTracker.StartTrackingRequest();

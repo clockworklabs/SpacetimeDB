@@ -882,9 +882,11 @@ namespace SpacetimeDB
             if (isClosing) throw new InvalidOperationException("Connection closed.");
             var querySetId = querySetIdAllocator.Next();
             subscriptions[querySetId] = handle;
-            subscriptionQueries[querySetId] = (string[])querySqls.Clone();
+            // Copy once: callers may mutate their array before the asynchronous send or replay.
+            var queries = querySqls.ToList();
+            if (automaticReconnect) subscriptionQueries[querySetId] = queries;
             if (!automaticReconnect || (IsActive && !preparingReplay))
-                SendSubscription(querySetId);
+                SendSubscription(querySetId, queries);
             return new QuerySetId(querySetId);
         }
 
