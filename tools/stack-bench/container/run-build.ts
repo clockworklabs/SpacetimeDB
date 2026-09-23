@@ -565,7 +565,8 @@ function signalSession(signal: 'TERM' | 'KILL') {
     + 'read -r pid expected < "$record"; '
     + 'current="$(awk \'{print $22}\' "/proc/$pid/stat" 2>/dev/null)" || exit 5; '
     + 'test "$current" = "$expected" || exit 3; kill "-$signal" "$pid"';
-  return spawnSync('docker', ['exec', containerName, 'sh', '-c', script,
+  // The agent can rewrite its own record, so signal with the agent's authority, not root's.
+  return spawnSync('docker', ['exec', '--user', `${AGENT_UID}:${AGENT_GID}`, containerName, 'sh', '-c', script,
     CODING_CONTAINER_PROCESS_IDENTITY.stopLabel, processRecord, signal], {
     encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
