@@ -1319,10 +1319,9 @@ async function main() {
       })}\n`, { flag: 'wx', mode: 0o600 });
     }
   } catch (error) {
-    if (existsSync(leasePath)) {
-      releaseBackendLease(leasePath, initialLease.ownershipToken);
-      if (!initialLease.campaignDelegation) rmSync(runtimeDir, { recursive: true, force: true });
-    }
+    // A refused release keeps the lease: it is the only record of what still runs.
+    if (existsSync(leasePath) && releaseBackendLease(leasePath, initialLease.ownershipToken)
+      && !initialLease.campaignDelegation) rmSync(runtimeDir, { recursive: true, force: true });
     throw error;
   }
   process.env.STACK_BENCH_LEASE = leasePath;
