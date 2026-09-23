@@ -940,10 +940,6 @@ export function schema<
         const { submodule, canonicalName } = mount;
         const { rawDef, dispatch } =
           submodule.default.buildSubmoduleDispatch(submodule);
-        // The key is the accessor namespace: module code and generated clients
-        // reach the submodule through it, and the runtime resolves its tables by
-        // it. The host derives the canonical namespace stored in the database
-        // from it, exactly as it does for table names, unless `name` pins one.
         dispatch.namespace = accName;
         ctx.addSubmodule({ namespace: accName, module: rawDef });
         if (canonicalName !== undefined) {
