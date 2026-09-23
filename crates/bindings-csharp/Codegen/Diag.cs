@@ -392,4 +392,12 @@ internal static class ErrorDescriptor
             ctx => $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares lifecycle reducers: {ctx.reducers}. Lifecycle reducers are only supported in the root scope; remove them or omit the dependency's namespace declaration so it registers automatically in public.",
             _ => Location.None
         );
+
+    public static readonly ErrorDescriptor<(Location location, string scope, string name, string first, string second)> GeneratedNameCollision =
+        new(
+            group,
+            "Conflicting generated C# names",
+            ctx => $"Generated C# name '{ctx.scope}.{ctx.name}' is used by both {ctx.first} and {ctx.second}. Choose distinct accessors or member names.",
+            ctx => ctx.location
+        );
 }
