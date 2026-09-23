@@ -32,6 +32,7 @@ members = [
     "views-auto-migrate-stable-updated",
     "views-auto-migrate-read-set",
     "views-auto-migrate-read-set-updated",
+    "views-scoped",
 
     # Security and permissions
     "rls",

@@ -79,6 +79,28 @@ export function makeAnonViewExport<
   return viewExport;
 }
 
+export function makeScopedViewExport<
+  S extends UntypedSchemaDef,
+  Key extends TypeBuilder<any, any>,
+  Ret extends ViewReturnTypeBuilder,
+  F extends ScopedViewFn<S, Key, Ret>,
+>(
+  ctx: SchemaInner,
+  opts: ScopedViewOpts<Key>,
+  ret: Ret,
+  resolve: ScopeResolverFn<S, Key>,
+  fn: F
+): ViewExport<F> {
+  const viewExport =
+    // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
+    fn.bind() as ViewExport<F>;
+  viewExport[exportContext] = ctx;
+  viewExport[registerExport] = (ctx, exportName) => {
+    registerScopedView(ctx, opts, exportName, ret, resolve, fn);
+  };
+  return viewExport;
+}
+
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
@@ -96,6 +118,42 @@ export type ViewOpts = {
   name?: string;
   public: true;
 };
+
+export type ScopedViewOpts<Key extends TypeBuilder<any, any>> = ViewOpts & {
+  /**
+   * The type of the scope key.
+   *
+   * The view is computed once per distinct scope key,
+   * and shared by every subscriber whose resolver returns that key.
+   */
+  scope: Key;
+};
+
+/**
+ * Resolves the scope key of a scoped view for the calling identity.
+ *
+ * Return `undefined` to place the caller in no scope, in which case the view is empty for them.
+ */
+export type ScopeResolverFn<
+  S extends UntypedSchemaDef,
+  Key extends TypeBuilder<any, any>,
+> = (ctx: ViewCtx<S>) => Infer<Key> | undefined;
+
+/**
+ * The body of a scoped view, computed once per distinct scope key.
+ *
+ * It receives an `AnonymousViewCtx`, as its result is shared by every subscriber in the scope.
+ */
+export type ScopedViewFn<
+  S extends UntypedSchemaDef,
+  Key extends TypeBuilder<any, any>,
+  Ret extends ViewReturnTypeBuilder,
+> =
+  | ((ctx: AnonymousViewCtx<S>, key: Infer<Key>) => Infer<Ret>)
+  | ((
+      ctx: AnonymousViewCtx<S>,
+      key: Infer<Key>
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
 
 type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
 
@@ -231,6 +289,47 @@ export function registerAnonymousView<
   const described = describeView(ctx, opts, exportName, true, params, ret);
   // Schema-erased for the same reason as `registerView` above.
   ctx.anonViews.push(buildViewInfo(ctx, described, fn as AnyAnonymousViewFn));
+}
+
+export function registerScopedView<
+  S extends UntypedSchemaDef,
+  Key extends TypeBuilder<any, any>,
+  Ret extends ViewReturnTypeBuilder,
+>(
+  ctx: SchemaInner,
+  opts: ScopedViewOpts<Key>,
+  exportName: string,
+  ret: Ret,
+  resolve: ScopeResolverFn<S, Key>,
+  fn: ScopedViewFn<S, Key, Ret>
+) {
+  // The body is an anonymous view whose only parameter is the scope key.
+  const described = describeView(
+    ctx,
+    opts,
+    exportName,
+    true,
+    { key: opts.scope },
+    ret
+  );
+  const body: AnyAnonymousViewFn = (viewCtx, args) =>
+    (fn as AnyScopedViewFn)(viewCtx, args.key);
+  ctx.anonViews.push(buildViewInfo(ctx, described, body));
+
+  ctx.moduleDef.scopedViews.push({
+    viewSourceName: exportName,
+    resolverIndex: ctx.scopeResolvers.length,
+  });
+  // The resolver returns `Option<Key>` to the host.
+  const optionKeyType = ctx.registerTypesRecursively(
+    new OptionBuilder(opts.scope)
+  ).algebraicType;
+  ctx.scopeResolvers.push({
+    // Schema-erased for the same reason as `registerView` above.
+    fn: resolve as AnyScopeResolverFn,
+    serializeKey: AlgebraicType.makeSerializer(optionKeyType, ctx.typespace),
+    keyTypeBaseSize: bsatnBaseSize(ctx.typespace, optionKeyType),
+  });
 }
 
 /**
@@ -372,9 +471,20 @@ type ViewInfo<F> = {
 
 type AnyViewFn = (ctx: ViewCtx<any>, params: any) => any;
 type AnyAnonymousViewFn = (ctx: AnonymousViewCtx<any>, params: any) => any;
+type AnyScopedViewFn = (ctx: AnonymousViewCtx<any>, key: any) => any;
+type AnyScopeResolverFn = (ctx: ViewCtx<any>) => any;
 
 export type Views = ViewInfo<AnyViewFn>[];
 export type AnonViews = ViewInfo<AnyAnonymousViewFn>[];
+
+type ScopeResolverInfo = {
+  fn: AnyScopeResolverFn;
+  /** Serializes the resolver's return value as `Option<Key>`. */
+  serializeKey: Serializer<any>;
+  keyTypeBaseSize: number;
+};
+
+export type ScopeResolvers = ScopeResolverInfo[];
 
 // A helper to get the product type out of a type builder.
 // This is only non-never if the type builder is an array.

@@ -30,6 +30,8 @@ declare module 'spacetime:sys@2.0' {
 
     __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
 
+    __call_view_scope__?(id: u32, sender: u256): Uint8Array | object;
+
     __call_procedure__(
       id: u32,
       sender: u256,

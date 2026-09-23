@@ -1160,6 +1160,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-scoped"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-sql"
 version = "0.1.0"
 dependencies = [

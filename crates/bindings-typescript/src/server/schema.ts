@@ -52,9 +52,14 @@ import { makeHooks } from './runtime';
 
 import {
   makeAnonViewExport,
+  makeScopedViewExport,
   makeViewExport,
   type AnonViews,
   type AnonymousViewFn,
+  type ScopedViewFn,
+  type ScopedViewOpts,
+  type ScopeResolverFn,
+  type ScopeResolvers,
   type ViewExport,
   type ViewFn,
   type ViewOpts,
@@ -83,6 +88,7 @@ export type SubmoduleDispatchInfo = {
   procedureDefs: RawProcedureDefV10[];
   anonViewFns: AnonViews;
   viewFns: Views;
+  scopeResolverFns: ScopeResolvers;
   typespace: Typespace;
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
   /** The submodule's own schemaType tables, used to build namespace-scoped query builders. */
@@ -102,6 +108,7 @@ export class SchemaInner<
   procedures: Procedures = [];
   views: Views = [];
   anonViews: AnonViews = [];
+  scopeResolvers: ScopeResolvers = [];
   httpHandlers: HandlerFn[] = [];
   /**
    * Maps reducer/procedure export objects to their source names.
@@ -337,6 +344,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         procedureDefs: [...this.#ctx.moduleDef.procedures],
         anonViewFns: [...this.#ctx.anonViews],
         viewFns: [...this.#ctx.views],
+        scopeResolverFns: [...this.#ctx.scopeResolvers],
         typespace: this.#ctx.moduleDef.typespace,
         tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
           accessorName: t.accessorName,
@@ -578,6 +586,47 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     ..._: ValidateViewPrimaryKey<Ret>
   ): ViewExport<F> {
     return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  }
+
+  /**
+   * Defines a scoped view.
+   *
+   * A scoped view is computed once per distinct scope key, rather than once per subscriber.
+   * `resolve` runs for each subscriber identity and returns their scope key,
+   * or `undefined` if they are in no scope, in which case the view is empty for them.
+   * `fn` runs once per distinct key and must not depend on the caller,
+   * so it receives an `AnonymousViewCtx` along with the key.
+   * Whenever the data read by `resolve` changes, the subscriber is moved to their new scope.
+   *
+   * @example
+   * ```ts
+   * export const team_chat = spacetimedb.scopedView(
+   *   { name: 'team_chat', public: true, scope: t.u64() },
+   *   t.array(chatMessages.rowType),
+   *   ctx => ctx.db.players.identity.find(ctx.sender)?.teamId,
+   *   (ctx, teamId) => Array.from(ctx.db.chatMessages.teamId.filter(teamId))
+   * );
+   * ```
+   */
+  scopedView<
+    Key extends TypeBuilder<any, any>,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ScopedViewFn<S, Key, Ret>,
+  >(
+    opts: ScopedViewOpts<Key>,
+    ret: Ret,
+    resolve: ScopeResolverFn<S, Key>,
+    fn: F,
+    // Compile-time-only guard: see `view`.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F> {
+    return makeScopedViewExport<S, Key, Ret, F>(
+      this.#ctx,
+      opts,
+      ret,
+      resolve,
+      fn
+    );
   }
 
   // TODO: re-enable once parameterized views are supported in SQL

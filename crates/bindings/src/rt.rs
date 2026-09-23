@@ -321,6 +321,60 @@ pub trait ViewContextArg {
 impl ViewContextArg for ViewContext {}
 impl ViewContextArg for AnonymousViewContext {}
 
+/// A trait of types that can be the context parameter of a scoped view.
+///
+/// The body of a scoped view is shared by every subscriber in the scope,
+/// so it must not observe the caller.
+#[diagnostic::on_unimplemented(
+    message = "The first parameter of a scoped `#[view]` must be `&AnonymousViewContext`",
+    note = "a scoped view is shared by all subscribers whose scope resolver returns the same key, so it cannot know its caller"
+)]
+pub trait ScopedViewContextArg {
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl ScopedViewContextArg for AnonymousViewContext {}
+
+/// A trait of types that a scope resolver may return for a scoped view with key type `K`.
+///
+/// A resolver returns `Some(key)`, or just `key`, to place the caller in the scope `key`,
+/// or `None` to place the caller in no scope, in which case the view is empty for them.
+#[diagnostic::on_unimplemented(
+    message = "scope resolvers must return `Option<{K}>` or `{K}`, where `{K}` is the scoped view's key type",
+    label = "this resolver returns `{Self}`"
+)]
+pub trait IntoScopeKey<K> {
+    fn into_scope_key(self) -> Option<K>;
+}
+
+impl<K> IntoScopeKey<K> for Option<K> {
+    fn into_scope_key(self) -> Option<K> {
+        self
+    }
+}
+
+impl<K: SpacetimeType> IntoScopeKey<K> for K {
+    fn into_scope_key(self) -> Option<K> {
+        Some(self)
+    }
+}
+
+/// Invoke the scope resolver of a scoped view with key type `K`.
+///
+/// Returns a [`ViewResultHeader::RowData`] header followed by the BSATN encoding of `Option<K>`.
+pub fn invoke_scope_resolver<K, R, F>(resolver: F, ctx: ViewContext) -> Vec<u8>
+where
+    K: SpacetimeType + Serialize,
+    R: IntoScopeKey<K>,
+    F: Fn(&ViewContext) -> R,
+{
+    let key = resolver(&ctx).into_scope_key();
+    let mut buf = IterBuf::take();
+    bsatn::to_writer(&mut *buf, &ViewResultHeader::RowData).expect("unable to encode view result header");
+    bsatn::to_writer(&mut *buf, &key).expect("unable to encode scope key");
+    std::mem::take(&mut *buf)
+}
+
 /// A trait of types that can be an argument of a view.
 #[diagnostic::on_unimplemented(
     message = "the view argument `{Self}` does not implement `SpacetimeType`",
@@ -894,6 +948,36 @@ where
     })
 }
 
+/// Registers a describer for the scoped view `I` with arguments `A` and return type `T`.
+///
+/// The view body is registered as an anonymous view taking the scope key as its only argument,
+/// and `resolver` is registered as its scope resolver.
+pub fn register_scoped_view<'a, A, I, T, V>(_: V, resolver: ScopeResolverFn)
+where
+    A: Args<'a>,
+    I: FnInfo<Invoke = AnonymousFn>,
+    T: ViewReturn,
+    V: AnonymousView<'a, A, T>,
+{
+    register_describer(move |module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let return_type = I::return_type(&mut module.inner).unwrap();
+        module
+            .inner
+            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+        if !I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
+            module
+                .inner
+                .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
+        }
+        module.views_anon.push(I::INVOKE);
+        module.inner.add_scoped_view(I::NAME, module.scope_resolvers.len());
+        module.scope_resolvers.push(resolver);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
 /// Registers a row-level security policy.
 pub fn register_row_level_security(sql: &'static str) {
     register_describer(|module| {
@@ -1017,6 +1101,8 @@ pub struct ModuleBuilder {
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
+    /// The scope resolvers of the module's scoped views.
+    scope_resolvers: Vec<ScopeResolverFn>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1042,6 +1128,10 @@ static VIEWS: OnceLock<Vec<ViewFn>> = OnceLock::new();
 /// An anonymous view function takes in `(AnonymousViewContext, Args)` and returns a Vec of bytes.
 pub type AnonymousFn = fn(AnonymousViewContext, &[u8]) -> Vec<u8>;
 static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
+
+/// A scope resolver takes in a `ViewContext` and returns the scope key, encoded as a Vec of bytes.
+pub type ScopeResolverFn = fn(ViewContext) -> Vec<u8>;
+static SCOPE_RESOLVERS: OnceLock<Vec<ScopeResolverFn>> = OnceLock::new();
 
 /// Called by the host when the module is initialized
 /// to describe the module into a serialized form that is returned.
@@ -1079,6 +1169,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
     HTTP_HANDLERS.set(module.http_handlers).ok().unwrap();
     VIEWS.set(module.views).ok().unwrap();
     ANONYMOUS_VIEWS.set(module.views_anon).ok().unwrap();
+    SCOPE_RESOLVERS.set(module.scope_resolvers).ok().unwrap();
 
     // Write the bsatn data into the sink.
     write_to_sink(description, &bytes);
@@ -1369,6 +1460,34 @@ extern "C" fn __call_view__(
         sink,
         &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
+    2
+}
+
+/// Called by the host to resolve the scope of the `sender`
+/// for the scoped view whose scope resolver is identified by `id`.
+/// See [`__call_reducer__`] for more commentary on the `sender_{0-3}` arguments.
+///
+/// The output, written to the `BytesSink` registered on the host side,
+/// is a [`ViewResultHeader::RowData`] header followed by the BSATN encoding of `Option<K>`,
+/// where `K` is the view's scope key type.
+///
+/// Like views, the return code is 2.
+#[unsafe(no_mangle)]
+extern "C" fn __call_view_scope__(
+    id: usize,
+    sender_0: u64,
+    sender_1: u64,
+    sender_2: u64,
+    sender_3: u64,
+    sink: BytesSink,
+) -> i16 {
+    // Piece together `sender_i` into an `Identity`.
+    let sender = [sender_0, sender_1, sender_2, sender_3];
+    let sender: [u8; 32] = bytemuck::must_cast(sender);
+    let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
+
+    let resolvers = SCOPE_RESOLVERS.get().unwrap();
+    write_to_sink(sink, &resolvers[id](ViewContext::new(sender)));
     2
 }
 
