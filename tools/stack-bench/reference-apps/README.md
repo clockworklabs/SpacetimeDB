@@ -20,7 +20,9 @@ A fixture must satisfy all of these conditions before it qualifies a run:
 4. The source contains no secrets, generated bindings, build output,
    transcripts, grader output, or mutation backups.
 5. Each mutation has an exact source anchor and produces the intended conclusive
-   failure without unrelated failures.
+   failure at an observation step (`expect`, `dbExpect`, or `waitUntilAbsent`),
+   without unrelated failures. Failing at a click, sign-in, or restart is
+   `CAUGHT_OFF_ASSERTION`, not a kill.
 6. The registry records the qualified source hash.
 
 Compile success or an old full score does not promote a fixture.
