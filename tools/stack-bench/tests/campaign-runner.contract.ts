@@ -315,8 +315,8 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
     validation: { ladder: { policy: 'pass-before-next-level', requestedLevels: [1, 2],
       completedLevels: [1], stoppedAfterLevel: 1, blockedLevels: [2] } },
     levels: [{ level: 1, selection: plannedSelection(attempt, 1),
-      graded: true, score: 57, max: 58, repairs: 3,
-      firstBuild: { score: 31, max: 58, outcome: appFailure },
+      graded: true, score: 56, max: 57, repairs: 3,
+      firstBuild: { score: 31, max: 57, outcome: appFailure },
       repair: { status: 'budget-exhausted', limit: 3, used: 3,
         stopReason: 'budget-exhausted' }, outcome: appFailure }],
     outcome: { kind: 'app_failure', levels: { 1: appFailure } } };
@@ -540,8 +540,8 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 0, max: 58, repairs: 1,
-    firstBuild: { score: 0, max: 58, outcome: { kind: 'app_failure' } },
+  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 0, max: 57, repairs: 1,
+    firstBuild: { score: 0, max: 57, outcome: { kind: 'app_failure' } },
     repair: { status: 'incomplete', limit: 3, used: 1, stopReason: null },
     outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
@@ -561,7 +561,7 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
   run.levels[0] = { ...run.levels[0]!, repairs: 3,
     repair: { status: 'budget-exhausted', limit: 3, used: 3, stopReason: null } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  run.levels[0] = { ...run.levels[0]!, score: 58 };
+  run.levels[0] = { ...run.levels[0]!, score: 57 };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.score/);
   run.levels[0] = { ...run.levels[0]!, contractPass: false,
@@ -598,8 +598,8 @@ test('campaign validation requires complete first-build and final measurement co
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
   levels: [{ level: 1, graded: true, selection: plannedSelection(attempt, 1),
-    score: 58, max: 58, repairs: 0,
-    firstBuild: { score: 58, max: 58, outcome },
+    score: 57, max: 57, repairs: 0,
+    firstBuild: { score: 57, max: 57, outcome },
     repair: { status: 'not-needed', limit: 3, used: 0, stopReason: null },
     outcome }], outcome: { kind: 'passed' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
@@ -619,14 +619,14 @@ test('campaign validation requires complete first-build and final measurement co
   } finally { rmSync(contradictoryPackage, { recursive: true, force: true }); }
 
   const missingFirstBuildPoint = structuredClone(run);
-  missingFirstBuildPoint.levels[0]!.firstBuild!.score = 57;
-  missingFirstBuildPoint.levels[0]!.firstBuild!.max = 57;
+  missingFirstBuildPoint.levels[0]!.firstBuild!.score = 56;
+  missingFirstBuildPoint.levels[0]!.firstBuild!.max = 56;
   assert.throws(() => validateCampaignRun(plan, attempt, missingFirstBuildPoint,
     { buildImage: 'test-build-image' }), /firstBuild\.max/);
 
   const missingFinalPoint = structuredClone(run);
-  missingFinalPoint.levels[0]!.max = 57;
-  missingFinalPoint.levels[0]!.score = 57;
+  missingFinalPoint.levels[0]!.max = 56;
+  missingFinalPoint.levels[0]!.score = 56;
   assert.throws(() => validateCampaignRun(plan, attempt, missingFinalPoint,
     { buildImage: 'test-build-image' }), /levels\.L1\.max/);
 
@@ -642,7 +642,7 @@ test('campaign validation requires complete first-build and final measurement co
     appFailures: ['feature/accounts'],
     inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] };
   inconclusiveFinal.outcome = { kind: 'app_failure' };
-  inconclusiveFinal.levels[0]!.score = 57;
+  inconclusiveFinal.levels[0]!.score = 56;
   inconclusiveFinal.levels[0]!.repairs = 3;
   inconclusiveFinal.levels[0]!.repair = { status: 'budget-exhausted', limit: 3,
     used: 3, stopReason: null };

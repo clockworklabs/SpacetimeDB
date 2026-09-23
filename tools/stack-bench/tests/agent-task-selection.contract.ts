@@ -171,7 +171,7 @@ test('pack dependencies become requested task scope while checks only narrow mea
 
 test('ordinary runs select scored checks while test-development checks require exact selection', () => {
   const ordinary = createRecipeTaskRequest(binding);
-  assert.equal(ordinary.selection.checks.length, 46);
+  assert.equal(ordinary.selection.checks.length, 45);
   assert.equal(ordinary.selection.checks.every(check => check.points > 0), true);
   assert.equal(ordinary.selection.completeness, 'full');
 
@@ -238,7 +238,7 @@ test('the real unprescribed prompt withholds every expected quality specificatio
     assert.doesNotMatch(prompt, /## Access control:|## State durability:|## Live state:|## Concurrency safety:|## Transactional integrity:/);
     assert.doesNotMatch(prompt, /server-enforced authority|survives a page reload|only one customer can receive the last unit|historical order prices do not change/);
     assert.doesNotMatch(JSON.stringify(visible), /ecommerce\.spec/);
-    assert.equal(task.selection.scoredPoints, 58);
+    assert.equal(task.selection.scoredPoints, 57);
     assert(task.selection.scoredChecks.some(check => check.treatment === 'expected'));
     assertVisibleTaskRequest(visible);
     assert.deepEqual(visible.selection.requested.checks, []);
@@ -258,10 +258,10 @@ test('exact modular qualification can include supporting checks without changing
   const exact = createBoundRecipeTaskRequest(modular, { featureIds: features,
     expectedSpecifications, checkKeys: modular.release.checkCatalog.map(check => check.stableKey) });
 
-  assert.equal(ordinary.selection.checks.length, 46);
+  assert.equal(ordinary.selection.checks.length, 45);
   assert.equal(ordinary.selection.checks.every(check => check.points > 0), true);
-  assert.equal(exact.selection.checks.length, 48);
-  assert.equal(exact.selection.scoredPoints, 58);
+  assert.equal(exact.selection.checks.length, 47);
+  assert.equal(exact.selection.scoredPoints, 57);
   assert.equal(exact.selection.checks.filter(check => check.points === 0).length, 2);
   assert.deepEqual(exact.selection.promptPacks, ordinary.selection.promptPacks);
 });

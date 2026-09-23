@@ -46,9 +46,9 @@ test('the registry owns one current L1 mutation set per backend', () => {
 test('the comprehensive release has scored defects and only two supporting controls', () => {
   const scoredKeys = release.checkCatalog.filter(check => check.points > 0)
     .map(check => check.stableKey).sort();
-  assert.equal(release.checkCatalog.length, 48);
-  assert.equal(release.scoring.points, 58);
-  assert.equal(scoredKeys.length, 46);
+  assert.equal(release.checkCatalog.length, 47);
+  assert.equal(release.scoring.points, 57);
+  assert.equal(scoredKeys.length, 45);
   for (const backend of BACKENDS) {
     const mutation = calibration.mutations.find(entry => entry.backend === backend);
     assert(mutation);

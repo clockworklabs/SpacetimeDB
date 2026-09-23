@@ -326,8 +326,8 @@ test('the cumulative L3 recipe adds every L3 check', () => {
     join(trackRoot, 'composition', 'recipes', 'sequential-l3.json'),
     { trackRoot },
   );
-  assert.equal(plan.checks.length, 98);
-  assert.equal(plan.scoring.points, 180);
+  assert.equal(plan.checks.length, 97);
+  assert.equal(plan.scoring.points, 179);
 
   const plannedKeys = new Set(plan.checks.map(check => check.stableKey));
   const expectedL3Keys = selected.flatMap(({ pack, check }) => {

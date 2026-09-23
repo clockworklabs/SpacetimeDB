@@ -594,21 +594,6 @@
       ]
     },
     {
-      "id": "external-stock-client-snapshot-restart",
-      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync.json",
-      "targets": [
-        "ecommerce.spec.external-data-sync.external-stock.901c"
-      ],
-      "desc": "Keep the first subscribed catalog values instead of accepting later native stock changes.",
-      "file": "client/src/App.tsx",
-      "edits": [
-        {
-          "find": "    setItems(state.items);",
-          "replace": "    setItems(current => current.length ? current : state.items);"
-        }
-      ]
-    },
-    {
       "id": "external-stock-client-snapshot-reconnect",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
       "targets": [

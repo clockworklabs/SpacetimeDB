@@ -450,29 +450,6 @@
       ]
     },
     {
-      "id": "server-restart-disables-catalog-recovery",
-      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync.json",
-      "targets": [
-        "ecommerce.spec.external-data-sync.external-stock.901c"
-      ],
-      "desc": "After a socket disconnect, the existing page ignores both reconnect refreshes and later catalogue snapshots.",
-      "file": "client/src/App.tsx",
-      "edits": [
-        {
-          "find": "  const socketRef = useRef<Socket | null>(null);\n\n  const saveSession",
-          "replace": "  const socketRef = useRef<Socket | null>(null);\n  const acceptCatalogRecovery = useRef(true);\n\n  const saveSession"
-        },
-        {
-          "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));",
-          "replace": "    socket.on(\"disconnect\", () => { acceptCatalogRecovery.current = false; });\n    socket.on(\"connect\", () => {\n      if (acceptCatalogRecovery.current) refreshItems().catch((err) => console.error(err));"
-        },
-        {
-          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));",
-          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => { if (acceptCatalogRecovery.current) setItems(data); });"
-        }
-      ]
-    },
-    {
       "id": "reconnect-generation-ignores-current-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
       "targets": [

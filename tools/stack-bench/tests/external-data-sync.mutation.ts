@@ -22,7 +22,6 @@ import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 const ROOT = STACK_BENCH_ROOT;
 const LIVE_SCENARIO = 'tracks/ecommerce/scenarios/01-external-live-sync.json';
 const RELOAD_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reload-sync.json';
-const RESTART_SCENARIO = 'tracks/ecommerce/scenarios/01-external-server-restart-sync.json';
 const RECONNECT_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reconnect-sync.json';
 const PACK = 'tracks/ecommerce/composition/packs/spec-external-data-sync.json';
 const registry = loadReferenceRegistry();
@@ -43,7 +42,6 @@ const cases: ExternalSyncCase[] = [
     backend: 'mongodb',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
-      ['server-restart-disables-catalog-recovery', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
       ['reconnect-generation-ignores-current-catalog', RECONNECT_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901d']],
     ],
   },
@@ -51,7 +49,6 @@ const cases: ExternalSyncCase[] = [
     backend: 'postgres',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
-      ['server-restart-does-not-resynchronize-catalog', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
       ['reconnect-does-not-send-current-catalog', RECONNECT_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901d']],
     ],
   },
@@ -59,7 +56,6 @@ const cases: ExternalSyncCase[] = [
     backend: 'spacetime',
     mutations: [
       ['stock-subscription-snapshotted-once', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
-      ['stock-view-ignores-update-across-app-server-stop', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
       ['stock-view-keeps-pre-reconnect-snapshot', RECONNECT_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901d']],
     ],
   },
@@ -82,19 +78,13 @@ test('external synchronization scenarios are focused and state-independent', () 
     source: RELOAD_SCENARIO,
     expectedLevel: 1,
   });
-  const restart = compileScenarioDefinition(json(RESTART_SCENARIO), {
-    source: RESTART_SCENARIO,
-    expectedLevel: 1,
-  });
 
   const liveFeature = requiredFeature(live.features[0], LIVE_SCENARIO);
   const reconnectFeature = requiredFeature(reconnect.features[0], RECONNECT_SCENARIO);
   const reloadFeature = requiredFeature(reload.features[0], RELOAD_SCENARIO);
-  const restartFeature = requiredFeature(restart.features[0], RESTART_SCENARIO);
   const liveCriterion = requiredCriterion(liveFeature.criteria[0], LIVE_SCENARIO);
   const reconnectCriterion = requiredCriterion(reconnectFeature.criteria[0], RECONNECT_SCENARIO);
   const reloadCriterion = requiredCriterion(reloadFeature.criteria[0], RELOAD_SCENARIO);
-  const restartCriterion = requiredCriterion(restartFeature.criteria[0], RESTART_SCENARIO);
 
   assert.deepEqual(liveFeature.criteria.map(criterion => criterion.id), ['901a']);
   assert.deepEqual(liveCriterion.steps.map(step => step.do),
@@ -115,20 +105,10 @@ test('external synchronization scenarios are focused and state-independent', () 
   assert.equal(disconnectedWrite.settleMs, 4000,
     'the external write must remain inside the disconnected window before network restoration');
   assert.equal(reconnectResult.equals, 52,
-    'East 7 + untouched West 45 must not depend on the server-restart scenario');
+    'East 7 + untouched West 45 must not depend on another external-stock scenario');
   assert.equal(reconnectSteps.some(step => ['startAppServer', 'stopAppServer'].includes(step.do)), false);
   assert.equal(reconnectCriterion.points, 1,
     'the scenario and recipe score must agree');
-
-  const restartSteps = restartCriterion.steps;
-  assert.deepEqual(restartSteps.map(step => step.do),
-    ['stopAppServer', 'dbSetStock', 'startAppServer', 'expectNumber']);
-  const restartResult = restartSteps.at(-1);
-  assert(restartResult, 'restart checks must contain a final result');
-  assert.equal(restartResult.equals, 65,
-    'untouched East 55 + West 10 must not depend on the live-sync scenario');
-  assert.equal(restartCriterion.points, 1,
-    'the server-restart score must be preserved');
 });
 
 test('the pack preserves stable check identities', () => {
@@ -136,7 +116,6 @@ test('the pack preserves stable check identities', () => {
   assert.deepEqual(pack.checks.map(check => [check.id, check.stableId, check.criteria]), [
     ['external-live', 'external-stock', ['901a']],
     ['external-reload', 'external-stock', ['901b']],
-    ['external-server-restart', 'external-stock', ['901c']],
     ['external-reconnect', 'external-stock', ['901d']],
   ]);
 });

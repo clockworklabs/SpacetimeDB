@@ -57,8 +57,8 @@ function byStableKey(candidate: RecipeRelease) {
 }
 
 test('current L1 has the complete scored concurrency and live-state surface', () => {
-  assert.equal(release.checkCatalog.length, 48);
-  assert.equal(release.scoring.points, 58);
+  assert.equal(release.checkCatalog.length, 47);
+  assert.equal(release.scoring.points, 57);
   assert.equal(release.checkCatalog.filter(check => check.points === 0).length, 2);
   const restockControl = byStableKey(release)
     .get('ecommerce.spec.concurrency-safety.restock-race.202-control');

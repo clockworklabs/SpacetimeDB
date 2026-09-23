@@ -54,9 +54,9 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    191);
+    190);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 362);
+    .reduce((total, check) => total + check.points, 0), 361);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
@@ -79,7 +79,6 @@ test('the ecommerce progression definition is complete and calculated from its d
     'ecommerce.spec.access-control.warehouse-area-boundary.7a',
     'ecommerce.spec.access-control.warehouse-write-boundary.103b',
     'ecommerce.spec.external-data-sync.external-stock.901a',
-    'ecommerce.spec.external-data-sync.external-stock.901c',
     'ecommerce.spec.external-data-sync.external-stock.901d',
     'ecommerce.spec.live-state.warehouse-stock.7c',
   ]);

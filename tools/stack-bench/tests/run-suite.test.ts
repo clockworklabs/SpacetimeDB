@@ -490,7 +490,7 @@ test('recipe weights govern scenario grading with and without explicit check fil
       if (check.points === 0) zeroPoint += 1;
     }
   }
-  assert.equal(total, 58);
+  assert.equal(total, 57);
   assert(overridden > 0, 'the regression must exercise a recipe weight override');
   assert(zeroPoint > 0, 'zero-point controls must retain zero weight');
 });
@@ -530,7 +530,7 @@ test('recipe execution keeps inherited suites out of the current-level score', (
     const binding = resolveRecipeRelease(track, 2, 'ecommerce.sequential-l2');
     const suites = suitesForRecipe(track, binding);
     const inherited = suites.filter(suite => suite.inherited);
-    assert.equal(inherited.length, 38);
+    assert.equal(inherited.length, 37);
     assert(inherited.every(suite => suite.fromLevel === 1));
     assert.equal(suites.filter(suite => !suite.inherited).length, 12);
   } finally { rmSync(temp, { recursive: true, force: true }); }

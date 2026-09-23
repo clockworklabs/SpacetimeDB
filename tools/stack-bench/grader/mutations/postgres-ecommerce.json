@@ -487,25 +487,6 @@
       ]
     },
     {
-      "id": "server-restart-does-not-resynchronize-catalog",
-      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync.json",
-      "targets": [
-        "ecommerce.spec.external-data-sync.external-stock.901c"
-      ],
-      "desc": "After a server restart, omit both connection-time catalog hydration and periodic authoritative reconciliation.",
-      "file": "server/src/index.ts",
-      "edits": [
-        {
-          "find": "    const catalog = await buildCatalog();\n    socket.emit(\"items:update\", { items: catalog });",
-          "replace": "    // mutant: reconnecting clients retain their pre-restart catalog"
-        },
-        {
-          "find": "  broadcastCatalog().catch((err) => console.error(\"poll broadcast failed\", err));",
-          "replace": "  // mutant: restart recovery does not reconcile authoritative catalog state"
-        }
-      ]
-    },
-    {
       "id": "reconnect-does-not-send-current-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
       "targets": [

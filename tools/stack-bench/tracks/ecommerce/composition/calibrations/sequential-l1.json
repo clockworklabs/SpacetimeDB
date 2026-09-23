@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/sequential-l1.json",
     "id": "ecommerce.sequential-l1",
-    "meaningSha256": "96bb3e9990aece9cfbf3b461314dd5c340d44e7dcca774ffe0ca5e6579270af9",
-    "executionSha256": "60a6fd507211d2d628f8cd346d9892f2dd1f75a6eb590cfc3ed69ab4ce4afaf5",
-    "contentSha256": "fee78872232182e855ee29ec19ff71c38d8ffb425feeb80ebb86f87f0f3cfec7"
+    "meaningSha256": "0808f0942bab3f36a4336b8b7ec75c11ebb6ebb634dc81a92ccdc91b5c1922f6",
+    "executionSha256": "2ed9b71a9a7afebdc8a83a8277d0cef7f091426d891ec507907186fb2f3737bd",
+    "contentSha256": "f3c14552d9af0910ea47639de803333dc48fdfe09c2bddee026ec1d58d369df5"
   },
   "fixture": {
     "id": "ecommerce.storefront",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "53f053364b654168b1d1a47e43d546befe0c57e3719178eb1bb5d1edf3402d93",
+      "sha256": "562fc602a04ab25a2eabe111cb04fb4b497e872df57b84845328bb5668b11dae",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "60ac2446163c59c9e65e91ba1446b8ea1443cdf3640c3240107b23a5bbb39481",
+      "sha256": "5d3d8bc9cef109b1f5b779320d393c4bd9c6b0153ce0f249ceafc4a31663c13a",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "1e98591697633c7d9c44b96a80233552469f042c24cb88721913ca276bd0eaa9",
+      "sha256": "fad0ac4eb8dd227e0854bda0099d6a58499a6ac076886bef3fe46f6f61396ed5",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -103,7 +103,6 @@
       "ecommerce.spec.external-data-sync.external-stock.901a",
       "ecommerce.spec.external-data-sync.external-stock.901d",
       "ecommerce.spec.external-data-sync.external-stock.901b",
-      "ecommerce.spec.external-data-sync.external-stock.901c",
       "ecommerce.spec.concurrency-safety.last-unit.201a",
       "ecommerce.spec.concurrency-safety.last-unit.201b",
       "ecommerce.spec.concurrency-safety.last-unit.201c",

@@ -158,7 +158,6 @@
         "ecommerce.spec.access-control#warehouse-write-boundary",
         "ecommerce.spec.external-data-sync#external-live",
         "ecommerce.spec.external-data-sync#external-reconnect",
-        "ecommerce.spec.external-data-sync#external-server-restart",
         "ecommerce.spec.live-state#warehouse-stock"
       ],
       "dependencies": [

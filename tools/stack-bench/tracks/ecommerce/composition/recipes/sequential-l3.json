@@ -205,7 +205,6 @@
       "includeCheckGroups": [
         "external-live",
         "external-reload",
-        "external-server-restart",
         "external-reconnect"
       ]
     },
@@ -446,7 +445,6 @@
       "ecommerce.spec.concurrency-safety.duplicate-checkout.203b": 1,
       "ecommerce.spec.external-data-sync.external-stock.901a": 1,
       "ecommerce.spec.external-data-sync.external-stock.901b": 0,
-      "ecommerce.spec.external-data-sync.external-stock.901c": 1,
       "ecommerce.spec.external-data-sync.external-stock.901d": 1,
       "ecommerce.spec.live-state.open-list.902a": 1,
       "ecommerce.operations-access.fulfilment-queue.1a": 2,

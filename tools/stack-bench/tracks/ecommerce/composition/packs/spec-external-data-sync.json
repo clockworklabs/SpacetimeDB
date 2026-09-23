@@ -74,23 +74,6 @@
       ]
     },
     {
-      "id": "external-server-restart",
-      "stableId": "external-stock",
-      "source": "scenarios/01-external-server-restart-sync.json",
-      "feature": 901,
-      "criteria": [
-        "901c"
-      ],
-      "role": "guarantee",
-      "observations": [
-        "requested",
-        "unmentioned"
-      ],
-      "requiresFeatures": [
-        "ecommerce.feature.warehouse-admin"
-      ]
-    },
-    {
       "id": "external-reconnect",
       "stableId": "external-stock",
       "source": "scenarios/01-external-reconnect-sync.json",

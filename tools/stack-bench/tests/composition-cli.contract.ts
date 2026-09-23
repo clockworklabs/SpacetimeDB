@@ -28,8 +28,8 @@ test('pack and recipe validation resolve their full source context without writi
   assert(pack.criteria > 0);
   const recipe = validateRecipeFile(join(SOURCE, 'composition', 'recipes', 'sequential-l1.json'),
     { trackRoot: SOURCE });
-  assert.equal(recipe.release.checkCatalog.length, 48);
-  assert.equal(recipe.release.checkCatalog.reduce((total, check) => total + check.points, 0), 58);
+  assert.equal(recipe.release.checkCatalog.length, 47);
+  assert.equal(recipe.release.checkCatalog.reduce((total, check) => total + check.points, 0), 57);
   assert.deepEqual(hashDirectory(SOURCE), before);
 });
 
@@ -42,7 +42,7 @@ test('the command surface runs without Docker or PATH access', () => {
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.id, 'ecommerce.sequential-l1');
-  assert.equal(output.checks, 48);
+  assert.equal(output.checks, 47);
 });
 
 test('recipe show gives pack/check selections their own stable scope identity', () => {

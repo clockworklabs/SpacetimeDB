@@ -1511,10 +1511,9 @@
         <div class="atk-body">
           <div class="step"><span class="actor">901a</span><span class="what">a back-office script sets Desk Lamp's East stock to 5, directly in the database; an anonymous viewer with the storefront already open sees 50 without touching the page</span></div>
           <div class="step"><span class="actor">901b</span><span class="what">the out-of-band change survives a reload; the page did not merely patch its own memory</span></div>
-          <div class="step"><span class="actor">901c</span><span class="what">a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload</span></div>
           <div class="step"><span class="actor">901d</span><span class="what">the client, not the server, misses the window: a correction lands while this browser is disconnected, and the page is current again once it reconnects</span></div>
         </div>
-        <div class="atk-verdict">4 checks, and the store has to hold every one</div>
+        <div class="atk-verdict">3 checks, and the store has to hold every one</div>
       </div>
       <div class="atk-panel" id="c14">
         <div class="atk-head"><span>A list being opened while its contents change</span><span>reader &middot; reviewer</span></div>

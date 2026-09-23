@@ -81,10 +81,10 @@ test('recipe-bound null qualification grades the exact modular execution and che
   const checks = recipeSuites.flatMap(suite => suite.checks);
 
   assert.deepEqual(suites.map(suite => suite.id), binding.execution.map(execution => execution.id));
-  assert.equal(checks.length, 48);
-  assert.equal(checks.reduce((total, check) => total + check.points, 0), 58);
+  assert.equal(checks.length, 47);
+  assert.equal(checks.reduce((total, check) => total + check.points, 0), 57);
   assert.equal(checks.filter(check => check.points === 0).length, 2);
-  assert.equal(new Set(checks.map(check => check.stableKey)).size, 48);
+  assert.equal(new Set(checks.map(check => check.stableKey)).size, 47);
 
   const selectedByExecution = new Map(recipeSuites.map(suite => {
     const scenario = compileScenarioDefinition(readJson(suite.spec),

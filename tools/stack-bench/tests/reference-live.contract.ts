@@ -497,12 +497,12 @@ test('modular reference qualification selects every exact check without prescrib
   const checkKeys = valuesAfter(argv, '--check');
 
   assert.equal(argv.includes('--request-spec'), false);
-  assert.equal(checkKeys.length, 48);
-  assert.equal(new Set(checkKeys).size, 48);
+  assert.equal(checkKeys.length, 47);
+  assert.equal(new Set(checkKeys).size, 47);
   const task = createBoundRecipeTaskRequest(binding,
     { featureIds, expectedSpecifications, checkKeys });
-  assert.equal(task.selection.checks.length, 48);
-  assert.equal(task.selection.scoredPoints, 58);
+  assert.equal(task.selection.checks.length, 47);
+  assert.equal(task.selection.scoredPoints, 57);
   assert.equal(task.selection.checks.filter(check => check.points === 0).length, 2);
   assert.equal(required(task.selection.specifications, 'task specifications').requested.length, 0);
   assert.equal(required(task.selection.specifications, 'task specifications').expected.length, expectedSpecifications.length);
@@ -521,7 +521,7 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 117);
+  assert.equal(selection.grader.checkKeys.length, 116);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>

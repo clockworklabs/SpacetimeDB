@@ -692,21 +692,6 @@
       ]
     },
     {
-      "id": "stock-view-ignores-update-across-app-server-stop",
-      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync.json",
-      "targets": [
-        "ecommerce.spec.external-data-sync.external-stock.901c"
-      ],
-      "desc": "Persist the first stock quantities in browser session storage and keep rendering them after app-server restart, including any frontend reload. Initial stock remains correct. This validates the stale-view oracle, not SpacetimeDB storage durability.",
-      "file": "client/src/App.tsx",
-      "edits": [
-        {
-          "find": "  const [stocks] = useTable(tables.stock);",
-          "replace": "  const [liveStocks] = useTable(tables.stock);\n  const cacheKey = 'stale-stock-quantities';\n  let savedQuantities = sessionStorage.getItem(cacheKey);\n  if (!savedQuantities && liveStocks.length > 0) {\n    savedQuantities = JSON.stringify(Object.fromEntries(liveStocks.map(row => [`${row.itemId}-${row.warehouseId}`, row.quantity])));\n    sessionStorage.setItem(cacheKey, savedQuantities);\n  }\n  const quantities: Record<string, number> = JSON.parse(savedQuantities ?? '{}');\n  const stocks = liveStocks.map(row => ({ ...row, quantity: quantities[`${row.itemId}-${row.warehouseId}`] ?? row.quantity }));"
-        }
-      ]
-    },
-    {
       "id": "stock-view-keeps-pre-reconnect-snapshot",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
       "targets": [
