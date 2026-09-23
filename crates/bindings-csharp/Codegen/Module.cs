@@ -2199,6 +2199,7 @@ record AssemblyDeclaration(
     string DescriptorTypeName,
     bool DeclaresMounts,
     string LifecycleReducers,
+    string RootOnlyDeclarations,
     EquatableArray<AssemblyTableAccessor> Tables,
     EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
     EquatableArray<AssemblyTableAccessor> Queries
@@ -2297,6 +2298,8 @@ public class Module : IIncrementalGenerator
                     assembly.GetAttributes().Any(attribute =>
                         attribute.AttributeClass?.ToDisplayString() == "SpacetimeDB.NamespaceAttribute"),
                     descriptor.GetMembers("LifecycleReducers").OfType<IFieldSymbol>()
+                        .FirstOrDefault()?.ConstantValue as string ?? "",
+                    descriptor.GetMembers("RootOnlyDeclarations").OfType<IFieldSymbol>()
                         .FirstOrDefault()?.ConstantValue as string ?? "",
                     ReadAccessors("Tables"),
                     ReadAccessors("ReadOnlyTables"),
@@ -2775,6 +2778,9 @@ public class Module : IIncrementalGenerator
                 foreach (var assembly in mountedAssemblies.Where(a => a.LifecycleReducers.Length != 0))
                     context.ReportDiagnostic(ErrorDescriptor.MountedLifecycleReducers.ToDiag(
                         (assembly.Identity, mountByIdentity[assembly.Identity].Accessor, assembly.LifecycleReducers)));
+                foreach (var assembly in mountedAssemblies.Where(a => a.RootOnlyDeclarations.Length != 0))
+                    context.ReportDiagnostic(ErrorDescriptor.MountedRootOnlyDeclarations.ToDiag(
+                        (assembly.Identity, mountByIdentity[assembly.Identity].Accessor, assembly.RootOnlyDeclarations)));
 
                 string GenerateDispatchRouting(string category, string arguments, string unknownId)
                 {
@@ -3250,6 +3256,10 @@ public class Module : IIncrementalGenerator
                     namespace {{extensionNamespaceName}} {
                         public static partial class AssemblyDescriptor {
                             public const string LifecycleReducers = {{SymbolDisplay.FormatLiteral(string.Join(", ", addReducers.Where(r => r.Kind != ReducerKind.UserDefined).Select(r => $"{r.FullName} ({r.Kind})")), true)}};
+                            public const string RootOnlyDeclarations = {{SymbolDisplay.FormatLiteral(string.Join(", ", new[] {
+                                rlsFilters.Array.Length != 0 ? "row-level security filters" : null,
+                                environmentRegistrations.Length != 0 ? "environment variables" : null
+                            }.Where(value => value is not null)), true)}};
                             public const int ReducerCount = {{addReducers.Array.Length}};
                             public const int ProcedureCount = {{addProcedures.Array.Length}};
                             public const int HttpHandlerCount = {{addHttpHandlers.Array.Length}};
