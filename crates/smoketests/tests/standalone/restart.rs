@@ -185,3 +185,30 @@ fn test_add_remove_index_after_restart() {
     let result = test.subscribe(&[JOIN_QUERY]).expect_rows(0).run();
     assert!(result.is_err(), "Expected subscription to fail after removing indices");
 }
+
+#[test]
+fn test_autoinc_rollback_allocation_restart_unique_violation() {
+    require_local_server!();
+    let mut test = Smoketest::builder().precompiled_module("autoinc-unique").build();
+
+    test.call("fill_repro_block", &[]).unwrap();
+    assert!(
+        test.call("rollback_after_repro_alloc", &[]).is_err(),
+        "rollback reducer should fail after consuming an auto-inc value"
+    );
+    test.call("add_repro", &[r#""committed-before-restart""#]).unwrap();
+
+    let output = test
+        .sql_confirmed("SELECT * FROM repro WHERE name = 'committed-before-restart'")
+        .unwrap();
+    assert!(
+        output.contains("committed-before-restart"),
+        "pre-restart row was not confirmed durable: {output}"
+    );
+
+    test.restart_server();
+
+    test.call("add_repro", &[r#""post-restart-gap""#]).unwrap();
+    test.call("add_repro", &[r#""post-restart-duplicate""#])
+        .expect("auto-inc should not reuse a pre-restart committed id");
+}

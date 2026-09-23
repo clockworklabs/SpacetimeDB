@@ -3,7 +3,7 @@ use spacetimedb_primitives::SequenceId;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_schema::schema::SequenceSchema;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 // TODO(cloutiertyler): The below was made `pub` for the datastore split. We should
 // investigate if this should be private again.
 pub struct Sequence {

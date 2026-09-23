@@ -41,3 +41,37 @@ macro_rules! autoinc_unique {
 }
 
 autoinc_unique!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128);
+
+#[spacetimedb::table(accessor = repro, public)]
+pub struct Repro {
+    #[auto_inc]
+    #[unique]
+    id: u32,
+    #[unique]
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn fill_repro_block(ctx: &ReducerContext) {
+    for id in 0..4096 {
+        ctx.db.repro().insert(Repro {
+            id: 0,
+            name: format!("committed-{id}"),
+        });
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn rollback_after_repro_alloc(ctx: &ReducerContext) -> Result<(), String> {
+    ctx.db.repro().insert(Repro {
+        id: 0,
+        name: "rolled-back".into(),
+    });
+    Err("rollback after auto-inc allocation".into())
+}
+
+#[spacetimedb::reducer]
+pub fn add_repro(ctx: &ReducerContext, name: String) -> Result<(), Box<dyn Error>> {
+    ctx.db.repro().try_insert(Repro { id: 0, name })?;
+    Ok(())
+}

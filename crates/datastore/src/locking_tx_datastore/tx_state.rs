@@ -76,9 +76,16 @@ pub(super) struct TxState {
     ///
     /// This is stored as a `ThinVec` as it would be very uncommon to add anything to this list.
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
+
+    /// Original live sequence states for sequences mutated during this transaction.
+    ///
+    /// Sequence allocation updates are written through the normal row path to `st_sequence`,
+    /// so the durable metadata change rolls back with the rest of `TxState`. The process-local
+    /// sequence cursor lives outside those row tables, so rollback must restore it explicitly.
+    pub(super) sequence_checkpoints: Option<Box<IntMap<SequenceId, Sequence>>>,
 }
 
-static_assert_size!(TxState, 96);
+static_assert_size!(TxState, 104);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {
@@ -87,11 +94,15 @@ impl MemoryUsage for TxState {
             delete_tables,
             blob_store,
             pending_schema_changes,
+            sequence_checkpoints,
         } = self;
         insert_tables.heap_usage()
             + delete_tables.heap_usage()
             + blob_store.heap_usage()
             + pending_schema_changes.heap_usage()
+            + sequence_checkpoints
+                .as_ref()
+                .map_or(0, |checkpoints| checkpoints.heap_usage())
     }
 }
 

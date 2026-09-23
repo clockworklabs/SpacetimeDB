@@ -460,7 +460,7 @@ pub struct MutTxId {
 // Grew by one word when `ReducerName` became fully qualified: it now holds a
 // `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
 // One per transaction, not per row.
-static_assert_size!(MutTxId, 576);
+static_assert_size!(MutTxId, 592);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -2110,6 +2110,11 @@ fn get_next_sequence_value(
         let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
         let sequence = get_sequence_mut(seq_state, seq_id)?;
+        tx_state
+            .sequence_checkpoints
+            .get_or_insert_with(Default::default)
+            .entry(seq_id)
+            .or_insert_with(|| sequence.clone());
         let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
         seq_row.allocated = new_allocated;
         seq_row

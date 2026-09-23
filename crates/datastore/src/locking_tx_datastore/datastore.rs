@@ -1100,7 +1100,10 @@ pub(crate) mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_execution::dml::MutDatastore as _;
     use spacetimedb_execution::Datastore;
-    use spacetimedb_lib::db::auth::{StAccess, StTableType};
+    use spacetimedb_lib::db::{
+        auth::{StAccess, StTableType},
+        raw_def::SEQUENCE_ALLOCATION_STEP,
+    };
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
@@ -2134,7 +2137,62 @@ pub(crate) mod tests {
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
-        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_inc_allocation_rollback_does_not_commit_above_persisted_allocation() -> ResultTest<()> {
+        // Reproduce rollback after crossing an auto-inc allocation boundary:
+        // the `st_sequence` row update is rolled back, but the in-memory cursor must not let
+        // later committed rows outrun the persisted allocation used after restart.
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        for id in 0..SEQUENCE_ALLOCATION_STEP {
+            insert(
+                &datastore,
+                &mut tx,
+                table_id,
+                &u32_str_u32(0, &format!("committed-{id}"), 18),
+            )?;
+        }
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, "rolled-back", 18))?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let mut tx = begin_mut_tx(&datastore);
+        insert(
+            &datastore,
+            &mut tx,
+            table_id,
+            &u32_str_u32(0, "committed-after-rollback", 18),
+        )?;
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        let allocated = query_st_tables(&tx)
+            .scan_st_sequences()?
+            .into_iter()
+            .find(|seq| seq.table_id == table_id && seq.col_pos == 0.into())
+            .expect("table should have an auto-inc sequence")
+            .allocated;
+        let max_id = all_rows(&datastore, &tx, table_id)
+            .into_iter()
+            .filter_map(|row| match row.get_field(0, None).ok()? {
+                AlgebraicValue::U32(id) => Some(*id as i128),
+                _ => None,
+            })
+            .max()
+            .unwrap();
+
+        assert!(
+            max_id < allocated,
+            "committed auto-inc id {max_id} must be below persisted allocation {allocated}"
+        );
         Ok(())
     }
 

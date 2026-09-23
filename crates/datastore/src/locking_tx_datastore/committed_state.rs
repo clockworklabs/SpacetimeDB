@@ -776,6 +776,15 @@ impl CommittedState {
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
+
+        if let Some(sequence_checkpoints) = tx_state.sequence_checkpoints {
+            for (sequence_id, sequence) in *sequence_checkpoints {
+                if seq_state.get_sequence_mut(sequence_id).is_some() {
+                    seq_state.insert(sequence);
+                }
+            }
+        }
+
         self.next_tx_offset.saturating_sub(1)
     }
 
