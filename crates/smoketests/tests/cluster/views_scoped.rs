@@ -120,18 +120,92 @@ export const spawn = spacetimedb.reducer(
 );
 "#;
 
+/// A TypeScript module with team-based fog of war.
+const TS_FOG_OF_WAR_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
+
+const players = table(
+  { name: "player" },
+  { identity: t.identity().primaryKey(), teamId: t.u64(), chunkId: t.u64() }
+);
+
+// The chunks each team can currently see.
+const teamVision = table(
+  { name: "team_vision" },
+  { id: t.u64().primaryKey().autoInc(), teamId: t.u64().index(), chunkId: t.u64() }
+);
+
+const entities = table(
+  { name: "entity" },
+  { id: t.u64().primaryKey().autoInc(), chunkId: t.u64().index(), kind: t.string() }
+);
+
+const spacetimedb = schema({ players, teamVision, entities });
+export default spacetimedb;
+
+// Shared team vision: one scope per team.
+export const fog_of_war = spacetimedb.scopedView(
+  { name: "fog_of_war", public: true, scope: t.u64() },
+  t.array(entities.rowType),
+  ctx => ctx.db.players.identity.find(ctx.sender)?.teamId,
+  (ctx, teamId) => {
+    console.log(`fog_of_war body evaluated for team ${teamId}`);
+    return Array.from(ctx.db.teamVision.teamId.filter(teamId)).flatMap(vision =>
+      Array.from(ctx.db.entities.chunkId.filter(vision.chunkId))
+    );
+  }
+);
+
+// Team and chunk: one scope per (team, chunk) pair.
+const TeamChunk = t.object("TeamChunk", { teamId: t.u64(), chunkId: t.u64() });
+
+export const fog_of_war_local = spacetimedb.scopedView(
+  { name: "fog_of_war_local", public: true, scope: TeamChunk },
+  t.array(entities.rowType),
+  ctx => {
+    const player = ctx.db.players.identity.find(ctx.sender);
+    return player && { teamId: player.teamId, chunkId: player.chunkId };
+  },
+  (ctx, key) => {
+    const teamSeesChunk = Array.from(ctx.db.teamVision.teamId.filter(key.teamId)).some(
+      vision => vision.chunkId === key.chunkId
+    );
+    return teamSeesChunk ? Array.from(ctx.db.entities.chunkId.filter(key.chunkId)) : [];
+  }
+);
+
+export const join = spacetimedb.reducer({ teamId: t.u64(), chunkId: t.u64() }, (ctx, { teamId, chunkId }) => {
+  ctx.db.players.insert({ identity: ctx.sender, teamId, chunkId });
+});
+
+export const move_to = spacetimedb.reducer({ chunkId: t.u64() }, (ctx, { chunkId }) => {
+  const player = ctx.db.players.identity.find(ctx.sender);
+  if (player) {
+    ctx.db.players.identity.update({ ...player, chunkId });
+  }
+});
+
+export const reveal = spacetimedb.reducer({ teamId: t.u64(), chunkId: t.u64() }, (ctx, { teamId, chunkId }) => {
+  ctx.db.teamVision.insert({ id: 0n, teamId, chunkId });
+});
+
+export const spawn = spacetimedb.reducer({ kind: t.string(), chunkId: t.u64() }, (ctx, { kind, chunkId }) => {
+  ctx.db.entities.insert({ id: 0n, chunkId, kind });
+});
+"#;
+
 /// Build a smoketest publishing the TypeScript `views-scoped` module.
 fn typescript_test() -> Smoketest {
+    typescript_test_with("views-scoped-typescript", TS_VIEWS_SCOPED_MODULE)
+}
+
+/// Build a smoketest publishing the TypeScript module `code`.
+fn typescript_test_with(name: &str, code: &str) -> Smoketest {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    let database_name = format!("views-scoped-typescript-{}", random_string());
+    let database_name = format!("{name}-{}", random_string());
     test.publish()
         .name(&database_name)
-        .source(
-            ModuleLanguage::TypeScript,
-            "views-scoped-typescript",
-            TS_VIEWS_SCOPED_MODULE,
-        )
+        .source(ModuleLanguage::TypeScript, name, code)
         .run()
         .unwrap();
     test
@@ -514,4 +588,103 @@ fn test_scoped_view_moves_subscriber_from_procedure() {
 fn test_typescript_scoped_view_moves_subscriber_from_procedure() {
     let test = typescript_test();
     check_procedure_moves_subscriber(&test);
+}
+
+#[test]
+fn test_typescript_fog_of_war_shared_by_team() {
+    let test = typescript_test_with("fog-of-war-typescript", TS_FOG_OF_WAR_MODULE);
+
+    let alice_token = test.read_token().unwrap();
+    test.call("spawn", &["\"tree\"", "0"]).unwrap();
+    test.call("spawn", &["\"rock\"", "5"]).unwrap();
+    test.call("spawn", &["\"bush\"", "9"]).unwrap();
+    test.call("spawn", &["\"enemy base\"", "7"]).unwrap();
+    test.call("reveal", &["1", "0"]).unwrap();
+    test.call("reveal", &["1", "5"]).unwrap();
+    test.call("reveal", &["2", "7"]).unwrap();
+
+    // Alice and Bob are on team 1, in different chunks. Carol is on team 2.
+    test.call("join", &["1", "0"]).unwrap();
+    test.assert_sql(
+        "SELECT kind FROM fog_of_war",
+        r#" kind
+--------
+ "tree"
+ "rock""#,
+    );
+    let alice = test
+        .subscribe(&["SELECT * FROM fog_of_war"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+
+    test.new_identity().unwrap();
+    test.call("join", &["1", "5"]).unwrap();
+    let bob = test
+        .subscribe(&["SELECT * FROM fog_of_war"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+
+    test.new_identity().unwrap();
+    test.call("join", &["2", "0"]).unwrap();
+    test.assert_sql(
+        "SELECT kind FROM fog_of_war",
+        r#" kind
+--------------
+ "enemy base""#,
+    );
+
+    // Team 1 reveals chunk 9, and both teammates see the bush.
+    test.call("reveal", &["1", "9"]).unwrap();
+    let expected = json!([{"deletes": [], "inserts": [{"kind": "bush"}]}]);
+    assert_eq!(
+        json!(project(alice.collect().unwrap(), "fog_of_war", &["kind"])),
+        expected
+    );
+    assert_eq!(
+        json!(project(bob.collect().unwrap(), "fog_of_war", &["kind"])),
+        expected
+    );
+
+    // Team 1's vision was computed for Alice's SQL query, which her subscription reused,
+    // and again when chunk 9 was revealed. Bob shared it rather than computing his own.
+    test.login_with_token(&alice_token).unwrap();
+    assert_eq!(count_logs(&test, "fog_of_war body evaluated for team 1"), 2);
+}
+
+#[test]
+fn test_typescript_fog_of_war_by_team_and_chunk() {
+    let test = typescript_test_with("fog-of-war-local-typescript", TS_FOG_OF_WAR_MODULE);
+
+    test.call("spawn", &["\"tree\"", "0"]).unwrap();
+    test.call("spawn", &["\"rock\"", "5"]).unwrap();
+    test.call("reveal", &["1", "0"]).unwrap();
+    test.call("join", &["1", "0"]).unwrap();
+
+    test.assert_sql(
+        "SELECT kind FROM fog_of_war_local",
+        r#" kind
+--------
+ "tree""#,
+    );
+
+    let sub = test
+        .subscribe(&["SELECT * FROM fog_of_war_local"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+
+    // Moving into a chunk the team can't see empties the view,
+    // until the team reveals it.
+    test.call("move_to", &["5"]).unwrap();
+    test.call("reveal", &["1", "5"]).unwrap();
+
+    assert_eq!(
+        json!(project(sub.collect().unwrap(), "fog_of_war_local", &["kind"])),
+        json!([
+            {"deletes": [{"kind": "tree"}], "inserts": []},
+            {"deletes": [], "inserts": [{"kind": "rock"}]},
+        ])
+    );
 }
