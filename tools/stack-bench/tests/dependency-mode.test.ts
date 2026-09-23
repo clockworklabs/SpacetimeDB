@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { dependencyRepairStopReason, type ConclusiveResult, type DependencyGradingSelection,
+import { dependencyRepairStopReason, type ConclusiveResult, type DependencyGradingSelection, type DependencyState,
   type DependencyPromptSelection } from '../src/progression/dependency-mode.js';
 import { compileDependencyMode } from '../src/progression/dependency-definition.js';
-import { dependencyCompletionBreakdown, type DependencyScore } from '../src/progression/dependency-score.js';
+import { dependencyCompletionBreakdown, scoreDependencyState, type DependencyScore } from '../src/progression/dependency-score.js';
+import { progressionGradeCompletions } from '../src/campaigns/campaign-report.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
   from '../src/progression/progression-definition.js';
 import { progressionEngine, type ProgressionWorkAction }
@@ -840,4 +841,16 @@ test('an application failure keeps earlier failures measured before the abort', 
   assert.deepEqual(Object.values(recorded.nodes.catalog!.checks), ['pass']);
   assert.throws(() => progressionEngine.recordResult(state, { ...aborted,
     ...grade(state, 'unrun', { ownership: 'not-run' }) }), /measured or fail/);
+});
+
+test('each recorded grade has the completion the dependency score gave at that moment', () => {
+  let state = progressionEngine.initialize(fixture());
+  const expected = new Map<string, unknown>();
+  for (const [index, outcomes] of [{ accounts: 'fail' }, {}].entries()) {
+    const evidence = { kind: 'grade_bundle' as const, id: `grade-${index}`, sha256: String(index).repeat(64) };
+    state = progressionEngine.recordResult(state, { ...grade(state, `run-1-progression-${index + 1}`, outcomes as Outcomes),
+      runId: 'run-1', evidence });
+    expected.set(`${evidence.id}:${evidence.sha256}`, scoreDependencyState(state as DependencyState).completion);
+  }
+  assert.deepEqual(progressionGradeCompletions(state as DependencyState), expected);
 });

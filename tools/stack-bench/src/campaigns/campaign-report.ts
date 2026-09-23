@@ -11,7 +11,9 @@ import { validateCampaignRun } from './campaign-run-validation.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { sha256 } from '../evidence/provenance.js';
-import { campaignGradingQualification } from './campaign-compiler.js';
+import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
+import { readProgressionState } from '../progression/progression-state.js';
+import { compileProgressionInput, dependencyRuntimeDefinition } from '../progression/progression-definition.js';
 import type { CampaignAttemptPlan, CampaignGradingQualification,
   CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExecution, CampaignState } from './campaign-scheduler.js';
@@ -22,7 +24,10 @@ import type { RunOutcome } from '../evidence/outcomes.js';
 import { runCostEvidence, sessionCostEvidence, sumCostEvidence } from '../evidence/cost-proof.js';
 import type { CostEvidence } from '../evidence/cost-proof.js';
 import { checkpointSchema, completionSchema, costEvidenceSchema, completionCurve, recordedExecutionSpend } from '../evidence/run-checkpoints.js';
-import type { CompletionCurve } from '../evidence/run-checkpoints.js';
+import type { CompletionCurve, RunCheckpoint } from '../evidence/run-checkpoints.js';
+import { progressionEngine } from '../progression/progression-engine.js';
+import { scoreDependencyState } from '../progression/dependency-score.js';
+import type { DependencyState } from '../progression/dependency-mode.js';
 import { checkCompletion } from '../evidence/check-completion.js';
 import type { CheckCompletion, CheckStatus } from '../evidence/check-completion.js';
 import { CAMPAIGN_FILE, campaignChildPath } from './campaign-path.js';
@@ -197,6 +202,8 @@ interface CampaignReportAttempt extends CampaignAttemptPlan {
   spend: CampaignSpend;
   completion: CheckCompletion;
   curve: CompletionCurve;
+  // Dependency points use the progression's scoring; raw when an older run cannot be replayed.
+  curveBasis?: 'progression' | 'raw';
   groups: Array<{ id: string; title: string; completion: CheckCompletion;
     cost: CostEvidence; costAttribution: 'not-separable' | 'measured-work' }>;
 }
@@ -905,9 +912,28 @@ export function validateCampaignReport(input: unknown): CampaignReport {
   return canonical;
 }
 
+// Dependency completion after each recorded grade, keyed by that grade bundle,
+// so a curve point uses the headline's scoring as it stood at that moment.
+export function progressionGradeCompletions(state: DependencyState): Map<string, CheckCompletion> {
+  const completions = new Map<string, CheckCompletion>();
+  let replay = progressionEngine.initialize(state.definition);
+  for (const event of state.events) {
+    if (event.type === 'repairs-granted') {
+      replay = progressionEngine.grantRepairs(replay, event.grant);
+      continue;
+    }
+    replay = progressionEngine.recordResult(replay, event.result);
+    const evidence = event.result.evidence;
+    if (evidence) completions.set(`${evidence.id}:${evidence.sha256}`, scoreDependencyState(replay as DependencyState).completion);
+  }
+  return completions;
+}
+
 export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignState,
   readRun: (attempt: CampaignAttemptPlan, execution: CampaignExecution) => BenchmarkRun,
   readProviderWaits?: (attempt: CampaignAttemptPlan, execution: CampaignExecution) => ProviderWaitSummary | null,
+  scoreCheckpoints?: (attempt: CampaignAttemptPlan, execution: CampaignExecution)
+    => ((checkpoint: RunCheckpoint) => CheckCompletion | null) | null,
 ): CampaignReport {
   if (state.campaignSha256 !== plan.contentSha256) throw new Error('report state does not match campaign plan');
   const rows: CampaignReportAttempt[] = [];
@@ -954,12 +980,19 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     });
     const latest = executions.at(-1);
     const latestRun = latest ? runs.get(latest.id) : undefined;
-    const checkpoints = executions.flatMap((execution, index) =>
-      (runs.get(execution.id)?.checkpoints ?? []).map(checkpoint => ({ ...checkpoint,
-        excluded: execution.status === 'invalid',
-        evidence: { ...checkpoint.evidence, path: `${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${checkpoint.evidence.path}` },
-        cost: sumCostEvidence([checkpoint.executionCost, ...executions.slice(0, index).map(item => item.cost)]),
-      }))).map((checkpoint, index) => ({ ...checkpoint, sequence: index + 1 }));
+    const dependency = attempt.plan.mode?.id === 'dependency';
+    let rawPoints = false;
+    const checkpoints = executions.flatMap((execution, index) => {
+      const scored = dependency ? scoreCheckpoints?.(attempt.plan, attempt.executions[index]!) ?? null : null;
+      return (runs.get(execution.id)?.checkpoints ?? []).map(checkpoint => {
+        const completion = scored?.(checkpoint) ?? null;
+        if (!completion) rawPoints = true;
+        return { ...checkpoint, completion: completion ?? checkpoint.completion,
+          excluded: execution.status === 'invalid',
+          evidence: { ...checkpoint.evidence, path: `${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${checkpoint.evidence.path}` },
+          cost: sumCostEvidence([checkpoint.executionCost, ...executions.slice(0, index).map(item => item.cost)]) };
+      });
+    }).map((checkpoint, index) => ({ ...checkpoint, sequence: index + 1 }));
     const selected = attempt.plan.condition.requested.levels.flatMap(level =>
       (level.selection.scoredChecks ?? []).map(check => ({ id: check.stableKey, points: check.points })));
     const accepted = latestRun?.checkpoints?.findLast(checkpoint => checkpoint.accepted);
@@ -997,6 +1030,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
       metrics, completion, groups, spend: executionSpend(executions),
       curve: completionCurve(checkpoints, plan.definition.analysis.spendThresholdsUsd ?? [],
         plan.definition.analysis.completionTargets ?? []),
+      ...(dependency && checkpoints.length ? { curveBasis: rawPoints ? 'raw' as const : 'progression' as const } : {}),
       firstBuildObservations: latest?.status === 'completed'
         ? latest.firstBuildObservations : null });
   }
@@ -1124,7 +1158,8 @@ export function renderCampaignHtml(report: CampaignReport,
     + (attempt.mode.id === 'dependency'
       ? '<p>Blocked descendants receive no completion credit, even when a raw check passed. A guarantee may be deferred after a prerequisite fails. '
         + 'The saved summary does not separate prerequisite deferral from missing conclusive evidence in the unmeasured count. '
-        + 'Use the linked grade evidence for raw outcomes; neither condition changes the full selected denominator.</p>' : '')
+        + 'Use the linked grade evidence for raw outcomes; neither condition changes the full selected denominator.</p>'
+        + (attempt.curveBasis === 'raw' ? '<p>This curve shows raw grade outcomes: the progression history behind these points could not be replayed.</p>' : '') : '')
     + (attempt.curve.checkpoints.length ? '<table><thead><tr><th>Measurement</th><th>Phase</th><th>Completion</th><th>All execution spend</th><th>Source</th></tr></thead><tbody>'
       + attempt.curve.checkpoints.map(point => `<tr><td>${point.sequence}${point.excluded ? ' (excluded execution)' : point.accepted ? '' : ' (rejected regression)'}</td>`
         + `<td>${escape(point.phase)}</td><td>${point.completion.passed}/${point.completion.selected}</td>`
@@ -1173,7 +1208,26 @@ export function generateCampaignReport(directory: string,
       throw new Error(`invalid execution ${execution.id} cost evidence belongs to another attempt`);
     }
     return run as BenchmarkRun;
-  }, (attempt, execution) => readCampaignProviderWaitHistory(paths.root, attempt.id, execution.id));
+  }, (attempt, execution) => readCampaignProviderWaitHistory(paths.root, attempt.id, execution.id),
+  (attempt, execution) => {
+    if (!plan.featureCatalog || !plan.dependencyPolicy) return null;
+    const directory = join(paths.root, execution.output);
+    try {
+      const stored = readProgressionState(join(directory, ARTIFACT_FILE.progressionState), {
+        progression: compileProgressionInput(dependencyRuntimeDefinition(plan.featureCatalog, plan.dependencyPolicy)),
+        featureCatalogIdentity: plan.featureCatalog.identity,
+        dependencyPolicyIdentity: plan.dependencyPolicy.identity,
+        owner: campaignProgressionOwner(plan, attempt, { workspace: true }),
+      });
+      const completions = progressionGradeCompletions(stored.state as DependencyState);
+      return checkpoint => {
+        try {
+          const bundle = readArtifact(join(directory, checkpoint.evidence.path), { expectedKind: 'grade_bundle' });
+          return completions.get(`${bundle.id}:${sha256(canonicalDefinitionJson(bundle))}`) ?? null;
+        } catch { return null; }
+      };
+    } catch { return null; }
+  });
   mkdirSync(output, { recursive: true });
   const reportPath = join(output, CAMPAIGN_FILE.reportJson);
   writeArtifact(reportPath, { kind: 'campaign_report', id: `${plan.id}-report-${report.contentSha256.slice(0, 16)}`,

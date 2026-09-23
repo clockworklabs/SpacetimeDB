@@ -851,3 +851,32 @@ test('a sequential attempt that stops early is scored against every planned leve
   assert.equal(metrics.finalScoreRate, 0.3);
   assert.equal(metrics.firstBuildScoreRate, 0.2);
 });
+
+test('dependency curve points use progression scoring, or say they are raw', () => {
+  const plan = examplePlan();
+  const claimed = claimNextAttempt(createCampaignState(plan, { now: created }), { now: created, admissionId: 'curve' });
+  assert(claimed.claim);
+  const graded = run('graded', claimed.claim.attempt);
+  const raw = { selected: 2, passed: 2, failed: 0, blocked: 0, unmeasured: 0, rate: 1 };
+  graded.checkpoints = [{ sequence: 1, phase: 'first-build', level: 1, accepted: true, workNodeIds: [],
+    sourceSha256: 'a'.repeat(64), selectionSha256: 'b'.repeat(64),
+    evidence: { path: 'checkpoints/1.json', sha256: 'c'.repeat(64) },
+    cost: { status: 'exact', costUsd: 1 }, executionCost: { status: 'exact', costUsd: 1 }, completion: raw,
+    checks: [{ id: 'a', status: 'passed' }, { id: 'b', status: 'passed' }] }];
+  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId, { exitCode: 0, run: graded }, { now: created });
+  for (const attempt of state.attempts) attempt.plan.mode = { ...attempt.plan.mode, id: 'dependency' };
+  // A raw pass can be a blocked descendant under the dependency rules.
+  const scored = { selected: 2, passed: 1, failed: 0, blocked: 1, unmeasured: 0, rate: 0.5 };
+  const attemptFor = (score: Parameters<typeof buildCampaignReport>[4]) => {
+    const report = buildCampaignReport(plan, state, () => graded, undefined, score);
+    return { report, attempt: report.attempts.find(attempt => attempt.executions.length)! };
+  };
+  const progression = attemptFor(() => () => scored);
+  assert.deepEqual(progression.attempt.curve.checkpoints[0]!.completion, scored);
+  assert.equal(progression.attempt.curveBasis, 'progression');
+  const unreplayed = attemptFor(() => null);
+  assert.deepEqual(unreplayed.attempt.curve.checkpoints[0]!.completion, raw);
+  assert.equal(unreplayed.attempt.curveBasis, 'raw');
+  assert.match(renderCampaignHtml(unreplayed.report), /curve shows raw grade outcomes/);
+  assert.doesNotMatch(renderCampaignHtml(progression.report), /curve shows raw grade outcomes/);
+});
