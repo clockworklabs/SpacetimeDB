@@ -457,6 +457,8 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   const runtimeValues = Object.freeze({
     applicationUrl: ctx.url,
     defaultWithin,
+    credentialRequestsInspectable: !ctx.backend
+      || STACK_ADAPTER_REGISTRY.get(ctx.backend).grading.transport !== 'reducer',
     expand: (value: unknown) => expand(value, ctx),
     hyphenatedScopedUser: (name: string) => `${name}-${ctx.scope}`,
     roomName: (base: string) => ctx.roomName(base),

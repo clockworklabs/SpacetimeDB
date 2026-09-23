@@ -47,6 +47,9 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
+  if (input.requestPatch && !browser.credentialRequestsInspectable) {
+    return { ...await signUp({ input: { ...input, requestPatch: undefined }, capabilities, signal }), requestPatch: 'not-applicable' };
+  }
   if (input.requestPatch) {
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
@@ -93,6 +96,11 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
   const currentUser = actor.page.locator(browser.testId('current-user')).first();
+  // Typed reducer arguments have no free-form fields to tamper with, so the
+  // step runs unmodified: the outcome a correct application gives a patched request.
+  if (input.requestPatch && !browser.credentialRequestsInspectable) {
+    return { ...await signIn({ input: { ...input, requestPatch: undefined }, capabilities, signal }), requestPatch: 'not-applicable' };
+  }
   if (input.requestPatch) {
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,

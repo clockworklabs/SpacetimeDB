@@ -39,6 +39,14 @@ evidence.
   their outcomes, the rest of the current work fails, and earlier features'
   unreached checks are recorded as not run. A readiness probe that times out is
   unmeasured, not an app failure.
+- An application refusal is the stack's defined error result: HTTP 400, 401,
+  403, 404, 409 or 422, a SpacetimeDB reducer failure (530), or a thrown
+  `ConvexError`. SpacetimeDB's HTTP reply does not separate a deliberate
+  reducer error from a panic, so a panicking reducer also counts as a refusal.
+  An HTTP 500 does not.
+- Stacks that pass credentials as typed reducer arguments (SpacetimeDB) run a
+  request-tampering sign-in or sign-up step unmodified: there are no free-form
+  fields to tamper with.
 - Concurrent actions drain every branch before returning; measurement failures
   take priority over app failures. Check verdicts cannot contradict failed or
   unmeasured action evidence.

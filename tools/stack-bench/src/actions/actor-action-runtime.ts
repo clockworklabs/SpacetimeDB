@@ -111,6 +111,8 @@ export interface Actor {
 
 export interface BrowserCapability {
   readonly defaultWithin: number;
+  // False where credentials travel as typed reducer arguments that a request patch cannot reach.
+  readonly credentialRequestsInspectable: boolean;
   roomName(value: string): string;
   scopedUser(value: string): string;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
