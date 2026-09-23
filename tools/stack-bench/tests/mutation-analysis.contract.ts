@@ -14,7 +14,16 @@ import { loadTrack } from '../src/composition/tracks.js';
 
 type CriterionValue = boolean | 'inconclusive';
 
-const report = (criteria: Record<string, CriterionValue>, setupError: string | null = null) => ({
+// A failed action record, as the grader stores the step a criterion stopped at.
+const failedStep = (id: string) => {
+  const { actor: _actor, actions: _actions, ...base } = createCheckEvidence({ status: 'failed',
+    code: 'test_result', phase: 'assertion', startedAtMs: 1, completedAtMs: 2 });
+  return { actor: null, evidence: { ...base, action: { id, version: '1' }, type: 'browser-observation-evidence',
+    phase: 'execute', timing: { startedAtMs: 1, completedAtMs: 2, durationMs: 1, deadlineMs: 100 } } };
+};
+
+const report = (criteria: Record<string, CriterionValue>, setupError: string | null = null,
+  failedAction = 'expect') => ({
   total: Object.values(criteria).filter(value => value === true).length,
   max: Object.keys(criteria).length,
   features: [{
@@ -25,6 +34,7 @@ const report = (criteria: Record<string, CriterionValue>, setupError: string | n
         code: value === true ? 'completed' : 'test_result',
         phase: setupError ? 'setup' : 'assertion', summary: setupError,
         startedAtMs: 1, completedAtMs: 2,
+        actions: value === false ? [failedStep(failedAction)] : [],
       }) })),
   }],
 });
@@ -235,7 +245,7 @@ test('only unusable mutation results are retried', () => {
     assert.equal(isRetryableMutationResult(status), true);
   }
   for (const status of ['CAUGHT', 'INVALID_REPORT', 'WRONG_CRITERION', 'SURVIVED',
-    'CAUGHT_COLLATERAL'] as const) {
+    'CAUGHT_COLLATERAL', 'CAUGHT_OFF_ASSERTION'] as const) {
     assert.equal(isRetryableMutationResult(status), false);
   }
 });
@@ -244,6 +254,15 @@ test('only a conclusive failure of the declared criterion is a clean kill', () =
   const result = classifyMutationResult(report({ a: true, b: true }), report({ a: true, b: false }), mutation);
   assert.equal(result.status, 'CAUGHT');
   assert.deepEqual(result.regressions.map(item => item.key), ['check.b']);
+});
+
+test('a target that fails before any observation is not a clean kill', () => {
+  const result = classifyMutationResult(report({ a: true, b: true }),
+    report({ a: true, b: false }, null, 'click'), mutation);
+  assert.equal(result.status, 'CAUGHT_OFF_ASSERTION');
+  assert.deepEqual(result.targetOffAssertion, [{ key: 'check.b', action: 'click' }]);
+  assert.equal(classifyMutationResult(report({ a: true, b: true }),
+    report({ a: true, b: false }, null, 'dbExpectStock'), mutation).status, 'CAUGHT');
 });
 
 test('a score drop caused by setup failure is rejected', () => {

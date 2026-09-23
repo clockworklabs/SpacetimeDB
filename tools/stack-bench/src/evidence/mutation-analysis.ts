@@ -180,6 +180,8 @@ interface IndexedCriterion {
   status: CheckEvidenceStatus;
   phase: 'setup' | 'assertion';
   detail: string | null;
+  // The action a failed criterion stopped at, when it recorded one.
+  failedAction: string | null;
 }
 
 interface SetupFailure {
@@ -237,7 +239,12 @@ export type MutationClassificationStatus =
   | 'INVALID_INCONCLUSIVE'
   | 'WRONG_CRITERION'
   | 'SURVIVED'
-  | 'CAUGHT_COLLATERAL';
+  | 'CAUGHT_COLLATERAL'
+  | 'CAUGHT_OFF_ASSERTION';
+
+// A kill counts only when the target fails at an observation. Failing at a
+// click, sign-in, restart, or crash is what any broken application would do.
+const ASSERTION_ACTION = /^(expect|dbExpect)|^waitUntilAbsent$/;
 
 export function isRetryableMutationResult(status: MutationClassificationStatus): boolean {
   return status === 'INVALID_SETUP'
@@ -396,6 +403,8 @@ export function indexMutationReport(report: MutationReport | null | undefined): 
         setupFailures.set(featureKey(feature.id), { feature: feature.id, detail: evidence.summary,
           status: evidence.status, outcomeKind: disposition.outcomeKind, code: evidence.code });
       }
+      // Validated action evidence; the last entry is the failing step only when it did not pass.
+      const last = evidence.actions.at(-1)?.evidence as { status: string; action: { id: string } } | undefined;
       const key = typeof criterion.stableKey === 'string' && criterion.stableKey
         ? criterion.stableKey : criterionKey(feature.id, criterion.id);
       if (criteria.has(key)) throw new Error(`duplicate mutation criterion identity: ${key}`);
@@ -409,6 +418,7 @@ export function indexMutationReport(report: MutationReport | null | undefined): 
         status: evidence.status,
         phase: evidence.phase,
         detail: evidence.summary,
+        failedAction: last && last.status !== 'passed' ? last.action.id : null,
       });
     }
   }
@@ -506,6 +516,7 @@ export function classifyMutationResult(
   targetHarnessFailures: string[];
   targetInconclusive: string[];
   targetSurvived: string[];
+  targetOffAssertion: Array<{ key: string; action: string | null }>;
   collateral: Array<IndexedCriterion & { key: string; expected: boolean }>;
   collateralHarnessFailures: string[];
   collateralInconclusive: string[];
@@ -532,6 +543,9 @@ export function classifyMutationResult(
   const targetInconclusive = targets.filter(item => item.result?.outcomeKind === 'inconclusive')
     .map(item => item.key);
   const targetSurvived = targets.filter(item => item.result?.passed).map(item => item.key);
+  const targetOffAssertion = targets.filter(item => item.result?.applicationFailure
+    && !ASSERTION_ACTION.test(item.result.failedAction ?? ''))
+    .map(item => ({ key: item.key, action: item.result!.failedAction }));
   const collateral = regressions.filter(item => !item.expected);
   const collateralHarnessFailures = [...baseline.criteria].filter(([key, before]) =>
     before.passed && !targetKeys.has(key)
@@ -550,8 +564,9 @@ export function classifyMutationResult(
   else if (targetSurvived.length && collateral.length) status = 'WRONG_CRITERION';
   else if (targetSurvived.length) status = 'SURVIVED';
   else if (collateral.length) status = 'CAUGHT_COLLATERAL';
+  else if (targetOffAssertion.length) status = 'CAUGHT_OFF_ASSERTION';
 
   return { status, targetKeys: [...targetKeys], targetMissing, targetHarnessFailures, targetInconclusive,
-    targetSurvived, collateral, collateralHarnessFailures, collateralInconclusive,
+    targetSurvived, targetOffAssertion, collateral, collateralHarnessFailures, collateralInconclusive,
     setupFailures, missing, regressions };
 }

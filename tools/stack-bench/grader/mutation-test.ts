@@ -830,6 +830,10 @@ async function main(): Promise<void> {
           }`,
         );
       }
+      if (classified.targetOffAssertion.length) {
+        console.log(`    stopped before an observation: ${classified.targetOffAssertion
+          .map(item => `${item.key} at ${item.action ?? 'no recorded action'}`).join(', ')}`);
+      }
     }
   }
 
