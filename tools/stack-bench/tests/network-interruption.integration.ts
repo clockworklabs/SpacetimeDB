@@ -24,7 +24,10 @@ const PAGE = `<script>
 
 test('going offline closes open sockets, refuses reconnects, and never delivers held updates', async () => {
   const sockets = new Set<Socket>();
-  const server = createServer((_req, res) => res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE));
+  // The dev server's client module carries its socket token, as Vite serves it.
+  const server = createServer((req, res) => req.url === '/@vite/client'
+    ? res.writeHead(200, { 'Content-Type': 'text/javascript' }).end('const wsToken = "dev";')
+    : res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE));
   server.on('upgrade', (req, socket: Socket) => {
     const accept = createHash('sha1').update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
@@ -120,5 +123,54 @@ test('going offline lets in-flight requests finish and flags one that never does
     await browser.close();
     server.closeAllConnections();
     server.close();
+  }
+});
+
+test('a socket shaped like the dev reload socket is still cut unless the dev server vouches for its token', async () => {
+  const sockets = new Set<Socket>();
+  const server = createServer((_req, res) => res.writeHead(200, { 'Content-Type': 'text/html' }).end(`<script>
+    window.received = []; window.closes = 0;
+    const ws = new WebSocket('ws://' + location.host + '/?token=application-session');
+    ws.onmessage = event => window.received.push(event.data);
+    ws.onclose = () => window.closes++;
+  </script>`));
+  server.on('upgrade', (req, socket: Socket) => {
+    const accept = createHash('sha1').update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
+    socket.write(`HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: ${accept}
+
+`);
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('error', () => {});
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext();
+    const networkInterruption = await installNetworkInterruption(context);
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+    await page.waitForTimeout(300);
+    const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
+    const capabilities = { actors: { get: () => actor },
+      'browser-interaction': { defaultWithin: 1000, sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) } };
+    const offline = await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'viewer', settleMs: 100 },
+      { capabilities });
+    assert.equal(offline.status, 'passed', offline.summary ?? '');
+    assert.equal((offline.observation as { closed: number }).closed, 1);
+    for (const socket of sockets) socket.write(Buffer.from([0x81, 8, ...Buffer.from('stock:52')]));
+    await executeAction(ACTION_REGISTRY, 'setOffline', { do: 'setOffline', actor: 'viewer', offline: false, settleMs: 300 },
+      { capabilities });
+    assert.deepEqual(await page.evaluate(() => (window as unknown as { received: string[]; closes: number }).received), []);
+    assert.equal(await page.evaluate(() => (window as unknown as { closes: number }).closes), 1,
+      'an app without reconnect code stays disconnected');
+  } finally {
+    await browser.close();
+    server.close();
+    for (const socket of sockets) socket.destroy();
   }
 });

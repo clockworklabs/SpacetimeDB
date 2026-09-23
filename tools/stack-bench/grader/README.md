@@ -46,10 +46,19 @@ evidence.
   An HTTP 500 does not.
 - A request-tampering sign-in or sign-up step modifies the credential request the
   app actually sends. Positional arguments, such as a SpacetimeDB function call,
-  take an added field only where the module schema names that parameter; a
-  field with no parameter is recorded as absent and the request goes as sent. If
-  the request cannot be captured or its parameters cannot be read, the step is
-  unmeasured. An ordinary sign-in never stands in for the probe.
+  take an added field only where the module schema declares it: the parameter of
+  that name, or else the one object parameter whose type declares the field. A
+  field the schema does not declare is recorded as absent and the request goes as
+  sent. If the request cannot be captured, its parameters cannot be read, or the
+  field's location is ambiguous, the step is unmeasured. An ordinary sign-in
+  never stands in for the probe.
+- Going offline closes the actor's WebSockets and refuses reconnects until the
+  network returns; only a Vite dev server's own reload socket, recognised by the
+  token its client module carries, stays open. In-flight HTTP requests get up to
+  five seconds to finish first. A request still open after that (an event
+  stream, or a long poll the server holds longer) cannot be cut, so the step is
+  unmeasured: reconnect checks currently measure WebSocket and short-request
+  transports only.
 - Concurrent actions drain every branch before returning; measurement failures
   take priority over app failures. Check verdicts cannot contradict failed or
   unmeasured action evidence.

@@ -13,9 +13,18 @@ export interface NetworkInterruption {
 const interruptible = new WeakSet<BrowserContext>();
 const DRAIN_MS = 5000;
 
-// A dev server's reload socket (Vite: the root path with a token) is tooling,
-// not the app. Cutting it makes Vite reload the whole page, so it stays open.
-const devServerSocket = (url: URL): boolean => url.pathname === '/' && url.searchParams.has('token');
+// A Vite dev server's reload socket is tooling, not the app, and cutting it makes
+// Vite reload the whole page. It stays open only when its token is the one the same
+// server's client module carries; a URL shape alone could be an app socket.
+async function viteReloadSocket(context: BrowserContext, url: URL): Promise<boolean> {
+  const token = url.searchParams.get('token');
+  if (!token) return false;
+  try {
+    const client = await context.request.get(new URL('@vite/client', url.href.replace(/^ws/, 'http')).href,
+      { timeout: 5000, maxRedirects: 0 });
+    return client.ok() && (await client.text()).includes(`const wsToken = ${JSON.stringify(token)}`);
+  } catch { return false; }
+}
 
 export const hasNetworkInterruption = (context: BrowserContext): boolean => interruptible.has(context);
 
@@ -28,23 +37,22 @@ export async function installNetworkInterruption(context: BrowserContext): Promi
   // Every socket a page opens must reach the route; one that did not could keep delivering.
   let opened = 0;
   let routedCount = 0;
-  const track = (page: Page) => page.on('websocket', socket => {
-    if (!devServerSocket(new URL(socket.url()))) opened += 1;
-  });
+  const track = (page: Page) => page.on('websocket', () => { opened += 1; });
   context.on('page', track);
   const inFlight = new Set<Request>();
   context.on('request', request => inFlight.add(request));
   context.on('requestfinished', request => inFlight.delete(request));
   context.on('requestfailed', request => inFlight.delete(request));
-  await context.routeWebSocket(url => !devServerSocket(url), page => {
+  await context.routeWebSocket(() => true, async page => {
     routedCount += 1;
-    if (offline) {
+    const tooling = await viteReloadSocket(context, new URL(page.url()));
+    if (offline && !tooling) {
       refused += 1;
       void page.close({ code: 1001, reason: 'network unavailable' }).catch(() => {});
       return;
     }
     const pair = { page, server: page.connectToServer() };
-    routed.add(pair);
+    if (!tooling) routed.add(pair);
     page.onMessage(data => pair.server.send(data));
     pair.server.onMessage(data => page.send(data));
     page.onClose((code, reason) => { routed.delete(pair); void pair.server.close({ code, reason }).catch(() => {}); });
