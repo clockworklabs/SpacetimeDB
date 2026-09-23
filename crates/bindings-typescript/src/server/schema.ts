@@ -593,7 +593,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
    *
    * A scoped view is computed once per distinct scope key, rather than once per subscriber.
    * `resolve` runs for each subscriber identity and returns their scope key,
-   * or `undefined` if they are in no scope, in which case the view is empty for them.
+   * or `undefined` or `null` if they are in no scope, in which case the view is empty for them.
    * `fn` runs once per distinct key and must not depend on the caller,
    * so it receives an `AnonymousViewCtx` along with the key.
    * Whenever the data read by `resolve` changes, the subscriber is moved to their new scope.

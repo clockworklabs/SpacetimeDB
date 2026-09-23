@@ -132,12 +132,13 @@ export type ScopedViewOpts<Key extends TypeBuilder<any, any>> = ViewOpts & {
 /**
  * Resolves the scope key of a scoped view for the calling identity.
  *
- * Return `undefined` to place the caller in no scope, in which case the view is empty for them.
+ * Return `undefined` or `null` to place the caller in no scope,
+ * in which case the view is empty for them.
  */
 export type ScopeResolverFn<
   S extends UntypedSchemaDef,
   Key extends TypeBuilder<any, any>,
-> = (ctx: ViewCtx<S>) => Infer<Key> | undefined;
+> = (ctx: ViewCtx<S>) => Infer<Key> | undefined | null;
 
 /**
  * The body of a scoped view, computed once per distinct scope key.

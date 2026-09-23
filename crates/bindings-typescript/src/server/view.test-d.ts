@@ -215,6 +215,17 @@ spacetime.scopedView(
   }
 );
 
+// Resolvers may return `null` for no scope, e.g. from a failed lookup.
+spacetime.scopedView(
+  { name: 'personsByIdOrNone', public: true, scope: t.u32() },
+  arrayRetValue,
+  ctx => {
+    const person = ctx.db.person.id.find(1);
+    return person && person.id;
+  },
+  (ctx, id) => Array.from(ctx.db.person.iter()).filter(p => p.id === id)
+);
+
 // Scoped view bodies may return queries.
 spacetime.scopedView(
   { name: 'personsByIdQuery', public: true, scope: t.u32() },

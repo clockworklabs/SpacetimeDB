@@ -4,7 +4,127 @@
 //! See `crates/smoketests/modules/views-scoped` for the module.
 
 use serde_json::{json, Value};
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{random_string, require_pnpm, ModuleLanguage, Smoketest};
+
+/// The TypeScript equivalent of the `views-scoped` module.
+const TS_VIEWS_SCOPED_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
+
+const players = table(
+  { name: "player" },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    teamId: t.u64(),
+    chunkX: t.i32(),
+    chunkY: t.i32(),
+  }
+);
+
+const chatMessages = table(
+  { name: "chat_message" },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    teamId: t.u64().index(),
+    text: t.string(),
+  }
+);
+
+const entities = table(
+  { name: "entity" },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    chunkX: t.i32().index(),
+    chunkY: t.i32(),
+    name: t.string(),
+  }
+);
+
+const spacetimedb = schema({ players, chatMessages, entities });
+export default spacetimedb;
+
+// Every player on a team shares one materialization of the team's chat.
+export const team_chat = spacetimedb.scopedView(
+  { name: "team_chat", public: true, scope: t.u64() },
+  t.array(chatMessages.rowType),
+  ctx => ctx.db.players.identity.find(ctx.sender)?.teamId,
+  (ctx, teamId) => {
+    console.log(`team_chat body evaluated for team ${teamId}`);
+    return Array.from(ctx.db.chatMessages.teamId.filter(teamId));
+  }
+);
+
+// Like `team_chat`, but the body returns a query.
+export const team_chat_query = spacetimedb.scopedView(
+  { name: "team_chat_query", public: true, scope: t.u64() },
+  t.array(chatMessages.rowType),
+  ctx => ctx.db.players.identity.find(ctx.sender)?.teamId,
+  (ctx, teamId) => ctx.from.chatMessages.where(m => m.teamId.eq(teamId)).build()
+);
+
+const ChunkKey = t.object("ChunkKey", { chunkX: t.i32(), chunkY: t.i32() });
+
+// Every player in a chunk shares one materialization of the chunk's entities.
+export const regional_entities = spacetimedb.scopedView(
+  { name: "regional_entities", public: true, scope: ChunkKey },
+  t.array(entities.rowType),
+  ctx => {
+    const player = ctx.db.players.identity.find(ctx.sender);
+    return player && { chunkX: player.chunkX, chunkY: player.chunkY };
+  },
+  (ctx, key) =>
+    Array.from(ctx.db.entities.chunkX.filter(key.chunkX)).filter(e => e.chunkY === key.chunkY)
+);
+
+export const join = spacetimedb.reducer({ name: t.string(), teamId: t.u64() }, (ctx, { name, teamId }) => {
+  ctx.db.players.insert({ identity: ctx.sender, name, teamId, chunkX: 0, chunkY: 0 });
+});
+
+export const leave = spacetimedb.reducer(ctx => {
+  ctx.db.players.identity.delete(ctx.sender);
+});
+
+export const set_team = spacetimedb.reducer({ teamId: t.u64() }, (ctx, { teamId }) => {
+  const player = ctx.db.players.identity.find(ctx.sender);
+  if (player) {
+    ctx.db.players.identity.update({ ...player, teamId });
+  }
+});
+
+export const move_to = spacetimedb.reducer({ chunkX: t.i32(), chunkY: t.i32() }, (ctx, { chunkX, chunkY }) => {
+  const player = ctx.db.players.identity.find(ctx.sender);
+  if (player) {
+    ctx.db.players.identity.update({ ...player, chunkX, chunkY });
+  }
+});
+
+export const send = spacetimedb.reducer({ teamId: t.u64(), text: t.string() }, (ctx, { teamId, text }) => {
+  ctx.db.chatMessages.insert({ id: 0n, teamId, text });
+});
+
+export const spawn = spacetimedb.reducer(
+  { name: t.string(), chunkX: t.i32(), chunkY: t.i32() },
+  (ctx, { name, chunkX, chunkY }) => {
+    ctx.db.entities.insert({ id: 0n, chunkX, chunkY, name });
+  }
+);
+"#;
+
+/// Build a smoketest publishing the TypeScript `views-scoped` module.
+fn typescript_test() -> Smoketest {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-scoped-typescript-{}", random_string());
+    test.publish()
+        .name(&database_name)
+        .source(
+            ModuleLanguage::TypeScript,
+            "views-scoped-typescript",
+            TS_VIEWS_SCOPED_MODULE,
+        )
+        .run()
+        .unwrap();
+    test
+}
 
 /// Project the rows of `table` in each subscription update to `fields`, sorting them for comparison.
 fn project(events: Vec<Value>, table: &str, fields: &[&str]) -> Vec<Value> {
@@ -144,5 +264,212 @@ fn test_scoped_view_with_composite_key() {
         r#" name
 --------
  "tree""#,
+    );
+}
+
+#[test]
+fn test_scoped_view_moves_subscriber_to_new_scope() {
+    let test = Smoketest::builder().precompiled_module("views-scoped").build();
+
+    test.call("send", &["1", "\"red one\""]).unwrap();
+    test.call("send", &["2", "\"blue one\""]).unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+
+    let sub = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(3)
+        .background()
+        .unwrap();
+
+    // Alice switches teams, and sees the blue team's chat instead of the red team's.
+    test.call("set_team", &["2"]).unwrap();
+    // She no longer sees the red team's messages.
+    test.call("send", &["1", "\"red two\""]).unwrap();
+    test.call("send", &["2", "\"blue two\""]).unwrap();
+    // She leaves the game, and sees no team's chat.
+    test.call("leave", &[]).unwrap();
+    // Nor any further messages.
+    test.call("send", &["2", "\"blue three\""]).unwrap();
+
+    assert_eq!(
+        json!(project(sub.collect().unwrap(), "team_chat", &["text"])),
+        json!([
+            {"deletes": [{"text": "red one"}], "inserts": [{"text": "blue one"}]},
+            {"deletes": [], "inserts": [{"text": "blue two"}]},
+            {"deletes": [{"text": "blue one"}, {"text": "blue two"}], "inserts": []},
+        ])
+    );
+}
+
+#[test]
+fn test_scoped_view_moves_subscriber_into_shared_scope() {
+    let test = Smoketest::builder().precompiled_module("views-scoped").build();
+
+    let alice_token = test.read_token().unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+    let alice = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+
+    test.new_identity().unwrap();
+    test.call("join", &["\"bob\"", "2"]).unwrap();
+    test.call("send", &["2", "\"welcome\""]).unwrap();
+    let bob = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+
+    // Alice joins Bob's team, whose chat is already materialized for Bob.
+    test.login_with_token(&alice_token).unwrap();
+    test.call("set_team", &["2"]).unwrap();
+    // From then on, both see the team's messages.
+    test.call("send", &["2", "\"hello both\""]).unwrap();
+
+    assert_eq!(
+        json!(project(alice.collect().unwrap(), "team_chat", &["text"])),
+        json!([
+            {"deletes": [], "inserts": [{"text": "welcome"}]},
+            {"deletes": [], "inserts": [{"text": "hello both"}]},
+        ])
+    );
+    assert_eq!(
+        json!(project(bob.collect().unwrap(), "team_chat", &["text"])),
+        json!([{"deletes": [], "inserts": [{"text": "hello both"}]}])
+    );
+}
+
+#[test]
+fn test_scoped_view_with_composite_key_follows_player() {
+    let test = Smoketest::builder().precompiled_module("views-scoped").build();
+
+    test.call("spawn", &["\"tree\"", "0", "0"]).unwrap();
+    test.call("spawn", &["\"rock\"", "5", "5"]).unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+
+    let sub = test
+        .subscribe(&["SELECT * FROM regional_entities"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+
+    test.call("move_to", &["5", "5"]).unwrap();
+    test.call("spawn", &["\"bush\"", "5", "5"]).unwrap();
+
+    assert_eq!(
+        json!(project(sub.collect().unwrap(), "regional_entities", &["name"])),
+        json!([
+            {"deletes": [{"name": "tree"}], "inserts": [{"name": "rock"}]},
+            {"deletes": [], "inserts": [{"name": "bush"}]},
+        ])
+    );
+}
+
+#[test]
+fn test_typescript_scoped_view_sql_selects_callers_scope() {
+    let test = typescript_test();
+
+    test.call("send", &["1", "\"red one\""]).unwrap();
+    test.call("send", &["2", "\"blue one\""]).unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+
+    for view in ["team_chat", "team_chat_query"] {
+        test.assert_sql(
+            &format!("SELECT text FROM {view}"),
+            r#" text
+-----------
+ "red one""#,
+        );
+    }
+}
+
+#[test]
+fn test_typescript_scoped_view_is_computed_once_per_scope() {
+    let test = typescript_test();
+
+    let owner_token = test.read_token().unwrap();
+    test.call("join", &["\"alice\"", "7"]).unwrap();
+    let alice = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+
+    test.new_identity().unwrap();
+    test.call("join", &["\"bob\"", "7"]).unwrap();
+    let bob = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+
+    test.call("send", &["7", "\"hello team\""]).unwrap();
+
+    let expected = json!([{"deletes": [], "inserts": [{"text": "hello team"}]}]);
+    assert_eq!(
+        json!(project(alice.collect().unwrap(), "team_chat", &["text"])),
+        expected
+    );
+    assert_eq!(json!(project(bob.collect().unwrap(), "team_chat", &["text"])), expected);
+
+    test.login_with_token(&owner_token).unwrap();
+    assert_eq!(count_logs(&test, "team_chat body evaluated for team 7"), 2);
+}
+
+#[test]
+fn test_typescript_scoped_view_moves_subscriber_to_new_scope() {
+    let test = typescript_test();
+
+    test.call("send", &["1", "\"red one\""]).unwrap();
+    test.call("send", &["2", "\"blue one\""]).unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+
+    let sub = test
+        .subscribe(&["SELECT * FROM team_chat"])
+        .expect_rows(3)
+        .background()
+        .unwrap();
+
+    test.call("set_team", &["2"]).unwrap();
+    test.call("send", &["1", "\"red two\""]).unwrap();
+    test.call("send", &["2", "\"blue two\""]).unwrap();
+    test.call("leave", &[]).unwrap();
+    test.call("send", &["2", "\"blue three\""]).unwrap();
+
+    assert_eq!(
+        json!(project(sub.collect().unwrap(), "team_chat", &["text"])),
+        json!([
+            {"deletes": [{"text": "red one"}], "inserts": [{"text": "blue one"}]},
+            {"deletes": [], "inserts": [{"text": "blue two"}]},
+            {"deletes": [{"text": "blue one"}, {"text": "blue two"}], "inserts": []},
+        ])
+    );
+}
+
+#[test]
+fn test_typescript_scoped_view_with_composite_key_follows_player() {
+    let test = typescript_test();
+
+    test.call("spawn", &["\"tree\"", "0", "0"]).unwrap();
+    test.call("spawn", &["\"rock\"", "5", "5"]).unwrap();
+    test.call("join", &["\"alice\"", "1"]).unwrap();
+
+    let sub = test
+        .subscribe(&["SELECT * FROM regional_entities"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+
+    test.call("move_to", &["5", "5"]).unwrap();
+    test.call("spawn", &["\"bush\"", "5", "5"]).unwrap();
+
+    assert_eq!(
+        json!(project(sub.collect().unwrap(), "regional_entities", &["name"])),
+        json!([
+            {"deletes": [{"name": "tree"}], "inserts": [{"name": "rock"}]},
+            {"deletes": [], "inserts": [{"name": "bush"}]},
+        ])
     );
 }
