@@ -5,12 +5,6 @@ using SpacetimeDB;
 
 namespace NamespaceRoot;
 
-[SpacetimeDB.Env]
-public struct EnvironmentSchema
-{
-    public string? NAMESPACE_TEST;
-}
-
 [Table(Accessor = "User", Public = true)]
 public partial struct User
 {
@@ -102,20 +96,6 @@ public static partial class Functions
     [Procedure]
     public static ulong CountUsers(ProcedureContext ctx) =>
         ctx.WithTx(tx => tx.Db.User.Count + tx.Db.MyAuth.User.Count + tx.Db.@class.User.Count);
-
-    [Procedure]
-    public static string ReadEnvironment(ProcedureContext ctx)
-    {
-        var value = ctx.Env.NAMESPACE_TEST;
-        if (AuthLib.Functions.ReadEnvironment(ctx) != (value ?? "unset"))
-            throw new Exception("Library helper must read the root invocation's environment");
-        return ctx.WithTx(tx =>
-        {
-            if (tx.Env.NAMESPACE_TEST != value)
-                throw new Exception("Transaction environment differs from procedure environment");
-            return value ?? "unset";
-        });
-    }
 
     [Procedure]
     public static uint WriteAcrossNamespaces(ProcedureContext ctx, uint id, bool fail) =>
