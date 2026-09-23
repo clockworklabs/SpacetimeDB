@@ -53,11 +53,12 @@ evidence.
   field's location is ambiguous, the step is unmeasured. An ordinary sign-in
   never stands in for the probe.
 - An actor that goes offline sends all its traffic through a harness proxy that
-  runs where its browser runs. Going offline refuses new connections and closes
-  the existing ones, WebSockets and in-flight HTTP alike (event streams, long
-  polls, streamed responses), then emulates offline in the browser. The step is
-  measured only when the browser itself sees every application connection end
-  within five seconds; otherwise it is unmeasured. A Vite dev server's own reload
+  runs where its browser runs. Going offline emulates offline in the browser,
+  then refuses new connections and closes the existing ones, WebSockets and
+  in-flight HTTP alike (event streams, long polls, streamed responses). The step
+  is measured only when every application connection is seen to end within five
+  seconds, by the browser or by the proxy closing a connection to the same host,
+  port and path; otherwise it is unmeasured. A Vite dev server's own reload
   socket stays open, and only when the dev server's client module carries its
   token. A dev server behind TLS cannot be identified that way and is not
   supported. Other actors keep their network.
