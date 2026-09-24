@@ -99,6 +99,10 @@ class MockBuilder {
     return this;
   }
 
+  hasTokenProvider(): boolean {
+    return false;
+  }
+
   build(): MockConnection {
     const connection = new MockConnection();
     connection.token = this.token;
