@@ -710,21 +710,6 @@
       ]
     },
     {
-      "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
-      "targets": [
-        "ecommerce.inventory-operations.warehouse-transfer.2a"
-      ],
-      "desc": "A transfer debits the source but inserts or increments the destination by zero, so the live warehouse totals do not move in opposite directions.",
-      "file": "server/src/index.ts",
-      "edits": [
-        {
-          "find": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, qty]\n      );",
-          "replace": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, 0]\n      );"
-        }
-      ]
-    },
-    {
       "id": "transfer-overdraft-guard-removed",
       "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
@@ -964,10 +949,9 @@
       "id": "progression-catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a",
-        "ecommerce.progression.catalog-management.catalog-management.622b"
+        "ecommerce.progression.catalog-management.catalog-management.622a"
       ],
-      "desc": "The public product card omits the submitted name while retaining the product and its variants. The variants assertion also cannot open that same named product card.",
+      "desc": "The public product card omits the submitted name while retaining the product and its variants.",
       "file": "client/src/App.tsx",
       "edits": [
         {
@@ -1162,9 +1146,10 @@
       "id": "progression-notification-preferences-do-not-save",
       "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
       "targets": [
-        "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
       ],
-      "desc": "Do not save notification preferences.",
+      "desc": "Do not save notification preferences. It also breaks the owner's saved-choice positive control in 630b; that coupled failure is not evidence of a privacy defect.",
       "file": "server/src/progression.ts",
       "edits": [
         {

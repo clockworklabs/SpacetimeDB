@@ -923,6 +923,7 @@
                   },
                   {
                     "actor": "password-returning",
+                    "awaitSignedIn": false,
                     "do": "signIn",
                     "name": "password-boundary",
                     "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A"
@@ -932,7 +933,7 @@
                     "contains": "password-boundary",
                     "do": "expect",
                     "testid": "current-user",
-                    "within": 6000
+                    "within": 10000
                   },
                   {
                     "actor": "password-impostor",

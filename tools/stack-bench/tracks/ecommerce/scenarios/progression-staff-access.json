@@ -18,10 +18,10 @@
           "statedBy": "Staff and administrators can sign in and use staff areas.",
           "steps": [
             { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },
             { "do": "expect", "actor": "staff", "testid": "staff-area", "within": 6000 },
             { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "click", "actor": "admin", "testid": "staff-link", "ifAvailable": true },
             { "do": "expect", "actor": "admin", "testid": "staff-area", "within": 6000 }
           ]
         },

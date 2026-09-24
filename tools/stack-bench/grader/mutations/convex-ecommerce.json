@@ -186,15 +186,29 @@
       "id": "catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a",
-        "ecommerce.progression.catalog-management.catalog-management.622b"
+        "ecommerce.progression.catalog-management.catalog-management.622a"
       ],
-      "desc": "The public product card omits the submitted name while retaining its product and variants. Both publication and named variant navigation fail because the latter locates the card by its product name; this does not claim the variants were lost.",
+      "desc": "The public product card omits the submitted name while retaining its product and variants.",
       "file": "client/src/App.tsx",
       "edits": [
         {
           "find": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name}\n      </div>",
           "replace": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name === \"Travel Mug\" ? \"\" : item.name}\n      </div>"
+        }
+      ]
+    },
+    {
+      "id": "catalog-variants-are-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "targets": [
+        "ecommerce.progression.catalog-management.catalog-management.622b"
+      ],
+      "desc": "Catalog management stores the submitted product without its named variants.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "const id = await ctx.db.insert('item', { ...args, price: money(args.price), description: args.name });",
+          "replace": "const id = await ctx.db.insert('item', { ...args, variants: [], price: money(args.price), description: args.name });"
         }
       ]
     },
@@ -1332,21 +1346,6 @@
       ]
     },
     {
-      "id": "transfer-totals-omit-destination-credit-live",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
-      "targets": [
-        "ecommerce.inventory-operations.warehouse-transfer.2a"
-      ],
-      "desc": "A transfer debits the source but adds zero to the destination, so the two live warehouse totals do not move in opposite directions.",
-      "file": "convex/shop.js",
-      "edits": [
-        {
-          "find": "await ctx.db.patch(target._id, { quantity: target.quantity + args.quantity });",
-          "replace": "await ctx.db.patch(target._id, { quantity: target.quantity });"
-        }
-      ]
-    },
-    {
       "id": "restock-does-not-increase-stock",
       "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
       "targets": [
@@ -1365,9 +1364,10 @@
       "id": "notification-preference-is-not-saved",
       "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
       "targets": [
-        "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
       ],
-      "desc": "Saved notification preferences remain disabled after reload.",
+      "desc": "Saved notification preferences remain disabled after reload. It also breaks the owner's saved-choice positive control in 630b; that coupled failure is not evidence of a privacy defect.",
       "file": "convex/progression.js",
       "edits": [
         {

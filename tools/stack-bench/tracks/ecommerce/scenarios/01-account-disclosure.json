@@ -38,13 +38,15 @@
               "do": "signIn",
               "actor": "returning",
               "name": "private-password",
-              "password": "sb-private-pw-76dc492ea153"
+              "password": "sb-private-pw-76dc492ea153",
+              "awaitSignedIn": false
             },
             {
               "do": "expect",
               "actor": "returning",
               "testid": "current-user",
-              "contains": "private-password"
+              "contains": "private-password",
+              "within": 10000
             },
             {
               "do": "reload",

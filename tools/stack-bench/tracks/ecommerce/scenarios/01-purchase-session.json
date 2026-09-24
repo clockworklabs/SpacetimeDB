@@ -720,7 +720,15 @@
             {
               "do": "signIn",
               "actor": "buyer",
-              "name": "kim"
+              "name": "kim",
+              "awaitSignedIn": false
+            },
+            {
+              "do": "expect",
+              "actor": "buyer",
+              "testid": "current-user",
+              "contains": "kim",
+              "within": 10000
             },
             {
               "do": "callAction",

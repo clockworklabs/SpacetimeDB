@@ -202,8 +202,7 @@ test('SpacetimeDB reservation and catalog mutants declare their observed targets
   const catalog = mutations.get('catalog-product-is-not-published');
   assert(catalog, 'the catalog mutation must exist');
   assert.deepEqual(catalog.targets,
-    ['ecommerce.progression.catalog-management.catalog-management.622a',
-      'ecommerce.progression.catalog-management.catalog-management.622b']);
+    ['ecommerce.progression.catalog-management.catalog-management.622a']);
   const catalogEdit = mutationFileEdits(catalog)[0];
   assert(catalogEdit, 'the catalog mutation must have an edit');
   const catalogPath = join(ROOT, fixture.targetPath, ...catalogEdit.file.split('/'));
@@ -216,8 +215,10 @@ test('SpacetimeDB reservation and catalog mutants declare their observed targets
   assert.deepEqual(syntaxErrors(unpublished, catalogEdit.file), []);
 });
 
-test('catalog targets include product lookup coupling and checkout targets stay separate', () => {
+test('catalog name and variant mutants target separate checks and checkout targets stay separate', () => {
   const catalogCases = [
+    { backend: 'convex', nameId: 'catalog-product-name-is-not-published',
+      variantsId: 'catalog-variants-are-discarded' },
     { backend: 'mongodb', nameId: 'catalog-product-name-is-not-published',
       variantsId: 'catalog-variants-are-discarded' },
     { backend: 'postgres', nameId: 'progression-catalog-product-name-is-not-published',
@@ -233,9 +234,9 @@ test('catalog targets include product lookup coupling and checkout targets stay 
     const variants = mutations.get(item.variantsId);
     assert(name, `missing ${item.nameId}`);
     assert(variants, `missing ${item.variantsId}`);
+    // 622b opens the product by name, so a hidden name stops it before any observation.
     assert.deepEqual(name.targets,
-      ['ecommerce.progression.catalog-management.catalog-management.622a',
-        'ecommerce.progression.catalog-management.catalog-management.622b']);
+      ['ecommerce.progression.catalog-management.catalog-management.622a']);
     assert.deepEqual(variants.targets,
       ['ecommerce.progression.catalog-management.catalog-management.622b']);
 

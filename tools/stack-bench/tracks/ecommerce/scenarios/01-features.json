@@ -58,14 +58,15 @@
               "do": "signIn",
               "actor": "password-returning",
               "name": "password-boundary",
-              "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A"
+              "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A",
+              "awaitSignedIn": false
             },
             {
               "do": "expect",
               "actor": "password-returning",
               "testid": "current-user",
               "contains": "password-boundary",
-              "within": 6000
+              "within": 10000
             },
             {
               "do": "signIn",

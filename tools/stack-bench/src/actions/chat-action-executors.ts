@@ -15,6 +15,8 @@ type ChatArguments<Input extends { readonly actor: string }> =
 
 interface AccountInput {
   readonly actor: string;
+  // False returns after submitting, so a following expect observes the signed-in view.
+  readonly awaitSignedIn?: boolean;
   readonly exact?: boolean;
   readonly expectFailure?: boolean;
   readonly name: string;
@@ -82,6 +84,7 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     await browser.sleep(input.settleMs ?? 2000, signal);
     return { user, authenticationPath: 'local-form', expectedFailure: true };
   }
+  if (input.awaitSignedIn === false) return { user, authenticationPath: 'local-form', submitted: true };
   await actor.page.locator(browser.testId('current-user')).first()
     .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
   return { user, authenticationPath: 'local-form', signedUp: true };
@@ -140,6 +143,7 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
     await browser.sleep(input.settleMs ?? 2000, signal);
     return { user, authenticationPath: 'local-form', expectedFailure: true };
   }
+  if (input.awaitSignedIn === false) return { user, authenticationPath: 'local-form', submitted: true };
   await actor.page.locator(browser.testId('current-user')).first()
     .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
   return { user, authenticationPath: 'local-form', signedIn: true };

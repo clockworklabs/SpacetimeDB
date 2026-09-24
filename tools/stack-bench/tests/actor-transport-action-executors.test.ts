@@ -777,6 +777,50 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(bug.code, 'unclassified_exception');
 });
 
+test('awaitSignedIn false leaves the signed-in view to the following expect', async () => {
+  const timeout = Object.assign(new Error('locator.waitFor: timed out'), { name: 'TimeoutError' });
+  for (const action of ['signIn', 'signUp']) {
+    const prefix = action === 'signIn' ? 'signin' : 'signup';
+    for (const signedInViewAppears of [true, false]) {
+      const calls: unknown[][] = [];
+      const locator = (purpose: string) => ({
+        first() { return this; },
+        or() { return this; },
+        filter() { return this; },
+        isVisible: async () => true,
+        fill: async (value: string) => { calls.push([purpose, 'fill', value]); },
+        inputValue: async () => 'Alicescope',
+        click: async () => { calls.push([purpose, 'click']); },
+        waitFor: async (options: unknown) => {
+          calls.push([purpose, 'waitFor', options]);
+          if (purpose.includes('current-user') && !signedInViewAppears) throw timeout;
+        },
+      });
+      const actor = {
+        loc: (id: string) => locator(`[data-testid="${id}"]`),
+        page: { locator: (selector: string) => locator(selector) },
+      };
+      const awaited = await run({ do: action, actor: 'a', name: 'Alice' },
+        services(new Map<string, unknown>([['a', actor]])));
+      assert.equal(awaited.status, signedInViewAppears ? 'passed' : 'failed', action);
+      assert(calls.some(call => call[0] === '[data-testid="current-user"]' && call[1] === 'waitFor'), action);
+      calls.length = 0;
+      const submitted = await run({ do: action, actor: 'a', name: 'Alice', awaitSignedIn: false },
+        services(new Map<string, unknown>([['a', actor]])));
+      // The refusal must land on the next expect, not on this interaction step.
+      assert.equal(submitted.status, 'passed', action);
+      assert.deepEqual(submitted.observation, { user: 'Alicescope', authenticationPath: 'local-form', submitted: true });
+      assert(calls.some(call => call[0] === `[data-testid="${prefix}-submit"]` && call[1] === 'click'), action);
+      assert(!calls.some(call => String(call[0]).includes('current-user')), action);
+    }
+    const compile = ACTION_REGISTRY.get(action).compile;
+    assert.doesNotThrow(() => compile({ do: action, actor: 'a', name: 'Alice', awaitSignedIn: false }));
+    assert.throws(() => compile({ do: action, actor: 'a', name: 'Alice', awaitSignedIn: 'no' }), /awaitSignedIn/);
+  }
+  assert.throws(() => ACTION_REGISTRY.get('ensureSignedIn')
+    .compile({ do: 'ensureSignedIn', actor: 'a', name: 'Alice', awaitSignedIn: false }), /awaitSignedIn/);
+});
+
 test('account restoration does not accept the wrong signed-in user', async () => {
   const currentUser = {
     first() { return this; },

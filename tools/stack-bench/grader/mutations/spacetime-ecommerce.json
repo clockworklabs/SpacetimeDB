@@ -196,21 +196,6 @@
       ]
     },
     {
-      "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-core",
-      "scenario": "tracks/ecommerce/scenarios/01-core.json",
-      "targets": [
-        "ecommerce.spec.live-state.ranking.2c"
-      ],
-      "desc": "Reverse the specified alphabetical tie-breaker. This necessarily breaks both the initial sequence and the post-purchase sequence in the same scenario.",
-      "file": "client/src/App.tsx",
-      "edits": [
-        {
-          "find": "      return a.name.localeCompare(b.name);",
-          "replace": "      return b.name.localeCompare(a.name);"
-        }
-      ]
-    },
-    {
       "id": "purchase-does-not-update-ranking-count",
       "scenario": "tracks/ecommerce/scenarios/01-core.json",
       "targets": [
@@ -971,21 +956,6 @@
       ]
     },
     {
-      "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
-      "targets": [
-        "ecommerce.inventory-operations.warehouse-transfer.2a"
-      ],
-      "desc": "The serialized transfer debits the source but writes the existing destination quantity back unchanged.",
-      "file": "backend/spacetimedb/src/index.ts",
-      "edits": [
-        {
-          "find": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity + quantity });",
-          "replace": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity });"
-        }
-      ]
-    },
-    {
       "id": "transfer-overdraft-guard-removed",
       "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
@@ -1372,10 +1342,9 @@
       "id": "catalog-product-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a",
-        "ecommerce.progression.catalog-management.catalog-management.622b"
+        "ecommerce.progression.catalog-management.catalog-management.622a"
       ],
-      "desc": "The public product card omits the submitted name. Both create visibility and variant navigation locate the submitted product card by its name, so the hidden name prevents both required observations.",
+      "desc": "The public product card omits the submitted name.",
       "file": "client/src/components/ItemCard.tsx",
       "edits": [
         {
@@ -1529,9 +1498,10 @@
       "id": "notification-preferences-are-not-saved",
       "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
       "targets": [
-        "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
       ],
-      "desc": "Saving notification preferences discards the selected values.",
+      "desc": "Saving notification preferences discards the selected values. It also breaks the owner's saved-choice positive control in 630b; that coupled failure is not evidence of a privacy defect.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {

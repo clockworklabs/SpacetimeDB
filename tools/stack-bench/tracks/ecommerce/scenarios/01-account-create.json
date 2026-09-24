@@ -17,8 +17,8 @@
           "desc": "a visitor can create an account and is signed in as it",
           "points": 1,
           "steps": [
-            {"do":"signUp","actor":"shopper","name":"ann"},
-            {"do":"expect","actor":"shopper","testid":"current-user","contains":"ann","within":6000}
+            {"do":"signUp","actor":"shopper","name":"ann","awaitSignedIn":false},
+            {"do":"expect","actor":"shopper","testid":"current-user","contains":"ann","within":10000}
           ],
           "statedBy": "a visitor can create an account with a username and password"
         }

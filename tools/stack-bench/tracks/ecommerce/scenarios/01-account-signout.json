@@ -37,16 +37,29 @@
               "within": 6000
             },
             {
+              "do": "reload",
+              "actor": "shopper",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "absent": true
+            },
+            {
               "do": "signIn",
               "actor": "shopper",
-              "name": "ann"
+              "name": "ann",
+              "awaitSignedIn": false
             },
             {
               "do": "expect",
               "actor": "shopper",
               "testid": "current-user",
               "contains": "ann",
-              "within": 6000
+              "within": 10000
             }
           ],
           "statedBy": "a signed-in user can sign out, returning to the signed-out state"
