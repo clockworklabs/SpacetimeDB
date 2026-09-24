@@ -622,17 +622,14 @@ impl CsharpScope<'_> {
     }
 
     fn sql_name(&self, name: &Identifier) -> String {
-        let segments = self
-            .path
-            .segments()
-            .iter()
-            .map(|s| format!("{s:?}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(
-            "new global::SpacetimeDB.SqlTableName(new string[] {{ {segments} }}, {:?})",
-            name.deref()
-        )
+        match self.path.segments() {
+            [] => format!("new global::SpacetimeDB.SqlTableName({:?})", name.deref()),
+            [namespace] => format!(
+                "new global::SpacetimeDB.SqlTableName({namespace:?}, {:?})",
+                name.deref()
+            ),
+            _ => panic!("Nested namespaces are not supported by C# bindings"),
+        }
     }
 
     fn child_members(&self, output: &mut CodeIndenter<String>, module: &ModuleDef, container: &str) {

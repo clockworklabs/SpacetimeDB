@@ -30,6 +30,6 @@ public sealed class NamespaceRegistry
 
     public SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
         ResolveNamespace(assemblyIdentity) is { } name
-            ? new SqlTableName([name], localName)
+            ? new SqlTableName(name, localName)
             : new SqlTableName(localName);
 }
