@@ -411,34 +411,39 @@ test('expected failures enter repairs while observed-only failures stay isolated
 });
 
 test('application setup failures become actionable repair feedback without criterion results', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-setup-repair-'));
-  try {
-    const app = join(root, 'app');
-    const grading = privateGradingDirectory(app);
-    mkdirSync(app, { recursive: true });
-    mkdirSync(grading, { recursive: true });
-    writeArtifact(join(grading, 'bundle.json'), {
-      kind: 'grade_bundle', id: 'setup-failure-bundle', identities: {},
-      payload: {
-        definitionSchemaVersion: 1, recipeRelease: null, calibration: null,
-        label: 'postgres-l1', track: 'ecommerce', backend: 'postgres', url: 'http://app',
-        app, level: 1, observation: 'scored', suites: {},
-        totals: { score: 0, max: 58, dirty: false, contractPass: null, regression: null },
-        error: 'database reset failed: server/package.json has no dev or start script',
-        outcome: { kind: 'app_failure', phase: 'application-restart',
-          reason: 'database reset failed: server/package.json has no dev or start script',
-          appFailures: ['application-restart'] },
-        selection: null,
-      },
-    });
-    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
-    assert.equal(reported.status, 0, reported.stderr);
-    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /Application setup/);
-    assert.match(repair, /must provide \/app\/start\.sh/);
-    assert.match(repair, /no dev or start script/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+  for (const [phase, reason, expected] of [
+    ['application-restart', 'database reset failed: server/package.json has no dev or start script',
+      /must provide \/app\/start\.sh/],
+    ['database-provenance', 'app did not write its marker to the database supplied for this run: marker not found',
+      /must use the postgres database and connection supplied for this run/],
+  ] as const) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-setup-repair-'));
+    try {
+      const app = join(root, 'app');
+      const grading = privateGradingDirectory(app);
+      mkdirSync(app, { recursive: true });
+      mkdirSync(grading, { recursive: true });
+      writeArtifact(join(grading, 'bundle.json'), {
+        kind: 'grade_bundle', id: 'setup-failure-bundle', identities: {},
+        payload: {
+          definitionSchemaVersion: 1, recipeRelease: null, calibration: null,
+          label: 'postgres-l1', track: 'ecommerce', backend: 'postgres', url: 'http://app',
+          app, level: 1, observation: 'scored', suites: {},
+          totals: { score: 0, max: 58, dirty: false, contractPass: null, regression: null },
+          error: reason,
+          outcome: { kind: 'app_failure', phase, reason, appFailures: [phase] },
+          selection: null,
+        },
+      });
+      const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+      assert.equal(reported.status, 0, reported.stderr);
+      const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+      assert.match(repair, /Application setup/);
+      assert.match(repair, expected);
+      assert(repair.includes(reason.slice(-24)), repair);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 

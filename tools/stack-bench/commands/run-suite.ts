@@ -486,7 +486,7 @@ export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backen
   };
   const ok = urls.some(matchesExpectedPort);
   return { ok, url: urls[0],
-    reason: ok ? 'ok' : `app targets ${urls[0]} but the benchmark database is on port ${expected}` };
+    reason: ok ? 'ok' : `app targets ${urls[0]} but the database supplied for this run is on port ${expected}` };
 }
 
 export async function writeApplicationDatabaseMarker(
@@ -1063,7 +1063,7 @@ async function main() {
   bundle.provenance = prov;
   console.log(`  database    ... ${prov.ok ? prov.reason : `WRONG DATABASE — ${prov.reason}`}`);
   if (!prov.ok) {
-    bundle.error = `app is not using the benchmark database: ${prov.reason}`;
+    bundle.error = `app is not using the database supplied for this run: ${prov.reason}`;
     bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
       appFailures: ['database-provenance'] };
     recordApplicationAbort();
@@ -1144,7 +1144,7 @@ async function main() {
       ? runtime.ok ? runtime.reason : `WRONG DATABASE — ${runtime.reason}`
       : runtime.reason}`);
     if (runtime.ok === false) {
-      bundle.error = `app did not write its marker to the benchmark database: ${runtime.reason}`;
+      bundle.error = `app did not write its marker to the database supplied for this run: ${runtime.reason}`;
       bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
         appFailures: ['database-provenance'] };
       recordApplicationAbort();
