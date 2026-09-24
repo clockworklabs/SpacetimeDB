@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import type {
   QueryClient,
   QueryKey,
@@ -183,7 +184,7 @@ export class SpacetimeDBQueryClient {
     const keyStr = JSON.stringify(queryKey);
     const db = this.connection.db;
 
-    const tableInstance = db[accessorName];
+    const tableInstance = getByAccessorPath(db, accessorName);
 
     if (!tableInstance) {
       console.warn(`SpacetimeDBQueryClient: table "${accessorName}" not found`);

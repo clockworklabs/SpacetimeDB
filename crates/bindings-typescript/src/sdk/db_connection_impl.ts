@@ -1,3 +1,4 @@
+import { accessorSlot } from '../lib/util';
 import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
 import BinaryReader from '../lib/binary_reader.ts';
@@ -441,9 +442,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const view = Object.create(null) as ClientDbView<RemoteModule>;
 
     for (const tbl of Object.values(this.#sourceNameToTableDef)) {
-      // ClientDbView uses this name verbatim
-      const key = tbl.accessorName;
-      Object.defineProperty(view, key, {
+      const [target, key] = accessorSlot(view, tbl.accessorName);
+      Object.defineProperty(target, key, {
         enumerable: true,
         configurable: false,
         get: () => this.clientCache.getOrCreateTable(tbl),
@@ -459,14 +459,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     for (const reducer of def.reducers) {
       const reducerName = reducer.name;
       const encodedReducerName = this.#reducerNameBytes[reducerName];
-      const key = reducer.accessorName;
+      const [target, key] = accessorSlot(out, reducer.accessorName);
 
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (
-        params: InferTypeOfParams<typeof reducer.params>
-      ) => {
+      target[key] = (params: InferTypeOfParams<typeof reducer.params>) => {
         const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
@@ -491,12 +489,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     for (const procedure of def.procedures) {
       const procedureName = procedure.name;
       const encodedProcedureName = this.#procedureNameBytes[procedureName];
-      const key = procedure.accessorName;
+      const [target, key] = accessorSlot(out, procedure.accessorName);
 
       const { serializeArgs, deserializeReturn } =
         this.#procedureSerializers[procedureName];
 
-      (out as any)[key] = (
+      target[key] = (
         params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();

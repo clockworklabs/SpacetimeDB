@@ -87,11 +87,11 @@ fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
         "namespace was applied twice or mixed forms somewhere in the generated bindings"
     );
     assert!(
-        code.contains(r#""my_lib.libData": __table({"#),
-        "submodule tables must be keyed by their canonical wire name"
+        code.contains(r#""myLib.libData": __table({"#) && code.contains("name: 'my_lib.libData',"),
+        "submodule tables must be keyed by their accessor path and carry the canonical wire name"
     );
     assert!(
-        !code.contains(r#"__reducerSchema("myLib."#) && !code.contains(r#""myLib.libData""#),
+        !code.contains(r#"__reducerSchema("myLib."#) && !code.contains("name: 'myLib."),
         "the accessor namespace must not leak into wire names"
     );
 

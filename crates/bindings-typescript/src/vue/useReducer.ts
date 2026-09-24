@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import { shallowRef, watch, onUnmounted } from 'vue';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import type { UntypedReducerDef } from '../sdk/reducers';
@@ -23,7 +24,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
       const connection = conn.getConnection();
       if (!connection) return;
 
-      const fn = (connection.reducers as any)[reducerName] as (
+      const fn = getByAccessorPath(connection.reducers, reducerName) as (
         ...p: ParamsType<ReducerDef>
       ) => Promise<void>;
       if (queueRef.value.length) {
@@ -47,7 +48,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
         queueRef.value.push({ params, resolve, reject });
       });
     }
-    const fn = (connection.reducers as any)[reducerName] as (
+    const fn = getByAccessorPath(connection.reducers, reducerName) as (
       ...p: ParamsType<ReducerDef>
     ) => Promise<void>;
     return fn(...params);

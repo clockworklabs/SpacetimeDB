@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import { useCallback, useEffect, useRef } from 'react';
 import type { UntypedReducerDef } from '../sdk/reducers';
 import { useSpacetimeDB } from './useSpacetimeDB';
@@ -24,7 +25,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     if (!conn) {
       return;
     }
-    const fn = (conn.reducers as any)[reducerName] as (
+    const fn = getByAccessorPath(conn.reducers, reducerName) as (
       ...p: ParamsType<ReducerDef>
     ) => Promise<void>;
     if (queueRef.current.length) {
@@ -43,7 +44,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
           queueRef.current.push({ params, resolve, reject });
         });
       }
-      const fn = (conn.reducers as any)[reducerName] as (
+      const fn = getByAccessorPath(conn.reducers, reducerName) as (
         ...p: ParamsType<ReducerDef>
       ) => Promise<void>;
       return fn(...params);

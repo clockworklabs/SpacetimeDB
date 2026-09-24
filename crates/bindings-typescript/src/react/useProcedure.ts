@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import { useCallback, useEffect, useRef } from 'react';
 import type { UntypedProcedureDef } from '../sdk/procedures';
 import { useSpacetimeDB } from './useSpacetimeDB';
@@ -29,7 +30,7 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
     if (!conn) {
       return;
     }
-    const fn = (conn.procedures as any)[procedureName] as (
+    const fn = getByAccessorPath(conn.procedures, procedureName) as (
       ...p: ProcedureParamsType<ProcedureDef>
     ) => Promise<ProcedureReturnType<ProcedureDef>>;
     if (queueRef.current.length) {
@@ -50,7 +51,7 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
           }
         );
       }
-      const fn = (conn.procedures as any)[procedureName] as (
+      const fn = getByAccessorPath(conn.procedures, procedureName) as (
         ...p: ProcedureParamsType<ProcedureDef>
       ) => Promise<ProcedureReturnType<ProcedureDef>>;
       return fn(...params);
