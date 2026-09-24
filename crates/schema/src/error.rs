@@ -24,6 +24,8 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 pub enum ValidationError {
     #[error("invalid module capabilities: at most 32 unique names of 1..64 lowercase ASCII letters, digits or underscores are allowed")]
     InvalidModuleCapabilities,
+    #[error("lifecycle reducer `{function}` must have Internal visibility")]
+    InvalidLifecycleVisibility { function: RawIdentifier },
     #[error("module contains repeated V10 section `{section}`")]
     DuplicateModuleSection { section: String },
     #[error("module has repeated environment declarations")]

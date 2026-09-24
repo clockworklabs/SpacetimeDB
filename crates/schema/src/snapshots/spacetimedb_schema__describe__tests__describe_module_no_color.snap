@@ -55,7 +55,7 @@ Views
   top_player() -> Option<Player>  [public] [anonymous]
 
 Reducers
-  init()  [lifecycle: init] [private]
+  init()  [lifecycle: init] [internal]
   lib.end_session(id: U64)
   move_player(player_id: U64, direction: Direction)
   reset_ranks()  [private]

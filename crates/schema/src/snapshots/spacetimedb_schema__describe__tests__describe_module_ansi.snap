@@ -55,7 +55,7 @@ expression: "describe_module(&def, PrettyPrintStyle::AnsiColor)"
   [0m[1m[36mtop_player[0m() -> [0m[35mOption<Player>[0m  [0m[32m[public][0m [0m[32m[anonymous][0m
 
 [0m[1m[34mReducers[0m
-  [0m[1m[36minit[0m()  [0m[32m[lifecycle: init][0m [0m[32m[private][0m
+  [0m[1m[36minit[0m()  [0m[32m[lifecycle: init][0m [0m[32m[internal][0m
   [0m[1m[36mlib.end_session[0m(id: [0m[35mU64[0m)
   [0m[1m[36mmove_player[0m(player_id: [0m[35mU64[0m, direction: [0m[35mDirection[0m)
   [0m[1m[36mreset_ranks[0m()  [0m[32m[private][0m

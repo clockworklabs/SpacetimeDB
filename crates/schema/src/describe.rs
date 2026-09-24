@@ -527,6 +527,7 @@ fn write_reducer_row(w: &mut StyledWriter, owning: &ModuleDef, reducer: &Reducer
             .lifecycle
             .map(|lifecycle| format!("[lifecycle: {}]", lifecycle_name(lifecycle))),
         reducer.visibility.is_private().then(|| "[private]".to_owned()),
+        reducer.visibility.is_internal().then(|| "[internal]".to_owned()),
     ]
     .into_iter()
     .flatten()
@@ -549,12 +550,13 @@ fn write_procedure_row(
 ) -> io::Result<()> {
     let ret = (!matches!(procedure.return_type_for_generate, AlgebraicTypeUse::Unit))
         .then(|| type_name(owning, &procedure.return_type_for_generate).to_string());
-    let tags = procedure
-        .visibility
-        .is_private()
-        .then(|| "[private]".to_owned())
-        .into_iter()
-        .collect_vec();
+    let tags = [
+        procedure.visibility.is_private().then(|| "[private]".to_owned()),
+        procedure.visibility.is_internal().then(|| "[internal]".to_owned()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect_vec();
     write_function_row(
         w,
         &format!("{prefix}{}", procedure.name),
@@ -1513,7 +1515,7 @@ mod tests {
         let reducers = describe_reducers(&def, PrettyPrintStyle::NoColor);
         assert_eq!(
             reducers,
-            "init()  [lifecycle: init] [private]\n\
+            "init()  [lifecycle: init] [internal]\n\
              lib.end_session(id: U64)\n\
              move_player(player_id: U64, direction: Direction)\n\
              reset_ranks()  [private]\n"

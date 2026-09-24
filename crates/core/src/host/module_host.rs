@@ -2369,7 +2369,10 @@ impl ModuleHost {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
 
-        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if !reducer_def
+            .visibility
+            .allows_invocation(false, self.is_database_owner(caller_identity))
+        {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
@@ -2894,7 +2897,10 @@ impl ModuleHost {
             .procedure_by_name_with_module(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
-        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if !procedure_def
+            .visibility
+            .allows_invocation(false, self.is_database_owner(caller_identity))
+        {
             return Err(ProcedureCallError::NoSuchProcedure);
         }
 
