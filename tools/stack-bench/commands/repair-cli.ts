@@ -127,6 +127,7 @@ export async function executeRepairGrant(args: RepairGrantArgs,
   const output = join(resolved.root, 'continuations', executionId);
   const privateRoot = join(tmpdir(), 'stack-bench-repair-supervisors');
   const supervisorState = join(privateRoot, `${executionId}.json`);
+  let cleanupError: unknown = null;
   try {
     mkdirSync(output, { recursive: true });
     mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
@@ -154,7 +155,7 @@ export async function executeRepairGrant(args: RepairGrantArgs,
       logs: { stdout: join(output, 'process.stdout.log'),
         stderr: join(output, 'process.stderr.log') },
     });
-    let cleanupError: unknown = null;
+    cleanupError = null;
     if (!processResult.ok && existsSync(supervisorState)) {
       try { rescue(supervisorState, output); }
       catch (error) { cleanupError = error; }
@@ -192,7 +193,8 @@ export async function executeRepairGrant(args: RepairGrantArgs,
     }
     return { output, process: processResult, run };
   } finally {
-    rmSync(supervisorState, { force: true });
+    // A failed cleanup keeps the supervisor state as recover's authority.
+    if (!cleanupError) rmSync(supervisorState, { force: true });
     releaseCampaignLock(lock);
   }
 }

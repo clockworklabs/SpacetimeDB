@@ -84,6 +84,12 @@ state root merely because its name resembles Stack Bench. Escalate with the
 complete result directory and private state stored separately from public
 artifacts.
 
+A Docker or host restart can stop a build container before teardown. Recovery
+then refuses with `workspace handback requires running build container <id>`,
+because it hands the app directory back from inside that container. Check that
+the ID matches the build container in the private lease, start that exact
+container with `docker start <id>`, and run `recover` again.
+
 ## Intentional retention
 
 `--retain-backend` is inspection mode, not successful cleanup. It writes
