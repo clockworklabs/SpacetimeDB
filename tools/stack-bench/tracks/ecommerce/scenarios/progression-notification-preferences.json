@@ -54,6 +54,10 @@
           "points": 2,
           "statedBy": "One customer's notification choices do not affect another customer.",
           "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 3000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "notification-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" },
             { "do": "click", "actor": "other", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "other", "testid": "notification-order", "attribute": "data-state", "value": "off" }
           ]

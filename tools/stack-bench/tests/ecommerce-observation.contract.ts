@@ -175,8 +175,9 @@ test('cart validation sends only a negative quantity and restores actor identity
   const feature = read('01-cart-boundary.json').features[0]!;
   const criterion = feature.criteria.find(candidate => candidate.id === '109b')!;
   const calls = criterion.steps.filter(step => step.do === 'callAction');
-  // Zero is a convention (remove the line or refuse); only a negative quantity can credit money.
-  assert.deepEqual(calls.map(step => (step.namedAction as { args: number[] }).args[1]), [-3]);
+  // An accepted in-range quantity precedes the refusal. Zero is a convention (remove the line or
+  // refuse); only a negative quantity can credit money.
+  assert.deepEqual(calls.map(step => (step.namedAction as { args: number[] }).args[1]), [2, -3]);
   for (const criterion of feature.criteria) {
     criterion.steps.forEach((step, index) => {
       if (step.do !== 'reload') return;
