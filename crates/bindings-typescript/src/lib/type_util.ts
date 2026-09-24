@@ -86,6 +86,19 @@ type CamelCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
  */
 export type CamelCase<S extends string> = Uncapitalize<CamelCaseImpl<S>>;
 
+type AccessorHead<K extends string> = K extends `${infer H}.${string}` ? H : K;
+type AccessorTail<
+  K extends string,
+  H extends string,
+> = K extends `${H}.${infer R}` ? R : never;
+
+/** Splits dotted keys into nested objects: `{ 'a.b': X, c: Y }` becomes `{ a: { b: X }, c: Y }`. */
+export type NestAccessors<T extends Record<string, unknown>> = {
+  [H in AccessorHead<keyof T & string>]: H extends keyof T
+    ? T[H]
+    : NestAccessors<{ [K in keyof T & string as AccessorTail<K, H>]: T[K] }>;
+};
+
 /** Type safe conversion from "some_identifier-name" to "some_identifier_name"
  * - No spaces; allowed separators: "_" and "-"
  * - Normalizes the *first* character to lowercase (e.g. "User_Name" -> "user_name")

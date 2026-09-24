@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import { createEffect } from 'solid-js';
 import type { UntypedProcedureDef } from '../sdk/procedures';
 import { useSpacetimeDB } from './useSpacetimeDB';
@@ -28,7 +29,7 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
     const conn = getConnection();
     if (!conn) return;
 
-    const fn = (conn.procedures as any)[procedureName] as (
+    const fn = getByAccessorPath(conn.procedures, procedureName) as (
       ...p: ProcedureParamsType<ProcedureDef>
     ) => Promise<ProcedureReturnType<ProcedureDef>>;
 
@@ -49,7 +50,7 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
         }
       );
     }
-    const fn = (conn.procedures as any)[procedureName] as (
+    const fn = getByAccessorPath(conn.procedures, procedureName) as (
       ...p: ProcedureParamsType<ProcedureDef>
     ) => Promise<ProcedureReturnType<ProcedureDef>>;
     return fn(...params);
