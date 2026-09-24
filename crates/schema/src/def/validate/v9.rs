@@ -156,6 +156,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let mut module_def = ModuleDef {
         // V9 has no submodules, so every def is at the root.
         path: NamespacePath::root(),
+        accessor_path: NamespacePath::root(),
         tables,
         reducers,
         views,
@@ -176,7 +177,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
 
     // Records each def's namespace. V9 has no submodules, so this just resolves everything at
     // the root, but the defs still need their `namespace` populated for keys to work.
-    module_def.apply_namespace(&NamespacePath::root());
+    module_def.apply_namespace(&NamespacePath::root(), &NamespacePath::root());
 
     Ok(module_def)
 }

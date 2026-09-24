@@ -112,12 +112,15 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ModuleDef {
-    /// The namespace path this module is mounted under, empty for the root.
+    /// The canonical namespace path this module is mounted under, empty for the root.
     ///
     /// Maintained by [`ModuleDef::apply_namespace`] alongside the `namespace` of every def,
     /// and used to resolve namespace-qualified keys relative to whichever module they are
     /// looked up in.
     path: NamespacePath,
+
+    /// The accessor namespace path this module is mounted under, empty for the root.
+    accessor_path: NamespacePath,
 
     /// The tables of the module definition.
     tables: IdentifierMap<TableDef>,
@@ -179,7 +182,7 @@ pub struct ModuleDef {
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
 
-    /// Submodules, keyed by the namespace they are registered under.
+    /// Submodules, keyed by the canonical namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
 
     /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
@@ -214,9 +217,24 @@ impl ModuleDef {
         self.raw_module_def_version
     }
 
-    /// The submodules of the module definition.
+    /// The submodules of the module definition, keyed by canonical namespace.
     pub fn submodules(&self) -> &IndexMap<Identifier, ModuleDef> {
         &self.submodules
+    }
+
+    /// The canonical namespace path this module is mounted under, empty for the root.
+    pub fn path(&self) -> &NamespacePath {
+        &self.path
+    }
+
+    /// The accessor namespace path this module is mounted under, empty for the root.
+    pub fn accessor_path(&self) -> &NamespacePath {
+        &self.accessor_path
+    }
+
+    /// The accessor name this module is mounted under in its parent, `None` for the root.
+    pub fn mount_accessor_name(&self) -> Option<&Identifier> {
+        self.accessor_path.segments().last()
     }
 
     /// The tables of the module definition.
@@ -295,8 +313,9 @@ impl ModuleDef {
     /// A def's [`ModuleDefLookup`] key is `(namespace, name)`, and a def cannot otherwise
     /// know which namespace it is mounted under: submodules are validated in isolation, so
     /// this runs once the module tree is assembled.
-    fn apply_namespace(&mut self, path: &NamespacePath) {
+    fn apply_namespace(&mut self, path: &NamespacePath, accessor_path: &NamespacePath) {
         self.path = path.clone();
+        self.accessor_path = accessor_path.clone();
         for table in self.tables.values_mut() {
             table.namespace = path.clone();
             for index in table.indexes.values_mut() {
@@ -319,13 +338,23 @@ impl ModuleDef {
             reducer.name = ReducerName::new(path.join(reducer.name.local().clone()));
         }
         for (namespace, submodule) in &mut self.submodules {
-            submodule.apply_namespace(&path.child(namespace.clone()));
+            let accessor = submodule
+                .mount_accessor_name()
+                .cloned()
+                .unwrap_or_else(|| namespace.clone());
+            submodule.apply_namespace(&path.child(namespace.clone()), &accessor_path.child(accessor));
         }
     }
 
     /// Debug-only check that every def's recorded namespace matches its module.
     #[cfg(debug_assertions)]
     fn assert_namespaces_applied(&self, path: &NamespacePath) {
+        debug_assert_eq!(&self.path, path, "module path stale");
+        debug_assert_eq!(
+            self.accessor_path.segments().len(),
+            path.segments().len(),
+            "accessor path depth mismatch"
+        );
         for table in self.tables.values() {
             debug_assert_eq!(&table.namespace, path, "table namespace stale");
             for index in table.indexes.values() {
@@ -477,11 +506,13 @@ impl ModuleDef {
         let mut warnings = Vec::new();
         for (namespace, submodule_def) in self.submodules() {
             if !submodule_def.http_routes().is_empty() {
+                // Module code narrows contexts by accessor name, not by canonical namespace.
+                let accessor = submodule_def.mount_accessor_name().unwrap_or(namespace);
                 warnings.push(format!(
                     "The submodule under namespace '{namespace}' registers HTTP routes via a router. \
                      Route registrations in submodules are ignored. Only the root module's routes \
                      are served. Define routes in the root module and call the submodule's HTTP handler \
-                     functions via `ctx.as.{namespace}`."
+                     functions via `ctx.as.{accessor}`."
                 ));
             }
             warnings.extend(submodule_def.collect_warnings());
@@ -1017,6 +1048,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_routes: _,
             raw_module_def_version: _,
             submodules: _,
+            accessor_path: _,
             environment: _,
         } = val;
 
@@ -1078,6 +1110,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_routes,
             raw_module_def_version: _,
             submodules,
+            accessor_path: _,
             environment,
         } = val;
 
@@ -1232,19 +1265,23 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
         }
 
-        // Always emit ExplicitNames so canonical names survive the round-trip.
-        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
-
         let submodules: Vec<_> = submodules
             .into_iter()
-            .map(|(namespace, module)| RawSubmoduleV10 {
-                namespace: namespace.to_string(),
-                module: module.into(),
+            .map(|(namespace, module)| {
+                let accessor = module.mount_accessor_name().unwrap_or(&namespace).to_string();
+                explicit_names.insert_namespace(accessor.clone(), namespace);
+                RawSubmoduleV10 {
+                    namespace: accessor,
+                    module: module.into(),
+                }
             })
             .collect();
         if !submodules.is_empty() {
             sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
+
+        // Always emit ExplicitNames so canonical names survive the round-trip.
+        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
         RawModuleDefV10 { sections }
     }
