@@ -5,13 +5,16 @@ const host = vi.hoisted(() => ({
   payload: '',
   jwtReads: 0,
   flagReads: 0,
+  conflicts: 0,
 }));
 vi.mock('spacetime:sys@2.0', () => ({
   moduleHooks: Symbol('moduleHooks'),
   identity: () => 1n,
   row_iter_bsatn_close: () => {},
   procedure_start_mut_tx: () => 0n,
-  procedure_commit_mut_tx: () => {},
+  procedure_commit_mut_tx: () => {
+    if (host.conflicts-- > 0) throw new Error('transaction conflict');
+  },
   procedure_abort_mut_tx: () => {},
   get_jwt_payload: () => {
     host.jwtReads++;
@@ -25,16 +28,23 @@ vi.mock('spacetime:sys@2.3', () => ({
   },
 }));
 
+// Load procedures first so its existing runtime import cycle initializes in order.
+import { callProcedure } from '../src/server/procedures';
 import { ReducerCtxImpl } from '../src/server/runtime';
 import { ConnectionId } from '../src/lib/connection_id';
 import { Identity } from '../src/lib/identity';
 import { Timestamp } from '../src/lib/timestamp';
 import { schema, exportContext, registerExport } from '../src/server/schema';
-import { callProcedure } from '../src/server/procedures';
 import { t } from '../src/lib/type_builders';
 
 beforeEach(() => {
-  Object.assign(host, { flags: 0, payload: '', jwtReads: 0, flagReads: 0 });
+  Object.assign(host, {
+    flags: 0,
+    payload: '',
+    jwtReads: 0,
+    flagReads: 0,
+    conflicts: 0,
+  });
 });
 
 describe('verified invocation authentication', () => {
@@ -48,9 +58,9 @@ describe('verified invocation authentication', () => {
         null,
         {}
       );
-      host.flags = flags ^ 1;
-      expect(host.flagReads).toBe(1);
+      expect(host.flagReads).toBe(0);
       expect(ctx.senderAuth.isInternal).toBe(Boolean(flags));
+      expect(host.flagReads).toBe(1);
       expect(ctx.senderAuth.hasJWT).toBe(false);
       expect(ctx.senderAuth.jwt).toBeNull();
       expect(host.jwtReads).toBe(0);
@@ -72,7 +82,6 @@ describe('verified invocation authentication', () => {
       connection,
       {}
     );
-    host.flags = 0;
     expect(ctx.connectionId).toBe(connection);
     expect(ctx.senderAuth.isInternal).toBe(true);
     expect(host.jwtReads).toBe(0);
@@ -98,37 +107,44 @@ describe('verified invocation authentication', () => {
       Timestamp.UNIX_EPOCH,
       new ConnectionId(8n)
     );
-    host.flags = 1;
     expect(firstAuth.isInternal).toBe(true);
     expect(ctx.senderAuth.isInternal).toBe(false);
     expect(ctx.senderAuth.hasJWT).toBe(false);
   });
 
-  it('preserves procedure auth inside a transaction after the host flags change', () => {
-    host.flags = 1;
-    const module = schema({});
-    const proc = module.procedure(t.unit(), ctx => {
-      host.flags = 0;
-      ctx.withTx(tx => {
-        expect(tx.senderAuth).toBe(ctx.senderAuth);
-        expect(tx.senderAuth.isInternal).toBe(true);
-        expect(tx.connectionId).toBe(ctx.connectionId);
+  it.each([0, 1])(
+    'reads invocation flag %s in every procedure transaction retry',
+    flags => {
+      host.flags = flags;
+      host.conflicts = 1;
+      const sender = new Identity(9n);
+      const connection = new ConnectionId(8n);
+      let attempts = 0;
+      const module = schema({});
+      const proc = module.procedure(t.unit(), ctx => {
+        ctx.withTx(tx => {
+          attempts++;
+          expect(tx.senderAuth.isInternal).toBe(Boolean(flags));
+          expect(tx.sender).toBe(sender);
+          expect(tx.connectionId).toBe(connection);
+        });
+        return {};
       });
-      return {};
-    });
-    const inner = proc[exportContext]!;
-    proc[registerExport](inner, 'procedure_auth');
-    callProcedure(
-      inner.procedures,
-      0,
-      new Identity(9n),
-      new ConnectionId(8n),
-      Timestamp.UNIX_EPOCH,
-      new Uint8Array(),
-      () => ({})
-    );
-    expect(host.flagReads).toBe(1);
-  });
+      const inner = proc[exportContext]!;
+      proc[registerExport](inner, 'procedure_auth');
+      callProcedure(
+        inner.procedures,
+        0,
+        sender,
+        connection,
+        Timestamp.UNIX_EPOCH,
+        new Uint8Array(),
+        () => ({})
+      );
+      expect(attempts).toBe(2);
+      expect(host.flagReads).toBe(2);
+    }
+  );
 });
 
 describe('hosted authentication capability', () => {
