@@ -17,13 +17,22 @@ public static partial class Functions
     {
         var value = ctx.Env.NAMESPACE_TEST;
         if (AuthLib.Functions.ReadEnvironment(ctx) != (value ?? "unset"))
+        {
             throw new Exception("Library helper must retain root environment access");
+        }
+
         if (AuthLib.Functions.ReadEnvironmentInTx(ctx) != (value ?? "unset"))
+        {
             throw new Exception("Library transaction helper must retain root environment access");
+        }
+
         return ctx.WithTx(tx =>
         {
             if (tx.Env.NAMESPACE_TEST != value)
+            {
                 throw new Exception("Root transaction environment mismatch");
+            }
+
             return value ?? "unset";
         });
     }
@@ -36,7 +45,10 @@ public static partial class Functions
     public static void ExpectEnvironment(ReducerContext ctx, string? expected)
     {
         if (ctx.Env.NAMESPACE_TEST != expected)
+        {
             throw new Exception("Root environment mismatch");
+        }
+
         AuthLib.Functions.ExpectEnvironment(ctx, expected);
     }
 

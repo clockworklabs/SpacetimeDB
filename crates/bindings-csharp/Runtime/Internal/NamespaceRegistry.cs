@@ -10,12 +10,17 @@ public sealed class NamespaceRegistry
         foreach (var mount in mounts)
         {
             if (mount.Key == rootIdentity)
+            {
                 throw new ArgumentException("The root assembly cannot be mounted.", nameof(mounts));
+            }
+
             if (!this.mounts.TryAdd(mount.Key, mount.Value))
+            {
                 throw new ArgumentException(
                     $"Assembly '{mount.Key}' is mounted more than once.",
                     nameof(mounts)
                 );
+            }
         }
     }
 

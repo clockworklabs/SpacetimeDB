@@ -10,7 +10,9 @@ internal static class Program
     private static void Require(bool condition, string message)
     {
         if (!condition)
+        {
             throw new Exception(message);
+        }
     }
 
     private static void Main()
@@ -18,7 +20,10 @@ internal static class Program
         var host =
             Environment.GetEnvironmentVariable("SPACETIMEDB_SERVER_URL") ?? "http://localhost:3000";
         if (host == "local")
+        {
             host = "http://localhost:3000";
+        }
+
         var connected = false;
         Exception? connectionError = null;
         var conn = DbConnection
@@ -38,14 +43,22 @@ internal static class Program
             while (!done())
             {
                 if (connectionError != null)
+                {
                     throw connectionError;
+                }
+
                 if (timer.Elapsed > TimeSpan.FromSeconds(30))
+                {
                     throw new TimeoutException(phase);
+                }
+
                 conn.FrameTick();
                 Thread.Sleep(5);
             }
             if (connectionError != null)
+            {
                 throw connectionError;
+            }
         }
 
         void Unsubscribe(SubscriptionHandle handle)
@@ -122,7 +135,10 @@ internal static class Program
             conn.Db.User.OnInsert += (ctx, row) =>
             {
                 if (row.Id != 2)
+                {
                     return;
+                }
+
                 Require(
                     ctx.Db.MyAuth.User.Id.Find(2)?.Score == 99
                         && ctx.Db.@class.User.Id.Find(4)?.Message == "consumer",
@@ -301,7 +317,10 @@ internal static class Program
             conn.Db.MyAuth.User.OnDelete += (ctx, row) =>
             {
                 if (row.Id != 10)
+                {
                     return;
+                }
+
                 Require(
                     ctx.Db.MyAuth.User.Id.Find(10) == null
                         && ctx.Db.@class.User.Id.Find(10) != null,
@@ -457,7 +476,10 @@ internal static class Program
             void CheckTransactionInsert(EventContext ctx, uint id)
             {
                 if (id < 20)
+                {
                     return;
+                }
+
                 Require(id == 20, "A rolled-back procedure emitted an insert");
                 Require(
                     ctx.Db.User.Id.Find(id) != null

@@ -60,7 +60,9 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
             .Where(field => !field.IsImplicitlyDeclared)
             .ToArray();
         if (fields.Length > 256 && types.Length != 0)
+        {
             Report(types[0], "An environment schema may declare at most 256 variables.");
+        }
 
         var keys = new HashSet<string>(StringComparer.Ordinal);
         var properties = new List<string>();
@@ -141,11 +143,17 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
                     or "GetType"
                     or "MemberwiseClone"
             )
+            {
                 continue;
+            }
+
             var read = $"{(sharedContexts ? "env." : "")}Get({Literal(name)})";
             if (!optional)
+            {
                 read +=
                     " ?? throw new global::System.InvalidOperationException(\"Required environment value is absent\")";
+            }
+
             properties.Add($"public string{(optional ? "?" : "")} @{name} => {read};");
         }
         return (properties, registrations);

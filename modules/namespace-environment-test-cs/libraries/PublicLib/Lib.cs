@@ -15,7 +15,10 @@ public static partial class Functions
     {
         var value = ctx.Env.PUBLIC_LIBRARY_TEST;
         if (ctx.WithTx(tx => tx.Env.PUBLIC_LIBRARY_TEST) != value)
+        {
             throw new Exception("Public library transaction environment mismatch");
+        }
+
         return value ?? "unset";
     }
 }

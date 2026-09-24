@@ -611,10 +611,13 @@ public static class GeneratorSnapshotTests
         );
         var rootSource = rootHasTable ? Table("Root") : "";
         if (mounted)
+        {
             rootSource =
                 "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]\n"
                 + "[assembly: SpacetimeDB.Namespace(typeof(Beta.Sentinel), Accessor = \"class\")]\n"
                 + rootSource;
+        }
+
         var root = Generate(Create("Root", rootSource, beta, utility, shared, alpha));
         var reordered = Generate(Create("Root", rootSource, alpha, shared, utility, beta));
 
@@ -648,7 +651,9 @@ public static class GeneratorSnapshotTests
         Assert.Equal(expected, Calls(reordered));
 
         if (rootHasTable || mounted)
+        {
             return;
+        }
 
         // An unrelated utility alone must not cause an otherwise empty module to register.
         var plainUtility = Emit(Create("PlainUtility", "public class PlainUtility { }"));

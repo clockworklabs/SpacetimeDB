@@ -162,7 +162,7 @@ public static class EnvironmentTests
         Assert.Contains(
             result.Diagnostics,
             diagnostic =>
-                diagnostic.Id == "STDB0044" && diagnostic.Severity == DiagnosticSeverity.Error
+                diagnostic.Id == "STDB0039" && diagnostic.Severity == DiagnosticSeverity.Error
         );
     }
 
