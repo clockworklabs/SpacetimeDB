@@ -28,7 +28,7 @@ public abstract class HandlerContextBase
                 default,
                 null,
                 timestamp,
-                AuthCtx.BuildFromSystemTables(null, default),
+                AuthCtx.Anonymous(),
                 random
             ),
             inner => CreateTxContext(inner)
