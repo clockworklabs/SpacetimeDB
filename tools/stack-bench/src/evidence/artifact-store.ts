@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync,
+  writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { CostRun } from './cost-proof.js';
@@ -31,6 +32,12 @@ function object(value: unknown, message: string): UnknownRecord {
   return value;
 }
 
+function syncDirectory(directory: string): void {
+  if (process.platform !== 'linux') return;
+  const fd = openSync(directory, 'r');
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+
 export function writeArtifact(path: string, input: unknown): Artifact {
   const candidate = object(input, `${path} must be an object`);
   if (candidate.artifactSchemaVersion !== undefined
@@ -50,8 +57,11 @@ export function writeArtifact(path: string, input: unknown): Artifact {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(temporary, `${JSON.stringify(artifact, null, 2)}\n`, { flag: 'wx' });
+    const fd = openSync(temporary, 'wx');
+    try { writeFileSync(fd, `${JSON.stringify(artifact, null, 2)}\n`); fsyncSync(fd); }
+    finally { closeSync(fd); }
     renameSync(temporary, path);
+    syncDirectory(dirname(path));
   } catch (error) {
     rmSync(temporary, { force: true });
     throw error;

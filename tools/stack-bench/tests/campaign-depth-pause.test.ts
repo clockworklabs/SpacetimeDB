@@ -144,7 +144,7 @@ test('planned hold preserves the L3 action, repair history, cohort and cost acco
   }
 });
 
-test('hold rejects source changes, stale authority and cancellation without advancing', async () => {
+test('hold rejects source changes, ignores a release from another controller and permits cancellation', async () => {
   for (const failure of ['source', 'authority', 'cancel']) {
     const root = mkdtempSync(join(tmpdir(), 'depth-pause-invalid-'));
     const abort = new AbortController();
@@ -157,13 +157,15 @@ test('hold rejects source changes, stale authority and cancellation without adva
         ownershipMarkerSha256: 'b'.repeat(64), attemptId: 'attempt', executionId: 'execution', depth: 2 };
       const pending = waitAtDepthBoundary(root, app, context, { signal: abort.signal });
       const rejected = assert.rejects(pending, failure === 'source' ? /source or progression/
-        : failure === 'authority' ? /ownershipMarkerSha256/ : /abort/i);
+        : /abort/i);
       if (failure === 'cancel') abort.abort();
       else {
         if (failure === 'source') writeFileSync(join(app, 'index.js'), 'edited');
         writeCampaignRecord(join(root, 'depth-release.json'), { campaignSha256: context.campaignSha256,
           ownershipMarkerSha256: (failure === 'authority' ? 'c' : 'b').repeat(64), depth: 2,
           releasedAt: Date.now() });
+        // Another controller's release leaves this cohort waiting for its own.
+        if (failure === 'authority') { await delay(600); abort.abort(); }
       }
       await rejected;
       assert.equal(readDepthPause(root, context)?.resumedAt, null);

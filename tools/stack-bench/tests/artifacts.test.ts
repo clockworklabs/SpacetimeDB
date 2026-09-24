@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -30,6 +30,17 @@ test('an invalid replacement cannot overwrite an existing run artifact', () => {
     writeRunJson(path, { id: 'run-a', status: 'complete' });
     assert.throws(() => writeRunJson(path, { id: '', complete: false }), /non-empty id/);
     assert.equal(readRunJson(path, 'run-a').status, 'complete');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a synced artifact replacement leaves only the committed file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
+  try {
+    const path = join(root, 'run.json');
+    writeRunJson(path, { id: 'run-a', status: 'running' });
+    writeRunJson(path, { id: 'run-a', status: 'complete' });
+    assert.equal(readRunJson(path, 'run-a').status, 'complete');
+    assert.deepEqual(readdirSync(root), ['run.json']);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

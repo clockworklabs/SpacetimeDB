@@ -102,6 +102,7 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
 | 'condition' | 'selectionRequest' | 'featureCatalog' | 'dependencyPolicy'
 >>, UnknownRecord {
   id?: string | null;
+  progressionResume?: { inheritedLevels?: readonly number[] };
   artifactEnvelope?: {
     attempt?: { parentId?: string };
     identities?: {
@@ -366,7 +367,9 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
     if (run.totals?.pausedDurationSec !== run.pausedDurationMs / 1000) {
       throw new Error('run paused duration total does not match its receipt');
     }
-  } else if (safeInteger(pauseDepth) && run.levels?.some(level => level.level > pauseDepth)) {
+  } else if (safeInteger(pauseDepth) && run.levels?.some(level => level.level > pauseDepth)
+    && !run.progressionResume?.inheritedLevels?.includes(pauseDepth)) {
+    // A continuation that inherited the pause depth was released with its cohort.
     throw new Error('run advanced beyond its planned boundary without pause evidence');
   }
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter

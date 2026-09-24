@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { readArtifactPayload } from '../src/evidence/artifacts.js';
-import { acquireResourceLocks, createBackendLease, readBackendLease,
+import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.js';
+import { acquireResourceLocks, createBackendLease, publicBackendLease, readBackendLease,
   writeBackendLease, type BackendLease } from '../src/runtime/backend-lease.js';
 import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
   validateSupervisorState, type SupervisorState } from '../src/runtime/recovery.js';
@@ -65,7 +65,7 @@ test('authenticated recovery releases exact lease resources and removes private 
   const f = fixture();
   try {
     const result = recoverSupervisedRun(f.statePath, { runtimeRoot: f.runtimeRoot });
-    assert.equal(result.ok, true);
+    assert.equal(result?.ok, true);
     assert.equal(existsSync(f.statePath), false);
     assert.equal(existsSync(f.leasePath), false, 'private runtime lease must be removed after recovery');
     assert.equal(existsSync(firstLockPath(f.lease)), false);
@@ -92,6 +92,39 @@ test('authenticated lease recovery works when parent supervisor state is missing
     assert.equal(recovery.status, 'clean');
     assert.equal(JSON.stringify(recovery).includes(f.lease.ownershipToken), false);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('repeated recovery after cleanup uses public release evidence, then reports nothing to recover', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-recovery-repeat-'));
+  const output = join(root, 'results');
+  const runtimeRoot = join(root, 'runtime');
+  const runtimeDir = join(runtimeRoot, 'removed-run');
+  const statePath = join(root, 'supervisor', 'run.json');
+  try {
+    mkdirSync(output, { recursive: true });
+    mkdirSync(runtimeRoot);
+    mkdirSync(dirname(statePath));
+    const lease = createBackendLease({ runId: 'recovery-repeat', backend: 'postgres',
+      track: 'ecommerce', runIndex: 0, database: 'app_recovery' });
+    lease.state = 'released';
+    writeArtifact(join(output, 'backend-lease.json'), { kind: 'backend_lease_evidence',
+      id: `${lease.runId}-backend-lease`, attempt: { id: `${lease.runId}-backend-lease`, parentId: lease.runId },
+      identities: emptyArtifactIdentities({ stackAdapter: { id: lease.backend } }),
+      payload: publicBackendLease(lease) });
+    writeFileSync(statePath, `${JSON.stringify({ version: SUPERVISOR_STATE_VERSION,
+      runId: lease.runId, backend: lease.backend, runtimeDir: resolve(runtimeDir),
+      leasePath: resolve(join(runtimeDir, 'backend-lease.json')),
+      ownershipToken: lease.ownershipToken, output: resolve(output) })}\n`);
+    assert.throws(() => recoverSupervisedRun(statePath, { runtimeRoot: join(root, 'other-root') }),
+      /not a direct child/);
+    assert.equal(existsSync(statePath), true);
+    assert.deepEqual(recoverSupervisedRun(statePath, { runtimeRoot }), { ok: true, state: 'clean',
+      runId: lease.runId, recoveryPath: join(output, 'recovery.json') });
+    assert.equal(readArtifactPayload(join(output, 'recovery.json'), { expectedKind: 'recovery' }).status,
+      'clean');
+    assert.equal(existsSync(statePath), false);
+    assert.equal(recoverSupervisedRun(statePath, { runtimeRoot }), null);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('recovery refuses a lease outside the configured runtime root', { skip: process.platform !== 'linux' ? 'Authenticated resource recovery requires Linux flock' : false }, () => {
@@ -162,7 +195,7 @@ test('an unleased live listener produces quarantine and remains untouched until 
     server.closeAllConnections();
     await closeServer(server);
     const cleaned = recoverSupervisedRun(statePath, { runtimeRoot });
-    assert.equal(cleaned.ok, true);
+    assert.equal(cleaned?.ok, true);
     assert.equal(existsSync(statePath), false);
   } finally {
     if (server.listening) {

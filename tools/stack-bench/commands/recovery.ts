@@ -17,8 +17,11 @@ try {
   const result = leaseRequest
     ? recoverBackendLease(statePath, output)
     : recoverSupervisedRun(statePath);
-  console.log(JSON.stringify(result, null, 2));
-  process.exitCode = result.ok ? 0 : 1;
+  if (result === null) {
+    console.log(`recovery: nothing to recover; supervisor state ${statePath} does not exist `
+      + '(authenticated recovery removes it after proven cleanup)');
+  } else console.log(JSON.stringify(result, null, 2));
+  process.exitCode = result === null || result.ok ? 0 : 1;
 } catch (error) {
   console.error(`recovery: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 2;

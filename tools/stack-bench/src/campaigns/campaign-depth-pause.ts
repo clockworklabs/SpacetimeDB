@@ -1,4 +1,4 @@
-import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
@@ -75,9 +75,11 @@ export async function waitAtDepthBoundary(output: string, app: string, context: 
   console.log(`Paused after depth ${context.depth}. Waiting for campaign continue-depth.`);
   while (true) {
     signal?.throwIfAborted();
-    if (existsSync(releasePath)) {
-      const release = releaseSchema.parse(JSON.parse(readFileSync(releasePath, 'utf8')));
-      for (const key of ['campaignSha256', 'ownershipMarkerSha256', 'depth'] as const) {
+    const release = existsSync(releasePath)
+      ? releaseSchema.parse(JSON.parse(readFileSync(releasePath, 'utf8'))) : null;
+    // A release written under an earlier controller belongs to that controller's cohort.
+    if (release && release.ownershipMarkerSha256 === context.ownershipMarkerSha256) {
+      for (const key of ['campaignSha256', 'depth'] as const) {
         if (release[key] !== context[key]) throw new Error(`depth release ${key} changed`);
       }
       if (release.releasedAt > Date.now()) throw new Error('depth release is in the future');
@@ -132,11 +134,12 @@ export function continueCampaignDepth(directory: string) {
   const path = campaignChildPath(directory, RELEASE, 'depth release');
   if (existsSync(path)) {
     const prior = releaseSchema.parse(JSON.parse(readFileSync(path, 'utf8')));
-    if (prior.campaignSha256 !== status.campaignSha256
-      || prior.ownershipMarkerSha256 !== status.ownershipMarkerSha256 || prior.depth !== status.depth) {
-      throw new Error('depth release belongs to a different controller or campaign');
+    if (prior.campaignSha256 !== status.campaignSha256 || prior.depth !== status.depth) {
+      throw new Error('depth release belongs to a different campaign');
     }
-    return prior;
+    if (prior.ownershipMarkerSha256 === status.ownershipMarkerSha256) return prior;
+    // The earlier controller's cohort is gone; this controller's cohort needs its own release.
+    rmSync(path);
   }
   if (!status.attempts.some(a => a.paused)
     || status.attempts.some(a => a.status === 'pending' || (a.status === 'running' && !a.paused))) {

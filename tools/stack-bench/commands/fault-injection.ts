@@ -14,6 +14,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
+import { recoverBackendLease } from '../src/runtime/recovery.js';
 import { buildContainerName } from '../container/reconcile-build-container.js';
 import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
@@ -228,6 +229,19 @@ async function main() {
     if (bench?.exitCode === null) {
       killTree(bench.pid);
       await delay(500);
+    }
+    if (!marker && existsSync(markerPath)) {
+      // The bench died before the marker was checked. Release its exact lease,
+      // including the build container, through authenticated recovery.
+      try {
+        const markerValue: unknown = JSON.parse(readFileSync(markerPath, 'utf8'));
+        if (isRecord(markerValue) && typeof markerValue.leasePath === 'string'
+          && existsSync(markerValue.leasePath)) {
+          recoverBackendLease(markerValue.leasePath, join(root, 'recovery'));
+        }
+      } catch (error) {
+        console.error(`fault lease recovery failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     if (marker?.lease?.resources?.buildContainer) {
       removeExactContainer(marker.lease.resources.buildContainer);

@@ -39,6 +39,7 @@ interface CampaignSummaryState {
       id: string;
       outcome: unknown;
       reason: string | null;
+      cleanupFailure?: string;
     }>;
   }>;
 }
@@ -99,13 +100,16 @@ function isOneOf<const T extends string>(value: string | undefined,
 export function campaignStateSummary(plan: CampaignSummaryPlan, state: CampaignSummaryState) {
   const failures = state.attempts.flatMap(attempt => {
     const execution = attempt.executions.at(-1);
-    if (!execution || execution.outcome === null || execution.outcome === 'passed') return [];
+    // A running execution whose cleanup failed awaits reconcile; show why.
+    const cleanupFailure = execution?.outcome === null ? execution.cleanupFailure : undefined;
+    if (!execution || (!cleanupFailure
+      && (execution.outcome === null || execution.outcome === 'passed'))) return [];
     return [{
       attempt: attempt.plan.id,
       status: statusWord(attempt.status),
       execution: execution.id,
-      outcome: statusWord(String(execution.outcome)),
-      reason: execution.reason,
+      outcome: cleanupFailure ? 'cleanup failed' : statusWord(String(execution.outcome)),
+      reason: cleanupFailure ?? execution.reason,
     }];
   });
   return {

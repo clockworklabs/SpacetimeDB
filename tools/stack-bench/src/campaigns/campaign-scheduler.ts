@@ -117,6 +117,7 @@ export interface CampaignExecution {
   runIndex: number;
   retry: CampaignRetry | null;
   continuation?: CampaignContinuation;
+  cleanupFailure?: string;
 }
 
 export interface CampaignAttemptState {
@@ -258,6 +259,7 @@ const executionSchema = z.strictObject({
   runIndex: z.number().int(),
   retry: retrySchema.nullable().optional(),
   continuation: continuationSchema.optional(),
+  cleanupFailure: z.string().min(1).optional(),
   credentialAssignment: assignmentSchema.nullable().optional(),
   timeExtensionSupported: z.boolean().optional(),
   timeContinuation: z.strictObject({ grantId: z.string().regex(SAFE_ID),

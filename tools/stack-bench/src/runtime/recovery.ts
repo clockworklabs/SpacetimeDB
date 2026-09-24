@@ -72,7 +72,7 @@ export function rescueSupervisedLease(path: string, output: string): void {
     return;
   }
   const result = recoverSupervisedRun(path, { removeState: false });
-  if (!result.ok) throw new Error(`supervisor could not release backend lease ${state.runId}`);
+  if (!result?.ok) throw new Error(`supervisor could not release backend lease ${state.runId}`);
 }
 
 interface RecoveryOptions {
@@ -92,7 +92,11 @@ function trustedRuntimeRoot(runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR
 }
 
 function authorizedRuntimeDirectory(runtimeDir: string, runtimeRoot?: string): string {
-  const directory = realpathSync(runtimeDir);
+  const absolute = resolve(runtimeDir);
+  // An earlier cleanup may have removed the directory; its parent must still be trusted.
+  const parent = dirname(absolute);
+  const directory = existsSync(absolute) ? realpathSync(absolute)
+    : join(existsSync(parent) ? realpathSync(parent) : parent, basename(absolute));
   if (dirname(directory) !== trustedRuntimeRoot(runtimeRoot)) {
     throw new Error('runtime directory is not a direct child of the configured Stack Bench runtime root');
   }
@@ -242,10 +246,12 @@ function recoverAuthorizedLease(
     runId: state.runId, recoveryPath: join(state.output, ARTIFACT_FILE.recovery) };
 }
 
+/** Null means the state file is gone; recovery removes it after proven cleanup. */
 export function recoverSupervisedRun(
   statePath: string,
   { removeState = true, runtimeRoot }: { removeState?: boolean } & RecoveryRuntimeOptions = {},
-): RecoveryResult {
+): RecoveryResult | null {
+  if (!existsSync(statePath)) return null;
   const absoluteState = realpathSync(statePath);
   if (!statSync(absoluteState).isFile()) throw new Error('supervisor state must be a regular file');
   const state = validateSupervisorState(JSON.parse(readFileSync(absoluteState, 'utf8')),

@@ -12,7 +12,12 @@ import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import { emptyArtifactIdentities, readArtifact,
   writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
-import { runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
+import { borrowCampaignReservation, delegateCampaignReservation, runCampaignAdmission }
+  from '../src/campaigns/campaign-admission.js';
+import { backendResourceLockKeys, createBackendLease, readBackendLease, writeBackendLease }
+  from '../src/runtime/backend-lease.js';
+import { loadTrack, portsFor } from '../src/composition/tracks.js';
+import { campaignStateSummary } from '../commands/campaign-cli.js';
 import { campaignChildPath } from '../src/campaigns/campaign-path.js';
 import { attemptArgv, campaignRetryAuthority,
   executeCampaign, reconcileCampaign,
@@ -26,8 +31,9 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { liveProgressionStatus } from '../src/progression/live-progression.js';
 import { writeProgressionState } from '../src/progression/progression-state.js';
-import { claimNextAttempt, initializeCampaignDirectory,
+import { claimNextAttempt, initializeCampaignDirectory, readCampaignState,
   writeCampaignState } from '../src/campaigns/campaign-scheduler.js';
+import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 
 type UnknownRecord = Record<string, unknown>;
 interface MutableSelection extends UnknownRecord {
@@ -265,6 +271,16 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   levels: [{ level: 1, selection: plannedSelection(attempt, 1) }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  // A continuation that inherited the pause depth advances without pausing again.
+  const paused = { ...attempt, mode: { ...attempt.mode, pauseAfterDepth: 1 } };
+  const beyond = { ...run, mode: paused.mode, levels: [...run.levels, { level: 2 }] };
+  assert.throws(() => validateCampaignRun(plan, paused, beyond, { buildImage: 'test-build-image' }),
+    /beyond its planned boundary/);
+  // This fixture plans no level 2, so later level checks may still refuse the run.
+  try {
+    validateCampaignRun(plan, paused, { ...beyond, progressionResume: { inheritedLevels: [1] } } as typeof beyond,
+      { buildImage: 'test-build-image' });
+  } catch (error) { assert.doesNotMatch(String(error), /beyond its planned boundary/); }
   assert.throws(() => validateCampaignRun(plan, attempt, { ...run,
     condition: { ...attempt.condition, productionQuality: !attempt.condition.productionQuality } },
   { buildImage: 'test-build-image' }), /does not match.*condition/);
@@ -1167,6 +1183,135 @@ test('reconciliation accepts the clean public proof left by authenticated recove
     writeArtifact(join(output, 'recovery.json'), recovered);
     assert.equal(publicRecoveryProvesCleanup(output, attempt.plan.stack, attempt.plan.id, execution.id), true);
     assert.equal(readFileSync(join(output, 'run.json'), 'utf8'), original);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+async function admittedPostgresAttempt(root: string, uuid: string) {
+  const definition = JSON.parse(readFileSync(example, 'utf8'));
+  definition.repetitions = 1;
+  definition.parallelism = 1;
+  definition.stacks = [definition.stacks.find((stack: UnknownRecord) => stack.id === 'postgres')];
+  const campaignPath = join(root, 'campaign.json');
+  const results = join(root, 'results');
+  writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
+  const plan = compileCampaignFile(campaignPath);
+  const initialized = initializeCampaignDirectory(plan, results, { now: '2026-08-12T00:00:00.000Z' });
+  const admission = await runCampaignAdmission(plan, results, {
+    env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => uuid,
+    preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
+      request: { backends: request.backends, track: request.track, levels: request.levelList,
+        runIndex: request.runIndex, parallelism: request.parallelism,
+        agentAdapter: request.agentAdapter,
+        packs: request.packIds, checks: request.checkKeys, image: request.image,
+        resultsDir: request.resultsDir, smoke: request.smoke },
+      ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
+  });
+  const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
+    admissionId: admission.id, runIndex: admission.runIndices[0] }).state;
+  writeCampaignState(initialized.paths.state, plan, running);
+  const attempt = running.attempts[0]!;
+  const execution = attempt.executions[0]!;
+  const output = join(results, execution.output);
+  mkdirSync(output, { recursive: true });
+  return { campaignPath, results, plan, admission, attempt, execution, output };
+}
+
+test('reconciliation records a run that finished before the controller recorded it', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-finished-'));
+  try {
+    const { campaignPath, results, plan, attempt, execution, output } =
+      await admittedPostgresAttempt(root, 'finished');
+    const agent = plan.agents.find(item => item.adapter === attempt.plan.agentAdapter)!;
+    const stack = plan.stacks.find(item => item.id === attempt.plan.stack)!;
+    const levels = attempt.plan.levels.map(level => {
+      const selection = plannedSelection(attempt.plan, level);
+      const max = selection.scoredPoints;
+      const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
+      return { level, graded: true, selection, score: max, max, repairs: 0,
+        firstBuild: { score: max, max, outcome },
+        repair: { status: 'not-needed', limit: 3, used: 0, stopReason: null },
+        outcome };
+    });
+    writeFakePackageEvidence(output, levels.at(-1)!);
+    const completedAt = new Date().toISOString();
+    writeRunJson(join(output, 'run.json'), { id: 'finished-run',
+      parentAttemptId: attempt.plan.id, startedAt: completedAt, completedAt,
+      identities: emptyArtifactIdentities({ experiment: experimentIdentity(plan),
+        agentAdapter: agent.identity, stackAdapter: stack }),
+      mode: attempt.plan.mode, track: plan.definition.track,
+      backend: attempt.plan.stack, model: attempt.plan.model, pricing: attempt.plan.pricing,
+      guidance: attempt.plan.guidance, condition: attempt.plan.condition,
+      selectionRequest: plan.definition.selection, skills: attempt.plan.skills,
+      totals: { costUsd: 0 }, levels, outcome: { kind: 'passed' } });
+    writeArtifact(join(output, 'process.json'), { kind: 'campaign_process',
+      id: `${execution.id}-process`,
+      attempt: { id: execution.id, parentId: attempt.plan.id },
+      identities: emptyArtifactIdentities(),
+      payload: { schemaVersion: 1, executionId: execution.id, runIndex: execution.runIndex,
+        exitCode: 0, signal: null, timedOut: false, streams: null } });
+    writeFileSync(join(results, '.private', `${execution.id}.supervisor.json`), '{}');
+    const rescued: string[] = [];
+    const state = reconcileCampaign(campaignPath, results,
+      { rescue: supervisor => { rescued.push(supervisor); } });
+    assert.equal(rescued.length, 1);
+    assert.equal(state.attempts[0]!.status, 'completed');
+    assert.equal(state.attempts[0]!.executions[0]!.outcome, 'passed');
+    assert.equal(state.attempts[0]!.executions[0]!.exitCode, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reconciliation releases a consumed child delegation that has no supervisor state', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-delegated-'));
+  try {
+    const { campaignPath, results, plan, admission, attempt, execution, output } =
+      await admittedPostgresAttempt(root, 'delegated');
+    assert(admission.reservation);
+    const env = delegateCampaignReservation(admission.reservation, results, {
+      campaignSha256: plan.contentSha256, admissionId: admission.id, executionId: execution.id,
+      output, backend: attempt.plan.stack, runIndex: execution.runIndex });
+    const lease = createBackendLease({ runId: 'delegated-child', backend: attempt.plan.stack,
+      track: plan.definition.track, runIndex: execution.runIndex, database: 'test',
+      container: { name: 'unused', id: 'unused' } });
+    const leasePath = join(root, 'child-runtime', 'backend-lease.json');
+    assert.equal(borrowCampaignReservation({ env, campaignSha256: plan.contentSha256,
+      admissionId: admission.id, executionId: execution.id, output, leasePath, lease,
+      keys: backendResourceLockKeys(lease, portsFor(loadTrack(lease.track), lease.backend,
+        lease.runIndex)) }), true);
+    lease.state = 'released';
+    writeBackendLease(leasePath, lease);
+    const delegationPath = join(results, '.private', `${execution.id}.delegation.json`);
+    const state = reconcileCampaign(campaignPath, results, {
+      rescue: () => { throw new Error('private recovery must not run without supervisor state'); },
+    });
+    assert.equal(readBackendLease(delegationPath).state, 'released');
+    assert.equal(readBackendLease(admission.reservation.path).state, 'released');
+    assert.equal(state.attempts[0]!.status, 'invalid');
+    assert.equal(state.attempts[0]!.executions[0]!.outcome, 'scheduler_interrupted');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('failed cleanup reason stays on the running execution and in the campaign summary', { skip: process.platform !== 'linux' ? 'Campaign control requires Linux flock' : false }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-cleanup-reason-'));
+  try {
+    const state = await executeCampaign(example, root, { mode: 'model-free-trial',
+      admit: () => ({ id: 'cleanup-admission', payload: { ok: true }, runIndices: [0] }),
+      execute: async (_command, _argv, options) => {
+        assert(options.env);
+        mkdirSync(join(root, '.private'), { recursive: true });
+        writeFileSync(options.env.STACK_BENCH_SUPERVISOR_STATE!, '{}');
+        return { code: 1, timedOut: false };
+      },
+      rescue: () => { throw new Error('runtime still owns a process'); },
+    });
+    const execution = state.attempts[0]!.executions[0]!;
+    assert.equal(execution.status, 'running');
+    assert.match(execution.cleanupFailure!, /attempt cleanup failed: runtime still owns a process/);
+    const stored = readArtifact<CampaignState>(join(root, 'state.json')).payload;
+    assert.equal(stored.attempts[0]!.executions[0]!.cleanupFailure, execution.cleanupFailure);
+    const { plan } = readCampaignState(root);
+    assert.deepEqual(campaignStateSummary(plan, stored).failures, [{ attempt: state.attempts[0]!.plan.id,
+      status: 'running', execution: execution.id, outcome: 'cleanup failed',
+      reason: execution.cleanupFailure }]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

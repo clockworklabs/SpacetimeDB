@@ -10,12 +10,14 @@ import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { acquireCampaignLock, releaseCampaignLock, watchCampaignCancellation } from './campaign-lock.js';
 import { compileCampaignFile } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
-import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
-  markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.js';
+import { claimNextAttempt, classifyCampaignExecution, finishCampaignExecution,
+  initializeCampaignDirectory, markInterruptedExecution, readCampaignState, writeCampaignState }
+  from './campaign-scheduler.js';
 import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, CampaignState }
   from './campaign-scheduler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
+import { readBackendLease } from '../runtime/backend-lease.js';
 import { runBounded } from '../runtime/bounded-process.js';
 import { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
 import { timeContinuationEligibility } from '../progression/live-progression.js';
@@ -60,6 +62,10 @@ interface RecoveryArtifact extends UnknownRecord {
 
 interface CampaignProcessArtifact extends UnknownRecord {
   executionId?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  timedOut?: boolean;
+  error?: string | null;
 }
 
 interface RunnerProcessResult {
@@ -262,6 +268,30 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
   return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut, run });
 }
 
+// Classify an execution whose process ended and was recorded before the
+// controller could persist its completion. Null means no usable record.
+function recordedAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+  executionId: string, output: string, extension: CampaignExtensionSeed | null): AttemptResult | null {
+  const processPath = join(output, ARTIFACT_FILE.process);
+  if (!existsSync(processPath) || !existsSync(join(output, ARTIFACT_FILE.run))) return null;
+  let recorded: CampaignProcessArtifact;
+  try {
+    const artifact = readArtifact<CampaignProcessArtifact>(processPath, {
+      expectedKind: 'campaign_process', expectedId: `${executionId}-process`,
+    });
+    if (artifact.attempt.id !== executionId || artifact.attempt.parentId !== attempt.id) return null;
+    recorded = artifact.payload;
+  } catch { return null; }
+  if (recorded.executionId !== executionId) return null;
+  return readAttemptResult(plan, attempt, executionId, output, {
+    code: integer(recorded.exitCode) ? recorded.exitCode : null,
+    signal: typeof recorded.signal === 'string' ? recorded.signal as NodeJS.Signals : null,
+    timedOut: recorded.timedOut === true,
+    error: typeof recorded.error === 'string' ? new Error(recorded.error) : null,
+    buildImage: plan.definition.runtime.buildImage,
+  }, extension);
+}
+
 export function remainingAttemptCostBudget(
   plan: { definition: { budgets: { maxCostUsdPerAttempt: number | null } } },
   claim: { attempt: { id: string }; priorOutputs?: string[] },
@@ -390,13 +420,20 @@ export function reconcileCampaign(campaignFile: string, directory: string,
     const initialized = initializeCampaignDirectory(plan, directory);
     const { state } = inspectCampaign(initialized.paths.root);
     const running = state.attempts.filter(item => item.status === 'running');
+    const delegated: string[] = [];
     for (const attempt of running) {
       const execution = attempt.executions.at(-1)!;
       const output = contained(initialized.paths.root, execution.output, 'attempt output');
       const supervisorState = contained(initialized.paths.root,
         join('.private', `${execution.id}.supervisor.json`), 'supervisor state');
+      const delegation = contained(initialized.paths.root,
+        join('.private', `${execution.id}.delegation.json`), 'campaign delegation');
       if (existsSync(supervisorState)) {
         rescue(supervisorState, output);
+      } else if (existsSync(`${delegation}.used`)) {
+        // The child consumed its delegation before recording supervisor state.
+        // Reservation recovery releases that child lease with its exact token.
+        delegated.push(delegation);
       } else if (!publicRecoveryProvesCleanup(output, attempt.plan.stack, attempt.plan.id,
         execution.id)) {
         throw new Error('running attempt has neither private supervisor authority nor public clean recovery proof');
@@ -404,11 +441,22 @@ export function reconcileCampaign(campaignFile: string, directory: string,
     }
     const recovered = recoverCampaignReservations(initialized.paths.root, plan);
     if (!running.length && !recovered) throw new Error('campaign has no running attempt or reservation to reconcile');
+    for (const delegation of delegated) {
+      if (readBackendLease(delegation).state !== 'released') {
+        throw new Error('consumed campaign delegation was not released by reservation recovery');
+      }
+    }
     let reconciled = state;
     for (const attempt of running) {
-      reconciled = markInterruptedExecution(reconciled, attempt.executions.at(-1)!.id, {
-        reason: 'controller ended before recording completion; exact-owned cleanup was proven',
-      });
+      const execution = attempt.executions.at(-1)!;
+      const output = contained(initialized.paths.root, execution.output, 'attempt output');
+      const result = recordedAttemptResult(plan, attempt.plan, execution.id, output,
+        attempt.extension ?? null);
+      reconciled = result && classifyCampaignExecution(result).status === 'completed'
+        ? finishCampaignExecution(reconciled, execution.id, result)
+        : markInterruptedExecution(reconciled, execution.id, {
+          reason: 'controller ended before recording completion; exact-owned cleanup was proven',
+        });
     }
     writeCampaignState(initialized.paths.state, plan, reconciled);
     return reconciled;
@@ -624,7 +672,11 @@ export async function executeCampaign(campaignFile: string, directory: string,
           if (!pending) break;
           const credentials = resolveExecutionCredentials(pending.plan.agentAdapter, pending.plan.id,
             executionCredentials ?? {}, executionEnv);
+          // The plan alone chooses effort; the controller's shell must not.
           if (pending.plan.effort) credentials.env.STACK_BENCH_EFFORT = pending.plan.effort;
+          else delete credentials.env.STACK_BENCH_EFFORT;
+          delete credentials.env.STACK_BENCH_THINKING;
+          delete credentials.env.MAX_THINKING_TOKENS;
           const previousAssignment = pending.executions.at(-1)?.credentialAssignment;
           if (pending.executions.length && canonicalDefinitionJson(previousAssignment ?? null)
             !== canonicalDefinitionJson(credentials.assignment)) {
@@ -716,6 +768,12 @@ export async function executeCampaign(campaignFile: string, directory: string,
         // authority still exists, so reconcile can retry exact-owned cleanup.
         // Marking it invalid here would strand that authority permanently.
         stopLaunching = true;
+        const execution = state.attempts.find(attempt =>
+          attempt.executions.at(-1)?.id === completed.claim.executionId)!.executions.at(-1)!;
+        execution.cleanupFailure = redactCredentials(completed.result.reason
+          ?? 'attempt cleanup failed').slice(0, 8_192);
+        state.updatedAt = new Date().toISOString();
+        writeCampaignState(initialized.paths.state, plan, state);
         continue;
       }
       state = finishCampaignExecution(state, completed.claim.executionId,
