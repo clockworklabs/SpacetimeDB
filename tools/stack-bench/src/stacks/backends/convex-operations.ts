@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { loadTrack, portsFor } from '../../composition/tracks.js';
 import { z } from 'zod';
-import { leaseFromEnv, loopbackHttpUri, type BackendLease } from '../../runtime/backend-lease.js';
+import { leaseFromEnv, loopbackHttpUri, readBackendLease, type BackendLease } from '../../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 import { requireAttemptNetwork } from '../../runtime/docker-network.js';
 import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
@@ -45,10 +45,11 @@ export function convexApplicationEnvironment(lease: BackendLease): Record<string
 
 // Vendor native administrative APIs, pinned with the backend image. This never
 // invokes an application's observer or business function. Credentials use stdin.
-function admin(input: NativeInput) {
+function admin(input: NativeInput, credential?: { key?: string }) {
   const deadline = Date.now() + TIMEOUT;
   const owned = target(input);
-  const key = ownedAdminKey(owned);
+  const key = credential?.key ?? ownedAdminKey(owned);
+  if (credential) credential.key = key;
   const post = (endpoint: string, body: unknown): string => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error('Convex native observation exceeded its time budget');
@@ -81,7 +82,10 @@ function tableNames(client: ReturnType<typeof admin>): string[] {
 // The native sync API brings all selected tables to one snapshot. Per-table
 // queries made at different times cannot establish conservation invariants.
 export function readConvexTables(names: readonly string[], input: NativeInput = {}) {
-  const client = admin(input);
+  return readTables(names, admin(input));
+}
+
+function readTables(names: readonly string[], client: ReturnType<typeof admin>) {
   const available = tableNames(client);
   if (names.some(name => !available.includes(name))) throw orderDataError('required Convex data table is missing');
   const selection = { _other: 'excluded', '': { _other: 'excluded',
@@ -120,12 +124,43 @@ export function readConvexTables(names: readonly string[], input: NativeInput = 
   throw new Error('Convex snapshot did not reach a consistent boundary within 100 pages');
 }
 
-export function getConvexCheckoutState({ account, item, storage, ...input }: NativeInput & {
+type CheckoutInput = NativeInput & {
   account: string; item: string; app?: string; storage?: OrderDataStorage;
-}) {
+};
+
+export function getConvexCheckoutState(input: CheckoutInput) {
+  return checkoutState(input);
+}
+
+// Feature-owned credential only: target validation, deadline, table discovery
+// and the complete snapshot are new on every read. Lifecycle owners close it
+// before reset/restart (which can rotate the native credential).
+export function createConvexOrderDataReader({ path, lease, exec }: { path: string; lease: BackendLease; exec?: TextCommandExecutor }) {
+  const expected = { backend: 'convex' as const, token: lease.ownershipToken, runId: lease.runId, active: true };
+  const identity = (value: BackendLease) => JSON.stringify([
+    value.resources.serverUri, value.resources.container, value.resources.network,
+  ]);
+  const boundIdentity = identity(lease);
+  const credential: { key?: string } = {};
+  let closed = false;
+  return {
+    read(input: Pick<CheckoutInput, 'account' | 'item' | 'storage'>) {
+      if (closed) throw new Error('Convex order data reader is closed');
+      try {
+        const current = readBackendLease(path, expected);
+        if (identity(current) !== boundIdentity) throw new Error('Convex reader target changed during the feature');
+        return checkoutState({ ...input, lease: current, exec }, credential);
+      }
+      catch (error) { delete credential.key; throw error; }
+    },
+    close() { closed = true; delete credential.key; },
+  };
+}
+
+function checkoutState({ account, item, storage, ...input }: CheckoutInput, credential?: { key?: string }) {
   if (!storage) throw orderDataError('Convex requires the declared order data interface');
   const columns = orderDataColumns(storage);
-  const tables = readConvexTables(Object.keys(columns), input);
+  const tables = readTables(Object.keys(columns), admin(input, credential));
   const rows = Object.fromEntries(Object.entries(columns).map(([table, fields]) => [table,
     tables[table]!.map(row => Object.fromEntries(fields.map(field => [field, field === 'id' ? row._id : row[field]])))]));
   return readOrderDataSnapshot(rows, account, item, storage);

@@ -900,11 +900,12 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 }
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
-  savedReader, contractIds, readMongoDbOrders,
+  savedReader, contractIds, readMongoDbOrders, readConvexOrders,
   checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
   checkoutActivity = { unsettled: false },
   exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
     readMongoDbOrders?: (input: { account: string; item: string; storage: OrderDataStorage; signal?: AbortSignal }) => Promise<CheckoutSnapshot>;
+    readConvexOrders?: (input: { account: string; item: string; storage: OrderDataStorage }) => CheckoutSnapshot;
     contractIds?: readonly string[];
     savedReader?: { path: string; sha256: string };
     checkoutActivity?: { unsettled: boolean };
@@ -937,7 +938,9 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
         throw error;
       };
       try {
-        if (adapter.id === 'convex') return adapter.databaseRead.getCheckoutState(selection);
+        if (adapter.id === 'convex') return selection.storage && readConvexOrders
+          ? readConvexOrders({ ...selection, storage: selection.storage })
+          : adapter.databaseRead.getCheckoutState(selection);
         if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
         if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
         if (adapter.id === 'mongodb' && selection.storage && readMongoDbOrders) {

@@ -45,6 +45,7 @@ import {
 import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import type { LeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import { createMongoDbOrderDataReader } from '../src/stacks/backends/mongodb-operations.js';
+import { createConvexOrderDataReader } from '../src/stacks/backends/convex-operations.js';
 import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec, prepareRuntimeCrash }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
@@ -126,6 +127,7 @@ type GradeRunContext = {
   checkoutActivity?: { unsettled: boolean };
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
   mongoOrderReader?: ReturnType<typeof createMongoDbOrderDataReader>;
+  convexOrderReader?: ReturnType<typeof createConvexOrderDataReader>;
   actionCancellation?: { reason: string | null };
   runId: string;
   roomName: (base: string) => string;
@@ -591,7 +593,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       restartSpec: ctx.restartSpec,
       target: 'backend-runtime',
       control: async (...args) => {
-        await closeMongoOrderReader(ctx);
+        await closeOrderReaders(ctx);
         return controlBackendRuntime(...args);
       },
       sleep: abortableSleep,
@@ -616,9 +618,14 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const reader = ctx.mongoOrderReader ??= createMongoDbOrderDataReader({ lease: ctx.databaseLease });
         try { return await reader.read(input); }
         catch (error) {
-          await closeMongoOrderReader(ctx);
+          await closeOrderReaders(ctx);
           throw error;
         }
+      },
+      readConvexOrders: input => {
+        const reader = ctx.convexOrderReader ??= createConvexOrderDataReader(
+          leaseFromEnv(process.env, { backend: 'convex', active: true }));
+        return reader.read(input);
       },
     }),
     'database-write': createDatabaseWriteCapability({
@@ -632,7 +639,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     'process-crash': Object.freeze({ combinedBoundary: !ctx.nullControl && ['spacetime', 'convex'].includes(ctx.restartSpec?.backend ?? ''),
       prepare: async (target: 'application' | 'database') => {
       if (!ctx.restartSpec || ctx.nullControl) throw new Error('process crash requires an owned grading runtime');
-      await closeMongoOrderReader(ctx);
+      await closeOrderReaders(ctx);
       return prepareRuntimeCrash(ctx.restartSpec, target);
     } }),
     subprocess: Object.freeze({ sleep: abortableSleep }),
@@ -640,7 +647,9 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   });
 }
 
-async function closeMongoOrderReader(ctx: GradeRunContext): Promise<void> {
+async function closeOrderReaders(ctx: GradeRunContext): Promise<void> {
+  ctx.convexOrderReader?.close();
+  delete ctx.convexOrderReader;
   const reader = ctx.mongoOrderReader;
   await reader?.close();
   if (ctx.mongoOrderReader === reader) delete ctx.mongoOrderReader;
@@ -812,7 +821,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   };
   const restoreFailures: GradeCleanupFailure[] = [];
   const closeAll = async () => {
-    try { await closeMongoOrderReader(ctx); }
+    try { await closeOrderReaders(ctx); }
     catch (error) { restoreFailures.push({ actor: null, stage: 'database-reader-close', reason: keepReason(errorMessage(error)) }); }
     // Interruption proxies run where the browser runs; close them even after cancellation closed the browser.
     await Promise.all(interruptions.splice(0).map(interruption => interruption.dispose()));
