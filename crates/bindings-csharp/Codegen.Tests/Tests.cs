@@ -52,12 +52,21 @@ public static class GeneratorSnapshotTests
 
         public Task Verify(string fileName, object target)
         {
-            if ((fileName == nameof(Module) || fileName == nameof(EnvironmentGenerator) || fileName == "ExtraCompilationErrors")
-                && ModuleTargetFramework == "net10.0")
+            if (
+                (
+                    fileName == nameof(Module)
+                    || fileName == nameof(EnvironmentGenerator)
+                    || fileName == "ExtraCompilationErrors"
+                )
+                && ModuleTargetFramework == "net10.0"
+            )
             {
                 fileName += ".net10";
             }
-            return Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+            return Verifier
+                .Verify(target)
+                .UseDirectory($"{projectDir}/snapshots")
+                .UseFileName(fileName);
         }
 
         private static CSharpGeneratorDriver CreateDriver(
@@ -196,20 +205,23 @@ public static class GeneratorSnapshotTests
         Assert.NotNull(runtimeAssembly);
 
         // Use the fixture's target, not the test host: the .NET 10 suite also compiles .NET 8 examples.
-        var sharedContexts = ((CSharpParseOptions)compilation.SyntaxTrees.First().Options)
-            .PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER");
-        foreach (var name in new[]
-        {
-            "SpacetimeDB.Local",
-            "SpacetimeDB.ReducerContext",
-            "SpacetimeDB.ProcedureContext",
-            "SpacetimeDB.ProcedureTxContext",
-            "SpacetimeDB.HandlerContext",
-            "SpacetimeDB.HandlerTxContext",
-            "SpacetimeDB.ViewContext",
-            "SpacetimeDB.AnonymousViewContext",
-            "SpacetimeDB.QueryBuilder",
-        })
+        var sharedContexts = (
+            (CSharpParseOptions)compilation.SyntaxTrees.First().Options
+        ).PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER");
+        foreach (
+            var name in new[]
+            {
+                "SpacetimeDB.Local",
+                "SpacetimeDB.ReducerContext",
+                "SpacetimeDB.ProcedureContext",
+                "SpacetimeDB.ProcedureTxContext",
+                "SpacetimeDB.HandlerContext",
+                "SpacetimeDB.HandlerTxContext",
+                "SpacetimeDB.ViewContext",
+                "SpacetimeDB.AnonymousViewContext",
+                "SpacetimeDB.QueryBuilder",
+            }
+        )
         {
             var runtimeType = runtimeAssembly!.GetTypeByMetadataName(name);
             var generatedType = compilation.Assembly.GetTypeByMetadataName(name);
@@ -260,9 +272,14 @@ public static class GeneratorSnapshotTests
     public static async Task NamespaceDeclarationsParseAndValidate()
     {
         var fixture = await Fixture.Compile("server");
-        const string usings = "global using System; global using System.IO; "
+        const string usings =
+            "global using System; global using System.IO; "
             + "global using System.Collections.Generic; global using System.Linq;\n";
-        CSharpCompilation Create(string name, string source, params MetadataReference[] references) =>
+        CSharpCompilation Create(
+            string name,
+            string source,
+            params MetadataReference[] references
+        ) =>
             CSharpCompilation.Create(
                 name,
                 [CSharpSyntaxTree.ParseText(usings + source, fixture.ParseOptions)],
@@ -271,18 +288,29 @@ public static class GeneratorSnapshotTests
             );
         MetadataReference Dependency(string name)
         {
-            var compilation = Create(name, $$"""
+            var compilation = Create(
+                name,
+                $$"""
                 namespace {{name}} {
                     public class Marker { }
                     [SpacetimeDB.Table(Accessor = "{{name}}Row")]
                     public partial struct Row { public uint Id; }
                 }
-                """);
+                """
+            );
             var driver = CSharpGeneratorDriver.Create(
-                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
+                [
+                    new Type().AsSourceGenerator(),
+                    new Module().AsSourceGenerator(),
+                    new EnvironmentGenerator().AsSourceGenerator(),
+                ],
                 parseOptions: fixture.ParseOptions
             );
-            driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+            driver.RunGeneratorsAndUpdateCompilation(
+                compilation,
+                out var output,
+                out var diagnostics
+            );
             Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
             using var dll = new MemoryStream();
             var emitted = output.Emit(dll);
@@ -293,14 +321,17 @@ public static class GeneratorSnapshotTests
         var audit = Dependency("Audit");
         string Mount(string marker = "Auth.Marker", string accessor = "MyAuth") =>
             $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"{accessor}\")]\n";
-        GeneratorDriver Run(string source) => CSharpGeneratorDriver.Create(
-                [new Module().AsSourceGenerator()],
-                parseOptions: fixture.ParseOptions,
-                driverOptions: new GeneratorDriverOptions(
-                    IncrementalGeneratorOutputKind.None,
-                    trackIncrementalGeneratorSteps: true
+        GeneratorDriver Run(string source) =>
+            CSharpGeneratorDriver
+                .Create(
+                    [new Module().AsSourceGenerator()],
+                    parseOptions: fixture.ParseOptions,
+                    driverOptions: new GeneratorDriverOptions(
+                        IncrementalGeneratorOutputKind.None,
+                        trackIncrementalGeneratorSteps: true
+                    )
                 )
-            ).RunGenerators(Create("Consumer", source, auth, audit));
+                .RunGenerators(Create("Consumer", source, auth, audit));
         void Reject(string source, string message)
         {
             var diagnostics = Run(source).GetRunResult().Diagnostics;
@@ -308,9 +339,17 @@ public static class GeneratorSnapshotTests
             Assert.All(diagnostics, d => Assert.True(d.Location.IsInSource, d.ToString()));
         }
 
-        object[] Parsed(GeneratorDriver driver) => [.. driver.GetRunResult().Results.Single()
-            .TrackedSteps["SpacetimeDB.Namespace.Parse"].Single().Outputs
-            .SelectMany(o => ((System.Collections.IEnumerable)o.Value).Cast<object>())];
+        object[] Parsed(GeneratorDriver driver) =>
+            [
+                .. driver
+                    .GetRunResult()
+                    .Results.Single()
+                    .TrackedSteps["SpacetimeDB.Namespace.Parse"]
+                    .Single()
+                    .Outputs.SelectMany(o =>
+                        ((System.Collections.IEnumerable)o.Value).Cast<object>()
+                    ),
+            ];
         Assert.Empty(Run(Mount(accessor: new string('a', 63))).GetRunResult().Diagnostics);
         Assert.Empty(Run(Mount(accessor: "public")).GetRunResult().Diagnostics);
         Reject(Mount(accessor: new string('a', 64)), "63 UTF-8 bytes");
@@ -329,16 +368,24 @@ public static class GeneratorSnapshotTests
         Reject(Mount() + Mount(accessor: "Other"), "only be mounted once");
         Reject(Mount() + Mount("Audit.Marker", "MYAUTH"), "case-insensitive");
         Reject(Mount() + Mount("Audit.Marker", "MyAuth"), "accessor 'MyAuth'");
-        Reject(Mount() + "[SpacetimeDB.Table(Accessor = \"MyAuth\")] public partial struct Row { public uint Id; }",
-            "root table accessor");
+        Reject(
+            Mount()
+                + "[SpacetimeDB.Table(Accessor = \"MyAuth\")] public partial struct Row { public uint Id; }",
+            "root table accessor"
+        );
 
         var oldLanguage = fixture.ParseOptions.WithLanguageVersion(LanguageVersion.CSharp13);
-        var oldCompilation = Create("Consumer", "", auth, audit).RemoveAllSyntaxTrees()
+        var oldCompilation = Create("Consumer", "", auth, audit)
+            .RemoveAllSyntaxTrees()
             .AddSyntaxTrees(CSharpSyntaxTree.ParseText(usings + Mount(), oldLanguage));
-        var oldResult = CSharpGeneratorDriver.Create(
-            [new Module().AsSourceGenerator()], parseOptions: oldLanguage
-        ).RunGenerators(oldCompilation).GetRunResult();
-        Assert.Contains(oldResult.Diagnostics, d => d.GetMessage().Contains("require .NET 10 and C# 14"));
+        var oldResult = CSharpGeneratorDriver
+            .Create([new Module().AsSourceGenerator()], parseOptions: oldLanguage)
+            .RunGenerators(oldCompilation)
+            .GetRunResult();
+        Assert.Contains(
+            oldResult.Diagnostics,
+            d => d.GetMessage().Contains("require .NET 10 and C# 14")
+        );
 
         var original = Run(Mount());
         foreach (var source in new[] { Mount(accessor: "Other"), Mount(accessor: "class") })
@@ -347,12 +394,16 @@ public static class GeneratorSnapshotTests
             Assert.Empty(changed.GetRunResult().Diagnostics);
             Assert.NotEqual(Assert.Single(Parsed(original)), Assert.Single(Parsed(changed)));
             Assert.Contains(
-                changed.GetRunResult().Results.Single().TrackedSteps["SpacetimeDB.Namespace.Parse"]
+                changed
+                    .GetRunResult()
+                    .Results.Single()
+                    .TrackedSteps["SpacetimeDB.Namespace.Parse"]
                     .SelectMany(s => s.Outputs),
                 o => o.Reason == IncrementalStepRunReason.Modified
             );
         }
     }
+
     [Fact]
     public static async Task NamespaceGeneratedNameCollisions()
     {
@@ -361,51 +412,93 @@ public static class GeneratorSnapshotTests
         {
             var compilation = CSharpCompilation.Create(
                 "CollisionProof",
-                [CSharpSyntaxTree.ParseText("global using System; global using System.IO; global using System.Collections.Generic;\n" + source, fixture.ParseOptions)],
+                [
+                    CSharpSyntaxTree.ParseText(
+                        "global using System; global using System.IO; global using System.Collections.Generic;\n"
+                            + source,
+                        fixture.ParseOptions
+                    ),
+                ],
                 fixture.SampleCompilation.References,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
             );
-            CSharpGeneratorDriver.Create(
-                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
-                parseOptions: fixture.ParseOptions
-            ).RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+            CSharpGeneratorDriver
+                .Create(
+                    [
+                        new Type().AsSourceGenerator(),
+                        new Module().AsSourceGenerator(),
+                        new EnvironmentGenerator().AsSourceGenerator(),
+                    ],
+                    parseOptions: fixture.ParseOptions
+                )
+                .RunGeneratorsAndUpdateCompilation(
+                    compilation,
+                    out var output,
+                    out var diagnostics
+                );
             return (output, diagnostics);
         }
-        foreach (var (accessor, fields, symbol) in new[]
+        foreach (
+            var (accessor, fields, symbol) in new[]
+            {
+                ("User", "[SpacetimeDB.Unique] public uint Count;", "Count"),
+                (
+                    "User",
+                    "[SpacetimeDB.Unique] public uint Id; [SpacetimeDB.Unique] public uint __Id;",
+                    "__Id"
+                ),
+                (
+                    "User",
+                    "[SpacetimeDB.Unique] public uint Id; [SpacetimeDB.Unique] public uint IdUniqueIndex;",
+                    "IdUniqueIndex"
+                ),
+                ("User", "public uint UserCols;", "UserCols"),
+                ("User", "[SpacetimeDB.PrimaryKey] public uint UserIxCols;", "UserIxCols"),
+                ("Tables", "public uint Id;", "Tables"),
+                ("ReadOnlyTables", "public uint Id;", "ReadOnlyTables"),
+                ("Queries", "public uint Id;", "Queries"),
+                ("GetType", "public uint Id;", "GetType"),
+            }
+        )
         {
-            ("User", "[SpacetimeDB.Unique] public uint Count;", "Count"),
-            ("User", "[SpacetimeDB.Unique] public uint Id; [SpacetimeDB.Unique] public uint __Id;", "__Id"),
-            ("User", "[SpacetimeDB.Unique] public uint Id; [SpacetimeDB.Unique] public uint IdUniqueIndex;", "IdUniqueIndex"),
-            ("User", "public uint UserCols;", "UserCols"),
-            ("User", "[SpacetimeDB.PrimaryKey] public uint UserIxCols;", "UserIxCols"),
-            ("Tables", "public uint Id;", "Tables"),
-            ("ReadOnlyTables", "public uint Id;", "ReadOnlyTables"),
-            ("Queries", "public uint Id;", "Queries"),
-            ("GetType", "public uint Id;", "GetType"),
-        })
-        {
-            var (_, diagnostics) = Generate($$"""
+            var (_, diagnostics) = Generate(
+                $$"""
                 [SpacetimeDB.Table(Accessor = "{{accessor}}")]
                 public partial struct Row { {{fields}} }
-                """);
+                """
+            );
             Assert.DoesNotContain(diagnostics, d => d.Id == "CS8785");
-            Assert.True(diagnostics.Any(d => d.GetMessage().Contains("Generated C# name")
-                && d.GetMessage().Contains(symbol) && d.Location.IsInSource),
-                $"Expected collision for {accessor}.{symbol}: {string.Join("\n", diagnostics)}");
+            Assert.True(
+                diagnostics.Any(d =>
+                    d.GetMessage().Contains("Generated C# name")
+                    && d.GetMessage().Contains(symbol)
+                    && d.Location.IsInSource
+                ),
+                $"Expected collision for {accessor}.{symbol}: {string.Join("\n", diagnostics)}"
+            );
         }
-        var (_, crossTableDiagnostics) = Generate("""
+        var (_, crossTableDiagnostics) = Generate(
+            """
             [SpacetimeDB.Table(Accessor = "User")]
             [SpacetimeDB.Table(Accessor = "UserIx")]
             public partial struct Row { public uint Id; }
-            """);
-        Assert.Contains(crossTableDiagnostics, d => d.GetMessage().Contains("UserIxCols")
-            && d.GetMessage().Contains("table 'User'") && d.GetMessage().Contains("table 'UserIx'"));
+            """
+        );
+        Assert.Contains(
+            crossTableDiagnostics,
+            d =>
+                d.GetMessage().Contains("UserIxCols")
+                && d.GetMessage().Contains("table 'User'")
+                && d.GetMessage().Contains("table 'UserIx'")
+        );
 
-        var (valid, validDiagnostics) = Generate("""
+        var (valid, validDiagnostics) = Generate(
+            """
             [SpacetimeDB.Table(Accessor = "First")]
             [SpacetimeDB.Table(Accessor = "Second")]
             public partial struct Row { [SpacetimeDB.Unique] public uint @class; }
-            """);
+            """
+        );
         Assert.Empty(validDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         using var dll = new MemoryStream();
         var emitted = valid.Emit(dll);
@@ -431,12 +524,20 @@ public static class GeneratorSnapshotTests
     [InlineData(true, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
-    public static async Task NamespaceDependenciesRegisterOnceInStableOrder(bool rootHasTable, bool mounted)
+    public static async Task NamespaceDependenciesRegisterOnceInStableOrder(
+        bool rootHasTable,
+        bool mounted
+    )
     {
         var fixture = await Fixture.Compile("server");
-        const string usings = "global using System; global using System.IO; "
+        const string usings =
+            "global using System; global using System.IO; "
             + "global using System.Collections.Generic; global using System.Linq;\n";
-        CSharpCompilation Create(string name, string source, params MetadataReference[] references) =>
+        CSharpCompilation Create(
+            string name,
+            string source,
+            params MetadataReference[] references
+        ) =>
             CSharpCompilation.Create(
                 name,
                 [CSharpSyntaxTree.ParseText(usings + source, fixture.ParseOptions)],
@@ -446,7 +547,11 @@ public static class GeneratorSnapshotTests
         CSharpCompilation Generate(CSharpCompilation input)
         {
             var driver = CSharpGeneratorDriver.Create(
-                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
+                [
+                    new Type().AsSourceGenerator(),
+                    new Module().AsSourceGenerator(),
+                    new EnvironmentGenerator().AsSourceGenerator(),
+                ],
                 parseOptions: fixture.ParseOptions
             );
             driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
@@ -461,59 +566,83 @@ public static class GeneratorSnapshotTests
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
             return MetadataReference.CreateFromImage(dll.ToArray());
         }
-        string Table(string name) => $$"""
-            namespace {{name}} {
-                public class Sentinel { }
-                [SpacetimeDB.Table]
-                public partial struct {{name}}Row { public uint Id; }
-            }
-            """;
-        string Descriptor(CSharpCompilation compilation) => Assert.Single(
-            compilation.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type)
-        ).ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        MethodDeclarationSyntax Method(CSharpCompilation compilation, string name) => Assert.Single(
-            compilation.SyntaxTrees.SelectMany(tree => tree.GetRoot().DescendantNodes())
-                .OfType<ClassDeclarationSyntax>()
-                .Where(type => type.Identifier.ValueText == "ModuleRegistration")
-                .SelectMany(type => type.Members.OfType<MethodDeclarationSyntax>())
-                .Where(method => method.Identifier.ValueText == name)
-        );
+        string Table(string name) =>
+            $$"""
+                namespace {{name}} {
+                    public class Sentinel { }
+                    [SpacetimeDB.Table]
+                    public partial struct {{name}}Row { public uint Id; }
+                }
+                """;
+        string Descriptor(CSharpCompilation compilation) =>
+            Assert
+                .Single(compilation.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type))
+                .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        MethodDeclarationSyntax Method(CSharpCompilation compilation, string name) =>
+            Assert.Single(
+                compilation
+                    .SyntaxTrees.SelectMany(tree => tree.GetRoot().DescendantNodes())
+                    .OfType<ClassDeclarationSyntax>()
+                    .Where(type => type.Identifier.ValueText == "ModuleRegistration")
+                    .SelectMany(type => type.Members.OfType<MethodDeclarationSyntax>())
+                    .Where(method => method.Identifier.ValueText == name)
+            );
 
         var sharedCompilation = Generate(Create("Shared", Table("Shared")));
         var shared = Emit(sharedCompilation);
-        var alphaCompilation = Generate(Create("Alpha", Table("Alpha")
-            + "public class AlphaLink { public Shared.Sentinel Value; }", shared));
+        var alphaCompilation = Generate(
+            Create(
+                "Alpha",
+                Table("Alpha") + "public class AlphaLink { public Shared.Sentinel Value; }",
+                shared
+            )
+        );
         var alpha = Emit(alphaCompilation);
-        var betaCompilation = Generate(Create("Beta", Table("Beta")
-            + "public class BetaLink { public Shared.Sentinel Value; }", shared));
+        var betaCompilation = Generate(
+            Create(
+                "Beta",
+                Table("Beta") + "public class BetaLink { public Shared.Sentinel Value; }",
+                shared
+            )
+        );
         var beta = Emit(betaCompilation);
-        var utility = Emit(Create("Utility",
-            "public class UtilityLink { public Shared.Sentinel Value; }", shared));
+        var utility = Emit(
+            Create("Utility", "public class UtilityLink { public Shared.Sentinel Value; }", shared)
+        );
         var rootSource = rootHasTable ? Table("Root") : "";
         if (mounted)
-            rootSource = "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]\n"
+            rootSource =
+                "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]\n"
                 + "[assembly: SpacetimeDB.Namespace(typeof(Beta.Sentinel), Accessor = \"class\")]\n"
                 + rootSource;
         var root = Generate(Create("Root", rootSource, beta, utility, shared, alpha));
         var reordered = Generate(Create("Root", rootSource, alpha, shared, utility, beta));
 
         string[] Calls(CSharpCompilation compilation) =>
-            [.. Method(compilation, "Initialize").DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Select(call => call.Expression.ToString())
-                .Where(call => call.EndsWith(".Register"))];
+            [
+                .. Method(compilation, "Initialize")
+                    .DescendantNodes()
+                    .OfType<InvocationExpressionSyntax>()
+                    .Select(call => call.Expression.ToString())
+                    .Where(call => call.EndsWith(".Register")),
+            ];
         CSharpCompilation[] orderedDependencies = mounted
             ? [sharedCompilation, alphaCompilation, betaCompilation]
             : [alphaCompilation, betaCompilation, sharedCompilation];
         var expected = new[] { Descriptor(root) + ".Register" }
-            .Concat(orderedDependencies.Select(c => Descriptor(c) + ".Register")).ToArray();
+            .Concat(orderedDependencies.Select(c => Descriptor(c) + ".Register"))
+            .ToArray();
         if (mounted)
         {
             var init = Method(root, "Initialize");
-            var submodules = init.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                .Where(call => call.Expression.ToString().EndsWith(".RegisterSubmodule")).ToArray();
-            Assert.Equal(["\"Auth\"", "\"class\""],
-                submodules.Select(call => call.ArgumentList.Arguments[0].ToString()));
+            var submodules = init.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(call => call.Expression.ToString().EndsWith(".RegisterSubmodule"))
+                .ToArray();
+            Assert.Equal(
+                ["\"Auth\"", "\"class\""],
+                submodules.Select(call => call.ArgumentList.Arguments[0].ToString())
+            );
         }
         Assert.Equal(expected, Calls(root));
         Assert.Equal(expected, Calls(reordered));
@@ -526,89 +655,152 @@ public static class GeneratorSnapshotTests
         var empty = Generate(Create("Empty", "", plainUtility));
         Assert.Empty(empty.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
 
-        var nested = Emit(Generate(Create("Nested",
-            "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]",
-            alpha, shared)));
-        var nestedResult = CSharpGeneratorDriver.Create(
-            [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
-        ).RunGenerators(Create("Outer", "", nested, alpha, shared)).GetRunResult();
-        Assert.Contains(nestedResult.Diagnostics, diagnostic =>
-            diagnostic.GetMessage().Contains("Only the consuming root"));
+        var nested = Emit(
+            Generate(
+                Create(
+                    "Nested",
+                    "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]",
+                    alpha,
+                    shared
+                )
+            )
+        );
+        var nestedResult = CSharpGeneratorDriver
+            .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+            .RunGenerators(Create("Outer", "", nested, alpha, shared))
+            .GetRunResult();
+        Assert.Contains(
+            nestedResult.Diagnostics,
+            diagnostic => diagnostic.GetMessage().Contains("Only the consuming root")
+        );
 
         foreach (var kind in new[] { "Init", "ClientConnected", "ClientDisconnected" })
         {
-            var lifecycle = Emit(Generate(Create("LifecycleDependency", $$"""
-                public class Marker { }
-                public static partial class LifecycleFunctions {
-                    [SpacetimeDB.Reducer(SpacetimeDB.ReducerKind.{{kind}})]
-                    public static void Handle(SpacetimeDB.ReducerContext ctx) { }
-                }
-                """)));
-            var lifecycleResult = CSharpGeneratorDriver.Create(
-                [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
-            ).RunGenerators(Create("LifecycleConsumer",
-                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\")]",
-                lifecycle)).GetRunResult();
-            Assert.Contains(lifecycleResult.Diagnostics, diagnostic =>
-                diagnostic.Severity == DiagnosticSeverity.Error
-                && diagnostic.Descriptor.Title.ToString() == "Root-only declarations in mounted dependency"
-                && diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
-                && diagnostic.GetMessage().Contains("Auth"));
+            var lifecycle = Emit(
+                Generate(
+                    Create(
+                        "LifecycleDependency",
+                        $$"""
+                        public class Marker { }
+                        public static partial class LifecycleFunctions {
+                            [SpacetimeDB.Reducer(SpacetimeDB.ReducerKind.{{kind}})]
+                            public static void Handle(SpacetimeDB.ReducerContext ctx) { }
+                        }
+                        """
+                    )
+                )
+            );
+            var lifecycleResult = CSharpGeneratorDriver
+                .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+                .RunGenerators(
+                    Create(
+                        "LifecycleConsumer",
+                        "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\")]",
+                        lifecycle
+                    )
+                )
+                .GetRunResult();
+            Assert.Contains(
+                lifecycleResult.Diagnostics,
+                diagnostic =>
+                    diagnostic.Severity == DiagnosticSeverity.Error
+                    && diagnostic.Descriptor.Title.ToString()
+                        == "Root-only declarations in mounted dependency"
+                    && diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
+                    && diagnostic.GetMessage().Contains("Auth")
+            );
             // The same dependency can still be published alone or merged into the root scope.
             Generate(Create("FlatLifecycleConsumer", "", lifecycle));
-            Generate(Create("PublicLifecycleConsumer",
-                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"public\")]",
-                lifecycle));
+            Generate(
+                Create(
+                    "PublicLifecycleConsumer",
+                    "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"public\")]",
+                    lifecycle
+                )
+            );
         }
 
-        foreach (var (source, declaration) in new[]
+        foreach (
+            var (source, declaration) in new[]
+            {
+                (
+                    "#pragma warning disable STDB_UNSTABLE\n"
+                        + """
+                        public static class Rules {
+                            [SpacetimeDB.ClientVisibilityFilter]
+                            public static readonly SpacetimeDB.Filter Visible =
+                                new SpacetimeDB.Filter.Sql("SELECT * FROM Entry");
+                        }
+                        """,
+                    "row-level security filters"
+                ),
+                (
+                    "[SpacetimeDB.Env] public struct Settings { public string SECRET; }",
+                    "environment variables"
+                ),
+            }
+        )
         {
-            ("""
-                #pragma warning disable STDB_UNSTABLE
-                public static class Rules {
-                    [SpacetimeDB.ClientVisibilityFilter]
-                    public static readonly SpacetimeDB.Filter Visible =
-                        new SpacetimeDB.Filter.Sql("SELECT * FROM Entry");
-                }
-                """, "row-level security filters"),
-            ("[SpacetimeDB.Env] public struct Settings { public string SECRET; }", "environment variables"),
-        })
-        {
-            var dependency = Emit(Generate(Create("RestrictedDependency",
-                "[SpacetimeDB.Table] public partial struct Entry { public uint Id; }\n" + source)));
-            var result = CSharpGeneratorDriver.Create(
-                [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
-            ).RunGenerators(Create("RestrictedConsumer",
-                "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"Auth\")]",
-                dependency)).GetRunResult();
-            Assert.Contains(result.Diagnostics, diagnostic =>
-                diagnostic.Severity == DiagnosticSeverity.Error
-                && diagnostic.GetMessage().Contains("RestrictedDependency")
-                && diagnostic.GetMessage().Contains("'Auth'")
-                && diagnostic.GetMessage().Contains(declaration)
-                && diagnostic.GetMessage().Contains("root scope"));
+            var dependency = Emit(
+                Generate(
+                    Create(
+                        "RestrictedDependency",
+                        "[SpacetimeDB.Table] public partial struct Entry { public uint Id; }\n"
+                            + source
+                    )
+                )
+            );
+            var result = CSharpGeneratorDriver
+                .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+                .RunGenerators(
+                    Create(
+                        "RestrictedConsumer",
+                        "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"Auth\")]",
+                        dependency
+                    )
+                )
+                .GetRunResult();
+            Assert.Contains(
+                result.Diagnostics,
+                diagnostic =>
+                    diagnostic.Severity == DiagnosticSeverity.Error
+                    && diagnostic.GetMessage().Contains("RestrictedDependency")
+                    && diagnostic.GetMessage().Contains("'Auth'")
+                    && diagnostic.GetMessage().Contains(declaration)
+                    && diagnostic.GetMessage().Contains("root scope")
+            );
             Generate(Create("FlatConsumer", "", dependency));
-            Generate(Create("PublicConsumer",
-                "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"public\")]",
-                dependency));
+            Generate(
+                Create(
+                    "PublicConsumer",
+                    "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"public\")]",
+                    dependency
+                )
+            );
         }
 
         // Empty environment schemas contain no keys and are permitted by the host.
-        var emptyEnvironment = Emit(Generate(Create("EmptyEnvironment",
-            "[SpacetimeDB.Env] public struct Settings { }")));
-        Generate(Create("EmptyEnvironmentConsumer",
-            "[assembly: SpacetimeDB.Namespace(typeof(Settings), Accessor = \"Auth\")]",
-            emptyEnvironment));
+        var emptyEnvironment = Emit(
+            Generate(Create("EmptyEnvironment", "[SpacetimeDB.Env] public struct Settings { }"))
+        );
+        Generate(
+            Create(
+                "EmptyEnvironmentConsumer",
+                "[assembly: SpacetimeDB.Namespace(typeof(Settings), Accessor = \"Auth\")]",
+                emptyEnvironment
+            )
+        );
     }
-
 #endif
 
     [Fact]
     public static async Task TypeAndModuleGeneratorsOnServer()
     {
         var fixture = await Fixture.Compile("server");
-        await fixture.Verify(nameof(EnvironmentGenerator),
-            fixture.RunGeneratorAndGetResult(new EnvironmentGenerator()));
+        await fixture.Verify(
+            nameof(EnvironmentGenerator),
+            fixture.RunGeneratorAndGetResult(new EnvironmentGenerator())
+        );
 
         var compilationAfterGen = await fixture.RunAndCheckGenerators(
             new SpacetimeDB.Codegen.Type(),

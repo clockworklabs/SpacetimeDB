@@ -8,22 +8,32 @@ using System.Diagnostics.CodeAnalysis;
 
 public sealed class Local : LocalBase { }
 
-public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
+public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
+{
     public DatabaseEnvironment Env => default;
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
     public readonly Random Rng;
     public readonly Timestamp Timestamp;
     public readonly AuthCtx SenderAuth;
+
     // **Note:** must be 0..=u32::MAX
     internal int CounterUuid;
     public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
+
     // We keep this property for compatibility with existing module code.
-    [global::System.Obsolete("ReducerContext.Identity is deprecated. Use DatabaseIdentity instead.")]
+    [global::System.Obsolete(
+        "ReducerContext.Identity is deprecated. Use DatabaseIdentity instead."
+    )]
     public Identity Identity => DatabaseIdentity;
 
-    internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random,
-                    Timestamp time, AuthCtx? senderAuth = null)
+    internal ReducerContext(
+        Identity identity,
+        ConnectionId? connectionId,
+        Random random,
+        Timestamp time,
+        AuthCtx? senderAuth = null
+    )
     {
         Sender = identity;
         ConnectionId = connectionId;
@@ -32,6 +42,7 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
         SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
         CounterUuid = 0;
     }
+
     /// <summary>
     /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
     /// </summary>
@@ -82,15 +93,23 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
 
 public readonly struct QueryBuilder { }
 
-public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
+public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
+{
     private readonly Local _db = new();
 
-    internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time)
-        : base(identity, connectionId, random, time) {}
+    internal ProcedureContext(
+        Identity identity,
+        ConnectionId? connectionId,
+        Random random,
+        Timestamp time
+    )
+        : base(identity, connectionId, random, time) { }
 
     protected internal override global::SpacetimeDB.LocalBase CreateLocal() => _db;
-    protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(Internal.TxContext inner) =>
-        _cached ??= new ProcedureTxContext(inner);
+
+    protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
+        Internal.TxContext inner
+    ) => _cached ??= new ProcedureTxContext(inner);
 
     private ProcedureTxContext? _cached;
 
@@ -100,9 +119,9 @@ public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureCont
         base.WithTx(tx => body((ProcedureTxContext)tx));
 
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
-        Func<ProcedureTxContext, Result<TResult, TError>> body)
-        where TError : Exception =>
-        base.TryWithTx(tx => body((ProcedureTxContext)tx));
+        Func<ProcedureTxContext, Result<TResult, TError>> body
+    )
+        where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
 
     /// <summary>
     /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
@@ -152,15 +171,18 @@ public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureCont
     }
 }
 
-public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase {
+public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
+{
     private readonly Local _db = new();
 
     internal HandlerContext(Random random, Timestamp time)
-        : base(random, time) {}
+        : base(random, time) { }
 
     protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
-    protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(Internal.TxContext inner) =>
-        _cached ??= new HandlerTxContext(inner);
+
+    protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(
+        Internal.TxContext inner
+    ) => _cached ??= new HandlerTxContext(inner);
 
     private HandlerTxContext? _cached;
 
@@ -170,9 +192,9 @@ public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextB
 
     [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
-        Func<HandlerTxContext, Result<TResult, TError>> body)
-        where TError : Exception =>
-        base.TryWithTx(tx => body((HandlerTxContext)tx));
+        Func<HandlerTxContext, Result<TResult, TError>> body
+    )
+        where TError : Exception => base.TryWithTx(tx => body((HandlerTxContext)tx));
 
     public Uuid NewUuidV4()
     {
@@ -189,15 +211,19 @@ public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextB
     }
 }
 
-public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase {
-    internal ProcedureTxContext(Internal.TxContext inner) : base(inner) {}
+public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
+{
+    internal ProcedureTxContext(Internal.TxContext inner)
+        : base(inner) { }
 
     public new Local Db => (Local)base.Db;
 }
 
 [Experimental("STDB_UNSTABLE")]
-public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase {
-    internal HandlerTxContext(Internal.TxContext inner) : base(inner) {}
+public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
+{
+    internal HandlerTxContext(Internal.TxContext inner)
+        : base(inner) { }
 
     public new Local Db => (Local)base.Db;
 }
@@ -216,7 +242,9 @@ public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.I
     }
 }
 
-public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext
+public sealed record AnonymousViewContext
+    : DbContext<Internal.LocalReadOnly>,
+        Internal.IAnonymousViewContext
 {
     public DatabaseEnvironment Env => default;
     public QueryBuilder From => default;

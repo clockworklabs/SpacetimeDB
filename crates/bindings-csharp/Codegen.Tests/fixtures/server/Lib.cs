@@ -9,6 +9,7 @@ public struct EnvironmentSchema
 {
     public string REQUIRED;
     public string? OPTIONAL;
+
     [SpacetimeDB.EnvValues("dev", "prod")]
     public string MODE;
 }

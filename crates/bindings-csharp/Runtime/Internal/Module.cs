@@ -56,12 +56,16 @@ public static class Module
     }
 
     public static string ResolveName(string assemblyIdentity, string localName) =>
-        (namespaces ?? throw new InvalidOperationException("Module namespaces have not been installed."))
-            .Resolve(assemblyIdentity, localName);
+        (
+            namespaces
+            ?? throw new InvalidOperationException("Module namespaces have not been installed.")
+        ).Resolve(assemblyIdentity, localName);
 
     public static SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
-        (namespaces ?? throw new InvalidOperationException("Module namespaces have not been installed."))
-            .ResolveSqlName(assemblyIdentity, localName);
+        (
+            namespaces
+            ?? throw new InvalidOperationException("Module namespaces have not been installed.")
+        ).ResolveSqlName(assemblyIdentity, localName);
 
     private static Func<
         Identity,
@@ -71,26 +75,29 @@ public static class Module
         IReducerContext
     >? newReducerContext =
 #if NET10_0_OR_GREATER
-        (identity, connectionId, random, time) =>
-            new SpacetimeDB.ReducerContext(identity, connectionId, random, time);
+    (identity, connectionId, random, time) =>
+        new SpacetimeDB.ReducerContext(identity, connectionId, random, time);
 #else
         null;
 #endif
     private static Func<Identity, IViewContext>? newViewContext =
 #if NET10_0_OR_GREATER
-        identity => new ViewContext(identity, new LocalReadOnly());
+    identity => new ViewContext(identity, new LocalReadOnly());
 #else
         null;
 #endif
     private static Func<IAnonymousViewContext>? newAnonymousViewContext =
 #if NET10_0_OR_GREATER
-        () => new AnonymousViewContext(new LocalReadOnly());
+    () => new AnonymousViewContext(new LocalReadOnly());
 #else
         null;
 #endif
     private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
 #if NET10_0_OR_GREATER
-        (random, time) => new HandlerContext(random, time);
+    (
+        random,
+        time
+    ) => new HandlerContext(random, time);
 #else
         null;
 #endif
@@ -103,8 +110,8 @@ public static class Module
         IProcedureContext
     >? newProcedureContext =
 #if NET10_0_OR_GREATER
-        (identity, connectionId, random, time) =>
-            new ProcedureContext(identity, connectionId, random, time);
+    (identity, connectionId, random, time) =>
+        new ProcedureContext(identity, connectionId, random, time);
 #else
         null;
 #endif
@@ -158,28 +165,23 @@ public static class Module
     }
 
     public static void RegisterReducer<R>()
-        where R : IReducer, new() =>
-        RootBuilder.RegisterReducer<R>();
+        where R : IReducer, new() => RootBuilder.RegisterReducer<R>();
 
     public static void RegisterProcedure<P>()
-        where P : IProcedure, new() =>
-        RootBuilder.RegisterProcedure<P>();
+        where P : IProcedure, new() => RootBuilder.RegisterProcedure<P>();
 
     public static void RegisterHttpHandler<H>()
-        where H : IHttpHandler, new() =>
-        RootBuilder.RegisterHttpHandler<H>();
+        where H : IHttpHandler, new() => RootBuilder.RegisterHttpHandler<H>();
 
     public static void RegisterHttpRouter(SpacetimeDB.Router router) =>
         RootBuilder.RegisterHttpRouter(router);
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new() =>
-        RootBuilder.RegisterTable<T, View>();
+        where View : ITableView<View, T>, new() => RootBuilder.RegisterTable<T, View>();
 
     public static void RegisterView<TDispatcher>()
-        where TDispatcher : IView, new() =>
-        RootBuilder.RegisterView<TDispatcher>();
+        where TDispatcher : IView, new() => RootBuilder.RegisterView<TDispatcher>();
 
     public static void RegisterAnonymousView<TDispatcher>()
         where TDispatcher : IAnonymousView, new() =>
@@ -422,6 +424,4 @@ public partial class Local
 /// On .NET 10 the generator provides assembly-scoped extension properties.
 /// On .NET 8 generated modules declare their own type with table accessors.
 /// </summary>
-public sealed partial class LocalReadOnly
-{
-}
+public sealed partial class LocalReadOnly { }
