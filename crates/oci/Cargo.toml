@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-oci"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "../../LICENSE.txt"
+description = "Bounded OCI image validation for SpacetimeDB container publishing"
+
+[dependencies]
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+flate2.workspace = true
+tar.workspace = true
+zstd = "0.13"
+
+[lints]
+workspace = true

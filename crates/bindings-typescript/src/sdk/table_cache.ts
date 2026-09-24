@@ -1,3 +1,4 @@
+import { INTERNAL_CLEAR_TABLE_CALLBACKS } from './managed_session_lifecycle';
 import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
@@ -217,6 +218,11 @@ export class TableCacheImpl<
       };
       return impl as ReadonlyIndex<TableDef, I>;
     }
+  }
+
+  /** @internal Release callbacks when an explicitly managed generation ends. */
+  [INTERNAL_CLEAR_TABLE_CALLBACKS](): void {
+    this.emitter.clear();
   }
 
   /**

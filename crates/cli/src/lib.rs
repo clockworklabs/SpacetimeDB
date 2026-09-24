@@ -1,6 +1,7 @@
 pub mod api;
 mod common_args;
 mod config;
+pub mod container;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
@@ -38,6 +39,7 @@ pub fn get_subcommands() -> Vec<Command> {
         logout::cli(),
         init::cli(),
         build::cli(),
+        subcommands::container::cli(),
         server::cli(),
         subscribe::cli(),
         start::cli(),
@@ -45,6 +47,23 @@ pub fn get_subcommands() -> Vec<Command> {
         unlock::cli(),
         subcommands::version::cli(),
     ]
+}
+
+/// Dispatch commands that need only project files before opening saved CLI
+/// server settings or credentials. Future container network commands use the
+/// ordinary authenticated dispatcher below.
+pub async fn exec_local_subcommand(cmd: &str, args: &ArgMatches) -> Option<anyhow::Result<ExitCode>> {
+    if cmd == "container"
+        && let Some(("build", args)) = args.subcommand()
+    {
+        Some(
+            subcommands::container::exec_build(args)
+                .await
+                .map(|()| ExitCode::SUCCESS),
+        )
+    } else {
+        None
+    }
 }
 
 pub async fn exec_subcommand(
@@ -69,6 +88,7 @@ pub async fn exec_subcommand(
         "list" => list::exec(config, args).await,
         "init" => init::exec(config, args).await.map(|_| ()),
         "build" => build::exec(config, args).await.map(drop),
+        "container" => subcommands::container::exec(config, args).await,
         "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,
         "start" => return start::exec(config, paths, args).await,

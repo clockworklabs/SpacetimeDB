@@ -2328,6 +2328,14 @@ pub enum FunctionVisibility {
 }
 
 impl FunctionVisibility {
+    /// Lifecycle event dispatch is a separate restriction from this predicate.
+    pub fn allows_invocation(&self, is_internal: bool, is_authorized_private_caller: bool) -> bool {
+        match self {
+            Self::Private => is_internal || is_authorized_private_caller,
+            Self::ClientCallable => true,
+        }
+    }
+
     pub fn is_private(&self) -> bool {
         matches!(self, FunctionVisibility::Private)
     }

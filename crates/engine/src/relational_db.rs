@@ -1,4 +1,4 @@
-use crate::durability::{request_durability, spawn_close as spawn_durability_close};
+use crate::durability::request_durability;
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
@@ -7,6 +7,8 @@ use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
+use futures::future::{BoxFuture, Shared};
+use futures::FutureExt;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
@@ -66,7 +68,9 @@ use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
 pub use super::snapshot::SnapshotWorker;
@@ -102,8 +106,11 @@ pub type ConnectedClients = HashSet<(Identity, ConnectionId)>;
 pub struct RelationalDB {
     database_identity: Identity,
     owner_identity: Identity,
+    hosted_admission: super::hosted_admission::HostedAdmission,
 
     inner: Locking,
+    commits_closed: Arc<AtomicBool>,
+    shutdown: OnceLock<Shared<BoxFuture<'static, Option<TxOffset>>>>,
     durability: Option<Arc<Durability>>,
     durability_runtime: Option<Handle>,
     snapshot_worker: Option<SnapshotWorker>,
@@ -142,9 +149,12 @@ impl std::fmt::Debug for RelationalDB {
 
 impl Drop for RelationalDB {
     fn drop(&mut self) {
-        // Attempt to flush the outstanding transactions.
-        if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
-            spawn_durability_close(durability, &runtime, self.database_identity);
+        self.hosted_admission.seal();
+        if let Some(runtime) = &self.durability_runtime {
+            // Join the same owned close when a cancelled shutdown waiter was the
+            // last database owner. Never start a second provider close early.
+            let close = self.start_shutdown(runtime);
+            runtime.spawn(close);
         }
     }
 }
@@ -164,12 +174,15 @@ impl RelationalDB {
 
         Self {
             inner,
+            commits_closed: Default::default(),
+            shutdown: Default::default(),
             durability,
             durability_runtime,
             snapshot_worker,
 
             database_identity,
             owner_identity,
+            hosted_admission: Default::default(),
 
             row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
@@ -192,6 +205,12 @@ impl RelationalDB {
             kind: DatabaseMemoryType::Datastore,
             bytes,
         });
+    }
+
+    /// Transient container admission for this exact database open. The trusted
+    /// receiving host opens it only after reconciling current incoming fences.
+    pub fn hosted_admission(&self) -> &super::hosted_admission::HostedAdmission {
+        &self.hosted_admission
     }
 
     /// Open a database, which may or may not already exist.
@@ -364,23 +383,51 @@ impl RelationalDB {
 
     /// Shut down the database, without dropping it.
     ///
-    /// If the database is in-memory only, this does nothing.
-    /// Otherwise, it instructs the durability layer to shut down
-    /// and waits until all outstanding transactions are reported as durable.
-    ///
-    /// After calling this method, calling [Self::commit_tx_downgrade] or
-    /// [Self::commit_tx] will panic.
-    ///
-    /// Returns `None` if the database is in-memory only,
-    /// or nothing has been durably persisted yet.
-    ///
-    /// Returns the durable [TxOffset] in a `Some` otherwise.
+    /// Permanently closes hosted and commit admission, then joins the configured
+    /// durability writer. Transactions already holding the exclusive transaction
+    /// lock can finish before closure; later commits roll back with `DatabaseClosed`.
+    /// Caller cancellation does not cancel the physical close.
     pub async fn shutdown(&self) -> Option<TxOffset> {
-        if let Some(durability) = &self.durability {
-            return durability.close().await;
+        self.hosted_admission.seal();
+        match &self.durability_runtime {
+            Some(runtime) => self.start_shutdown(runtime).await,
+            None => self.start_shutdown(&Handle::tokio_current()).await,
         }
+    }
 
-        None
+    /// Close using the owning host runtime, including in-memory simulation databases.
+    pub async fn shutdown_with_runtime(&self, runtime: &Handle) -> Option<TxOffset> {
+        self.hosted_admission.seal();
+        self.start_shutdown(runtime).await
+    }
+
+    fn start_shutdown(&self, runtime: &Handle) -> Shared<BoxFuture<'static, Option<TxOffset>>> {
+        self.shutdown
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                let closed = self.commits_closed.clone();
+                let durability = self.durability.clone();
+                // A shutdown owns this task through both lock acquisition and actual
+                // writer completion. The blocking lock never occupies a runtime worker.
+                let close_runtime = runtime.clone();
+                let task = runtime.spawn(async move {
+                    close_runtime
+                        .spawn_blocking(move || {
+                            let tx = inner.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+                            closed.store(true, Ordering::Relaxed);
+                            let _ = inner.rollback_mut_tx(tx);
+                        })
+                        .await;
+                    match durability {
+                        Some(durability) => durability.close().await,
+                        None => None,
+                    }
+                });
+                async move { task.await.expect("database writer close task panicked") }
+                    .boxed()
+                    .shared()
+            })
+            .clone()
     }
 
     /// Create any system tables that are missing from the datastore.
@@ -877,6 +924,13 @@ impl RelationalDB {
         tx: MutTx,
     ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>, DBError> {
         log::trace!("COMMIT MUT TX");
+        // `tx` holds the same exclusive lock used by start_shutdown. The flag
+        // cannot change between this check and the durability append.
+        if self.commits_closed.load(Ordering::Relaxed) {
+            let (_, metrics, reducer) = self.rollback_mut_tx(tx);
+            self.report_tx_metrics(reducer, None, Some(metrics), None);
+            return Err(DBError::DatabaseClosed);
+        }
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
@@ -895,8 +949,15 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
+    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Result<(Arc<TxData>, TxMetrics, Tx), DBError> {
         log::trace!("COMMIT MUT TX");
+        // `tx` holds the same exclusive lock used by start_shutdown. The flag
+        // cannot change between this check and the durability append.
+        if self.commits_closed.load(Ordering::Relaxed) {
+            let (_, metrics, reducer) = self.rollback_mut_tx(tx);
+            self.report_tx_metrics(reducer, None, Some(metrics), None);
+            return Err(DBError::DatabaseClosed);
+        }
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         let (tx_data, tx_metrics, tx, datastore_memory_bytes) =
@@ -907,7 +968,7 @@ impl RelationalDB {
         self.maybe_do_snapshot(&tx_data);
         self.observe_datastore_memory(datastore_memory_bytes);
 
-        (tx_data, tx_metrics, tx)
+        Ok((tx_data, tx_metrics, tx))
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -1629,6 +1690,7 @@ impl RelationalDB {
         self.with_auto_commit(Workload::Internal, |mut_tx| {
             self.clear_all_views(mut_tx)?;
             self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+            self.clear_table(mut_tx, spacetimedb_datastore::system_tables::ST_CONNECTION_AUTH_ID)?;
             self.clear_table(mut_tx, ST_CLIENT_ID)?;
             self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
             Ok(())
@@ -2432,6 +2494,9 @@ pub mod tests_utils {
         (dir, snapshot)
     }
 }
+
+#[cfg(test)]
+mod shutdown_tests;
 
 #[cfg(test)]
 mod tests {

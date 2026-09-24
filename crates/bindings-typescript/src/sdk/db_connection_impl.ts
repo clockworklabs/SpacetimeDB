@@ -1,3 +1,9 @@
+import {
+  INTERNAL_MANAGED_SESSION,
+  INTERNAL_CLEAR_TABLE_CALLBACKS,
+  ContainerSessionCallError,
+  type ManagedSessionLifecycle,
+} from './managed_session_lifecycle';
 import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
 import BinaryReader from '../lib/binary_reader.ts';
@@ -274,6 +280,87 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   >();
   #reducerCallInfo = new Map<number, { name: string; args: object }>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
+  #managedCalls?: Map<
+    number,
+    { reject: (error: Error) => void; sent: boolean }
+  >;
+  #managedQueuedCalls = new Map<Uint8Array, number>();
+  #managedTerminalError?: Error;
+
+  [INTERNAL_MANAGED_SESSION](): ManagedSessionLifecycle {
+    return {
+      enable: () => {
+        if (
+          this.#managedCalls ||
+          this.#managedTerminalError ||
+          this.#outboundQueue.length ||
+          this.#reducerCallbacks.size ||
+          this.#procedureCallbacks.size ||
+          this.#subscriptionManager.subscriptions.size
+        )
+          throw new Error('Managed boundary requires an unused connection');
+        this.#managedCalls = new Map();
+      },
+      seal: error => {
+        if (!this.#managedCalls || this.#managedTerminalError) return;
+        // Seal first, before any subscription callback can attempt another call.
+        this.#managedTerminalError = error;
+        this.isActive = false;
+        this.isDisconnectRequested = true;
+        this.token = undefined;
+        this.#outboundQueue.length = 0;
+        this.#inboundQueue.length = 0;
+        this.#inboundQueueOffset = 0;
+        this.#managedQueuedCalls.clear();
+        const pending = [...this.#managedCalls.values()];
+        this.#managedCalls.clear();
+        this.#reducerCallbacks.clear();
+        this.#procedureCallbacks.clear();
+        this.#reducerCallInfo.clear();
+        this.#emitter.clear();
+        for (const table of this.clientCache.tables.values())
+          table[INTERNAL_CLEAR_TABLE_CALLBACKS]();
+        const subscriptions = [
+          ...this.#subscriptionManager.subscriptions.values(),
+        ];
+        this.#subscriptionManager.subscriptions.clear();
+        for (const call of pending)
+          call.reject(
+            new ContainerSessionCallError(call.sent ? 'unknown' : 'not_sent')
+          );
+        const errorContext: ErrorContextInterface<RemoteModule> = {
+          ...this.#makeEventContext({
+            id: this.#nextEventId(),
+            tag: 'Error',
+            value: error,
+          }),
+          event: error,
+        };
+        let callbackFailed = false;
+        for (const { emitter } of subscriptions) {
+          try {
+            emitter.emit('error', errorContext, error);
+          } catch {
+            callbackFailed = true;
+          } finally {
+            emitter.clear();
+          }
+        }
+        if (callbackFailed)
+          throw new Error('Managed subscription callback failed');
+      },
+    };
+  }
+
+  #markManagedCallSent(message: Uint8Array): void {
+    const requestId = this.#managedQueuedCalls.get(message);
+    this.#managedQueuedCalls.delete(message);
+    if (requestId !== undefined) {
+      const call = this.#managedCalls?.get(requestId);
+      if (call) call.sent = true;
+    }
+  }
+
   #rowDeserializers: Record<string, Deserializer<any>>;
   #rowIdMetadata: Record<
     string,
@@ -560,6 +647,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     >,
     querySql: string[]
   ): number {
+    if (this.#managedTerminalError) throw this.#managedTerminalError;
     const querySetId = this.#getNextQueryId();
     this.#subscriptionManager.subscriptions.set(querySetId, {
       handle,
@@ -715,6 +803,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #flushOutboundQueueV2(wsResolved: WebSocketAdapter): void {
     const pending = this.#outboundQueue.splice(0);
     for (const message of pending) {
+      this.#markManagedCallSent(message);
       wsResolved.send(message);
     }
   }
@@ -731,6 +820,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       this.#outboundQueue,
       MAX_V3_OUTBOUND_FRAME_BYTES
     );
+    for (let index = 0; index < batchSize; index++)
+      this.#markManagedCallSent(this.#outboundQueue[index]);
     wsResolved.send(
       encodeClientMessagesV3(
         this.#clientFrameEncoder,
@@ -786,35 +877,51 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #clientMessageEncoder = new BinaryWriter(1024);
   #sendEncodedMessage(
     encoded: Uint8Array<ArrayBuffer>,
-    describe: () => string
+    describe: () => string,
+    managedRequestId?: number
   ): void {
+    if (this.#managedTerminalError) throw this.#managedTerminalError;
     stdbLogger('trace', describe);
     if (this.ws && this.isActive) {
       if (this.#negotiatedWsProtocol === V2_WS_PROTOCOL) {
         if (this.#outboundQueue.length) this.#flushOutboundQueue(this.ws);
+        const call =
+          managedRequestId === undefined
+            ? undefined
+            : this.#managedCalls?.get(managedRequestId);
+        if (call) call.sent = true;
         this.ws.send(encoded);
         return;
       }
 
-      this.#outboundQueue.push(encoded.slice());
+      const queued = encoded.slice();
+      this.#outboundQueue.push(queued);
+      if (this.#managedCalls && managedRequestId !== undefined)
+        this.#managedQueuedCalls.set(queued, managedRequestId);
       this.#scheduleOutboundFlush();
     } else {
       // Use slice() to copy, in case the clientMessageEncoder's buffer gets reused
       // before the connection opens or before a v3 microbatch flush runs.
-      this.#outboundQueue.push(encoded.slice());
+      const queued = encoded.slice();
+      this.#outboundQueue.push(queued);
+      if (this.#managedCalls && managedRequestId !== undefined)
+        this.#managedQueuedCalls.set(queued, managedRequestId);
     }
   }
 
-  #sendMessage(message: ClientMessage): void {
+  #sendMessage(message: ClientMessage, managedRequestId?: number): void {
     const writer = this.#clientMessageEncoder;
     writer.clear();
     ClientMessage.serialize(writer, message);
     const encoded = writer.getBuffer();
     const isLive = !!(this.ws && this.isActive);
-    this.#sendEncodedMessage(encoded, () =>
-      isLive
-        ? `Sending message to server: ${stringify(message)}`
-        : `Queuing message to server: ${stringify(message)}`
+    this.#sendEncodedMessage(
+      encoded,
+      () =>
+        isLive
+          ? `Sending message to server: ${stringify(message)}`
+          : `Queuing message to server: ${stringify(message)}`,
+      managedRequestId
     );
   }
 
@@ -833,7 +940,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const encoded = writer.getBuffer();
     this.#sendEncodedMessage(
       encoded,
-      () => `Sending reducer call message to server: requestId=${requestId}`
+      () => `Sending reducer call message to server: requestId=${requestId}`,
+      requestId
     );
   }
 
@@ -852,7 +960,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const encoded = writer.getBuffer();
     this.#sendEncodedMessage(
       encoded,
-      () => `Sending procedure call message to server: requestId=${requestId}`
+      () => `Sending procedure call message to server: requestId=${requestId}`,
+      requestId
     );
   }
 
@@ -926,11 +1035,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       () => `Calling ${callbacks.length} triggered row callbacks`
     );
     for (const callback of callbacks) {
+      if (this.#managedTerminalError) return;
       callback.cb();
     }
   }
 
   #processServerMessage(serverMessage: ServerMessage): void {
+    if (this.#managedTerminalError) return;
     stdbLogger(
       'trace',
       () => `Processing server message: ${stringify(serverMessage)}`
@@ -1054,6 +1165,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
       case 'ReducerResult': {
         const { requestId, result } = serverMessage.value;
+        // A received result wins a later managed seal from a row callback.
+        // Promise reactions still run after this synchronous cache update.
+        if (this.#managedCalls?.has(requestId)) {
+          this.#managedCalls.delete(requestId);
+          const confirmed = this.#reducerCallbacks.get(requestId);
+          this.#reducerCallbacks.delete(requestId);
+          confirmed?.(result);
+        }
 
         if (result.tag === 'Ok') {
           const reducerInfo = this.#reducerCallInfo.get(requestId);
@@ -1086,6 +1205,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#reducerCallInfo.delete(requestId);
         const cb = this.#reducerCallbacks.get(requestId);
         this.#reducerCallbacks.delete(requestId);
+        this.#managedCalls?.delete(requestId);
         cb?.(result);
         break;
       }
@@ -1097,6 +1217,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             : { tag: 'Err', value: status.value };
         const cb = this.#procedureCallbacks.get(requestId);
         this.#procedureCallbacks.delete(requestId);
+        this.#managedCalls?.delete(requestId);
         cb?.(result);
         break;
       }
@@ -1200,9 +1321,20 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
+    if (this.#managedTerminalError)
+      return Promise.reject(new ContainerSessionCallError('not_sent'));
     const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
-    this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
+    this.#managedCalls?.set(requestId, { reject, sent: false });
+    try {
+      this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
+    } catch (error) {
+      const call = this.#managedCalls?.get(requestId);
+      if (!call) throw error;
+      this.#managedCalls!.delete(requestId);
+      reject(new ContainerSessionCallError(call.sent ? 'unknown' : 'not_sent'));
+      return promise;
+    }
     if (reducerArgs) {
       this.#reducerCallInfo.set(requestId, {
         name: reducerName,
@@ -1235,15 +1367,26 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
+    if (this.#managedTerminalError)
+      return Promise.reject(new ContainerSessionCallError('not_sent'));
     const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
+    this.#managedCalls?.set(requestId, { reject, sent: false });
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
       args: argsBuffer,
       requestId,
       flags: 0,
     });
-    this.#sendMessage(message);
+    try {
+      this.#sendMessage(message, requestId);
+    } catch (error) {
+      const call = this.#managedCalls?.get(requestId);
+      if (!call) throw error;
+      this.#managedCalls!.delete(requestId);
+      reject(new ContainerSessionCallError(call.sent ? 'unknown' : 'not_sent'));
+      return promise;
+    }
     if (reducerArgs) {
       this.#reducerCallInfo.set(requestId, {
         name: reducerName,
@@ -1316,9 +1459,24 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     encodedProcedureName: Uint8Array,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
+    if (this.#managedTerminalError)
+      return Promise.reject(new ContainerSessionCallError('not_sent'));
     const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
-    this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
+    this.#managedCalls?.set(requestId, { reject, sent: false });
+    try {
+      this.#sendCallProcedureMessage(
+        requestId,
+        encodedProcedureName,
+        argsBuffer
+      );
+    } catch (error) {
+      const call = this.#managedCalls?.get(requestId);
+      if (!call) throw error;
+      this.#managedCalls!.delete(requestId);
+      reject(new ContainerSessionCallError(call.sent ? 'unknown' : 'not_sent'));
+      return promise;
+    }
     this.#procedureCallbacks.set(requestId, result => {
       if (result.tag === 'Ok') {
         resolve(result.value);
@@ -1333,8 +1491,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
+    if (this.#managedTerminalError)
+      return Promise.reject(new ContainerSessionCallError('not_sent'));
     const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
+    this.#managedCalls?.set(requestId, { reject, sent: false });
     const message = ClientMessage.CallProcedure({
       procedure: procedureName,
       args: argsBuffer,
@@ -1342,7 +1503,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       // reserved for future use - 0 is the only valid value
       flags: 0,
     });
-    this.#sendMessage(message);
+    try {
+      this.#sendMessage(message, requestId);
+    } catch (error) {
+      const call = this.#managedCalls?.get(requestId);
+      if (!call) throw error;
+      this.#managedCalls!.delete(requestId);
+      reject(new ContainerSessionCallError(call.sent ? 'unknown' : 'not_sent'));
+      return promise;
+    }
     this.#procedureCallbacks.set(requestId, result => {
       if (result.tag === 'Ok') {
         resolve(result.value);

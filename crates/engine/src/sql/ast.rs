@@ -34,6 +34,9 @@ impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     }
 
     fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
+        if spacetimedb_datastore::system_tables::is_host_only_read_table(table_id) {
+            return None;
+        }
         self.tx
             .get_schema(table_id)
             .filter(|schema| self.auth.has_read_access(schema.table_access))

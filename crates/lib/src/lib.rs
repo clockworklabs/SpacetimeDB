@@ -11,7 +11,10 @@ use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
 pub mod connection_id;
+pub mod container;
+pub mod container_environment;
 pub mod db;
+pub mod deployment;
 mod direct_index_key;
 pub mod environment;
 pub mod error;

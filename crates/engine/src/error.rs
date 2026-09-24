@@ -97,6 +97,8 @@ pub enum ViewError {
 
 #[derive(Error, Debug)]
 pub enum DBError {
+    #[error("database storage is closed")]
+    DatabaseClosed,
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
     #[error("BufferError: {0}")]

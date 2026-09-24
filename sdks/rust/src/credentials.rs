@@ -1,4 +1,8 @@
-//! Utilities for saving and re-using credentials.
+//! Credentials for ordinary clients and hosted container processes.
+//!
+//! Hosted containers should use `Container` and
+//! `DbConnectionBuilder::with_container_credentials` instead of saving
+//! their short-lived tokens to a file. Those APIs are available in native builds.
 //!
 //! Users are encouraged to import this module by name and refer to its contents by qualified path, like:
 //! ```ignore
@@ -7,6 +11,13 @@
 //!     credentials::File::new("my_app")
 //! }
 //! ```
+
+#[cfg(not(feature = "browser"))]
+mod container;
+#[cfg(all(test, not(feature = "browser")))]
+pub(crate) use container::tests as container_tests;
+#[cfg(not(feature = "browser"))]
+pub use container::{Container, ContainerCredentialError, ContainerToken};
 
 #[cfg(not(feature = "browser"))]
 mod native_mod {

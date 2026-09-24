@@ -98,6 +98,7 @@ tracing-subscriber.workspace = true
 tracing-tracy.workspace = true
 tracing.workspace = true
 url.workspace = true
+uuid = { workspace = true, features = ["v4", "v7"] }
 v8.workspace = true
 wasmtime.workspace = true
 wasmtime-internal-fiber.workspace = true

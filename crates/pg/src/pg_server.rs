@@ -282,13 +282,11 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 
                 let claims = match validate_token(&self.ctx, &pwd.password).await {
                     Ok(claims) => claims,
-                    Err(err) => {
-                        // TODO: Do not log the supplied password/token; then classify credential errors separately from provider failures.
-                        log::warn!(
-                            "PG: Authentication failed for identity `{}` on database {database}: {err}",
-                            pwd.password
-                        );
-                        let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
+                    Err(_) => {
+                        // The supplied password is a bearer token. Validator
+                        // errors can also contain untrusted claims or responses.
+                        log::warn!("PG: Authentication failed on database {database}");
+                        let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), "Invalid token".to_owned());
                         return close_client(client, err).await;
                     }
                 };
