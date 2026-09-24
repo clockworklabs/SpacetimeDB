@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A SpacetimeDB email example with Resend delivery requests, webhook verification, and live delivery status."
+    />
+    <title>Dispatch</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+            >
+              <path d="M22 2 11 13" />
+              <path d="M22 2 15 22l-4-9-9-4z" />
+            </svg>
+          </span>
+          <div class="brand-text">
+            <h1>Dispatch</h1>
+            <span class="brand-sub"
+              >Send an email, watch its delivery resolve live</span
+            >
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel compose">
+          <div class="compose-head">
+            <h2>Compose</h2>
+            <p class="muted">
+              Dispatched through the mounted Resend submodule.
+            </p>
+          </div>
+
+          <form id="compose-form" class="form-grid">
+            <label>
+              To
+              <input
+                id="to-input"
+                autocomplete="off"
+                placeholder="you@example.com"
+              />
+            </label>
+            <label>
+              Subject
+              <input
+                id="subject-input"
+                autocomplete="off"
+                placeholder="Hello from Dispatch"
+              />
+            </label>
+            <div class="field">
+              <div class="field-head">
+                <span class="field-label">Message</span>
+                <div class="msg-tabs" role="tablist">
+                  <button type="button" class="msg-tab active" data-tab="write">
+                    Write
+                  </button>
+                  <button type="button" class="msg-tab" data-tab="preview">
+                    Preview
+                  </button>
+                </div>
+              </div>
+              <textarea
+                id="message-input"
+                aria-label="Email message"
+                placeholder="Write something worth opening."
+              ></textarea>
+              <div id="message-preview" class="mail-preview" hidden></div>
+            </div>
+            <button id="send-btn" class="primary" type="submit">Send</button>
+            <div id="form-error" class="form-error"></div>
+          </form>
+
+          <div class="test-block">
+            <span class="test-label">Resend test addresses</span>
+            <div class="test-row">
+              <button type="button" data-fill="delivered@resend.dev">
+                <b>Delivered</b>
+              </button>
+              <button type="button" data-fill="bounced@resend.dev">
+                <b>Bounced</b>
+              </button>
+              <button type="button" data-fill="complained@resend.dev">
+                <b>Complaint</b>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel console">
+          <header class="console-head">
+            <div class="console-copy">
+              <h2>Live delivery</h2>
+              <p class="muted">
+                Every dispatch and its lifecycle, streamed from SpacetimeDB.
+              </p>
+            </div>
+            <div class="console-right">
+              <span id="feed-count" class="feed-count">0 sent</span>
+              <button id="clear-btn" type="button">Clear</button>
+            </div>
+          </header>
+
+          <div class="metrics">
+            <div class="metric">
+              <strong id="count-sent">0</strong><span>Sent</span>
+            </div>
+            <div class="metric delivered">
+              <strong id="count-delivered">0</strong><span>Delivered</span>
+            </div>
+            <div class="metric opened">
+              <strong id="count-opened">0</strong><span>Opened</span>
+            </div>
+            <div class="metric bounced">
+              <strong id="count-bounced">0</strong><span>Bounced</span>
+            </div>
+          </div>
+
+          <div id="feed" class="feed"></div>
+        </section>
+      </main>
+
+      <footer class="page-foot">
+        <span class="by">Built on</span>
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display: inline-flex"
+          ><img src="/assets/brand.svg" alt="SpacetimeDB"
+        /></a>
+      </footer>
+    </div>
+
+    <script type="module" src="/app.js?v=dispatch-15"></script>
+  </body>
+</html>
