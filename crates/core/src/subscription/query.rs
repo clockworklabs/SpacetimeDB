@@ -9,6 +9,8 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_physical_plan::plan::ProjectPlan;
+use spacetimedb_primitives::ViewId;
+use spacetimedb_sats::u256;
 use spacetimedb_subscription::SubscriptionPlan;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*$").unwrap());
@@ -41,6 +43,27 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let (plans, has_param, _) = SubscriptionPlan::compile_plans(input, &tx, auth)?;
     let hash = QueryHash::from_string(input, auth.caller(), has_param);
     Ok(Plan::new(plans, hash, input.to_owned()))
+}
+
+/// Compile a query which reads scoped views, binding them to the caller's scopes `view_scopes`.
+///
+/// The hash of the returned plan identifies these scopes,
+/// so that the plan is shared by every caller in the same scopes,
+/// unless the query's result also depends on the caller's identity.
+pub(crate) fn compile_query_for_view_scopes<Tx: Datastore + StateView>(
+    auth: &AuthCtx,
+    tx: &Tx,
+    input: &str,
+    view_scopes: Vec<(ViewId, u256)>,
+) -> Result<CompiledQuery, DBError> {
+    let tx = SchemaViewer::new(tx, auth);
+    let compiled = SubscriptionPlan::compile_plans_for_scopes(input, &tx, auth, view_scopes.iter().copied())?;
+    let identity = (auth.bypass_rls() || compiled.reads_sender).then(|| auth.caller());
+    let hash = QueryHash::from_string_and_view_scopes(input, identity, &view_scopes);
+    Ok(CompiledQuery {
+        plan: Plan::new_scoped(compiled.plans, hash, input.to_owned(), identity),
+        physical_plans: compiled.physical_plans,
+    })
 }
 
 /// Compile a string into a single read-only query with externally-computed hashes.

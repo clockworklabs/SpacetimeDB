@@ -26,7 +26,7 @@ use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+    AnonymousViewOp, ExecutionError, ReducerOp, ReducerResult, ScopeResolverOp, ViewOp, ViewReturnData,
 };
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx};
 use crate::host::{AbiCall, ArgsTuple};
@@ -434,6 +434,16 @@ pub fn get_hooks_from_default_export<'scope>(
             .map_err(|e| e.throw(scope))?
     };
 
+    // `call_view_scope` is optional, for the same reason as `call_http_handler`.
+    let call_view_scope = {
+        let key = str_from_ident!(__call_view_scope__).string(scope);
+        let value = hooks.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+        (!value.is_null_or_undefined())
+            .then(|| cast!(scope, value, Function, "module function hook `__call_view_scope__`"))
+            .transpose()
+            .map_err(|e| e.throw(scope))?
+    };
+
     // Cache hooks in context slots so syscall-time code can reconstruct them.
     let hooks = HookFunctions {
         abi: AbiVersion::V2,
@@ -444,6 +454,7 @@ pub fn get_hooks_from_default_export<'scope>(
         call_reducer,
         call_view: Some(call_view),
         call_view_anon: Some(call_view_anon),
+        call_view_scope,
         call_procedure: Some(call_procedure),
         call_http_handler,
     };
@@ -552,6 +563,7 @@ pub(super) fn call_call_view(
         table_id: _,
         name: _,
         sender,
+        call: _,
         timestamp: _,
         args: view_args,
     } = op;
@@ -601,6 +613,7 @@ pub(super) fn call_call_view_anon(
         view_id: _,
         table_id: _,
         name: _,
+        call: _,
         timestamp: _,
         args: view_args,
     } = op;
@@ -628,6 +641,53 @@ pub(super) fn call_call_view_anon(
         data_val,
         v8::Uint8Array,
         "bytes in the `data` field returned from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+    let bytes = ret.get_contents(&mut []);
+
+    Ok(ViewReturnData::HeaderFirst(Bytes::copy_from_slice(bytes)))
+}
+
+/// Calls the `__call_view_scope__` function `fun`.
+pub(super) fn call_call_view_scope(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: ScopeResolverOp<'_>,
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
+    let fun = hooks
+        .call_view_scope
+        .context("`__call_view_scope__` was never defined")?;
+
+    let ScopeResolverOp {
+        fn_ptr: ViewFnPtr(resolver_id),
+        sender,
+        ..
+    } = op;
+    // Serialize the arguments.
+    let resolver_id = serialize_to_js(scope, &resolver_id)?;
+    let sender = serialize_to_js(scope, &sender.to_u256())?;
+    let args = &[resolver_id, sender];
+
+    // Call the function.
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
+
+    // Returns an object with a `data` field containing the bytes.
+    let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_scope__`").map_err(|e| e.throw(scope))?;
+
+    let Some(data_key) = v8::String::new(scope, "data") else {
+        return Err(ErrorOrException::Err(anyhow::anyhow!("error creating a v8 string")));
+    };
+    let Some(data_val) = ret.get(scope, data_key.into()) else {
+        return Err(ErrorOrException::Err(anyhow::anyhow!(
+            "data key not found in return object"
+        )));
+    };
+
+    let ret = cast!(
+        scope,
+        data_val,
+        v8::Uint8Array,
+        "bytes in the `data` field returned from `__call_view_scope__`"
     )
     .map_err(|e| e.throw(scope))?;
     let bytes = ret.get_contents(&mut []);

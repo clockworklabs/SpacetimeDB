@@ -33,6 +33,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, WithTypespace};
 use crate::auto_migrate::PrettyPrintStyle;
 use crate::def::{
     ColumnDef, HttpRouteDef, IndexAlgorithm, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef,
+    ViewInstancing,
 };
 use crate::identifier::NamespacePath;
 use crate::styled_writer::StyledWriter;
@@ -503,7 +504,11 @@ fn write_view_row(w: &mut StyledWriter, prefix: &NamespacePath, owning: &ModuleD
     let ret = type_name(owning, &view.return_type_for_generate).to_string();
     let tags = [
         Some(if view.is_public { "[public]" } else { "[private]" }),
-        view.is_anonymous.then_some("[anonymous]"),
+        match view.instancing() {
+            ViewInstancing::Global => Some("[anonymous]"),
+            ViewInstancing::PerSender => None,
+            ViewInstancing::Scoped => Some("[scoped]"),
+        },
     ]
     .into_iter()
     .flatten()

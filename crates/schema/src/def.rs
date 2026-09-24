@@ -36,7 +36,8 @@ use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
     RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
     RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawScopedViewDefV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -819,6 +820,50 @@ impl ModuleDef {
                 .sum::<usize>()
     }
 
+    /// Count of scope resolvers in this module (not including submodules).
+    pub fn scope_resolver_count(&self) -> usize {
+        self.views.values().filter(|v| v.scope.is_some()).count()
+    }
+
+    /// Total scope resolver count including all submodules (depth-first sum).
+    pub fn total_scope_resolver_count(&self) -> usize {
+        self.scope_resolver_count()
+            + self
+                .submodules
+                .values()
+                .map(|m| m.total_scope_resolver_count())
+                .sum::<usize>()
+    }
+
+    /// Look up the globally-unique fn_ptr of the scope resolver for the view named `name`,
+    /// resolving dot-qualified names like `"lib.library_view"`.
+    ///
+    /// Like view fn_ptrs, resolver fn_ptrs are offset by the resolvers of all modules
+    /// that precede the view's module in depth-first order.
+    /// Returns `None` if the view does not exist or is not scoped.
+    pub fn scope_resolver_global_fn_ptr(&self, name: &str) -> Option<ViewFnPtr> {
+        self.scope_resolver_global_fn_ptr_inner(name, 0)
+    }
+
+    fn scope_resolver_global_fn_ptr_inner(&self, name: &str, offset: u32) -> Option<ViewFnPtr> {
+        match name.split_once('.') {
+            None => {
+                let scope = self.views.get(name)?.scope?;
+                Some(ViewFnPtr(scope.resolver_fn_ptr.0 + offset))
+            }
+            Some((namespace, rest)) => {
+                let mut off = offset + self.scope_resolver_count() as u32;
+                for (ns, submodule) in &self.submodules {
+                    if ns == namespace {
+                        return submodule.scope_resolver_global_fn_ptr_inner(rest, off);
+                    }
+                    off += submodule.total_scope_resolver_count() as u32;
+                }
+                None
+            }
+        }
+    }
+
     /// Convenience method to look up a procedure, possibly by a string.
     pub fn procedure<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ProcedureDef> {
         // If the string IS a valid identifier, we can just look it up.
@@ -1182,6 +1227,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
         let mut raw_view_primary_keys = Vec::new();
+        let mut raw_scoped_views = Vec::new();
         let raw_views: Vec<RawViewDefV10> = views
             .into_values()
             .map(|vd| {
@@ -1189,6 +1235,12 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(vd.accessor_name.clone()),
                     RawIdentifier::from(vd.name.clone()),
                 );
+                if let Some(scope) = vd.scope {
+                    raw_scoped_views.push(RawScopedViewDefV10 {
+                        view_source_name: RawIdentifier::from(vd.accessor_name.clone()),
+                        resolver_index: scope.resolver_fn_ptr.into(),
+                    });
+                }
                 // Only explicit procedural-view primary keys are serialized into
                 // `ViewPrimaryKeys`. Primary keys for query builder views are
                 // inferred again during validation from the returned table type.
@@ -1217,6 +1269,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
         if !raw_view_primary_keys.is_empty() {
             sections.push(RawModuleDefV10Section::ViewPrimaryKeys(raw_view_primary_keys));
+        }
+        if !raw_scoped_views.is_empty() {
+            sections.push(RawModuleDefV10Section::ScopedViews(raw_scoped_views));
         }
 
         if !schedules.is_empty() {
@@ -2228,9 +2283,49 @@ pub struct ViewDef {
     /// The same information is stored in `params`.
     /// This is just a more convenient-to-access format.
     pub param_columns: Vec<ViewParamDef>,
+
+    /// If this is a scoped view, its scope metadata.
+    ///
+    /// A scoped view is an anonymous view whose only parameter is the scope key.
+    /// It is materialized once per distinct scope key,
+    /// and each subscriber observes the rows for the key its resolver returns.
+    pub scope: Option<ViewScopeDef>,
+}
+
+/// Scope metadata for a scoped view.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct ViewScopeDef {
+    /// The index of the scope resolver within the module's list of scope resolvers.
+    pub resolver_fn_ptr: ViewFnPtr,
+}
+
+/// How the materialized instances of a view are keyed.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ViewInstancing {
+    /// An anonymous view, materialized once and shared by all subscribers.
+    Global,
+    /// A view with a `ViewContext`, materialized once per subscriber identity.
+    PerSender,
+    /// A scoped view, materialized once per distinct scope key.
+    Scoped,
 }
 
 impl ViewDef {
+    /// How are the materialized instances of this view keyed?
+    pub fn instancing(&self) -> ViewInstancing {
+        match (self.scope, self.is_anonymous) {
+            (Some(_), _) => ViewInstancing::Scoped,
+            (None, true) => ViewInstancing::Global,
+            (None, false) => ViewInstancing::PerSender,
+        }
+    }
+
+    /// The type of this view's scope key, if it is a scoped view.
+    pub fn scope_key_type(&self) -> Option<&AlgebraicType> {
+        self.scope?;
+        self.params.elements.first().map(|elem| &elem.algebraic_type)
+    }
+
     /// Get a column by the column's name.
     pub fn get_column_by_name(&self, name: &Identifier) -> Option<&ViewColumnDef> {
         self.return_columns.iter().find(|c| &c.name == name)

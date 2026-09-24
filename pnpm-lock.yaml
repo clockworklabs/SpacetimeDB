@@ -304,6 +304,12 @@ importers:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
 
+  modules/scoped-views-bench-ts:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
+
   modules/sdk-test-case-conversion-ts:
     dependencies:
       spacetimedb:

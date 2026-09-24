@@ -586,6 +586,7 @@ fn auto_migrate_view<'def>(
     // 2. If we change the order of the columns or parameters
     // 3. If we change the types of the columns or parameters
     // 4. If we change the context parameter
+    // 5. If we make a view scoped or unscoped
     let old_return_cols: HashMap<&Identifier, &ViewColumnDef> =
         old.return_columns.iter().map(|c| (&c.name, c)).collect();
     let new_return_cols: HashMap<&Identifier, &ViewColumnDef> =
@@ -663,6 +664,7 @@ fn auto_migrate_view<'def>(
     }
 
     if old.is_anonymous != new.is_anonymous
+        || old.scope.is_some() != new.scope.is_some()
         || old.primary_key != new.primary_key
         || incompatible_return_type
         || incompatible_param_types
@@ -2703,6 +2705,42 @@ mod tests {
                     );
                 }),
             },
+            TestCase {
+                desc: "Make view scoped",
+                old_def: create_module_def_v10(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        0,
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def_v10(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        0,
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                    builder.add_scoped_view("my_view", 0);
+                }),
+            },
         ] {
             let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
             let steps = &plan.steps[..];
@@ -2722,6 +2760,33 @@ mod tests {
                 "{name}, steps: {steps:?}"
             );
         }
+    }
+
+    #[test]
+    fn unchanged_scoped_view_is_updated_in_place() {
+        let def = || {
+            create_module_def_v10(|builder| {
+                let return_type_ref = builder.add_algebraic_type(
+                    [],
+                    "my_view_return_type",
+                    AlgebraicType::product([("a", AlgebraicType::U64)]),
+                    true,
+                );
+                builder.add_view(
+                    "my_view",
+                    0,
+                    true,
+                    true,
+                    ProductType::from([("x", AlgebraicType::U32)]),
+                    AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+                );
+                builder.add_scoped_view("my_view", 0);
+            })
+        };
+        let (old_def, new_def) = (def(), def());
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        assert!(!plan.disconnects_all_users(), "plan: {plan:?}");
+        assert_eq!(plan.steps, [AutoMigrateStep::UpdateView(key("", "my_view"))]);
     }
 
     #[test]

@@ -63,6 +63,7 @@ import {
   type AnonymousViewCtx,
   type AnonViews,
   type ViewCtx,
+  type ScopeResolvers,
   type Views,
 } from './views';
 import {
@@ -377,6 +378,7 @@ type FlatSubmoduleDispatch = {
   procedureDefs: RawProcedureDefV10[];
   anonViewFns: AnonViews;
   viewFns: Views;
+  scopeResolverFns: ScopeResolvers;
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
   schemaTables: Record<string, UntypedTableDef>;
   typespace: Typespace;
@@ -401,6 +403,7 @@ function flattenSubmoduleDispatches(
       procedureDefs: d.procedureDefs,
       anonViewFns: d.anonViewFns,
       viewFns: d.viewFns,
+      scopeResolverFns: d.scopeResolverFns,
       tables: d.tables,
       schemaTables: d.schemaTables,
       typespace: d.typespace,
@@ -427,6 +430,7 @@ class ModuleHooksImpl implements ModuleHooks {
   #flatSubmodules: FlatSubmoduleDispatch[];
   #consumerAnonViewCount: number;
   #consumerViewCount: number;
+  #consumerScopeResolverCount: number;
   /** Cache the `ReducerCtx` object to avoid allocating anew for every reducer call. */
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
   /** Per-submodule alias ctx maps, cached lazily (parallel to #flatSubmodules). */
@@ -438,6 +442,7 @@ class ModuleHooksImpl implements ModuleHooks {
     this.#consumerProcedureCount = schema.procedures.length;
     this.#consumerAnonViewCount = schema.anonViews.length;
     this.#consumerViewCount = schema.views.length;
+    this.#consumerScopeResolverCount = schema.scopeResolvers.length;
     this.#flatSubmodules = flattenSubmoduleDispatches(
       schema.submoduleDispatchInfos
     );
@@ -694,6 +699,50 @@ class ModuleHooksImpl implements ModuleHooks {
       ViewResultHeader.serialize(retBuf, ViewResultHeader.RowData);
       serializeReturn(retBuf, ret);
     }
+    return { data: retBuf.getBuffer() };
+  }
+
+  __call_view_scope__(id: u32, sender: u256): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
+    let scopeResolverFns: ScopeResolvers;
+    let localId: number;
+    let dbView: ReadonlyDbView<any>;
+    let from: QueryBuilder<any>;
+
+    if (id < this.#consumerScopeResolverCount) {
+      scopeResolverFns = moduleCtx.scopeResolvers;
+      localId = id;
+      dbView = this.#dbView as ReadonlyDbView<any>;
+      from = makeQueryBuilder(moduleCtx.schemaType);
+    } else {
+      let offset = this.#consumerScopeResolverCount;
+      let found = false;
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
+        if (id < offset + m.scopeResolverFns.length) {
+          scopeResolverFns = m.scopeResolverFns;
+          localId = id - offset;
+          dbView = this.#getSubmoduleDbView(i) as ReadonlyDbView<any>;
+          from = this.#getSubmoduleQueryBuilder(i);
+          found = true;
+          break;
+        }
+        offset += m.scopeResolverFns.length;
+      }
+      if (!found) throw new RangeError(`unknown scopeResolverId ${id}`);
+    }
+
+    const { fn, serializeKey, keyTypeBaseSize } = scopeResolverFns![localId!];
+    const ctx: ViewCtx<any> = freeze({
+      env: environment,
+      sender: new Identity(sender),
+      db: dbView!,
+      from: from!,
+    });
+    const key = callUserFunction(fn, ctx);
+    const retBuf = new BinaryWriter(keyTypeBaseSize);
+    ViewResultHeader.serialize(retBuf, ViewResultHeader.RowData);
+    serializeKey(retBuf, key ?? undefined);
     return { data: retBuf.getBuffer() };
   }
 

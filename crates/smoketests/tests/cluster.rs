@@ -39,4 +39,5 @@ mod cluster {
     mod templates;
     mod timestamp_route;
     mod views;
+    mod views_scoped;
 }

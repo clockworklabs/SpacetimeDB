@@ -192,3 +192,60 @@ spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
     .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id))
     .build();
 });
+
+// Scoped views: the resolver sees the sender and returns the scope key,
+// and the body receives the key with an anonymous context.
+spacetime.scopedView(
+  { name: 'personsByName', public: true, scope: t.string() },
+  arrayRetValue,
+  ctx => ctx.db.person.id.find(1)?.name,
+  (ctx, name: string) =>
+    Array.from(ctx.db.person.iter()).filter(p => p.name === name)
+);
+
+// Composite scope keys.
+const nameAndId = t.object('NameAndId', { name: t.string(), id: t.u32() });
+spacetime.scopedView(
+  { name: 'personByNameAndId', public: true, scope: nameAndId },
+  optionalPerson,
+  ctx => ({ name: ctx.sender.toHexString(), id: 1 }),
+  (ctx, key) => {
+    const person = ctx.db.person.id.find(key.id);
+    return person?.name === key.name ? person : undefined;
+  }
+);
+
+// Resolvers may return `null` for no scope, e.g. from a failed lookup.
+spacetime.scopedView(
+  { name: 'personsByIdOrNone', public: true, scope: t.u32() },
+  arrayRetValue,
+  ctx => {
+    const person = ctx.db.person.id.find(1);
+    return person && person.id;
+  },
+  (ctx, id) => Array.from(ctx.db.person.iter()).filter(p => p.id === id)
+);
+
+// Scoped view bodies may return queries.
+spacetime.scopedView(
+  { name: 'personsByIdQuery', public: true, scope: t.u32() },
+  arrayRetValue,
+  () => 1,
+  (ctx, id) => ctx.from.person.where(p => p.id.eq(id)).build()
+);
+
+spacetime.scopedView(
+  { name: 'wrongKeyType', public: true, scope: t.u32() },
+  arrayRetValue,
+  // @ts-expect-error the resolver must return the scope key type.
+  () => 'not a u32',
+  () => []
+);
+
+spacetime.scopedView(
+  { name: 'bodyCannotSeeSender', public: true, scope: t.u32() },
+  arrayRetValue,
+  () => 1,
+  // @ts-expect-error the body receives an anonymous context without `sender`.
+  ctx => (ctx.sender ? [] : [])
+);

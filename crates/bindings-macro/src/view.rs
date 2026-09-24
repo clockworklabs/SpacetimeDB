@@ -13,6 +13,8 @@ pub(crate) struct ViewArgs {
     name: Option<LitStr>,
     accessor: Ident,
     primary_key: Option<ViewPrimaryKeyArg>,
+    /// The scope resolver of a scoped view, given by `#[view(scope = resolver)]`.
+    scope: Option<syn::Path>,
     #[allow(unused)]
     public: bool,
 }
@@ -55,6 +57,7 @@ impl ViewArgs {
         let mut name = None;
         let mut accessor = None;
         let mut primary_key = None;
+        let mut scope = None;
         let mut public = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
@@ -74,6 +77,10 @@ impl ViewArgs {
                     check_duplicate_msg(&primary_key, &meta, "`primary_key` already specified")?;
                     primary_key = Some(ViewPrimaryKeyArg::parse(meta.value()?)?);
                 }
+                sym::scope => {
+                    check_duplicate_msg(&scope, &meta, "`scope` already specified")?;
+                    scope = Some(meta.value()?.parse::<syn::Path>()?);
+                }
             });
             Ok(())
         })
@@ -90,6 +97,7 @@ impl ViewArgs {
         Ok(Self {
             name,
             primary_key,
+            scope,
             public: true,
             accessor,
         })
@@ -185,13 +193,26 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         ));
     };
 
+    // A scoped view takes exactly one parameter after the context, its scope key.
+    // Other views do not take parameters.
     // TODO: Re-enable parameterized views once we can pass args from sql
-    if !arg_tys.is_empty() {
-        return Err(syn::Error::new_spanned(
-            &original_function.sig,
-            "Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`",
-        ));
-    }
+    let scope_key_ty = match (&args.scope, arg_tys) {
+        (Some(_), [key_ty]) => Some(*key_ty),
+        (Some(_), _) => {
+            return Err(syn::Error::new_spanned(
+                &original_function.sig,
+                "Scoped views must take exactly one parameter after `&AnonymousViewContext`, the scope key",
+            ));
+        }
+        (None, []) => None,
+        (None, _) => {
+            return Err(syn::Error::new_spanned(
+                &original_function.sig,
+                "Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`, \
+                 unless they are scoped with `#[view(scope = resolver)]`",
+            ));
+        }
+    };
 
     // Extract the context type
     let ctx_ty = match ctx_ty {
@@ -220,12 +241,39 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     let lt_params = &original_function.sig.generics;
     let lt_where_clause = &lt_params.where_clause;
 
-    let generated_describe_function = quote! {
-        #[unsafe(export_name = #register_describer_symbol)]
-        pub extern "C" fn __register_describer() {
-            spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
+    let generated_describe_function = if scope_key_ty.is_some() {
+        quote! {
+            #[unsafe(export_name = #register_describer_symbol)]
+            pub extern "C" fn __register_describer() {
+                spacetimedb::rt::register_scoped_view::<_, #func_name, _, _>(#func_name, #func_name::resolve_scope)
+            }
+        }
+    } else {
+        quote! {
+            #[unsafe(export_name = #register_describer_symbol)]
+            pub extern "C" fn __register_describer() {
+                spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
+            }
         }
     };
+
+    // For a scoped view, generate a shim invoking the resolver,
+    // which checks that the resolver returns the view's scope key type.
+    let scope_resolver_impl = args.scope.as_ref().zip(scope_key_ty).map(|(resolver, key_ty)| {
+        quote! {
+            const _: () = {
+                fn _assert_scoped_view_ctx #lt_params () #lt_where_clause {
+                    let _ = <#ctx_ty as spacetimedb::rt::ScopedViewContextArg>::_ITEM;
+                }
+            };
+
+            impl #func_name {
+                fn resolve_scope(__ctx: spacetimedb::ViewContext) -> Vec<u8> {
+                    spacetimedb::rt::invoke_scope_resolver::<#key_ty, _, _>(#resolver, __ctx)
+                }
+            }
+        }
+    });
 
     let explicit_name = args.name.as_ref();
     let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
@@ -325,6 +373,8 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         };
 
         #primary_key_field_check
+
+        #scope_resolver_impl
 
         impl #func_name {
             fn invoke(__ctx: #ctx_ty, __args: &[u8]) -> Vec<u8> {

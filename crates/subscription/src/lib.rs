@@ -5,12 +5,12 @@ use spacetimedb_execution::{
     Datastore, DeltaStore, ExecutionParams, Row,
 };
 use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
-use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, sats::u256, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{
     IxScan, Label, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectPlan, TableScan,
 };
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
-use spacetimedb_query::compile_subscription;
+use spacetimedb_query::{compile_subscription_detailed, CompiledSubscription};
 use spacetimedb_schema::{schema::TableSchema, table_name::TableName};
 use std::{ops::RangeBounds, sync::Arc};
 
@@ -389,8 +389,10 @@ struct SubscriptionMetadata {
     view_ids: Vec<ViewId>,
     /// Whether this plan reads from an anonymous view.
     reads_anonymous_view: bool,
-    /// Whether this plan reads from a non-anonymous view.
+    /// Whether this plan reads from a view materialized per caller identity.
     reads_non_anonymous_view: bool,
+    /// The scoped views read by this plan, sorted.
+    scoped_view_ids: Vec<ViewId>,
     /// Search arguments used for pruning.
     search_args: Vec<(TableId, ColId, AlgebraicValue)>,
     /// Join edge used for pruning.
@@ -502,6 +504,11 @@ impl SubscriptionPlan {
         }
     }
 
+    /// The scoped views read by this plan, sorted.
+    pub fn scoped_view_ids(&self) -> &[ViewId] {
+        &self.metadata.scoped_view_ids
+    }
+
     /// Search arguments used for pruning.
     pub fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + '_ {
         self.metadata.search_args.iter().cloned()
@@ -597,12 +604,35 @@ impl SubscriptionPlan {
     }
 
     /// Generate a plan for incrementally maintaining a subscription
+    ///
+    /// The returned `bool` is set if the result of the subscription may depend on the caller.
+    /// Scoped views read by the plan are not bound to any scope, so they select no rows;
+    /// see [`Self::compile_plans_for_scopes`].
     pub fn compile_plans(
         sql: &str,
         tx: &impl SchemaView,
         auth: &AuthCtx,
     ) -> Result<(Vec<Self>, bool, Vec<ProjectPlan>)> {
-        let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
+        let compiled = Self::compile_plans_for_scopes(sql, tx, auth, [])?;
+        let has_param = compiled.reads_sender || compiled.reads_scoped_view;
+        Ok((compiled.plans, has_param, compiled.physical_plans))
+    }
+
+    /// Generate a plan for incrementally maintaining a subscription,
+    /// binding the scoped views it reads to the caller's scopes `view_scopes`.
+    pub fn compile_plans_for_scopes(
+        sql: &str,
+        tx: &impl SchemaView,
+        auth: &AuthCtx,
+        view_scopes: impl IntoIterator<Item = (ViewId, u256)>,
+    ) -> Result<CompiledSubscriptionPlans> {
+        let CompiledSubscription {
+            plans,
+            return_id,
+            return_name,
+            reads_sender,
+            reads_scoped_view,
+        } = compile_subscription_detailed(sql, tx, auth)?;
 
         /// Does this plan have any non-index joins?
         fn has_non_index_join(plan: &PhysicalPlan) -> bool {
@@ -640,7 +670,7 @@ impl SubscriptionPlan {
 
         let mut subscriptions = vec![];
         let mut physical_plans = vec![];
-        let params = ExecutionParams::from_auth(auth);
+        let params = ExecutionParams::from_auth(auth).with_view_scopes(view_scopes);
 
         for plan in plans {
             let plan_opt = plan.clone().optimize()?;
@@ -667,6 +697,7 @@ impl SubscriptionPlan {
                 view_ids: view_ids.into_iter().collect(),
                 reads_anonymous_view: plan_opt.reads_from_view(true),
                 reads_non_anonymous_view: plan_opt.reads_from_view(false),
+                scoped_view_ids: plan_opt.scoped_view_ids(),
                 search_args: plan_opt.physical_plan().search_args(&params),
                 join_edge: Self::join_edge_for_plan(&plan_opt, return_id, is_join, &params),
                 scan_metrics: SubscriptionPlanMetrics::from_physical_plan(plan_opt.physical_plan()),
@@ -678,12 +709,27 @@ impl SubscriptionPlan {
                 return_id,
                 return_name: return_name.clone(),
                 base_plan: PipelinedProject::from(plan_opt),
-                params,
+                params: params.clone(),
                 fragments,
                 metadata,
             });
         }
 
-        Ok((subscriptions, has_param, physical_plans))
+        Ok(CompiledSubscriptionPlans {
+            plans: subscriptions,
+            physical_plans,
+            reads_sender,
+            reads_scoped_view,
+        })
     }
+}
+
+/// The plans compiled for a subscription query by [`SubscriptionPlan::compile_plans_for_scopes`].
+pub struct CompiledSubscriptionPlans {
+    pub plans: Vec<SubscriptionPlan>,
+    pub physical_plans: Vec<ProjectPlan>,
+    /// Does the result of this subscription depend on the caller's identity?
+    pub reads_sender: bool,
+    /// Does this subscription read from a scoped view?
+    pub reads_scoped_view: bool,
 }

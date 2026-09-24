@@ -4,7 +4,7 @@ use super::module_subscription_manager::{
     from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
     SubscriptionManager, TransactionOffset,
 };
-use super::query::{compile_query_with_hashes, CompiledQuery};
+use super::query::{compile_query_for_view_scopes, compile_query_with_hashes, CompiledQuery};
 use super::tx::DeltaTx;
 use super::TableUpdateType;
 use crate::client::messages::{
@@ -22,7 +22,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::{collect_table_update, collect_table_update_for_view, execute_plans};
 use crate::worker_metrics::WORKER_METRICS;
 use core::panic;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
@@ -42,7 +42,10 @@ use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
+use spacetimedb_primitives::ViewId;
+use spacetimedb_sats::u256;
 use spacetimedb_schema::def::RawModuleDefVersion;
+use spacetimedb_schema::schema::ViewDefInfo;
 use spacetimedb_table::static_assert_size;
 use std::{
     ops::Range,
@@ -782,8 +785,24 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
 
+        let mut instance = instance;
+        let mut queries = [query];
+        let (mut_tx, scope_trapped, bound) = self.bind_view_scopes(
+            mut_tx,
+            instance.as_deref_mut(),
+            &auth,
+            &mut queries,
+            &mut physical_plans,
+        )?;
+        let [query] = queries;
+        if let Err(err) = bound {
+            let _ = send_err_msg(format!("{err}, executing: `{}`", query.sql()).into());
+            return Ok((None, scope_trapped));
+        }
+
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &query, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         return_on_err_with_sql_bool!(
             self.check_new_query_row_limit(std::slice::from_ref(&query), &physical_plans, &tx, &auth),
@@ -1634,6 +1653,30 @@ impl ModuleSubscriptions {
             }
         }
 
+        // Bind the queries which read scoped views to the sender's scopes,
+        // as their scopes determine under which hashes they are registered.
+        let mut instance = instance;
+        let mut scope_trapped = false;
+        let mut bound_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
+        let mut bound_sets = Vec::with_capacity(compiled_sets.len());
+        for (index, mut queries) in compiled_sets {
+            let (tx, trapped, bound) = self.bind_view_scopes(
+                bound_tx,
+                instance.as_deref_mut(),
+                &auth,
+                &mut queries,
+                &mut physical_plans,
+            )?;
+            bound_tx = tx;
+            scope_trapped |= trapped;
+            match bound {
+                Ok(()) => bound_sets.push((index, queries)),
+                Err(err) => outcomes[index] = ws_v2::SubscribeSetOutcome::Error(err.to_string().into()),
+            }
+        }
+        let compiled_sets = bound_sets;
+        let (mut_tx, _) = self.guard_mut_tx(bound_tx, <_>::default());
+
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
         // and `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still
@@ -1682,6 +1725,7 @@ impl ModuleSubscriptions {
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &registered_queries, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         // Evaluate every registered set at the single transaction offset above.
         // A set which fails has its registration removed,
@@ -1788,6 +1832,20 @@ impl ModuleSubscriptions {
             return Ok((None, false));
         }
 
+        let mut instance = instance;
+        let (mut queries, mut physical_plans) = (queries, physical_plans);
+        let (mut_tx, scope_trapped, bound) = self.bind_view_scopes(
+            mut_tx,
+            instance.as_deref_mut(),
+            &auth,
+            &mut queries,
+            &mut physical_plans,
+        )?;
+        if let Err(err) = bound {
+            send_err_msg(err.to_string().into());
+            return Ok((None, scope_trapped));
+        }
+
         let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -1812,6 +1870,7 @@ impl ModuleSubscriptions {
 
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         if let Err(err) = self.check_new_query_row_limit(&queries, &physical_plans, &tx, &auth) {
             self.remove_failed_subscription(
@@ -1937,8 +1996,20 @@ impl ModuleSubscriptions {
             subscription_metrics,
         )?;
 
+        let mut instance = instance;
+        let (mut queries, mut physical_plans) = (queries, physical_plans);
+        let (mut_tx, scope_trapped, bound) = self.bind_view_scopes(
+            mut_tx,
+            instance.as_deref_mut(),
+            &auth,
+            &mut queries,
+            &mut physical_plans,
+        )?;
+        bound?;
+
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
+        let trapped = trapped || scope_trapped;
 
         self.check_new_query_row_limit(&queries, &physical_plans, &tx, &auth)?;
 
@@ -2048,11 +2119,17 @@ impl ModuleSubscriptions {
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
-        let subscriptions = {
+        // If the transaction moves subscribers of scoped views to different scopes,
+        // their subscriptions must move too, which requires a write lock.
+        let mut subscriptions = {
             // How contended is the lock?
             let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
             let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
-            self.subscriptions.read()
+            if tx.has_view_scope_changes() && matches!(event.status, EventStatus::Committed(_)) {
+                SubscriptionsGuard::Write(self.subscriptions.write())
+            } else {
+                SubscriptionsGuard::Read(self.subscriptions.read())
+            }
         };
 
         let stdb = &self.relational_db;
@@ -2113,13 +2190,32 @@ impl ModuleSubscriptions {
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
-        let (update_metrics, failed_v2_subscriptions) = subscriptions.eval_updates_sequential(
-            (&delta_read_tx, tx_offset),
-            &self.bsatn_rlb_pool,
-            self.module_def_version(),
-            event.clone(),
-            caller,
-        );
+        let (update_metrics, failed_v2_subscriptions) = match &mut subscriptions {
+            SubscriptionsGuard::Read(subscriptions) => subscriptions.eval_updates_sequential(
+                (&delta_read_tx, tx_offset),
+                &self.bsatn_rlb_pool,
+                self.module_def_version(),
+                event.clone(),
+                caller,
+            ),
+            SubscriptionsGuard::Write(subscriptions) => {
+                let owner = stdb.owner_identity();
+                let mut rebind = |plan: &Plan, subscriber: Identity, view_scopes: Vec<(ViewId, u256)>| {
+                    let auth = AuthCtx::new(owner, subscriber);
+                    compile_query_for_view_scopes(&auth, &*read_tx, plan.sql(), view_scopes).map(|query| query.plan)
+                };
+                subscriptions.eval_updates_with_rescoping(
+                    (&delta_read_tx, tx_offset),
+                    &self.bsatn_rlb_pool,
+                    self.module_def_version(),
+                    event.clone(),
+                    caller,
+                    tx_data.view_scope_changes(),
+                    &mut rebind,
+                )
+            }
+        };
+        drop(delta_read_tx);
         drop(subscriptions);
         // For subscriptions that had an error, we have send the client an error message,
         // but we also need to remove the subscription so that we don't keep trying to send updates.
@@ -2175,6 +2271,60 @@ impl ModuleSubscriptions {
 
     /// We unsubscribe from views by decrementing the subscriber count in the view lifecycle state.
     /// Views without any subscribers are cleaned up async.
+    /// Bind the queries in `queries` which read scoped views to the scopes of `auth.caller()`.
+    ///
+    /// Such queries are compiled without scopes, which are only known once the caller's scope resolvers have run.
+    /// This runs them, materializing the views of the caller's scopes,
+    /// and recompiles each such query for those scopes, updating `physical_plans` accordingly.
+    /// The hash of a recompiled query identifies its scopes,
+    /// so that it is shared by every subscriber in the same scopes.
+    ///
+    /// Returns the transaction, whether a view trapped, and whether compiling the queries succeeded.
+    /// Returns an error, consuming the transaction, if the views could not be materialized.
+    fn bind_view_scopes<I: WasmInstance>(
+        &self,
+        mut tx: MutTxId,
+        instance: Option<&mut RefInstance<'_, I>>,
+        auth: &AuthCtx,
+        queries: &mut [Arc<Plan>],
+        physical_plans: &mut HashMap<QueryHash, Vec<ProjectPlan>>,
+    ) -> Result<(MutTxId, bool, Result<(), DBError>), DBError> {
+        let caller = auth.caller();
+        let scoped = queries
+            .iter()
+            .enumerate()
+            .filter(|(_, query)| query.reads_scoped_view())
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        if scoped.is_empty() {
+            return Ok((tx, false, Ok(())));
+        }
+
+        let mut trapped = false;
+        if let Some(instance) = instance {
+            let scoped_queries = scoped.iter().map(|&i| queries[i].clone()).collect::<Vec<_>>();
+            (tx, trapped) = ModuleHost::materialize_scoped_views(tx, instance, &scoped_queries, caller)?;
+        }
+
+        for i in scoped {
+            let query = &queries[i];
+            let view_scopes = match tx.view_scopes_for(query.scoped_view_ids(), caller) {
+                Ok(view_scopes) => view_scopes,
+                Err(err) => return Ok((tx, trapped, Err(err.into()))),
+            };
+            match compile_query_for_view_scopes(auth, &tx, query.sql(), view_scopes) {
+                Ok(compiled) => {
+                    physical_plans.remove(&query.hash());
+                    physical_plans.insert(compiled.plan.hash(), compiled.physical_plans);
+                    queries[i] = Arc::new(compiled.plan);
+                }
+                Err(err) => return Ok((tx, trapped, Err(err))),
+            }
+        }
+
+        Ok((tx, trapped, Ok(())))
+    }
+
     fn _unsubscribe_views(
         tx: &mut MutTxId,
         view_collector: &impl CollectViews,
@@ -2184,6 +2334,12 @@ impl ModuleSubscriptions {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let is_anonymous = tx.lookup_st_view(view_id)?.is_anonymous;
+            if ViewDefInfo::infer_is_scoped(is_anonymous, tx.is_view_parameterized(view_id)?) {
+                // The subscriber's scope may have changed since they subscribed,
+                // so look it up rather than recomputing it.
+                tx.unsubscribe_scoped_view(view_id, sender)?;
+                continue;
+            }
             let view_call = if is_anonymous {
                 ViewCallInfo::anonymous(view_id)
             } else {
@@ -2282,6 +2438,23 @@ impl ModuleSubscriptions {
     }
 }
 
+/// A lock on the [`SubscriptionManager`], for reading or writing.
+enum SubscriptionsGuard<'a> {
+    Read(RwLockReadGuard<'a, SubscriptionManager>),
+    Write(RwLockWriteGuard<'a, SubscriptionManager>),
+}
+
+impl std::ops::Deref for SubscriptionsGuard<'_> {
+    type Target = SubscriptionManager;
+
+    fn deref(&self) -> &SubscriptionManager {
+        match self {
+            Self::Read(guard) => guard,
+            Self::Write(guard) => guard,
+        }
+    }
+}
+
 /// Extra parameters for [`ModuleSubscriptions::guard_tx`].
 #[derive(Default)]
 struct GuardTxOptions {
@@ -2352,17 +2525,20 @@ mod tests {
     use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
-    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+    use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs, ViewScopeKey};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::metrics::ExecutionMetrics;
     use spacetimedb_lib::{bsatn, ConnectionId, ProductType, ProductValue, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_primitives::ViewId;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::ModuleDef;
     use std::future::Future;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
@@ -4787,5 +4963,201 @@ mod tests {
         assert_tx_update_for_table(rx_for_b.recv(), table_id, &schema, [product![2_u8]], []).await;
 
         Ok(())
+    }
+
+    /// The protocols through which clients subscribe, for tests which cover each of them.
+    #[derive(Clone, Copy, Debug)]
+    enum SubscribeProtocol {
+        V1Single,
+        V1Multi,
+        V1Legacy,
+        V2,
+    }
+
+    /// Create the scoped view `team_chat`, keyed by a team id, whose rows are `(text: String)`.
+    fn create_team_chat(db: &RelationalDB) -> anyhow::Result<(ViewId, TableId)> {
+        let mut builder = RawModuleDefV10Builder::new();
+        let message = builder.add_algebraic_type(
+            [],
+            "message",
+            AlgebraicType::product([("text", AlgebraicType::String)]),
+            true,
+        );
+        builder.add_view(
+            "team_chat",
+            0,
+            true,
+            true,
+            ProductType::from([("team_id", AlgebraicType::U64)]),
+            AlgebraicType::array(AlgebraicType::Ref(message)),
+        );
+        builder.add_scoped_view("team_chat", 0);
+        let module_def: ModuleDef = builder.finish().try_into()?;
+        let view_def = module_def.view("team_chat").unwrap();
+        Ok(
+            db.with_auto_commit(spacetimedb_datastore::execution_context::Workload::Internal, |tx| {
+                db.create_view(tx, &module_def, view_def)
+            })?,
+        )
+    }
+
+    fn team(team_id: u64) -> ViewScopeKey {
+        ViewScopeKey::from_args_bsatn(bsatn::to_vec(&product![team_id]).unwrap())
+    }
+
+    fn chat(texts: &[&str]) -> Vec<ProductValue> {
+        texts.iter().map(|text| product![text.to_string()]).collect()
+    }
+
+    /// Materialize the chat of `team` as `texts`, and mark its instance as materialized.
+    fn set_team_chat(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        (view_id, table_id): (ViewId, TableId),
+        team: &ViewScopeKey,
+        texts: &[&str],
+    ) -> anyhow::Result<()> {
+        let call = ViewCallInfo::scope_body(view_id, team);
+        tx.update_view_timestamp(call.clone(), ViewInstanceArgs::ScopeBody(team.clone()))?;
+        db.materialize_view_call(tx, table_id, call, chat(texts))?;
+        Ok(())
+    }
+
+    /// Pull a message from `rx` and assert that it updates `team_chat` with `inserts` and `deletes`.
+    async fn expect_team_chat_update(
+        protocol: SubscribeProtocol,
+        rx: &mut ClientConnectionReceiver,
+        table_id: TableId,
+        inserts: Vec<ProductValue>,
+        deletes: Vec<ProductValue>,
+    ) {
+        let schema = ProductType::from([AlgebraicType::String]);
+        match protocol {
+            SubscribeProtocol::V2 => {
+                assert_v2_tx_update_for_table(
+                    rx.recv(),
+                    ws_v2::QuerySetId::new(1),
+                    "team_chat",
+                    &schema,
+                    inserts,
+                    deletes,
+                )
+                .await
+            }
+            _ => assert_tx_update_for_table(rx.recv(), table_id, &schema, inserts, deletes).await,
+        }
+    }
+
+    /// A player on the red team subscribes to the scoped view `team_chat`,
+    /// then switches to the blue team.
+    /// The player must receive the difference between the two teams' chats,
+    /// omitting the messages they have in common,
+    /// and afterwards receive updates to the blue team's chat but not the red team's.
+    async fn check_rescoping(protocol: SubscribeProtocol) -> anyhow::Result<()> {
+        let db = relational_db()?;
+        let view = create_team_chat(&db)?;
+        let (view_id, table_id) = view;
+        let (red, blue) = (team(1), team(2));
+
+        let client_id = client_id_from_u8(1);
+        let player = client_id.identity;
+        let (sender, mut rx) = match protocol {
+            SubscribeProtocol::V2 => v2_client_connection(client_id, &db),
+            _ => client_connection(client_id, &db),
+        };
+        let auth = AuthCtx::new(db.owner_identity(), player);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        // The player is on the red team.
+        // Without a module, emulate what subscribing to the view does in `ModuleHost::materialize_views`.
+        let mut tx = begin_mut_tx(&db);
+        tx.set_view_scope(view_id, player, Some(red.clone()))?;
+        let resolver = ViewCallInfo::scope_resolver(view_id, player);
+        tx.subscribe_view(resolver, ViewInstanceArgs::ScopeResolver(player), player)?;
+        let red_call = ViewCallInfo::scope_body(view_id, &red);
+        tx.subscribe_view(red_call, ViewInstanceArgs::ScopeBody(red.clone()), player)?;
+        // Both teams received an announcement, which the player keeps seeing when switching teams.
+        set_team_chat(&db, &mut tx, view, &red, &["red one", "announcement"])?;
+        set_team_chat(&db, &mut tx, view, &blue, &["blue one", "announcement"])?;
+        db.commit_tx(tx)?;
+
+        let sql = "select * from team_chat";
+        let mut counter = 0;
+        match protocol {
+            SubscribeProtocol::V1Single => subscribe_single(&subs, auth, sql, sender, &mut counter).await?,
+            SubscribeProtocol::V1Multi => {
+                subscribe_multi(&subs, auth, &[sql], sender, &mut counter).await?;
+            }
+            SubscribeProtocol::V1Legacy => {
+                let subscribe = ws_v1::Subscribe {
+                    query_strings: [sql.into()].into(),
+                    request_id: 0,
+                };
+                subs.add_legacy_subscriber(None, sender, auth, subscribe, Instant::now(), None)
+                    .await?;
+            }
+            SubscribeProtocol::V2 => {
+                let subscribe = ws_v2::Subscribe {
+                    request_id: 1,
+                    query_set_id: ws_v2::QuerySetId::new(1),
+                    query_strings: [sql.into()].into(),
+                };
+                subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+                    None,
+                    sender,
+                    auth,
+                    subscribe,
+                    Instant::now(),
+                    None,
+                )?;
+            }
+        }
+        // The initial rows of the subscription.
+        rx.recv().await.expect("expected the initial subscription update");
+
+        // The player switches to the blue team.
+        let mut tx = begin_mut_tx(&db);
+        assert_eq!(tx.set_view_scope(view_id, player, Some(blue.clone()))?, None);
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        expect_team_chat_update(protocol, &mut rx, table_id, chat(&["blue one"]), chat(&["red one"])).await;
+
+        // A message to the red team is not received...
+        let mut tx = begin_mut_tx(&db);
+        set_team_chat(&db, &mut tx, view, &red, &["red one", "announcement", "red two"])?;
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        // ...but one to the blue team is.
+        let mut tx = begin_mut_tx(&db);
+        set_team_chat(&db, &mut tx, view, &blue, &["blue one", "announcement", "blue two"])?;
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        expect_team_chat_update(protocol, &mut rx, table_id, chat(&["blue two"]), vec![]).await;
+
+        // The player leaves, so is in no team.
+        let mut tx = begin_mut_tx(&db);
+        tx.set_view_scope(view_id, player, None)?;
+        commit_and_broadcast_event(&subs, None, module_event(), tx);
+        let blue_chat = chat(&["blue one", "announcement", "blue two"]);
+        expect_team_chat_update(protocol, &mut rx, table_id, vec![], blue_chat).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_v1_single_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V1Single).await
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_v1_multi_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V1Multi).await
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_legacy_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V1Legacy).await
+    }
+
+    #[tokio::test]
+    async fn rescoping_moves_v2_subscriptions() -> anyhow::Result<()> {
+        check_rescoping(SubscribeProtocol::V2).await
     }
 }

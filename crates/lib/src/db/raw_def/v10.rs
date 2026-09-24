@@ -104,6 +104,9 @@ pub enum RawModuleDefV10Section {
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
     Environment(Vec<crate::environment::EnvironmentDeclaration>),
+
+    /// Scope metadata for scoped views.
+    ScopedViews(Vec<RawScopedViewDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -571,6 +574,28 @@ pub struct RawViewPrimaryKeyDefV10 {
     pub columns: Vec<RawIdentifier>,
 }
 
+/// Scope metadata for a view.
+///
+/// A scoped view is an anonymous view with a single parameter, the scope key,
+/// paired with a resolver function which computes the scope key for a caller.
+/// The view is materialized once per distinct scope key,
+/// and each subscriber observes the rows for the key their resolver returns.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawScopedViewDefV10 {
+    /// The source/accessor name of the view this scope applies to.
+    ///
+    /// The view must be anonymous and take exactly one parameter, the scope key.
+    pub view_source_name: RawIdentifier,
+
+    /// The index of the scope resolver in the module's list of scope resolvers.
+    ///
+    /// A resolver takes a `ViewContext` and returns `Option<K>`,
+    /// where `K` is the type of the view's scope key parameter.
+    pub resolver_index: u32,
+}
+
 impl RawModuleDefV10 {
     /// Get the submodules for this module definition.
     pub fn submodules(&self) -> Option<&Vec<RawSubmoduleV10>> {
@@ -632,6 +657,14 @@ impl RawModuleDefV10 {
     pub fn view_primary_keys(&self) -> Option<&Vec<RawViewPrimaryKeyDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => Some(primary_keys),
+            _ => None,
+        })
+    }
+
+    /// Get the scoped views section, if present.
+    pub fn scoped_views(&self) -> Option<&Vec<RawScopedViewDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ScopedViews(scoped_views) => Some(scoped_views),
             _ => None,
         })
     }
@@ -832,6 +865,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => primary_keys,
             _ => unreachable!("Just ensured ViewPrimaryKeys section exists"),
+        }
+    }
+
+    /// Get mutable access to the scoped views section, creating it if missing.
+    fn scoped_views_mut(&mut self) -> &mut Vec<RawScopedViewDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ScopedViews(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ScopedViews(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ScopedViews(scoped_views) => scoped_views,
+            _ => unreachable!("Just ensured ScopedViews section exists"),
         }
     }
 
@@ -1178,6 +1231,16 @@ impl RawModuleDefV10Builder {
         self.view_primary_keys_mut().push(RawViewPrimaryKeyDefV10 {
             view_source_name: view_source_name.into(),
             columns: columns.into_iter().map(Into::into).collect(),
+        });
+    }
+
+    /// Add scope metadata for a view.
+    ///
+    /// The view must be a previously-added anonymous view taking the scope key as its only parameter.
+    pub fn add_scoped_view(&mut self, view_source_name: impl Into<RawIdentifier>, resolver_index: usize) {
+        self.scoped_views_mut().push(RawScopedViewDefV10 {
+            view_source_name: view_source_name.into(),
+            resolver_index: resolver_index as u32,
         });
     }
 

@@ -11,11 +11,12 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
-    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, ViewCallResult,
-    ViewCommand, ViewCommandResult, ViewOutcome,
+    CallScopeResolverParams, CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError,
+    InitDatabaseResult, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, ScopeResolverCallResult, SqlCommand,
+    SqlCommandResult, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::view_refresh::{refresh_view_calls, InstanceViewComputer};
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -38,7 +39,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewScopeKey};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
@@ -53,7 +54,7 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
-use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
@@ -93,6 +94,12 @@ pub trait WasmInstance {
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
+
+    /// Call the scope resolver of a scoped view.
+    ///
+    /// On success, the returned data is a [`ViewResultHeader::RowData`] header
+    /// followed by the BSATN encoding of `Option<K>`, where `K` is the view's scope key type.
+    fn call_view_scope(&mut self, op: ScopeResolverOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
 
     fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error);
 
@@ -165,6 +172,38 @@ pub(crate) fn deserialize_view_rows(
                 .map_err(DBError::from)
         })
         .collect()
+}
+
+/// Decode the data returned by the scope resolver of a scoped view,
+/// the BSATN encoding of `Option<K>` where `K` is `key_type`,
+/// into the scope key, the BSATN-encoded arguments `(key,)` of the view's body.
+pub(crate) fn decode_scope_key(
+    return_data: ViewReturnData,
+    key_type: &AlgebraicType,
+    typespace: &Typespace,
+) -> anyhow::Result<Option<ViewScopeKey>> {
+    let bytes = match ViewResult::from_return_data(return_data)? {
+        ViewResult::Rows(bytes) => bytes,
+        ViewResult::RawSql(_) => bail!("scope resolver returned a query rather than a scope key"),
+    };
+    let option_type = AlgebraicType::option(key_type.clone());
+    let mut reader = &bytes[..];
+    let key = WithTypespace::new(typespace, &option_type)
+        .deserialize(bsatn::Deserializer::new(&mut reader))
+        .context("failed to deserialize scope key returned by scope resolver")?;
+    ensure!(
+        reader.is_empty(),
+        "scope resolver returned {} trailing bytes after its scope key",
+        reader.len()
+    );
+    let key = key
+        .into_option()
+        .map_err(|_| anyhow!("scope resolver did not return an option"))?;
+    key.map(|key| {
+        let args = bsatn::to_vec(&ProductValue::from_iter([key]))?;
+        Ok(ViewScopeKey::from_args_bsatn(args))
+    })
+    .transpose()
 }
 
 pub(crate) fn run_query_for_view(
@@ -877,8 +916,18 @@ impl InstanceCommon {
         tx: MutTxId,
         inst: &mut I,
     ) -> Result<(ViewCallResult, u32, bool), anyhow::Error> {
-        let view_calls = collect_subscribed_view_calls(&tx, &self.info.module_def, self.info.owner_identity)?;
-        Ok(self.execute_view_calls(tx, view_calls, inst))
+        let module_def = self.info.module_def.clone();
+        let view_calls = collect_subscribed_view_calls(&tx, &module_def)?;
+        let caller = self.info.owner_identity;
+        let mut instance = RefInstance {
+            common: self,
+            instance: inst,
+        };
+        let mut computer = InstanceViewComputer::new(&mut instance, caller, Timestamp::now());
+        let (tx, _) = refresh_view_calls(&mut computer, tx, &module_def, view_calls);
+        let num_views_evaluated = computer.num_views_evaluated;
+        let trapped = computer.trapped;
+        Ok((computer.into_result(tx), num_views_evaluated, trapped))
     }
 
     pub(crate) async fn call_procedure<I: WasmInstance>(
@@ -1417,6 +1466,7 @@ impl InstanceCommon {
             fn_ptr,
             caller,
             sender,
+            call: view_call,
             args,
             row_type,
             timestamp,
@@ -1435,6 +1485,7 @@ impl InstanceCommon {
                         table_id,
                         fn_ptr,
                         sender: &sender,
+                        call: &view_call,
                         args: &args,
                         timestamp,
                     },
@@ -1446,6 +1497,7 @@ impl InstanceCommon {
                         view_id,
                         table_id,
                         fn_ptr,
+                        call: &view_call,
                         args: &args,
                         timestamp,
                     },
@@ -1461,23 +1513,19 @@ impl InstanceCommon {
 
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let outcome: ViewOutcome = match (result.call_result, sender) {
-            (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
+        let outcome: ViewOutcome = match result.call_result {
+            Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("view", &view_name, &err);
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // TODO: maybe do something else with user errors?
-            (Err(ExecutionError::User(err)), _) => {
+            Err(ExecutionError::User(err)) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            (Ok(raw), sender) => {
+            Ok(raw) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender),
-                        None => ViewCallInfo::anonymous(view_id),
-                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let row_product_type = view_typespace
                         .resolve(row_type)
@@ -1533,6 +1581,100 @@ impl InstanceCommon {
         (res, trapped)
     }
 
+    /// Calls the scope resolver of a scoped view for `params.sender`,
+    /// recording its reads under the resolver's instance `params.call`.
+    ///
+    /// On success, returns the scope key, if any, which the resolver returned.
+    /// This does not update the resolver's instance with the new scope; the caller must do so.
+    pub(crate) fn call_scope_resolver_with_tx<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        params: CallScopeResolverParams,
+        inst: &mut I,
+    ) -> (ScopeResolverCallResult, bool) {
+        let compute_start = std::time::Instant::now();
+        let CallScopeResolverParams {
+            view_name,
+            view_id,
+            fn_ptr,
+            caller,
+            sender,
+            call,
+            key_type,
+            timestamp,
+            view_typespace,
+        } = params;
+
+        let _outer_span = start_call_function_span(&view_name, &caller, None);
+
+        let mut tx_slot = inst.tx_slot();
+        let (mut tx, result) = tx_slot.set(tx, || {
+            self.call_function(caller, &view_name, |budget| {
+                inst.call_view_scope(
+                    ScopeResolverOp {
+                        name: &view_name,
+                        view_id,
+                        fn_ptr,
+                        sender: &sender,
+                        call: &call,
+                        timestamp,
+                    },
+                    budget,
+                )
+            })
+        });
+
+        self.vm_metrics
+            .get_for_view_id(view_id, &self.info.database_identity, &view_name)
+            .report(&result.stats);
+
+        let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
+
+        let mut scope = None;
+        let outcome: ViewOutcome = match result.call_result {
+            Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
+                inst.log_traceback("view scope resolver", &view_name, &err);
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
+            }
+            Err(ExecutionError::User(err)) => {
+                inst.log_traceback("view scope resolver", &view_name, &anyhow::anyhow!(err));
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
+            }
+            Ok(raw) => match decode_scope_key(raw, &key_type, &view_typespace) {
+                Ok(key) => {
+                    // The resolver's instance has no rows,
+                    // but its new read set must replace its old one.
+                    tx.replace_view_read_set(call);
+                    scope = key;
+                    ViewOutcome::Success
+                }
+                Err(err) => {
+                    log::warn!("Error resolving scope of view `{view_name}`: {err:?}");
+                    ViewOutcome::Failed(format!("Error resolving scope of view `{view_name}`: {err}"))
+                }
+            },
+        };
+
+        let total_time = compute_start.elapsed();
+        self.vm_metrics
+            .get_for_view_id2(view_id, &self.info.database_identity, &view_name)
+            .report(&ViewExecutionStats {
+                call_duration: result.stats.total_duration(),
+                total_duration: total_time,
+            });
+
+        let result = ViewCallResult {
+            outcome,
+            tx,
+            execution_budget_used: result.stats.execution_budget_used(),
+            total_duration: total_time,
+            abi_duration: result.stats.abi_duration(),
+            call_duration: result.stats.total_duration(),
+        };
+
+        (ScopeResolverCallResult { result, scope }, trapped)
+    }
+
     /// Compiles and runs a query that was returned from a view.
     /// This tracks read dependencies for the view.
     /// Note that this doesn't modify the resulting rows in any way.
@@ -1563,39 +1705,6 @@ impl InstanceCommon {
         ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }
 
-    /// Executes view calls and accumulate results.
-    /// Returns early if any call traps or fails.
-    fn execute_view_calls<I: WasmInstance>(
-        &mut self,
-        tx: MutTxId,
-        view_calls: Vec<CallViewParams>,
-        inst: &mut I,
-    ) -> (ViewCallResult, u32, bool) {
-        let mut out = ViewCallResult::default(tx);
-        let mut trapped = false;
-        let mut num_views_evaluated = 0;
-
-        for params in view_calls {
-            num_views_evaluated += 1;
-            let (result, call_trapped) = self.call_view_with_tx(out.tx, params, inst);
-
-            out.tx = result.tx;
-            out.outcome = result.outcome;
-            out.execution_budget_used += result.execution_budget_used;
-            out.total_duration += result.total_duration;
-            out.abi_duration += result.abi_duration;
-
-            trapped = trapped || call_trapped;
-
-            // Terminate early if execution failed
-            if trapped || !matches!(out.outcome, ViewOutcome::Success) {
-                break;
-            }
-        }
-
-        (out, num_views_evaluated, trapped)
-    }
-
     /// Empty the system tables tracking clients without running any lifecycle reducers.
     pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.info.relational_db().clear_all_clients().map_err(Into::into)
@@ -1618,76 +1727,30 @@ impl InstanceCommon {
     }
 }
 
-fn collect_subscribed_view_calls(
-    tx: &MutTxId,
-    module_def: &ModuleDef,
-    owner_identity: Identity,
-) -> Result<Vec<CallViewParams>, anyhow::Error> {
+/// Collect every materialized instance of the views in `module_def`, to be reevaluated.
+fn collect_subscribed_view_calls(tx: &MutTxId, module_def: &ModuleDef) -> Result<Vec<ViewCallInfo>, anyhow::Error> {
     let mut view_calls = Vec::new();
 
-    for (prefix, owning_def, view) in module_def.all_views_with_prefix() {
-        let ViewDef {
-            name: local_name,
-            is_anonymous,
-            product_type_ref,
-            ..
-        } = view;
-
-        // Full namespaced canonical name: matches both the st_view registration
-        // (create_view / create_view_with_prefix) and `view_by_name_with_global_fn_ptr`.
-        let view_name = prefix.join(local_name.clone());
-
-        let (global_fn_ptr, _, _) = module_def
-            .view_by_name_with_global_fn_ptr(&view_name)
-            .ok_or_else(|| anyhow::anyhow!("view {} not found in module_def", view_name))?;
+    for (prefix, _, view) in module_def.all_views_with_prefix() {
+        // Full namespaced canonical name: matches the st_view registration
+        // (create_view / create_view_with_prefix).
+        let view_name = prefix.join(view.name.clone());
 
         let st_view = tx
             .view_from_name(&view_name)?
             .ok_or_else(|| anyhow::anyhow!("view {} not found in database", view_name))?;
+        anyhow::ensure!(
+            st_view.table_id.is_some(),
+            "view {} does not have a backing table in database",
+            view_name
+        );
 
         let view_id = st_view.view_id;
-        let table_id = st_view
-            .table_id
-            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", view_name))?;
-        let subs = tx.materialized_view_instances_for_view(view_id);
-        let view_typespace = Arc::new(owning_def.typespace().clone());
-
-        if *is_anonymous {
-            if subs.is_empty() {
-                continue;
-            }
-            view_calls.push(CallViewParams {
-                view_name: view_name.clone(),
-                view_id,
-                table_id,
-                fn_ptr: global_fn_ptr,
-                caller: owner_identity,
-                sender: None,
-                args: ArgsTuple::nullary(),
-                row_type: *product_type_ref,
-                timestamp: Timestamp::now(),
-                view_typespace: view_typespace.clone(),
-            });
-            continue;
-        }
-
-        for sub in subs {
-            let ViewInstanceArgs::Sender(identity) = sub else {
-                continue;
-            };
-            view_calls.push(CallViewParams {
-                view_name: view_name.clone(),
-                view_id,
-                table_id,
-                fn_ptr: global_fn_ptr,
-                caller: owner_identity,
-                sender: Some(identity),
-                args: ArgsTuple::nullary(),
-                row_type: *product_type_ref,
-                timestamp: Timestamp::now(),
-                view_typespace: view_typespace.clone(),
-            });
-        }
+        view_calls.extend(
+            tx.materialized_view_instances_for_view(view_id)
+                .iter()
+                .map(|args| ViewCallInfo::from_args(view_id, args)),
+        );
     }
 
     Ok(view_calls)
@@ -1974,6 +2037,8 @@ pub struct ViewOp<'a> {
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
     pub sender: &'a Identity,
+    /// The view instance being computed, under which reads are recorded.
+    pub call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -1987,11 +2052,13 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
+        FuncCallType::View(self.call.clone())
     }
 }
 
 /// Describes an anonymous view call in a cheaply shareable way.
+///
+/// This is also used for the bodies of scoped views, with the scope key as `args`.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
     pub name: &'a NamespacedIdentifier,
@@ -1999,6 +2066,8 @@ pub struct AnonymousViewOp<'a> {
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
+    /// The view instance being computed, under which reads are recorded.
+    pub call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -2012,7 +2081,35 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
+        FuncCallType::View(self.call.clone())
+    }
+}
+
+/// Describes a call to the scope resolver of a scoped view in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct ScopeResolverOp<'a> {
+    /// The name of the scoped view.
+    pub name: &'a NamespacedIdentifier,
+    pub view_id: ViewId,
+    /// The index of the resolver in the module's list of scope resolvers.
+    pub fn_ptr: ViewFnPtr,
+    pub sender: &'a Identity,
+    /// The resolver's instance for `sender`, under which reads are recorded.
+    pub call: &'a ViewCallInfo,
+    pub timestamp: Timestamp,
+}
+
+impl InstanceOp for ScopeResolverOp<'_> {
+    fn name(&self) -> &NamespacedIdentifier {
+        self.name
+    }
+
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::View(self.call.clone())
     }
 }
 
@@ -2229,10 +2326,9 @@ mod tests {
         let effects = UpdateEffects::after_migration(result, &tx);
         assert!(effects.refresh_views);
         assert!(effects.disconnect_clients);
-        let calls = collect_subscribed_view_calls(&tx, &new, Identity::ZERO)?;
+        let calls = collect_subscribed_view_calls(&tx, &new)?;
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].view_id, view_id);
-        assert_eq!(&*calls[0].view_name, "environment_view");
         assert!(tx.active_subscribers_for_view(view_id).is_empty());
         let (_send, receive) = tokio::sync::oneshot::channel();
         assert!(matches!(
@@ -2420,15 +2516,13 @@ mod tests {
 
         // Two subscriber rows exist, but anonymous views should still be reevaluated once
         // because they share a single materialization.
-        let calls = collect_subscribed_view_calls(&tx, &module_def, Identity::ZERO)?;
+        let calls = collect_subscribed_view_calls(&tx, &module_def)?;
 
         assert_eq!(
-            calls.len(),
-            1,
+            calls,
+            [ViewCallInfo::anonymous(view_id)],
             "anonymous views should only be reevaluated once even with multiple subscriber rows"
         );
-        assert_eq!(calls[0].view_id, view_id);
-        assert_eq!(calls[0].sender, None);
         Ok(())
     }
 
@@ -2457,12 +2551,11 @@ mod tests {
 
         // Sender-backed views keep one materialization per sender, so reevaluation must
         // preserve both callers.
-        let calls = collect_subscribed_view_calls(&tx, &module_def, Identity::ZERO)?;
-        let senders: Vec<_> = calls.iter().filter_map(|call| call.sender).collect();
+        let calls = collect_subscribed_view_calls(&tx, &module_def)?;
 
         assert_eq!(calls.len(), 2, "sender views should still reevaluate once per sender");
-        assert!(senders.contains(&Identity::ZERO));
-        assert!(senders.contains(&Identity::ONE));
+        assert!(calls.contains(&ViewCallInfo::sender(view_id, Identity::ZERO)));
+        assert!(calls.contains(&ViewCallInfo::sender(view_id, Identity::ONE)));
         Ok(())
     }
 }

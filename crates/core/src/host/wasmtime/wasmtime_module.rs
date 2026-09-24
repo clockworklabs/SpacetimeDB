@@ -285,6 +285,34 @@ pub(super) fn call_view_export(
     }
 }
 
+/// Call the `__call_view_scope__` export to resolve the scope of `sender` for a scoped view.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn call_view_scope_export(
+    mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
+    call_view_scope: Option<CallViewScopeType>,
+    view_name: &NamespacedIdentifier,
+    fn_ptr: u32,
+    sender: Identity,
+    result_sink: u32,
+    supports_async: bool,
+) -> anyhow::Result<i32> {
+    let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(sender);
+    let call_view_scope = call_view_scope.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Module defines scoped view {} but does not export `{}`",
+            view_name,
+            CALL_VIEW_SCOPE_DUNDER
+        )
+    })?;
+
+    call_sync_typed_func(
+        &call_view_scope,
+        ctx.as_context_mut(),
+        (fn_ptr, sender_0, sender_1, sender_2, sender_3, result_sink),
+        supports_async,
+    )
+}
+
 impl module_host_actor::WasmInstancePre for WasmtimeModule {
     type Instance = WasmtimeInstance;
 
@@ -413,9 +441,10 @@ fn instantiate_wasmtime_instance(
     let call_procedure = get_call_procedure(&mut store, &instance);
     let call_view = get_call_view(&mut store, &instance);
     let call_view_anon = get_call_view_anon(&mut store, &instance);
+    let call_view_scope = get_call_view_scope(&mut store, &instance);
     store
         .data_mut()
-        .set_call_view_exports(call_view.clone(), call_view_anon.clone());
+        .set_call_view_exports(call_view.clone(), call_view_anon.clone(), call_view_scope.clone());
     let call_http_handler = get_call_http_handler(&mut store, &instance);
 
     Ok(WasmtimeInstance {
@@ -425,6 +454,7 @@ fn instantiate_wasmtime_instance(
         call_procedure,
         call_view,
         call_view_anon,
+        call_view_scope,
         call_http_handler,
         supports_async,
     })
@@ -483,6 +513,20 @@ fn get_call_view_anon(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
             .unwrap_or_else(|| panic!("{CALL_VIEW_ANON_DUNDER} export is not a function"))
             .typed(store)
             .unwrap_or_else(|err| panic!("{CALL_VIEW_ANON_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+/// Look up the `instance`'s export named by [`CALL_VIEW_SCOPE_DUNDER`].
+///
+/// Similar to [`get_call_procedure`], but for the scope resolvers of scoped views.
+fn get_call_view_scope(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallViewScopeType> {
+    let export = instance.get_export(store.as_context_mut(), CALL_VIEW_SCOPE_DUNDER)?;
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_VIEW_SCOPE_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_VIEW_SCOPE_DUNDER} export is a function with incorrect type: {err}")),
     )
 }
 
@@ -564,6 +608,25 @@ pub(super) type CallViewAnonType = TypedFunc<
     i32,
 >;
 
+/// The function signature of `__call_view_scope__`
+pub(super) type CallViewScopeType = TypedFunc<
+    (
+        // The index of the scope resolver
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
+
 /// The function signature of `__call_http_handler__`
 pub(super) type CallHttpHandlerType = TypedFunc<
     (
@@ -590,6 +653,7 @@ pub struct WasmtimeInstance {
     call_procedure: Option<CallProcedureType>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
+    call_view_scope: Option<CallViewScopeType>,
     call_http_handler: Option<CallHttpHandlerType>,
     supports_async: bool,
 }
@@ -738,6 +802,39 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         );
 
         let (stats, result_bytes) = finish_opcall(store, budget, errors_sink);
+
+        let call_result = call_result
+            .map_err(ExecutionError::Trap)
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
+
+        module_host_actor::ViewExecuteResult { stats, call_result }
+    }
+
+    fn call_view_scope(
+        &mut self,
+        op: module_host_actor::ScopeResolverOp<'_>,
+        budget: FunctionBudget,
+    ) -> module_host_actor::ViewExecuteResult {
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        // Resolvers take no arguments beyond the sender.
+        let (_, result_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name().clone(), bytes::Bytes::new(), op.timestamp, op.call_type());
+
+        let call_result = call_view_scope_export(
+            &mut *store,
+            self.call_view_scope.clone(),
+            op.name,
+            op.fn_ptr.0,
+            *op.sender,
+            result_sink,
+            self.supports_async,
+        );
+
+        let (stats, result_bytes) = finish_opcall(store, budget, result_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)

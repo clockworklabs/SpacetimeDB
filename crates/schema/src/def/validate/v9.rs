@@ -548,6 +548,7 @@ impl ModuleValidatorV9<'_> {
             return_columns,
             param_columns,
             accessor_name: name,
+            scope: None,
         })
     }
 

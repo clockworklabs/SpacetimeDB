@@ -197,6 +197,7 @@ export class ModuleContext {
     procedures: [],
     views: [],
     viewPrimaryKeys: [],
+    scopedViews: [],
     lifeCycleReducers: [],
     httpHandlers: [],
     httpRoutes: [],
@@ -232,6 +233,13 @@ export class ModuleContext {
         tag: 'ViewPrimaryKeys',
         value: module.viewPrimaryKeys,
       }
+    );
+    // Only emit `ScopedViews` when the module declares scoped views,
+    // so that modules without them remain publishable to older hosts.
+    push(
+      module.scopedViews.length > 0
+        ? { tag: 'ScopedViews', value: module.scopedViews }
+        : undefined
     );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(
