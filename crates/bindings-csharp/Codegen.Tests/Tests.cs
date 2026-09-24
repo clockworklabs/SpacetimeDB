@@ -746,15 +746,24 @@ public static class GeneratorSnapshotTests
             }
         )
         {
-            var dependency = Emit(
-                Generate(
-                    Create(
-                        "RestrictedDependency",
-                        "[SpacetimeDB.Table] public partial struct Entry { public uint Id; }\n"
-                            + source
-                    )
-                )
+            // These declarations must register even without tables or functions in the assembly.
+            var dependencyCompilation = Generate(
+                Create("RestrictedDependency", source + "\npublic class Entry { }")
             );
+            var dependencyDescriptor = Descriptor(dependencyCompilation);
+            var dependency = Emit(dependencyCompilation);
+            if (declaration == "row-level security filters")
+            {
+                Assert.Contains(
+                    Method(dependencyCompilation, "Register")
+                        .DescendantNodes()
+                        .OfType<InvocationExpressionSyntax>(),
+                    call =>
+                        call.Expression.ToString() == "builder.RegisterClientVisibilityFilter"
+                        && call.ArgumentList.Arguments.Single().ToString()
+                            == "global::Rules.Visible"
+                );
+            }
             var result = CSharpGeneratorDriver
                 .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
                 .RunGenerators(
@@ -774,14 +783,24 @@ public static class GeneratorSnapshotTests
                     && diagnostic.GetMessage().Contains(declaration)
                     && diagnostic.GetMessage().Contains("root scope")
             );
-            Generate(Create("FlatConsumer", "", dependency));
-            Generate(
-                Create(
-                    "PublicConsumer",
+            foreach (
+                var mount in new[]
+                {
+                    "",
                     "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"public\")]",
-                    dependency
-                )
-            );
+                }
+            )
+            {
+                var consumer = Generate(Create("PublicConsumer", mount, dependency));
+                Assert.Equal(
+                    new[]
+                    {
+                        Descriptor(consumer) + ".Register",
+                        dependencyDescriptor + ".Register",
+                    },
+                    Calls(consumer)
+                );
+            }
         }
 
         // Empty environment schemas contain no keys and are permitted by the host.
