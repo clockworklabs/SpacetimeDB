@@ -1175,14 +1175,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         if !http_routes.is_empty() {
-            let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
-                .into_iter()
-                .map(|route| RawHttpRouteDefV10 {
-                    handler_function: route.handler_name.into(),
-                    method: route.method,
-                    path: RawIdentifier::new(route.path.as_ref()),
-                })
-                .collect();
+            let raw_http_routes: Vec<RawHttpRouteDefV10> =
+                http_routes.into_iter().map(RawHttpRouteDefV10::from).collect();
             sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
         }
 
@@ -2457,6 +2451,16 @@ pub struct HttpRouteDef {
     pub handler_name: Identifier,
     pub method: spacetimedb_lib::db::raw_def::v10::MethodOrAny,
     pub path: Box<str>,
+}
+
+impl From<HttpRouteDef> for RawHttpRouteDefV10 {
+    fn from(val: HttpRouteDef) -> Self {
+        RawHttpRouteDefV10 {
+            handler_function: val.handler_name.into(),
+            method: val.method,
+            path: RawIdentifier::new(val.path.as_ref()),
+        }
+    }
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {
