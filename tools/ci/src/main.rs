@@ -88,6 +88,10 @@ const COMMANDS: &[Command] = &[
         path: &["other-workflows", "check-release-deps"],
         package: "ci-check-release-deps",
     },
+    Command {
+        path: &["other-workflows", "cache-warm"],
+        package: "ci-cache-warm",
+    },
 ];
 
 fn print_help() {
