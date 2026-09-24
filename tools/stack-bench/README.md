@@ -59,7 +59,7 @@ Start with [Getting started](GETTING-STARTED.md), then the
 - `commands/` and `src/` own the CLI and reusable benchmark logic.
 - `grader/`, `linter/`, and `reference-apps/` own validation.
 - Retained qualification records go in `qualification-evidence/`, cited by path
-  from each calibration. None are retained while qualification is pending.
+  from each calibration.
 - `appliance/` owns deployment. `dashboard/` is an optional interface.
 
 Prompt selection and scoring selection stay separate. A behavior can be measured
