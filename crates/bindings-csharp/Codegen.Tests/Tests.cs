@@ -655,6 +655,43 @@ public static class GeneratorSnapshotTests
             return;
         }
 
+        foreach (var accessor in new[] { "public", "PUBLIC" })
+        {
+            var publicConsumer = Generate(
+                Create(
+                    "PublicAccessorConsumer",
+                    $$"""
+                    [assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = "{{accessor}}")]
+                    public static class Helpers {
+                        public static void Insert(SpacetimeDB.ReducerContext ctx) =>
+                            ctx.Db.AlphaRow.Insert(new Alpha.AlphaRow { Id = 1 });
+                        public static ulong Count(SpacetimeDB.ViewContext ctx) => ctx.Db.AlphaRow.Count;
+                        public static ulong Count(SpacetimeDB.AnonymousViewContext ctx) => ctx.Db.AlphaRow.Count;
+                        public static SpacetimeDB.IQuery<Alpha.AlphaRow> Query(SpacetimeDB.ViewContext ctx) =>
+                            ctx.From.AlphaRow();
+                        public static SpacetimeDB.IQuery<Alpha.AlphaRow> Query(SpacetimeDB.AnonymousViewContext ctx) =>
+                            ctx.From.AlphaRow();
+                    }
+                    """,
+                    alpha,
+                    shared
+                )
+            );
+            Assert.Equal(
+                new[]
+                {
+                    Descriptor(publicConsumer) + ".Register",
+                    Descriptor(alphaCompilation) + ".Register",
+                    Descriptor(sharedCompilation) + ".Register",
+                },
+                Calls(publicConsumer)
+            );
+            Assert.DoesNotContain(
+                "RegisterSubmodule",
+                Method(publicConsumer, "Initialize").ToString()
+            );
+        }
+
         // An unrelated utility alone must not cause an otherwise empty module to register.
         var plainUtility = Emit(Create("PlainUtility", "public class PlainUtility { }"));
         var empty = Generate(Create("Empty", "", plainUtility));
