@@ -1,6 +1,6 @@
 import { schema, t, table } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
-import { installAuth } from './install';
+import { install } from './install';
 import {
   authAccountTable as authAccount,
   authAdminIdentityTable as authAdminIdentity,
@@ -36,7 +36,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  installAuth(ctx);
+  install(ctx);
 });
 
 // Generate an ES256 keypair when the first configuration has no PEM.

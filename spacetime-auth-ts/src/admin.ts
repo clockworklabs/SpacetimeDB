@@ -1,6 +1,6 @@
 import type { Identity, Timestamp } from 'spacetimedb';
 import { SenderError } from 'spacetimedb/server';
-import type { AuthTransactionCtx } from './context.ts';
+import type { AuthTransactionCtx } from './context';
 
 export type AdminVerdict = 'admin' | 'denied';
 

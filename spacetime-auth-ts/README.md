@@ -33,7 +33,7 @@ const spacetimedb = schema({ auth });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  auth.installAuth(ctx.as.auth);
+  auth.install(ctx.as.auth);
 });
 ```
 
@@ -104,7 +104,7 @@ await conn.reducers.updateProfile({ name: 'Ada', image: undefined });
 The root entrypoint exports table builders, password and OAuth handlers, JWT
 and key helpers, connection-binding procedures, and caller helpers. The
 `./submodule` entrypoint exports the submodule schema, registered database
-operations, views, handler factories, and `installAuth`. The host module owns
+operations, views, handler factories, and `install`. The host module owns
 `init`, HTTP routing, cookie policy, and mail delivery.
 
 Supported flows:

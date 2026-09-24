@@ -1,4 +1,4 @@
-import { FILE_MIME_TYPE_MAX, FILE_PATH_MAX } from './constants.ts';
+import { FILE_MIME_TYPE_MAX, FILE_PATH_MAX } from './constants';
 
 const MIME_TYPE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
 

@@ -15,7 +15,7 @@ export type AdminRateLimitBuckets = __Infer<typeof AdminRateLimitBuckets>;
 
 export const RateLimitAdminIdentity = __t.object("RateLimitAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type RateLimitAdminIdentity = __Infer<typeof RateLimitAdminIdentity>;
 

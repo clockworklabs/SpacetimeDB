@@ -76,7 +76,7 @@ export function makeAgentDispatch<
   }
 
   function invoke(ctx: Tx, name: string, inputJson: string): InvokeResult {
-    if (!Object.hasOwn(tools, name)) {
+    if (!Object.prototype.hasOwnProperty.call(tools, name)) {
       return { result: `unknown tool: ${name}`, isError: true };
     }
     const tool = (tools as Record<string, AgentTool<TypeBuilderLike>>)[name];
@@ -235,7 +235,7 @@ function validateToolValue(
       }
       const output: Record<string, unknown> = {};
       for (const element of elements) {
-        if (!Object.hasOwn(input, element.name)) {
+        if (!Object.prototype.hasOwnProperty.call(input, element.name)) {
           if (optionPayload(element.algebraicType) !== undefined) continue;
           throw new Error(
             `invalid tool input: ${path}.${element.name} is required`
@@ -282,7 +282,7 @@ function validateToolValue(
           throw new Error(`invalid tool input: ${path}.${key} is not allowed`);
       }
       if (isUnitType(variant.algebraicType)) return { tag: input.tag };
-      if (!Object.hasOwn(input, 'value'))
+      if (!Object.prototype.hasOwnProperty.call(input, 'value'))
         throw new Error(`invalid tool input: ${path}.value is required`);
       return {
         tag: input.tag,
@@ -470,13 +470,15 @@ export function makeAgentRegistry<
 
   return {
     has(agentName: string): boolean {
-      return Object.hasOwn(agents, agentName);
+      return Object.prototype.hasOwnProperty.call(agents, agentName);
     },
     names(): string[] {
       return Object.keys(agents);
     },
     agentDef(agentName: string): AgentDefinition | undefined {
-      return Object.hasOwn(agents, agentName) ? agents[agentName] : undefined;
+      return Object.prototype.hasOwnProperty.call(agents, agentName)
+        ? agents[agentName]
+        : undefined;
     },
     llmToolDefsFor(agentName: string): ToolDefinition[] {
       const d = dispatches.get(agentName);

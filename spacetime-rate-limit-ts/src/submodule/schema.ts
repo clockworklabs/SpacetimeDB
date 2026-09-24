@@ -25,7 +25,7 @@ export const rateLimitAdminIdentity = table(
   { name: 'rate_limit_admin_identity', public: false },
   {
     identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
+    addedAt: t.timestamp(),
   }
 );
 

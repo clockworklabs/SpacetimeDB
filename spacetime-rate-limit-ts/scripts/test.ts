@@ -1,6 +1,7 @@
 import { Timestamp } from 'spacetimedb';
 import {
   consumeRateLimit,
+  client,
   DEFAULT_SWEEP_BATCH,
   MAX_SWEEP_BATCH,
   resolveRateLimitSweepBatch,
@@ -93,6 +94,53 @@ function makeTx(nowMicros = 0n) {
 }
 
 process.stdout.write('\nrate limiter\n');
+
+{
+  const tx = makeTx();
+  const tap = client({ scope: 'tap', windowSeconds: 60, limit: 1 });
+  const other = client({ scope: 'other', windowSeconds: 60, limit: 1 });
+  assert(
+    tap.consume(tx, { key: 'alice' }).allowed,
+    'configured policy allows first call'
+  );
+  assert(
+    !tap.consume(tx, { key: 'alice' }).allowed,
+    'configured policy enforces limit'
+  );
+  assert(
+    other.consume(tx, { key: 'alice' }).allowed,
+    'scopes have independent buckets'
+  );
+  assert(
+    tap.consume(tx, { key: 'bob' }).allowed,
+    'actors have independent buckets'
+  );
+  assert(
+    tap.consume(tx, { key: 'alice', limit: 2 }).allowed,
+    'dynamic limit is supported'
+  );
+}
+
+{
+  const tx = makeTx();
+  consumeRateLimit(tx, {
+    key: 'fresh',
+    scope: 's',
+    limit: 1,
+    windowSeconds: 100,
+  });
+  consumeRateLimit(tx, {
+    key: 'expired',
+    scope: 's',
+    limit: 1,
+    windowSeconds: 1,
+  });
+  tx.timestamp = new Timestamp(2_000_000n);
+  assert(
+    sweepRateLimits(tx, tx.rows.values()) === 1,
+    'sweep accepts unordered rows'
+  );
+}
 
 {
   const tx = makeTx();

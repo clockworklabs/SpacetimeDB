@@ -12,11 +12,11 @@ import {
   requireConfig,
   ConfigMissingError,
   userAgent,
-} from './http.ts';
-import { signJwt, verifyJwt } from '../jwt.ts';
-import { privateKeyFromPem, publicKeyFromPem } from '../keys.ts';
-import { newSessionToken, uuidV7 } from '../crypto.ts';
-import { type AuthHttpOptions, clientKey } from '../rate_limit.ts';
+} from './http';
+import { signJwt, verifyJwt } from '../jwt';
+import { privateKeyFromPem, publicKeyFromPem } from '../keys';
+import { newSessionToken, uuidV7 } from '../crypto';
+import { type AuthHttpOptions, clientKey } from '../rate_limit';
 type StoredAuthSession = NonNullable<
   ReturnType<AuthTransactionCtx['db']['authSession']['sessionId']['find']>
 >;

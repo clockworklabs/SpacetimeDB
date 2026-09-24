@@ -1,5 +1,5 @@
 export { default } from './submodule/index';
-export { installAuth } from './submodule/install';
+export { install } from './submodule/install';
 export {
   authSweep,
   getAuthPublicKey,

@@ -10,9 +10,9 @@ import {
   fileListPage,
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
-} from './rows.ts';
-import { FILE_BYTES_MAX, FILE_LIST_PAGE_MAX } from './constants.ts';
-import { fileSha256Hex } from './hash.ts';
+} from './rows';
+import { FILE_BYTES_MAX, FILE_LIST_PAGE_MAX } from './constants';
+import { fileSha256Hex } from './hash';
 import {
   FileValidationError,
   ownerPathKey,
@@ -20,8 +20,8 @@ import {
   validateFilePath,
   validateFilePrefix,
   validateMimeType,
-} from './validation.ts';
-import type { TransactionModuleCtx } from './submodule/schema.ts';
+} from './validation';
+import type { TransactionModuleCtx } from './submodule/schema';
 
 type FileTable = TransactionModuleCtx['db']['file'];
 type FileBlobTable = TransactionModuleCtx['db']['fileBlob'];
@@ -45,7 +45,7 @@ interface FileProcedureContext {
 }
 
 // Lowercase hex SHA-256, for consumers that write their own insert path.
-export { fileSha256Hex } from './hash.ts';
+export { fileSha256Hex } from './hash';
 
 const VALID_VISIBILITIES = new Set([
   FILE_VISIBILITY_OWNER,
@@ -239,7 +239,7 @@ export function listFiles(
     if (hasMore) out.pop();
     return {
       files: out,
-      nextCursor: hasMore ? out.at(-1)?.path : undefined,
+      nextCursor: hasMore ? out[out.length - 1]?.path : undefined,
     };
   });
 }

@@ -1,10 +1,10 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
-import { uuidV7, randomToken } from '../crypto.ts';
+import { uuidV7, randomToken } from '../crypto';
 import {
   buildVerifyEmail,
   MailerNotConfiguredError,
   type SendMailFn,
-} from '../mailer.ts';
+} from '../mailer';
 import {
   type AuthHandlerCtx,
   ConfigMissingError,
@@ -14,15 +14,15 @@ import {
   parseQueryString,
   redirectResponse,
   requireConfig,
-} from './http.ts';
-import { verifyJwt } from '../jwt.ts';
-import { publicKeyFromPem } from '../keys.ts';
+} from './http';
+import { verifyJwt } from '../jwt';
+import { publicKeyFromPem } from '../keys';
 import { Timestamp } from 'spacetimedb';
 import {
   AUTH_RATE_LIMITS,
   type AuthHttpOptions,
   enforceIpRateLimit,
-} from '../rate_limit.ts';
+} from '../rate_limit';
 
 const PURPOSE = 'email_verify';
 const TOKEN_TTL_SECONDS = 60n * 60n * 24n;

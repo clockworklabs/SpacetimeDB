@@ -8,7 +8,7 @@ const SWEEPER_INTERVAL_MICROS = 60n * ONE_SECOND_MICROS;
 type Schema = InferSchema<typeof spacetimedb>;
 type InstallCtx = ReducerCtx<Schema>;
 
-export function installAgents(ctx: InstallCtx) {
+export function install(ctx: InstallCtx) {
   if (ctx.db.agentAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.agentAdminIdentity.insert({
       identity: ctx.sender,

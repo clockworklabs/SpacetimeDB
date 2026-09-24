@@ -8,8 +8,8 @@ const ONE_SECOND_MICROS = 1_000_000n;
 type Schema = InferSchema<typeof spacetimedb>;
 type InstallCtx = ReducerCtx<Schema>;
 
-export function installAuth(ctx: InstallCtx) {
-  rateLimit.installRateLimit(ctx.as.rateLimit);
+export function install(ctx: InstallCtx) {
+  rateLimit.install(ctx.as.rateLimit);
 
   if (ctx.db.authAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.authAdminIdentity.insert({

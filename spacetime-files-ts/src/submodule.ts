@@ -1,8 +1,7 @@
-export { default, spacetimedb } from './submodule/schema.ts';
-export { file, fileBlob } from './submodule/schema.ts';
-export { installFiles } from './submodule/install.ts';
-export * from './rows.ts';
-export * from './validation.ts';
-export * from './procedures.ts';
-export * from './handlers.ts';
-export { FILE_BYTES_MAX, FILE_PATH_MAX } from './constants.ts';
+export { default, spacetimedb } from './submodule/schema';
+export { file, fileBlob } from './submodule/schema';
+export * from './rows';
+export * from './validation';
+export * from './procedures';
+export * from './handlers';
+export { FILE_BYTES_MAX, FILE_PATH_MAX } from './constants';

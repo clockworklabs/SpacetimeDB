@@ -3,8 +3,8 @@ import {
   makeOAuthStartHandler,
   type OAuthProfile,
   type OAuthProviderSpec,
-} from './oauth.ts';
-import type { AuthHandlerCtx } from './http.ts';
+} from './oauth';
+import type { AuthHandlerCtx } from './http';
 
 const githubHeaders = {
   accept: 'application/vnd.github+json',

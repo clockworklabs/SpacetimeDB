@@ -1,67 +1,64 @@
 import type { Request, SyncResponse } from 'spacetimedb/server';
 import {
-  consumeRateLimit,
+  client,
   type RateLimitResult,
 } from '@spacetimedb/rate-limit/submodule';
-import { errorResponse } from './handlers/http.ts';
-import { clientKey, type TrustedProxyHeader } from './request-trust.ts';
-import type { AuthHandlerCtx } from './context.ts';
+import { errorResponse } from './handlers/http';
+import { clientKey, type TrustedProxyHeader } from './request-trust';
+import type { AuthHandlerCtx } from './context';
 export {
   clientKey,
   type AuthHttpOptions,
   type TrustedProxyHeader,
-} from './request-trust.ts';
+} from './request-trust';
 
-export interface AuthRateLimitPolicy {
-  scope: string;
-  limit: number;
-  windowSeconds: number;
-}
+export type AuthRateLimitPolicy = ReturnType<typeof client>;
 
 export const AUTH_RATE_LIMITS = {
-  passwordSignup: {
+  passwordSignup: client({
     scope: 'auth.password.signup',
     limit: 5,
     windowSeconds: 3600,
-  },
-  passwordLoginIp: {
+  }),
+  passwordLoginIp: client({
     scope: 'auth.password.login.ip',
     limit: 30,
     windowSeconds: 300,
-  },
-  passwordLoginEmail: {
+  }),
+  passwordLoginEmail: client({
     scope: 'auth.password.login.email',
     limit: 10,
     windowSeconds: 300,
-  },
-  passwordForgotIp: {
+  }),
+  passwordForgotIp: client({
     scope: 'auth.password.forgot.ip',
     limit: 5,
     windowSeconds: 3600,
-  },
-  passwordForgotEmail: {
+  }),
+  passwordForgotEmail: client({
     scope: 'auth.password.forgot.email',
     limit: 3,
     windowSeconds: 3600,
-  },
-  passwordReset: { scope: 'auth.password.reset', limit: 5, windowSeconds: 900 },
-  oauthStart: { scope: 'auth.oauth.start', limit: 30, windowSeconds: 300 },
-  emailVerifyRequest: {
+  }),
+  passwordReset: client({
+    scope: 'auth.password.reset',
+    limit: 5,
+    windowSeconds: 900,
+  }),
+  oauthStart: client({
+    scope: 'auth.oauth.start',
+    limit: 30,
+    windowSeconds: 300,
+  }),
+  emailVerifyRequest: client({
     scope: 'auth.email.verify_request',
     limit: 5,
     windowSeconds: 3600,
-  },
+  }),
 } satisfies Record<string, AuthRateLimitPolicy>;
 
 function normalizePart(value: string): string {
   return value.toLowerCase().trim().slice(0, 256);
-}
-
-export function rateLimitKey(
-  policy: AuthRateLimitPolicy,
-  actor: string
-): string {
-  return `${policy.scope}:${normalizePart(actor)}`;
 }
 
 export function rateLimitResponse(result: RateLimitResult): SyncResponse {
@@ -83,11 +80,8 @@ export function enforceRateLimits(
   let blocked: RateLimitResult | null = null;
   for (const check of checks) {
     const result = ctx.as.rateLimit.withTx(tx =>
-      consumeRateLimit(tx, {
-        key: rateLimitKey(check.policy, check.actor),
-        scope: check.policy.scope,
-        limit: check.policy.limit,
-        windowSeconds: check.policy.windowSeconds,
+      check.policy.consume(tx, {
+        key: normalizePart(check.actor),
       })
     );
     if (!result.allowed) {

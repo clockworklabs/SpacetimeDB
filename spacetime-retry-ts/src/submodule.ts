@@ -121,7 +121,7 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
 
   const dispatchRetry = makeRetryDispatch(handlers);
 
-  function installRetry(ctx: unknown): void {
+  function install(ctx: unknown): void {
     const retryCtx = retryContext(ctx);
     if (retryCtx.db.retryAdminIdentity.identity.find(retryCtx.sender) == null) {
       retryCtx.db.retryAdminIdentity.insert({
@@ -327,7 +327,7 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
     retryArgs,
     retryHistoryStatus,
     RetryHistoryStatus,
-    installRetry,
+    install,
     requireAdmin,
     views: {
       retryTasksAdmin,

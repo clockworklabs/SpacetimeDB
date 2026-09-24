@@ -10,14 +10,14 @@ import {
   fromPrivateKeyBytes,
   privateKeyFromPem,
   publicKeyFromPem,
-} from './keys.ts';
-import { verifyJwt } from './jwt.ts';
-import { authAdminVerdict, denyIfNotAdmin } from './admin.ts';
+} from './keys';
+import { verifyJwt } from './jwt';
+import { authAdminVerdict, denyIfNotAdmin } from './admin';
 import type {
   AuthProcedureCtx,
   AuthReducerCtx,
   AuthTransactionCtx,
-} from './context.ts';
+} from './context';
 
 type AuthWriteCtx = AuthReducerCtx | AuthProcedureCtx;
 

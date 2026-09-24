@@ -1,4 +1,4 @@
-import type { HttpLike } from './openrouter.ts';
+import type { HttpLike } from './openrouter';
 
 export interface EmbeddingProvider {
   name: string;
