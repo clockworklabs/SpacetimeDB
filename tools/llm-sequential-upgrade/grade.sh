@@ -89,7 +89,7 @@ $CLAUDE_CMD -p "Grade the sequential upgrade app at: $APP_DIR_NATIVE
 
 Backend: $GRADE_BACKEND
 
-Follow GRADING.md (setup, rubric, and result format):
+Follow CLAUDE.md Phases 6-8:
 1. Open http://localhost:$VITE_PORT in Chrome and verify the app loads
 2. Test each feature using the test plans in test-plans/feature-*.md
 3. Score each feature 0-3 based on browser observations

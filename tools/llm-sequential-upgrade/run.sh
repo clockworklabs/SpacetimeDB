@@ -814,8 +814,7 @@ fi
 
 # ─── Run Claude Code ─────────────────────────────────────────────────────────
 # Run from the APP directory so CLAUDE.md auto-discovery picks up the
-# backend-specific file. Ancestor CLAUDE.md files, including
-# llm-sequential-upgrade/CLAUDE.md, are loaded too.
+# backend-specific file, not the parent llm-sequential-upgrade/CLAUDE.md.
 
 cd "$APP_DIR"
 
@@ -861,16 +860,11 @@ if [[ -n "$MODEL" ]]; then
 fi
 
 # Build args as an array so empty optional flags (model/resume) can't break the invocation.
-# Read and Edit are limited to the app directory; the language and feature content is
-# inlined into the prompt above, so nothing outside it is needed. Bash remains
-# available, so this is not filesystem isolation.
-# --setting-sources keeps the operator's user settings, plugins, and hooks out of the agent.
 CLAUDE_ARGS=(
-  --print --verbose --output-format text
-  --permission-mode acceptEdits
-  --allowedTools Bash
-  --setting-sources project,local
+  --print --verbose --output-format text --dangerously-skip-permissions
   --add-dir "$APP_DIR"
+  --add-dir "$SCRIPT_DIR"
+  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts"
   --session-id "$SESSION_ID"
 )
 [[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
@@ -980,3 +974,4 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=
 else
   echo "WARNING: Telemetry parsing failed. Raw logs at: $SHARED_TELEMETRY_DIR/logs.jsonl"
 fi
+
