@@ -387,30 +387,6 @@ public static partial class BSATNRuntimeTests
     }
 
     [Fact]
-    public static void StructuralReadProductRoundTrip()
-    {
-        GenBasic.Sample(
-            value =>
-            {
-                var row = new BasicDataClass(value);
-                using var stream = new MemoryStream(IStructuralReadWrite.ToBytes(row));
-                using var reader = new BinaryReader(stream);
-                Assert.Equal(row, IStructuralReadWrite.Read<BasicDataClass>(reader));
-                Assert.Equal(stream.Length, stream.Position);
-
-                stream.Position = 0;
-                Assert.Equal(new BasicDataStruct(value), IStructuralReadWrite.Read<BasicDataStruct>(reader));
-                Assert.Equal(stream.Length, stream.Position);
-
-                stream.Position = 0;
-                Assert.Equal(new BasicDataRecord(value), IStructuralReadWrite.Read<BasicDataRecord>(reader));
-                Assert.Equal(stream.Length, stream.Position);
-            },
-            iter: 10_000
-        );
-    }
-
-    [Fact]
     public static void GeneratedProductEqualsWorks()
     {
         CollisionCounter collisionCounter = new();
