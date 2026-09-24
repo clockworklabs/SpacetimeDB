@@ -370,10 +370,12 @@ These caps do not reserve CPU or RAM and are not measured hardware minimums.
 Setup selects `STACK_BENCH_RUNNER_CAPACITY=dynamic`. Admission then checks
 current host memory and CPU load instead of a fixed slot count. New claims
 reserve startup headroom for one minute so concurrent launches cannot reuse the
-same free-memory estimate. Campaigns and standalone qualification queue and retry
-when resources are busy. The pressure check is an admission snapshot, not a
-reservation against future spikes. Set a positive integer instead for a fixed
-host quota measured for your workload.
+same free-memory estimate. Dashboard runs, `job start`, and standalone
+qualification wait and retry when resources are busy. CLI `campaign run`,
+`trial`, `resume`, and `extend` do not wait. They stop launching, let active
+attempts finish, and exit 2 with the remaining attempts pending. The pressure
+check is an admission snapshot, not a reservation against future spikes. Set a
+positive integer instead for a fixed host quota measured for your workload.
 
 Each worker has a 2-CPU/4-GiB coding container, a 1-CPU/1-GiB backend, a
 1-CPU/2-GiB browser, and a broker capped at 256 MiB when needed. Thus nine

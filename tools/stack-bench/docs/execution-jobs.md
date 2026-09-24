@@ -36,12 +36,14 @@ job submit submission.json
 job status <returned-id>
 job list --limit 50
 job work <returned-id> --host worker-east
+job resume <returned-id>
 job cancel <returned-id>
 ```
 
 For source development, use `node dist/commands/job-cli.js` before these arguments.
-Set `STACK_BENCH_RESULTS_DIR` or pass `--results`. The normal appliance controller command
-sets runtime image identity for `job work`. A worker must use the matching frozen controller
+Pass `--results` or set an absolute `STACK_BENCH_RESULTS_DIR`. Otherwise the package
+`results/` folder is used, as in the dashboard. The normal appliance controller command
+sets runtime image identity for `job work` and `job resume`. A worker must use the matching frozen controller
 and coding images. Named secret paths must exist on that worker.
 
 Submission snapshots the plan. Repeating the same key and request returns the same job.
@@ -56,9 +58,10 @@ The existing local dashboard controls expose:
 - `POST /api/jobs`: submit the JSON above; returns 202 and the durable job status.
 - `GET /api/jobs?limit=50&after=<cursor>`: list one page.
 - `GET /api/jobs/<id>`: read status, assigned host, capacity wait, and campaign directory.
+- `POST /api/jobs/<id>/start`: start a worker for a queued job.
 - `POST /api/jobs/<id>/cancel`: request cancellation.
 
-Writes require the same origin, browser token, and control-secret headers as existing
+Writes require the same origin and browser token headers as existing
 dashboard controls. This remains a local operator API. An authenticated product service
 can instead call `submitExecutionJob` and `workExecutionJob` from
 `src/campaigns/execution-jobs.ts`. Authenticate callers and authorize credential/profile
@@ -105,6 +108,8 @@ same job. Claims do not expire: a worker that loses contact may still have paid 
 in flight. A killed worker therefore leaves a retained claim for investigation rather than
 an automatic duplicate. Use campaign status, stop, and authenticated reconciliation to
 resolve owned resources. Failed jobs are not automatically retried by `job work`.
+`job resume` continues an interrupted dependency campaign with the job's saved
+credentials and capacity policy. Dashboard Resume uses it for job campaigns.
 Reconciliation proves cleanup; it does not restore a live database or agent session.
 See [interruption and recovery](../appliance/RECOVERY.md) before releasing retained work.
 

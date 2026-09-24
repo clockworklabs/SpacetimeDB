@@ -515,7 +515,8 @@ export function campaignSheet(resultsRoot: string, key: string,
   { controllerActive = campaignLockIsActive }: ViewOptions = {}): CampaignSheet {
   const directory = campaignDirectory(resultsRoot, key);
   const reportPaths = ['report/report.html', 'report/export-manifest.json'];
-  const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, ...reportPaths],
+  const fingerprint = campaignFingerprint(directory,
+    [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, `report/${CAMPAIGN_FILE.reportJson}`, ...reportPaths],
     [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, 'depth-pause.json']);
   const { plan, state } = dashboardCampaignState(directory);
   const interrupted = controllerInterrupted(controllerActive, directory, plan, state.status);
@@ -571,7 +572,8 @@ export function campaignSheet(resultsRoot: string, key: string,
     executions: state.summary.executions,
     resumable: dependency && state.status === 'prepared' && state.summary.executions > 0,
     controllerOwner: interrupted ? null : controllerOwner,
-    reportFiles: reportPaths.filter(path => existsSync(join(directory, path)) && statSync(join(directory, path)).isFile()),
+    reportFiles: reportCurrent(directory, plan, state.updatedAt)
+      ? reportPaths.filter(path => existsSync(join(directory, path)) && statSync(join(directory, path)).isFile()) : [],
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
     facts: sheetFacts(plan),
@@ -579,6 +581,14 @@ export function campaignSheet(resultsRoot: string, key: string,
   };
   sheetCache.set(cacheKey, { fingerprint, sheet });
   return sheet;
+}
+
+// The report records the plan and state it was built from; a later state makes it an earlier report.
+function reportCurrent(directory: string, plan: CompiledCampaignPlan, updatedAt: string): boolean {
+  try {
+    const report = readArtifact(join(directory, 'report', CAMPAIGN_FILE.reportJson), { expectedKind: 'campaign_report' });
+    return report.identities.experiment?.sha256 === plan.contentSha256 && report.timestamps.completedAt === updatedAt;
+  } catch { return false; }
 }
 
 function uniquePoints(dependency: DependencyProgress | null): { score: number; max: number } | null {
@@ -840,10 +850,11 @@ function progressionSnapshot(state: ProgressionState, nodeIds: readonly string[]
   score: number | null;
   repairs: number;
 } {
-  const average = progressionEngine.score(state).questlineAveragePercentage;
+  // Passed points over selected points: the same measure as the weighted score.
+  const score = progressionEngine.score(state).uniqueChecks.percentage;
   return {
     statuses: nodeIds.map(id => state.nodes[id]?.status ?? 'locked'),
-    score: average == null ? null : Math.round(average * 10) / 10,
+    score: score == null ? null : Math.round(score * 10) / 10,
     repairs: state.attempts.filter(attempt => attempt.repair !== undefined).length,
   };
 }

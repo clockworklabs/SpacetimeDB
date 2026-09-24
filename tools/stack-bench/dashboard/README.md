@@ -99,7 +99,8 @@ completion requires all selected checks of a feature to pass, including its
 production guarantees. Weighted score remains a separate measure. Spend includes
 all executions and shows upper bounds and unknown values. Different comparison
 conditions do not share one score average. Files links to the report and its
-public export manifest; the manifest lists evidence and any reconstruction gaps.
+public export manifest while the report matches the current campaign state; the
+manifest lists evidence and any reconstruction gaps.
 Charts connect saved observations; intermediate values are not measured.
 Comparison summaries and the distribution use eligible completed attempts.
 Excluded attempts remain labelled in chart controls and the Runs table. Cost and
@@ -118,7 +119,7 @@ holds show their paused state; elapsed time includes those holds.
 | route | returns |
 | --- | --- |
 | `GET /api/health` | `read-only` or `controller` |
-| `GET /api/overview` | one summary per campaign |
+| `GET /api/overview?page=N&filter=F` | 20 campaign summaries per page, counts per filter, and the running campaign keys |
 | `GET /api/campaigns/:key` | the campaign sheet |
 | `GET /api/campaigns/:key/live` | live spend, cost observations, activity, and phase |
 | `GET /api/campaigns/:key/progression` | the dependency graph and its replay |
@@ -128,10 +129,15 @@ holds show their paused state; elapsed time includes those holds.
 | `GET /api/campaigns/:key/attempts/:id/transcript` | selected session and paged transcript messages |
 | `GET /api/campaigns/:key/attempts/:id/time` | time allowance, grants, and continuation eligibility |
 | `POST /api/campaigns/:key/attempts/:id/time` | request additional time |
-| `GET /api/campaigns/:key/artifacts/:name` | one allowlisted artifact |
+| `GET /api/campaigns/:key/artifacts/:id` | one allowlisted artifact; `:id` is its base64url path |
 | `GET /api/events` | the change stream |
 | `GET /api/plans` | the discovered plans |
-| `POST /api/campaigns` | start a run |
+| `GET /api/session` | whether controls are available, and the browser token |
+| `GET /api/run-setup` | workload choices and defaults |
+| `POST /api/runs/prepare` | the review of a run setup |
+| `POST /api/runs` | start a reviewed run; returns 202, the job status, and the campaign key |
+| `GET /api/reference-runs` | reference qualification runs |
+| `POST /api/jobs/:id/start` | start a worker for a queued job |
 | `POST /api/campaigns/:key/resume` | run eligible scheduled dependency work |
 | `POST /api/campaigns/:key/stop` | stop the exact controller shown by the page |
 
@@ -148,7 +154,8 @@ modification time of the evidence they read, including while a campaign runs.
 `GET /api/events` is a server-sent event stream. A `campaign` event names a
 campaign whose plan, state, run output, or progression state changed; a `log`
 event names an attempt whose stdout grew. Changes are debounced for 500 ms and
-the stream sends a comment every 25 seconds so an idle connection stays open.
+the stream sends a `reference` event every 25 seconds so an idle connection stays open.
+The overview refreshes reference runs on that event.
 Campaign events refresh the affected evidence. Log events fetch only live fields
 and the open log or transcript. The client also refreshes live fields every five
 seconds while runs are active; Claude Code and Codex usage can advance without a
@@ -193,11 +200,13 @@ node dist/commands/job-cli.js start review.json --results /path/to/results --hos
 `options` returns each workload's choices and defaults. `prepare` takes `key`,
 `workload`, `workloadSha256` (from options), `level`, `stacks`, `agents` (`index` and `effort`), `conditions`,
 `repetitions`, `parallelism`, `repairs`, `timeoutMinutes`, `maxCostUsd`,
-`pauseAfterDepth` (null for none), and `credentials` (empty for appliance defaults).
+`pauseAfterDepth` (null for none), `productionQuality` (default true), and `credentials`
+(empty for appliance defaults).
 The response records the review identity, immutable plan, cost cap, account mode,
 and grading qualification. `start` accepts that response. Any change requires a
-new review. It starts the same worker as the dashboard and returns the job ID before
-waiting for completion. No model or reasoning level is substituted.
+new review. It starts the same worker as the dashboard. It prints the job ID first,
+then waits for the campaign and prints the final job status. No model or reasoning
+level is substituted.
 
 HTTP clients use `GET /api/run-setup`, `POST /api/runs/prepare`, and `POST /api/runs`.
 Writes require the same origin and browser token as other controls.

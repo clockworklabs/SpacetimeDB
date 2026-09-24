@@ -958,6 +958,7 @@ test('the progression view replays the graph once per stack within its budget', 
   writeCampaign(directory, plan, state);
   const progression = compileProgressionInput(dependencyRuntimeDefinition(
     plan.featureCatalog, plan.dependencyPolicy));
+  const finalScores = new Map<string, number | null>();
   for (const claim of claims) {
     const output = join(directory, claim.output);
     mkdirSync(join(output, 'source'), { recursive: true });
@@ -987,6 +988,7 @@ test('the progression view replays the graph once per stack within its budget', 
           model: claim.attempt.model, conditionSha256: claim.attempt.condition.contentSha256 },
         workspace: { appDirectory: 'source' } },
       state: timedState });
+    finalScores.set(claim.attempt.id, progressionEngine.score(timedState).uniqueChecks.percentage);
   }
 
   const view = campaignProgression(resultsRoot, 'progression-run');
@@ -998,6 +1000,10 @@ test('the progression view replays the graph once per stack within its budget', 
   const track = view.stacks[0];
   assert.ok(track);
   assert.ok(track.steps.length > 1);
+  // The replay score is passed points over selected points, as the weighted score is.
+  const finalScore = finalScores.get(track.attemptId);
+  assert.equal(typeof finalScore, 'number');
+  assert.equal(track.steps.at(-1)?.score, Math.round(finalScore! * 10) / 10);
   assert.deepEqual(track.steps.map(step => step.completedAt), track.steps.map((_, index) =>
     new Date(Date.parse(now) + (index + 1) * 60_000).toISOString()));
   assert.ok(track.steps.every(step => step.statuses.length === view.nodes.length));
@@ -1204,4 +1210,91 @@ test('job endpoints authenticate writes, paginate reads, and queue without launc
   assert.equal(cancelled.status, 202);
   assert.equal((await cancelled.json() as { status: string }).status, 'cancelled');
   assert.equal(launches, 0);
+});
+
+function writeStoppedDependencyCampaign(directory: string, plan: CompiledCampaignPlan): void {
+  const now = '2026-08-25T12:00:00.000Z';
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }), { now, admissionId: 'old' });
+  assert.ok(claimed.claim);
+  writeCampaign(directory, plan, finishCampaignExecution(claimed.state, claimed.claim.executionId, {
+    exitCode: 1,
+    run: { outcome: { kind: 'harness_failure', reason: 'controller stopped' } },
+    retryAuthority: { transient: true, recoveryClean: true, budgetKnown: true, cause: 'controller stopped' },
+  }, { now: '2026-08-25T12:00:01.000Z', retries: 1, retryOn: ['harness_failure'] }));
+}
+
+test('Resume keeps a job campaign on its job and accepts a model-free draft', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-job-resume-'));
+  const plan = dependencyPlan();
+  assert.equal(plan.state, 'draft');
+  const draftPlan = { id: plan.id, title: plan.title, state: plan.state, mode: 'dependency',
+    sha256: plan.contentSha256, file: 'reference.json' };
+  // The route needs only the job record; the job path itself is covered by the job CLI tests.
+  const jobId = sha256('resume-job');
+  mkdirSync(join(root, 'jobs', jobId), { recursive: true });
+  writeFileSync(join(root, 'jobs', jobId, 'job.json'), '{}');
+  writeStoppedDependencyCampaign(join(root, 'campaigns', `job-${jobId}`), plan);
+  writeStoppedDependencyCampaign(join(root, 'campaigns', 'draft-run'), plan);
+  const launches: LaunchInput[] = [];
+  const feed = { append() {}, list() { return []; } };
+  const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
+    allowLaunch: true, token: 'resume-token', feed, plans: () => [draftPlan],
+    launch(input) { launches.push(input); return Object.assign(new EventEmitter(), { pid: 1 }); } });
+  const origin = await listenOrigin(server);
+  t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
+  const resume = (key: string) => fetch(`${origin}/api/campaigns/${key}/resume`, { method: 'POST',
+    headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'resume-token' }, body: '{}' });
+
+  assert.equal((await resume(`job-${jobId}`)).status, 202);
+  assert.equal(launches[0]?.command, 'resume');
+  assert.equal(launches[0]?.jobId, jobId);
+  assert.equal((await resume('draft-run')).status, 202);
+  assert.equal(launches[1]?.jobId, undefined);
+  assert.equal(launches[1]?.plan.state, 'draft');
+});
+
+test('bad client input on campaign controls is a client error', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-client-errors-'));
+  const attemptId = writeSingleAttemptCampaign(root, 'known-run');
+  const feed = { append() {}, list() { return []; } };
+  const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
+    allowLaunch: true, token: 'input-token', feed, plans: () => [] });
+  const origin = await listenOrigin(server);
+  t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
+  const post = (path: string, body: string) => fetch(`${origin}/api/campaigns/${path}`, { method: 'POST',
+    headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'input-token' }, body });
+
+  assert.equal((await fetch(`${origin}/api/campaigns/known-run/attempts/${attemptId}/time`)).status, 200);
+  assert.equal((await fetch(`${origin}/api/campaigns/known-run/attempts/unknown-attempt/time`)).status, 404);
+  assert.equal((await fetch(`${origin}/api/campaigns/missing-run/attempts/${attemptId}/time`)).status, 404);
+  assert.equal((await fetch(`${origin}/api/campaigns/known-run/attempts/%E0%A4%A/time`)).status, 400);
+  assert.equal((await post(`known-run/attempts/${attemptId}/time`, '{')).status, 400);
+  assert.equal((await post(`known-run/attempts/${attemptId}/time`, 'x'.repeat(17 * 1024))).status, 400);
+  assert.equal((await post(`missing-run/attempts/${attemptId}/time`,
+    JSON.stringify({ minutes: 5, grantId: 'grant-1' }))).status, 404);
+  assert.equal((await post('known-run/stop', '{')).status, 400);
+  assert.equal((await post('missing-run/stop', JSON.stringify({ owner: 'a'.repeat(64) }))).status, 404);
+  assert.equal((await post('missing-run/resume', '{}')).status, 404);
+});
+
+test('the sheet links a report only while it describes the current state', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-report-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const plan = examplePlan();
+  const state = createCampaignState(plan, { now: '2026-08-18T12:00:00.000Z' });
+  const directory = join(resultsRoot, 'campaigns', 'report-run');
+  writeCampaign(directory, plan, state);
+  const options = { controllerActive: () => false };
+  mkdirSync(join(directory, 'report'));
+  writeFileSync(join(directory, 'report', 'report.html'), '<p>report</p>');
+  assert.deepEqual(campaignSheet(resultsRoot, 'report-run', options).reportFiles, []);
+  writeArtifact(join(directory, 'report', 'report.json'), { kind: 'campaign_report', id: 'report-run-report',
+    timestamps: { startedAt: state.createdAt, completedAt: state.updatedAt },
+    identities: emptyArtifactIdentities({ experiment: { id: plan.id, version: plan.version,
+      sha256: plan.contentSha256, state: plan.state } }), payload: { reportSchemaVersion: 1 } });
+  assert.deepEqual(campaignSheet(resultsRoot, 'report-run', options).reportFiles, ['report/report.html']);
+  writeCampaign(directory, plan, { ...state, updatedAt: '2026-08-18T13:00:00.000Z' });
+  const later = new Date(Date.now() + 5000);
+  utimesSync(join(directory, 'state.json'), later, later);
+  assert.deepEqual(campaignSheet(resultsRoot, 'report-run', options).reportFiles, []);
 });

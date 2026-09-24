@@ -37,7 +37,7 @@ const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'run']);
 
 export function controllerCommandRequiresAgentAuth(command: string | undefined,
   args: string[] = []): boolean {
-  if (command === 'job' && ['prepare', 'start', 'work', 'worker'].includes(args[0] ?? '')) return true;
+  if (command === 'job' && ['prepare', 'start', 'resume', 'work', 'worker'].includes(args[0] ?? '')) return true;
   if (command === 'run' && args.some(value => value === '--grade-from' || value.startsWith('--grade-from='))) {
     return !parseBenchArguments([process.execPath, 'bench', ...args]).gradeFrom;
   }
@@ -158,6 +158,7 @@ function help(): void {
     + '  job start <review-json|-> --host <host>  start a reviewed run\n'
     + '  job submit <json|->             submit an idempotent execution job\n'
     + '  job work <id> --host <host>      claim and execute one submitted job\n'
+    + '  job resume <id>                  continue an interrupted job with its saved accounts and capacity policy\n'
     + '  job worker --host <host> --concurrency <jobs>  dispatch queued jobs automatically\n'
     + '  job list|status <id>|cancel <id> inspect or cancel submitted work\n'
     + '  preflight --backend <stacks> --track <track> --levels <range>\n'
@@ -174,9 +175,12 @@ function help(): void {
     + '  campaign status <dir> [--full]   what the campaign is doing now, from its saved state\n'
     + '  campaign inspect <dir>           every attempt, level, and check with its evidence\n'
     + '  campaign report <dir>            write the JSON and HTML report\n'
+    + '  campaign export <dir> --out <new-dir>  write a partial copy with the report, CSV tables, and public artifacts\n'
     + '  campaign audit <dir>             check a finished reference campaign against its promises\n'
-    + '  campaign grant-repairs <dir> --attempt <id> --level <n> --repairs <n>  add repair budget\n'
+    + '  campaign grant-repairs <dir> --attempt <id> --grant-id <id> --level <n> --feature <id> [--feature <id> ...] --repairs <n>  add repair budget\n'
     + '  campaign grant-time <dir> --attempt <id> --grant-id <id> --minutes <n>  add time\n'
+    + '  campaign continuation-status <dir> --attempt <id> [--json]  inspect a live provider wait\n'
+    + '  campaign continue-provider <dir> --attempt <id> --request-id <id>  continue the waiting provider session once\n'
     + '  campaign reconcile <plan> --out <dir>  clean up after an interruption and prove it\n'
     + '  campaign modes                   list the campaign modes this controller knows\n'
     + '  dashboard [--port N]             serve the local dashboard\n'
@@ -188,16 +192,16 @@ function help(): void {
     + '  repair grant <run-dir> --level <n> --repairs <n>  add one repair budget\n'
     + '\n'
     + 'Qualify the grader\n'
-    + '  qualify-reference --track <track> --level <n>  grade the hand-built reference app, or its mutations\n'
+    + '  qualify-reference --backend <stack> --track <track> --level <n>  grade the hand-built reference app, or its mutations\n'
     + '    --mutation-workers N           split the mutation run across 1 to 8 isolated workers\n'
     + '  qualify-null --track <track> --level <n>  prove an empty app scores nothing\n'
     + '  qualification status --track <track> --level <n>  which grading evidence is still missing\n'
-    + '  pack-budget recommend --track <track> --level <n> --recipe <id> --evidence <dir>  derive pack limits from reference evidence\n'
+    + '  pack-budget recommend --track <track> --level <n> [--recipe <id>] --evidence <reference.json> [--evidence ...] --out <measurement.json>  derive pack limits from reference evidence\n'
     + '\n'
     + 'Recover and verify\n'
     + '  recover <private-state>          retry cleanup for an interrupted attempt, or keep its quarantine\n'
     + '  recover-lease <lease> --out <dir>  recover when the attempt state was not kept\n'
-    + '  verify-release <manifest>        verify a candidate or signed release\n'
+    + '  verify-release <manifest> --root <bundle-dir>  verify a candidate or signed release\n'
     + '  init-deps | verify-deps          create or verify the release dependency volume\n');
 }
 
@@ -219,7 +223,7 @@ async function main(argv: string[]): Promise<void> {
   const runtime = ['preflight', 'run', 'qualify-reference', 'qualify-null', 'recover', 'recover-lease']
     .includes(command ?? '') || (command === 'campaign'
       && ['run', 'trial', 'resume', 'extend', 'reconcile'].includes(argv[3] ?? ''))
-      || (command === 'job' && ['start', 'work', 'worker'].includes(argv[3] ?? ''));
+      || (command === 'job' && ['start', 'resume', 'work', 'worker'].includes(argv[3] ?? ''));
   if (runtime) env = controllerRuntimeEnvironment(env);
   const child = spawn(resolved.executable, resolved.args, { stdio: 'inherit', env });
   const stopForwardingSignals = forwardControllerSignals(child);

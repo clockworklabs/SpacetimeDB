@@ -175,17 +175,19 @@ function securityHeaders(response: ServerResponse): void {
   response.setHeader('referrer-policy', 'no-referrer');
 }
 
+class RequestBodyError extends Error {}
+
 async function body(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.length;
-    if (bytes > 16 * 1024) throw new Error('request body is too large');
+    if (bytes > 16 * 1024) throw new RequestBodyError('request body is too large');
     chunks.push(buffer);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch { throw new Error('request body must be valid JSON'); }
+  } catch { throw new RequestBodyError('request body must be valid JSON'); }
 }
 
 function createOperationFeed(resultsRoot: string): OperationFeed {
@@ -212,7 +214,8 @@ function launchCampaign({ command, jobId, plan, output, operationId, resultsRoot
   env = process.env }: LaunchInput): LaunchChild {
   const runtime = controllerRuntimeCommand(command === 'work'
     ? ['job', 'work', jobId!, '--results', resultsRoot, '--host', env.STACK_BENCH_HOST_ID ?? 'local']
-    : ['campaign', command, plan.path, '--out', output], env);
+    : jobId ? ['job', 'resume', jobId, '--results', resultsRoot]
+      : ['campaign', command, plan.path, '--out', output], env);
   feed.append({ id: operationId, updatedAt: new Date().toISOString(),
     containerName: runtime.containerName, ownershipLabel: runtime.ownershipLabel });
   const operationsRoot = join(resolve(resultsRoot), 'dashboard', 'operations');
@@ -418,7 +421,16 @@ export function createDashboardServer(options: DashboardServerOptions) {
         if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
         const directory = contained(campaignsRoot, key, 'campaign');
         const attemptId = decodeURIComponent(timeRoute[2] ?? '');
-        if (request.method === 'GET') return json(response, 200, readCampaignTimeBudget(directory, attemptId));
+        if (request.method === 'GET') {
+          if (!existsSync(directory)) return json(response, 404, { error: 'Not found' });
+          try { return json(response, 200, readCampaignTimeBudget(directory, attemptId)); }
+          catch (error) {
+            if (error instanceof Error && error.message === `unknown attempt ${attemptId}`) {
+              return json(response, 404, { error: 'Not found' });
+            }
+            throw error;
+          }
+        }
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
         if (!controlAuthorized(request, request.headers.host, token)) {
           return json(response, 403, { error: 'The time request is not authorized.' });
@@ -428,6 +440,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
           || !Number.isInteger(input.minutes) || input.minutes <= 0 || typeof input.grantId !== 'string') {
           return json(response, 400, { error: 'Positive whole minutes and a grant ID are required.' });
         }
+        if (!existsSync(directory)) return json(response, 404, { error: 'Not found' });
         try {
           const receipt = requestCampaignTimeGrant(directory, {
             attemptId, grantId: input.grantId, minutes: input.minutes,
@@ -452,6 +465,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return json(response, 400, { error: 'The current controller identity is required.' });
         }
         const directory = contained(campaignsRoot, key, 'campaign');
+        if (!existsSync(directory)) return json(response, 404, { error: 'Not found' });
         const campaign = summarizeCampaign(directory, { includeAttempts: false });
         if (!requestCampaignCancellation(directory,
           { id: campaign.id, contentSha256: campaign.sha256 }, owner)) {
@@ -471,16 +485,21 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         const key = decodeURIComponent(resumeRoute[1] ?? '');
         if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
-        const campaign = summarizeCampaign(
-          contained(join(resultsRoot, 'campaigns'), key, 'campaign'), { includeAttempts: false });
+        const directory = contained(campaignsRoot, key, 'campaign');
+        if (!existsSync(directory)) return json(response, 404, { error: 'Not found' });
+        const campaign = summarizeCampaign(directory, { includeAttempts: false });
         const priorExecutions = campaign.summary?.executions ?? 0;
         if (campaign.mode !== 'dependency' || campaign.status !== 'prepared' || priorExecutions < 1) {
           return json(response, 409, { error: 'Only an interrupted campaign that is ready can resume.' });
         }
         const plan = plans().find(item => item.id === campaign.id && item.sha256 === campaign.sha256);
-        if (!plan || plan.state !== 'frozen') {
+        // A draft campaign can only exist as a model-free trial, which `campaign resume` continues.
+        if (!plan || !['frozen', 'draft'].includes(plan.state)) {
           return json(response, 409, { error: 'The test plan used by this campaign is unavailable.' });
         }
+        // A job's campaign resumes with the accounts and capacity policy the job saved.
+        const jobId = /^job-([a-f0-9]{64})$/.exec(key)?.[1];
+        const savedJob = jobId && existsSync(join(resultsRoot, 'jobs', jobId, 'job.json')) ? jobId : undefined;
         const reservation = `${campaign.id}:${campaign.sha256}:${key}`;
         if (launchReservations.has(reservation)) {
           return json(response, 409, { error: 'This campaign already has an active controller.' });
@@ -493,7 +512,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
         feed.append(operation);
         const output = join(resultsRoot, 'campaigns', key);
         try {
-          const child = launch({ command: 'resume', plan: { ...plan, path: join(plansRoot, plan.file) }, output,
+          const child = launch({ command: 'resume', ...(savedJob ? { jobId: savedJob } : {}),
+            plan: { ...plan, path: join(plansRoot, plan.file) }, output,
             operationId: operation.id, resultsRoot, feed, env: process.env });
           if (typeof child?.once === 'function') {
             child.once('error', () => launchReservations.delete(reservation));
@@ -600,7 +620,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       return json(response, 404, { error: 'Not found' });
     } catch (error) {
-      return json(response, 500, { error: errorMessage(error) });
+      const clientError = error instanceof RequestBodyError || error instanceof URIError;
+      return json(response, clientError ? 400 : 500, { error: errorMessage(error) });
     }
   });
   // An open event stream is not an idle connection: the watchers stop and the

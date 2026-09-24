@@ -42,7 +42,7 @@ This checks the runner; it does not measure a coding model.
    ([defaults](dashboard/README.md#pages)). **Production-quality app** is on by default. It adds: “Build a production-quality
    application suitable for real users, not a prototype or demo.” You can turn it
    off before review.
-3. Review the configuration, attempt count, and cost cap. Select **Start**.
+3. Review the configuration, attempt count, and cost cap. Select **Start run**.
 4. Open the run to follow its status. Keep excluded and incomplete attempts in
    your review. Provisional results are not qualified comparisons.
 

@@ -7,8 +7,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { cancelExecutionJob, listExecutionJobs, readExecutionJob, submitExecutionJob,
   workExecutionJob } from '../src/campaigns/execution-jobs.js';
-import type { executeCampaign } from '../src/campaigns/campaign-runner.js';
+import type { executeCampaign, inspectCampaign } from '../src/campaigns/campaign-runner.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { jobCommand, resumeExecutionJob } from '../commands/job-cli.js';
+import { DEPENDENCY_CAMPAIGN } from './fixtures/dashboard-fixture.js';
 
 test('job submission, exclusive workers, cancellation and retained failures use durable records', async () => {
   const root = mkdtempSync(join(tmpdir(), 'execution-jobs-'));
@@ -114,4 +116,62 @@ test('job reads tolerate a worker publishing its claim and result between file r
     syncBuiltinESMExports();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('job resume continues the campaign with the job saved accounts and capacity policy', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-resume-'));
+  try {
+    mkdirSync(join(root, 'plans'));
+    copyFileSync(DEPENDENCY_CAMPAIGN, join(root, 'plans/reference.json'));
+    const credentials = { adapters: { 'reference-fixture': 'team-a' } };
+    const job = submitExecutionJob(root, { key: 'resume-job', planFile: 'reference.json', credentials });
+    const planFile = join(root, 'jobs', job.id, 'plan.json');
+    const directory = join(root, 'campaigns', `job-${job.id}`);
+    let status = 'completed';
+    const inspect = ((path: string) => {
+      assert.equal(path, directory);
+      return { plan: { contentSha256: job.planSha256, definition: { mode: { id: 'dependency' } } },
+        state: { status, attempts: [{ executions: [{}] }] } };
+    }) as unknown as typeof inspectCampaign;
+    let calls = 0;
+    const execute = (async (path, output, options) => {
+      calls++;
+      assert.equal(path, planFile);
+      assert.equal(output, directory);
+      assert.equal(options?.mode, 'model-free-trial');
+      assert.equal(options?.capacityPolicy, 'wait');
+      assert.deepEqual(options?.executionCredentials, credentials);
+      return { status: 'completed', summary: { completed: 1 } };
+    }) as typeof executeCampaign;
+    await assert.rejects(resumeExecutionJob(root, job.id, { execute, inspect }), /scheduled work/);
+    assert.equal(calls, 0);
+    status = 'prepared';
+    assert.deepEqual(await resumeExecutionJob(root, job.id, { execute, inspect }),
+      { status: 'completed', campaignDirectory: directory, campaign: { completed: 1 } });
+    assert.equal(calls, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('job CLI rejects options its command does not use and resolves results like the dashboard', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-cli-'));
+  const cwd = process.cwd();
+  try {
+    mkdirSync(join(root, 'plans'));
+    copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/campaign.deterministic.json'), join(root, 'plans/test.json'));
+    const job = submitExecutionJob(root, { key: 'cli-job', planFile: 'test.json' });
+    const env = { STACK_BENCH_RESULTS_DIR: root };
+    for (const argv of [['work', job.id, '--host', 'h', '--concurrency', '2'], ['status', job.id, '--host', 'h'],
+      ['list', '--concurrency', '2'], ['prepare', 'selection.json', '--limit', '5'], ['options', '--host', 'x'],
+      ['resume', job.id, '--host', 'h']]) {
+      await assert.rejects(jobCommand(argv, env), /does not take --/, argv.join(' '));
+    }
+    assert.equal((await jobCommand(['status', job.id], env) as { status: string }).status, 'queued');
+    assert.equal((await jobCommand(['list', '--limit', '1'], env) as { jobs: unknown[] }).jobs.length, 1);
+    await assert.rejects(jobCommand(['list'], { STACK_BENCH_RESULTS_DIR: 'results' }), /must be an absolute path/);
+    // An empty setting means the package results folder, not the working directory.
+    process.chdir(root);
+    const packageResults = await jobCommand(['list'], { STACK_BENCH_RESULTS_DIR: '' }) as
+      { jobs: Array<{ job: { id: string } }> };
+    assert.equal(packageResults.jobs.some(entry => entry.job.id === job.id), false);
+  } finally { process.chdir(cwd); rmSync(root, { recursive: true, force: true }); }
 });
