@@ -1002,5 +1002,5 @@ export const simulateTick = spacetimedb.reducer(
 export * from './views';
 
 export const init = spacetimedb.init(ctx => {
-  posthog.installPostHog(ctx.as.posthog);
+  posthog.install(ctx.as.posthog);
 });

@@ -92,7 +92,7 @@ export const retryHistoryAdmin = spacetimedb.view(
 );
 
 export const init = spacetimedb.init(ctx => {
-  retry.installRetry(ctx);
+  retry.install(ctx);
 });
 
 export const retryFire = spacetimedb.reducer(

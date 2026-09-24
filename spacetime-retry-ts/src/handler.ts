@@ -43,7 +43,7 @@ export function makeRetryDispatch<Tx, H extends Record<string, RetryHandler>>(
     ctx: Tx,
     args: { tag: keyof H & string; value?: unknown }
   ): RetryResult {
-    if (!Object.hasOwn(handlers, args.tag)) {
+    if (!Object.prototype.hasOwnProperty.call(handlers, args.tag)) {
       throw new Error(`unknown retry handler: ${args.tag}`);
     }
     const handler = handlers[args.tag];

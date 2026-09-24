@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { installPostHog } from './install';
+import { install } from './install';
 
 export const outboxStatus = t.enum('PostHogOutboxStatus', [
   'Queued',
@@ -167,7 +167,7 @@ export const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  installPostHog(ctx);
+  install(ctx);
 });
 
 export default spacetimedb;

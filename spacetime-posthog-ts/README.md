@@ -35,7 +35,7 @@ const spacetimedb = schema({ posthog });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  posthog.installPostHog(ctx.as.posthog);
+  posthog.install(ctx.as.posthog);
 });
 
 export const complete_order = spacetimedb.reducer(

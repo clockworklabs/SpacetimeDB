@@ -6,7 +6,7 @@ export {
   posthogOutbox,
   t,
 } from './submodule/schema';
-export { installPostHog } from './submodule/install';
+export { install } from './submodule/install';
 export { setPosthogConfig, getPosthogConfigStatus } from './submodule/config';
 export { addAdminIdentity, removeAdminIdentity } from './submodule/auth';
 export {

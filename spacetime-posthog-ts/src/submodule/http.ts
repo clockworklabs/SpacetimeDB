@@ -33,7 +33,11 @@ export function featureFlagValue(
     if (!parsed || typeof parsed !== 'object' || !('flags' in parsed))
       return undefined;
     const flags = parsed.flags;
-    if (!flags || typeof flags !== 'object' || !Object.hasOwn(flags, key))
+    if (
+      !flags ||
+      typeof flags !== 'object' ||
+      !Object.prototype.hasOwnProperty.call(flags, key)
+    )
       return undefined;
     const flag: unknown = (flags as Record<string, unknown>)[key];
     if (

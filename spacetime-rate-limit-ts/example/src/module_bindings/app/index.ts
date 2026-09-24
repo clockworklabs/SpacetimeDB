@@ -61,6 +61,7 @@ import RateLimit_AdminRateLimitBucketsRow from "./rateLimit/admin_rate_limit_buc
 
 // Import namespace reducer arg schemas
 import RateLimit_AddRateLimitAdminReducer from "./rateLimit/add_rate_limit_admin_reducer";
+import RateLimit_RemoveRateLimitAdminReducer from "./rateLimit/remove_rate_limit_admin_reducer";
 import RateLimit_ResetBucketsReducer from "./rateLimit/reset_buckets_reducer";
 import RateLimit_UpdateConfigReducer from "./rateLimit/update_config_reducer";
 
@@ -151,6 +152,7 @@ const reducersSchema = __reducers(
   __reducerSchema("set_player_color", SetPlayerColorReducer),
   __reducerSchema("update_config", UpdateConfigReducer),
   __reducerSchema("rateLimit.add_rate_limit_admin", RateLimit_AddRateLimitAdminReducer),
+  __reducerSchema("rateLimit.remove_rate_limit_admin", RateLimit_RemoveRateLimitAdminReducer),
   __reducerSchema("rateLimit.reset_buckets", RateLimit_ResetBucketsReducer),
   __reducerSchema("rateLimit.update_config", RateLimit_UpdateConfigReducer),
 );
@@ -205,6 +207,7 @@ export const reducers = {
   updateConfig: __reducerAccessors.updateConfig,
   rateLimit: {
     addRateLimitAdmin: __reducerAccessors["rateLimit.addRateLimitAdmin"],
+    removeRateLimitAdmin: __reducerAccessors["rateLimit.removeRateLimitAdmin"],
     resetBuckets: __reducerAccessors["rateLimit.resetBuckets"],
     updateConfig: __reducerAccessors["rateLimit.updateConfig"],
   },
