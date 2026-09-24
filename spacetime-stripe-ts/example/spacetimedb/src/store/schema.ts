@@ -68,7 +68,7 @@ export const spacetimedb = schema({
 
 export const init = spacetimedb.init(ctx => {
   installStore(ctx);
-  stripe.installStripe(ctx.as.stripe);
+  stripe.install(ctx.as.stripe);
 });
 
 export default spacetimedb;

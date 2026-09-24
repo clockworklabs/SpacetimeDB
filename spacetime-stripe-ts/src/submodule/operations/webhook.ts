@@ -80,26 +80,33 @@ export function handleStripeWebhook(
   try {
     const outcome = ctx.withTx(tx => {
       const existing = tx.db.stripeWebhookEvent.eventId.find(eventId);
-      if (existing) return { kind: 'duplicate', status: existing.status };
+      if (
+        existing &&
+        (existing.status.tag === 'Processed' ||
+          existing.status.tag === 'Ignored')
+      )
+        return { kind: 'duplicate', status: existing.status };
 
-      tx.db.stripeWebhookEvent.insert({
-        eventId,
-        eventType,
-        livemode,
-        signatureHeader,
-        payloadJson,
-        status: WebhookEventStatus.Received,
-        errorMessage: undefined,
-        receivedAt: tx.timestamp,
-        processedAt: undefined,
-      });
+      if (!existing)
+        tx.db.stripeWebhookEvent.insert({
+          eventId,
+          eventType,
+          livemode,
+          signatureHeader,
+          payloadJson,
+          status: WebhookEventStatus.Received,
+          errorMessage: undefined,
+          receivedAt: tx.timestamp,
+          processedAt: undefined,
+        });
 
-      const result = applyStripeEvent(tx, payloadJson);
+      const result = applyStripeEvent(tx, existing?.payloadJson ?? payloadJson);
       updateWebhookStatus(tx, eventId, result.status, result.error);
       return { kind: 'applied', status: result.status, error: result.error };
     });
 
-    return jsonResponse(200, { ok: true, eventId, ...outcome });
+    const ok = outcome.status.tag !== 'Failed';
+    return jsonResponse(ok ? 200 : 400, { ok, eventId, ...outcome });
   } catch (error) {
     console.error(`stripe webhook processing failed for ${eventId}:`, error);
     return jsonResponse(500, { error: 'webhook processing failed' });

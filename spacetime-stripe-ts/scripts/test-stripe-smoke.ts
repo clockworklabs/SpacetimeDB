@@ -7,6 +7,7 @@ type Options = {
   server: string;
   database: string;
   skipBuildPublish: boolean;
+  httpUrl?: string;
 };
 
 function parseArgs(argv: string[]): Options {
@@ -22,6 +23,7 @@ function parseArgs(argv: string[]): Options {
     if (flag === 'skip-build-publish') opts.skipBuildPublish = true;
     if (flag === 'server') opts.server = argv[++i]!;
     if (flag === 'database') opts.database = argv[++i]!;
+    if (flag === 'http-url') opts.httpUrl = argv[++i]!;
   }
   return opts;
 }
@@ -168,6 +170,84 @@ async function main() {
     'null',
     some(STRIPE_WEBHOOK_SECRET),
   ]);
+
+  if (opts.httpUrl) {
+    step('signed HTTP delivery: failed payloads stay retryable');
+    const post = async (payload: object, expectedStatus: number) => {
+      const body = JSON.stringify(payload);
+      const response = await fetch(
+        `${opts.httpUrl}/v1/database/${opts.database}/route/stripe/webhook`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'stripe-signature': stripeSignature(body),
+          },
+          body,
+        }
+      );
+      if (response.status !== expectedStatus) {
+        throw new Error(
+          `expected HTTP ${expectedStatus}, got ${response.status}: ${await response.text()}`
+        );
+      }
+    };
+    for (const [eventId, eventType, object, expectedStatus] of [
+      ['evt_http_invalid', 'customer.created', {}, 400],
+      ['evt_http_valid', 'customer.created', { id: 'cus_http_valid' }, 200],
+      ['evt_http_ignored', 'unhandled.event', {}, 200],
+    ] as const) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await post(
+          { id: eventId, type: eventType, data: { object } },
+          expectedStatus
+        );
+      }
+    }
+    const paid = {
+      id: 'evt_http_paid',
+      type: 'invoice.paid',
+      data: { object: { id: 'in_http_retry', customer: null } },
+    };
+    await post(paid, 400);
+    await ingest(opts, {
+      eventId: 'evt_http_invoice',
+      eventType: 'invoice.created',
+      payload: {
+        id: 'evt_http_invoice',
+        type: 'invoice.created',
+        data: {
+          object: {
+            id: 'in_http_retry',
+            customer: 'cus_http_valid',
+            status: 'open',
+          },
+        },
+      },
+    });
+    await post(paid, 200);
+    const recovered = await call(opts, 'list_invoices', [q('cus_http_valid')]);
+    if (!recovered.includes('"paid"'))
+      throw new Error(`failed event was not retried: ${recovered}`);
+  }
+
+  step('relay rejects invalid payload on each attempt');
+  const invalidPayload = JSON.stringify({
+    id: 'evt_relay_invalid',
+    type: 'customer.created',
+    data: { object: {} },
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const error = await expectCallFails(opts, 'ingest_stripe_webhook', [
+      q('evt_relay_invalid'),
+      q('customer.created'),
+      'false',
+      q(invalidPayload),
+      some(stripeSignature(invalidPayload)),
+    ]);
+    if (!error.includes('stripe.webhook_payload_invalid'))
+      throw new Error(error);
+  }
 
   step('negative: anonymous callers cannot read or mutate Stripe state');
   for (const [name, args] of [

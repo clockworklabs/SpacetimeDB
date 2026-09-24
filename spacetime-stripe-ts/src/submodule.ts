@@ -1,5 +1,5 @@
 export { default } from './submodule/schema';
-export { installStripe } from './submodule/install';
+export { install } from './submodule/install';
 export {
   upsertCustomer,
   upsertSubscription,
@@ -8,8 +8,41 @@ export {
   ingestStripeWebhook,
   replayWebhookEvent,
 } from './submodule/operations';
-export * from './submodule/operations/billing';
-export * from './submodule/operations/queries';
+export {
+  validateStripePrice,
+  getRemoteCheckoutSession,
+  getWebhookEventCount,
+  stripeApiRequest,
+  createCustomer,
+  createOrUpdateCustomer,
+  updateSubscriptionMetadata,
+  getOrCreateCustomer,
+  createCheckoutSession,
+  createCustomerPortalSession,
+  cancelSubscription,
+  reactivateSubscription,
+  updateSubscriptionQuantity,
+} from './submodule/operations/billing';
+export {
+  getCustomer,
+  getCustomerByEmail,
+  getCustomerByUserId,
+  getSubscription,
+  listSubscriptions,
+  listSubscriptionsWithCreationTime,
+  getSubscriptionByOrgId,
+  listSubscriptionsByOrgId,
+  listSubscriptionsByUserId,
+  getPayment,
+  listPayments,
+  listPaymentsByUserId,
+  listPaymentsByOrgId,
+  listInvoices,
+  listInvoicesByOrgId,
+  listInvoicesByUserId,
+  getCheckoutSession,
+  listCheckoutSessions,
+} from './submodule/operations/queries';
 export {
   handleStripeWebhook,
   stripeWebhookHandler,

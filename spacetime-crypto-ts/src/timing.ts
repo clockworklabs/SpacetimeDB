@@ -54,10 +54,10 @@ export function base64ToBytes(b64: string): Uint8Array {
   const out = new Uint8Array((s.length / 4) * 3 - pad);
   let oi = 0;
   for (let i = 0; i < s.length; i += 4) {
-    const c0 = lookup[s.charCodeAt(i)];
-    const c1 = lookup[s.charCodeAt(i + 1)];
-    const c2 = lookup[s.charCodeAt(i + 2)];
-    const c3 = lookup[s.charCodeAt(i + 3)];
+    const c0 = lookup[s.charCodeAt(i)] ?? -1;
+    const c1 = lookup[s.charCodeAt(i + 1)] ?? -1;
+    const c2 = lookup[s.charCodeAt(i + 2)] ?? -1;
+    const c3 = lookup[s.charCodeAt(i + 3)] ?? -1;
     if (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0) {
       throw new Error('base64: invalid char');
     }

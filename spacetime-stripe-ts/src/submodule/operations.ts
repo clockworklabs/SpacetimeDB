@@ -869,21 +869,28 @@ export const ingestStripeWebhook = spacetimedb.reducer(
     const existing = ctx.db.stripeWebhookEvent.eventId.find(
       signedMetadata.eventId
     );
-    if (existing) return;
+    if (
+      existing &&
+      (existing.status.tag === 'Processed' || existing.status.tag === 'Ignored')
+    )
+      return;
 
-    ctx.db.stripeWebhookEvent.insert({
-      eventId: signedMetadata.eventId,
-      eventType: signedMetadata.eventType,
-      livemode: signedMetadata.livemode,
-      signatureHeader,
-      payloadJson,
-      status: WebhookEventStatus.Received,
-      errorMessage: undefined,
-      receivedAt: ctx.timestamp,
-      processedAt: undefined,
-    });
+    if (!existing)
+      ctx.db.stripeWebhookEvent.insert({
+        eventId: signedMetadata.eventId,
+        eventType: signedMetadata.eventType,
+        livemode: signedMetadata.livemode,
+        signatureHeader,
+        payloadJson,
+        status: WebhookEventStatus.Received,
+        errorMessage: undefined,
+        receivedAt: ctx.timestamp,
+        processedAt: undefined,
+      });
 
-    const outcome = applyStripeEvent(ctx, payloadJson);
+    const outcome = applyStripeEvent(ctx, existing?.payloadJson ?? payloadJson);
+    if (outcome.status.tag === 'Failed')
+      throwSenderError('stripe.webhook_payload_invalid');
     updateWebhookStatus(
       ctx,
       signedMetadata.eventId,

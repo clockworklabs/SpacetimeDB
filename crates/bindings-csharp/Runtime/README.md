@@ -4,7 +4,7 @@
 
 # SpacetimeDB.Runtime
 
-This project contains the runtime bindings for SpacetimeDB WebAssembly modules. See the [C# module library reference](https://spacetimedb.com/docs/modules/c-sharp) for stable, user-facing documentation.
+This project contains the runtime bindings for SpacetimeDB WebAssembly modules. See the [C# module library reference](https://spacetimedb.com/docs/core-concepts) for stable, user-facing documentation.
 
 SpacetimeDB modules are compiled to WebAssembly modules that expose a specific interface; see the [module ABI reference](https://spacetimedb.com/docs/webassembly-abi).
 

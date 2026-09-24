@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
-import { installStripe } from './install';
+import { install } from './install';
 
 // Internal ingest lifecycle for webhook rows. Received = stored. Processed =
 // applied to the data model. Ignored = duplicate or unhandled event type.
@@ -253,7 +253,7 @@ export const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  installStripe(ctx);
+  install(ctx);
 });
 
 export default spacetimedb;
@@ -381,7 +381,7 @@ const vPaymentIntentObject = v.object({
   metadata: vMetadata,
 });
 
-// Discriminated union over the 12 handled event types; unknown types route to status=failed.
+// Unknown event types are acknowledged as Ignored.
 export const vStripeEvent = v.variant('type', [
   v.object({
     type: v.literal('customer.created'),
