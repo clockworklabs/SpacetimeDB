@@ -824,6 +824,81 @@ impl From<http::Error> for Error {
 mod tests {
     use super::*;
 
+    // Native host stubs exercise the real transaction path, including a commit retry.
+    std::thread_local! {
+        static COMMIT_ATTEMPTS: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn get_call_auth_flags() -> u32 {
+        0 // HTTP handlers are external invocations.
+    }
+
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn procedure_start_mut_tx(out: *mut i64) -> u16 {
+        unsafe { out.write(0) };
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn procedure_commit_mut_tx() -> u16 {
+        COMMIT_ATTEMPTS.with(|attempts| {
+            let previous = attempts.replace(attempts.get() + 1);
+            // Fail the first commit to force reconstruction of the transaction context.
+            if previous == 0 {
+                1
+            } else {
+                0
+            }
+        })
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn procedure_abort_mut_tx() -> u16 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn get_jwt(_: *const u8, _: *mut crate::sys::raw::BytesSource) -> u16 {
+        panic!("handler authentication must not read a JWT")
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn bytes_source_read(_: crate::sys::raw::BytesSource, _: *mut u8, _: *mut usize) -> i16 {
+        panic!("handler authentication must not read a JWT")
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn bytes_source_remaining_length(_: crate::sys::raw::BytesSource, _: *mut u32) -> i16 {
+        panic!("handler authentication must not read a JWT")
+    }
+
+    #[test]
+    fn handler_transactions_are_external_without_jwt_even_on_retry() {
+        let mut handler = HandlerContext::new(Timestamp::UNIX_EPOCH);
+        for fallible in [false, true] {
+            COMMIT_ATTEMPTS.with(|attempts| attempts.set(0));
+            let calls = std::cell::Cell::new(0);
+            let check = |tx: &TxContext| {
+                calls.set(calls.get() + 1);
+                assert!(!tx.sender_auth().is_internal());
+                assert!(!tx.sender_auth().has_jwt());
+                assert!(tx.sender_auth().jwt().is_none());
+            };
+            if fallible {
+                handler
+                    .try_with_tx(|tx| {
+                        check(tx);
+                        Ok::<_, ()>(())
+                    })
+                    .unwrap();
+            } else {
+                handler.with_tx(check);
+            }
+            assert_eq!(calls.get(), 2);
+        }
+    }
+
     #[test]
     fn request_from_wire_preserves_metadata_and_body() {
         let request = st_http::Request {
