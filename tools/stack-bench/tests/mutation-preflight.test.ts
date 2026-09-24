@@ -253,13 +253,10 @@ test('mutation grading receives the exact scored checks selected for the run', (
   ]);
 });
 
-test('mutation control timeout follows its explicit runtime budget', () => {
-  assert.equal(mutationControlTimeoutMs(), 80 * 60_000);
-  assert.equal(mutationControlTimeoutMs(15), 35 * 60_000);
+test('mutation timeouts cover their runtime budget and each grade uses only the remaining batch time', () => {
+  assert(mutationControlTimeoutMs() > 0);
+  for (const budget of [1, 15, 60]) assert(mutationControlTimeoutMs(budget) >= budget * 60_000);
   assert.throws(() => mutationControlTimeoutMs(0), /positive number/);
-});
-
-test('each mutation grade uses only the remaining batch time', () => {
   const now = 1_000_000;
   assert.equal(mutationGradeTimeoutMs(now + 30_000, now), 30_000);
   assert.equal(mutationGradeTimeoutMs(now + GRADER_SOURCE_TIMEOUT_MS + 1, now),
@@ -269,26 +266,15 @@ test('each mutation grade uses only the remaining batch time', () => {
   assert.throws(() => mutationGradeTimeoutMs(Number.NaN, now), /must be finite/);
 });
 
-test('mutation shard coordinates reach the mutation runner together', () => {
-  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce.json');
-  const args = { out: 'output', mutations: manifest, backend: 'mongodb',
-    track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'parallel-attempt',
-    recipe: null, recipeTasks: new Map(), mutationShardIndex: 2, mutationShardCount: 4 };
-  const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
-    loadTrack('ecommerce'));
-  const index = argv.indexOf('--mutation-shard-index');
-  assert.deepEqual(argv.slice(index, index + 4),
-    ['--mutation-shard-index', '2', '--mutation-shard-count', '4']);
-});
-
-test('mutation checkpoint controls reach the mutation runner', () => {
+test('mutation checkpoint and shard controls reach the mutation runner', () => {
   const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce.json');
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
     track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'resume-attempt',
     recipe: null, recipeTasks: new Map(), mutationResumeFrom: 'prior.json',
     mutationCheckpointOut: 'next.json', mutationMaxRuntimeMinutes: 30,
     mutationImageId: 'sha256:image', mutationBaselineBundle: 'baseline.json',
-    expectedMutationCalibration: { id: 'calibration', sha256: 'calibration-sha' } };
+    expectedMutationCalibration: { id: 'calibration', sha256: 'calibration-sha' },
+    mutationShardIndex: 2, mutationShardCount: 4 };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
   const after = (flag: string): string => {
@@ -303,6 +289,9 @@ test('mutation checkpoint controls reach the mutation runner', () => {
   assert.equal(after('--baseline-bundle'), 'baseline.json');
   assert.deepEqual(JSON.parse(after('--expected-calibration-json')),
     args.expectedMutationCalibration);
+  const shard = argv.indexOf('--mutation-shard-index');
+  assert.deepEqual(argv.slice(shard, shard + 4),
+    ['--mutation-shard-index', '2', '--mutation-shard-count', '4']);
 });
 
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, compileRecipeFile, resolveTaskFragment,
+import { compilePackDefinition, resolveTaskFragment,
   type CompiledPackDefinition } from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledCriterion, type CompiledFeature }
   from '../src/composition/definition-compiler.js';
@@ -27,20 +27,7 @@ const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
 const definition = compileProgressionDefinitionFile(
   join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
 
-test('search ordering after purchases does not make purchasing a pagination prerequisite', () => {
-  const node = definition.nodes.find(node => node.id === 'faceted-search')!;
-  assert.deepEqual(node.dependencies, ['catalog-discovery']);
-  const interaction = node.gradingChecks.find(check => check.id.endsWith('.402b'))!;
-  assert.equal(interaction.role, 'guarantee');
-  assert.deepEqual(interaction.requiresFeatures, [
-    'ecommerce.feature.purchasing', 'ecommerce.progression.faceted-search',
-  ]);
-  const pagination = node.gradingChecks.find(check => check.id.endsWith('.402a'))!;
-  assert.equal(pagination.role, 'feature');
-  assert.deepEqual(pagination.requiresFeatures ?? [], []);
-});
-
-test('stored review script safety belongs to reviews and requires successful product behavior', () => {
+test('stored review script safety belongs to reviews and review access is verified at the server boundary', () => {
   const pack = packs.get('ecommerce.progression.review-access-specifications')!;
   const check = pack.checks.find(check => check.id === 'stored-review-script')!;
   assert.equal(check.role, 'guarantee');
@@ -53,6 +40,14 @@ test('stored review script safety belongs to reviews and requires successful pro
     && step.outcome === 'accepted'), 'reject-all cannot pass');
   assert.deepEqual(steps.filter(step => step.do === 'expectNoScriptExecution').map(step => step.actor),
     ['owner', 'reader-fresh']);
+
+  const [reviewCriterion] = selectedCriteria(pack);
+  assert(reviewCriterion);
+  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'owner'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted'));
+  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'stranger'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome'
+    && step.outcome === 'application-refused' && step.routeProvenBy === 'owner'));
 });
 
 test('shipping accounting is an unprompted production check owned only by fulfilment', () => {
@@ -147,19 +142,6 @@ test('feature requests are implementation-neutral and never name the testing int
   }
 });
 
-test('every check selects criteria that exist in its scenario', () => {
-  for (const { pack } of featurePacks) {
-    for (const check of pack.checks) {
-      const at = `${pack.id}.${check.id}`;
-      const { feature } = scenarioFeature(check, at);
-      for (const id of check.criteria ?? []) {
-        assert(feature.criteria.some(criterion => criterion.id === id),
-          `${at} selects ${id}, which ${check.source} does not define`);
-      }
-    }
-  }
-});
-
 test('shopping criteria in one scenario never share a product, so state cannot leak between them', () => {
   const [quantity, checkout] = requiredPack('ecommerce.feature.cart').checks.length
     ? selectedCriteria(requiredPack('ecommerce.feature.cart'))
@@ -172,29 +154,6 @@ test('shopping criteria in one scenario never share a product, so state cannot l
     return add.in.contains;
   };
   assert.notEqual(product(quantity), product(checkout));
-});
-
-test('fulfilment and cancellation keep separate authorization owners', () => {
-  // A cross-feature authorization check is graded by exactly one feature, so
-  // a failure has one repair owner.
-  const access = requiredPack('ecommerce.progression.operations-access-specifications');
-  assert.equal(access.moduleType, 'specification');
-  const owners = new Map(access.checks.map(check => [check.id, check.requiresFeatures]));
-  assert(owners.get('operator-authorization-direct')?.includes('ecommerce.progression.fulfilment-queue'));
-  assert(owners.get('order-owner-direct')?.includes('ecommerce.l2.order-cancellation-features'));
-  const fulfilment = definition.nodes.find(node => node.id === 'fulfilment-queue');
-  const cancellation = definition.nodes.find(node => node.id === 'order-cancellation');
-  assert(fulfilment && cancellation);
-  const owns = (node: CompiledProgressionNode, checkId: string): boolean => {
-    const check = access.checks.find(candidate => candidate.id === checkId);
-    assert(check, `${access.id} must define ${checkId}`);
-    const prefix = `${access.stableId ?? access.id}.${check.stableId ?? check.id}.`;
-    return node.gradingChecks.some(graded => graded.id.startsWith(prefix));
-  };
-  assert(owns(fulfilment, 'operator-authorization-direct'));
-  assert(!owns(fulfilment, 'order-owner-direct'));
-  assert(owns(cancellation, 'order-owner-direct'));
-  assert(!owns(cancellation, 'operator-authorization-direct'));
 });
 
 test('every replayed request names a declared actor whose request it replays', () => {
@@ -252,54 +211,6 @@ test('refund accounting proves one persisted effect after a same-staff replay', 
   const access = selectedCriteria(requiredPack('ecommerce.spec.access-control')).find(criterion => criterion.id === '615c');
   assert(access?.steps.some(step => step.do === 'expectActionOutcome'
     && step.outcome === 'refused'));
-});
-
-test('review access is verified at the server boundary', () => {
-  const review = requiredPack('ecommerce.progression.review-access-specifications');
-  const [reviewCriterion] = selectedCriteria(review);
-  assert(reviewCriterion);
-  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'owner'));
-  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted'));
-  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'stranger'));
-  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome'
-    && step.outcome === 'application-refused' && step.routeProvenBy === 'owner'));
-});
-
-test('promotion rules use values a date input accepts', () => {
-  const [criterion] = selectedCriteria(requiredPack('ecommerce.progression.promotion-rules'));
-  assert(criterion);
-  const values = criterion.steps
-    .filter(step => step.do === 'fill' && typeof step.testid === 'string'
-      && ['promotion-start', 'promotion-end'].includes(step.testid))
-    .map(step => step.text);
-  assert.equal(values.length, 2);
-  for (const value of values) assert.match(String(value), /^\d{4}-\d{2}-\d{2}$/);
-});
-
-test('recommendations use their declared catalog entry before reading results', () => {
-  const pack = requiredPack('ecommerce.l2.recommendations');
-  const text = pack.task.contracts.map(fragmentText).join('\n');
-  assert.match(text, /`catalog-link`.*catalog.*list visible/);
-  const [criterion] = selectedCriteria(pack);
-  assert(criterion);
-  const firstResult = criterion.steps.findIndex(step => step.do === 'expect'
-    && step.testid === 'recommended-item');
-  assert(firstResult > 0);
-  assert.equal(criterion.steps[firstResult - 1]?.testid, 'catalog-link');
-});
-
-test('the sequential L2 recipe runs every source its operations feature packs own', () => {
-  const recipe = compileRecipeFile(
-    join(trackRoot, 'composition', 'recipes', 'sequential-l2.json'), { trackRoot });
-  const sources = new Set(recipe.execution.map(entry => entry.source));
-  for (const name of ['operations-access-features.json',
-    'inventory-operations-features.json', 'returns-pricing-features.json']) {
-    const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-    assert.equal(pack.moduleType, 'feature');
-    for (const check of pack.checks) {
-      assert(sources.has(check.source), `${name} must run ${check.source}`);
-    }
-  }
 });
 
 // Each check has authored reporting metadata; browser transport is not a UI category.

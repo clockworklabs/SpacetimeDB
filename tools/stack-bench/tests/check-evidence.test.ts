@@ -32,12 +32,6 @@ function evidence(overrides: Partial<EvidenceInput> = {}): CheckEvidence {
   });
 }
 
-test('check evidence validates typed status', () => {
-  const value = evidence({ status: 'harness_failure', code: 'browser_failure' });
-  assert.equal(validateCheckEvidence(value), value);
-  assert.equal(evidenceIsMeasured(value), false);
-});
-
 test('blocked records the failed prerequisite without claiming the target assertion ran', () => {
   const value = evidence({ status: 'blocked', phase: 'setup' });
   assert.equal(evidenceIsMeasured(value), true, 'the app prerequisite failure is attributable');
@@ -45,14 +39,6 @@ test('blocked records the failed prerequisite without claiming the target assert
   assert.equal(evidencePassed(value), false);
   assert.equal(evidenceDisposition(value).label, 'BLOCKED');
   assert.throws(() => evidence({ status: 'blocked', phase: 'assertion' }), /setup failure/);
-});
-
-test('criterion verdict ignores wording when typed evidence exists', () => {
-  const criterion = {
-    id: 'works',
-    evidence: evidence({ status: 'passed', code: 'completed', summary: 'anything at all' }),
-  };
-  assert.equal(criterionEvidence(criterion).status, 'passed');
 });
 
 test('criteria without typed evidence are rejected', () => {
@@ -116,6 +102,9 @@ test('all semantic helpers and renderers obey typed status, never diagnostic wor
   assert.equal(evidenceIsRepairable(misleading), true);
   assert.equal(evidenceStatusLabel(misleading), 'FAIL');
   assert.match(renderEvidenceConsoleLine(misleading, 'feature/check'), /^FAIL feature\/check/);
+  assert.equal(criterionEvidence({ id: 'works',
+    evidence: evidence({ status: 'passed', code: 'completed', summary: 'anything at all' }) }).status, 'passed');
+  assert.equal(criterionEvidence({ id: 'misleading', evidence: misleading }).status, 'failed');
 
   const unavailable = evidence({ status: 'harness_failure', code: 'browser_failure',
     summary: 'FAILED: blame the generated app' });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -11,9 +11,27 @@ import { buildRecipeRelease, executionPlanForRelease,
   requireRecipeRelease } from '../src/composition/recipe-release.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.js';
+import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.js';
 
 const TRACK = loadTrack('ecommerce');
-const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'dependency-l3.json');
+const CALIBRATIONS = join(TRACK.dir, 'composition', 'calibrations');
+const CALIBRATION = join(CALIBRATIONS, 'dependency-l3.json');
+const BACKENDS = ['mongodb', 'postgres', 'spacetime'];
+const PRECONDITION_CONTROLS = [
+  ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'precondition'],
+  ['ecommerce.spec.external-data-sync.external-stock.901b', 'precondition'],
+];
+const EXPECTED_CALIBRATIONS: Record<string, { id: string; recipe: string; stacks: string[];
+  controls: string[][] }> = {
+  'dependency-l3.json': { id: 'ecommerce.dependency-l3-calibration', recipe: 'progression-catalog',
+    stacks: ['convex', ...BACKENDS], controls: [] },
+  'dependency-l6.json': { id: 'ecommerce.l6-return-refund-calibration', recipe: 'progression-catalog',
+    stacks: BACKENDS, controls: [] },
+  'sequential-l1.json': { id: 'ecommerce.sequential-l1-calibration', recipe: 'sequential-l1',
+    stacks: BACKENDS, controls: PRECONDITION_CONTROLS },
+  'sequential-l2.json': { id: 'ecommerce.sequential-l2-calibration', recipe: 'sequential-l2',
+    stacks: BACKENDS, controls: PRECONDITION_CONTROLS },
+};
 
 function calibrationSource(): unknown {
   return JSON.parse(readFileSync(CALIBRATION, 'utf8'));
@@ -40,31 +58,52 @@ test('qualification runtime must cover the exact selected pack set', () => {
   ] }, release), false);
 });
 
-test('current calibration binds stable authored identities', () => {
-  const { release, plan } = current();
-  assert.equal(plan.id, 'ecommerce.dependency-l3-calibration');
-  assert.deepEqual(plan.recipe, {
-    path: 'composition/recipes/progression-catalog.json',
-    id: release.id,
-    meaningSha256: release.meaningSha256,
-    executionSha256: release.executionSha256,
-    contentSha256: release.contentSha256,
-  });
-  assert.deepEqual(plan.qualification.stacks, ['convex', 'mongodb', 'postgres', 'spacetime']);
-  assert.equal(plan.qualification.evidence.length, 0);
-  assert.equal(plan.references.entries.length, 4);
-  assert.equal(plan.mutations.length, 4);
-  assert.match(plan.contentSha256, /^[a-f0-9]{64}$/);
-  assert.match(plan.qualificationSha256, /^[a-f0-9]{64}$/);
-  assert.deepEqual(calibrationQualificationIdentity(plan), {
-    id: plan.id,
-    contentSha256: plan.qualificationSha256,
-  });
-  const scored = new Set(release.checkCatalog.filter(check => check.points > 0)
-    .map(check => check.stableKey));
-  for (const mutation of plan.mutations) {
-    const covered = new Set(mutation.targets.flatMap(target => target.stableKeys));
-    assert.deepEqual([...scored].filter(key => !covered.has(key)), [], mutation.backend);
+test('every current calibration binds stable authored identities', () => {
+  const registry = loadReferenceRegistry();
+  assert.deepEqual(validateReferenceRegistry(registry).issues, []);
+  assert.deepEqual(readdirSync(CALIBRATIONS).filter(name => name.endsWith('.json')).sort(),
+    Object.keys(EXPECTED_CALIBRATIONS).sort());
+  for (const [name, expected] of Object.entries(EXPECTED_CALIBRATIONS)) {
+    const path = join(CALIBRATIONS, name);
+    const { selection } = JSON.parse(readFileSync(path, 'utf8')) as { selection: { alias: string } };
+    const binding = requireRecipeRelease(TRACK, Number(selection.alias.slice(1)),
+      `ecommerce.${expected.recipe}`);
+    const plan = compileCalibrationFile(path, { trackRoot: TRACK.dir, stackBenchRoot: STACK_BENCH_ROOT,
+      release: binding.release });
+    const { release } = calibrationQualificationRelease(plan, binding.release, binding.execution);
+    assert.equal(plan.id, expected.id);
+    assert.deepEqual(plan.recipe, {
+      path: `composition/recipes/${expected.recipe}.json`,
+      id: release.id,
+      meaningSha256: release.meaningSha256,
+      executionSha256: release.executionSha256,
+      contentSha256: release.contentSha256,
+    }, name);
+    assert.deepEqual(plan.qualification.stacks, expected.stacks, name);
+    assert.deepEqual(plan.qualification.evidence, [], name);
+    assert.deepEqual(plan.references.entries.map(reference => reference.backend).sort(), expected.stacks, name);
+    assert.deepEqual(plan.mutations.map(mutation => mutation.backend).sort(), expected.stacks, name);
+    assert.match(plan.contentSha256, /^[a-f0-9]{64}$/);
+    assert.match(plan.qualificationSha256, /^[a-f0-9]{64}$/);
+    assert.deepEqual(calibrationQualificationIdentity(plan), {
+      id: plan.id,
+      contentSha256: plan.qualificationSha256,
+    });
+    assert.deepEqual(plan.controls.map(control => [control.stableKey, control.role]), expected.controls, name);
+    const scored = new Set(release.checkCatalog.filter(check => check.points > 0)
+      .map(check => check.stableKey));
+    assert(scored.size > 0, name);
+    for (const reference of plan.references.entries) {
+      assert.equal(reference.id, `ecommerce-reference-${reference.backend}`, name);
+    }
+    for (const mutation of plan.mutations) {
+      const covered = new Set(mutation.targets.flatMap(target => target.stableKeys));
+      assert.deepEqual([...scored].filter(key => !covered.has(key)), [], `${name} ${mutation.backend}`);
+      const fixture = registry.fixtures.find(entry => entry.id === `ecommerce-reference-${mutation.backend}`);
+      assert(fixture?.recipes, `${name} ${mutation.backend}`);
+      assert(fixture.recipes.includes(release.id), `${name} ${mutation.backend}`);
+      assert.deepEqual(fixture.mutationManifests, [mutation.path], `${name} ${mutation.backend}`);
+    }
   }
 });
 
@@ -162,7 +201,7 @@ test('calibration identity changes when selected checks change', () => {
   assert.notDeepEqual(calibrationQualificationIdentity(identityInput), first);
 });
 
-test('calibration rejects retired authored lifecycle fields', () => {
+test('calibration rejects unknown fields', () => {
   const value = calibrationSource() as Record<string, unknown>;
   value.version = '1.0.0';
   assert.throws(() => compileCalibrationDefinition(value), /unknown field/);

@@ -18,19 +18,6 @@ const requested = { track: 'example', levels: [{ level: 1,
     contractSha256: '1'.repeat(64), requirementIds: ['example.requirement'],
     contractIds: ['example.contract'] } }] };
 
-const modularRequested = { track: 'example', levels: [{ ...requested.levels[0],
-  selection: { schemaVersion: 3, sha256: 'd'.repeat(64), scoredPoints: 2,
-    requested: { features: ['example.feature'], specifications: {
-      requested: [], expected: ['example.spec'], observed: [],
-    }, checks: [] },
-    promptPacks: ['example.feature'], features: ['example.feature'],
-    specifications: { requested: [], expected: ['example.spec'], observed: [] },
-    scoredChecks: [
-      { stableKey: 'example.feature.check', points: 1, treatment: 'requested' },
-      { stableKey: 'example.spec.check', points: 1, treatment: 'expected' },
-    ], observedChecks: [] },
-}] };
-
 const writeJson = (path: string, value: unknown): void => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -50,13 +37,6 @@ test('production framing is explicit and does not change legacy or grading scope
   assert.deepEqual(enabled.requested, legacy.requested);
   assert.deepEqual(enabled.guidance, legacy.guidance);
   assert.throws(() => validateConditionReference({ ...prescribed, productionQuality: 'true' }), /must be a boolean/);
-});
-
-test('retired authentication provider conditions are rejected', () => {
-  for (const authenticationProvider of ['keycloak', undefined, null, 'none']) {
-    assert.throws(() => validateConditionReference({ ...prescribed, authenticationProvider }),
-      /authenticationProvider/);
-  }
 });
 
 test('dev workflow is opt-in and changes only the SpacetimeDB skill identity', () => {
@@ -113,15 +93,6 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.notEqual(changed.contentSha256, condition.contentSha256);
 });
 
-test('packaged neutral product guidance retains intentional SDK skills', () => {
-  const neutral = { id: 'neutral', guidanceProfile: 'neutral', repairPolicy: 'scored-only' };
-  const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
-    { requested });
-  assert.equal(condition.guidance.mode, 'neutral');
-  assert.equal(condition.guidance.material.designAdvice, true);
-  assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
-});
-
 test('neutral guidance uses current stack documents, skills, and credential aliases', () => {
   const profile = resolveGuidanceProfile('neutral', ['mongodb', 'postgres', 'spacetime']);
   assert.equal(profile.material.designAdvice, true);
@@ -132,26 +103,12 @@ test('neutral guidance uses current stack documents, skills, and credential alia
     'stackbench-customer-2026': 'store-customer-2026',
     'stackbench-staff-2026': 'store-staff-2026',
   });
-});
-
-test('all neutral profiles retain full TypeScript server and client skills', () => {
-  for (const [id, extra] of [['neutral', []], ['neutral-dev', ['spacetime-dev']],
-    ['neutral-managed-dev', ['spacetime-managed-dev']]] as const) {
-    const profile = resolveGuidanceProfile(id, ['spacetime']);
-    assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli', ...extra]);
-    assert.equal(profile.material.designAdvice, true);
-  }
-});
-
-test('expected modular specifications are scored under the ordinary repair policy', () => {
-  const selected = { id: 'defaults', guidanceProfile: 'neutral', repairPolicy: 'scored-only' };
-  const [condition] = resolveStudyConditions([selected], ['mongodb', 'postgres', 'spacetime'],
-    { requested: modularRequested });
-  const selectedLevel = condition.requested.levels[0];
-  assert.ok(selectedLevel?.selection.specifications);
-  assert.deepEqual(selectedLevel.selection.specifications.expected,
-    ['example.spec']);
-  assert.equal(condition.repair.scoredEvidence, true);
+  const [condition] = resolveStudyConditions([
+    { id: 'neutral', guidanceProfile: 'neutral', repairPolicy: 'scored-only' },
+  ], ['mongodb', 'postgres', 'spacetime'], { requested });
+  assert.equal(condition.guidance.mode, 'neutral');
+  assert.equal(condition.guidance.material.designAdvice, true);
+  assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
 });
 
 test('condition references use stable IDs', () => {

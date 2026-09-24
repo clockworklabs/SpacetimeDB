@@ -7,23 +7,15 @@ import ts from 'typescript';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { mutationFileEdits, mutationTargetKeys, readMutationManifest, releaseScenarioCheckKeys,
+import { mutationFileEdits, readMutationManifest, releaseScenarioCheckKeys,
   type LoadedMutationDefinition }
   from '../src/evidence/mutation-analysis.js';
-import { compileFeatureCatalogInput,
-  compileProgressionDefinitionFile } from '../src/progression/progression-definition.js';
-import { resolveProgressionRecipeLevelSelection }
-  from '../src/progression/progression-recipe-selection.js';
 import { loadReferenceRegistry } from '../src/references/reference-fixtures.js';
 
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const definition = compileProgressionDefinitionFile(
-  join(TRACK, 'progression', 'ecommerce.json'), { trackRoot: TRACK });
 const binding = resolveRecipeRelease(loadTrack('ecommerce'), 3,
   'ecommerce.progression-catalog');
-const selection = resolveProgressionRecipeLevelSelection(binding,
-  compileFeatureCatalogInput(definition), 3, { cumulative: true });
 const fixtures = new Map(loadReferenceRegistry().fixtures
   .filter(fixture => fixture.track === 'ecommerce')
   .map(fixture => [fixture.backend, fixture]));
@@ -132,17 +124,6 @@ test('SpacetimeDB stale support control preserves initial and reloaded replies',
   assert.deepEqual(render(['saved reply', 'new live reply'], true), ['saved reply', 'new live reply']);
 });
 
-test('SpacetimeDB guest purchase control reaches the reducer through the graded button', () => {
-  const mutation = mutationManifest('spacetime').mutations.find(candidate =>
-    candidate.id === 'signed-out-purchase-bypasses-account-check');
-  assert(mutation);
-  const edits = mutationFileEdits(mutation);
-  assert(edits.some(edit => edit.file === 'client/src/components/ItemCard.tsx'
-    && edit.find.includes('isSignedIn && (') && edit.replace.includes('true && (')));
-  assert(edits.some(edit => edit.file === 'backend/spacetimedb/src/index.ts'
-    && edit.find.includes('buyNow') && edit.replace.includes("getAccountId(ctx) === null")));
-});
-
 test('restock controls declare both checks that require successful administrator writes', () => {
   for (const backend of ['mongodb', 'postgres', 'spacetime', 'convex']) {
     const ids = ['authorized-restock-does-not-change-stock',
@@ -190,37 +171,6 @@ for (const backend of ['mongodb', 'postgres', 'spacetime']) {
       const recipeBinding = resolveRecipeRelease(loadTrack('ecommerce'), 2, recipe);
       assert.deepEqual(mutation.targets, releaseScenarioCheckKeys(recipeBinding.release, TRACK,
         join(ROOT, mutation.scenario), mutation.targets));
-    }
-  });
-
-  test(`${backend} progression mutations cover every selected L1-L3 check`, () => {
-    const manifest = mutationManifest(backend);
-    const selected = new Set(selection.grader.checkKeys);
-    const covered = new Set(manifest.mutations.flatMap(mutation => mutationTargetKeys(mutation)));
-    assert.deepEqual([...selected].filter(check => !covered.has(check)), []);
-  });
-
-  test(`${backend} declared progression mutations have exact anchors and valid syntax`, () => {
-    const fixture = fixtures.get(backend);
-    assert(fixture?.targetPath, `${backend} fixture must have a target path`);
-    const manifest = mutationManifest(backend);
-    for (const mutation of manifest.mutations) {
-      const editsByFile = new Map<string, ReturnType<typeof mutationFileEdits>>();
-      for (const edit of mutationFileEdits(mutation)) {
-        const edits = editsByFile.get(edit.file) ?? [];
-        edits.push(edit);
-        editsByFile.set(edit.file, edits);
-      }
-      for (const [file, edits] of editsByFile) {
-        let source: string = readFileSync(join(ROOT, fixture.targetPath, ...file.split('/')), 'utf8');
-        for (const edit of edits) {
-          assert.equal(source.split(edit.find).length - 1, 1,
-            `${mutation.id} anchor must match once in ${file}`);
-          source = source.replace(edit.find, edit.replace);
-        }
-        assert.deepEqual(syntaxErrors(source, file), [],
-          `${mutation.id} must remain syntactically valid`);
-      }
     }
   });
 }

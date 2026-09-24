@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import test from 'node:test';
+import ts from 'typescript';
 import { mutationFileEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions, type MutationManifest }
   from '../src/evidence/mutation-analysis.js';
@@ -28,6 +29,17 @@ function manifestAt(path: string): MutationManifest & Record<string, unknown> {
   const value = readJson(path);
   if (!isMutationManifest(value)) throw new Error(`${path} mutations must be an array`);
   return value;
+}
+
+function syntaxErrors(source: string, file: string): string[] {
+  if (!['.ts', '.tsx'].includes(extname(file))) return [];
+  return (ts.transpileModule(source, {
+    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+    reportDiagnostics: true,
+  }).diagnostics ?? []).filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
+    .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
 }
 
 test('every mutation manifest binds valid edits to exact scenario criteria', () => {
@@ -60,7 +72,7 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
   }
 });
 
-test('current mutation anchors match their hash-bound canonical fixture exactly once', () => {
+test('current mutation anchors match their hash-bound canonical fixture exactly once and keep it syntactically valid', () => {
   const registry = loadReferenceRegistry();
   for (const fixture of registry.fixtures) {
     const manifests = fixture.mutationManifests ?? [];
@@ -85,11 +97,20 @@ test('current mutation anchors match their hash-bound canonical fixture exactly 
         assert.equal(manifest.fixtureSha256, fixture.imported.sourceSha256,
           `${fixture.id} manifest is bound to different source bytes`);
         for (const mutation of manifest.mutations ?? []) {
+          const editsByFile = new Map<string, ReturnType<typeof mutationFileEdits>>();
           for (const edit of mutationFileEdits(mutation)) {
-            const source = readFileSync(join(sourceRoot, edit.file), 'utf8');
-            const matches = source.split(edit.find).length - 1;
-            assert.equal(matches, 1,
-              `${fixture.id}/${mutation.id} anchor matched ${matches} times in ${edit.file}`);
+            editsByFile.set(edit.file, [...editsByFile.get(edit.file) ?? [], edit]);
+          }
+          for (const [file, edits] of editsByFile) {
+            let source = readFileSync(join(sourceRoot, file), 'utf8');
+            for (const edit of edits) {
+              const matches = source.split(edit.find).length - 1;
+              assert.equal(matches, 1,
+                `${fixture.id}/${mutation.id} anchor matched ${matches} times in ${file}`);
+              source = source.replace(edit.find, edit.replace);
+            }
+            assert.deepEqual(syntaxErrors(source, file), [],
+              `${fixture.id}/${mutation.id} must remain syntactically valid in ${file}`);
           }
         }
       }

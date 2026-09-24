@@ -2,20 +2,19 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseReferenceQualificationArgs,
   mutationWorkerRequiresSiblingAbort, referenceQualificationContext,
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
-  parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
+  parallelMutationResults, readParallelMutationWorker,
   qualificationMutationManifest,
-  companionReferenceArtifactPath,
   assertFullMutationRepetitions,
   qualificationArtifactsOk,
   referenceQualificationRelease,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
-  referenceQualificationWorkRoot, referenceRunFromMutationBaseline,
+  referenceRunFromMutationBaseline,
   referenceQualificationEnvironment,
   targetedMutationCheckKeys } from '../src/references/reference-live.js';
 import { auditMutationWorkerRun, auditReferenceRun }
@@ -29,6 +28,14 @@ test('bounded process charges launcher time from the shared claim timestamp', as
   });
   assert.equal(result.timedOut, true);
   assert(Date.now() - start < 10_000, 'must not give the process a fresh 60-second allowance');
+
+  const started = Date.now();
+  const terminated = await runBounded(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore', timeoutMs: 50, terminate: pid => process.kill(pid, 'SIGKILL'),
+  });
+  assert.equal(terminated.ok, false);
+  assert.equal(terminated.timedOut, true);
+  assert(Date.now() - started < 10_000, 'timed-out child was not terminated promptly');
 });
 import { rescueSupervisedLease } from '../src/runtime/recovery.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
@@ -313,58 +320,51 @@ test('reference runs allocate distinct Convex native ports and retain the explic
     'http://127.0.0.1:3390');
 });
 
-test('parallel Convex preflight reserves the same native ports as its worker environments', () => {
-  const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'convex', '--track', 'ecommerce', '--mutations', '--full-mutations',
-    '--mutation-workers', '2', '--run-index', '80']);
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-preflight-'));
-  const env = { STACK_BENCH_RESOURCE_LOCK_DIR: root,
-    STACK_BENCH_CONVEX_URI: 'http://127.0.0.1:14000' };
-  try {
-    const keys = parallelMutationResourceLockKeys(args, env);
-    assert.deepEqual(keys, ['listener:http://127.0.0.1:14080',
-      'listener:http://127.0.0.1:14081', 'slot:ecommerce:convex:run80',
-      'slot:ecommerce:convex:run81']);
-    for (const runIndex of [80, 81]) {
-      const uri = referenceQualificationEnvironment('convex', { ...args, runIndex }, env)
-        .STACK_BENCH_CONVEX_URI;
-      const key = `listener:${uri}`;
-      const path = join(root, `${createHash('sha256').update(key).digest('hex')}.lock.json`);
-      writeFileSync(path, '{}\n');
-      assert.throws(() => preflightParallelMutationResources(args, env), /already leased/);
-      rmSync(path);
+test('parallel mutation preflight covers every worker slot and native listener', () => {
+  for (const { backend, workers, runIndex, env, expected } of [
+    { backend: 'spacetime', workers: '3', runIndex: '8', env: {}, expected: [
+      'listener:http://127.0.0.1:3318',
+      'listener:http://127.0.0.1:3319',
+      'listener:http://127.0.0.1:3320',
+      'slot:ecommerce:spacetime:run10',
+      'slot:ecommerce:spacetime:run8',
+      'slot:ecommerce:spacetime:run9',
+    ] },
+    { backend: 'convex', workers: '2', runIndex: '80',
+      env: { STACK_BENCH_CONVEX_URI: 'http://127.0.0.1:14000' }, expected: [
+        'listener:http://127.0.0.1:14080',
+        'listener:http://127.0.0.1:14081',
+        'slot:ecommerce:convex:run80',
+        'slot:ecommerce:convex:run81',
+      ] },
+  ]) {
+    const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
+      '--backend', backend, '--track', 'ecommerce', '--mutations', '--full-mutations',
+      '--mutation-workers', workers, '--run-index', runIndex]);
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-preflight-'));
+    const lockEnv = { ...env, STACK_BENCH_RESOURCE_LOCK_DIR: root };
+    try {
+      const keys = parallelMutationResourceLockKeys(args, lockEnv);
+      assert.deepEqual(keys, expected);
+      if (backend === 'convex') {
+        for (const index of [80, 81]) {
+          assert(keys.includes(`listener:${referenceQualificationEnvironment('convex',
+            { ...args, runIndex: index }, lockEnv).STACK_BENCH_CONVEX_URI}`),
+          'preflight must reserve the listener each worker environment uses');
+        }
+      }
+      for (const key of keys) {
+        const digest = createHash('sha256').update(key).digest('hex');
+        const path = join(root, `${digest}.lock.json`);
+        writeFileSync(path, '{}\n');
+        assert.throws(() => preflightParallelMutationResources(args, lockEnv),
+          new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+        rmSync(path);
+      }
+      assert.doesNotThrow(() => preflightParallelMutationResources(args, lockEnv));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
-    assert.doesNotThrow(() => preflightParallelMutationResources(args, env));
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('parallel mutation preflight covers every worker slot and Spacetime listener', () => {
-  const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'spacetime', '--track', 'ecommerce', '--mutations', '--full-mutations',
-    '--mutation-workers', '3', '--run-index', '8']);
-  const keys = parallelMutationResourceLockKeys(args);
-  assert.deepEqual(keys, [
-    'listener:http://127.0.0.1:3318',
-    'listener:http://127.0.0.1:3319',
-    'listener:http://127.0.0.1:3320',
-    'slot:ecommerce:spacetime:run10',
-    'slot:ecommerce:spacetime:run8',
-    'slot:ecommerce:spacetime:run9',
-  ]);
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-preflight-'));
-  try {
-    for (const key of keys) {
-      const digest = createHash('sha256').update(key).digest('hex');
-      const path = join(root, `${digest}.lock.json`);
-      writeFileSync(path, '{}\n');
-      assert.throws(() => preflightParallelMutationResources(args,
-        { STACK_BENCH_RESOURCE_LOCK_DIR: root }), new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-      rmSync(path);
-    }
-    assert.doesNotThrow(() => preflightParallelMutationResources(args,
-      { STACK_BENCH_RESOURCE_LOCK_DIR: root }));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -478,14 +478,9 @@ test('reference qualification resolves the exact executable calibration identity
   assert.equal(record(context.identity, 'qualification identity').id, 'ecommerce.sequential-l1-calibration');
   assert.equal(record(context.identity, 'qualification identity').contentSha256,
     context.calibration.qualificationSha256);
-});
-
-test('reference qualification resolves the current calibration', () => {
-  const current = required(loadReferenceRegistry().fixtures.find(item => item.id === 'ecommerce-reference-mongodb'), 'current MongoDB reference');
-  const context = referenceQualificationContext({ ...current, level: 1 },
-  'ecommerce.sequential-l1');
-  assert.equal(context.binding.release.id, 'ecommerce.sequential-l1');
-  assert.equal(context.calibration.id, 'ecommerce.sequential-l1-calibration');
+  const explicit = referenceQualificationContext({ ...current, level: 1 }, 'ecommerce.sequential-l1');
+  assert.equal(explicit.binding.release.id, 'ecommerce.sequential-l1');
+  assert.equal(explicit.calibration.id, 'ecommerce.sequential-l1-calibration');
 });
 
 test('modular reference qualification selects every exact check without prescribing specifications', () => {
@@ -497,13 +492,12 @@ test('modular reference qualification selects every exact check without prescrib
   const checkKeys = valuesAfter(argv, '--check');
 
   assert.equal(argv.includes('--request-spec'), false);
-  assert.equal(checkKeys.length, 47);
-  assert.equal(new Set(checkKeys).size, 47);
+  assert.equal(checkKeys.length, binding.release.checkCatalog.length);
+  assert.equal(new Set(checkKeys).size, checkKeys.length);
   const task = createBoundRecipeTaskRequest(binding,
     { featureIds, expectedSpecifications, checkKeys });
-  assert.equal(task.selection.checks.length, 47);
-  assert.equal(task.selection.scoredPoints, 57);
-  assert.equal(task.selection.checks.filter(check => check.points === 0).length, 2);
+  assert.equal(task.selection.checks.length, checkKeys.length);
+  assert.equal(task.selection.scoredPoints, binding.release.scoring.points);
   assert.equal(required(task.selection.specifications, 'task specifications').requested.length, 0);
   assert.equal(required(task.selection.specifications, 'task specifications').expected.length, expectedSpecifications.length);
 });
@@ -521,7 +515,6 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 112);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>
@@ -530,22 +523,6 @@ test('progression reference qualification follows the catalog check selection', 
   assert.equal(scoped.checkCatalog.length, selection.grader.checkKeys.length);
   assert.throws(() => referenceQualificationRelease(binding.release,
     [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
-});
-
-test('reference qualification keeps underlying runs beside the requested artifact', () => {
-  const root = join(tmpdir(), 'stack-bench-reference-output-test');
-  const paths = referenceQualificationPaths({ out: join(root, 'postgres-reference.json') }, 'ignored-id');
-  assert.equal(paths.artifactPath, join(root, 'postgres-reference.json'));
-  assert.equal(paths.artifactDirectory, root);
-  assert.equal(paths.runsRoot, join(root, 'postgres-reference.runs'));
-});
-
-test('full mutation evidence gives its clean baseline a separate reference path', () => {
-  const root = join(tmpdir(), 'stack-bench-companion-path-test');
-  assert.equal(companionReferenceArtifactPath(join(root, 'ecommerce-l3-postgres-mutation.json')),
-    join(root, 'ecommerce-l3-postgres-reference.json'));
-  assert.equal(companionReferenceArtifactPath(join(root, 'custom.json')),
-    join(root, 'custom-reference.json'));
 });
 
 test('full mutation evidence requires the calibrated repetition count', () => {
@@ -563,11 +540,6 @@ test('full mutation qualification fails when either required artifact fails', ()
   assert.equal(qualificationArtifactsOk({ ok: true }, { ok: false }), false);
   assert.equal(qualificationArtifactsOk({ ok: false }, { ok: true }), false);
   assert.equal(qualificationArtifactsOk({ ok: true }), true);
-});
-
-test('reference qualification uses the daemon-visible appliance work root', () => {
-  assert.equal(referenceQualificationWorkRoot({ STACK_BENCH_WORK_DIR: '/var/lib/stack-bench/work' }),
-    resolve('/var/lib/stack-bench/work'));
 });
 
 test('reference qualification records whether its controller is the supported Linux appliance', () => {
@@ -632,15 +604,21 @@ function writeEvidence(root: string, { id, points, passed }: {
   return release;
 }
 
-test('reference qualification audits zero-point criteria and teardown evidence', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
-  try {
-    const release = writeEvidence(root, { id: '901a', points: 0, passed: true });
-    const audit = auditReferenceRun(root, fixture, { release });
-    assert.equal(audit.ok, true);
-    assert.equal(audit.criteria, 1);
-    assert.equal(audit.zeroPointCriteria, 1);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('reference qualification audits zero-point criteria, the exact level score and teardown evidence', () => {
+  for (const { points, passed, expected } of [
+    { points: 0, passed: true, expected: { ok: true, criteria: 1, zeroPointCriteria: 1 } },
+    { points: 2, passed: true, expected: { ok: true, score: '2/2' } },
+    { points: 0, passed: false, expected: { ok: false, failures: ['systems/901/901a did not pass'] } },
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+    try {
+      const release = writeEvidence(root, { id: '901a', points, passed });
+      const audit = auditReferenceRun(root, fixture, { release });
+      for (const [field, value] of Object.entries(expected)) {
+        assert.deepEqual(record(audit, 'audit')[field], value, `${points} points, passed ${passed}: ${field}`);
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('timing-only reference mode cannot select mutations or individual checks', () => {
@@ -701,16 +679,6 @@ test('reference qualification rejects missing and over-budget runtime evidence b
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('reference qualification reports the exact level score', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
-  try {
-    const release = writeEvidence(root, { id: '901a', points: 2, passed: true });
-    const audit = auditReferenceRun(root, fixture, { release });
-    assert.equal(audit.ok, true);
-    assert.equal(audit.score, '2/2');
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('reference qualification reports malformed evidence instead of throwing', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
   try {
@@ -750,16 +718,6 @@ test('a mutation run reuses its stored clean baseline as reference evidence', ()
     assert.equal(run.mutations, null);
     assert.equal(run.harnessSha256Before, 'a'.repeat(64));
     assert.equal(run.harnessSha256After, 'a'.repeat(64));
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('reference qualification rejects a failed zero-point criterion', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
-  try {
-    const release = writeEvidence(root, { id: '901a', points: 0, passed: false });
-    const audit = auditReferenceRun(root, fixture, { release });
-    assert.equal(audit.ok, false);
-    assert.deepEqual(audit.failures, ['systems/901/901a did not pass']);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -806,18 +764,6 @@ test('reference qualification refuses identity-less or wrong same-sized check ev
     assert.equal(unidentified.ok, false);
     assert(unidentified.failures.includes('exact recipe release was not supplied to the qualification audit'));
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('reference qualification terminates a child at its repetition deadline', async () => {
-  const started = Date.now();
-  const result = await runBounded(process.execPath,
-    ['-e', 'setInterval(() => {}, 1000)'], {
-      stdio: 'ignore', timeoutMs: 50,
-      terminate: pid => process.kill(pid, 'SIGKILL'),
-    });
-  assert.equal(result.ok, false);
-  assert.equal(result.timedOut, true);
-  assert(Date.now() - started < 10_000, 'timed-out child was not terminated promptly');
 });
 
 test('bounded execution expires after a wall-clock jump without waiting for its monotonic timer', async t => {

@@ -8,8 +8,6 @@ import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledCriterion, type CompiledFeature }
   from '../src/composition/definition-compiler.js';
-import { compileProgressionDefinitionFile, type CompiledProgressionNode }
-  from '../src/progression/progression-definition.js';
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
@@ -194,18 +192,6 @@ test('personalized recommendations prove sales ordering, name ties, and isolatio
     && JSON.stringify(step.equals) === JSON.stringify(expectedNameOrder)));
 });
 
-test('the graph selects every behavior check and required dependency', () => {
-  const definition = compileProgressionDefinitionFile(
-    join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
-  const byId = new Map(definition.nodes.map(node => [node.id, node]));
-
-  assert.deepEqual(requiredNode(byId, 'automatic-reorder').dependencies,
-    ['purchasing', 'scheduled-restocks', 'staff-roles']);
-  assert.equal(requiredNode(byId, 'automatic-reorder').gradingChecks.length, 3);
-  assert.equal(requiredNode(byId, 'cart-recovery').gradingChecks.length, 2);
-  assert.equal(requiredNode(byId, 'personalized-recommendations').gradingChecks.length, 2);
-});
-
 function requiredPackName(index: number): string {
   const name = packNames[index];
   if (!name) throw new Error(`behavior pack name ${index} is required`);
@@ -235,13 +221,4 @@ function requiredContract(
   const contract = pack.task.contracts[0];
   if (!contract) throw new Error(`${pack.id} must have a testing contract`);
   return contract;
-}
-
-function requiredNode(
-  nodes: ReadonlyMap<string, CompiledProgressionNode>,
-  nodeId: string,
-): CompiledProgressionNode {
-  const node = nodes.get(nodeId);
-  if (!node) throw new Error(`progression node ${nodeId} is required`);
-  return node;
 }

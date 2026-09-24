@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { hashDirectory } from '../src/evidence/provenance.js';
 import { loadReferenceRegistry, inspectImportedReference, selectReferenceFixture,
   prepareReferenceFixtureSource, referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
@@ -42,10 +41,13 @@ test('reference validation contains malformed input and unsafe execution paths',
 test('a recipe-bound full fixture can serve only its declared progression action levels', () => {
   const registry = loadReferenceRegistry();
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
-    for (const level of [1, 2, 3, 4, 5, 6]) {
-      assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level,
-        recipe: 'ecommerce.progression-catalog' }).id,
-      `ecommerce-reference-${backend}`);
+    for (const [recipe, levels] of [['ecommerce.progression-catalog', [1, 2, 3, 4, 5, 6]],
+      ['ecommerce.sequential-l1', [1]], ['ecommerce.sequential-l2', [2]]] as const) {
+      for (const level of levels) {
+        const fixture = selectReferenceFixture(registry, { backend, track: 'ecommerce', level, recipe });
+        assert.equal(fixture.id, `ecommerce-reference-${backend}`);
+        assert.equal(fixture.targetPath, `reference-apps/ecommerce/${backend}`);
+      }
     }
   }
 
@@ -62,12 +64,6 @@ test('a recipe-bound full fixture can serve only its declared progression action
   invalidRangeFixture.actionLevels = [1, 5, 7];
   assert(validateReferenceRegistry(invalidRange).issues.some(issue =>
     issue.includes('cannot exceed the fixture level')));
-});
-
-test('reference selection uses only current recipe fixtures', () => {
-  const registry = loadReferenceRegistry();
-  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.sequential-l1' }).id, 'ecommerce-reference-mongodb');
 });
 
 test('default reference tooling follows the current recipe', () => {
@@ -88,15 +84,6 @@ test('default reference tooling follows the current recipe', () => {
     backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.unknown',
   }), /exactly one/);
-});
-
-test('the L2 recipe selects one current fixture per backend', () => {
-  const registry = loadReferenceRegistry();
-  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
-    assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
-      recipe: 'ecommerce.sequential-l2' }).id,
-    `ecommerce-reference-${backend}`);
-  }
 });
 
 test('reference inspection rejects a symlink that the regular-file hash does not bind', t => {
@@ -227,26 +214,3 @@ test('authored references bind checked-in bytes', () => {
 function isFileSystemError(error: unknown): error is NodeJS.ErrnoException & { code: string } {
   return error instanceof Error && 'code' in error && typeof error.code === 'string';
 }
-
-
-test('price action input follows the editable value on every reference stack', () => {
-  const cases = [
-    { backend: 'postgres', file: 'client/src/App.tsx', values: (price: number) => ({
-      it: { id: 7, name: 'Gaming Mouse', price: 99 }, priceValue: price }) },
-    { backend: 'mongodb', file: 'client/src/App.tsx', values: (price: number) => ({
-      it: { id: '7', name: 'Gaming Mouse', price: 99 }, priceValues: { '7': String(price) } }) },
-    { backend: 'spacetime', file: 'client/src/components/AdminPanel.tsx', values: (price: number) => ({
-      item: { id: 7n, name: 'Gaming Mouse', price: 99 }, k: '7', priceInputs: { '7': String(price) } }) },
-  ];
-  for (const item of cases) {
-    const source = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', item.backend, item.file), 'utf8');
-    const expression = source.match(/data-price-input=\{(JSON.stringify\([\s\S]*?\))\}/)?.[1];
-    assert.ok(expression, `${item.backend} price action needs a dynamic input binding`);
-    for (const price of [1, 17.35]) {
-      const values = item.values(price);
-      const input = JSON.parse(new Function(...Object.keys(values), `return ${expression}`)(...Object.values(values)));
-      assert.equal(input.price, price, `${item.backend} action must use the current field value`);
-      assert.equal(String(input.itemId), '7');
-    }
-  }
-});

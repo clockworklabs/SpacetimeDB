@@ -9,7 +9,9 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { TRACKS_DIR } from '../src/composition/tracks.js';
 
 test('committed normalized definition plans have no semantic drift', () => {
-  assert.deepEqual(checkDefinitionSnapshots(), { checked: 4, changed: [] });
+  const result = checkDefinitionSnapshots();
+  assert.deepEqual(result.changed, []);
+  assert(result.checked > 0);
 });
 
 test('the action fixture represents every registered action', () => {

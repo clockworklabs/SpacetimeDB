@@ -63,6 +63,26 @@ test('level selection uses stable IDs and may pin the compiled content', () => {
   }), /content changed/);
   assert.throws(() => validateRecipeRequest({ id: selected.release.id, unexpected: true }),
     /unknown field/);
+
+  const box = copyTrack();
+  try {
+    const copied = copiedTrack(track, box.root);
+    const before = requireRecipeRelease(copied, 1);
+    const recipe = JSON.parse(readFileSync(box.recipe, 'utf8')) as {
+      task: { framing: { requirements: Array<{ id: string }> } };
+    };
+    const requirement = recipe.task.framing.requirements[0];
+    assert(requirement);
+    requirement.id = `${requirement.id}.revised`;
+    writeFileSync(box.recipe, `${JSON.stringify(recipe, null, 2)}\n`);
+
+    assert.throws(() => resolveRecipeRelease(copied, 1, {
+      id: before.release.id,
+      contentSha256: before.release.contentSha256,
+    }), /content changed/);
+  } finally {
+    rmSync(box.temp, { recursive: true, force: true });
+  }
 });
 
 test('repeated depth aliases resolve the same release as direct compilation', () => {
@@ -89,26 +109,4 @@ test('a recipe binding emits only its selected grade artifact', () => {
   const bundled = bundleRecipeRelease(binding);
   assert(bundled);
   assert.equal(bundled.selection.alias, 'L2');
-});
-
-test('a changed selected recipe cannot satisfy a pinned request', () => {
-  const box = copyTrack();
-  try {
-    const track = copiedTrack(loadTrack('ecommerce'), box.root);
-    const before = requireRecipeRelease(track, 1);
-    const recipe = JSON.parse(readFileSync(box.recipe, 'utf8')) as {
-      task: { framing: { requirements: Array<{ id: string }> } };
-    };
-    const requirement = recipe.task.framing.requirements[0];
-    assert(requirement);
-    requirement.id = `${requirement.id}.revised`;
-    writeFileSync(box.recipe, `${JSON.stringify(recipe, null, 2)}\n`);
-
-    assert.throws(() => resolveRecipeRelease(track, 1, {
-      id: before.release.id,
-      contentSha256: before.release.contentSha256,
-    }), /content changed/);
-  } finally {
-    rmSync(box.temp, { recursive: true, force: true });
-  }
 });

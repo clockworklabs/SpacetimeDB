@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.js';
 import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
@@ -16,11 +15,9 @@ import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
+import { compileProgressionDefinitionFile } from '../src/progression/progression-definition.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { parseReferenceAgentArgs } from '../src/references/reference-agent.js';
-import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistry }
-  from '../src/references/reference-fixtures.js';
 
 const root = STACK_BENCH_ROOT;
 const campaignPath = join(root, 'appliance', 'campaign.ecommerce-progression-reference.json');
@@ -65,6 +62,12 @@ test('the ecommerce reference pilot resolves the exact L1-L6 progression inputs'
   assert.equal(plan.dependencyPolicy.identity.id, 'dependency-graph');
   assert.deepEqual(plan.bindings.map(binding => binding.recipe.id),
     Array(6).fill('ecommerce.progression-catalog'));
+  assert.equal(new Set(plan.bindings.map(binding => binding.recipe.contentSha256)).size, 1);
+  const trackRoot = join(root, 'tracks', 'ecommerce');
+  assert.equal(plan.featureCatalog.definition.nodes.length, compileProgressionDefinitionFile(
+    join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot }).nodes.length);
+  assert(first(plan.conditions).requested.levels.every(level =>
+    typeof level.task.mode === 'string' && ['fresh', 'upgrade'].includes(level.task.mode)));
   assert.deepEqual(plan.attempts.map(attempt => attempt.stack).sort(),
     ['mongodb', 'postgres', 'spacetime']);
   assert(plan.attempts.every(attempt => attempt.agentAdapter === 'reference-fixture'));
@@ -153,22 +156,6 @@ test('dependency mode stops at the selected catalog prefix', () => {
   }
 });
 
-test('every campaign level resolves one current reference for each stack', () => {
-  const registry = loadReferenceRegistry();
-  assert.deepEqual(validateReferenceRegistry(registry), { ok: true, issues: [] });
-  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
-    for (let level = 1; level <= 5; level += 1) {
-      const fixture = selectReferenceFixture(registry, {
-        backend,
-        track: 'ecommerce',
-        level,
-        recipe: 'ecommerce.progression-catalog',
-      });
-      assert.equal(fixture.targetPath, `reference-apps/ecommerce/${backend}`);
-    }
-  }
-});
-
 test('every progression action input is exposed by every reference app', () => {
   const track = loadTrack('ecommerce');
   const binding = resolveRecipeRelease(track, 5, 'ecommerce.progression-catalog');
@@ -186,22 +173,6 @@ test('every progression action input is exposed by every reference app', () => {
     }
   }
   assert.deepEqual(missing, []);
-});
-
-test('the model-free reference adapter can advance through progression levels', () => {
-  const adapter = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
-  assert.deepEqual(adapter.modes, ['build', 'fix', 'upgrade']);
-  const parsed = parseReferenceAgentArgs([
-    'node', 'reference-agent.js',
-    '--backend', 'mongodb',
-    '--app', 'app',
-    '--track', 'ecommerce',
-    '--level', '2',
-    '--run-index', '0',
-    '--mode', 'upgrade',
-  ]);
-  assert.equal(parsed.mode, 'upgrade');
-  assert.equal(parsed.level, 2);
 });
 
 test('campaign admission sends the exact catalog, mode, and default build image to preflight', async () => {

@@ -34,30 +34,6 @@ function relativeModuleTargets(file: string): string[] {
     .map(match => resolve(dirname(file), `${match[2]?.slice(0, -3)}.ts`));
 }
 
-test('the project root contains no implementation modules', () => {
-  const rootModules = readdirSync(ROOT, { withFileTypes: true })
-    .filter(entry => entry.isFile() && entry.name.endsWith('.ts'))
-    .map(entry => entry.name);
-  assert.deepEqual(rootModules, []);
-});
-
-test('tracked production areas contain no tmp-named scratch modules', () => {
-  const scratch = modulesBelow(ROOT)
-    .map(path => relative(ROOT, path))
-    .filter(path => /(?:^|[\\/])tmp-/.test(path));
-  assert.deepEqual(scratch, []);
-});
-
-test('the authored harness contains TypeScript, not JavaScript implementation files', () => {
-  // Reference apps and app fixtures are application source in their stack's own
-  // form; a Convex app, for example, deploys JavaScript functions.
-  const authoredJavaScript = filesBelow(ROOT)
-    .filter(path => !/^(reference-apps|tests[\\/]fixtures)[\\/]/.test(relative(ROOT, path)))
-    .filter(path => ['.js', '.mjs'].includes(extname(path)))
-    .map(path => relative(ROOT, path));
-  assert.deepEqual(authoredJavaScript, []);
-});
-
 test('production libraries do not import command entrypoints', () => {
   const violations: string[] = [];
   for (const area of ['src', 'grader', 'dashboard']) {

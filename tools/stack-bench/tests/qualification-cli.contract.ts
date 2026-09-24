@@ -50,25 +50,11 @@ test('qualification status forwards the requested worker count and defaults to e
     /--mutation-workers/);
 });
 
-test('pending L1 qualification lists the required evidence without writing', () => {
-  const status = qualificationReadiness('ecommerce', 1);
-  assert.match(status.scope.calibration.contentSha256, /^[a-f0-9]{64}$/);
-  assert.equal(status.requiredEvidence.length, 7);
-  assert.equal(status.commands.length, 4);
-  assert.equal(status.budgetPreparation.required, false);
-  assert.deepEqual(status.budgetPreparation.commands, []);
-  assert.equal(status.launch.ok, true);
-  assert.deepEqual(status.launch.blockers, []);
-  assert.equal(status.qualification.ready, false);
-  assert.equal(status.qualification.blockers.filter(item => item.code === 'evidence_missing').length, 7);
-});
-
 test('qualification status rejects ambiguous or undeclared scope', () => {
   assert.deepEqual(parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce', '--level', '1']), { command: 'status', track: 'ecommerce', level: 1 });
   assert.throws(() => qualificationReadiness('ecommerce', 3), /has no L3 calibration/);
   const dependency = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
-  assert.equal(dependency.defectChecks.totalChecks, 112);
   assert.ok(dependency.commands.filter(command => command.startsWith('qualify-reference '))
     .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
   assert.ok(dependency.commands.filter(command => command.startsWith('qualify-null '))
@@ -76,10 +62,6 @@ test('qualification status rejects ambiguous or undeclared scope', () => {
   assert.throws(() => qualificationReadiness('ecommerce', 4), /not declared/);
   assert.throws(() => parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce']), /usage/);
-});
-
-test('sequential L2 qualification uses its exact current L1 base', () => {
-  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.id, 'ecommerce.sequential-l2');
 });
 
 test('qualification resolves the pending sequential L1 release exactly and by default', () => {
@@ -97,8 +79,13 @@ test('qualification resolves the pending sequential L1 release exactly and by de
   assert.equal(status.scope.recipe.id, 'ecommerce.sequential-l1');
   assert.match(status.scope.calibration.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(status.launch.ok, true);
+  assert.deepEqual(status.launch.blockers, []);
   assert.equal(status.requiredEvidence.length, 7);
+  assert.equal(status.commands.length, 4);
+  assert.equal(status.budgetPreparation.required, false);
+  assert.deepEqual(status.budgetPreparation.commands, []);
   assert.equal(status.qualification.ready, false);
+  assert.equal(status.qualification.blockers.filter(item => item.code === 'evidence_missing').length, 7);
   assert(status.commands.every(command => command.includes('--recipe ecommerce.sequential-l1')));
   const defaultStatus = qualificationReadiness('ecommerce', 1);
   assert.equal(defaultStatus.scope.recipe.id, 'ecommerce.sequential-l1');

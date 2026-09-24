@@ -251,65 +251,46 @@ test('only unusable mutation results are retried', () => {
 });
 
 test('only a conclusive failure of the declared criterion is a clean kill', () => {
-  const result = classifyMutationResult(report({ a: true, b: true }), report({ a: true, b: false }), mutation);
-  assert.equal(result.status, 'CAUGHT');
-  assert.deepEqual(result.regressions.map(item => item.key), ['check.b']);
-});
-
-test('a target that fails before any observation is not a clean kill', () => {
-  const result = classifyMutationResult(report({ a: true, b: true }),
-    report({ a: true, b: false }, null, 'click'), mutation);
-  assert.equal(result.status, 'CAUGHT_OFF_ASSERTION');
-  assert.deepEqual(result.targetOffAssertion, [{ key: 'check.b', action: 'click' }]);
-  assert.equal(classifyMutationResult(report({ a: true, b: true }),
-    report({ a: true, b: false }, null, 'dbExpectStock'), mutation).status, 'CAUGHT');
-});
-
-test('a score drop caused by setup failure is rejected', () => {
-  const result = classifyMutationResult(report({ a: true, b: true }),
-    report({ a: false, b: false }, 'sign in failed'), mutation);
-  assert.equal(result.status, 'INVALID_SETUP');
-});
-
-test('an inconclusive target does not kill a mutant', () => {
-  const result = classifyMutationResult(report({ a: true, b: true }),
-    report({ a: true, b: 'inconclusive' }), mutation);
-  assert.equal(result.status, 'INVALID_INCONCLUSIVE');
-});
-
-test('a typed harness failure is not mistaken for an inconclusive or caught mutant', () => {
-  const evidence = createCheckEvidence({ status: 'harness_failure', code: 'browser_failure',
-    phase: 'assertion', summary: 'not an application observation', startedAtMs: 1, completedAtMs: 2 });
-  const mutant = report({ a: true, b: true });
-  mutant.total = 1;
-  mutant.features[0]!.criteria[1] = { id: 'b', stableKey: 'check.b', evidence };
-  const result = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
-  assert.equal(result.status, 'INVALID_HARNESS_FAILURE');
-  assert.deepEqual(result.targetHarnessFailures, ['check.b']);
-});
-
-test('lost evidence outside the declared target invalidates a mutation kill', () => {
-  const inconclusive = classifyMutationResult(report({ a: true, b: true }),
-    report({ a: 'inconclusive', b: false }), mutation);
-  assert.equal(inconclusive.status, 'INVALID_INCONCLUSIVE');
-  assert.deepEqual(inconclusive.collateralInconclusive, ['check.a']);
-
-  const harnessEvidence = createCheckEvidence({ status: 'harness_failure', code: 'browser_failure',
-    phase: 'assertion', summary: 'browser disappeared', startedAtMs: 1, completedAtMs: 2 });
-  const mutant = report({ a: true, b: false });
-  mutant.features[0]!.criteria[0] = { id: 'a', stableKey: 'check.a', evidence: harnessEvidence };
-  const harness = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
-  assert.equal(harness.status, 'INVALID_HARNESS_FAILURE');
-  assert.deepEqual(harness.collateralHarnessFailures, ['check.a']);
-});
-
-test('failure in the wrong criterion is distinguished from survival', () => {
-  const result = classifyMutationResult(report({ a: true, b: true }), report({ a: false, b: true }), mutation);
-  assert.equal(result.status, 'WRONG_CRITERION');
-  assert.deepEqual(result.collateral.map(item => item.key), ['check.a']);
-});
-
-test('collateral damage fails even when the intended criterion catches the mutant', () => {
-  const result = classifyMutationResult(report({ a: true, b: true }), report({ a: false, b: false }), mutation);
-  assert.equal(result.status, 'CAUGHT_COLLATERAL');
+  const harnessFailure = (summary: string) => createCheckEvidence({ status: 'harness_failure',
+    code: 'browser_failure', phase: 'assertion', summary, startedAtMs: 1, completedAtMs: 2 });
+  const targetHarness = report({ a: true, b: true });
+  targetHarness.total = 1;
+  targetHarness.features[0]!.criteria[1] = { id: 'b', stableKey: 'check.b',
+    evidence: harnessFailure('not an application observation') };
+  const collateralHarness = report({ a: true, b: false });
+  collateralHarness.features[0]!.criteria[0] = { id: 'a', stableKey: 'check.a',
+    evidence: harnessFailure('browser disappeared') };
+  const cases: Array<{ name: string; mutant: ReturnType<typeof report>; status: string;
+    fields?: Record<string, unknown>; regressions?: string[]; collateral?: string[] }> = [
+    { name: 'the declared criterion fails conclusively', mutant: report({ a: true, b: false }),
+      status: 'CAUGHT', regressions: ['check.b'] },
+    { name: 'the target fails at a database observation',
+      mutant: report({ a: true, b: false }, null, 'dbExpectStock'), status: 'CAUGHT' },
+    { name: 'the target fails before any observation',
+      mutant: report({ a: true, b: false }, null, 'click'), status: 'CAUGHT_OFF_ASSERTION',
+      fields: { targetOffAssertion: [{ key: 'check.b', action: 'click' }] } },
+    { name: 'a score drop caused by setup failure',
+      mutant: report({ a: false, b: false }, 'sign in failed'), status: 'INVALID_SETUP' },
+    { name: 'an inconclusive target', mutant: report({ a: true, b: 'inconclusive' }),
+      status: 'INVALID_INCONCLUSIVE' },
+    { name: 'a typed harness failure on the target', mutant: targetHarness,
+      status: 'INVALID_HARNESS_FAILURE', fields: { targetHarnessFailures: ['check.b'] } },
+    { name: 'inconclusive evidence outside the target', mutant: report({ a: 'inconclusive', b: false }),
+      status: 'INVALID_INCONCLUSIVE', fields: { collateralInconclusive: ['check.a'] } },
+    { name: 'a harness failure outside the target', mutant: collateralHarness,
+      status: 'INVALID_HARNESS_FAILURE', fields: { collateralHarnessFailures: ['check.a'] } },
+    { name: 'failure in the wrong criterion', mutant: report({ a: false, b: true }),
+      status: 'WRONG_CRITERION', collateral: ['check.a'] },
+    { name: 'collateral damage beside a caught target', mutant: report({ a: false, b: false }),
+      status: 'CAUGHT_COLLATERAL' },
+  ];
+  for (const { name, mutant, status, fields = {}, regressions, collateral } of cases) {
+    const result = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
+    assert.equal(result.status, status, name);
+    for (const [field, value] of Object.entries(fields)) {
+      assert.deepEqual((result as unknown as Record<string, unknown>)[field], value, name);
+    }
+    if (regressions) assert.deepEqual(result.regressions.map(item => item.key), regressions, name);
+    if (collateral) assert.deepEqual(result.collateral.map(item => item.key), collateral, name);
+  }
 });

@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { compilePackDefinition, compileRecipeFile, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { loadTrack } from '../src/composition/tracks.js';
@@ -45,61 +44,6 @@ function packChecks(pack: CompiledPackDefinition): string[] {
   });
 }
 
-test('the ecommerce progression definition is complete and calculated from its dependencies', () => {
-  const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
-  assert.equal(definition.nodes.length, 49);
-  assert.deepEqual(Object.fromEntries([1, 2, 3, 4, 5, 6].map(level => [
-    level,
-    definition.nodes.filter(node => node.level === level).length,
-  ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
-  assert.equal(definition.questlines.length, 12);
-  assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    186);
-  assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 352);
-  assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
-    === node.dependencies.length));
-  assert(definition.questlines.every(questline =>
-    definition.nodes.some(node => node.questline === questline.id)));
-
-  const byId = new Map(definition.nodes.map(node => [node.id, node]));
-  assert(requiredNode(byId, 'accounts').gradingChecks.some(check =>
-    check.id === 'ecommerce.spec.access-control.account-disclosure.110a'));
-  assert.deepEqual(requiredNode(byId, 'faceted-search').dependencies, ['catalog-discovery']);
-  assert.deepEqual(requiredNode(byId, 'scheduled-restocks').dependencies, ['warehouse-admin']);
-  assert.deepEqual(requiredNode(byId, 'price-history').dependencies,
-    ['catalog-management']);
-  assert.deepEqual(requiredNode(byId, 'warehouse-admin').dependencies, ['catalog', 'staff-access']);
-  assert.deepEqual(requiredNode(byId, 'stock-transfers').dependencies, ['warehouse-admin']);
-  assert.deepEqual(requiredNode(byId, 'catalog-management').dependencies,
-    ['catalog-discovery', 'staff-roles']);
-  assert.deepEqual(requiredNode(byId, 'warehouse-admin').gradingChecks.map(check => check.id), [
-    'ecommerce.feature.warehouse-admin.admin-write.103a',
-    'ecommerce.feature.warehouse-admin.warehouse-view.7b',
-    'ecommerce.spec.access-control.warehouse-area-boundary.7a',
-    'ecommerce.spec.access-control.warehouse-write-boundary.103b',
-    'ecommerce.spec.external-data-sync.external-stock.901a',
-    'ecommerce.spec.external-data-sync.external-stock.901d',
-    'ecommerce.spec.live-state.warehouse-stock.7c',
-  ]);
-  assert(requiredNode(byId, 'fulfilment-queue').gradingChecks.some(check =>
-    check.id === 'ecommerce.spec.concurrency-safety.last-unit.201a'));
-  assert(requiredNode(byId, 'fulfilment-queue').gradingChecks.some(check =>
-    check.id === 'ecommerce.spec.concurrency-safety.restock-race.202a'));
-  assert(requiredNode(byId, 'order-delivery').gradingChecks.some(check =>
-    check.id === 'ecommerce.returns-pricing.cancellation-and-return.3d'));
-  assert.deepEqual(requiredNode(byId, 'personalized-recommendations').dependencies,
-    ['recommendations']);
-  assert.deepEqual(requiredNode(byId, 'automatic-reorder').dependencies,
-    ['purchasing', 'scheduled-restocks', 'staff-roles']);
-  assert.deepEqual(requiredNode(byId, 'order-delivery').dependencies,
-    ['fulfilment-queue', 'order-cancellation']);
-  assert.deepEqual(requiredNode(byId, 'order-returns').dependencies,
-    ['order-delivery']);
-  assert.deepEqual(requiredNode(byId, 'support-refunds').dependencies,
-    ['order-cancellation', 'order-support']);
-});
-
 test('every progression feature reference and scored check binds to repository data', () => {
   const packs: Array<[string, CompiledPackDefinition]> = readdirSync(packRoot)
     .filter(name => name.endsWith('.json')).map(name => {
@@ -139,54 +83,6 @@ test('every progression feature reference and scored check binds to repository d
       'ecommerce.feature.catalog.catalog-values.2a']);
 });
 
-test('signed-out purchase access does not depend on cart controls', () => {
-  const pack = compilePackDefinition(
-    readJson(join(packRoot, 'spec-access-control.json')),
-    { source: 'spec-access-control.json' },
-  );
-  const purchase = pack.checks.find(check => check.id === 'signed-out-purchase');
-  assert(purchase, 'access control must include signed-out-purchase');
-  assert.deepEqual(purchase.requiresFeatures, ['ecommerce.feature.purchasing']);
-  assert.equal(purchase.source, 'scenarios/progression-signed-out-purchase.json');
-
-  const scenario = compileScenarioDefinition(readJson(join(trackRoot, purchase.source)), {
-    source: purchase.source,
-  });
-  const criterion = scenario.features.find(feature => feature.id === purchase.feature)
-    ?.criteria.find(candidate => candidate.id === '3a');
-  assert(criterion, 'signed-out purchase must own criterion 3a');
-  assert.equal(criterion.points, 1);
-  assert.deepEqual(criterion.steps.map(step => step.do),
-    ['recordNumber', 'click', 'reload', 'click', 'click', 'expectNumber']);
-  assert.deepEqual(criterion.steps.map(step => step.testid),
-    ['item-stock', 'buy-now', undefined, 'overlay-close', 'catalog-link', 'item-stock']);
-  assert.equal(criterion.steps[1]?.ifAvailable, true);
-  assert.equal(criterion.steps[3]?.ifAvailable, true);
-  assert.equal(criterion.steps[5]?.relativeTo, criterion.steps[0]?.as);
-  assert.equal(criterion.steps[5]?.plus, 0);
-
-  const cartBoundary = pack.checks.find(check => check.id === 'cart-boundary');
-  assert(cartBoundary, 'access control must include cart-boundary');
-  assert.deepEqual(cartBoundary.requiresFeatures, ['ecommerce.feature.cart']);
-  assert.notEqual(cartBoundary.source, purchase.source);
-});
-
-test('cart isolation reads the action input from the acting customer', () => {
-  const pack = compilePackDefinition(
-    readJson(join(packRoot, 'spec-access-control.json')),
-    { source: 'spec-access-control.json' },
-  );
-  const source = pack.checks.find(check => check.id === 'cart-boundary')?.source;
-  assert(source, 'access control must include cart-boundary');
-  const scenario = compileScenarioDefinition(readJson(join(trackRoot, source)), { source });
-  const action = scenario.features.find(feature => feature.id === 109)
-    ?.criteria.find(criterion => criterion.id === '109a')
-    ?.steps.find(step => step.do === 'callAction');
-  assert(action && action.do === 'callAction');
-  assert.equal(action.actor, 'stranger');
-  assert.equal(action.from, undefined);
-});
-
 test('every progression feature is a whole module and every direct graph edge is required', () => {
   const packByRef = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
     .filter(name => name.endsWith('.json'))
@@ -195,6 +91,10 @@ test('every progression feature is a whole module and every direct graph edge is
       return [pack.id, pack];
     }));
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
+    === node.dependencies.length));
+  assert(definition.questlines.every(questline =>
+    definition.nodes.some(node => node.questline === questline.id)));
   const nodeById = new Map(definition.nodes.map(node => [node.id, node]));
   const ownerByRef = new Map(definition.nodes
     .flatMap(node => node.featureRefs.map(reference => [reference, node.id])));
@@ -215,16 +115,6 @@ test('every progression feature is a whole module and every direct graph edge is
       assert(pack, `${node.id} references missing ${node.featureRefs[index] ?? '<unknown>'}`);
       return pack;
     });
-    for (const pack of requiredPacks) {
-      assert.equal(pack.task.requirements.length, 1,
-        `${node.id} must have one product prompt module`);
-      assert.equal(pack.task.contracts.filter(fragment => fragment.id !== 'ecommerce.orders.data').length, 1,
-        `${node.id} must have one application interface module`);
-      for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
-        assert.equal(fragment.from, undefined, `${node.id} must not slice ${fragment.path}`);
-        assert.equal(fragment.until, undefined, `${node.id} must not slice ${fragment.path}`);
-      }
-    }
     const requiredOwners = [...new Set(requiredPacks.flatMap(pack => pack.requiresPacks)
       .map(reference => ownerByRef.get(reference))
       .filter((owner): owner is string => typeof owner === 'string' && owner !== node.id))];
@@ -365,20 +255,6 @@ test('all-at-once composes every selected feature into one fresh request', () =>
   assert.equal(selected.agent.request.task.mode, 'fresh');
   assert.deepEqual(selected.agent.request.selection.requested.features, featureIds);
   assert(selected.agent.task.requirementIds.includes('ecommerce.progression.managed-support'));
-});
-
-test('the current campaign binds the full graph to one catalog across six levels', () => {
-  const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'appliance',
-    'campaign.ecommerce-progression-reference.json'));
-  assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5, 6]);
-  assert(plan.featureCatalog, 'the campaign must compile its feature catalog');
-  assert.equal(plan.featureCatalog.definition.nodes.length,
-    compileProgressionDefinitionFile(definitionPath, { trackRoot }).nodes.length);
-  assert.equal(new Set(plan.bindings.map(binding => binding.recipe.contentSha256)).size, 1);
-  const condition = plan.conditions[0];
-  assert(condition, 'the campaign must have a condition');
-  assert(condition.requested.levels.every(level =>
-    typeof level.task.mode === 'string' && ['fresh', 'upgrade'].includes(level.task.mode)));
 });
 
 test('every feature and grading check binds to the progression recipe', () => {

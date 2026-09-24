@@ -26,27 +26,34 @@ function argv({ mode = 'build', level = '2', runIndex = '0', recipe }: ArgvOptio
     '--run-index', runIndex, ...(recipe ? ['--recipe', recipe] : [])];
 }
 
-test('the model-free reference builder accepts any explicit positive level', () => {
-  assert.equal(parseReferenceAgentArgs(argv({ level: '1' })).level, 1);
-  assert.equal(parseReferenceAgentArgs(argv({ level: '2' })).level, 2);
-  assert.equal(parseReferenceAgentArgs(argv({ level: '3' })).level, 3);
-  assert.equal(parseReferenceAgentArgs(argv({ mode: 'upgrade', level: '4' })).mode, 'upgrade');
-  assert.equal(parseReferenceAgentArgs(argv({ mode: 'fix', level: '4' })).mode, 'fix');
-});
-
 test('the shared adapter request forwards the exact recipe into reference selection', async () => {
   const adapter = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
   assert(adapter, 'the reference-fixture adapter must be registered');
-  const command = agentRequestArgv(adapter, {
-    mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',
-    track: 'ecommerce', runIndex: 0, model: 'reference-fixture',
-    guidance: 'prescribed', recipe: 'ecommerce.sequential-l1',
-  });
-  const parsed = parseReferenceAgentArgs(['node', ...command]);
-  assert.equal(parsed.recipe, 'ecommerce.sequential-l1');
+  assert.deepEqual(adapter.modes, ['build', 'fix', 'upgrade']);
+  for (const mode of adapter.modes) {
+    const command = agentRequestArgv(adapter, {
+      mode, backend: 'mongodb', level: 1, app: '/work/reference',
+      track: 'ecommerce', runIndex: 0, model: 'reference-fixture',
+      guidance: 'prescribed', recipe: 'ecommerce.sequential-l1',
+    });
+    const parsed = parseReferenceAgentArgs(['node', ...command]);
+    assert.equal(parsed.mode, mode);
+    assert.equal(parsed.recipe, 'ecommerce.sequential-l1');
+  }
 });
 
-test('the model-free reference builder rejects unsupported modes and malformed scope', () => {
+test('the model-free reference builder accepts explicit positive levels and rejects unsupported modes and malformed scope', () => {
+  for (const [options, mode, level] of [
+    [{ level: '1' }, 'build', 1],
+    [{ level: '2' }, 'build', 2],
+    [{ level: '3' }, 'build', 3],
+    [{ mode: 'upgrade', level: '4' }, 'upgrade', 4],
+    [{ mode: 'fix', level: '4' }, 'fix', 4],
+  ] as const) {
+    const parsed = parseReferenceAgentArgs(argv(options));
+    assert.equal(parsed.mode, mode);
+    assert.equal(parsed.level, level);
+  }
   assert.throws(() => parseReferenceAgentArgs(argv({ mode: 'resume' })),
     /only build, upgrade and fix modes/);
   assert.throws(() => parseReferenceAgentArgs(argv({ level: '0' })), /positive integer level/);
@@ -88,6 +95,12 @@ test('dependency progression seeds once and verifies the same full fixture on la
     assert.throws(() => prepareReferenceSource({ ...common, mode: 'upgrade', level: 3 }),
       /contains source other than/);
 
+    const defaults = { backend: 'mongodb', track: 'ecommerce', level: 1, app: join(root, 'default-app') };
+    const seeded = prepareReferenceSource(defaults);
+    assert.equal(seeded.fixture.id, 'ecommerce-reference-mongodb');
+    assert.equal(seeded.seeded, true);
+    assert.equal(prepareReferenceSource(defaults).seeded, false);
+
     const empty = join(root, 'empty');
     assert.throws(() => prepareReferenceSource({ ...common, mode: 'upgrade', level: 2, app: empty }),
       /upgrade requires the existing ecommerce-reference-mongodb source/);
@@ -123,13 +136,27 @@ test('reference deployment restores canonical source while retaining generated b
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('reference deployment restores source after a failed deploy', async () => {
+test('reference deployment restores source after a failed deploy and reports stop and restore failures', async () => {
   const events: string[] = [];
   await assert.rejects(() => deployReferenceAndRestoreSource(() => events.push('stop'), async () => {
     events.push('deploy');
     throw new Error('deploy failed');
   }, () => events.push('restore')), /deploy failed/);
   assert.deepEqual(events, ['stop', 'deploy', 'restore']);
+
+  const stopFailure: string[] = [];
+  await assert.rejects(() => deployReferenceAndRestoreSource(() => {
+    throw new Error('stop failed');
+  }, () => stopFailure.push('deploy'), () => stopFailure.push('restore')), /stop failed/);
+  assert.deepEqual(stopFailure, [], 'a service that cannot stop must abort before mutation');
+
+  await assert.rejects(() => deployReferenceAndRestoreSource(() => {}, async () => {
+    throw new Error('deploy failed');
+  }, () => { throw new Error('restore failed'); }), error => {
+    assert(error instanceof AggregateError);
+    assert.deepEqual(error.errors.map(errorMessage), ['deploy failed', 'restore failed']);
+    return true;
+  });
 });
 
 test('reference redeployment cannot accept the prior stage listener as ready', async () => {
@@ -151,24 +178,6 @@ test('reference redeployment cannot accept the prior stage listener as ready', a
   } finally { if (old.listening) await close(); }
 });
 
-test('reference redeployment aborts before mutation if the old service cannot stop', async () => {
-  const events: string[] = [];
-  await assert.rejects(() => deployReferenceAndRestoreSource(() => {
-    throw new Error('stop failed');
-  }, () => events.push('deploy'), () => events.push('restore')), /stop failed/);
-  assert.deepEqual(events, []);
-});
-
-test('reference deployment reports both deploy and restoration failures', async () => {
-  await assert.rejects(() => deployReferenceAndRestoreSource(() => {}, async () => {
-    throw new Error('deploy failed');
-  }, () => { throw new Error('restore failed'); }), error => {
-    assert(error instanceof AggregateError);
-    assert.deepEqual(error.errors.map(errorMessage), ['deploy failed', 'restore failed']);
-    return true;
-  });
-});
-
 test('reference clients are explicitly reachable outside their build container', () => {
   const prefix = 'umask 022; exec /usr/bin/setpriv --reuid=10001 --regid=10001 --init-groups '
     + '/usr/local/bin/npm run ';
@@ -188,20 +197,6 @@ test('reference clients are explicitly reachable outside their build container',
     /unsafe reference script/);
 });
 
-test('reference adapter seeds an empty campaign app from the exact registered fixture', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-'));
-  try {
-    const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
-      app: join(root, 'app') };
-    const seeded = prepareReferenceSource(args);
-    assert.equal(seeded.fixture.id, 'ecommerce-reference-mongodb');
-    assert.equal(seeded.seeded, true);
-    assert.equal(prepareReferenceSource(args).seeded, false);
-    writeFileSync(join(args.app, 'unexpected.txt'), 'different source');
-    assert.throws(() => prepareReferenceSource(args), /contains source other than/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('an unknown recipe-specific reference cannot be launched', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-unknown-'));
   try {
@@ -212,23 +207,7 @@ test('an unknown recipe-specific reference cannot be launched', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the L1 recipe uses the shared reference fixture', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l1-shared-'));
-  try {
-    const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.sequential-l1', app: join(root, 'app') };
-    const seeded = prepareReferenceSource(args);
-    assert.equal(seeded.fixture.id, 'ecommerce-reference-mongodb');
-    assert.equal(seeded.sourceSha256, seeded.fixture.imported?.sourceSha256);
-    const client = readFileSync(join(args.app, 'client', 'src', 'App.tsx'), 'utf8');
-    for (const attribute of ['data-buy-input=', 'data-cart-input=', 'data-restock-input=']) {
-      assert.match(client, new RegExp(attribute));
-    }
-    assert.equal(prepareReferenceSource(args).seeded, false);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('the cumulative L2 fixture source prepares the exact seven action inputs for every backend', () => {
+test('the L1 and cumulative L2 recipes prepare the registered fixture with its seven action inputs for every backend', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-shared-'));
   const registry = loadReferenceRegistry();
   try {
@@ -239,6 +218,10 @@ test('the cumulative L2 fixture source prepares the exact seven action inputs fo
       assert.equal(fixture.id, `ecommerce-reference-${backend}`);
       assert.equal(prepareReferenceFixtureSource(fixture, app).sha256,
         fixture.imported?.sourceSha256);
+      const l1 = prepareReferenceSource({ backend, track: 'ecommerce', level: 1,
+        recipe: 'ecommerce.sequential-l1', app: join(root, `${backend}-l1`) });
+      assert.equal(l1.fixture.id, fixture.id);
+      assert.equal(l1.sourceSha256, fixture.imported?.sourceSha256);
       const files = backend === 'spacetime'
         ? ['client/src/components/ItemCard.tsx', 'client/src/components/OrdersPanel.tsx',
           'client/src/components/AdminPanel.tsx', 'client/src/components/CartPanel.tsx']

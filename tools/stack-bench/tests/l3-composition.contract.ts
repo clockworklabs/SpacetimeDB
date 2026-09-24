@@ -18,11 +18,6 @@ const packNames = l3Recipe
   .filter((name): name is string => name !== undefined && name.startsWith('l3-'))
   .sort();
 const packs = packNames.map(name => compilePackDefinition(readJson(join(packRoot, name)), { source: name }));
-const packById = new Map(l3Recipe.map(pack => {
-  const name = pack.path.split('/').at(-1) ?? '';
-  const compiled = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-  return [compiled.id, compiled];
-}));
 const selected = packs.flatMap(pack => pack.checks.map(check => ({ pack, check })));
 const scenarioFor = (check: CompiledPackDefinition['checks'][number]) => {
   const source = join(trackRoot, check.source);
@@ -123,47 +118,6 @@ test('every L3 scored check has isolated setup and one criterion', () => {
   }
 });
 
-test('L3 dependencies close over real selected packs', () => {
-  const visit = (pack: CompiledPackDefinition, seen = new Set<string>()): Set<string> => {
-    const ref = pack.id;
-    if (seen.has(ref)) return seen;
-    seen.add(ref);
-    for (const required of pack.requiresPacks) {
-      const dependency = packById.get(required);
-      assert(dependency, `${ref} requires missing ${required}`);
-      visit(dependency, seen);
-    }
-    return seen;
-  };
-  for (const pack of packs) visit(pack);
-  const order = requiredPack('ecommerce.l3.order-delivery-features');
-  const orderDependencies = visit(order);
-  assert(orderDependencies.has('ecommerce.progression.fulfilment-queue'));
-  assert(orderDependencies.has('ecommerce.l2.order-cancellation-features'));
-});
-
-test('L3 prompt and contract fragments resolve to non-empty text', () => {
-  const fragments = new Map();
-  for (const pack of packs) {
-    for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
-      const text = resolveFragment(fragment);
-      assert(text.length > 20, `${fragment.id} is too small to be useful`);
-      const previous = fragments.get(fragment.id);
-      if (previous) {
-        assert.equal(text, previous, `${fragment.id} must resolve identically for every owner`);
-      } else {
-        fragments.set(fragment.id, text);
-      }
-    }
-  }
-  const scheduled = requiredPack('ecommerce.l3.scheduled-restocks-features');
-  const calls = scheduled.task.contracts.find(fragment =>
-    fragment.id === 'ecommerce.l3.scheduled-restock-hooks');
-  assert(calls, 'scheduled restocks must include direct testing calls');
-  assert.match(resolveFragment(calls), /DELETE \/api\/admin\/scheduled-restocks\/:id/);
-  assert.match(resolveFragment(calls), /cancel_scheduled_restock/);
-});
-
 test('L3 feature requests and production specifications do not claim the same work', () => {
   const featureText = packs.filter(pack => pack.moduleType === 'feature')
     .flatMap(pack => pack.task.requirements).map(resolveFragment).join('\n');
@@ -252,24 +206,17 @@ test('timed and restarted work has conclusive before-and-after observations', ()
   }
 });
 
-test('scheduled-work access tests both server actions and cleans up pending work', () => {
-  const pack = requiredPack('ecommerce.l3.deferred-access-specifications');
-  const steps = nestedSteps(featureFor(requiredCheck(pack)));
-  assert(steps.some(step => step.do === 'callAction' && step.action === 'scheduleRestock'));
-  assert(steps.some(step => step.do === 'replayAs'
-    && step.namedAction?.id === 'cancelScheduledRestock'));
-  assert(steps.some(step => step.do === 'expectActionOutcome' && step.outcome === 'refused'));
-  assert(steps.some(step => step.do === 'expectReplayRejected'));
-  assert.equal(lastStep(steps).do, 'click');
-  assert.equal(lastStep(steps).testid, 'pending-restock-cancel');
-});
-
 test('pending-work checks cancel or complete the work they create', () => {
   const pendingPack = requiredPack('ecommerce.l3.scheduled-restocks-features');
   const pendingSteps = nestedSteps(featureFor(
     requiredCheck(pendingPack, 'pending')));
   assert.equal(lastStep(pendingSteps).do, 'click');
   assert.equal(lastStep(pendingSteps).testid, 'pending-restock-cancel');
+
+  const accessSteps = nestedSteps(featureFor(requiredCheck(
+    requiredPack('ecommerce.l3.deferred-access-specifications'))));
+  assert.equal(lastStep(accessSteps).do, 'click');
+  assert.equal(lastStep(accessSteps).testid, 'pending-restock-cancel');
 
   const timePack = requiredPack('ecommerce.l3.server-time-specifications');
   const timeSteps = nestedSteps(featureFor(requiredCheck(timePack, 'not-early')));
