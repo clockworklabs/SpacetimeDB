@@ -197,12 +197,12 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
+    /// Whether the bindings use host-verified invocation authority and sender identity.
+    /// Container Hosting's admission and publication checks require this marker to
+    /// reject legacy modules on new hosts. Those callers are introduced in the
+    /// Container Hosting PR; this prerequisite only defines and emits the marker.
     pub fn supports_hosted_auth_v1(&self) -> bool {
         self.capabilities.contains(&RawIdentifier::new("hosted_auth_v1"))
-    }
-
-    pub fn capabilities(&self) -> impl Iterator<Item = &RawIdentifier> {
-        self.capabilities.iter()
     }
 
     /// The validated root environment schema. Legacy modules have an empty schema.
@@ -232,13 +232,6 @@ impl ModuleDef {
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
-    }
-
-    /// The row type of a table or view, addressed by its canonical name.
-    pub fn type_ref_for_table_like(&self, name: &str) -> Option<AlgebraicTypeRef> {
-        self.table(name)
-            .map(|table| table.product_type_ref)
-            .or_else(|| self.view(name).map(|view| view.product_type_ref))
     }
 
     /// Serialize without reinterpreting the definition's original version semantics.
@@ -1000,7 +993,7 @@ impl TryFrom<RawModuleDef> for ModuleDef {
             RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
             RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
             RawModuleDef::V10(v10_mod) => Self::try_from(v10_mod),
-            _ => Err(crate::error::ValidationError::UnsupportedModuleVersion.into()),
+            _ => unimplemented!(),
         }
     }
 }

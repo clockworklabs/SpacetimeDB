@@ -3108,7 +3108,7 @@ mod visibility_tests {
         builder.add_capability("hosted_auth_v1");
         let module: ModuleDef = builder.finish().try_into().unwrap();
         assert!(module.supports_hosted_auth_v1());
-        let reloaded: ModuleDef = module.into_raw().try_into().unwrap();
+        let reloaded: ModuleDef = RawModuleDefV10::from(module).try_into().unwrap();
         assert!(reloaded.supports_hosted_auth_v1());
         for names in [
             vec!["".to_string()],
