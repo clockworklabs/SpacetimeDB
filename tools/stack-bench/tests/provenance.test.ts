@@ -18,6 +18,13 @@ test('file-set hashes bind both relative names and exact bytes', () => {
     assert.equal(first.sha256, hashFiles([one, two], { base: root }).sha256);
     writeFileSync(two, 'changed');
     assert.notEqual(first.sha256, hashFiles([one, two], { base: root }).sha256);
+    // A CRLF checkout of the same commit hashes like its LF form only when asked.
+    writeFileSync(two, 'x\ny\n');
+    const lf = hashFiles([one, two], { base: root, lineEndings: 'lf' }).sha256;
+    assert.equal(lf, hashFiles([one, two], { base: root }).sha256);
+    writeFileSync(two, 'x\r\ny\r\n');
+    assert.equal(hashFiles([one, two], { base: root, lineEndings: 'lf' }).sha256, lf);
+    assert.notEqual(hashFiles([one, two], { base: root }).sha256, lf);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

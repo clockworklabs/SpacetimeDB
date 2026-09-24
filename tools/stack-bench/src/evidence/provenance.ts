@@ -39,14 +39,17 @@ export const sha256 = (value: string | Buffer): string =>
 // ambiguous (`ab`+`c` equals `a`+`bc`) and loses which file supplied a rubric.
 export function hashFiles(
   paths: readonly string[],
-  { base = process.cwd() }: { base?: string } = {},
+  { base = process.cwd(), lineEndings = 'exact' }: { base?: string; lineEndings?: 'exact' | 'lf' } = {},
 ): HashFilesResult {
   const entries = [...new Set(paths.map(path => resolve(path)))]
     .map(path => ({ path, name: relative(resolve(base), path).replaceAll('\\', '/') }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const hash = createHash('sha256');
   for (const entry of entries) {
-    const bytes = readFileSync(entry.path);
+    const read = readFileSync(entry.path);
+    // Git stores these files with LF; a CRLF checkout must hash the same commit alike.
+    const bytes = lineEndings === 'lf'
+      ? Buffer.from(read.toString('latin1').replaceAll('\r\n', '\n'), 'latin1') : read;
     hash.update(`${entry.name.length}:${entry.name}:${bytes.length}:`);
     hash.update(bytes);
   }

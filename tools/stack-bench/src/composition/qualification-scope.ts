@@ -281,7 +281,7 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
   const trackWalk = resolve(root, 'tracks', release.track, 'walk.ts');
   if (!existsSync(trackWalk)) fail(`mapped track walk does not exist: tracks/${release.track}/walk.ts`);
   files.push(trackWalk);
-  const executable = hashFiles(files, { base: root });
+  const executable = hashFiles(files, { base: root, lineEndings: 'lf' });
   const adapter = stack === null ? null : { id: stack, version: stackAdapterVersion(stack) };
   const document: QualificationScopeDocument = {
     checksSha256: checkIdentity(release),
