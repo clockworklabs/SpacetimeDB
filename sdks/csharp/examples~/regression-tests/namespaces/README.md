@@ -1,10 +1,13 @@
 # Namespace Integration Test
 
-Runs a generated C# 9 / .NET 8 client against the .NET 10 module in
-`modules/namespace-test-cs`. It uses `Accessor` as the namespace name throughout.
+Runs generated clients against the .NET 10 module in `modules/namespace-test-cs`.
+The .NET 8 run verifies backward compatibility;
+the .NET 10 run verifies the newer client runtime. Both retain C# 9 to enforce the
+generated-code language baseline. It uses `Accessor` as the namespace name throughout.
 
 The existing `sdks/csharp/tools~/run-regression-tests.sh 10` harness generates the
-bindings, publishes a fresh `namespace-tests` database, and runs this client.
+bindings and runs this client on both frameworks, clearing and republishing the
+`namespace-tests` database before each run.
 The namespace scenario is skipped in the .NET 8 **module** pass. CI already runs
 both harness passes.
 
@@ -13,8 +16,10 @@ C# packages configured as described in `sdks/csharp/DEVELOP.md`:
 
 ```sh
 cargo spacetime generate -y -l csharp -o sdks/csharp/examples~/regression-tests/namespaces/module_bindings --module-path modules/namespace-test-cs --build-options="--dotnet-version 10"
-cargo spacetime publish --dotnet-version 10 -c -y --server local -p modules/namespace-test-cs namespace-tests
-dotnet run --project sdks/csharp/examples~/regression-tests/namespaces/client.csproj
+for framework in net8.0 net10.0; do
+    cargo spacetime publish --dotnet-version 10 -c -y --server local -p modules/namespace-test-cs namespace-tests
+    dotnet run --framework "$framework" --project sdks/csharp/examples~/regression-tests/namespaces/client.csproj
+done
 ```
 
 The publish command deletes existing data in the test database. Republish before
@@ -23,7 +28,7 @@ each client run. For a nondefault server, pass its URL to publish and set
 
 Coverage:
 
-- Root and two mounted libraries with different row types named `User`, plus an
+- Root and two mounted libraries with different row types named `User`, plus a
   dependency automatically registered in `public`, without a namespace declaration.
 - Explicit table names and a C# keyword namespace accessor.
 - Typed subscriptions, filtered queries, both semijoin directions, and overlapping
@@ -45,9 +50,6 @@ Coverage:
   and table names and custom scheduled-at columns. Covers one-shot and immediate
   execution, repeating reducer cancellation, argument payloads, generated keys,
   namespace isolation, and absence of scheduled functions from client call APIs.
-
-Assertions throw in both Debug and Release. Every asynchronous phase has a timeout.
-The generated bindings are committed and regenerated through the normal CLI path.
 
 Environment access and namespace isolation are covered separately by
 `namespace_csharp_environment_security` in `crates/testing/tests/environment.rs`.
