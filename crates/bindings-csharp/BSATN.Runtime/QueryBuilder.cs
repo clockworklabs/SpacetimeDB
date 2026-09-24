@@ -2,43 +2,35 @@ namespace SpacetimeDB;
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Globalization;
 
-/// <summary>A table identifier with separately quoted namespace segments and local name.</summary>
+/// <summary>A table identifier with a separately quoted optional namespace and local name.</summary>
 public readonly struct SqlTableName
 {
-    private readonly ReadOnlyCollection<string>? namespaceSegments;
-    public IReadOnlyList<string> NamespaceSegments =>
-        namespaceSegments ?? (IReadOnlyList<string>)[];
+    public string? Namespace { get; }
     public string LocalName { get; }
 
     public SqlTableName(string localName)
     {
         LocalName = localName;
-        namespaceSegments = null;
+        Namespace = null;
     }
 
-    public SqlTableName(string[] namespaceSegments, string localName)
+    public SqlTableName(string @namespace, string localName)
     {
-#if NET8_OR_GREATER
-        ArgumentNullException.ThrowIfNull(namespaceSegments);
-#else
-        if (namespaceSegments is null)
-            throw new ArgumentNullException(nameof(namespaceSegments));
-#endif
-        this.namespaceSegments = Array.AsReadOnly((string[])namespaceSegments.Clone());
+        if (@namespace is null)
+        {
+            throw new ArgumentNullException(nameof(@namespace));
+        }
+
+        Namespace = @namespace;
         LocalName = localName;
     }
 
-    public override string ToString()
-    {
-        var sql = "";
-        if (namespaceSegments is not null)
-            foreach (var segment in namespaceSegments)
-                sql += SqlFormat.QuoteIdent(segment) + ".";
-        return sql + SqlFormat.QuoteIdent(LocalName);
-    }
+    public override string ToString() =>
+        Namespace is null
+            ? SqlFormat.QuoteIdent(LocalName)
+            : SqlFormat.QuoteIdent(Namespace) + "." + SqlFormat.QuoteIdent(LocalName);
 }
 
 public readonly struct SqlLiteral<T>
