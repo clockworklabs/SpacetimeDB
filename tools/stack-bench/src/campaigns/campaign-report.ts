@@ -1,7 +1,7 @@
 import { retainedRunCost } from '../evidence/retained-run-cost.js';
 import { randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
-  renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync,
+  readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact }
@@ -924,7 +924,9 @@ export function progressionGradeCompletions(state: DependencyState): Map<string,
     }
     replay = progressionEngine.recordResult(replay, event.result);
     const evidence = event.result.evidence;
-    if (evidence) completions.set(`${evidence.id}:${evidence.sha256}`, scoreDependencyState(replay as DependencyState).completion);
+    const key = evidence && `${evidence.id}:${evidence.sha256}`;
+    // A rollback records the restored accepted grade again; the first record is its own point.
+    if (key && !completions.has(key)) completions.set(key, scoreDependencyState(replay as DependencyState).completion);
   }
   return completions;
 }
@@ -981,10 +983,15 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     const latest = executions.at(-1);
     const latestRun = latest ? runs.get(latest.id) : undefined;
     const dependency = attempt.plan.mode?.id === 'dependency';
+    // A rejected candidate changed no accepted outcome, so it keeps the progression
+    // completion of the accepted point before it.
+    let acceptedCompletion: CheckCompletion | null = null;
     const points = executions.flatMap((execution, index) => {
       const scored = dependency ? scoreCheckpoints?.(attempt.plan, attempt.executions[index]!) ?? null : null;
-      return (runs.get(execution.id)?.checkpoints ?? []).map(checkpoint => ({ execution, index, checkpoint,
-        completion: scored?.(checkpoint) ?? null }));
+      return (runs.get(execution.id)?.checkpoints ?? []).map(checkpoint => {
+        if (scored && checkpoint.accepted) acceptedCompletion = scored(checkpoint);
+        return { execution, index, checkpoint, completion: scored ? acceptedCompletion : null };
+      });
     });
     // One basis per curve: when any point cannot be replayed, every point stays raw.
     const rawPoints = points.some(point => !point.completion);
@@ -1186,6 +1193,16 @@ export function renderCampaignHtml(report: CampaignReport,
   return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p>${qualificationWarning}<p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Cost and measured completion</h2>${curves}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
 
+// Readers see the previous file or the complete new one, never a partial write.
+function replaceFile(path: string, text: string): void {
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    const fd = openSync(temporary, 'wx');
+    try { writeFileSync(fd, text); fsyncSync(fd); } finally { closeSync(fd); }
+    renameSync(temporary, path);
+  } finally { rmSync(temporary, { force: true }); }
+}
+
 export interface GeneratedCampaignReport { report: CampaignReport; reportPath: string;
   htmlPath: string; exportManifestPath: string; relativeOutput: string }
 
@@ -1230,6 +1247,9 @@ export function generateCampaignReport(directory: string,
     } catch { return null; }
   });
   mkdirSync(output, { recursive: true });
+  // The manifest is written last, so it only ever describes this generation's files.
+  const exportManifestPath = join(output, 'export-manifest.json');
+  rmSync(exportManifestPath, { force: true });
   const reportPath = join(output, CAMPAIGN_FILE.reportJson);
   writeArtifact(reportPath, { kind: 'campaign_report', id: `${plan.id}-report-${report.contentSha256.slice(0, 16)}`,
     timestamps: { startedAt: state.createdAt, completedAt: state.updatedAt },
@@ -1238,11 +1258,9 @@ export function generateCampaignReport(directory: string,
     } }), payload: report });
   const htmlPath = join(output, CAMPAIGN_FILE.reportHtml);
   const evidencePrefix = relative(output, paths.root).replaceAll('\\', '/') || '.';
-  const temporaryHtml = `${htmlPath}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(temporaryHtml, renderCampaignHtml(report, { evidencePrefix }), { flag: 'wx' });
-  renameSync(temporaryHtml, htmlPath);
-  const exportManifestPath = join(output, 'export-manifest.json');
-  writeFileSync(exportManifestPath, `${JSON.stringify(publicExportManifest(paths.root, report, htmlPath), null, 2)}\n`);
+  replaceFile(htmlPath, renderCampaignHtml(report, { evidencePrefix }));
+  replaceFile(exportManifestPath,
+    `${JSON.stringify(publicExportManifest(paths.root, report, htmlPath), null, 2)}\n`);
   return { report, reportPath, htmlPath, exportManifestPath,
     relativeOutput: outputRelative.replaceAll('\\', '/') };
 }

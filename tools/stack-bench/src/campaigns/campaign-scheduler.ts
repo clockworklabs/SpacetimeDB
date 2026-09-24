@@ -399,7 +399,7 @@ export function validateCampaignState(input: unknown): CampaignState {
           fail(`${executionAt} running fields are inconsistent`);
         }
       } else {
-        const completedAt = execution.completedAt!;
+        const completedAt = execution.completedAt ?? fail(`${executionAt}.completedAt is required`);
         if (Date.parse(completedAt) < Date.parse(execution.startedAt)) {
           fail(`${executionAt}.completedAt precedes startedAt`);
         }

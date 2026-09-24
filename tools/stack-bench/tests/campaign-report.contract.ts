@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
+  writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,14 +8,15 @@ import test from 'node:test';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact,
   writeRunJson } from '../src/evidence/artifacts.js';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import { campaignProgressionOwner, compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import { buildCampaignReport, campaignActiveDurationMs, campaignMeasuredRunWork, campaignReportCsv, exportCampaignReport, generateCampaignReport,
-  campaignRunMetrics, campaignRunFirstBuildObservations, renderCampaignHtml,
+  campaignRunMetrics, campaignRunFirstBuildObservations, progressionGradeCompletions, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
 import type { BenchmarkRun, RunSelection } from '../src/campaigns/campaign-report.js';
 import type { RunSessionRecord } from '../src/evidence/benchmark-run.js';
+import type { RunCheckpoint } from '../src/evidence/run-checkpoints.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
@@ -22,6 +24,15 @@ import { readCampaignAdmission, validateCampaignAdmission } from '../src/campaig
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, writeCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { assessStoppedProviderContinuation, providerWaitSummary } from '../src/agents/provider-continuation-audit.js';
+import { progressionEngine } from '../src/progression/progression-engine.js';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../src/progression/progression-definition.js';
+import { writeProgressionState } from '../src/progression/progression-state.js';
+import type { ProgressionState } from '../src/progression/progression-state.js';
+import { scoreDependencyState } from '../src/progression/dependency-score.js';
+import type { DependencyState } from '../src/progression/dependency-mode.js';
+import { campaignProgression } from '../dashboard/dashboard-views.js';
+import { DEPENDENCY_CAMPAIGN, writeCampaign } from './fixtures/dashboard-fixture.js';
 
 const projectRoot = STACK_BENCH_ROOT;
 const example = join(projectRoot, 'tests', 'fixtures', 'campaign.deterministic.json');
@@ -596,6 +607,14 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
     assert.equal(artifact.payload.contentSha256, first.report.contentSha256);
     assert.match(readFileSync(second.htmlPath, 'utf8'), /\.\.\/attempts\//);
     assert.match(readFileSync(second.htmlPath, 'utf8'), /\.\.\/admissions\//);
+    // An interrupted regeneration leaves no manifest to offer and no partial file.
+    rmSync(second.htmlPath);
+    mkdirSync(join(second.htmlPath, 'occupied'), { recursive: true });
+    assert.throws(() => generateCampaignReport(root));
+    assert.equal(existsSync(second.exportManifestPath), false);
+    assert.deepEqual(readdirSync(join(root, 'report')).filter(name => name.endsWith('.tmp')), []);
+    rmSync(second.htmlPath, { recursive: true });
+    assert.deepEqual(readFileSync(generateCampaignReport(root).exportManifestPath), manifestBytes);
     const invalid = finishCampaignExecution(claimed.state, claim.executionId,
       { exitCode: 1, run: null }, { now: '2026-08-12T00:02:00.000Z' });
     writeCampaignState(initialized.paths.state, plan, invalid);
@@ -829,4 +848,79 @@ test('dependency curve points use progression scoring, or say they are raw', () 
   assert.equal(partial.attempt.curveBasis, 'raw');
   assert.match(renderCampaignHtml(unreplayed.report), /curve shows raw grade outcomes/);
   assert.doesNotMatch(renderCampaignHtml(progression.report), /curve shows raw grade outcomes/);
+});
+
+test('a rejected repair keeps the dependency curve on progression scoring, as the dashboard charts it', t => {
+  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  assert.ok(plan.featureCatalog && plan.dependencyPolicy);
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-report-rejected-repair-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const directory = join(resultsRoot, 'campaigns', 'rejected-repair');
+  const claimed = claimNextAttempt(createCampaignState(plan, { now: created }), { now: created, admissionId: 'curve' });
+  assert(claimed.claim);
+  const claim = claimed.claim;
+  writeCampaign(directory, plan, claimed.state);
+  const progression = compileProgressionInput(dependencyRuntimeDefinition(plan.featureCatalog, plan.dependencyPolicy));
+  let target = '';
+  const result = (state: ProgressionState, evidence: { id: string; sha256: string }) => {
+    const selection = progressionEngine.gradingSelection(state);
+    target ||= selection.nodeIds[0]!;
+    return { attemptId: `${claim.attempt.id}-progression-${state.attempts.length + 1}`,
+      runId: claim.attempt.id, outcome: 'conclusive' as const, evidence: { kind: 'grade_bundle' as const, ...evidence },
+      nodes: selection.nodeIds.map(nodeId => ({ id: nodeId,
+        checks: selection.checks.filter(check => check.nodeId === nodeId).map((check, index) => ({
+          id: check.id, outcome: nodeId === target && index === 0 ? 'fail' as const : 'pass' as const })) })) };
+  };
+  // Builds run to terminal with one feature failing and no repair budget.
+  let replay = progressionEngine.initialize(progression.definition);
+  const builds: Array<{ path: string; key: string; completion: unknown }> = [];
+  while (progressionEngine.nextAction(replay).type !== 'terminal') {
+    const evidence = { id: `build-${builds.length + 1}`, sha256: String(builds.length % 10).repeat(64) };
+    replay = progressionEngine.recordResult(replay, result(replay, evidence));
+    builds.push({ path: `checkpoints/${builds.length + 1}.json`, key: `${evidence.id}:${evidence.sha256}`,
+      completion: scoreDependencyState(replay as DependencyState).completion });
+  }
+  const lastAccepted = builds.at(-1)!;
+  replay = progressionEngine.grantRepairs(replay, { grantId: 'grant-1',
+    level: progression.definition.nodes.find(node => node.id === target)!.level, nodeIds: [target], repairs: 2 });
+  assert.equal(progressionEngine.nextAction(replay).type, 'repair');
+  // The rejected candidate is rolled back: the restored accepted grade is recorded again.
+  const [id, sha] = lastAccepted.key.split(':') as [string, string];
+  replay = progressionEngine.recordResult(replay, { ...result(replay, { id, sha256: sha }), completedRepair: true });
+  assert.notDeepEqual(scoreDependencyState(replay as DependencyState).completion, lastAccepted.completion);
+  const output = join(directory, claim.output);
+  mkdirSync(join(output, 'source'), { recursive: true });
+  writeProgressionState(join(output, 'progression-state.json'), { progression,
+    featureCatalogIdentity: plan.featureCatalog.identity,
+    dependencyPolicyIdentity: plan.dependencyPolicy.identity,
+    owner: campaignProgressionOwner(plan, claim.attempt, { workspace: true }), state: replay });
+
+  const graded = run('graded', claim.attempt);
+  const raw = { selected: 2, passed: 2, failed: 0, blocked: 0, unmeasured: 0, rate: 1 };
+  const checkpoint = (sequence: number, accepted: boolean): RunCheckpoint => ({ sequence,
+    phase: accepted ? 'first-build' : 'repair', level: 1, accepted, workNodeIds: [target],
+    sourceSha256: 'a'.repeat(64), selectionSha256: 'b'.repeat(64),
+    evidence: { path: `checkpoints/${sequence}.json`, sha256: 'c'.repeat(64) },
+    cost: { status: 'exact', costUsd: sequence }, executionCost: { status: 'exact', costUsd: sequence },
+    completion: raw, checks: [{ id: 'a', status: 'passed' }, { id: 'b', status: 'passed' }] });
+  graded.checkpoints = [...builds.map((_, index) => checkpoint(index + 1, true)), checkpoint(builds.length + 1, false)];
+  const state = finishCampaignExecution(claimed.state, claim.executionId, { exitCode: 0, run: graded }, { now: created });
+  // Only accepted grades have progression events; the rejected bundle has none.
+  const keys = new Map(builds.map(build => [build.path, build.key]));
+  const completions = progressionGradeCompletions(replay as DependencyState);
+  const report = buildCampaignReport(plan, state, () => graded, undefined,
+    () => point => completions.get(keys.get(point.evidence.path) ?? '') ?? null);
+  const attempt = report.attempts.find(item => item.id === claim.attempt.id)!;
+  assert.equal(attempt.curveBasis, 'progression');
+  assert.deepEqual(attempt.curve.checkpoints.map(point => point.completion),
+    [...builds.map(build => build.completion), lastAccepted.completion]);
+  assert.doesNotMatch(renderCampaignHtml(report), /curve shows raw grade outcomes/);
+
+  const view = campaignProgression(resultsRoot, 'rejected-repair');
+  const steps = view?.stacks.find(track => track.attemptId === claim.attempt.id)?.steps
+    .filter(step => step.action !== 'grant');
+  assert.ok(steps);
+  assert.deepEqual(steps.map(step => step.action), [...builds.map(() => 'build'), 'repair']);
+  assert.deepEqual(attempt.curve.checkpoints.map(point => point.completion.rate),
+    steps.map(step => step.completion));
 });

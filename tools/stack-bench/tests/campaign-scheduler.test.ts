@@ -355,6 +355,22 @@ test('interrupted and missing-artifact executions fail closed without invented r
   assert.equal(attemptAt(missing).status, 'invalid');
 });
 
+test('a finished execution without a completion time never loads', () => {
+  const now = '2026-08-12T00:05:00.000Z';
+  const completed = claimed().state;
+  const invalid = claimed().state;
+  for (const state of [
+    finishCampaignExecution(completed, executionAt(completed).id,
+      { exitCode: 0, run: { outcome: { kind: 'passed' } } }, { now }),
+    markInterruptedExecution(invalid, executionAt(invalid).id, { now }),
+  ]) {
+    assert.equal(executionAt(state).completedAt, now);
+    validateCampaignState(state);
+    executionAt(state).completedAt = null;
+    assert.throws(() => validateCampaignState(state), /executions\[0\]\.completedAt is required/);
+  }
+});
+
 test('malformed state and inconsistent summaries never become resumable', () => {
   const state = prepared();
   state.status = 'completed';
