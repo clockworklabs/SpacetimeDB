@@ -1,10 +1,6 @@
-#!/usr/bin/env node
-
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { REPOSITORY_ROOT } from '../package-root.js';
 
@@ -182,20 +178,3 @@ export function releaseSourceIdentity(root = process.cwd(),
     revision, ...identity, paths: [...RELEASE_SOURCE_PATHS],
     binarySourceSha256: binarySource.sha256, binarySourceFiles: binarySource.files };
 }
-
-function main(): void {
-  if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--json')) {
-    console.error('Usage: release-source [--json]');
-    process.exitCode = 2;
-    return;
-  }
-  const identity = releaseSourceIdentity(releaseSourceRoot());
-  if (process.argv[2] === '--json') console.log(JSON.stringify(identity, null, 2));
-  else {
-    process.stdout.write(`SOURCE_REVISION=${identity.revision}\n`);
-    process.stdout.write(`SOURCE_SHA256=${identity.sha256}\n`);
-    process.stdout.write(`BINARY_SOURCE_SHA256=${identity.binarySourceSha256}\n`);
-  }
-}
-
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) main();

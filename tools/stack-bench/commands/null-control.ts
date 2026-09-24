@@ -35,7 +35,6 @@ interface NullControlArgs {
   level: number | null;
   recipe?: string;
   out?: string;
-  audit: boolean;
   parentAttemptId?: string;
   selectedChecks: string[];
 }
@@ -43,12 +42,12 @@ interface NullControlArgs {
 export function parseNullControlArgs(argv: string[]): NullControlArgs {
   const { values } = parseNodeArgs({ args: argv.slice(2), options: {
     track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' },
-    out: { type: 'string' }, audit: { type: 'boolean' }, 'parent-attempt-id': { type: 'string' },
+    out: { type: 'string' }, 'parent-attempt-id': { type: 'string' },
     'selected-check': { type: 'string', multiple: true },
   } });
   const args: NullControlArgs = {
     tracks: values.track?.split(',').filter(Boolean) ?? listTracks(),
-    level: values.level === undefined ? null : Number(values.level), audit: values.audit ?? false,
+    level: values.level === undefined ? null : Number(values.level),
     recipe: values.recipe, out: values.out, parentAttemptId: values['parent-attempt-id'],
     selectedChecks: values['selected-check'] ?? [],
   };
@@ -269,7 +268,7 @@ async function main() {
       summary: artifact.summary,
       artifact: outputPath,
     }, null, 2));
-    if (!analysis.ok && !args.audit) process.exitCode = 1;
+    if (!analysis.ok) process.exitCode = 1;
   } finally {
     try { await browserServer?.close(); }
     finally {

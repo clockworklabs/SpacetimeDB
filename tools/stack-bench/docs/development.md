@@ -68,7 +68,16 @@ What each test command runs, after its build:
 | `npm run test:all` | The three rows above | Not integration or mutation-definition tests |
 | `npm run test:mutation-definitions` | `tests/*.mutation.ts` | Model-free |
 | `npm run test:integration` | `tests/*.integration.ts` | Serial; can own browsers, processes, ports, and Docker |
+| `npm run check:references` | `reference-apps/registry.json` | Checks the registry and each imported fixture's hash and metadata |
+| `npm run test:container` | `commands/container-smoke.ts` | Model-free; prepares a build container against a local SpacetimeDB host and checks a reset publish; needs Docker, the build image, and the local SpacetimeDB CLI |
+| `npm run test:faults` | `commands/fault-injection.ts` | Model-free; fails a coding session during a backend restart and checks teardown and lease evidence; needs Docker, the build image, and the local SpacetimeDB CLI |
+| `npm run test:loop` | `commands/test-loop.ts` | Model-free; runs bench with the deterministic agent on the stub backend and `loop` track, then checks the run evidence |
 | (manual) | `tests/dashboard/*.browser.ts` | Needs `STACK_BENCH_BROWSER_TEST_URL` pointing at an isolated appliance |
+
+Every npm script above builds `dist` first, and a build clears `dist`. To run
+several checks against one build, run `npm run build` once, then call
+`node --test dist/tests/...` or `node dist/commands/...` directly. Do not run
+two npm scripts at the same time.
 
 Docker and qualification checks remain separate.
 Campaign and lock tests exercise native Linux `flock`. A Windows host cannot

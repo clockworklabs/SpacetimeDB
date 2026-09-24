@@ -3,7 +3,6 @@
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, posix, resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
@@ -248,20 +247,17 @@ export function auditTranscript(file: string, boundary: string | null,
 
 function main(): void {
   const { values } = parseArgs({ args: process.argv.slice(2), options: {
-    app: { type: 'string' }, dir: { type: 'string' }, json: { type: 'boolean' },
+    app: { type: 'string' }, json: { type: 'boolean' },
     'own-endpoints': { type: 'string' },
     'isolated-loopback': { type: 'boolean' },
   } });
   const ownEndpoints = (values['own-endpoints'] ?? '').split(',').filter(Boolean);
   const requestedApp = values.app;
-  const requestedDirectory = values.dir;
-  if (requestedApp && requestedDirectory) throw new Error('--app and --dir cannot be used together');
-  const roots = requestedApp ? transcriptDirectories(requestedApp)
-    : requestedDirectory ? [resolve(requestedDirectory)]
-    : [join(homedir(), '.claude', 'projects')];
-  // When the caller names the app directory, that is the boundary. Do not
-  // infer it from a transcript folder name.
-  const appBoundary = requestedApp ? norm(resolve(requestedApp)) : null;
+  if (!requestedApp) throw new Error('--app is required');
+  const roots = transcriptDirectories(requestedApp);
+  // The app directory is the boundary. Do not infer it from a transcript
+  // folder name.
+  const appBoundary = norm(resolve(requestedApp));
   const results: AuditResult[] = [];
 for (const root of roots) {
   if (!existsSync(root)) continue;
@@ -274,7 +270,7 @@ for (const root of roots) {
       if (e.isDirectory()) {
         // Codex native rollouts are agent-writable; audit controller event logs only.
         if (!/node_modules/.test(p)
-          && !(requestedApp && root === codexTranscriptDirectory(requestedApp))) stack.push(p);
+          && root !== codexTranscriptDirectory(requestedApp)) stack.push(p);
         continue;
       }
       if (!/\.jsonl$/.test(e.name)) continue;

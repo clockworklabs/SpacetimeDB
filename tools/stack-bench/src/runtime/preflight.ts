@@ -1,10 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, openSync, closeSync, readFileSync, readSync, renameSync, rmSync,
+  existsSync, mkdirSync, openSync, closeSync, readFileSync, readSync, rmSync,
   statfsSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { resolveContainerAuth } from '../../container/container-auth.js';
@@ -63,8 +63,6 @@ export interface PreflightRequest {
   image: string;
   resultsDir: string;
   recipe?: string;
-  report?: string;
-  json?: boolean;
   supervisorState?: string;
   requestedScopes?: RequestedScope[];
   featureCatalog?: unknown;
@@ -790,11 +788,4 @@ export function runPreflight(
     checks,
   };
   return report;
-}
-
-export function writePreflightReport(path: string, report: PreflightReport): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}`;
-  writeFileSync(temporary, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-  renameSync(temporary, path);
 }

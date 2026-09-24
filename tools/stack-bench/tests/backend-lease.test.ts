@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   createBackendLease,
-  acquireResourceLock,
+  acquireResourceLocks,
   backendResourceLockKeys,
   publicBackendLease,
   readBackendLease,
@@ -156,7 +156,7 @@ test('private host teardown refusal retains resource locks', { skip: process.pla
   const lease = createBackendLease({ runId: 'convex-refused', backend: 'convex',
     track: 'ecommerce', runIndex: 0, serverUri: 'http://127.0.0.1:14310' });
   try {
-    const lock = acquireResourceLock({ root, key: 'port:14310', lease });
+    const lock = acquireResourceLocks({ root, keys: ['port:14310'], lease })[0]!;
     lease.resources.locks.push(lock);
     writeBackendLease(path, lease);
     assert.equal(releaseBackendLease(path, lease.ownershipToken, { hostTeardown: () => false }), false);
@@ -358,7 +358,7 @@ test('a different PID start marker cannot authorize reclamation across controlle
       writeFileSync(path, JSON.stringify({ version: 1, key, runId: 'dead-owner', ...owner,
         ownershipMarkerSha256: 'dead-owner', acquiredAt: new Date().toISOString() }));
       const before = readFileSync(path, 'utf8');
-      assert.throws(() => acquireResourceLock({ root, key, lease: current }), /run authenticated recovery before reuse/);
+      assert.throws(() => acquireResourceLocks({ root, keys: [key], lease: current }), /run authenticated recovery before reuse/);
       assert.equal(readFileSync(path, 'utf8'), before);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }

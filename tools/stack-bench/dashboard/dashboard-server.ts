@@ -142,15 +142,14 @@ function controlAuthorized(request: IncomingMessage, host: string | undefined,
 export function parseDashboardArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): DashboardArgs {
   const { values } = parseNodeArgs({ args: argv.slice(2), options: {
     host: { type: 'string' }, port: { type: 'string' }, results: { type: 'string' },
-    plans: { type: 'string' }, 'allow-container-bind': { type: 'boolean' },
+    'allow-container-bind': { type: 'boolean' },
   } });
   const args: DashboardArgs = { host: values.host ?? '127.0.0.1',
     port: values.port === undefined ? 7331 : Number(values.port),
     resultsRoot: stackBenchResultsRoot(STACK_BENCH_ROOT, env),
     plansRoot: '', allowContainerBind: values['allow-container-bind'] ?? false };
   if (values.results) args.resultsRoot = resolve(values.results);
-  if (values.plans) args.plansRoot = resolve(values.plans);
-  args.plansRoot ||= join(args.resultsRoot, 'plans');
+  args.plansRoot = join(args.resultsRoot, 'plans');
   const applianceContainerBind = args.allowContainerBind
     && env.STACK_BENCH_APPLIANCE === '1' && args.host === '0.0.0.0';
   if (!LOOPBACK.has(args.host) && !applianceContainerBind) {

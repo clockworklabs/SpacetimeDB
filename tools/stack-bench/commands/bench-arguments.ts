@@ -35,7 +35,6 @@ export interface BenchArguments {
   agentAdapter: string;
   pricing?: PricingAuthority | null;
   repairs: number;
-  maxStalledRepairs: number;
   maxBudgetUsd?: number;
   runIndex: number;
   out?: string;
@@ -97,9 +96,7 @@ interface BenchCliOptions extends Partial<BenchArguments> {
   check?: string[];
   pricingJson?: unknown;
   featureModule?: string[];
-  requestSpec?: string[];
   expectSpec?: string[];
-  observeSpec?: string[];
   expectedMutationCalibrationJson?: unknown;
   progressionSeedJson?: unknown;
 }
@@ -107,19 +104,18 @@ interface BenchCliOptions extends Partial<BenchArguments> {
 function parseCli(argv: readonly string[]): BenchCliOptions {
   const strings = ['backend', 'track', 'levels', 'campaign-file', 'campaign-attempt-id',
     'campaign-admission-id', 'progression-resume-from', 'recipe', 'model', 'provider-route', 'max-output-tokens', 'pricing-json',
-    'repairs', 'max-stalled-repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
-    'agent-adapter', 'guidance', 'task-mode', 'skills', 'mutations',
+    'repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
+    'agent-adapter', 'guidance', 'task-mode', 'mutations',
     'mutation-shard-index', 'mutation-shard-count', 'mutation-resume-from',
     'mutation-checkpoint-out', 'mutation-baseline-bundle',
     'expected-mutation-calibration-json', 'mutation-max-runtime-minutes', 'seed-from',
     'seed-through', 'progression-seed-json',
     'parent-attempt-id', 'repair-from', 'repair-level', 'grade-from', 'grade-level'] as const;
-  const multiple = ['pack', 'check', 'feature-module', 'request-spec', 'expect-spec',
-    'observe-spec'] as const;
+  const multiple = ['pack', 'check', 'feature-module', 'expect-spec'] as const;
   const options = Object.fromEntries([
     ...strings.map(name => [name, { type: 'string' as const }]),
     ...multiple.map(name => [name, { type: 'string' as const, multiple: true }]),
-    ...['no-media', 'retain-backend', 'reference-mutation-only', 'production-quality', 'no-production-quality'].map(name =>
+    ...['no-media', 'retain-backend', 'reference-mutation-only', 'no-production-quality'].map(name =>
       [name, { type: 'boolean' as const }]),
   ]);
   const { values } = parseArgs({ args: [...argv.slice(2)], options, strict: true,
@@ -128,12 +124,11 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
   for (const [key, value] of Object.entries(values)) {
     parsed[key.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())] = value;
   }
-  for (const key of ['pack', 'check', 'featureModule', 'requestSpec', 'expectSpec',
-    'observeSpec']) {
+  for (const key of ['pack', 'check', 'featureModule', 'expectSpec']) {
     const value = parsed[key] as string[] | undefined;
     if (value) parsed[key] = value.flatMap(item => item.split(',').filter(Boolean));
   }
-  for (const key of ['repairs', 'maxStalledRepairs', 'maxBudgetUsd', 'maxOutputTokens', 'mutationShardIndex',
+  for (const key of ['repairs', 'maxBudgetUsd', 'maxOutputTokens', 'mutationShardIndex',
     'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel', 'gradeLevel', 'seedThrough']) {
     if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
   }
@@ -146,10 +141,8 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     if (typeof parsed[key] === 'string') parsed[key] = JSON.parse(parsed[key]);
   }
   if (typeof parsed.guidance === 'string') parsed.guidance = parseGuidanceMode(parsed.guidance);
-  if (typeof parsed.skills === 'string') parsed.skills = parsed.skills.split(',').filter(Boolean);
   if (parsed.noMedia === true) parsed.media = false;
   delete parsed.noMedia;
-  if (parsed.productionQuality && parsed.noProductionQuality) throw new Error('choose only one production-quality flag');
   if (parsed.noProductionQuality) parsed.productionQuality = false;
   delete parsed.noProductionQuality;
   return parsed as BenchCliOptions;
@@ -158,11 +151,11 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
 export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   const args: BenchArguments = { model: null, agentAdapter: 'claude-code',
     repairs: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
-    levelList: [], maxStalledRepairs: 3, guidance: 'prescribed', productionQuality: true, track: DEFAULT_TRACK,
+    levelList: [], guidance: 'prescribed', productionQuality: true, track: DEFAULT_TRACK,
     packIds: [], checkKeys: [], featureIds: [], requestedSpecifications: [],
     expectedSpecifications: [], observedSpecifications: [],
     mutationMaxRuntimeMinutes: 60 };
-  const { pack, check, pricingJson, featureModule, requestSpec, expectSpec, observeSpec,
+  const { pack, check, pricingJson, featureModule, expectSpec,
     expectedMutationCalibrationJson, progressionSeedJson, ...options } = parseCli(argv);
   Object.assign(args, options);
   if (args.gradeLevel !== undefined && (!args.gradeFrom
@@ -189,9 +182,7 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     args.pricing = validatePricingAuthority(pricingJson, { at: '--pricing-json' });
   }
   if (featureModule) args.featureIds = featureModule;
-  if (requestSpec) args.requestedSpecifications = requestSpec;
   if (expectSpec) args.expectedSpecifications = expectSpec;
-  if (observeSpec) args.observedSpecifications = observeSpec;
   args.levelsProvided = options.levels !== undefined;
   if (expectedMutationCalibrationJson !== undefined) {
     args.expectedMutationCalibration = expectedMutationCalibrationJson;
@@ -285,10 +276,6 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   }
   if (!Number.isSafeInteger(args.repairs) || args.repairs < 0) {
     throw new Error('--repairs must be a non-negative safe integer');
-  }
-  if (!Number.isInteger(args.maxStalledRepairs) || args.maxStalledRepairs < 0
-    || args.maxStalledRepairs > 20) {
-    throw new Error('--max-stalled-repairs must be an integer from 0 through 20');
   }
   if (args.maxBudgetUsd !== undefined
     && (!Number.isFinite(args.maxBudgetUsd) || args.maxBudgetUsd <= 0)) {

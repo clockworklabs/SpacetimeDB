@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { readArtifactPayload } from '../src/evidence/artifacts.js';
-import { acquireResourceLock, createBackendLease, readBackendLease,
+import { acquireResourceLocks, createBackendLease, readBackendLease,
   writeBackendLease, type BackendLease } from '../src/runtime/backend-lease.js';
 import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
   validateSupervisorState, type SupervisorState } from '../src/runtime/recovery.js';
@@ -23,8 +23,8 @@ function fixture({ state = 'active' }: { state?: BackendLease['state'] } = {}) {
     track: 'ecommerce', runIndex: 0, database: 'app_recovery',
     container: { name: 'stack-bench-postgres', id: 'postgres-id' } });
   lease.state = state;
-  lease.resources.locks.push(acquireResourceLock({ root: locks,
-    key: 'slot:ecommerce:postgres:run0', lease }));
+  lease.resources.locks.push(...acquireResourceLocks({ root: locks,
+    keys: ['slot:ecommerce:postgres:run0'], lease }));
   writeBackendLease(leasePath, lease);
   const supervisor: SupervisorState = { version: SUPERVISOR_STATE_VERSION, runId: lease.runId,
     backend: lease.backend, runtimeDir: resolve(join(runtimeRoot, 'private')),

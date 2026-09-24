@@ -28,12 +28,6 @@ export const REPAIR_ORDERS = ['declared', 'shuffled'] as const;
 
 export type RepairOrder = typeof REPAIR_ORDERS[number];
 
-export interface RepairPlanInput {
-  selection: RepairSelection;
-  budget: RepairBudget;
-  order?: RepairOrder;
-}
-
 export interface RepairPlan extends Record<string, unknown> {
   selection: RepairSelection;
   budget: RepairBudget;

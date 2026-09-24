@@ -60,14 +60,14 @@ export function controllerRuntimeEnvironment(source: NodeJS.ProcessEnv = process
 
 export function controllerRuntimeCommand(args: string[], source: NodeJS.ProcessEnv = process.env) {
   if (!source.STACK_BENCH_COMPOSE_FILE || !source.STACK_BENCH_STATE_ROOT
-    || !source.STACK_BENCH_CONTROLLER_IMAGE || !(source.STACK_BENCH_BUILD_IMAGE ?? source.STACK_BENCH_IMAGE)) {
+    || !source.STACK_BENCH_CONTROLLER_IMAGE || !source.STACK_BENCH_BUILD_IMAGE) {
     throw new Error('controller launch requires the setup environment and appliance Compose file');
   }
   const ownership = randomUUID();
   const containerName = `stack-bench-controller-${ownership}`;
   const ownershipLabel = `io.spacetimedb.stack-bench.controller-owner=${ownership}`;
   const env: NodeJS.ProcessEnv = { ...controllerChildEnvironment(source, { requireAgentAuth: false }),
-    STACK_BENCH_BUILD_IMAGE: source.STACK_BENCH_BUILD_IMAGE ?? source.STACK_BENCH_IMAGE };
+    STACK_BENCH_BUILD_IMAGE: source.STACK_BENCH_BUILD_IMAGE };
   return { executable: 'docker', containerName, ownershipLabel,
     args: ['compose', '-f', source.STACK_BENCH_COMPOSE_FILE, 'run', '--rm', '--no-deps',
       '--name', containerName, '--label', ownershipLabel, 'controller', ...args],

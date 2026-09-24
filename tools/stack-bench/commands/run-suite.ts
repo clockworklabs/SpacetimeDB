@@ -84,8 +84,6 @@ type RunArguments = {
   media: boolean;
   runIndex: number;
   track: string;
-  packIds: string[];
-  checkKeys: string[];
   observation: Observation;
   recipe?: string;
   recipeTask?: RecipeTaskArgument;
@@ -299,7 +297,6 @@ function parseArgs(argv: string[]): RunArguments {
     'credential-aliases-json': { type: 'string' }, 'regression-checks-json': { type: 'string' },
     observation: { type: 'string' }, 'source-sha256': { type: 'string' },
     'no-media': { type: 'boolean' }, track: { type: 'string' },
-    pack: { type: 'string', multiple: true }, check: { type: 'string', multiple: true },
     'restart-spec': { type: 'string' }, 'application-failure-json': { type: 'string' },
     'run-index': { type: 'string' }, 'no-reset': { type: 'boolean' },
     'retry-inconclusive': { type: 'boolean' },
@@ -311,8 +308,6 @@ function parseArgs(argv: string[]): RunArguments {
     retryInconclusive: values['retry-inconclusive'] ?? false,
     media: !(values['no-media'] ?? false), runIndex: Number(values['run-index'] ?? 0),
     track: values.track ?? DEFAULT_TRACK,
-    packIds: (values.pack ?? []).flatMap(value => value.split(',').filter(Boolean)),
-    checkKeys: (values.check ?? []).flatMap(value => value.split(',').filter(Boolean)),
     observation: parseObservation(values.observation ?? 'scored'),
     recipe: values.recipe,
     recipeTask: values['recipe-task-json'] === undefined ? undefined : JSON.parse(values['recipe-task-json']),
@@ -715,7 +710,7 @@ function checkActions(args: RunArguments): ActionsPayload | null {
   rmSync(out, { force: true });
   try {
     run('node', [compiledEntrypoint('commands', 'check-actions.js'), '--backend', args.backend,
-      '--url', args.url, '--app', args.app ?? '.', '--track', args.track, '--out', out, '--quiet',
+      '--url', args.url, '--track', args.track, '--out', out, '--quiet',
       '--parent-attempt-id', args.bundleArtifactId]);
   } catch { /* non-zero exit means something is missing; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
@@ -836,13 +831,10 @@ async function main() {
   args.databaseLease = databaseLeaseForGrading(args.backend);
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, Number(args.level), args.recipeTask?.recipe ?? args.recipe);
-  if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {
-    throw new Error('--pack and --check require a recipe-bound level');
-  }
   const selectedTask = recipeBinding
     ? (args.recipeTask
         ? resolveBoundRecipeTaskRequest(recipeBinding, args.recipeTask)
-        : createBoundRecipeTaskRequest(recipeBinding, args))
+        : createBoundRecipeTaskRequest(recipeBinding))
     : null;
   let selection = selectObservationScope(selectedTask, args.observation);
   if (args.sourceSha256) {

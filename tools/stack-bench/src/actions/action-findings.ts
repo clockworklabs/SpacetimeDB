@@ -152,7 +152,6 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
 export const FAILED_FINDING_KINDS = Object.freeze(Object.keys(FAILED_FINDINGS).sort()) as readonly FailedFindingKind[];
 export const INCONCLUSIVE_FINDING_KINDS = Object.freeze(
   Object.keys(INCONCLUSIVE_FINDINGS).sort()) as readonly InconclusiveFindingKind[];
-export const FINDING_KINDS = Object.freeze([...FAILED_FINDING_KINDS, ...INCONCLUSIVE_FINDING_KINDS].sort()) as readonly FindingKind[];
 
 export function finding<K extends FindingKind>(kind: K, fields: FindingFields[K]): Finding {
   return { kind, fields } as Finding;

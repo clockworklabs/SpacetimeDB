@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ActionApplicationFailure, ActionInconclusive } from '../src/actions/action-contract.js';
-import { FAILED_FINDING_KINDS, FINDING_KINDS, INCONCLUSIVE_FINDING_KINDS, finding, findingStatus,
+import { FAILED_FINDING_KINDS, INCONCLUSIVE_FINDING_KINDS, finding, findingStatus,
   isFinding, renderFinding, renderRepairFinding } from '../src/actions/action-findings.js';
 import type { Finding, FindingKind } from '../src/actions/action-findings.js';
 import { fail, inconclusive } from '../src/actions/actor-action-runtime.js';
 import { assertAgentVisibleText } from '../src/composition/agent-visible-contract.js';
+
+const FINDING_KINDS = [...FAILED_FINDING_KINDS, ...INCONCLUSIVE_FINDING_KINDS].sort();
 
 // One sample per kind. The sample values are the shapes an executor has:
 // contract names, actor labels, action ids, numbers, statuses. `detail` is
@@ -115,7 +117,6 @@ test('repair findings retain measured quantities without changing evidence or pr
 });
 
 test('the catalog partitions into application failures and unmeasured outcomes', () => {
-  assert.deepEqual([...FAILED_FINDING_KINDS, ...INCONCLUSIVE_FINDING_KINDS].sort(), [...FINDING_KINDS]);
   assert.equal(new Set(FINDING_KINDS).size, FINDING_KINDS.length);
   for (const kind of FAILED_FINDING_KINDS) assert.equal(findingStatus(SAMPLES[kind]), 'failed');
   for (const kind of INCONCLUSIVE_FINDING_KINDS) assert.equal(findingStatus(SAMPLES[kind]), 'inconclusive');

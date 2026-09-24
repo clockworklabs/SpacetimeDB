@@ -106,9 +106,6 @@ export function validateReferenceRegistry(registry: unknown,
     }
     const fixture = value as unknown as ReferenceFixture;
     const label = fixture.id ?? '<unnamed>';
-    if ('status' in fixture || 'blockedReason' in fixture) {
-      issues.push(`${label}: authored lifecycle fields are not supported`);
-    }
     if (typeof fixture.id !== 'string' || !fixture.id || ids.has(fixture.id)) issues.push(`${label}: id is missing or duplicated`);
     ids.add(fixture.id);
     if (!BACKENDS.has(fixture.backend)) issues.push(`${label}: invalid backend`);

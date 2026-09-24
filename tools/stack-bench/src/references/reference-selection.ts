@@ -3,11 +3,6 @@ import type { ReferenceFixture, ReferenceRegistry } from './reference-fixtures.j
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import type { RecipeBinding, RecipeRequest } from '../composition/recipe-release.js';
 import { loadTrack } from '../composition/tracks.js';
-import { validateConditionReference, type ConditionReference } from '../campaigns/condition-compiler.js';
-
-export function parseReferenceCondition(value: string | undefined): ConditionReference | undefined {
-  return value === undefined ? undefined : validateConditionReference(JSON.parse(value), 'reference condition');
-}
 
 export interface ReferenceSelectionArgs {
   backend: string;

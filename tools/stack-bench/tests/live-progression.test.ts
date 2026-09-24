@@ -32,11 +32,13 @@ import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { createCampaignState, claimNextAttempt, finishCampaignExecution,
   scheduleTimeContinuation } from '../src/campaigns/campaign-scheduler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import type { RepairPlanInput } from '../src/progression/repair-plan.js';
+import type { RepairPlan } from '../src/progression/repair-plan.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { synchronizeProgressionSummary } from '../commands/bench.js';
 import { aggregateRunOutcome, runExitCode } from '../src/evidence/outcomes.js';
 import type { BenchmarkRunRecord, RunLevelRecord } from '../src/evidence/benchmark-run.js';
+
+type RepairPlanInput = Pick<RepairPlan, 'selection' | 'budget'> & { order?: RepairPlan['order'] };
 
 test('interrupted repair summaries retain failure identity and charge the recorded depth', () => {
   const compiled = compileProgressionInput(definition());

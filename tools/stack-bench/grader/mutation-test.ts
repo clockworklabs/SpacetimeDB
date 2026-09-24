@@ -117,9 +117,9 @@ const GRADER = join(HERE, "grade.js");
 export function parseMutationArgs(argv: readonly string[]): ParsedMutationArgs {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
     app: { type: 'string' }, url: { type: 'string' }, mutations: { type: 'string' },
-    level: { type: 'string' }, spec: { type: 'string' }, backend: { type: 'string' },
+    level: { type: 'string' }, backend: { type: 'string' },
     track: { type: 'string' }, recipe: { type: 'string' },
-    'selected-check': { type: 'string', multiple: true }, 'db-name': { type: 'string' },
+    'selected-check': { type: 'string', multiple: true },
     'run-index': { type: 'string' },
     'restart-spec': { type: 'string' }, out: { type: 'string' }, 'parent-attempt-id': { type: 'string' },
     'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
@@ -128,8 +128,8 @@ export function parseMutationArgs(argv: readonly string[]): ParsedMutationArgs {
     'max-runtime-minutes': { type: 'string' }, 'image-id': { type: 'string' },
   } });
   const a: MutationArgs = { app: values.app, url: values.url, mutations: values.mutations,
-    level: values.level, spec: values.spec, backend: values.backend, track: values.track,
-    recipe: values.recipe, selectedCheckKeys: values['selected-check'], dbName: values['db-name'],
+    level: values.level, backend: values.backend, track: values.track,
+    recipe: values.recipe, selectedCheckKeys: values['selected-check'],
     runIndex: values['run-index'] ?? '0',
     restartSpec: values['restart-spec'] === undefined ? undefined
       : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
@@ -486,12 +486,6 @@ async function main(): Promise<void> {
   for (const [scenario, mutations] of groupMutationsByScenario(spec)) {
     const declaredSpec = resolveMutationScenarioPath(scenario);
     groups.set(declaredSpec, mutations);
-  }
-  if (args.spec) {
-    const requested = resolve(args.spec);
-    if (groups.size !== 1 || !groups.has(requested)) {
-      throw new Error('--spec conflicts with the mutation manifest scenario selection');
-    }
   }
   // Hosted apps serve this build; development servers compile client source on demand.
   const clientDist = `${CODING_CONTAINER_APP_ROOT}/client/dist`;

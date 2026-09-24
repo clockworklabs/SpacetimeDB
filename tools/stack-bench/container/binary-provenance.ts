@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
-import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { binarySourceIdentity, SOURCE_IDENTITY_SCHEME }
-  from '../src/releases/release-source.js';
+import { SOURCE_IDENTITY_SCHEME } from '../src/releases/release-source.js';
 import { STACK_BENCH_RUNNER_PLATFORM } from '../src/runtime/runner-environment.js';
 
 export const RUST_BUILDER_IMAGE =
@@ -161,26 +160,6 @@ function option(args: string[], name: string): string {
 
 function main(): void {
   const [command, ...args] = process.argv.slice(2);
-  if (command === 'source') {
-    const repo = resolve(option(args, '--repo'));
-    console.log(JSON.stringify(binarySourceIdentity(repo), null, 2));
-    return;
-  }
-  if (command === 'record') {
-    const repo = resolve(option(args, '--repo'));
-    const stackBenchRoot = join(repo, 'tools', 'stack-bench');
-    const source = JSON.parse(readFileSync(resolve(option(args, '--source-file')), 'utf8'));
-    const current = binarySourceIdentity(repo);
-    assertBinarySourceUnchanged(source, current);
-    const manifest = createBinaryProvenance(stackBenchRoot, source);
-    const path = provenancePath(stackBenchRoot);
-    const temporary = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
-    try { renameSync(temporary, path); }
-    catch (error) { rmSync(temporary, { force: true }); throw error; }
-    console.log(`recorded ${path}`);
-    return;
-  }
   if (command === 'record-snapshot') {
     // The Docker source stage records this identity before compiling the same
     // immutable Git archive. This path needs no host-built binary or Git metadata.
@@ -195,7 +174,7 @@ function main(): void {
     console.log('verified SpacetimeDB CLI and standalone binary provenance');
     return;
   }
-  throw new Error('Usage: binary-provenance source --repo PATH | record --repo PATH --source-file PATH | verify --root PATH --source-sha256 SHA256');
+  throw new Error('Usage: binary-provenance record-snapshot --root PATH --source-file PATH | verify --root PATH --source-sha256 SHA256');
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

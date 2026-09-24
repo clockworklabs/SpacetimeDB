@@ -140,7 +140,7 @@ test('dashboard runtime launch uses the existing Compose controller with exact o
     STACK_BENCH_COMPOSE_FILE: '/opt/stack-bench/appliance/docker-compose.yaml',
     STACK_BENCH_STATE_ROOT: '/var/lib/docker/volumes/stack-bench-state/_data',
     STACK_BENCH_CONTROLLER_IMAGE: `sha256:${'a'.repeat(64)}`,
-    STACK_BENCH_IMAGE: `sha256:${'b'.repeat(64)}`,
+    STACK_BENCH_BUILD_IMAGE: `sha256:${'b'.repeat(64)}`,
     ANTHROPIC_API_KEY: 'ambient-secret',
   });
   assert.equal(command.executable, 'docker');

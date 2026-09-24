@@ -22,9 +22,6 @@ test('the reference registry binds its current fixtures and provenance', () => {
   escapedFixture.source = { basePath: 'reference-apps/old', patchPath: 'reference-apps/old.json' };
   assert(validateReferenceRegistry(escaped).issues.some(issue =>
     issue.includes('source overlays are not supported')));
-  escapedFixture.status = 'candidate';
-  assert(validateReferenceRegistry(escaped).issues.some(issue =>
-    issue.includes('lifecycle fields are not supported')));
 });
 
 test('reference validation contains malformed input and unsafe execution paths', () => {

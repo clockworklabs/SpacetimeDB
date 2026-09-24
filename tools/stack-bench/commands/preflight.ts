@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { parsePreflightArgs, printPreflightReport } from './preflight-cli.js';
-import { runPreflight, writePreflightReport } from '../src/runtime/preflight.js';
+import { runPreflight } from '../src/runtime/preflight.js';
 
 let request;
 try {
@@ -13,7 +13,5 @@ try {
 }
 
 const report = runPreflight(request);
-if (request.report) writePreflightReport(request.report, report);
-if (request.json) console.log(JSON.stringify(report, null, 2));
-else printPreflightReport(report);
+printPreflightReport(report);
 process.exitCode = report.ok ? 0 : 1;

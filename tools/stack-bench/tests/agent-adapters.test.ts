@@ -35,7 +35,7 @@ test('production framing follows every coding adapter but not model-free control
       ...(routed ? { providerRoute: 'openai', maxOutputTokens: 8192 } : {}) };
     const enabled = agentRequestArgv(adapter, { ...input, productionQuality: true });
     const legacy = agentRequestArgv(adapter, input);
-    assert.equal(enabled.includes('--production-quality'), Boolean(adapter.provider));
+    assert.equal(enabled.includes('--no-production-quality'), false);
     assert.equal(legacy.includes('--no-production-quality'), Boolean(adapter.provider));
     const flag = (name: string) => legacy.includes(name) ? legacy[legacy.indexOf(name) + 1] : undefined;
     assert.equal(flag('--provider-route'), routed ? 'openai' : undefined);

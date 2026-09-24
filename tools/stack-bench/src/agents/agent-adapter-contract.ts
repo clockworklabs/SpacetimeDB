@@ -154,7 +154,7 @@ export function agentRequestArgv(adapter: AgentAdapter, request: AgentRequest): 
     '--level', String(request.level), '--app', request.app, '--track', request.track,
     '--run-index', String(request.runIndex), '--model', request.model,
     '--guidance', request.guidance,
-    ...(adapter.provider ? [request.productionQuality ? '--production-quality' : '--no-production-quality'] : []),
+    ...(adapter.provider && !request.productionQuality ? ['--no-production-quality'] : []),
     ...(providerRoute ? ['--provider-route', providerRoute] : []),
     ...(maxOutputTokens ? ['--max-output-tokens', String(maxOutputTokens)] : []),
     ...(request.recipe ? ['--recipe', request.recipe] : []),

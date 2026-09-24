@@ -24,14 +24,10 @@ export function applyAgentCredential<TArgs extends AgentCredentialArgs>(
 ): void {
   const adapterFileVariable = adapter.apiKeyEnvironmentVariable
     ? `${adapter.apiKeyEnvironmentVariable}_FILE` : null;
-  const configuredKeyFile = (args.apiKeyFile ? resolve(args.apiKeyFile) : null)
-    ?? (env.STACK_BENCH_API_KEY_FILE ? resolve(env.STACK_BENCH_API_KEY_FILE) : null)
+  const configuredKeyFile = (env.STACK_BENCH_API_KEY_FILE ? resolve(env.STACK_BENCH_API_KEY_FILE) : null)
     ?? (adapterFileVariable && env[adapterFileVariable] ? resolve(env[adapterFileVariable]) : null);
-  if ((args.apiKey || configuredKeyFile) && !adapter.apiKeyEnvironmentVariable) {
+  if (configuredKeyFile && !adapter.apiKeyEnvironmentVariable) {
     throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
-  }
-  if (args.apiKey && configuredKeyFile) {
-    throw new Error('use only one of --api-key and --api-key-file');
   }
   if (configuredKeyFile) {
     const value = read(configuredKeyFile, 'utf8').trim();

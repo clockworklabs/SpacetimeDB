@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
   indexMutationReport, mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
-  isRetryableMutationResult,
+  isRetryableMutationResult, readMutationManifest,
   releaseScenarioCheckKeys, resolveMutationFile, resolveMutationScenarioPath,
   reusableMutationBaseline,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.js';
@@ -194,7 +196,17 @@ test('a mutation can declare exact targets across multiple features', () => {
     targets: ['check.b', 'check.c'],
   };
   assert.equal(validateMutationDefinitions([crossFeature]).ok, true);
-  assert.equal(validateMutationDefinitions([{ ...crossFeature, breaks: 7, kills: ['b'] }]).ok, false);
+  const directory = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-manifest-'));
+  try {
+    const manifest = join(directory, 'mutations.json');
+    writeFileSync(manifest, JSON.stringify({ schemaVersion: 3, fixtureSha256: 'a'.repeat(64),
+      backend: 'postgres', track: 'ecommerce', mutations: [{ id: 'cross-feature',
+        edits: [{ file: 'src/app.ts', find: 'correct', replace: 'broken' }],
+        targets: ['check.b', 'check.c'], breaks: 7, kills: ['b'] }] }));
+    assert.throws(() => readMutationManifest(manifest), /unknown fields: breaks, kills/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
   const baseline = { total: 2, max: 2, features: [
     { id: 7, criteria: [report({ b: true }).features[0]!.criteria[0]!] },
     { id: 8, criteria: [report({ c: true }).features[0]!.criteria[0]!] },

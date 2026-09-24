@@ -88,11 +88,9 @@ interface AgentArgs {
   credentialAliases?: Readonly<Record<string, string>>;
   recipe?: string;
   recipeTask?: RecipeTaskRequest;
-  thinking?: string;
   maxBudgetUsd?: number;
   skills?: string[];
   skillIdentity?: ResolvedSkills;
-  apiKey?: string;
   printPrompt?: boolean;
 }
 
@@ -313,17 +311,15 @@ function ambientEnv(): Record<string, string | undefined> {
 export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   const strings = ['provider', 'provider-route', 'max-output-tokens', 'mode', 'track', 'backend', 'level', 'app', 'run-index', 'model',
     'pricing-json', 'guidance', 'guidance-document-json', 'credential-aliases-json',
-    'recipe', 'recipe-task-json', 'thinking', 'max-budget-usd', 'skills', 'skills-json',
-    'skill-identity-json', 'api-key'] as const;
+    'recipe', 'recipe-task-json', 'max-budget-usd', 'skills-json',
+    'skill-identity-json'] as const;
   const { values: rawValues } = parseNodeArgs({ args: [...argv.slice(2)], options: Object.fromEntries([
     ...strings.map(name => [name, { type: 'string' as const }]),
     ['print-prompt', { type: 'boolean' as const }],
-    ['production-quality', { type: 'boolean' as const }],
     ['no-production-quality', { type: 'boolean' as const }],
   ]), strict: true, allowPositionals: false });
   const values = rawValues as Partial<Record<(typeof strings)[number], string>>
-    & { 'print-prompt'?: boolean; 'production-quality'?: boolean; 'no-production-quality'?: boolean };
-  if (values['production-quality'] && values['no-production-quality']) throw new Error('choose only one production-quality flag');
+    & { 'print-prompt'?: boolean; 'no-production-quality'?: boolean };
   const mode = values.mode;
   if (mode !== 'build' && mode !== 'upgrade' && mode !== 'fix' && mode !== 'resume') {
     throw new Error('--mode must be build, upgrade, fix, or resume');
@@ -345,9 +341,6 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   const provider = parseCodingProvider(values.provider ?? 'anthropic');
   const codingProvider = CODING_PROVIDERS[provider];
   if (codingProvider.requiresBudget && !values.model) throw new Error(`--model is required for ${provider}`);
-  if (codingProvider.executable !== 'claude' && values.thinking) {
-    throw new Error(`${provider} uses STACK_BENCH_EFFORT, not --thinking`);
-  }
   const providerRoute = validateProviderRoute(provider, values['provider-route']);
   const maxOutputTokens = validateProviderOutputLimit(provider,
     values['max-output-tokens'] === undefined ? undefined : Number(values['max-output-tokens']));
@@ -357,12 +350,8 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   if (maxBudgetUsd !== undefined && (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
   }
-  if (values.skills !== undefined && values['skills-json'] !== undefined) {
-    throw new Error('--skills and --skills-json cannot be used together');
-  }
-  const skills = values.skills?.split(',').map(skill => skill.trim()).filter(Boolean)
-    ?? (values['skills-json'] === undefined ? undefined
-      : stringArray(values['skills-json'], '--skills-json'));
+  const skills = values['skills-json'] === undefined ? undefined
+    : stringArray(values['skills-json'], '--skills-json');
   let pricing = values['pricing-json'] === undefined
     ? undefined : validatePricingAuthority(JSON.parse(values['pricing-json']), { at: '--pricing-json' });
   if (pricing === undefined && maxBudgetUsd !== undefined) {
@@ -386,13 +375,11 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
     ...(values['recipe-task-json'] ? {
       recipeTask: JSON.parse(values['recipe-task-json']) as RecipeTaskRequest,
     } : {}),
-    ...(values.thinking ? { thinking: values.thinking } : {}),
     ...(maxBudgetUsd !== undefined ? { maxBudgetUsd } : {}),
     ...(skills ? { skills } : {}),
     ...(values['skill-identity-json'] ? {
       skillIdentity: validateSkillIdentity(JSON.parse(values['skill-identity-json'])),
     } : {}),
-    ...(values['api-key'] ? { apiKey: values['api-key'] } : {}),
     ...(values['print-prompt'] ? { printPrompt: true } : {}) };
 }
 
@@ -831,7 +818,7 @@ async function main() {
     ?? process.env[`${CODING_PROVIDERS[args.provider].apiKeyEnvironment}_FILE`];
   let selectedAuthMode: string | null = null;
   const invocationEnvironment = (baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
-    const refreshed = refreshCodingInvocationCredentials({ provider: args.provider, apiKey: args.apiKey,
+    const refreshed = refreshCodingInvocationCredentials({ provider: args.provider,
       keyFile: selectedKeyFile, expectedMode: selectedAuthMode, env: baseEnv });
     selectedAuthMode = refreshed.mode;
     return refreshed.env;
@@ -849,8 +836,8 @@ async function main() {
     // Send prompts through stdin to avoid the Windows command-line limit.
     const cliEnv = { ...process.env,
       // Absent unless deliberately overridden — see THINKING_TOKENS above.
-      ...(args.provider === 'anthropic' && (args.thinking ?? THINKING_TOKENS)
-        ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
+      ...(args.provider === 'anthropic' && THINKING_TOKENS
+        ? { MAX_THINKING_TOKENS: THINKING_TOKENS }
         : {}),
       // Keep the CLI fixed across the campaign.
       ...(args.provider === 'anthropic' ? { DISABLE_AUTOUPDATER: '1',
@@ -940,7 +927,7 @@ async function main() {
       provider: args.provider,
       ...(args.providerRoute ? { providerRoute: args.providerRoute } : {}),
       ...(args.maxOutputTokens ? { maxOutputTokens: args.maxOutputTokens } : {}),
-      thinkingTokens: args.provider !== 'anthropic' ? null : (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
+      thinkingTokens: args.provider !== 'anthropic' ? null : THINKING_TOKENS ? Number(THINKING_TOKENS) : 'cli default',
       permissionMode: args.provider === 'anthropic' ? 'acceptEdits' : 'container-isolated',
       effort: EFFORT,
       skills: selectedSkills,

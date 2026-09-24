@@ -22,8 +22,6 @@ export interface MutationDefinition {
   edits?: unknown;
   targets?: unknown;
   scenario?: unknown;
-  breaks?: unknown;
-  kills?: unknown;
   [key: string]: unknown;
 }
 
@@ -103,8 +101,7 @@ function loadedMutationEdit(value: unknown, at: string): LoadedMutationEdit {
 
 function loadedMutation(value: unknown, at: string): LoadedMutationDefinition {
   if (!object(value)) throw new Error(`${at} must be an object`);
-  exact(value, new Set(['id', 'desc', 'file', 'find', 'replace', 'edits', 'targets', 'scenario', 'breaks',
-    'kills']), at);
+  exact(value, new Set(['id', 'desc', 'file', 'find', 'replace', 'edits', 'targets', 'scenario']), at);
   if (!Array.isArray(value.edits) || value.edits.length === 0) {
     throw new Error(`${at}.edits must be a non-empty array`);
   }
@@ -376,9 +373,6 @@ export function validateMutationDefinitions(
       || mutation.targets.some(target => typeof target !== 'string' || !target.trim())
       || new Set(mutation.targets).size !== mutation.targets.length) {
       issues.push({ kind: 'bad_targets', mutation: mutation.id });
-    }
-    if (mutation.breaks != null || mutation.kills != null) {
-      issues.push({ kind: 'legacy_targets', mutation: mutation.id });
     }
     if (edits.length === 0) issues.push({ kind: 'missing_edits', mutation: mutation.id });
     for (const edit of edits) {

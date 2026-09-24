@@ -101,6 +101,7 @@ import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-roo
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import { runningContainerIdentity } from '../src/runtime/container-identity.js';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
+const MAX_STALLED_REPAIRS = 3;
 
 type UnknownRecord = Record<string, unknown>;
 type ContaminationAudit = { kind: 'contaminated' | 'harness_failure'; evidence: string[];
@@ -2407,8 +2408,7 @@ async function main() {
     const pauseForRepeatedFindings = () => {
       if (args.progression) return false;
       repairProgress = repairProgressState(repairProgress, bundle);
-      if (args.maxStalledRepairs === 0
-        || repairProgress.stalledRounds < args.maxStalledRepairs) return false;
+      if (repairProgress.stalledRounds < MAX_STALLED_REPAIRS) return false;
       repairStopReason = 'repeated-findings';
       console.log(`    pausing after ${repairProgress.stalledRounds} repairs `
         + 'with the same failed checks and no score gain');
@@ -2902,7 +2902,7 @@ async function main() {
       status: repairStatus,
       limit: repairLimit,
       used: priorRepairs + repairs,
-      ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
+      ...(!args.progression ? { stallLimitRounds: MAX_STALLED_REPAIRS } : {}),
       stopReason,
       ...(nodeRepairs ? { nodeRepairs } : {}),
       ...(repairCandidate ? { candidate: repairCandidate } : {}),

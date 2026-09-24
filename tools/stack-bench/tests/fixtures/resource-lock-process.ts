@@ -1,4 +1,4 @@
-import { createBackendLease, acquireResourceLock,
+import { createBackendLease, acquireResourceLocks,
   resourceLockScope } from '../../src/runtime/backend-lease.js';
 
 const [root, runId, mode = 'acquire'] = process.argv.slice(2);
@@ -12,8 +12,8 @@ try {
     STACK_BENCH_APPLIANCE: '1',
     STACK_BENCH_RESOURCE_LOCK_DIR: root,
   });
-  lease.resources.locks.push(acquireResourceLock({
-    ...scope, key: 'slot:process-test:stub:run0', lease,
+  lease.resources.locks.push(...acquireResourceLocks({
+    ...scope, keys: ['slot:process-test:stub:run0'], lease,
   }));
   process.stdout.write('acquired\n');
   if (mode === 'hold') setInterval(() => {}, 1_000);

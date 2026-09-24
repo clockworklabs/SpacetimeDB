@@ -522,12 +522,6 @@ function lockedResources(input: ResourceLockTransaction): BackendResourceLock[] 
   return JSON.parse(result.stdout) as BackendResourceLock[];
 }
 
-export function acquireResourceLock(input: {
-  root: string; key: string; lease: BackendLease;
-}): BackendResourceLock {
-  return acquireResourceLocks({ ...input, keys: [input.key] })[0]!;
-}
-
 export function acquireResourceLocks(input: {
   root: string; keys: string[]; lease: BackendLease; capacity?: number | null;
 }): BackendResourceLock[] {

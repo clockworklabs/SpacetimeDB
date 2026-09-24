@@ -11,7 +11,6 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 interface CheckActionsArgs {
   backend?: string;
   url?: string;
-  app?: string;
   out?: string;
   track?: string;
   quiet?: boolean;
@@ -29,11 +28,11 @@ interface ActionResult {
 
 function parseArgs(argv: string[]): CheckActionsArgs {
   const { values } = parseNodeArgs({ args: argv.slice(2), options: {
-    backend: { type: 'string' }, url: { type: 'string' }, app: { type: 'string' },
+    backend: { type: 'string' }, url: { type: 'string' },
     out: { type: 'string' }, track: { type: 'string' }, quiet: { type: 'boolean' },
     'parent-attempt-id': { type: 'string' },
   } });
-  const a: CheckActionsArgs = { backend: values.backend, url: values.url, app: values.app,
+  const a: CheckActionsArgs = { backend: values.backend, url: values.url,
     out: values.out, track: values.track, quiet: values.quiet,
     parentAttemptId: values['parent-attempt-id'] };
   if (!a.backend) { console.error('--backend is required'); process.exit(2); }

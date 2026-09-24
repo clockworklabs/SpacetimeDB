@@ -27,11 +27,8 @@ export function parsePreflightArgs(
     guidance: { type: 'string' },
     pack: { type: 'string', multiple: true },
     check: { type: 'string', multiple: true },
-    image: { type: 'string' },
     'results-dir': { type: 'string' },
-    report: { type: 'string' },
     smoke: { type: 'boolean' },
-    json: { type: 'boolean' },
   } });
   const request: PreflightRequest = { backends: [], track: 'ecommerce', levels: '1', levelList: [],
     runIndex: 0, parallelism: 1,
@@ -50,11 +47,8 @@ export function parsePreflightArgs(
   if (values.guidance !== undefined) request.guidance = values.guidance;
   request.packIds = (values.pack ?? []).flatMap(splitList);
   request.checkKeys = (values.check ?? []).flatMap(splitList);
-  if (values.image !== undefined) request.image = values.image;
   if (values['results-dir'] !== undefined) request.resultsDir = resolve(values['results-dir']);
-  if (values.report !== undefined) request.report = resolve(values.report);
   request.smoke = values.smoke ?? false;
-  request.json = values.json;
   if (!request.backends.length) throw new Error('--backend is required (comma-separated values are accepted)');
   if (request.guidance !== 'neutral' && request.guidance !== 'prescribed') {
     throw new Error('--guidance must be neutral or prescribed');

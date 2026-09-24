@@ -153,11 +153,8 @@ function identity(profile: IdentityProfile, resolved: unknown): { id: string; co
   return { id: profile.id, contentSha256: sha256(canonicalDefinitionJson({ profile, resolved })) };
 }
 
-function validateIdentityFields(value: UnknownRecord, at: string, kind: string,
-  schemaVersions: number[] = [1]): void {
-  if (typeof value.schemaVersion !== 'number' || !schemaVersions.includes(value.schemaVersion)) {
-    fail(`${at}.schemaVersion`, `must be ${schemaVersions.join(' or ')}`);
-  }
+function validateIdentityFields(value: UnknownRecord, at: string, kind: string): void {
+  if (value.schemaVersion !== 1) fail(`${at}.schemaVersion`, 'must be 1');
   if (value.kind !== kind) fail(`${at}.kind`, `must be ${kind}`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
 }

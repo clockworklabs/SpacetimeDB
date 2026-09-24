@@ -12,8 +12,9 @@ import { progressionEngine, type ProgressionWorkAction }
   from '../src/progression/progression-engine.js';
 import type { CheckCategory } from '../src/composition/definition-compiler.js';
 import type { ProgressionState } from '../src/progression/progression-state.js';
-import type { RepairPlanInput } from '../src/progression/repair-plan.js';
+import type { RepairPlan } from '../src/progression/repair-plan.js';
 
+type RepairPlanInput = Pick<RepairPlan, 'selection' | 'budget'> & { order?: RepairPlan['order'] };
 type Outcome = 'pass' | 'fail' | 'blocked' | 'not-run';
 type Outcomes = Record<string, Outcome | Record<string, Outcome>>;
 

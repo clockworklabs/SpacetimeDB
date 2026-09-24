@@ -12,8 +12,7 @@ import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPaylo
 import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.js';
-import { resolveReferenceSelection, parseReferenceCondition } from './reference-selection.js';
-import type { ConditionReference } from '../campaigns/condition-compiler.js';
+import { resolveReferenceSelection } from './reference-selection.js';
 import { campaignSlotEnvironment } from '../campaigns/campaign-runtime.js';
 import { auditMutationWorkerRun, auditReferenceRun }
   from './reference-qualification-audit.js';
@@ -53,7 +52,6 @@ import type { ProgressionRecipeSelections }
 
 // The flags a qualification run is launched with.
 export interface ReferenceQualificationArgs {
-  condition?: ConditionReference;
   backend?: string;
   track: string;
   level: number;
@@ -76,7 +74,6 @@ export interface ReferenceQualificationArgs {
   artifactDirectory?: string;
   runsRoot?: string;
   timeoutMs?: number;
-  spacetimePortExplicit?: boolean;
   mutationBaselineBundle?: string;
   mutationCheckpoint?: string | null;
   mutationCheckpointDir?: string;
@@ -190,29 +187,26 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   ReferenceQualificationArgs {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
     backend: { type: 'string' }, track: { type: 'string' }, level: { type: 'string' },
-    'condition-json': { type: 'string' },
     recipe: { type: 'string' }, 'feature-catalog': { type: 'string' },
     repetitions: { type: 'string' }, 'run-index': { type: 'string' },
-    'spacetime-port': { type: 'string' }, 'timeout-minutes': { type: 'string' },
+    'timeout-minutes': { type: 'string' },
     mutations: { type: 'boolean' }, 'full-mutations': { type: 'boolean' },
     'timing-only': { type: 'boolean' },
     'selected-check': { type: 'string', multiple: true },
     'mutation-id': { type: 'string', multiple: true }, 'mutation-workers': { type: 'string' },
     'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
-    'mutation-checkpoint-dir': { type: 'string' }, 'mutation-checkpoint': { type: 'string' },
+    'mutation-checkpoint': { type: 'string' },
     'mutation-baseline-bundle': { type: 'string' }, 'mutation-max-runtime-minutes': { type: 'string' },
     'reference-mutation-only': { type: 'boolean' }, out: { type: 'string' },
   } });
   const number = (value: string | undefined, fallback: number | null): number | null =>
     value === undefined ? fallback : Number(value);
   const args: ReferenceQualificationArgs = {
-    condition: parseReferenceCondition(values['condition-json']),
     backend: values.backend, track: values.track ?? 'ecommerce',
     level: number(values.level, 1) as number, recipe: values.recipe,
     featureCatalog: values['feature-catalog'], repetitions: number(values.repetitions, 2) as number,
     runIndex: number(values['run-index'], 0) as number,
-    spacetimePort: number(values['spacetime-port'], null),
-    spacetimePortExplicit: values['spacetime-port'] !== undefined,
+    spacetimePort: null,
     timeoutMinutes: number(values['timeout-minutes'], null),
     mutations: values.mutations ?? false, fullMutations: values['full-mutations'],
     timingOnly: values['timing-only'] ?? false,
@@ -220,7 +214,6 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     mutationIds: values['mutation-id'] ?? [], mutationWorkers: number(values['mutation-workers'], 1) as number,
     mutationShardIndex: number(values['mutation-shard-index'], null),
     mutationShardCount: number(values['mutation-shard-count'], null),
-    mutationCheckpointDir: values['mutation-checkpoint-dir'] && resolve(values['mutation-checkpoint-dir']),
     mutationCheckpoint: values['mutation-checkpoint'] && resolve(values['mutation-checkpoint']),
     mutationBaselineBundle: values['mutation-baseline-bundle'] && resolve(values['mutation-baseline-bundle']),
     mutationMaxRuntimeMinutes: number(values['mutation-max-runtime-minutes'], 60) as number,
@@ -249,7 +242,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   if (args.mutationWorkers > 1 && !args.mutations) {
     throw new Error('--mutation-workers above 1 requires --mutations');
   }
-  if ((args.mutationCheckpointDir || args.mutationCheckpoint || args.mutationBaselineBundle)
+  if ((args.mutationCheckpoint || args.mutationBaselineBundle)
       && !args.mutations) {
     throw new Error('mutation control options require --mutations');
   }
@@ -307,10 +300,10 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   }
   args.spacetimePort ??= DEFAULT_SPACETIME_PORT + args.runIndex;
   if (!Number.isInteger(args.spacetimePort) || args.spacetimePort < 1024 || args.spacetimePort > 65535) {
-    throw new Error('--spacetime-port must be an integer from 1024 through 65535');
+    throw new Error('the Spacetime port must be an integer from 1024 through 65535');
   }
   if (args.mutations && args.spacetimePort + args.mutationWorkers - 1 > 65535) {
-    throw new Error('--spacetime-port plus mutation worker offsets must not exceed 65535');
+    throw new Error('the Spacetime port plus mutation worker offsets must not exceed 65535');
   }
   args.timeoutMinutes ??= args.mutations ? 120 : 60;
   const maximumTimeoutMinutes = args.mutations ? 180 : 240;
@@ -643,9 +636,6 @@ export function parallelMutationChildArgv(args: ReferenceQualificationArgs,
   }
   for (const mutationId of args.mutationIds ?? []) {
     argv.push('--mutation-id', String(mutationId));
-  }
-  if (args.spacetimePortExplicit) {
-    argv.push('--spacetime-port', String(Number(args.spacetimePort) + workerIndex));
   }
   return argv;
 }

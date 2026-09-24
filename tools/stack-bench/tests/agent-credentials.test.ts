@@ -12,7 +12,7 @@ test('credential resolution reads only the selected adapter secret file', () => 
   for (const { args, env, path } of [
     { args: {}, env: { PROVIDER_API_KEY_FILE: '/selected/key', ANTHROPIC_API_KEY_FILE: '/unrelated/key' },
       path: '/selected/key' },
-    { args: { apiKeyFile: 'relative-key' }, env: {}, path: 'relative-key' },
+    { args: {}, env: { STACK_BENCH_API_KEY_FILE: 'relative-key' }, path: 'relative-key' },
   ] as { args: AgentCredentialArgs; env: Record<string, string>; path: string }[]) {
     let readPath: string | null = null;
     applyAgentCredential(args, paid, { env, read: file => { readPath = file; return 'selected-secret\n'; } });
@@ -27,16 +27,12 @@ test('model-free adapters ignore unrelated provider secrets but reject explicit 
   applyAgentCredential(args, modelFree,
     { env: { ANTHROPIC_API_KEY_FILE: '/mounted/by-appliance' } });
   assert.deepEqual(args, {});
-  assert.throws(() => applyAgentCredential({ apiKeyFile: '/explicit/key' }, modelFree,
-    { env: {}, read: () => 'secret' }), /does not accept an API key/);
   assert.throws(() => applyAgentCredential({}, modelFree,
     { env: { STACK_BENCH_API_KEY_FILE: '/generic/key' }, read: () => 'secret' }),
   /does not accept an API key/);
 });
 
-test('credential resolution rejects ambiguous and empty selected credentials', () => {
-  assert.throws(() => applyAgentCredential({ apiKey: 'direct', apiKeyFile: '/key' }, paid,
-    { env: {}, read: () => 'file' }), /only one/);
-  assert.throws(() => applyAgentCredential({ apiKeyFile: '/key' }, paid,
-    { env: {}, read: () => '\n' }), /is empty/);
+test('credential resolution rejects empty selected credentials', () => {
+  assert.throws(() => applyAgentCredential({}, paid,
+    { env: { PROVIDER_API_KEY_FILE: '/key' }, read: () => '\n' }), /is empty/);
 });

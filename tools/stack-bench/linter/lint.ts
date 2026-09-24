@@ -34,7 +34,6 @@ export interface LintArgs {
   url?: string;
   track: string;
   level: number;
-  json: boolean;
   headed: boolean;
   out?: string;
   label?: string;
@@ -59,20 +58,20 @@ export interface LintWalkContext {
 function parseArgs(argv: string[]): LintArgs {
   const { values } = parseNodeArgs({ args: argv.slice(2), options: {
     url: { type: 'string' }, track: { type: 'string' }, level: { type: 'string' },
-    json: { type: 'boolean' }, out: { type: 'string' }, label: { type: 'string' },
+    out: { type: 'string' }, label: { type: 'string' },
     'parent-attempt-id': { type: 'string' }, 'credential-aliases-json': { type: 'string' },
     hook: { type: 'string', multiple: true }, 'selected-hooks': { type: 'boolean' },
     headed: { type: 'boolean' },
   } });
   const args: LintArgs = { url: values.url, track: values.track ?? DEFAULT_TRACK,
-    level: values.level === undefined ? 1 : Number(values.level), json: values.json ?? false,
+    level: values.level === undefined ? 1 : Number(values.level),
     headed: values.headed ?? false, out: values.out, label: values.label,
     parentAttemptId: values['parent-attempt-id'],
     credentialAliases: values['credential-aliases-json'] === undefined
       ? undefined : JSON.parse(values['credential-aliases-json']),
     hooks: values.hook ?? (values['selected-hooks'] ? [] : undefined) };
   if (!args.url || !Number.isInteger(args.level) || args.level < 1) {
-    console.error('Usage: node dist/linter/lint.js --url <app-url> --level <N> [--json] [--headed]');
+    console.error('Usage: node dist/linter/lint.js --url <app-url> --level <N> [--headed]');
     process.exit(2);
   }
   return args;
@@ -237,22 +236,18 @@ async function run() {
       identities: emptyArtifactIdentities(),
       payload: report,
     });
-    if (!args.json) console.log(`\nLint report written to ${args.out}`);
+    console.log(`\nLint report written to ${args.out}`);
   }
-  if (args.json) {
-    console.log(JSON.stringify(report, null, 2));
-  } else {
-    for (const r of results) {
-      console.log(`${r.status.padEnd(9)} ${r.id}${r.detail ? ` — ${r.detail}` : ''}`);
-    }
-    console.log(failures.length === 0
-      ? report.counts.pass > 0
-        ? `\nAPPLICATION CONTRACT PASS (${report.counts.pass} interfaces)`
-        : report.counts.scenario > 0
-          ? `\nAPPLICATION CONTRACT DEFERRED (${report.counts.scenario} interfaces checked during feature grading)`
-          : '\nNO STANDALONE INTERFACES SELECTED'
-      : `\nAPPLICATION CONTRACT FAIL (${failures.length} interfaces missing or blocked)`);
+  for (const r of results) {
+    console.log(`${r.status.padEnd(9)} ${r.id}${r.detail ? ` — ${r.detail}` : ''}`);
   }
+  console.log(failures.length === 0
+    ? report.counts.pass > 0
+      ? `\nAPPLICATION CONTRACT PASS (${report.counts.pass} interfaces)`
+      : report.counts.scenario > 0
+        ? `\nAPPLICATION CONTRACT DEFERRED (${report.counts.scenario} interfaces checked during feature grading)`
+        : '\nNO STANDALONE INTERFACES SELECTED'
+    : `\nAPPLICATION CONTRACT FAIL (${failures.length} interfaces missing or blocked)`);
   process.exit(failures.length === 0 ? 0 : 1);
 }
 

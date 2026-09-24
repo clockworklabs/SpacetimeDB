@@ -13,6 +13,7 @@ import type { PublicBackendLease } from '../src/runtime/backend-lease.js';
 import type { RepairLevel, RepairOutcome } from '../src/runtime/repair-grant.js';
 import type { LevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { CODING_CONTAINER_BUG_REPORT_FILE } from '../src/runtime/coding-container-policy.js';
+import { CHECK_EVIDENCE_SCHEMA_VERSION } from '../src/evidence/check-evidence.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
 const WORK = mkdtempSync(join(tmpdir(), 'stack-bench-loop-'));
@@ -160,8 +161,8 @@ check('lint, action, and grade evidence are children of the bundle',
 const gradedFeatures = gradeArtifact.payload?.features ?? [];
 check('grade artifacts retain typed setup, criterion, and action evidence',
   gradedFeatures.length > 0
-    && gradedFeatures.every(feature => feature.setupEvidence?.schemaVersion === 1
-      && (feature.criteria ?? []).every(criterion => criterion.evidence?.schemaVersion === 1
+    && gradedFeatures.every(feature => feature.setupEvidence?.schemaVersion === CHECK_EVIDENCE_SCHEMA_VERSION
+      && (feature.criteria ?? []).every(criterion => criterion.evidence?.schemaVersion === CHECK_EVIDENCE_SCHEMA_VERSION
         && Array.isArray(criterion.evidence.actions))),
   JSON.stringify(gradedFeatures.map(feature => ({ id: feature.id,
     setup: feature.setupEvidence?.status,

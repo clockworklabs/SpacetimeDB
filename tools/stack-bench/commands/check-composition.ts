@@ -68,16 +68,7 @@ export function checkCompositions(
 }
 
 function main(): void {
-  const args = process.argv.slice(2);
-  let trackName: string | null = null;
-  for (let index = 0; index < args.length; index += 1) {
-    const value = args[index + 1];
-    if (args[index] === '--track' && value) {
-      trackName = value;
-      index += 1;
-    } else throw new Error(`unknown or incomplete argument ${args[index]}`);
-  }
-  const summary = checkCompositions({ trackName });
+  const summary = checkCompositions();
   if (!summary.length) throw new Error('no composition sources found');
   for (const row of summary) {
     console.log(`${row.track}: ${row.packs} packs, ${row.fixtures} fixtures, ${row.recipes} recipes, ${row.checks} selected checks, ${row.selections} recipe selections`);

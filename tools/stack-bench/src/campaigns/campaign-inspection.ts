@@ -28,16 +28,11 @@ interface Score {
   max: number;
 }
 
-interface CheckFailure {
-  stableKey?: string;
-  description?: string;
-}
-
 interface RunOutcome {
   kind?: string;
   phase?: string;
   reason?: string | null;
-  appFailures?: Array<string | CheckFailure>;
+  appFailures?: string[];
   inconclusive?: unknown[];
 }
 
@@ -57,12 +52,11 @@ interface RunLevel {
   durationSec?: number | null;
   buildCostUsd?: number | null;
   repairCostUsd?: number | null;
-  firstBuild?: Score & { outcome?: RunOutcome; missed?: Array<string | CheckFailure> };
+  firstBuild?: Score & { outcome?: RunOutcome; missed?: string[] };
   repair?: { used?: number; status?: string | null; nodeRepairs?: RunNodeRepairs[] };
   regression?: { score?: number | null; max?: number | null } | null;
   resumedRepair?: unknown;
   outcome?: RunOutcome;
-  missed?: Array<string | CheckFailure>;
 }
 
 interface BenchmarkRunPayload {
@@ -187,9 +181,8 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
           ? { used: level.repair.nodeRepairs.reduce((total, node) => total + (node.used ?? 0), 0) }
           : null,
         continued: level.resumedRepair !== undefined && level.resumedRepair !== null,
-        failures: (level.outcome?.appFailures
-          ?? (level.graded ? [] : level.missed ?? level.firstBuild?.missed ?? [])).map(item =>
-          typeof item === 'string' ? item : item.stableKey ?? item.description ?? 'Failed check'),
+        failures: level.outcome?.appFailures
+          ?? (level.graded ? [] : level.firstBuild?.missed ?? []),
       }; }),
     };
   } catch (error) {

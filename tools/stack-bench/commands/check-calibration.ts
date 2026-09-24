@@ -3,7 +3,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
 
 import { compileCalibrationDefinition, compileCalibrationFile } from '../src/composition/calibration-compiler.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
@@ -50,10 +49,7 @@ export function checkCalibrations(
 }
 
 function main() {
-  const { values } = parseArgs({ args: process.argv.slice(2), options: {
-    track: { type: 'string' },
-  }, strict: true, allowPositionals: false });
-  const results = checkCalibrations({ trackName: values.track ?? null });
+  const results = checkCalibrations();
   for (const result of results) {
     console.log(`${result.track}: ${result.id}; ` +
       `${result.controls} controls, ${result.stacks} stacks, ${result.contentSha256.slice(0, 12)}`);

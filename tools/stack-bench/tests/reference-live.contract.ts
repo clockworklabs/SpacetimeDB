@@ -214,16 +214,13 @@ test('parallel Spacetime qualification derives an isolated listener port from th
     '--backend', 'spacetime', '--run-index', '0']);
   const parallel = parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'spacetime', '--run-index', '14']);
-  const explicit = parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'spacetime', '--run-index', '14', '--spacetime-port', '4411']);
 
   assert.equal(first.spacetimePort, 3310);
   assert.equal(parallel.spacetimePort, 3324);
   assert.notEqual(first.spacetimePort, parallel.spacetimePort);
-  assert.equal(explicit.spacetimePort, 4411);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'spacetime', '--mutations', '--full-mutations', '--mutation-workers', '2',
-    '--spacetime-port', '65535']), /worker offsets/);
+    '--run-index', '62225']), /worker offsets/);
 });
 
 test('parallel mutation qualification reserves bounded slots and exact child shards', () => {
@@ -491,7 +488,6 @@ test('modular reference qualification selects every exact check without prescrib
   const expectedSpecifications = valuesAfter(argv, '--expect-spec');
   const checkKeys = valuesAfter(argv, '--check');
 
-  assert.equal(argv.includes('--request-spec'), false);
   assert.equal(checkKeys.length, binding.release.checkCatalog.length);
   assert.equal(new Set(checkKeys).size, checkKeys.length);
   const task = createBoundRecipeTaskRequest(binding,
