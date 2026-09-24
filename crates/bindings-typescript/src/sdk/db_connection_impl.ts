@@ -1160,6 +1160,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#processMessage(data);
         }
       }
+    } catch (e) {
+      // A message that fails to apply (undecodable, or a callback threw)
+      // leaves the client cache inconsistent, and rethrowing from a WebSocket
+      // listener crashes Node hosts. Fail the connection instead: drop what is
+      // queued and close, so `onDisconnect` receives the error.
+      stdbLogger('error', 'Failed to process a server message', e);
+      this.#connectionError = toError(e);
+      this.#inboundQueueOffset = this.#inboundQueue.length;
+      this.isActive = false;
+      this.ws?.close();
     } finally {
       if (this.#inboundQueueOffset >= this.#inboundQueue.length) {
         this.#inboundQueue.length = 0;
