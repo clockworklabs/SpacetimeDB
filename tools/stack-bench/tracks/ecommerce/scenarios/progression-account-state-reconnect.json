@@ -11,7 +11,9 @@
       "setup": [
         { "do": "signUp", "actor": "shopper", "name": "pat" },
         { "do": "signIn", "actor": "peer", "name": "pat" },
-        { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } }
+        { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "click", "actor": "shopper", "testid": "cart-toggle", "unlessVisible": "cart-total" },
+        { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" }
       ],
       "criteria": [
         {
