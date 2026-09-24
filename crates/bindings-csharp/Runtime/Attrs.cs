@@ -1,26 +1,5 @@
 namespace SpacetimeDB
 {
-#if NET10_0_OR_GREATER
-    /// <summary>
-    /// Places the module contributions of the marker type's assembly in a namespace.
-    /// The consuming module chooses the placement; the marker may be any accessible type.
-    /// Requires .NET 10 and C# 14.
-    /// </summary>
-    /// <remarks>
-    /// An assembly may be mounted only once. Dependencies cannot declare mounts.
-    /// Named namespaces cannot contain lifecycle reducers, RLS filters, or nonempty
-    /// environment declarations. Dependencies without a mount register automatically in public.
-    /// </remarks>
-    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
-    public sealed class NamespaceAttribute(System.Type marker) : Attribute
-    {
-        public System.Type Marker { get; } = marker;
-
-        /// <summary>The C# member name and database namespace used for the mounted module.</summary>
-        public string Accessor { get; set; } = "";
-    }
-#endif
-
     /// <summary>Declares the complete environment schema for this module.</summary>
     [AttributeUsage(AttributeTargets.Struct)]
     public sealed class EnvAttribute : Attribute { }
@@ -251,9 +230,30 @@ namespace SpacetimeDB
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
     public sealed class HttpRouterAttribute() : Attribute { }
 
+#if NET10_0_OR_GREATER
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
     public sealed class ModuleDescriptorAttribute(Type descriptorType) : Attribute
     {
         public Type DescriptorType { get; } = descriptorType;
     }
+
+    /// <summary>
+    /// Places the module contributions of the marker type's assembly in a namespace.
+    /// The consuming module chooses the placement; the marker may be any accessible type.
+    /// Requires .NET 10 and C# 14.
+    /// </summary>
+    /// <remarks>
+    /// An assembly may be mounted only once. Dependencies cannot declare mounts.
+    /// Named namespaces cannot contain lifecycle reducers, RLS filters, or nonempty
+    /// environment declarations. Dependencies without a mount register automatically in public.
+    /// </remarks>
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public sealed class NamespaceAttribute(System.Type marker) : Attribute
+    {
+        public System.Type Marker { get; } = marker;
+
+        /// <summary>The C# member name and database namespace used for the mounted module.</summary>
+        public string Accessor { get; set; } = "";
+    }
+#endif
 }
