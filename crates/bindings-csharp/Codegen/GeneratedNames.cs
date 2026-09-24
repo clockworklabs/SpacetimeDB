@@ -19,8 +19,12 @@ sealed class GeneratedNames(GeneratedNameCollisionReporter report)
         var name = SyntaxFactory.ParseToken(identifier).ValueText;
         var key = (scope, name);
         if (declarations.TryGetValue(key, out var previous))
+        {
             report(scope, name, previous, contributor);
+        }
         else
+        {
             declarations.Add(key, contributor);
+        }
     }
 }
