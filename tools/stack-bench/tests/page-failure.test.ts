@@ -21,13 +21,24 @@ test('a locator timeout names the awaited control, not its container', () => {
   assert.equal(finding.kind, 'page-timeout');
   assert.equal(finding.fields.control, 'category-units');
   assert.equal(pageFailure(message).message, 'the category-units control inside the category-row control did not become available in time');
-});
 
-test('a timeout without a named control stays a page timeout', () => {
-  const finding = findingOf('page.goto: Timeout 30000ms exceeded.');
-  assert.equal(finding.kind, 'page-timeout');
-  assert.equal(finding.fields.control, undefined);
+  // A timeout without a named control stays a page timeout.
+  const unnamed = findingOf('page.goto: Timeout 30000ms exceeded.');
+  assert.equal(unnamed.kind, 'page-timeout');
+  assert.equal(unnamed.fields.control, undefined);
   assert.equal(pageFailure('page.goto: Timeout 30000ms exceeded.').message, 'the page did not respond in time');
+
+  // Alternative controls are not reported as nested controls.
+  for (const operation of ['or', 'and']) {
+    const alternative = `locator.waitFor: Timeout waiting for locator('[data-role="signup-username"]').${operation}(locator('[data-role="signup-toggle"]'))`;
+    const failure = pageFailure(alternative);
+    assert.doesNotMatch(failure.message, /inside/);
+    if (operation === 'or') assert.match(failure.message, /signup-username, signup-toggle/);
+    else assert.doesNotMatch(failure.message, /signup-toggle|signup-username/);
+    const finding = findingOf(alternative);
+    assert.equal(finding.kind, 'page-timeout');
+    if (finding.kind === 'page-timeout') assert.equal(finding.fields.scope, undefined);
+  }
 });
 
 
@@ -48,19 +59,6 @@ test('scoped failures expose the parent control without probe text or raw errors
   }
 });
 
-
-test('alternative controls are not reported as nested controls', () => {
-  for (const operation of ['or', 'and']) {
-    const message = `locator.waitFor: Timeout waiting for locator('[data-role="signup-username"]').${operation}(locator('[data-role="signup-toggle"]'))`;
-    const failure = pageFailure(message);
-    assert.doesNotMatch(failure.message, /inside/);
-    if (operation === 'or') assert.match(failure.message, /signup-username, signup-toggle/);
-    else assert.doesNotMatch(failure.message, /signup-toggle|signup-username/);
-    const finding = findingOf(message);
-    assert.equal(finding.kind, 'page-timeout');
-    if (finding.kind === 'page-timeout') assert.equal(finding.fields.scope, undefined);
-  }
-});
 
 test('real browser control failures score, but grader selector and script errors do not', async () => {
   const browser = await chromium.launch({ headless: true });

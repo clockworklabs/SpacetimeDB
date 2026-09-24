@@ -1,79 +1,57 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { openCrashReducerConnection } from '../src/stacks/spacetime-crash-transport.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { checkoutStateSchema, type CheckoutState } from '../src/stacks/checkout-state.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 test('baseline checkout retains completion evidence and cannot confirm queued or lost responses', async () => {
-  for (const status of [200, 201, 204, 202, 409, 500, null]) {
+  type Receipt = { outcome: string; protocol: string; actor: string; action: string; status: number | null };
+  const confirm = async (request: { url: string; method: string; responseContract?: string },
+    fetch: () => Promise<unknown>, writeUrl = request.url) => {
     let unsettled = false;
     const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
       do: 'confirmCheckout', actor: 'buyer',
     }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] },
+        writes: [{ url: writeUrl, headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { markCheckoutUnsettled: () => { unsettled = true; } },
-      'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
-        request: () => ({ url: 'http://app/checkout', method: 'POST' }), fetch: async () => {
-          if (status === null) throw new Error('response lost');
-          return { ok: status < 300, status, text: async () => 'private response body' };
-        } },
+      'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }), request: () => request, fetch },
     } });
+    assert(!JSON.stringify(result).includes('private'));
+    return { result, unsettled, receipt: result.observation as Receipt };
+  };
+  for (const status of [200, 201, 204, 202, 409, 500, null]) {
+    const { result, unsettled, receipt } = await confirm({ url: 'http://app/checkout', method: 'POST' }, async () => {
+      if (status === null) throw new Error('response lost');
+      return { ok: status < 300, status, text: async () => 'private response body' };
+    }, 'http://app/session');
     const confirmed = status !== null && [200, 201, 204].includes(status);
     assert.equal(result.status, confirmed ? 'passed' : status === null || status === 202 ? 'inconclusive' : 'failed');
     assert.equal(unsettled, !confirmed);
-    const receipt = result.observation as { outcome: string; protocol: string; actor: string; action: string };
     assert.equal(receipt.outcome, confirmed ? 'committed' : 'not-confirmed');
     assert.equal(receipt.protocol, 'http');
     assert.equal(receipt.actor, 'buyer');
     assert.equal(receipt.action, 'checkout');
-    assert(!JSON.stringify(result).includes('private'));
   }
-});
-
-test('every draft crash baseline confirms then reconciles checkout before reloading', () => {
-  for (const boundary of ['application', 'database']) {
-    const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
-      `tracks/ecommerce/scenarios/diagnostic-checkout-${boundary}-crash.json`), 'utf8'));
-    for (const feature of scenario.features) {
-      const steps = feature.setup as Array<{ do: string; before?: string; prepared?: string; testid?: string }>;
-      const index = steps.findIndex(step => step.do === 'confirmCheckout');
-      assert(index > 0);
-      assert.equal(steps[index - 1]!.do, 'dbRecordCheckout');
-      assert.deepEqual(steps.slice(index + 1, index + 3).map(step => step.do), ['dbExpectCheckout', 'reload']);
-      assert.equal(steps[index + 1]!.before, 'baseline-before');
-      assert.equal(steps[index + 1]!.prepared, 'baseline-prepared');
-      assert(!steps.some(step => step.testid === 'checkout-submit'));
-      assert(feature.criteria.every((criterion: { points: number }) => criterion.points === 0));
-    }
+  // A native mutation is confirmed by its envelope, and the receipt keeps the actual HTTP status.
+  for (const mode of ['committed', 'refused', 'function-error', 'malformed', 'lost-body']) {
+    const { result, unsettled, receipt } = await confirm(
+      { url: 'http://app/api/mutation', method: 'POST', responseContract: 'convex-mutation' },
+      async () => ({ ok: true, status: 200, text: async () => {
+        if (mode === 'lost-body') throw new Error('private body unavailable');
+        return mode === 'committed' ? '{"status":"success","value":null}'
+          : mode === 'refused' ? '{"status":"error","errorMessage":"private refusal","errorData":null}'
+            : mode === 'function-error' ? '{"status":"error","errorMessage":"private failure"}' : '{}';
+      } }));
+    assert.equal(result.status, mode === 'committed' ? 'passed'
+      : mode === 'lost-body' ? 'inconclusive' : 'failed', mode);
+    assert.equal(receipt.status, mode === 'lost-body' ? null : 200);
+    assert.equal(receipt.protocol, 'convex-mutation');
+    assert.equal(receipt.outcome, mode === 'committed' ? 'committed' : 'not-confirmed');
+    assert.equal(unsettled, mode !== 'committed');
   }
-});
-
-test('scored crash trials clear retained carts before the next stock baseline', () => {
-  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
-    'tracks/ecommerce/scenarios/progression-checkout-crash.json'), 'utf8'));
-  const steps = scenario.features[0].setup as Array<{
-    do: string; actor?: string; testid?: string; ifAvailable?: boolean;
-    within?: number; equals?: number; in?: { contains: string };
-  }>;
-  const crashes = steps.flatMap((step, index) => step.do === 'crashCheckout' ? [index] : []);
-  assert.equal(crashes.length, 2, 'cleanup must not add crashes');
-  for (const index of crashes) {
-    const nextSnapshot = steps.findIndex((step, i) => i > index && step.do === 'dbRecordCheckout');
-    const cleanup = steps.slice(index + 1, nextSnapshot);
-    const removals = cleanup.filter(step => step.testid === 'cart-remove');
-    assert.deepEqual(removals.map(step => step.in?.contains), ['Keyboard', 'Coffee Grinder']);
-    assert(removals.every(step => step.actor === steps[index]!.actor && step.ifAvailable));
-    assert(cleanup.some(step => step.do === 'expectNumber' && step.testid === 'cart-count'
-      && step.actor === steps[index]!.actor && step.equals === 0));
-  }
-  assert(steps.filter(step => step.do === 'click' && step.ifAvailable)
-    .every(step => step.within !== undefined && step.within <= 1000),
-  'optional navigation must not consume the reservation window');
 });
 
 class Socket extends EventTarget {
@@ -393,36 +371,6 @@ test('crash verdict without a measured observation remains inconclusive', async 
       do: 'expectCrashCheckout', from: 'missing', verdict,
     }, { capabilities: { 'browser-observation': { recorded: new Map() } } });
     assert.equal(result.status, 'inconclusive');
-  }
-});
-
-test('native checkout requires classified completion and retains the actual HTTP status', async () => {
-  for (const mode of ['committed', 'refused', 'function-error', 'malformed', 'lost-body']) {
-    let unsettled = false;
-    const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
-      do: 'confirmCheckout', actor: 'buyer',
-    }, { capabilities: {
-      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] }, context: { cookies: async () => [] },
-        writes: [{ url: 'http://app/api/mutation', headers: { authorization: 'Bearer private-token' } }] }) },
-      'database-read': { markCheckoutUnsettled: () => { unsettled = true; } },
-      'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
-        request: () => ({ url: 'http://app/api/mutation', method: 'POST', responseContract: 'convex-mutation' }),
-        fetch: async () => ({ ok: true, status: 200, text: async () => {
-          if (mode === 'lost-body') throw new Error('private body unavailable');
-          return mode === 'committed' ? '{"status":"success","value":null}'
-            : mode === 'refused' ? '{"status":"error","errorMessage":"private refusal","errorData":null}'
-              : mode === 'function-error' ? '{"status":"error","errorMessage":"private failure"}' : '{}';
-        } }),
-      },
-    } });
-    assert.equal(result.status, mode === 'committed' ? 'passed'
-      : mode === 'lost-body' ? 'inconclusive' : 'failed', mode);
-    const receipt = result.observation as { status: number | null; protocol: string; outcome: string };
-    assert.equal(receipt.status, mode === 'lost-body' ? null : 200);
-    assert.equal(receipt.protocol, 'convex-mutation');
-    assert.equal(receipt.outcome, mode === 'committed' ? 'committed' : 'not-confirmed');
-    assert.equal(unsettled, mode !== 'committed');
-    assert(!JSON.stringify(result).includes('private'));
   }
 });
 

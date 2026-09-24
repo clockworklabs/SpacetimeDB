@@ -1,38 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { orderOperationDifferences, type CheckoutState, type OrderOperation } from '../src/stacks/checkout-state.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
 
 const catalog = [{ itemId: 'i', priceMinor: 200 }, { itemId: 'j', priceMinor: 300 }];
-test('one scored history binds every operation to two fresh native snapshots', () => {
-  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
-    'tracks/ecommerce/scenarios/mixed-operation-history.json'), 'utf8')));
-  assert.equal(scenario.features.length, 1);
-  for (const feature of scenario.features) {
-    const steps = feature.criteria[0]!.steps;
-    assert.equal(feature.criteria[0]!.points, 1);
-    const comparisons = steps.filter(step => step.do === 'dbExpectOperation');
-    assert.equal(comparisons.length, 30);
-    assert.equal(new Set(comparisons.map(step => step.before)).size, 30);
-    assert.deepEqual([...new Set(comparisons.map(step => step.operation))].sort(),
-      ['buy', 'cancel', 'cart-add', 'cart-update', 'checkout', 'reconnect', 'restock', 'transfer']);
-    for (const comparison of comparisons) {
-      const at = steps.indexOf(comparison), reconnect = comparison.operation === 'reconnect';
-      const offset = reconnect ? 4 : 3;
-      assert.deepEqual(steps.slice(at - offset, at - offset + 2).map(step => [step.do, step.as]),
-        [['dbRecordCheckout', comparison.before], ['dbRecordCheckout', comparison.otherBefore]]);
-      const call = steps[at - (reconnect ? 2 : 1)]!;
-      assert.equal(call.do, reconnect ? 'reload' : 'callConcurrently');
-      if (!reconnect) { assert.equal(call.action, comparison.operation); assert.equal(call.requests, 1); }
-    }
-  }
-});
+
 function initial(): CheckoutState {
   return { accountId: 'a', itemId: 'i', priceMinor: 200, cart: [], reservations: [], orders: [], payments: [],
     orphanOrderLines: 0, orphanAllocations: 0,

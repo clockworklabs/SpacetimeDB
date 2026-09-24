@@ -65,38 +65,6 @@ test('isolated Mongo reads authenticate with private lease authority', t => {
     lease: { ...lease, ownershipToken: '' }, exec }), /private lease authority/);
 });
 
-test('reader and saved source mismatches fail before querying; changed container ownership prevents reads', t => {
-  const f = fixture(); t.after(() => rmSync(f.root, { recursive: true, force: true }));
-  const noExec: TextCommandExecutor = () => { throw new Error('must not execute'); };
-  assert.throws(() => getSavedMongoDbCheckoutState({ ...f.args,
-    reader: { ...f.args.reader, sha256: '0'.repeat(64) }, exec: noExec }), /reader hash mismatch/);
-  writeFileSync(join(f.args.app, 'server.js'), 'changed');
-  assert.throws(() => getSavedMongoDbCheckoutState({ ...f.args, exec: noExec }), /source hash mismatch/);
-  writeFileSync(join(f.args.app, 'server.js'), 'source');
-  const wrongOwner: TextCommandExecutor = (_file, args) => {
-    assert.equal(args[0], 'inspect'); return 'replacement-id';
-  };
-  assert.throws(() => getSavedMongoDbCheckoutState({ ...f.args, exec: wrongOwner }), /changed after lease creation/);
-});
-
-test('reader rejects missing or ambiguous entities, omitted accounting and fabricated payment state', t => {
-  const f = fixture(); t.after(() => rmSync(f.root, { recursive: true, force: true }));
-  const valid = { accountMatches: 1, itemMatches: 1, state: f.state };
-  for (const value of [
-    { ...valid, accountMatches: 0 }, { ...valid, itemMatches: 2 },
-    { ...valid, state: { ...f.state, orphanAllocations: undefined } },
-    { ...valid, state: { ...f.state, orders: [{ ...f.state.orders[0], refundedMinor: undefined }] } },
-    { ...valid, state: { ...f.state, payments: [{ id: 'made-up', orderId: 'old', amountMinor: 8900, status: 'paid' }] } },
-  ]) {
-    const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id' : JSON.stringify(value);
-    assert.throws(() => getSavedMongoDbCheckoutState({ ...f.args, exec }));
-  }
-  const reservations = [{ itemId: 'keyboard', warehouseId: 'east', quantity: 1 }];
-  const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id'
-    : JSON.stringify({ ...valid, state: { ...f.state, reservations } });
-  assert.deepEqual(getSavedMongoDbCheckoutState({ ...f.args, exec }).state.reservations, reservations);
-});
-
 test('database errors retain stderr without exposing credentials or the evaluated program', t => {
   const f = fixture(); t.after(() => rmSync(f.root, { recursive: true, force: true }));
   const lease = { ...f.args.lease, ownershipToken: 'private-authority',

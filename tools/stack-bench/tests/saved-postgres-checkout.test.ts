@@ -6,13 +6,17 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
+import { getSavedMongoDbCheckoutState } from '../src/stacks/backends/saved-mongodb-checkout.js';
 import { getSavedPostgresCheckoutState } from '../src/stacks/backends/saved-postgres-checkout.js';
 
-function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'saved-postgres-reader-')), app = join(root, 'app');
+const READERS = { postgres: getSavedPostgresCheckoutState, mongodb: getSavedMongoDbCheckoutState } as const;
+
+function fixture(backend: keyof typeof READERS = 'postgres') {
+  const root = mkdtempSync(join(tmpdir(), `saved-${backend}-reader-`)), app = join(root, 'app');
   mkdirSync(app); writeFileSync(join(app, 'server.js'), 'source');
   const sourceSha256 = hashAppSource(app).sha256;
-  const mapping = JSON.stringify({ sourceSha256, sql: "SELECT :'account', :'item'" });
+  const mapping = JSON.stringify(backend === 'postgres'
+    ? { sourceSha256, sql: "SELECT :'account', :'item'" } : { sourceSha256, script: 'return {};' });
   const reader = { path: join(root, 'reader.json'), sha256: createHash('sha256').update(mapping).digest('hex') };
   writeFileSync(reader.path, mapping);
   const state = { accountId: 'buyer', itemId: 'keyboard', priceMinor: 8900, cart: [],
@@ -47,33 +51,39 @@ test('saved reader uses the exact owned container and one read-only repeatable s
 });
 
 test('reader and saved source mismatches fail before querying; changed container ownership prevents reads', t => {
-  const f = fixture(); t.after(() => rmSync(f.root, { recursive: true, force: true }));
-  const noExec: TextCommandExecutor = () => { throw new Error('must not execute'); };
-  assert.throws(() => getSavedPostgresCheckoutState({ ...f.args,
-    reader: { ...f.args.reader, sha256: '0'.repeat(64) }, exec: noExec }), /reader hash mismatch/);
-  writeFileSync(join(f.args.app, 'server.js'), 'changed');
-  assert.throws(() => getSavedPostgresCheckoutState({ ...f.args, exec: noExec }), /source hash mismatch/);
-  writeFileSync(join(f.args.app, 'server.js'), 'source');
-  const wrongOwner: TextCommandExecutor = (_file, args) => {
-    assert.equal(args[0], 'inspect'); return 'replacement-id';
-  };
-  assert.throws(() => getSavedPostgresCheckoutState({ ...f.args, exec: wrongOwner }), /changed after lease creation/);
+  for (const backend of ['postgres', 'mongodb'] as const) {
+    const f = fixture(backend); t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const read = READERS[backend];
+    const noExec: TextCommandExecutor = () => { throw new Error('must not execute'); };
+    assert.throws(() => read({ ...f.args,
+      reader: { ...f.args.reader, sha256: '0'.repeat(64) }, exec: noExec }), /reader hash mismatch/);
+    writeFileSync(join(f.args.app, 'server.js'), 'changed');
+    assert.throws(() => read({ ...f.args, exec: noExec }), /source hash mismatch/);
+    writeFileSync(join(f.args.app, 'server.js'), 'source');
+    const wrongOwner: TextCommandExecutor = (_file, args) => {
+      assert.equal(args[0], 'inspect'); return 'replacement-id';
+    };
+    assert.throws(() => read({ ...f.args, exec: wrongOwner }), /changed after lease creation/);
+  }
 });
 
 test('reader rejects missing or ambiguous entities, omitted accounting and fabricated payment state', t => {
-  const f = fixture(); t.after(() => rmSync(f.root, { recursive: true, force: true }));
-  const valid = { accountMatches: 1, itemMatches: 1, state: f.state };
-  for (const value of [
-    { ...valid, accountMatches: 0 }, { ...valid, itemMatches: 2 },
-    { ...valid, state: { ...f.state, orphanAllocations: undefined } },
-    { ...valid, state: { ...f.state, orders: [{ ...f.state.orders[0], refundedMinor: undefined }] } },
-    { ...valid, state: { ...f.state, payments: [{ id: 'made-up', orderId: 'old', amountMinor: 8900, status: 'paid' }] } },
-  ]) {
-    const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id' : JSON.stringify(value);
-    assert.throws(() => getSavedPostgresCheckoutState({ ...f.args, exec }));
+  for (const backend of ['postgres', 'mongodb'] as const) {
+    const f = fixture(backend); t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const read = READERS[backend];
+    const valid = { accountMatches: 1, itemMatches: 1, state: f.state };
+    for (const value of [
+      { ...valid, accountMatches: 0 }, { ...valid, itemMatches: 2 },
+      { ...valid, state: { ...f.state, orphanAllocations: undefined } },
+      { ...valid, state: { ...f.state, orders: [{ ...f.state.orders[0], refundedMinor: undefined }] } },
+      { ...valid, state: { ...f.state, payments: [{ id: 'made-up', orderId: 'old', amountMinor: 8900, status: 'paid' }] } },
+    ]) {
+      const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id' : JSON.stringify(value);
+      assert.throws(() => read({ ...f.args, exec }));
+    }
+    const reservations = [{ itemId: 'keyboard', warehouseId: 'east', quantity: 1 }];
+    const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id'
+      : JSON.stringify({ ...valid, state: { ...f.state, reservations } });
+    assert.deepEqual(read({ ...f.args, exec }).state.reservations, reservations);
   }
-  const reservations = [{ itemId: 'keyboard', warehouseId: 'east', quantity: 1 }];
-  const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id'
-    : JSON.stringify({ ...valid, state: { ...f.state, reservations } });
-  assert.deepEqual(getSavedPostgresCheckoutState({ ...f.args, exec }).state.reservations, reservations);
 });

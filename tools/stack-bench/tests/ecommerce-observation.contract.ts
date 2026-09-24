@@ -56,18 +56,6 @@ test('order ownership switches the same browser and reconciles the next write un
   ]);
 });
 
-test('catalog variants and pagination enter the declared observation surface', () => {
-  const variants = read('progression-catalog-management.json').features[0]!.criteria
-    .find(criterion => criterion.id === '622b')!;
-  assert.equal(variants.steps[0]!.do, 'openItem');
-  assert.equal(variants.steps[0]!.item, 'Travel Mug');
-  assert.equal(variants.steps[0]!.unlessVisible, 'item-variant');
-  const setup = read('progression-faceted-pagination.json').features[0]!.setup;
-  assert.deepEqual(setup.map(step => [step.do, step.testid, step.text, step.enter]), [
-    ['fill', 'minimum-price', '1', undefined], ['click', 'filter-apply', undefined, undefined],
-  ]);
-});
-
 test('scheduled-restock identifiers match each native interface and stay opaque in replay', () => {
   const text = readFileSync(join(STACK_BENCH_ROOT,
     'tracks/ecommerce/contracts/scheduled-restocks.md'), 'utf8');
@@ -109,17 +97,15 @@ test('restock observations use one pending row and a ledger delta without item-n
     const scenario = JSON.stringify(read(name));
     assert(!/"testid":"pending-restock-item","contains"/.test(scenario));
   }
-});
-
-test('overdraw failure cannot change the next transfer or authorization probe state', () => {
+  // An overdraw failure cannot change the next transfer or authorization probe state.
   const isolated = read('02-transfer-overdraw.json');
   const shared = read('02-strengthened.json');
   assert.deepEqual(isolated.features.flatMap(feature => feature.criteria).map(check => check.id), ['2c']);
   assert(!shared.features.flatMap(feature => feature.criteria).some(check => check.id === '2c'));
   assert.deepEqual(isolated.features[0]!.setup, shared.features.find(feature => feature.id === 2)!.setup);
-  const pack = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+  const integrity = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
     'tracks/ecommerce/composition/packs/spec-transactional-integrity.json'), 'utf8'));
-  assert.equal(pack.checks.find((check: { id: string }) => check.id === 'stock-transfer-overdraw').source,
+  assert.equal(integrity.checks.find((check: { id: string }) => check.id === 'stock-transfer-overdraw').source,
     'scenarios/02-transfer-overdraw.json');
 });
 
@@ -197,7 +183,14 @@ test('cart validation sends only a negative quantity and restores actor identity
       assert.equal(criterion.steps[index + 1]!.do, 'ensureSignedIn');
       assert.equal(criterion.steps[index + 1]!.actor, step.actor);
     });
+    // Access assertions read refreshed state after the direct write.
+    const result = criterion.steps.findIndex(step => step.do === 'expectActionOutcome');
+    assert(result >= 0);
+    assert.equal(criterion.steps[result + 1]!.do, 'reload');
+    assert(criterion.steps.slice(result + 1).some(step => step.do === 'expectNumber'
+      && step.testid === 'cart-quantity'));
   }
+  assert(feature.criteria[0]!.steps.some(step => step.do === 'reload' && step.actor === 'stranger'));
 });
 
 test('later-depth checks retain their own effects and independent controls', () => {

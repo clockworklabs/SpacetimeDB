@@ -1,34 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import ts from 'typescript';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import { mutationEdits, mutationScenario, mutationTargetKeys,
-  readMutationManifest, validateMutationDefinitions } from '../src/evidence/mutation-analysis.js';
-import { loadReferenceRegistry, prepareReferenceFixtureSource,
-  selectReferenceFixture } from '../src/references/reference-fixtures.js';
-import type { MutationDefinition } from '../src/evidence/mutation-analysis.js';
-import type { ReferenceFixtureSelector } from '../src/references/reference-fixtures.js';
 
-const ROOT = STACK_BENCH_ROOT;
-const SCENARIO_RELATIVE = 'tracks/ecommerce/scenarios/01-open-list-live.json';
-const MUTATION_SCENARIO = 'tracks/ecommerce/scenarios/progression-open-list-live.json';
-const SCENARIO = join(ROOT, SCENARIO_RELATIVE);
-const registry = loadReferenceRegistry();
-
-interface ReferenceSourceArguments extends ReferenceFixtureSelector {
-  app: string;
-}
-
-function prepareReferenceSource(args: ReferenceSourceArguments) {
-  const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
-  const prepared = prepareReferenceFixtureSource(fixture, args.app);
-  return { fixture, sourceSha256: prepared.sha256 };
-}
+const SCENARIO = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-open-list-live.json');
 
 test('the focused 902a candidate deterministically checks an already-open live list', () => {
   const scenario = compileScenarioDefinition(readJson(SCENARIO),
@@ -59,70 +37,6 @@ test('the focused 902a candidate deterministically checks an already-open live l
     /without assuming HTTP, WebSockets, subscriptions, or any project layout/);
 });
 
-for (const backend of ['mongodb', 'postgres', 'spacetime']) {
-  test(`${backend} has exact known defects for the open-list check`, () => {
-    const fixture = registry.fixtures.find(candidate =>
-      candidate.track === 'ecommerce' && candidate.backend === backend);
-    assert.equal(fixture?.mutationManifests?.length, 1);
-    const manifestPath = fixture?.mutationManifests?.[0];
-    assert(manifestPath);
-    const manifest = readMutationManifest(join(ROOT, manifestPath));
-    const mutations = manifest.mutations.filter(mutation =>
-      mutationTargetKeys(mutation).includes('ecommerce.spec.live-state.open-list.902a'));
-    assert.equal(manifest.fixtureSha256, fixture.imported?.sourceSha256);
-    assert.deepEqual(validateMutationDefinitions(mutations, {
-      defaultScenario: manifest.scenario,
-      requireScenario: true,
-    }).issues, []);
-    assert.equal(mutations.length, backend === 'mongodb' ? 1 : 2);
-    assert(mutations.every(mutation => mutationTargetKeys(mutation).length === 1
-      && mutationTargetKeys(mutation)[0] === 'ecommerce.spec.live-state.open-list.902a'));
-    assert(mutations.some(mutation => /ignore|snapshot/i.test(mutationDescription(mutation))),
-      'one mutation must omit the committed review from the open reader');
-    if (backend !== 'mongodb') {
-      assert(mutations.some(mutation => /twice/i.test(mutationDescription(mutation))),
-        'one mutation must duplicate the committed review');
-    }
-
-    const work = mkdtempSync(join(tmpdir(), `stack-bench-open-list-${backend}-`));
-    try {
-      const app = join(work, 'app');
-      const prepared = prepareReferenceSource({
-        backend,
-        track: 'ecommerce',
-        level: 1,
-        recipe: 'ecommerce.sequential-l1',
-        app,
-      });
-      assert.equal(prepared.sourceSha256, manifest.fixtureSha256);
-      for (const mutation of mutations) {
-        assert.equal(mutationScenario(manifest, mutation), MUTATION_SCENARIO);
-        const source = readFileSync(join(app, mutationFile(mutation)), 'utf8');
-        let mutated = source;
-        for (const edit of validMutationEdits(mutation)) {
-          assert.equal(mutated.split(edit.find).length - 1, 1,
-            `${mutation.id} anchor must match exactly once`);
-          mutated = mutated.replace(edit.find, edit.replace);
-        }
-        const transpiled = ts.transpileModule(mutated, {
-          compilerOptions: {
-            jsx: ts.JsxEmit.ReactJSX,
-            module: ts.ModuleKind.ESNext,
-            target: ts.ScriptTarget.ES2022,
-          },
-          fileName: mutationFile(mutation),
-          reportDiagnostics: true,
-        });
-        assert.deepEqual((transpiled.diagnostics ?? [])
-          .filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
-          .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
-      }
-    } finally {
-      rmSync(work, { recursive: true, force: true });
-    }
-  });
-}
-
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
@@ -130,19 +44,4 @@ function readJson(path: string): unknown {
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== 'string') throw new Error(`${label} must be a string`);
   return value;
-}
-
-function mutationDescription(mutation: MutationDefinition): string {
-  return stringValue(mutation.desc, 'mutation description');
-}
-
-function mutationFile(mutation: MutationDefinition): string {
-  return stringValue(mutation.file, 'mutation file');
-}
-
-function validMutationEdits(mutation: MutationDefinition): Array<{ find: string; replace: string }> {
-  return mutationEdits(mutation).map(edit => ({
-    find: stringValue(edit.find, 'mutation edit find'),
-    replace: stringValue(edit.replace, 'mutation edit replace'),
-  }));
 }

@@ -21,15 +21,13 @@ function captureFailure(received: ReceivedTransport) {
   assert.fail('Incomplete capture must remain inconclusive');
 }
 
-test('compressed SpacetimeDB frames decode to their message text', () => {
+test('compressed SpacetimeDB frames decode to their message text and other frames keep their bytes', () => {
   assert.equal(transportFrameText(Buffer.concat([Buffer.from([2]), gzipSync(message)])), message);
   assert.equal(transportFrameText(Buffer.concat([Buffer.from([1]), brotliCompressSync(message)])),
     message);
   assert.equal(transportFrameText(Buffer.concat([Buffer.from([0]), Buffer.from(message)])),
     `\u0000${message}`);
-});
-
-test('other frames keep their bytes', () => {
+  // Other frames keep their bytes.
   assert.equal(transportFrameText(message), message);
   assert.equal(transportFrameText(Buffer.from(message)), message);
   const socketIo = Buffer.from('2["chat",{"text":"hi"}]');

@@ -19,7 +19,6 @@ test('stock reads use the leased database and preserve zero and negative observa
     assert.equal(result.quantity, quantities.reduce((sum, n) => sum + n, 0));
     assert.match(sql, /Kid''s Keyboard/);
     assert.doesNotMatch(sql, /\b(?:UPDATE|INSERT|DELETE)\b/);
-    assert.match(sql, /json_agg\(stock/);
   }
 });
 

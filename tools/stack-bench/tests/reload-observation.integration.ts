@@ -55,9 +55,11 @@ test('reservation restart readback rejects returned stock with a lost cart entry
   try {
     for (const retained of [true, false]) {
       const page = await browser.newPage();
+      // The pending reservation holds one unit until the expiry wait returns it.
+      let expired = false;
       await page.route('http://reservation.test/', route => route.fulfill({ contentType: 'text/html',
         body: `<span id="current-user">durable-reservation</span>
-          <div id="item-card">Desk Lamp<span id="item-stock">100</span></div>
+          <div id="item-card">Desk Lamp<span id="item-stock">${expired ? 100 : 99}</span></div>
           <button id="cart-toggle">Cart</button><section id="cart" hidden>
           ${retained ? '<div id="cart-item">Desk Lamp<span id="cart-item-expired">Expired</span></div>' : ''}
           </section><script>document.querySelector('#cart-toggle').onclick=()=>{document.querySelector('#cart').hidden=false;};</script>` }));
@@ -67,16 +69,17 @@ test('reservation restart readback rejects returned stock with a lost cart entry
           { hasText: options.scope.contains }).first() : page;
         return root.locator(stableElementSelector(id), { hasText: options?.contains }).first();
       } };
-      const capability = { defaultWithin: 300, recorded: new Map([['before', 100]]),
-        expand: (value: string) => value, scopedUser: (value: string) => value,
+      const capability = { defaultWithin: 300, expand: (value: string) => value, scopedUser: (value: string) => value,
+        recorded: new Map([['before', 100], ['pending-314', performance.now()], ['pending-314-accepted', performance.now()]]),
         testId: stableElementSelector, sleep: async () => {} };
+      const clock = { sleep: async () => { expired = true; } };
       let failed: string | undefined;
       for (const step of feature.criteria[0]!.steps) {
         const input = { ...step, ...(['expect', 'expectNumber'].includes(step.do) ? { within: 300 } : {}),
           ...('settleMs' in step ? { settleMs: 0 } : {}) };
         const result = await executeAction(ACTION_REGISTRY, step.do, input,
           { capabilities: { actors: { get: () => actor }, 'browser-interaction': capability,
-            'browser-observation': capability } });
+            'browser-observation': capability, clock } });
         if (result.status !== 'passed') { failed = String(step.testid ?? step.do); break; }
       }
       assert.equal(failed, retained ? undefined : 'cart-item-expired');
@@ -304,40 +307,6 @@ test('low-stock live observations stay open while another client restocks', asyn
       assert.equal(failed, live ? undefined : 'waitUntilAbsent');
       assert.equal(stock, live ? 10 : 11);
       await Promise.all([...pages.values()].map(page => page.close()));
-    }
-  } finally { await browser.close(); }
-});
-
-test('staff role reload keeps an open panel visible and opens a closed panel', async () => {
-  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-staff-roles.json');
-  const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;
-  const criterion = feature.criteria.find(criterion => criterion.id === '621a')!;
-  const entry = criterion.steps.findIndex(step => step.testid === 'admin-link');
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage();
-    const actor = { page, loc: (id: string, options?: { scope?: { testid: string } }) => {
-      const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid)) : page;
-      return root.locator(stableElementSelector(id));
-    } };
-    const capability = { defaultWithin: 300, expand: (value: string) => value,
-      testId: stableElementSelector, sleep: async () => {} };
-    for (const open of [true, false]) {
-      await page.route('http://role.test/', route => route.fulfill({ contentType: 'text/html',
-        body: `<button id="admin-link">Admin</button><section id="roles" ${open ? '' : 'hidden'}>
-          <div id="staff-role-account-staff"><select id="staff-role-select"><option>inventory</option></select></div>
-          </section><script>document.querySelector('#admin-link').onclick=()=>{
-            const panel=document.querySelector('#roles');panel.hidden=!panel.hidden;};</script>` }));
-      await page.goto('http://role.test/');
-      await page.reload();
-      for (const step of criterion.steps.slice(entry, entry + 2)) {
-        const result = await executeAction(ACTION_REGISTRY, step.do,
-          { ...step, ...(step.do === 'expect' ? { within: 300 } : {}) },
-          { capabilities: { actors: { get: () => actor }, 'browser-interaction': capability,
-            'browser-observation': capability } });
-        assert.equal(result.status, 'passed', result.summary ?? undefined);
-      }
-      await page.unroute('http://role.test/');
     }
   } finally { await browser.close(); }
 });

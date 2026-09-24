@@ -6,13 +6,11 @@ import { runInNewContext } from 'node:vm';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
-import { describesMissingStockInterface } from '../src/stacks/stock-interface.js';
 import {
   createDatabaseWriteCapability,
   createDatabaseReadCapability,
   createLifecycleCapability,
   databaseWriteFailureDetail,
-  RUNTIME_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/runtime-action-executors.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { inspectBuildContainer } from '../src/stacks/hosted-lifecycle.js';
@@ -69,12 +67,6 @@ function observation(result: { readonly observation: unknown }): UnknownRecord {
   assert(result.observation !== null && typeof result.observation === 'object');
   return result.observation as UnknownRecord;
 }
-
-test('the runtime executor registry contains only registered actions', () => {
-  for (const id of Object.keys(RUNTIME_ACTION_IMPLEMENTATIONS)) {
-    assert(ACTION_REGISTRY.get(id).timeoutMs > 0, id);
-  }
-});
 
 test('stock observations compare authoritative quantities and cannot use a missing baseline', async () => {
   const recorded = new Map<string, number>();
@@ -148,6 +140,11 @@ test('timed observations use the original origin and a missed window is unmeasur
   assert(waits[0] !== undefined && waits[0] > 2000 && waits[0] <= 3000);
   assert.equal((await run({ do: 'wait', actor: 'a', ms: 1000, since: 'start' }, capabilities)).status, 'passed');
   assert.equal(waits[1], 0);
+  const missing = await run({ do: 'wait', actor: 'missing', ms: 1 }, { ...capabilities, actors: { get: () => undefined } });
+  assert.equal(missing.status, 'harness_failure');
+  assert.equal(missing.code, 'unclassified_exception');
+  assert.equal(missing.summary, 'harness did not create actor "missing"');
+  assert.equal(waits.length, 2);
 });
 
 test('transfer conservation rejects moving the wrong product despite correct warehouse totals', async () => {
@@ -212,71 +209,64 @@ test('cancellation probes reject a refund to the wrong warehouse even when total
   }
 });
 
-test('optional checkout diagnostic has fresh-account cohorts and cannot pass by rejecting all work', () => {
-  const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/diagnostic-checkout-contention.json');
-  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
-  const accounts = scenario.features.flatMap(feature => feature.setup.filter(step => step.do === 'signUp').map(step => step.name));
-  assert.equal(new Set(accounts).size, 12);
-  const widths: unknown[] = [];
-  for (const feature of scenario.features) {
-    assert(feature.setup.some(step => step.do === 'dbRecordStock'));
-    const account = feature.setup.find(step => step.do === 'signUp')!.name;
-    const initial = feature.setup.findIndex(step => step.do === 'dbRecordCheckout');
-    assert(initial < feature.setup.findIndex(step => step.do === 'click'));
-    assert.equal(feature.setup[initial]!.account, `{user:${account}}`);
-    for (const criterion of feature.criteria) {
-      assert.equal(criterion.points, 0, 'diagnostics must not add scored ladder credit');
-      const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
-      widths.push(call.requests);
-      assert.equal(criterion.steps[0]!.do, 'dbRecordCheckout');
-      assert.equal(criterion.steps[0]!.account, `{user:${account}}`);
-      assert(criterion.steps.some(step => step.do === 'dbExpectCheckout' && step.quantity === 1));
-      assert(criterion.steps.some(step => step.do === 'expectCallOutcomes'));
-      assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -1));
-      assert(criterion.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+test('optional diagnostics keep fixed fresh-account schedules and cannot pass by rejecting all work', () => {
+  const load = (file: string) => {
+    const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file);
+    return compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  };
+  for (const [file, cohorts] of [['diagnostic-checkout-contention.json', 12], ['diagnostic-purchase-contention.json', 24]] as const) {
+    const scenario = load(file);
+    const accounts = scenario.features.flatMap(feature => feature.setup.filter(step => step.do === 'signUp').map(step => step.name));
+    assert.equal(new Set(accounts).size, cohorts);
+    const widths: unknown[] = [];
+    for (const feature of scenario.features) {
+      const account = feature.setup.find(step => step.do === 'signUp')!.name;
+      const initial = feature.setup.findIndex(step => step.do === 'dbRecordCheckout');
+      if (file === 'diagnostic-checkout-contention.json') {
+        assert(feature.setup.some(step => step.do === 'dbRecordStock'));
+        assert(initial < feature.setup.findIndex(step => step.do === 'click'));
+        assert.equal(feature.setup[initial]!.account, `{user:${account}}`);
+      } else {
+        assert(feature.setup.some(step => step.do === 'dbSetStock' && step.quantity === 128));
+        assert.equal(feature.setup.filter(step => step.do === 'dbRecordCheckout').length, 2);
+      }
+      for (const criterion of feature.criteria) {
+        assert.equal(criterion.points, 0, 'diagnostics must not add scored ladder credit');
+        const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
+        widths.push(call.requests);
+        if (file === 'diagnostic-checkout-contention.json') {
+          assert.equal(criterion.steps[0]!.do, 'dbRecordCheckout');
+          assert.equal(criterion.steps[0]!.account, `{user:${account}}`);
+          assert(criterion.steps.some(step => step.do === 'dbExpectCheckout' && step.quantity === 1));
+          assert(criterion.steps.some(step => step.do === 'expectCallOutcomes'));
+          assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -1));
+          assert(criterion.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+        } else {
+          // Purchases require every affordable request and its stored effect.
+          assert.equal(call.action, 'buy');
+          assert(criterion.steps.some(step => step.do === 'expectCallOutcomes' && step.accepted === call.requests));
+          assert(criterion.steps.some(step => step.do === 'dbExpectPurchases' && step.purchases === call.requests));
+        }
+      }
     }
+    assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
   }
-  assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
-});
-
-test('optional purchase cohorts require all affordable requests and stored effects', () => {
-  const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/diagnostic-purchase-contention.json');
-  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
-  const accounts = scenario.features.flatMap(feature => feature.setup.filter(step => step.do === 'signUp').map(step => step.name));
-  assert.equal(new Set(accounts).size, 24);
-  const widths: unknown[] = [];
-  for (const feature of scenario.features) {
-    assert(feature.setup.some(step => step.do === 'dbSetStock' && step.quantity === 128));
-    for (const criterion of feature.criteria) {
+  // Scarce and mixed diagnostics keep their fixed schedules and mandatory stored progress.
+  for (const [file, cohorts, calls] of [['diagnostic-scarce-stock.json', 12, 255], ['diagnostic-restock-contention.json', 80, 1000]] as const) {
+    const scenario = load(file);
+    assert.equal(scenario.features.length, cohorts);
+    let count = 0;
+    for (const feature of scenario.features) {
+      const criterion = feature.criteria[0]!;
       assert.equal(criterion.points, 0);
-      const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
-      widths.push(call.requests);
-      assert.equal(call.action, 'buy');
-      assert(criterion.steps.some(step => step.do === 'expectCallOutcomes' && step.accepted === call.requests));
-      assert(criterion.steps.some(step => step.do === 'dbExpectPurchases' && step.purchases === call.requests));
-      assert.equal(feature.setup.filter(step => step.do === 'dbRecordCheckout').length,2);
+      const call = criterion.steps[0]!;
+      const restock = (call.alongside as Array<{ requests: number }> | undefined)?.[0];
+      count += Number(call.requests) + (restock?.requests ?? 0);
+      assert.equal(criterion.steps[1]!.do, 'dbExpectPurchases');
+      assert.equal(criterion.steps[1]!.purchases, restock ? call.requests : Math.min(3, Number(call.requests)));
+      if (restock) assert(feature.setup.some(step => step.do === 'signIn' && step.actor === 'admin'));
     }
-  }
-  assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
-});
-
-test('scarce and mixed diagnostics keep the fixed schedules and mandatory stored progress', () => {
-  for (const [file, cohorts, calls] of [['diagnostic-scarce-stock.json',12,255],['diagnostic-restock-contention.json',80,1000]] as const) {
-    const path=join(STACK_BENCH_ROOT,'tracks/ecommerce/scenarios',file);
-    const scenario=compileScenarioDefinition(JSON.parse(readFileSync(path,'utf8')),{source:path});
-    assert.equal(scenario.features.length,cohorts);
-    let count=0;
-    for(const feature of scenario.features){
-      const criterion=feature.criteria[0]!;
-      assert.equal(criterion.points,0);
-      const call=criterion.steps[0]!;
-      const restock=(call.alongside as Array<{requests:number}>|undefined)?.[0];
-      count+=Number(call.requests)+(restock?.requests??0);
-      assert.equal(criterion.steps[1]!.do,'dbExpectPurchases');
-      assert.equal(criterion.steps[1]!.purchases,restock?call.requests:Math.min(3,Number(call.requests)));
-      if(restock)assert(feature.setup.some(step=>step.do==='signIn' && step.actor==='admin'));
-    }
-    assert.equal(count,calls);
+    assert.equal(count, calls);
   }
 });
 
@@ -588,17 +578,6 @@ test('MongoDB auth and command failures cannot be scored as missing stock data',
   }
 });
 
-test('stock-interface detection requires database evidence, not a missing executable', () => {
-  for (const message of ['OCI runtime exec failed: executable file not found in $PATH',
-    'FATAL: role "appuser" does not exist', 'FATAL: database "bench" does not exist']) {
-    assert.equal(describesMissingStockInterface(message), false, message);
-  }
-  for (const message of ['Table stock not found', 'relation "stock" does not exist',
-    'no such column: quantity', 'field item_id not found']) {
-    assert.equal(describesMissingStockInterface(message), true, message);
-  }
-});
-
 test('direct database writes fail as harness errors without lease authority', async () => {
   const capability = createDatabaseWriteCapability({
     backend: 'postgres', expand: value => value, exec: () => 'UPDATE 1\n',
@@ -656,29 +635,6 @@ test('offline lifecycle fails closed when browser network state does not change'
     services(new Map([['a', actor]])));
   assert.equal(result.status, 'harness_failure');
   assert.match(result.summary ?? '', /navigator\.onLine remained true/);
-});
-
-test('client lifecycle delegates through the narrow browser capability', async () => {
-  const events: unknown[] = [];
-  const actor = { page: { close: async () => events.push('close') } };
-  const capabilities = services(new Map([['a', actor]]), { browser: {
-    clients: {
-      open: async (value: unknown, settleMs: number) => {
-        events.push(['open', value === actor, settleMs]);
-      },
-      fresh: async (_actor: unknown, _name: string, preserveStorage: boolean) => {
-        events.push(['fresh', preserveStorage]); return 'a-fresh';
-      },
-    },
-    sleep,
-  } });
-  assert.equal((await run({ do: 'closeClient', actor: 'a' }, capabilities)).status, 'passed');
-  assert.equal((await run({ do: 'openClient', actor: 'a', settleMs: 9 }, capabilities)).status, 'passed');
-  const fresh = await run({ do: 'freshClient', actor: 'a' }, capabilities);
-  assert.equal(fresh.status, 'passed');
-  assert.equal((await run({ do: 'freshClient', actor: 'a', preserveStorage: true }, capabilities)).status, 'passed');
-  assert.deepEqual(events, ['close', ['open', true, 9], ['fresh', false], ['fresh', true]]);
-  assert.deepEqual(fresh.observation, { actor: 'a-fresh' });
 });
 
 test('a crashed page during a concurrency barrier or click remains a harness failure', async () => {

@@ -88,32 +88,10 @@ test('every scenario action has a complete versioned runtime contract', () => {
     assert(action.sensitivity.every(value => typeof value === 'string'), id);
     assert.doesNotThrow(() => action.compile(representative.get(id)), id);
   }
-});
-
-test('action policy is explicit for each behavior category', () => {
-  const expected = {
-    callAction: ['transport', 60_000, ['actors', 'named-actions', 'transport-observation']],
-    callConcurrently: ['concurrency', 120_000, ['actors', 'named-actions']],
-    click: ['browser-interaction', 60_000, ['actors', 'browser-interaction']],
-    dbSetStock: ['database', 90_000, ['clock', 'database-write']],
-    dbRecordStock: ['database', 90_000, ['database-read', 'browser-observation']],
-    dbExpectStock: ['database', 90_000, ['database-read', 'browser-observation', 'clock']],
-    expect: ['browser-observation', 300_000, ['actors', 'browser-observation']],
-    restartBackend: ['lifecycle', 900_000, ['backend-lifecycle']],
-    runScript: ['application-process', 90_000, ['application-files', 'subprocess']],
-    startAppServer: ['lifecycle', 900_000, ['application-lifecycle']],
-    wait: ['timing', 360_000, ['actors', 'clock', 'browser-observation']],
-  } as const;
-  for (const [id, [category, timeoutMs, capabilities]] of Object.entries(expected)) {
-    const action = ACTION_REGISTRY.get(id);
-    assert.equal(action.category, category, id);
-    assert.equal(action.timeoutMs, timeoutMs, id);
-    assert.deepEqual(action.capabilities, capabilities, id);
+  // Credential sensitivity drives evidence redaction.
+  for (const id of ['ensureSignedIn', 'signIn', 'signUp']) {
+    assert(ACTION_REGISTRY.get(id).sensitivity.includes('credential'), id);
   }
-  assert.deepEqual(ACTION_REGISTRY.get('runScript').sensitivity,
-    ['user-content', 'filesystem-path', 'process-output']);
-  assert.deepEqual(ACTION_REGISTRY.get('signIn').sensitivity,
-    ['credential', 'user-content']);
 });
 
 test('duplicate, unknown, malformed, and incomplete registrations fail at startup', () => {

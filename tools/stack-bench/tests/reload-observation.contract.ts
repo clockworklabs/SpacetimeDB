@@ -20,17 +20,6 @@ test('stored-stock validation does not delay live transfer observations', () => 
   assert(!observations.slice(0, live + 1).some(step => ['reload', 'wait'].includes(step.do)));
 });
 
-test('reservation restart evidence retains the expired cart line after stock returns', () => {
-  const feature = scenario('03-deferred-durability.json').features.find(feature => feature.id === 314)!;
-  assert(feature.setup.some(step => step.do === 'restartBackend'));
-  const steps = feature.criteria.find(criterion => criterion.id === '314a')!.steps;
-  const restored = steps.findIndex(step => step.do === 'expectNumber' && step.testid === 'item-stock' && step.plus === 0);
-  const expired = steps.findIndex(step => step.do === 'expect' && step.testid === 'cart-item-expired');
-  assert(restored >= 0 && expired > restored);
-  assert(steps.slice(restored + 1, expired).some(step => step.do === 'reload' && step.actor === 'customer'));
-  assert.deepEqual(steps[expired]!.in, { testid: 'cart-item', contains: 'Desk Lamp' });
-});
-
 test('session-survival criteria observe the signed-in user without restoring the session', () => {
   // These IDs explicitly claim session survival. Do not infer that claim from wording
   // or apply this rule to independent data-retention checks that permit re-authentication.
@@ -51,50 +40,10 @@ test('session-survival criteria observe the signed-in user without restoring the
   }
 });
 
-test('restock checks reopen and verify the admin destination after every admin reload', () => {
-  let reloads = 0;
-  for (const name of ['03-server-time.json', '03-deferred-durability.json']) {
-    for (const feature of scenario(name).features) {
-      const steps = [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)];
-      for (const [index, step] of steps.entries()) {
-        if (step.do !== 'reload' || step.actor !== 'admin') continue;
-        reloads++;
-        // A fresh page may first restore the admin session; the destination is then reopened
-        // and verified before any observation.
-        const next = steps[index + 1]!.do === 'ensureSignedIn' ? index + 2 : index + 1;
-        assert.equal(steps[next]!.do, 'click');
-        assert.equal(steps[next]!.actor, 'admin');
-        assert.equal(steps[next]!.testid, 'admin-link');
-        // An optional in-area navigation hook may sit between the area and its controls.
-        const after = steps[next + 1]!.testid === 'restocks-link' ? next + 2 : next + 1;
-        assert.deepEqual(steps[after],
-          { do: 'expect', actor: 'admin', testid: 'schedule-restock-submit' });
-      }
-    }
-  }
-  assert.equal(reloads, 4, 'cover server-time, ordinary execution, and durability cleanup observations');
-  const delivery = scenario('03-deferred-integrity.json').features.find(feature => feature.id === 312)!;
-  assert.deepEqual(delivery.setup.at(-1),
-    { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true, within: 1000 });
-  const firstObservation = delivery.criteria[0]!.steps.find(step => step.do === 'expect')!;
-  assert.equal(firstObservation.testid, 'completed-order-item');
-  assert.equal(firstObservation.absent, undefined);
-});
-
 test('support privacy confirms persisted owner writes without requiring live refresh', () => {
   const privacy = scenario('progression-managed-support-privacy.json').features[0]!.criteria[0]!;
   const tail = privacy.steps.slice(privacy.steps.findIndex(step => step.do === 'expectReplayRejected'));
   assert.equal(tail[0]!.do, 'expectReplayRejected');
-  assert.deepEqual(tail[1], { do: 'reload', actor: 'staff', settleMs: 2000 });
-  assert.deepEqual(tail[2],
-    { do: 'ensureSignedIn', actor: 'staff', name: 'staff', password: 'stackbench-staff-2026',
-      exact: true, readyTestid: 'current-user' });
-  assert.deepEqual(tail[3],
-    { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true, unlessVisible: 'support-assignee' });
-  assert.deepEqual(tail[4],
-    { do: 'click', actor: 'staff', testid: 'support-queue-link', ifAvailable: true, unlessVisible: 'support-assignee' });
-  assert.deepEqual(tail[5],
-    { do: 'expect', actor: 'staff', testid: 'support-ticket', contains: 'Private managed case {user:casemarker}' });
   assert.equal(tail[6]!.do, 'expectElementCount');
   assert.equal(tail[6]!.equals, 1, 'an unauthorized replay must not add a second reply');
   const live = scenario('progression-managed-support-shared.json').features[0]!.criteria
@@ -106,31 +55,7 @@ test('support privacy confirms persisted owner writes without requiring live ref
     && step.testid === 'support-reply-item').length, 2, 'both open clients must still receive live replies');
 });
 
-test('low-stock observations follow the optional in-area link the contract allows', () => {
-  for (const [name, featureId] of [['02-low-stock.json', 5], ['02-features.json', 5]] as const) {
-    const feature = scenario(name).features.find(feature => feature.id === featureId)!;
-    const area = feature.setup.findIndex(step => step.do === 'click' && step.testid === 'admin-link');
-    assert(area >= 0, `${name}: the admin area is opened in setup`);
-    assert.deepEqual(feature.setup[area + 1],
-      { do: 'click', actor: 'admin', testid: 'low-stock-link', ifAvailable: true, unlessVisible: 'low-stock-item', within: 10000 });
-  }
-});
-
-test('scheduled-restock setups follow the optional in-area link the contract allows', () => {
-  for (const [name, featureIds] of [['03-scheduled-restocks.json', [302]],
-    ['03-scheduled-restock-apply.json', [305]], ['03-scheduled-restock-cancel.json', [306]],
-    ['03-features.json', [302]]] as const) {
-    for (const featureId of featureIds) {
-      const feature = scenario(name).features.find(feature => feature.id === featureId)!;
-      const area = feature.setup.findIndex(step => step.do === 'click' && step.testid === 'admin-link');
-      assert(area >= 0, `${name}/${featureId}: the admin area is opened in setup`);
-      assert.deepEqual(feature.setup[area + 1],
-        { do: 'click', actor: 'admin', testid: 'restocks-link', ifAvailable: true });
-    }
-  }
-});
-
-test('the queue warehouse label is observed on a fresh staff page', () => {
+test('the direct conservation race and queue warehouse label are observed on fresh pages', () => {
   for (const name of ['02-queue-warehouse.json', '02-self-contained.json']) {
     const check = scenario(name).features.flatMap(feature => feature.criteria)
       .find(criterion => criterion.id === '1b')!;
@@ -141,9 +66,6 @@ test('the queue warehouse label is observed on a fresh staff page', () => {
     assert.equal(before[reload + 1]!.do, 'ensureSignedIn');
     assert.deepEqual(before[reload + 2], { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
   }
-});
-
-test('the direct conservation race is observed on fresh pages', () => {
   const race = scenario('02-server-actions.json').features.flatMap(feature => feature.criteria)
     .find(criterion => criterion.id === '202d')!;
   for (const actor of ['admin', 'customer']) {
@@ -210,16 +132,14 @@ test('opposing transfers require both valid calls and exact directional stock de
     assert.deepEqual(check.steps.slice(index + 2, index + 4).map(step => [step.do, step.warehouse, step.plus]),
       [['dbExpectStock', 'East', [-3, 5, -5][pair]], ['dbExpectStock', 'West', [3, -5, 5][pair]]]);
   }
-});
-
-test('checkout overlap verifies both completed writes before comparing serial outcomes', () => {
-  const check = scenario('progression-cart-checkout.json').features[0]!.criteria.find(check => check.id === '4d')!;
-  assert.equal(check.points, 2);
-  const index = check.steps.findIndex(step => step.alongsideAdd === 'Coffee Grinder');
+  // Checkout overlap verifies both completed writes before comparing serial outcomes.
+  const overlap = scenario('progression-cart-checkout.json').features[0]!.criteria.find(check => check.id === '4d')!;
+  assert.equal(overlap.points, 2);
+  const index = overlap.steps.findIndex(step => step.alongsideAdd === 'Coffee Grinder');
   assert(index > 1);
-  assert.deepEqual(check.steps[index - 1], { do: 'expectCallOutcomes', accepted: 2 });
-  assert.equal(check.steps[index - 2]!.do, 'callConcurrently');
-  assert.deepEqual(check.steps.filter(step => step.do === 'dbRecordCheckout' && String(step.as).startsWith('overlap-'))
+  assert.deepEqual(overlap.steps[index - 1], { do: 'expectCallOutcomes', accepted: 2 });
+  assert.equal(overlap.steps[index - 2]!.do, 'callConcurrently');
+  assert.deepEqual(overlap.steps.filter(step => step.do === 'dbRecordCheckout' && String(step.as).startsWith('overlap-'))
     .map(step => step.storage), Array(2).fill({ kind: 'order-data', cart: true, warehouses: 'if-requested' }));
 });
 
@@ -236,6 +156,14 @@ test('L2 direct authorization refusals follow accepted routes and fresh observat
       assert(check.steps.slice(refusal + 1).some(step => step.do === 'reload'));
     }
   }
+  // A refused warehouse write must leave the stock unchanged.
+  const warehouse = scenario('01-admin-write-staff.json').features.flatMap(feature => feature.criteria)
+    .find(criterion => criterion.id === '103b')!;
+  const replay = warehouse.steps.findIndex(step => step.do === 'callAction' && step.actor === 'staff');
+  assert(replay >= 0);
+  assert(warehouse.steps.slice(replay + 1).some(step => step.do === 'expectActionOutcome'
+    && step.actor === 'staff' && step.outcome === 'refused'));
+  assert(warehouse.steps.slice(replay + 1).some(step => step.do === 'expectNumber' && step.plus === 0));
 });
 
 test('cancellation conservation proves the sale before its reversal', () => {

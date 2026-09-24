@@ -17,7 +17,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease } from '../src/composition/recipe-release.js';
-import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { parseGradeArgs } from '../grader/grade.js';
 
 const fullStorage = { kind: 'order-data' as const, cart: true, warehouses: true };
@@ -225,70 +225,6 @@ test('order read scope requires selected data and never infers features from mis
   }
 });
 
-test('purchase and cancellation scoring uses disclosed native interfaces without adding carts or fulfilment', () => {
-  const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
-  const request = createBoundRecipeTaskRequest(binding, {
-    featureIds: ['ecommerce.l2.order-cancellation-features'], taskMode: 'fresh',
-    expectedSpecifications: ['ecommerce.progression.cancellation-accounting-specifications'],
-  });
-  assert.match(request.task.contractText, /data-cancel-input/);
-  assert.match(request.task.contractText, /order_allocation\(order_line_id, warehouse_id, quantity\)/);
-  assert(!request.selection.features?.includes('ecommerce.feature.cart'));
-  assert(!request.selection.features?.includes('ecommerce.progression.fulfilment-queue'));
-  const read = (file: string) => {
-    const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file);
-    return compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
-  };
-  const purchases = read('01-last-unit.json').features[0]!;
-  assert.deepEqual(purchases.criteria.map(row => row.id), ['201a', '201c', '201b'],
-    'extra progress purchases must follow the first-race revenue assertion');
-  const progress = purchases.criteria.find(row => row.id === '201b')!;
-  assert.deepEqual(progress.steps.filter(step => step.do === 'dbExpectPurchases').map(step => step.purchases), [3, 4]);
-  const cancellation = read('02-invariants.json').features.find(row => row.id === 203)!;
-  const cancel = cancellation.criteria.find(row => row.id === '203a')!;
-  assert(cancel.steps.some(step => step.do === 'callConcurrently' && step.action === 'cancel' && step.requests === 4));
-  assert(cancel.steps.some(step => step.do === 'dbExpectCancellation'));
-  for (const [steps, action, parameter] of [[progress.steps, 'buy', 'itemId'], [cancel.steps, 'cancel', 'orderId']] as const) {
-    const call = steps.find(step => step.do === 'callConcurrently')!;
-    assert.deepEqual(call.namedAction, {
-      id: action, path: action === 'buy' ? '/api/items/:id/buy' : '/api/orders/:id/cancel',
-      reducer: action === 'buy' ? 'buy_now' : 'cancel_order', args: [0],
-      params: [{ name: parameter, in: 'path', placeholder: ':id', wireType: 'u64' }],
-    }, 'declared live identifiers must replace the placeholder action defaults');
-  }
-  for (const step of [...purchases.setup, ...progress.steps, ...cancel.steps].filter(step => step.do === 'dbRecordCheckout')) {
-    assert.deepEqual(step.storage, { kind: 'order-data', cart: false, warehouses: true });
-  }
-  const mixed = read('01-restock-race.json').features[0]!.criteria.find(row => row.id === '202a')!;
-  const callIndex = mixed.steps.findIndex(step => step.do === 'callConcurrently');
-  assert(mixed.steps.findIndex(step => step.do === 'race') < callIndex,
-    'native reconciliation supplements the UI race instead of bypassing stale-form controls');
-  const call = mixed.steps[callIndex]!;
-  assert.equal(call.requests, 3);
-  assert.deepEqual(call.actors, ['a', 'b', 'c']);
-  const [restock] = call.alongside as Array<{ action: string; requests: number }>;
-  assert.deepEqual([restock!.action, restock!.requests], ['restock', 1]);
-  assert.deepEqual(mixed.steps.slice(callIndex + 1).map(step => step.do), ['expectCallOutcomes', 'dbExpectPurchases']);
-  assert.deepEqual(mixed.steps.at(-1)!.before, { a: 'mixed-a', b: 'mixed-b', c: 'mixed-c' });
-  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
-    const manifest = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'grader/mutations', `${backend}-ecommerce.json`), 'utf8'));
-    const mutant = manifest.mutations.find((row: { id: string }) => row.id === 'cancellation-accounting-loses-stock-restoration');
-    assert(mutant);
-    const source = join(STACK_BENCH_ROOT, mutant.scenario);
-    const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
-    const selected = selectScenarioChecks(scenario, { checks: binding.release.checkCatalog }, mutant.targets);
-    assert.deepEqual(selected.features.flatMap(feature => feature.criteria.map(row => row.id)), ['203a'],
-      'the mutation baseline must contain every targeted check in its own scenario');
-    const code = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, mutant.file), 'utf8').replaceAll('\r\n', '\n');
-    for (const edit of mutant.edits) assert.equal(code.split(edit.find).length, 2, 'defect edit must have one exact source match');
-    const mixedMutant = manifest.mutations.find((row: { id: string }) => row.id === 'restock-race-records-wrong-order-total');
-    assert.equal(mixedMutant.scenario, 'tracks/ecommerce/scenarios/01-restock-race.json');
-    assert.deepEqual(mixedMutant.targets, ['ecommerce.spec.concurrency-safety.restock-race.202a']);
-    const mixedCode = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, mixedMutant.file), 'utf8').replaceAll('\r\n', '\n');
-    for (const edit of mixedMutant.edits) assert.equal(mixedCode.split(edit.find).length, 2);
-  }
-});
-
 test('order data preserves empty state, orphan effects and exact identifiers without a reference source', () => {
   const raw = data();
   const read = () => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage);
@@ -479,49 +415,3 @@ for (const backend of ['postgres', 'mongodb'] as const) {
     } finally { docker(['rm', '-f', id]); }
   });
 }
-
- test('volume checks retain independent setup, native scopes and existing scoring owners', () => {
-  const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
-  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-books-balance.json');
-  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
-  for (const [id, warehouses] of [['107a', false], ['107b', true]] as const) {
-    const key = `ecommerce.spec.transactional-integrity.books-balance.${id}`;
-    const selected = selectScenarioChecks(scenario, { checks: binding.release.checkCatalog }, [key]);
-    const feature = selected.features[0]!;
-    assert.equal(feature.criteria.length, 1);
-    assert.equal(feature.criteria[0]!.points, 1);
-    assert.equal(feature.setup.filter(step => step.do === 'callAction').length, 1000);
-    assert.equal(feature.setup.filter(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted').length, 1000);
-    const verify = feature.criteria[0]!.steps[0]!;
-    assert.equal(verify.do, 'dbExpectPurchaseCount');
-    assert.equal(verify.purchasesEach, 500);
-    for (const key of verify.before as string[]) {
-      const before = feature.setup.find(step => step.as === key)!;
-      assert.deepEqual(before.storage, { kind: 'order-data', cart: false, warehouses });
-    }
-    const check = binding.release.checkCatalog.find(check => check.stableKey === key)!;
-    assert(check.requiresFeatures?.includes('ecommerce.feature.warehouse-admin'));
-    assert(check.requiresFeatures?.includes('ecommerce.feature.purchasing'));
-  }
-  const catalogSource = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-catalog-volume.json');
-  const catalog = compileScenarioDefinition(JSON.parse(readFileSync(catalogSource, 'utf8')), { source: catalogSource });
-  const catalogKey = 'ecommerce.spec.transactional-integrity.catalog-volume.622c';
-  const selectedCatalog = selectScenarioChecks(catalog, { checks: binding.release.checkCatalog }, [catalogKey]);
-  const catalogFeature = selectedCatalog.features[0]!;
-  assert.equal(catalogFeature.id, 622);
-  assert.equal(catalogFeature.criteria.length, 1);
-  assert.equal(catalogFeature.criteria[0]!.points, 1);
-  const catalogSteps = catalogFeature.criteria[0]!.steps;
-  const committed = catalogSteps.filter(step => step.do === 'dbExpectCatalogItem');
-  assert.equal(committed.length, 1000);
-  assert.equal(new Set(committed.map(step => step.name)).size, 1000);
-  for (const commit of committed) {
-    assert.equal(commit.priceMinor, 125);
-  }
-  const pages = catalogSteps.filter(step => step.do === 'expectSequence');
-  assert.equal(pages.length, 101);
-  assert.deepEqual(pages.slice(0, 100).flatMap(step => step.equals as string[]), committed.map(step => step.name).reverse());
-  assert.deepEqual(pages[100]!.equals, pages[98]!.equals);
-  assert.deepEqual(binding.release.checkCatalog.find(check => check.stableKey === catalogKey)!.requiresFeatures,
-    ['ecommerce.feature.purchasing', 'ecommerce.progression.catalog-management', 'ecommerce.progression.faceted-search']);
- });

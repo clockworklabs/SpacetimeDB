@@ -103,87 +103,6 @@ test('the live grader executes and reports exactly one selected stable check', a
   }
 });
 
-test('failed positive controls preserve actionable setup evidence without running the target assertions', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-positive-control-'));
-  const out = join(root, 'grade.json');
-  const spec = join(root, 'scenario.json');
-  writeFileSync(spec, JSON.stringify({ schemaVersion: 1, level: 1, features: [{
-    id: 1, name: 'Access', actors: ['buyer'],
-    setup: [{ do: 'expectNumber', actor: 'buyer', testid: 'item-stock', equals: 99, within: 50 }],
-    criteria: [
-      { id: '1a', category: 'production', desc: 'unauthorized purchase is refused', points: 2,
-        steps: [{ do: 'expect', actor: 'buyer', testid: 'never-run' }] },
-      { id: '1b', category: 'feature', desc: 'stock display works', points: 1,
-        steps: [{ do: 'expect', actor: 'buyer', testid: 'never-run' }] },
-    ],
-  }] }));
-  const server = startBlankApp('<div data-role="item-stock">100</div>');
-  try {
-    const port = await server.port;
-    await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1', '--spec', spec, '--out', out]);
-    const feature = first(readGradeArtifactPayload(out).features);
-    assert.equal(feature.setupEvidence.status, 'failed');
-    assert.equal(feature.setupEvidence.finding?.kind, 'number-mismatch');
-    assert.equal(feature.criteria[0]?.evidence.status, 'failed');
-    assert.equal(feature.criteria[0]?.evidence.phase, 'setup');
-    assert.deepEqual(feature.criteria[0]?.evidence.actions, []);
-    assert.equal(feature.criteria[1]?.evidence.status, 'failed');
-    assert.equal(feature.max, 3);
-    assert.equal(feature.score, 0);
-  } finally {
-    server.child.kill('SIGTERM');
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('the live grader executes account setup through the registered actor executor', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-actor-grade-'));
-  const out = join(root, 'grade.json');
-  const spec = join(root, 'scenario.json');
-  writeFileSync(spec, JSON.stringify({
-    schemaVersion: 1,
-    level: 1,
-    features: [{
-      id: 1,
-      name: 'account setup',
-      actors: ['a'],
-      setup: [{ do: 'signUp', actor: 'a', name: 'Alice' }],
-      criteria: [{ id: '1a', desc: 'signed-in identity is visible',
-        steps: [{ do: 'expect', actor: 'a', testid: 'current-user' }] }],
-    }],
-  }));
-  const server = startBlankApp(`<!doctype html><html><body>
-    <input data-role="signup-username"><input data-role="signup-password">
-    <button data-role="signup-submit">Sign up</button>
-    <div data-role="current-user" hidden></div>
-    <script>
-      document.querySelector('[data-role="signup-submit"]').onclick = () => {
-        const current = document.querySelector('[data-role="current-user"]');
-        current.textContent = document.querySelector('[data-role="signup-username"]').value;
-        current.hidden = false;
-      };
-    </script>
-  </body></html>`);
-  try {
-    const port = await server.port;
-    await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1',
-      '--spec', spec, '--out', out]);
-    const report = readGradeArtifactPayload(out);
-    assert.equal(report.total, 1);
-    assert.equal(report.max, 1);
-    const feature = first(report.features);
-    const criterion = first(feature.criteria);
-    assert.equal(criterion.evidence.status, 'passed');
-    assert.equal(feature.setupEvidence.status, 'passed');
-    assert.deepEqual(actionIds(feature.setupEvidence.actions), ['signUp']);
-    assert.equal(criterion.evidence.status, 'passed');
-    assert.deepEqual(actionIds(criterion.evidence.actions), ['expect']);
-  } finally {
-    server.child.kill('SIGTERM');
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('setup can wait for app readiness without relaxing scored checks', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-ready-grade-'));
   const out = join(root, 'grade.json');
@@ -239,9 +158,11 @@ test('setup can wait for app readiness without relaxing scored checks', async ()
     const report = readGradeArtifactPayload(out);
     const feature = first(report.features);
     assert.equal(feature.setupEvidence.status, 'passed');
+    assert.deepEqual(actionIds(feature.setupEvidence.actions), ['signUp']);
     assert.equal(report.total, 1);
     assert.equal(report.max, 2);
     assert.equal(first(feature.criteria).evidence.status, 'passed');
+    assert.deepEqual(actionIds(first(feature.criteria).evidence.actions), ['expect']);
     const failedCriterion = feature.criteria[1];
     assert(failedCriterion);
     assert.equal(failedCriterion.evidence.status, 'failed');

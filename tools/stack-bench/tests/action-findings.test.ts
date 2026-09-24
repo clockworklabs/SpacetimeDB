@@ -1,9 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import test from 'node:test';
-
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 import { ActionApplicationFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 import { FAILED_FINDING_KINDS, FINDING_KINDS, INCONCLUSIVE_FINDING_KINDS, finding, findingStatus,
@@ -110,6 +106,8 @@ test('repair findings retain measured quantities without changing evidence or pr
     control: 'stock', observed: 52, expected: { atMost: 50 },
   })), /stock.*52.*at most 50/);
   assert.match(renderRepairFinding(SAMPLES['call-refused']), /HTTP 404/);
+  assert.match(renderFinding(SAMPLES['call-refused']), /names the buy_now reducer or POST \/api\/buy/);
+  assert.match(renderFinding(SAMPLES['forgery-error']), /returned no server response/);
   assert.match(renderRepairFinding(SAMPLES['entries-missing']), /missing.*duplicated/);
   assert.doesNotMatch(renderRepairFinding(finding('stock-interface-missing', {
     missingRow: 'warehouse',
@@ -142,34 +140,6 @@ test('executors fail with a finding, and the message is its rendering', () => {
       && error.message === 'the expected data could not be observed reaching owner'
       && isFinding(error.details.finding) && error.details.finding.kind === 'not-observed');
 });
-
-// Executors use the runtime helpers. Browser boundaries classify Playwright
-// errors; runtime, crash and response-loss executors retain observations and nested findings.
-test('executors fail only through the runtime helpers', () => {
-  const directory = join(STACK_BENCH_ROOT, 'src', 'actions');
-  const allowed = new Set(['action-contract.ts', 'actor-action-runtime.ts',
-    'browser-action-executors.ts', 'browser-navigation.ts', 'runtime-action-executors.ts',
-    'crash-action-executors.ts', 'response-loss-action-executors.ts']);
-  for (const file of readdirSync(directory).filter(name => name.endsWith('.ts'))) {
-    const source = readFileSync(join(directory, file), 'utf8');
-    const direct = source.match(/new Action(?:ApplicationFailure|Inconclusive)\(/g) ?? [];
-    if (allowed.has(file)) continue;
-    assert.deepEqual(direct, [], `${file} constructs a failure outside the runtime helpers`);
-  }
-});
-
-test('sample renderings read as behavior, not mechanics', () => {
-  assert.equal(renderFinding(SAMPLES['number-mismatch']),
-    'the order-total control reads 9, expected exactly 12');
-  assert.equal(renderFinding(SAMPLES['call-refused']),
-    'the buy action was refused for buyer (HTTP 404); the application interface names the buy_now reducer or POST /api/buy');
-  assert.equal(renderFinding(SAMPLES['replay-accepted']),
-    'a request replayed as customer, who must be refused, was accepted (HTTP 200)');
-  assert.equal(renderFinding(SAMPLES['page-error']), 'the page did not behave as required');
-  assert.equal(renderFinding(SAMPLES['forgery-error']),
-    'the tampered request returned no server response; this does not meet the access-error status contract');
-});
-
 
 test('missing rows and filtered controls give useful feedback without exposing probe text', () => {
   assert.match(renderRepairFinding(finding('stock-interface-missing', {

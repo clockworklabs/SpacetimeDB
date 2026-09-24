@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { harnessBrowserFailure, harnessProcessFailure } from '../src/evidence/harness-errors.js';
+import { harnessBrowserFailure, harnessProcessFailure,
+  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 
 test('child-process timeouts are harness failures, not application findings', () => {
   const error = Object.assign(new Error('spawnSync docker ETIMEDOUT'), {
@@ -25,8 +26,14 @@ test('a missing harness database container is not blamed on the application', ()
     'database container selected by the harness is unavailable');
 });
 
-test('a crashed browser target is inconclusive harness evidence', () => {
+test('a crashed browser target is inconclusive harness evidence', async () => {
   assert.match(harnessBrowserFailure(new Error('browserContext.setOffline: Target crashed ')) ?? '',
     /^browser target failed in the harness/);
   assert.equal(harnessBrowserFailure(new Error('expected stock 15, saw 20')), null);
+  // Browser setup operations are harness failures, but app navigation is not.
+  const infrastructure = await runBrowserInfrastructureOperation('page creation', async () => {
+    throw new Error('page allocation failed');
+  }).catch((error: unknown) => error);
+  assert.match(harnessBrowserFailure(infrastructure) ?? '', /browser page creation failed/);
+  assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
 });

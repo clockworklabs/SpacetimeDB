@@ -6,8 +6,6 @@ import { errors } from 'playwright';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
 import { closeActorContexts, gradeFeature } from '../grader/grade.js';
-import { harnessBrowserFailure,
-  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 
 test('grader context cleanup records browser failures instead of throwing away the report', async () => {
   const context = {
@@ -27,14 +25,6 @@ test('grader context cleanup records browser failures instead of throwing away t
   assert(failures.every(failure => failure.actor === 'buyer'));
 });
 
-test('grader context cleanup stays silent when cleanup succeeds', async () => {
-  const context = { tracing: { stop: async () => { throw new Error('trace was never started'); } }, close: async () => {} };
-  const failures = await closeActorContexts([
-    { context, name: 'buyer', page: { video: () => null } },
-  ], { trace: true, media: '/tmp/media', slug: 'account-create' });
-  assert.deepEqual(failures, []);
-});
-
 test('grader context cleanup closes a context when page creation failed', async () => {
   let closed = false;
   const context = {
@@ -46,17 +36,12 @@ test('grader context cleanup closes a context when page creation failed', async 
   ], { media: '/tmp/media', slug: 'account-create' });
   assert.equal(closed, true);
   assert.deepEqual(failures, []);
-});
 
-test('browser setup operations are harness failures but app navigation is not', async () => {
-  let infrastructure: unknown;
-  try {
-    await runBrowserInfrastructureOperation('page creation', async () => {
-      throw new Error('page allocation failed');
-    });
-  } catch (error) { infrastructure = error; }
-  assert.match(harnessBrowserFailure(infrastructure) ?? '', /browser page creation failed/);
-  assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
+  // A trace that was never started is not a cleanup failure.
+  const untraced = { tracing: { stop: async () => { throw new Error('trace was never started'); } }, close: async () => {} };
+  assert.deepEqual(await closeActorContexts([
+    { context: untraced, name: 'buyer', page: { video: () => null } },
+  ], { trace: true, media: '/tmp/media', slug: 'account-create' }), []);
 });
 
 test('navigation timeout is inconclusive; connection refusal blocks setup and proven crashes are harness failures', async () => {

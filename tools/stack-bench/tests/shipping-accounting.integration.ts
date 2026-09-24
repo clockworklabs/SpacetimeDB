@@ -5,6 +5,7 @@ import test from 'node:test';
 import { chromium } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
+import { createNamedActionsCapability } from '../src/actions/actor-transport-action-executors.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -27,22 +28,18 @@ test('shipping accounting accepts a correct sale and rejects a missing sale or d
             status = 'pending';
             if (defect !== 'missing-sale') { east--; revenue += 89; }
           });
-          await page.exposeFunction('ship', () => {
-            status = 'shipped';
-            if (defect === 'stock-twice') west--;
-            if (defect === 'revenue-twice') revenue += 89;
-          });
           await page.route('http://shipping-accounting.test/**', route => route.fulfill({ contentType: 'text/html', body: `
             <span id="current-user">${name === 'customer' ? 'shipping-accounting' : name}</span>
             <button id="admin-link">Admin</button><button id="staff-link">Staff</button>
             <div id="admin-revenue">${revenue}</div>
             <div id="item-card">Keyboard<button id="buy-now" onclick="buy().then(()=>location.reload())">Buy</button></div>
             <button id="orders-toggle">Orders</button>
-            ${status ? `<div id="order-item">Keyboard<span id="order-status">${status}</span></div>` : ''}
-            ${status === 'pending' ? '<div id="queue-item">Keyboard<button id="ship-submit" onclick="ship()">Ship</button></div>' : ''}
+            ${status ? `<div id="order-item" data-ship-input='{"orderId":"1"}'>Keyboard<span id="order-status">${status}</span></div>` : ''}
           ` }));
           await page.goto('http://shipping-accounting.test/');
-          actors.set(name, { name, page, loc: (id: string, options?: {
+          actors.set(name, { name, page, context, record: () => {},
+            writes: [{ url: 'http://shipping-accounting.test/', headers: { authorization: `Bearer ${name}` } }],
+            loc: (id: string, options?: {
             contains?: string; scope?: { testid: string; contains?: string };
           }) => {
             const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid))
@@ -51,15 +48,30 @@ test('shipping accounting accepts a correct sale and rejects a missing sale or d
             return (options?.contains ? loc.filter({ hasText: options.contains }) : loc).first();
           } });
         }
+        const sleep = async () => new Promise<void>(resolve => setTimeout(resolve, 20));
         const capability = { recorded: new Map<string, number>(), defaultWithin: 500,
           expand: (value: string) => value, scopedUser: (value: string) => value,
-          testId: stableElementSelector, sleep: async () => new Promise(resolve => setTimeout(resolve, 20)) };
+          testId: stableElementSelector, sleep };
+        // Staff ships through the declared named action with its own credentials.
+        const named = createNamedActionsCapability({ backend: 'postgres', url: 'http://shipping-accounting.test',
+          lastCalls: { get: () => null, set: () => {} }, sleep,
+          fetchImpl: async (_url, options) => {
+            assert.equal(options.headers?.authorization, 'Bearer staff');
+            assert.deepEqual(JSON.parse(String(options.body)), { orderId: '1' });
+            status = 'shipped';
+            if (defect === 'stock-twice') west--;
+            if (defect === 'revenue-twice') revenue += 89;
+            return { status: 200, ok: true, text: async () => '{}' };
+          } });
+        const transport = { defaultWithin: 500, expand: (value: string) => value, sleep,
+          verification: { unverified: () => {}, verified: () => {} } };
         let failed = null;
         for (const step of steps) {
           const result = await executeAction(ACTION_REGISTRY, step.do,
             Object.hasOwn(step, 'within') ? { ...step, within: 500 } : step, { capabilities: {
             actors: { get: (name: string) => actors.get(name) }, 'browser-interaction': capability,
-            'browser-observation': capability, 'database-read': { getStock: async (input: { item: string; warehouse?: string }) => ({
+            'browser-observation': capability, clock: { sleep }, 'named-actions': named, 'transport-observation': transport,
+            'database-read': { getStock: async (input: { item: string; warehouse?: string }) => ({
               backend: 'postgres', item: input.item, quantity: input.warehouse === 'East' ? east : input.warehouse === 'West' ? west : east + west,
             }) },
           } });

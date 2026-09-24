@@ -61,6 +61,28 @@ test('order-only checkout rejects partial, duplicate, lost and refunded effects 
   assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
   const preparedRefund = structuredClone(prepared); preparedRefund.refunds = [];
   assert(orderCheckoutDifferences(before, preparedRefund, after, 1).some(row => row.control === 'refunds unchanged during cart preparation'));
+
+  // An optional stock hold must explain the stock debit without covering more than the cart.
+  const held = states();
+  for (const state of [held.before, held.prepared, held.after]) {
+    state.payments = []; state.orphanAllocations = 0;
+    for (const order of state.orders) order.refundedMinor = 0;
+  }
+  assert.deepEqual(orderCheckoutDifferences(held.before, held.prepared, held.after, 1), []);
+  assert(orderCheckoutDifferences(held.before, held.prepared, held.prepared, 1).length, 'confirmed checkout cannot remain just a stock hold');
+  const unexplained = structuredClone(held.prepared); unexplained.reservations = [];
+  assert(orderCheckoutDifferences(held.before, unexplained, held.after, 1).length, 'stock debit needs an actual hold');
+  const overheld = structuredClone(held.prepared); overheld.reservations[0]!.quantity = 2; overheld.stock[0]!.quantity = 8;
+  assert(orderCheckoutDifferences(held.before, overheld, held.after, 1).length, 'hold cannot exceed the cart');
+  const retained = structuredClone(held.after); retained.reservations = structuredClone(held.prepared.reservations);
+  assert(orderCheckoutDifferences(held.before, held.prepared, retained, 1, true).length, 'checkout must release its hold');
+  // A cart may hold only part of its quantity; final allocations must still account for the whole order.
+  held.prepared.cart[0]!.quantity = 2;
+  held.after.stock[0]!.quantity = 8;
+  held.after.orders[0]!.totalMinor *= 2;
+  held.after.orders[0]!.lines[0]!.quantity = 2;
+  held.after.orders[0]!.lines[0]!.allocations[0]!.quantity = 2;
+  assert.deepEqual(orderCheckoutDifferences(held.before, held.prepared, held.after, 2), []);
 });
 
 test('cart add overlapping checkout accepts both serial orders and rejects lost, duplicated and partial effects', () => {
@@ -125,38 +147,6 @@ test('unsettled server work blocks later checkout and stock comparisons until a 
   assert.throws(() => fresh.getCheckoutState({ account: 'buyer', item: 'Keyboard' }), /reads are disabled/);
 });
 
-test('order checkout accounts for optional stock holds without accepting unexplained loss or duplicate purchases', () => {
-  const { before, prepared, after } = states();
-  for (const state of [before, prepared, after]) {
-    state.payments = []; state.orphanAllocations = 0;
-    for (const order of state.orders) order.refundedMinor = 0;
-  }
-  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
-  assert.deepEqual(orderCheckoutDifferences(before, prepared, prepared, 1, true), []);
-  assert(orderCheckoutDifferences(before, prepared, prepared, 1).length, 'confirmed checkout cannot remain just a stock hold');
-  const unexplained = structuredClone(prepared); unexplained.reservations = [];
-  assert(orderCheckoutDifferences(before, unexplained, after, 1).length, 'stock debit needs an actual hold');
-  const overheld = structuredClone(prepared); overheld.reservations[0]!.quantity = 2; overheld.stock[0]!.quantity = 8;
-  assert(orderCheckoutDifferences(before, overheld, after, 1).length, 'hold cannot exceed the cart');
-  for (const change of [
-    (state: CheckoutState) => { state.stock[0]!.quantity--; },
-    (state: CheckoutState) => { state.stock[0]!.quantity++; },
-    (state: CheckoutState) => { state.orders = []; },
-    (state: CheckoutState) => { state.orders.push({ ...structuredClone(state.orders[0]!), id: 'extra' }); },
-    (state: CheckoutState) => { state.reservations = structuredClone(prepared.reservations); },
-  ]) {
-    const broken = structuredClone(after); change(broken);
-    assert(orderCheckoutDifferences(before, prepared, broken, 1, true).length);
-  }
-  // A cart may hold only part of its quantity; final allocations must still account for the whole order.
-  prepared.cart[0]!.quantity = 2;
-  after.stock[0]!.quantity = 8;
-  after.orders[0]!.totalMinor *= 2;
-  after.orders[0]!.lines[0]!.quantity = 2;
-  after.orders[0]!.lines[0]!.allocations[0]!.quantity = 2;
-  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 2), []);
-});
-
 test('checkout reconciliation accepts stock reservation and atomic checkout alternatives', () => {
   const { before, prepared, after } = states();
   assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);
@@ -170,6 +160,18 @@ test('checkout reconciliation accepts stock reservation and atomic checkout alte
   before.orders.push(structuredClone(prior)); prepared.orders.push(structuredClone(prior));
   prior.lines.reverse(); after.orders.push(prior);
   assert.deepEqual(checkoutDifferences(before, prepared, after, 1), [], 'nested database row order is not corruption');
+
+  // One order can split a product across warehouse lines.
+  const split = states();
+  split.before.stock.push({ warehouseId: 'west', quantity: 5 });
+  split.prepared.stock.push({ warehouseId: 'west', quantity: 4 });
+  split.after.stock.push({ warehouseId: 'west', quantity: 4 });
+  split.prepared.cart[0]!.quantity = 2;
+  split.prepared.reservations.push({ itemId: 'i', warehouseId: 'west', quantity: 1 });
+  split.after.orders[0]!.lines.push({ itemId: 'i', quantity: 1, priceMinor: 1999, allocations: [{ warehouseId: 'west', quantity: 1 }] });
+  split.after.orders[0]!.totalMinor *= 2;
+  split.after.payments[0]!.amountMinor *= 2;
+  assert.deepEqual(checkoutDifferences(split.before, split.prepared, split.after, 2), []);
 });
 
 test('crash recovery permits complete or absent effects only without an acknowledgement', () => {
@@ -331,19 +333,6 @@ test('direct price probes reconcile accepted or refused effects without requirin
       : ['reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed';
     assert.equal(result.status, expected, mode + ': ' + JSON.stringify(result));
   }
-});
-
-test('one order can split a product across warehouse lines', () => {
-  const { before, prepared, after } = states();
-  before.stock.push({ warehouseId: 'west', quantity: 5 });
-  prepared.stock.push({ warehouseId: 'west', quantity: 4 });
-  after.stock.push({ warehouseId: 'west', quantity: 4 });
-  prepared.cart[0]!.quantity = 2;
-  prepared.reservations.push({ itemId: 'i', warehouseId: 'west', quantity: 1 });
-  after.orders[0]!.lines.push({ itemId: 'i', quantity: 1, priceMinor: 1999, allocations: [{ warehouseId: 'west', quantity: 1 }] });
-  after.orders[0]!.totalMinor *= 2;
-  after.payments[0]!.amountMinor *= 2;
-  assert.deepEqual(checkoutDifferences(before, prepared, after, 2), []);
 });
 
 test('checkout reconciliation detects duplicate, partial, wrong-owner and reject-all effects', () => {

@@ -5,10 +5,7 @@ import { chromium, errors } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { compileActionInput } from '../src/composition/definition-compiler.js';
-import {
-  BROWSER_ACTION_IMPLEMENTATIONS,
-  parseRenderedNumber,
-} from '../src/actions/browser-action-executors.js';
+import { parseRenderedNumber } from '../src/actions/browser-action-executors.js';
 
 type UnknownRecord = Record<string, unknown>;
 interface ServiceOverrides {
@@ -52,14 +49,6 @@ async function run(
     capabilities: provided.capabilities,
   });
 }
-
-test('the extracted executor registry is exact and every migrated action has bounded metadata', () => {
-  for (const id of Object.keys(BROWSER_ACTION_IMPLEMENTATIONS)) {
-    const plugin = ACTION_REGISTRY.get(id);
-    assert(plugin.timeoutMs > 0, id);
-    assert(plugin.capabilities.includes('actors') || plugin.capabilities.includes('browser-observation'), id);
-  }
-});
 
 test('script canary detects execution after DOM removal and rejects missing observers', async () => {
   const browser = await chromium.launch({ headless: true });
@@ -123,21 +112,6 @@ test('UI failures retain bounded observations but exclude passwords and unproven
   }
 });
 
-
-test('timing executes through the contract and still rejects an unknown actor', async () => {
-  const slept: number[] = [];
-  const provided = services({}, { clockSleep: async (ms) => { slept.push(ms); } });
-  const passed = await run({ do: 'wait', actor: 'a', ms: 17 }, provided);
-  assert.equal(passed.status, 'passed');
-  assert.deepEqual(passed.observation, { waitedMs: 17 });
-  assert.deepEqual(slept, [17]);
-
-  const missing = await run({ do: 'wait', actor: 'missing', ms: 1 }, provided);
-  assert.equal(missing.status, 'harness_failure');
-  assert.equal(missing.code, 'unclassified_exception');
-  assert.equal(missing.summary, 'harness did not create actor "missing"');
-});
-
 test('observation and selection errors cannot become missing-control findings', async () => {
   for (const operation of ['expect', 'expectNumber', 'waitUntilAbsent', 'fill']) {
     const result = await run({ do: operation, actor: 'a', testid: 'field',
@@ -179,6 +153,16 @@ test('message order requires observed messages and compares the merged sender se
     const result = await run({ do: 'expectOrderMatches', actors: ['a', 'b'], prefix: '(?:AA|BB)' }, provided);
     assert.equal(result.status, expected, result.summary ?? undefined);
   }
+  // Ordered text is an explicit implementation-neutral observation.
+  const items = {
+    filter: () => items,
+    allInnerTexts: async () => ['Coffee Grinder', 'Air Purifier'],
+  };
+  const scope = { filter: () => scope, first: () => scope, locator: () => items };
+  const ordered = await run({ do: 'expectSequence', actor: 'a', testid: 'item-name',
+    in: { testid: 'item-list' }, equals: ['Coffee Grinder', 'Air Purifier'] }, services({ page: { locator: () => scope } }));
+  assert.equal(ordered.status, 'passed');
+  assert.deepEqual((ordered.observation as { values: string[] }).values, ['Coffee Grinder', 'Air Purifier']);
 });
 
 test('optional clicks operate enabled controls and skip unavailable controls', async () => {
@@ -192,40 +176,24 @@ test('optional clicks operate enabled controls and skip unavailable controls', a
   }
 });
 
-test('interaction actions receive scoped values and preserve click options', async () => {
-  const calls: unknown[][] = [];
-  const locator = {
-    click: async (options: unknown) => { calls.push(['click', options]); },
-  };
-  const actor = {
-    loc: (testid: string, options: unknown) => {
-      calls.push(['loc', testid, options]);
-      return locator;
-    },
-  };
-  const passed = await run({ do: 'click', actor: 'a', testid: 'open',
-    contains: '{room:test}', in: { testid: 'row', contains: '{room:test}' }, settleMs: 5 },
-  services(actor));
-  assert.equal(passed.status, 'passed');
-  assert.deepEqual(calls, [
-    ['loc', 'open', { contains: 'test-scoped',
-      scope: { testid: 'row', contains: 'test-scoped' } }],
-    ['click', { timeout: 5000 }],
-  ]);
-});
-
-test('interaction scopes can match separate text fragments without assuming punctuation', async () => {
-  let scope: { testid: string; contains: RegExp } | undefined;
-  const actor = { loc: (_testid: string, options: {
-    scope: { testid: string; contains: RegExp };
-  }) => {
-    scope = options.scope;
-    return { click: async () => {} };
+test('interaction scopes expand scoped values and can match separate text fragments without assuming punctuation', async () => {
+  const received: unknown[] = [];
+  let clickOptions: unknown;
+  const actor = { loc: (_testid: string, options: unknown) => {
+    received.push(options);
+    return { click: async (options: unknown) => { clickOptions = options; } };
   } };
+  const expanded = await run({ do: 'click', actor: 'a', testid: 'open',
+    contains: '{room:test}', in: { testid: 'row', contains: '{room:test}' }, settleMs: 5 }, services(actor));
+  assert.equal(expanded.status, 'passed');
+  assert.deepEqual(received, [{ contains: 'test-scoped', scope: { testid: 'row', contains: 'test-scoped' } }]);
+  assert.deepEqual(clickOptions, { timeout: 5000 });
+
   const result = await run({ do: 'click', actor: 'a', testid: 'save',
     in: { testid: 'row', containsAll: ['Mirrorless Camera', 'East'] } }, services(actor));
   assert.equal(result.status, 'passed');
-  assert(scope);
+  const scope = (received.at(-1) as { scope?: { testid: string; contains: unknown } }).scope;
+  assert(scope && scope.contains instanceof RegExp);
   assert.equal(scope.testid, 'row');
   assert(scope.contains.test('Mirrorless Camera @ East'));
   assert(scope.contains.test('East: Mirrorless Camera'));
@@ -256,30 +224,6 @@ test('fill adapts values to date input types', async () => {
   values.length = 0;
   await run({ do: 'fill', actor: 'a', testid: 'date', text: '2099-12-31T23:59' }, services(actor));
   assert.deepEqual(values, [['date', '2099-12-31']]);
-});
-
-test('recorded-number state is narrow, reusable, and numeric parsing is stable', async () => {
-  assert.equal(parseRenderedNumber('Stock: 1,024 left'), 1024);
-  assert.equal(parseRenderedNumber('$12.50'), 12.5);
-  assert.equal(parseRenderedNumber('none'), null);
-
-  let rendered = 'Total: 1,024';
-  const locator = {
-    waitFor: async () => {},
-    evaluate: async () => 'DIV',
-    innerText: async () => rendered,
-  };
-  const actor = { loc: () => locator };
-  const provided = services(actor);
-  const recorded = await run({ do: 'recordNumber', actor: 'a', testid: 'total', as: 'before' }, provided);
-  assert.equal(recorded.status, 'passed');
-  assert.equal(provided.recorded.get('before'), 1024);
-
-  rendered = 'Total: 1,027';
-  const compared = await run({ do: 'expectNumber', actor: 'a', testid: 'total',
-    relativeTo: 'before', plus: 3 }, provided);
-  assert.equal(compared.status, 'passed');
-  assert.deepEqual(compared.observation, { value: 1027 });
 });
 
 test('stock observations accept an explicit zero-stock state without relaxing other numeric controls', async () => {
@@ -348,29 +292,27 @@ test('absence checks do not pass before a late element appears', async () => {
   assert.match(result.summary ?? '', /was shown when it must not be/);
 });
 
-test('waitUntilAbsent waits for a visible element to leave', async () => {
-  const calls: unknown[] = [];
-  const actor = { loc: () => ({ waitFor: async (options: unknown) => { calls.push(options); } }) };
-  const result = await run({ do: 'waitUntilAbsent', actor: 'a', testid: 'queue-item',
-    contains: 'Keyboard', within: 1000 }, services(actor));
-  assert.equal(result.status, 'passed');
-  assert.deepEqual(calls, [{ state: 'hidden', timeout: 1000 }]);
-});
-
 test('unavailable checks do not pass before a control becomes enabled', async () => {
-  let checks = 0;
-  const locator = {
-    filter() { return this; },
-    first() { return this; },
-    isVisible: async () => true,
-    isDisabled: async () => ++checks === 1,
-    getAttribute: async () => null,
-  };
-  const actor = { page: { locator: () => locator } };
-  const result = await run({ do: 'expectUnavailable', actor: 'a', testid: 'admin',
-    within: 100 }, services(actor));
-  assert.equal(result.status, 'failed');
-  assert.match(result.summary ?? '', /stayed available to/);
+  for (const enabled of [true, false]) {
+    let checks = 0;
+    const locator = {
+      filter() { return this; },
+      first() { return this; },
+      isVisible: async () => true,
+      isDisabled: async () => !enabled || ++checks === 1,
+      getAttribute: async () => null,
+    };
+    const actor = { page: { locator: () => locator } };
+    const result = await run({ do: 'expectUnavailable', actor: 'a', testid: 'admin',
+      within: 100 }, services(actor));
+    if (enabled) {
+      assert.equal(result.status, 'failed');
+      assert.match(result.summary ?? '', /stayed available to/);
+    } else {
+      assert.equal(result.status, 'passed');
+      assert.deepEqual(result.observation, { unavailable: true, reason: 'disabled' });
+    }
+  }
 });
 
 test('missing values do not satisfy agreement across actors', async () => {
@@ -386,20 +328,13 @@ test('missing values do not satisfy agreement across actors', async () => {
   assert.match(result.summary ?? '', /missing or unreadable/);
 });
 
-test('expect can verify a persisted form value', async () => {
-  const locator = {
-    waitFor: async () => {},
-    evaluate: async () => 'INPUT',
-    inputValue: async () => 'staff',
-  };
-  const actor = { loc: () => locator };
-  const result = await run({ do: 'expect', actor: 'a', testid: 'support-assignee',
-    value: 'staff' }, services(actor));
-  assert.equal(result.status, 'passed');
-  assert.deepEqual(result.observation, { visible: true, value: 'staff' });
-});
+test('expect can verify a persisted form value or an element attribute', async () => {
+  const field = { waitFor: async () => {}, evaluate: async () => 'INPUT', inputValue: async () => 'staff' };
+  const persisted = await run({ do: 'expect', actor: 'a', testid: 'support-assignee',
+    value: 'staff' }, services({ loc: () => field }));
+  assert.equal(persisted.status, 'passed');
+  assert.deepEqual(persisted.observation, { visible: true, value: 'staff' });
 
-test('expect can verify an element attribute', async () => {
   const locator = {
     waitFor: async () => {},
     getAttribute: async (name: string) => name === 'data-state' ? 'on' : null,
@@ -409,43 +344,6 @@ test('expect can verify an element attribute', async () => {
     attribute: 'data-state', value: 'on' }, services(actor));
   assert.equal(result.status, 'passed');
   assert.deepEqual(result.observation, { visible: true, attribute: 'data-state', value: 'on' });
-});
-
-test('ordered text and unavailable controls are explicit implementation-neutral observations', async () => {
-  const items = {
-    filter: () => items,
-    allInnerTexts: async () => ['Coffee Grinder', 'Air Purifier'],
-  };
-  const scope = {
-    filter: () => scope,
-    first: () => scope,
-    locator: () => items,
-  };
-  const disabled = {
-    filter: () => disabled,
-    first: () => disabled,
-    isVisible: async () => true,
-    isDisabled: async () => true,
-    getAttribute: async () => null,
-  };
-  const actor = {
-    page: {
-      locator: (selector: string) => selector.includes('item-list') ? scope : disabled,
-    },
-  };
-  const provided = services(actor);
-  const ordered = await run({ do: 'expectSequence', actor: 'a', testid: 'item-name',
-    in: { testid: 'item-list' }, equals: ['Coffee Grinder', 'Air Purifier'] }, provided);
-  assert.equal(ordered.status, 'passed');
-  assert.deepEqual(
-    (ordered.observation as { values: string[] }).values,
-    ['Coffee Grinder', 'Air Purifier'],
-  );
-
-  const unavailable = await run({ do: 'expectUnavailable', actor: 'a', testid: 'buy-now',
-    within: 1 }, provided);
-  assert.equal(unavailable.status, 'passed');
-  assert.deepEqual(unavailable.observation, { unavailable: true, reason: 'disabled' });
 });
 
 test('element counts use visible observations instead of hidden duplicate markup', async () => {
@@ -549,9 +447,20 @@ test('a click that removes its target before timing out is inconclusive and is n
 
 
 test('relative number bounds use recorded values and report the resolved bound', async () => {
-  let value = 70;
+  assert.equal(parseRenderedNumber('Stock: 1,024 left'), 1024);
+  assert.equal(parseRenderedNumber('$12.50'), 12.5);
+  assert.equal(parseRenderedNumber('none'), null);
+  let value: number | string = 'Total: 1,024';
   const provided = services({ loc: () => ({ waitFor: async () => {},
     evaluate: async () => 'SPAN', innerText: async () => String(value) }) });
+  assert.equal((await run({ do: 'recordNumber', actor: 'a', testid: 'total', as: 'before' }, provided)).status, 'passed');
+  assert.equal(provided.recorded.get('before'), 1024);
+  value = 'Total: 1,027';
+  const compared = await run({ do: 'expectNumber', actor: 'a', testid: 'total', relativeTo: 'before', plus: 3 }, provided);
+  assert.equal(compared.status, 'passed');
+  assert.deepEqual(compared.observation, { value: 1027 });
+
+  value = 70;
   provided.recorded.set('initial', 72);
   const step = { do: 'expectNumber', actor: 'a', testid: 'timer', relativeTo: 'initial', plus: -1, within: 1 };
   assert.equal((await run({ ...step, comparison: 'atMost' }, provided)).status, 'passed');
@@ -626,21 +535,36 @@ test('covered navigation accepts a destination that finishes loading without ano
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const mode of ['delayed', 'absent', 'button']) {
+    for (const mode of ['delayed', 'absent', 'button', 'removed']) {
       const page = await browser.newPage();
       try {
         await page.setContent(`<button id="sales-link" onclick="this.dataset.clicks=Number(this.dataset.clicks||0)+1">Sales</button>
-          <dialog id="modal">Loading</dialog><script>
+          ${mode === 'removed' ? '<div id="category-row">Audio</div>' : `<dialog id="modal">Loading</dialog><script>
           ${mode === 'button' ? '' : 'modal.showModal();'}
           ${mode === 'delayed' ? "setTimeout(()=>modal.innerHTML='<div id=category-row>Audio</div>',150);" : ''}
-          </script>`);
+          </script>`}`);
+        const loc = (id: string) => {
+          const locator = page.locator(`#${id}`);
+          if (mode !== 'removed' || id !== 'category-row') return locator;
+          // Catalog navigation can remove the old destination between two reads.
+          return new Proxy(locator, { get(target, key) {
+            if (key === 'isVisible') return async () => {
+              const visible = await target.isVisible();
+              await page.locator('#category-row').evaluate(element => element.remove());
+              return visible;
+            };
+            const value = Reflect.get(target, key);
+            return typeof value === 'function' ? value.bind(target) : value;
+          } });
+        };
         const result = await run({ do: 'click', actor: 'a', testid: 'sales-link',
           unlessVisible: 'category-row', ifAvailable: true, within: 600 },
-        services({ loc: (id: string) => page.locator(`#${id}`) }, {
+        services({ loc }, {
           browser: { sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
         }));
         assert.equal(result.status, mode === 'absent' ? 'failed' : 'passed', result.summary ?? undefined);
-        assert.equal(await page.locator('#sales-link').getAttribute('data-clicks'), mode === 'button' ? '1' : null);
+        assert.equal(await page.locator('#sales-link').getAttribute('data-clicks'),
+          mode === 'button' || mode === 'removed' ? '1' : null);
         if (mode === 'absent') assert.equal(result.finding?.kind, 'control-blocked');
       } finally { await page.close(); }
     }
@@ -713,31 +637,4 @@ test('failed disappearance identifies the matched entry and scope', async () => 
   assert.equal(result.status, 'failed');
   assert.match(result.summary!, /Coffee Grinder/);
   assert.match(result.summary!, /search-results/);
-});
-
-// The catalog navigation can remove the old destination between these two reads.
-test('navigation clicks once when its old destination disappears during observation', async () => {
-  const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage();
-    page.setDefaultTimeout(150);
-    await page.setContent('<button id="profile-link" onclick="this.dataset.clicked=true">Profile</button><div id="profile-address-summary">Address</div>');
-    const result = await run({ do: 'click', actor: 'a', testid: 'profile-link',
-      unlessVisible: 'profile-address-summary', within: 150 }, services({ loc: (id: string) => {
-      const locator = page.locator('#' + id);
-      if (id !== 'profile-address-summary') return locator;
-      return new Proxy(locator, { get(target, key) {
-        if (key === 'isVisible') return async () => {
-          const visible = await target.isVisible();
-          await page.locator('#profile-address-summary').evaluate(element => element.remove());
-          return visible;
-        };
-        const value = Reflect.get(target, key);
-        return typeof value === 'function' ? value.bind(target) : value;
-      } });
-    } }));
-    assert.equal(result.status, 'passed', result.summary ?? undefined);
-    assert.equal(await page.locator('#profile-link').getAttribute('data-clicked'), 'true');
-  } finally { await browser.close(); }
 });

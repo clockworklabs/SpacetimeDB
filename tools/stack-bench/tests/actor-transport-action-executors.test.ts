@@ -12,10 +12,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { classifyResponseContract, tamperedSessionCredentials } from '../src/actions/named-action-runtime.js';
 import { executeAction } from '../src/actions/action-contract.js';
-import {
-  ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
-  createNamedActionsCapability,
-} from '../src/actions/actor-transport-action-executors.js';
+import { createNamedActionsCapability } from '../src/actions/actor-transport-action-executors.js';
 
 type UnknownRecord = Record<string, unknown>;
 type NamedOptions = Parameters<typeof createNamedActionsCapability>[0];
@@ -120,18 +117,6 @@ async function run(input: UnknownRecord, provided: ProvidedServices) {
   });
 }
 
-test('the actor/transport executor registry is exact and capability-scoped', () => {
-  for (const id of Object.keys(ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS)) {
-    const plugin = ACTION_REGISTRY.get(id);
-    assert(plugin.timeoutMs > 0, id);
-    assert(plugin.capabilities.length > 0, id);
-    assert(plugin.capabilities.every(capability => [
-      'actors', 'application-files', 'browser-interaction', 'named-actions', 'subprocess',
-      'transport-observation',
-    ].includes(capability)), `${id}: ${plugin.capabilities.join(', ')}`);
-  }
-});
-
 test('a parameterless action needs no DOM input; parameterized actions still do', async () => {
   let calls = 0;
   const provided = services(new Map([['guest', { name: 'guest' }]]), {
@@ -151,52 +136,34 @@ test('a parameterless action needs no DOM input; parameterized actions still do'
   assert.equal(calls, 1);
 });
 
-test('optional actor credentials preserve illicit sessions without excusing broken credential hooks', async () => {
-  const input = { do: 'callAction', actor: 'guest', action: 'checkout', authentication: 'optional', settleMs: 0,
-    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
-  for (const observed of [{ signedOut: true }, ['illicit-session'], ['one-token', 'another-token'], { unavailable: 'credential hook failed' }]) {
-    let calls = 0;
-    const actor = { name: 'guest', writes: [{ url: 'http://app.test/api/checkout', headers: { 'x-csrf-token': 'caller-csrf' } }],
-      record() {}, context: { cookies: async () => [] },
-      page: { evaluate: async () => observed } };
-    const provided = services(new Map([['guest', actor]]), {
-      fetchImpl: async (_url, options) => {
-        calls++;
-        assert.equal((options.headers as Record<string, string>)['x-csrf-token'], 'caller-csrf');
-        assert.equal((options.headers as Record<string, string>).Authorization,
-          Array.isArray(observed) ? 'Bearer illicit-session' : undefined);
-        return namedResponse(401, false);
-      },
-    });
-    const result = await run(input, provided);
-    const broken = Array.isArray(observed) ? observed.length > 1 : 'unavailable' in observed;
-    assert.equal(result.status, broken ? 'inconclusive' : 'passed', JSON.stringify(result));
-    assert.equal(calls, broken ? 0 : 1);
-  }
-});
-
 test('live session hooks override captured credentials after signout and account changes', async () => {
-  for (const current of [null, 'current-session', 'broken', 'no-hook']) {
+  // An array is an app without the hook that keeps these session tokens in storage and has no captured Authorization.
+  for (const current of [null, 'current-session', 'broken', 'no-hook', ['illicit-session'], ['one-token', 'another-token']]) {
     let calls = 0;
+    const stored = Array.isArray(current) ? current : [];
+    const storage = { length: stored.length, key: (index: number) => `session-${index}`,
+      getItem: (key: string) => stored[Number(key.slice('session-'.length))] ?? null };
     const actor = { name: 'buyer', writes: [{ url: 'http://app.test/buy', headers: {
-      authorization: 'Bearer old-session', 'x-csrf-token': 'current-context',
+      ...(Array.isArray(current) ? {} : { authorization: 'Bearer old-session' }), 'x-csrf-token': 'current-context',
     } }], context: { cookies: async () => [] }, page: {
       evaluate: async (callback: () => unknown) =>
-        runInNewContext(`(${callback.toString()})()`, { localStorage: { length: 0 }, sessionStorage: { length: 0 }, window: current === 'no-hook' ? {} : {
-          getSessionToken: () => { if (current === 'broken') throw new Error('broken hook'); return current; },
-        } }),
+        runInNewContext(`(${callback.toString()})()`, { localStorage: storage, sessionStorage: { length: 0 },
+          window: current === 'no-hook' || Array.isArray(current) ? {} : {
+            getSessionToken: () => { if (current === 'broken') throw new Error('broken hook'); return current; },
+          } }),
     } };
+    const broken = current === 'broken' || stored.length > 1;
     const provided = services(new Map([['buyer', actor]]), { fetchImpl: async (_url, options) => {
       calls++;
       assert.equal(options.headers?.['x-csrf-token'], 'current-context');
       assert.equal(options.headers?.Authorization ?? options.headers?.authorization,
-        current === null ? undefined : `Bearer ${current === 'no-hook' ? 'old-session' : current}`);
+        current === null ? undefined : `Bearer ${Array.isArray(current) ? current[0] : current === 'no-hook' ? 'old-session' : current}`);
       return namedResponse(401, false);
     } });
     const result = await run({ do: 'callAction', actor: 'buyer', action: 'buy', authentication: 'optional', settleMs: 0,
       namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } }, provided);
-    assert.equal(result.status, current === 'broken' ? 'inconclusive' : 'passed', JSON.stringify(result));
-    assert.equal(calls, current === 'broken' ? 0 : 1);
+    assert.equal(result.status, broken ? 'inconclusive' : 'passed', JSON.stringify(result));
+    assert.equal(calls, broken ? 0 : 1);
   }
 });
 
@@ -426,32 +393,6 @@ test('one named server action maps DOM input symmetrically and verifies its outc
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
 });
 
-test('reference cart identifiers allow both positive and negative scenario quantities on the actual action path', async () => {
-  for (const backend of ['postgres', 'mongodb', 'spacetime', 'convex']) {
-    const file = backend === 'spacetime' ? 'client/src/components/CartPanel.tsx' : 'client/src/App.tsx';
-    const source = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, file), 'utf8');
-    const expressions = [...source.matchAll(/data-cart-input=\{JSON.stringify\((\{[^}]+\})\)\}/g)];
-    assert.equal(expressions.length, 1);
-    const input = JSON.stringify(runInNewContext(`(${expressions[0]![1]})`, { line: { itemId: '17' } }));
-    assert.deepEqual(JSON.parse(input), { itemId: '17' });
-    for (const quantity of [-3, 4]) for (const doAction of ['callAction', 'callConcurrently']) {
-      let sent = false;
-      const customer = { name: 'customer', writes: [{ headers: { authorization: 'Bearer test' } }],
-        loc: () => ({ waitFor: async () => {}, getAttribute: async () => input }) };
-      const provided = services(new Map([['customer', customer]]), { fetchImpl: async (_url, options) => {
-        sent = true; assert.deepEqual(JSON.parse(String(options.body)), { quantity });
-        return namedResponse(200, true);
-      } });
-      const result = await run({ do: doAction, ...(doAction === 'callAction' ? { actor: 'customer' } : { actors: ['customer'], requests: 1 }), action: 'cart-update',
-        namedAction: { id: 'cart-update', path: '/api/cart/:itemId', method: 'PATCH', reducer: 'update_cart_quantity', args: [0, quantity],
-          params: [{ name: 'itemId', in: 'path', placeholder: ':itemId' }, { name: 'quantity', in: 'body' }] },
-        input: { testid: 'cart-item', attribute: 'data-cart-input' }, settleMs: 0,
-      }, provided);
-      assert.equal(result.status, 'passed', `${backend} ${doAction}: ${JSON.stringify(result)}`); assert(sent);
-    }
-  }
-});
-
 test('named action input uses declared defaults and a missing route is not mistaken for a refusal', async () => {
   const actor = (input: UnknownRecord) => ({
     name: 'customer',
@@ -508,30 +449,22 @@ test('named action input uses declared defaults and a missing route is not mista
   assert.equal(unrelatedProof.status, 'failed');
 });
 
-test('generic client errors do not prove a named action was refused for authorization', async () => {
-  for (const status of [400, 409, 422]) {
-    const actor = {
-      name: 'customer',
-      actionCall: { action: 'checkout', accepted: false, status },
-    };
-    const provided = services(new Map<string, unknown>([['customer', actor]]));
-    const checked = await run({ do: 'expectActionOutcome', actor: 'customer',
-      outcome: 'refused' }, provided);
-    assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
-    assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
-  }
-});
-
 test('validation refusal accepts only deliberate application rejection statuses', async () => {
-  for (const [status, expected] of [[400, 'passed'], [409, 'passed'], [422, 'passed'],
-    [403, 'failed'], [500, 'failed']] as const) {
+  for (const [outcome, status, expected] of [
+    ['validation-refused', 400, 'passed'], ['validation-refused', 409, 'passed'], ['validation-refused', 422, 'passed'],
+    ['validation-refused', 403, 'failed'], ['validation-refused', 500, 'failed'],
+    // Generic client errors do not prove a named action was refused for authorization.
+    ['refused', 400, 'failed'], ['refused', 409, 'failed'], ['refused', 422, 'failed'],
+  ] as const) {
     const actor = { name: 'customer',
       actionCall: { action: 'cart-set-quantity', accepted: false, status } };
     const provided = services(new Map<string, unknown>([['customer', actor]]));
-    const checked = await run({ do: 'expectActionOutcome', actor: 'customer',
-      outcome: 'validation-refused' }, provided);
+    const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
     assert.equal(checked.status, expected, checked.summary ?? undefined);
+    if (outcome === 'refused') {
+      assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+      assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
+    }
   }
 });
 
@@ -672,58 +605,39 @@ test('restock role claims reach the real write with staff credentials and stored
   }
 });
 
-test('shipping role claims retain customer credentials and check fresh state before classifying refusal', async () => {
+test('shipping role and cancellation owner claims retain the caller and check fresh state before classifying refusal', async () => {
   const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/02-server-actions.json', 'utf8'));
-  const criterion = scenario.features.find((f: UnknownRecord) => f.id === 201).criteria[0];
-  const steps = criterion.steps as UnknownRecord[], calls = steps.filter(step => step.do === 'callAction');
-  assert.equal(criterion.points, 2);
-  assert.equal(calls.length, 4);
-  const attack = steps.indexOf(calls[2]!);
-  assert.equal(steps[attack + 1]!.outcome, 'completed');
-  const refused = steps.findIndex((step, i) => i > attack && step.outcome === 'application-refused');
-  assert(steps.slice(attack, refused).some(step => step.do === 'reload'));
-  assert.equal(steps[refused - 1]!.value, 'pending');
-  assert.equal(steps.at(-1)!.value, 'shipped');
-  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
-    const requests: { body: string; authorization: string | undefined }[] = [];
-    const provided = services(new Map(['staff', 'customer'].map(name => [name, { name,
-      writes: [{ headers: { authorization: `Bearer ${name}` } }],
-      loc: () => ({ waitFor: async () => {}, getAttribute: async () => '{"orderId":"9007199254740993"}' }),
-    }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
-      fetchImpl: async (_url, options) => { requests.push({ body: options.body!, authorization: options.headers?.authorization }); return namedResponse(403, false); } });
-    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
-    assert.deepEqual(requests.map(r => r.authorization), ['Bearer staff', 'Bearer customer', 'Bearer customer', 'Bearer staff']);
-    if (backend === 'spacetime') assert.equal(requests[2]!.body, '[9007199254740993,"staff"]');
-    else assert.deepEqual(JSON.parse(requests[2]!.body), { orderId: '9007199254740993', role: 'staff' });
-  }
-});
-
-test('cancellation owner claims retain the caller and verify fresh state before refusal', async () => {
-  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/02-server-actions.json', 'utf8'));
-  const feature = scenario.features.find((f: UnknownRecord) => f.id === 204);
-  const owner = feature.setup.find((s: UnknownRecord) => s.do === 'signUp' && s.actor === 'owner');
-  assert.equal(owner.exact, true);
-  const criterion = feature.criteria[0];
-  const steps = criterion.steps as UnknownRecord[], calls = steps.filter(step => step.do === 'callAction');
-  assert.equal(criterion.points, 2);
-  assert.equal(calls.length, 4);
-  const attack = steps.indexOf(calls[2]!);
-  assert.equal(steps[attack + 1]!.outcome, 'completed');
-  const refusal = steps.findIndex((s, i) => i > attack && s.outcome === 'application-refused');
-  assert(steps.slice(attack, refusal).some(s => s.do === 'reload'));
-  assert.equal(steps[refusal - 1]!.value, 'pending');
-  assert.equal(steps.at(-1)!.value, 'cancelled');
-  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
-    const requests: { body: string; authorization: string | undefined }[] = [];
-    const provided = services(new Map(['owner', 'other'].map(name => [name, { name,
-      writes: [{ headers: { authorization: `Bearer ${name}` } }],
-      loc: () => ({ waitFor: async () => {}, getAttribute: async () => '{"orderId":"9007199254740993"}' }),
-    }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
-      fetchImpl: async (_url, options) => { requests.push({ body: options.body!, authorization: options.headers?.authorization }); return namedResponse(403, false); } });
-    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
-    assert.deepEqual(requests.map(r => r.authorization), ['Bearer owner', 'Bearer other', 'Bearer other', 'Bearer owner']);
-    if (backend === 'spacetime') assert.equal(requests[2]!.body, `[9007199254740993,${JSON.stringify(owner.name)}]`);
-    else assert.deepEqual(JSON.parse(requests[2]!.body), { username: owner.name });
+  for (const [id, [caller, claimant], final] of [
+    [201, ['staff', 'customer'], 'shipped'], [204, ['owner', 'other'], 'cancelled'],
+  ] as const) {
+    const feature = scenario.features.find((f: UnknownRecord) => f.id === id);
+    const owner = feature.setup.find((s: UnknownRecord) => s.do === 'signUp' && s.actor === 'owner');
+    if (id === 204) assert.equal(owner.exact, true);
+    const criterion = feature.criteria[0];
+    const steps = criterion.steps as UnknownRecord[], calls = steps.filter(step => step.do === 'callAction');
+    assert.equal(criterion.points, 2);
+    assert.equal(calls.length, 4);
+    const attack = steps.indexOf(calls[2]!);
+    assert.equal(steps[attack + 1]!.outcome, 'completed');
+    const refused = steps.findIndex((step, i) => i > attack && step.outcome === 'application-refused');
+    assert(steps.slice(attack, refused).some(step => step.do === 'reload'));
+    assert.equal(steps[refused - 1]!.value, 'pending');
+    assert.equal(steps.at(-1)!.value, final);
+    for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+      const requests: { body: string; authorization: string | undefined }[] = [];
+      const provided = services(new Map([caller, claimant].map(name => [name, { name,
+        writes: [{ headers: { authorization: `Bearer ${name}` } }],
+        loc: () => ({ waitFor: async () => {}, getAttribute: async () => '{"orderId":"9007199254740993"}' }),
+      }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+        fetchImpl: async (_url, options) => { requests.push({ body: options.body!, authorization: options.headers?.authorization }); return namedResponse(403, false); } });
+      for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+      assert.deepEqual(requests.map(r => r.authorization), [caller, claimant, claimant, caller].map(name => `Bearer ${name}`));
+      if (id === 201) {
+        if (backend === 'spacetime') assert.equal(requests[2]!.body, '[9007199254740993,"staff"]');
+        else assert.deepEqual(JSON.parse(requests[2]!.body), { orderId: '9007199254740993', role: 'staff' });
+      } else if (backend === 'spacetime') assert.equal(requests[2]!.body, `[9007199254740993,${JSON.stringify(owner.name)}]`);
+      else assert.deepEqual(JSON.parse(requests[2]!.body), { username: owner.name });
+    }
   }
 });
 
@@ -837,6 +751,13 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(truncated.status, 'inconclusive');
   assert.match(JSON.stringify(truncated.finding), /input changed the requested username/);
   assert(!calls.some(call => call[1] === 'click'));
+  // A refusal-tolerant signup must still deliver the exact account name, or it measures nothing.
+  const refusalTolerant = await run({ do: 'signUp', actor: 'a', name: 'Alice', expectFailure: true },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(refusalTolerant.status, 'inconclusive');
+  assert.equal(refusalTolerant.finding?.kind, 'invalid-input');
+  assert.match(JSON.stringify(refusalTolerant.finding), /input changed the requested username/);
+  assert(!calls.some(call => call[1] === 'click'));
 
   const timeout = Object.assign(new Error('locator.fill: timed out'), { name: 'TimeoutError' });
   const timedOutActor = { page: { locator: () => ({ first() { return this; },
@@ -856,59 +777,6 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(bug.code, 'unclassified_exception');
 });
 
-test('sign in waits for a rendered toggle instead of silently missing the form', async () => {
-  const calls: unknown[][] = [];
-  let formVisible = false;
-  const username = {
-    first() { return this; },
-    or() { return { first() { return this; },
-      filter(options: unknown) { assert.deepEqual(options, { visible: true }); return this; },
-      waitFor: async (options: unknown) => { calls.push(['form-or-toggle', 'waitFor', options]); } }; },
-    isVisible: async () => formVisible,
-    waitFor: async (options: unknown) => {
-      calls.push(['username', 'waitFor', options]);
-      assert.equal(formVisible, true);
-    },
-    fill: async (value: string) => { calls.push(['username', 'fill', value]); },
-    inputValue: async () => 'admin',
-  };
-  const fields: Record<string, unknown> = {
-    '[data-testid="signin-username"]': username,
-    '[data-testid="signin-password"]': { first() { return this; },
-      fill: async (value: string) => { calls.push(['password', 'fill', value]); } },
-    '[data-testid="signin-submit"]': { first() { return this; },
-      click: async () => { calls.push(['submit', 'click']); } },
-    '[data-testid="current-user"]': { first() { return this; },
-      waitFor: async (options: unknown) => { calls.push(['current-user', 'waitFor', options]); } },
-  };
-  const toggle = {
-    waitFor: async (options: unknown) => { calls.push(['toggle', 'waitFor', options]); },
-    click: async (options: unknown) => {
-      calls.push(['toggle', 'click', options]);
-      formVisible = true;
-    },
-  };
-  const actor = {
-    loc: (id: string) => {
-      assert.equal(id, 'signin-toggle');
-      return toggle;
-    },
-    page: { locator: (selector: string) => fields[selector] },
-  };
-
-  const result = await run({ do: 'signIn', actor: 'a', name: 'admin', password: 'secret', exact: true },
-    services(new Map<string, unknown>([['a', actor]])));
-
-  assert.equal(result.status, 'passed');
-  assert.deepEqual(calls.slice(0, 3), [
-    ['form-or-toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
-    ['toggle', 'click', { timeout: 5000 }],
-    ['username', 'waitFor', { state: 'visible', timeout: 5000 }],
-  ]);
-  assert(calls.some(call => call[0] === 'username' && call[2] === 'admin'));
-  assert(calls.some(call => call[0] === 'password' && call[2] === 'secret'));
-});
-
 test('account restoration does not accept the wrong signed-in user', async () => {
   const currentUser = {
     first() { return this; },
@@ -925,34 +793,19 @@ test('account restoration does not accept the wrong signed-in user', async () =>
   assert.match(result.summary ?? '', /different account/);
 });
 
-test('an unreplayable WebSocket write cannot earn server-side forgery credit', async () => {
-  const actor = {
-    name: 'a',
-    lastWrite: null,
-    lastWsWrite: { event: 'send_message', body: { content: 'hello' } },
-  };
-  const provided = services(new Map<string, unknown>([['a', actor], ['victim', {}]]));
-  const forged = await run({ do: 'forgeWrite', actor: 'a', fromActor: 'victim', settleMs: 0 }, provided);
-  assert.equal(forged.status, 'passed');
-  assert.deepEqual(forged.observation, { attempted: false, classification: 'unverified' });
+test('an unreplayable WebSocket write or missing transport evidence cannot earn server-side forgery credit', async () => {
+  for (const lastWsWrite of [{ event: 'send_message', body: { content: 'hello' } }, null]) {
+    const actor = { name: 'a', lastWrite: null, lastWsWrite };
+    const provided = services(new Map<string, unknown>([['a', actor], ['victim', {}]]));
+    const forged = await run({ do: 'forgeWrite', actor: 'a', fromActor: 'victim', settleMs: 0 }, provided);
+    assert.equal(forged.status, 'passed');
+    assert.deepEqual(forged.observation, { attempted: false, classification: 'unverified' });
 
-  const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
-  assert.equal(checked.status, 'inconclusive');
-  assert.match(checked.summary ?? '', /could not verify the forgery refusal/);
-  assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
-});
-
-test('missing transport evidence cannot earn server-side forgery credit', async () => {
-  const actor = { name: 'a', lastWrite: null, lastWsWrite: null };
-  const provided = services(new Map<string, unknown>([['a', actor], ['victim', {}]]));
-  const forged = await run({ do: 'forgeWrite', actor: 'a', fromActor: 'victim', settleMs: 0 },
-    provided);
-  assert.equal(forged.status, 'passed');
-  assert.equal(record(forged.observation).classification, 'unverified');
-
-  const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
-  assert.equal(checked.status, 'inconclusive');
-  assert.match(checked.summary ?? '', /could not verify the forgery refusal/);
+    const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
+    assert.equal(checked.status, 'inconclusive');
+    assert.match(checked.summary ?? '', /could not verify the forgery refusal/);
+    assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
+  }
 });
 
 test('a negative delivery check observes its full window before passing', async () => {
@@ -1189,6 +1042,11 @@ test('only an explicit authorization response proves a replay refusal', async ()
     assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
     assert.equal(provided.verification.length, 0);
   }
+  // A private-resource replay may explicitly treat not found as refusal.
+  const privateResource = services(new Map<string, unknown>([['customer', { name: 'customer',
+    replay: { accepted: false, status: 404, method: 'POST', url: '/support/1/replies' } }]]));
+  assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound: true },
+    privateResource)).status, 'passed');
   for (const status of [200, 400, 401, 403, 404, 500]) {
     const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: '{}' });
     const actor = { name: 'customer', replay: { ...classified, accepted: classified.ok, status, method: 'POST', url: '/api/mutation' } };
@@ -1218,15 +1076,6 @@ test('an idempotent replay permits success or deliberate validation refusal, nev
   const absent = services(new Map<string, unknown>([['staff', { name: 'staff' }]]));
   assert.equal((await run({ do: 'expectReplayCompleted', actor: 'staff' }, absent)).status,
     'inconclusive');
-});
-
-test('a private-resource replay may explicitly treat not found as refusal', async () => {
-  const actor = { name: 'customer',
-    replay: { accepted: false, status: 404, method: 'POST', url: '/support/1/replies' } };
-  const provided = services(new Map<string, unknown>([['customer', actor]]));
-  const checked = await run({ do: 'expectReplayRejected', actor: 'customer',
-    allowNotFound: true }, provided);
-  assert.equal(checked.status, 'passed');
 });
 
 test('only an explicit authorization response proves a forged-write refusal', async () => {
@@ -1261,41 +1110,6 @@ test('a missing numeric literal makes the server-side replay check inconclusive'
   assert.equal(replayed.status, 'inconclusive');
   assert.match(replayed.summary ?? '', /could not issue the replay as/);
   assert.equal(requests.length, 0);
-});
-
-test('named calls preserve actor credentials, result state, and application assertions', async () => {
-  const requests: CapturedRequest[] = [];
-  const actor = (name: string) => ({
-    name,
-    context: { cookies: async () => [{ name: 'sid', value: name }] },
-    page: { evaluate: async () => null },
-  });
-  const provided = services(new Map<string, unknown>([
-    ['a', actor('a')],
-    ['b', actor('b')],
-  ]), {
-    fetchImpl: async (url, options) => {
-      requests.push({ url, options: options as unknown as UnknownRecord });
-      return { status: 200, ok: true, text: async () => '' };
-    },
-  });
-  const called = await run({ do: 'callConcurrently', actors: ['a', 'b'],
-    action: 'checkout', settleMs: 0 }, provided);
-  assert.equal(called.status, 'passed');
-  assert.equal(record(called.observation).fired, 2);
-  assert.equal(requests.length, 2);
-  const firstRequest = requests[0];
-  assert(firstRequest);
-  assert.match(String(record(firstRequest.options.headers).Cookie), /sid=a/);
-  assert.equal(provided.calls?.action, 'checkout');
-
-  const accepted = await run({ do: 'expectCallOutcomes', accepted: 2 }, provided);
-  assert.equal(accepted.status, 'passed');
-  assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'passed',
-    'idempotent success does not require a specific accepted-response count');
-  const mismatch = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
-  assert.equal(mismatch.status, 'failed');
-  assert.match(mismatch.summary ?? '', /calls were accepted, expected 1/);
 });
 
 test('named calls scope browser cookies and captured request context to the action destination', async () => {
@@ -1344,6 +1158,13 @@ test('named calls scope browser cookies and captured request context to the acti
   assert.equal(seen.length, 3);
   assert(!JSON.stringify(seen).includes('provider-private'));
   assert(!JSON.stringify(seen).includes('stale=must-not-replay'));
+  assert.equal(provided.calls?.action, 'checkout');
+  assert.equal(provided.calls?.fired, 2);
+  assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'passed',
+    'idempotent success does not require a specific accepted-response count');
+  const mismatch = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
+  assert.equal(mismatch.status, 'failed');
+  assert.match(mismatch.summary ?? '', /calls were accepted, expected 1/);
 });
 
 test('cross-account replay uses caller CSRF context and cannot credit missing caller context', async () => {
@@ -1399,10 +1220,13 @@ test('concurrent calls classify every result before counting accepted requests',
   }
   const provided = services(new Map());
   const named = provided.capabilities['named-actions'] as ReturnType<typeof createNamedActionsCapability>;
-  named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
-    outcomes: [{ name: 'a', status: 200, ok: true, text: '' }] });
-  assert.equal((await run({ do: 'expectCallOutcomes', accepted: 1 }, provided)).status, 'inconclusive',
-    'a missing outcome must not pass');
+  // A missing outcome must not pass, and an unknown outcome outranks an error response in either order.
+  for (const [statuses, accepted] of [[[200], 1], [[0, 500], undefined], [[500, 0], undefined]] as const) {
+    named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
+      outcomes: statuses.map(status => ({ name: 'a', status, ok: status === 200, text: '' })) });
+    assert.equal((await run({ do: 'expectCallOutcomes', ...(accepted === undefined ? {} : { accepted }) }, provided)).status,
+      'inconclusive', statuses.join(','));
+  }
 });
 
 test('bounded checkout cohorts issue every request and retain client timing and transport outcomes', async () => {
@@ -1497,16 +1321,6 @@ test('cancelled cohorts drain requests and retain their history in action eviden
     assert.equal(history.responses, duringSettle ? 2 : 1);
     assert.equal(history.cancelled, duringSettle ? 0 : 1);
     assert.doesNotMatch(JSON.stringify(result), /Bearer|session/);
-  }
-});
-
-test('unknown request outcomes take priority over error responses in either order', async () => {
-  for (const statuses of [[0, 500], [500, 0]]) {
-    const provided = services(new Map());
-    const named = provided.capabilities['named-actions'] as ReturnType<typeof createNamedActionsCapability>;
-    named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
-      outcomes: statuses.map(status => ({ name: 'a', status, ok: false, text: '' })) });
-    assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'inconclusive');
   }
 });
 

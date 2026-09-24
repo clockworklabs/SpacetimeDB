@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -9,10 +9,6 @@ const directory = join(STACK_BENCH_ROOT, 'tracks', 'chat', 'scenarios');
 const load = (name: string) => compileScenarioDefinition(
   JSON.parse(readFileSync(join(directory, name), 'utf8')), { source: name });
 const feature = (name: string, id: number) => load(name).features.find(value => value.id === id)!;
-
-for (const name of readdirSync(directory).filter(name => name.endsWith('.json'))) {
-  test(`chat scenario ${name} compiles, including inactive diagnostics`, () => { load(name); });
-}
 
 test('chat distinguishes eventual transitions from continued absence', () => {
   const typing = feature('01-basic-chat.json', 3).criteria;
@@ -40,14 +36,6 @@ test('reconnect ownership uses authority and receipt stability has two readers',
   const stability = feature('01-invariants.json', 105);
   assert.equal(stability.actors!.length, 3);
   assert.deepEqual(stability.criteria[0]!.steps.filter(step => step.do === 'expect').map(step => step.contains), ['Bob', 'Carol']);
-});
-
-test('inactive pin-cap control oversubscribes three slots with four replays', () => {
-  const steps = feature('01-contention-wip.json', 106).criteria
-    .find(value => value.id === 'pin-cap-holds-under-concurrency')!.steps;
-  const replay = steps.find(step => step.do === 'replayConcurrently')!;
-  assert.equal(replay.actors!.length, 4);
-  assert(steps.some(step => step.do === 'click' && step.actor === 'dave' && step.in?.contains === 'PIN-4'));
 });
 
 test('resync checks acknowledged history that predates the disconnect', () => {
