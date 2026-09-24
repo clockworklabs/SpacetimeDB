@@ -98,11 +98,20 @@ export type {
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 
+/**
+ * Supplies the auth token for one connection attempt. See
+ * {@link DbConnectionBuilder.withToken}.
+ */
+export type TokenProvider = () =>
+  | string
+  | undefined
+  | Promise<string | undefined>;
+
 export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   uri: URL;
   nameOrAddress: string;
   identity?: Identity;
-  token?: string;
+  token?: string | TokenProvider;
   emitter: EventEmitter<ConnectionEvent>;
   createWSFn: WebSocketFactory;
   compression: 'gzip' | 'brotli' | 'none';
@@ -327,7 +336,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
 
     this.identity = identity;
-    this.token = token;
 
     this.#remoteModule = remoteModule;
     this.#emitter = emitter;
@@ -388,15 +396,23 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.reducers = this.#makeReducers(remoteModule);
     this.procedures = this.#makeProcedures(remoteModule);
 
-    this.wsPromise = createWSFn({
-      url,
-      nameOrAddress,
-      wsProtocol: [...PREFERRED_WS_PROTOCOLS],
-      authToken: token,
-      compression: compression,
-      lightMode: lightMode,
-      confirmedReads: confirmedReads,
-    })
+    // A token provider is asked for a fresh token on every attempt, so
+    // short-lived credentials such as OIDC session JWTs survive reconnects.
+    // Resolving it inside the chain routes a throw or rejection to
+    // `onConnectError` rather than out of `build()`. A plain string token is
+    // assigned synchronously, as before.
+    this.wsPromise = (async () => {
+      this.token = typeof token === 'function' ? await token() : token;
+      return createWSFn({
+        url,
+        nameOrAddress,
+        wsProtocol: [...PREFERRED_WS_PROTOCOLS],
+        authToken: this.token,
+        compression: compression,
+        lightMode: lightMode,
+        confirmedReads: confirmedReads,
+      });
+    })()
       .then(v => {
         this.ws = v;
 
@@ -423,7 +439,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       })
       .catch(e => {
         stdbLogger('error', 'Error connecting to SpacetimeDB WS');
-        this.#emitter.emit('connectError', this, e);
+        this.#emitter.emit('connectError', this, toError(e));
 
         return undefined;
       });

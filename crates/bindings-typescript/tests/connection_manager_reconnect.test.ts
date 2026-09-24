@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { ConnectionId } from '../src';
+import { ConnectionId, type TokenProvider } from '../src';
+import { ServerMessage } from '../src/sdk/client_api/types.ts';
 import {
   CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS,
   connectionManagerReconnectDelayMs,
   ConnectionManager,
 } from '../src/sdk/connection_manager.ts';
+import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter.ts';
+import { DbConnection } from '../test-app/src/module_bindings/index.ts';
+import { anIdentity } from './utils.ts';
 
 type ErrorContextInterface = {
   isActive: boolean;
@@ -142,6 +146,10 @@ class MockBuilder {
     this.token = token;
     this.tokenHistory.push(token);
     return this;
+  }
+
+  hasTokenProvider(): boolean {
+    return false;
   }
 
   build(): MockConnection {
@@ -805,6 +813,86 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
     expect(signedIn.connections[1].token).toBe('signed-in-token');
+
+    ConnectionManager.release(key);
+  });
+});
+
+// These use a real `DbConnection` because the provider is resolved inside it,
+// per connection attempt.
+describe('ConnectionManager with a token provider', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  function providerBuilder(provider: TokenProvider) {
+    const sockets: WebsocketTestAdapter[] = [];
+    const authTokens: (string | undefined)[] = [];
+    const builder = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withToken(provider)
+      .withWSFn(args => {
+        authTokens.push(args.authToken);
+        const socket = new WebsocketTestAdapter();
+        sockets.push(socket);
+        return socket.openWebSocket(args);
+      });
+    return { builder, sockets, authTokens };
+  }
+
+  test('asks the provider again on reconnect instead of resuming its last token', async () => {
+    const key = nextKey();
+    let issued = 0;
+    const { builder, sockets, authTokens } = providerBuilder(
+      async () => `jwt-${++issued}`
+    );
+
+    ConnectionManager.retain(key, builder);
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0].acceptConnection();
+    sockets[0].sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'jwt-1',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    expect(ConnectionManager.getSnapshot(key)?.token).toBe('jwt-1');
+
+    // By now the short-lived token may have expired; the rebuild must not
+    // resume it.
+    sockets[0].close();
+    await vi.advanceTimersByTimeAsync(connectionManagerReconnectDelayMs(0));
+
+    expect(authTokens).toEqual(['jwt-1', 'jwt-2']);
+
+    ConnectionManager.release(key);
+  });
+
+  test('retries after the provider rejects', async () => {
+    const key = nextKey();
+    const provider = vi
+      .fn<TokenProvider>()
+      .mockRejectedValueOnce(new Error('token fetch failed'))
+      .mockResolvedValue('jwt');
+    const { builder, authTokens } = providerBuilder(provider);
+
+    ConnectionManager.retain(key, builder);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ConnectionManager.getSnapshot(key)?.connectionError?.message).toBe(
+      'token fetch failed'
+    );
+    expect(authTokens).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(connectionManagerReconnectDelayMs(0));
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(authTokens).toEqual(['jwt']);
 
     ConnectionManager.release(key);
   });
