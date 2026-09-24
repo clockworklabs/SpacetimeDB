@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16"
+  },
+  "files": ["node.mts", "node.cts"]
+}
