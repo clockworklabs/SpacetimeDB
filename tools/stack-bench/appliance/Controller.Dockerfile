@@ -15,7 +15,8 @@ WORKDIR /workspace/tools/stack-bench
 RUN corepack enable && pnpm --filter spacetimedb install --frozen-lockfile --ignore-scripts \
     && npm ci --ignore-scripts --no-audit --no-fund && npm run build \
     && node dist/src/references/reference-fixtures.js \
-    && node dist/commands/check-calibration.js
+    && node dist/commands/check-calibration.js \
+    && rm -rf /workspace/node_modules /workspace/crates/bindings-typescript/node_modules
 # Normalize checkout text as Git does on Windows; explicit .gitattributes still apply.
 RUN --mount=type=bind,target=/checkout \
     GIT_OPTIONAL_LOCKS=0 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/checkout \
@@ -53,7 +54,8 @@ COPY --from=stack-bench-build /workspace/tools/stack-bench/container/spacetimedb
 
 FROM source AS sdk-build
 WORKDIR /workspace
-RUN pnpm --filter spacetimedb run build \
+RUN pnpm --filter spacetimedb install --frozen-lockfile --ignore-scripts \
+    && pnpm --filter spacetimedb run build \
     && test -f crates/bindings-typescript/dist/server/index.d.ts \
     && test -f crates/bindings-typescript/dist/server/index.mjs
 
