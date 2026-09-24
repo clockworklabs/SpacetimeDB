@@ -45,8 +45,13 @@ INSERT INTO order_line VALUES (0, 1, 17);`);
         assert.equal(getPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', lease }).quantity, 0);
         assert.equal(run('SELECT quantity FROM order_line;'), '17', 'stock setup must not alter order history');
         assert.throws(() => getPostgresStock({ item: 'Absent', lease }), /no stock data/);
-        run("INSERT INTO item VALUES (1, 'Kid''s Keyboard');");
+        assert.throws(() => setPostgresStock({ item: 'Absent', warehouse: 'East', quantity: 9, lease }), /required item/);
+        run("INSERT INTO item VALUES (1, 'Kid''s Keyboard'); INSERT INTO stock VALUES (1, 1, 4);");
         assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), /ambiguous/);
+        assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 9, lease }), /ambiguous/);
+        assert.equal(run('SELECT string_agg(quantity::text, \',\' ORDER BY item_id) FROM stock WHERE warehouse_id = 1;'), '0,4',
+          'an ambiguous write must change no row');
+        run('DELETE FROM stock WHERE item_id = 1;');
         run("DELETE FROM item WHERE id = 1; INSERT INTO warehouse VALUES (3, 'East');");
         assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', lease }), /ambiguous/);
         run('DELETE FROM warehouse WHERE id = 3;');
@@ -62,7 +67,7 @@ INSERT INTO order_line VALUES (0, 1, 17);`);
 db.item.insertOne({_id:itemId, name:"Kid's Keyboard"});
 db.warehouse.insertMany([{id:0,name:'East'},{id:2,name:'West'}]);
 db.stock.insertMany([{item_id:itemId.toHexString(),warehouse_id:0,quantity:5},
- {itemId,warehouseId:2,quantity:-1}]);`);
+ {item_id:itemId,warehouse_id:2,quantity:-1}]);`);
         assert.equal(getMongoDbStock({ item: "Kid's Keyboard", lease }).quantity, 4);
         assert.equal(getMongoDbStock({ item: "Kid's Keyboard", warehouse: 'West', lease }).quantity, -1);
         run('db.stock.updateOne({warehouse_id:0},{$set:{quantity:0}})');

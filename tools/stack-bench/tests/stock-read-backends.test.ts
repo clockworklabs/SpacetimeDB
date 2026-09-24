@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { getMongoDbStock } from '../src/stacks/backends/mongodb-operations.js';
+import { getMongoDbStock, setMongoDbStock } from '../src/stacks/backends/mongodb-operations.js';
 import { getSpacetimeStock } from '../src/stacks/backends/spacetime-operations.js';
 
 const container = { name: 'leased', id: 'leased-id' };
@@ -36,13 +36,21 @@ function mongoExec(data: Record<string, Document[]>) {
         const found = rows.filter(row => match(row, query));
         return { toArray: () => found, limit: (count: number) => ({ toArray: () => found.slice(0, count) }) };
       },
+      updateOne: (query: Document, update: { $set: Document }) => {
+        const found = rows.find(row => match(row, query));
+        if (found) Object.assign(found, update.$set);
+        return { matchedCount: found ? 1 : 0 };
+      },
     }]));
     let output = '';
-    const stopped = {};
+    const stopped = { code: 0 };
     try {
       runInNewContext(args.at(-1)!, { db: { ...db, getCollectionNames: () => Object.keys(data) },
-        ObjectId, print: (value: string) => { output += value; }, quit: () => { throw stopped; } });
+        ObjectId, print: (value: string) => { output += value; },
+        quit: (code = 0) => { stopped.code = code; throw stopped; } });
     } catch (error) { if (error !== stopped) throw error; }
+    // mongosh exits non-zero after quit(1); the child process error carries stdout.
+    if (stopped.code) throw Object.assign(new Error('mongosh exited 1'), { stdout: output });
     return output;
   };
 }
@@ -52,9 +60,50 @@ test('MongoDB stock reads preserve ObjectId/string references, zero and negative
   const exec = mongoExec({ item: [{ _id: new ObjectId(itemId), name: 'Widget' }],
     warehouse: [{ _id: 1, name: 'East' }, { _id: 2, name: 'West' }],
     stock: [{ item_id: itemId, warehouse_id: 1, quantity: 0 },
-      { itemId: new ObjectId(itemId), warehouseId: 2, quantity: -3 }] });
+      { item_id: new ObjectId(itemId), warehouse_id: 2, quantity: -3 }] });
   assert.equal(getMongoDbStock({ item: 'Widget', warehouse: 'East', lease, exec }).quantity, 0);
   assert.equal(getMongoDbStock({ item: 'Widget', lease, exec }).quantity, -3);
+});
+
+test('MongoDB stock reads and writes use only the declared item_id/warehouse_id fields', () => {
+  const data = () => ({ item: [{ id: 1, name: 'Widget' }], warehouse: [{ id: 2, name: 'East' }],
+    stock: [{ _id: 's', itemId: 1, warehouseId: 2, quantity: 3 }] as Document[] });
+  const missingStock = (error: unknown): boolean => interfaceFailure(error)
+    && (error as { missingRow?: unknown }).missingRow === 'stock';
+  assert.throws(() => getMongoDbStock({ item: 'Widget', warehouse: 'East', lease, exec: mongoExec(data()) }), missingStock);
+  assert.throws(() => getMongoDbStock({ item: 'Widget', lease, exec: mongoExec(data()) }), missingStock);
+  const undeclared = data();
+  assert.throws(() => setMongoDbStock({ item: 'Widget', warehouse: 'East', quantity: 9, lease,
+    exec: mongoExec(undeclared) }), missingStock);
+  assert.equal(undeclared.stock[0]!.quantity, 3);
+  // A declared row without its warehouse_id is not read through a camelCase fallback.
+  const partial = { ...data(), stock: [{ item_id: 1, warehouseId: 2, quantity: 3 }] };
+  assert.throws(() => getMongoDbStock({ item: 'Widget', lease, exec: mongoExec(partial) }),
+    (error: unknown) => interfaceFailure(error) && (error as { stockInterfaceInvalid?: unknown }).stockInterfaceInvalid === true);
+});
+
+test('MongoDB stock writes refuse ambiguous rows and non-numeric quantities as interface failures', () => {
+  const valid = () => ({ item: [{ id: 1, name: 'Widget' }], warehouse: [{ id: 2, name: 'East' }],
+    stock: [{ _id: 's', item_id: 1, warehouse_id: 2, quantity: 3 }] as Document[] });
+  const written = valid();
+  assert.deepEqual(setMongoDbStock({ item: 'Widget', warehouse: 'East', quantity: 0, lease, exec: mongoExec(written) }),
+    { backend: 'mongodb', item: 'Widget', warehouse: 'East', quantity: 0 });
+  assert.equal(written.stock[0]!.quantity, 0);
+  const invalid = (error: unknown): boolean => interfaceFailure(error)
+    && (error as { stockInterfaceInvalid?: unknown }).stockInterfaceInvalid === true;
+  for (const [defect, data] of Object.entries({
+    'duplicate item': { ...valid(), item: [{ id: 1, name: 'Widget' }, { id: 3, name: 'Widget' }] },
+    'duplicate warehouse': { ...valid(), warehouse: [{ id: 2, name: 'East' }, { id: 4, name: 'East' }] },
+    'duplicate stock': { ...valid(), stock: [...valid().stock, { _id: 't', item_id: 1, warehouse_id: 2, quantity: 1 }] },
+    'absent quantity': { ...valid(), stock: [{ _id: 's', item_id: 1, warehouse_id: 2 }] },
+    'text quantity': { ...valid(), stock: [{ _id: 's', item_id: 1, warehouse_id: 2, quantity: '3' }] },
+    'fractional quantity': { ...valid(), stock: [{ _id: 's', item_id: 1, warehouse_id: 2, quantity: 0.5 }] },
+  })) {
+    const before = JSON.stringify(data.stock);
+    assert.throws(() => setMongoDbStock({ item: 'Widget', warehouse: 'East', quantity: 9, lease,
+      exec: mongoExec(data) }), invalid, defect);
+    assert.equal(JSON.stringify(data.stock), before, `${defect} must not be written`);
+  }
 });
 
 test('MongoDB stock reads reject missing, duplicate and invalid data', () => {

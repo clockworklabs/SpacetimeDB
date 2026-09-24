@@ -64,8 +64,10 @@ test('native order snapshots normalize only IDs and use the shared order oracle'
   assert.equal(result.state.accountId, 'buyer');
   assert.equal(result.state.priceMinor, 1999);
   assert.equal(result.state.stock[0]!.quantity, 3);
+  // A diagnostic read without a storage selection is the caller's error, not an invalid app interface.
   assert.throws(() => getConvexCheckoutState({ account: 'buyer', item: 'Keyboard', lease, exec: client.exec }),
-    /declared order data/);
+    (error: unknown) => error instanceof Error && /declared order data/.test(error.message)
+      && !('orderDataInterface' in error));
 });
 
 test('native observer rejects missing tables, duplicate links, invalid quantities and stalled snapshots', () => {

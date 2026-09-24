@@ -756,6 +756,10 @@ async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetSt
     result = await capabilities['database-write'].setStock(input);
   } catch (error) {
     if (errorShape(error).classification) throw error;
+    if (errorShape(error).stockInterfaceInvalid === true) {
+      fail('interface-invalid', { action: 'set stock', attribute: 'stock data',
+        detail: databaseWriteFailureDetail(error) });
+    }
     // The contract names the stock tables; an application without them has
     // failed that interface. Any other write failure is the harness's.
     if (errorShape(error).stockInterface === true) {

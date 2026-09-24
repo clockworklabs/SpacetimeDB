@@ -158,7 +158,8 @@ export function createConvexOrderDataReader({ path, lease, exec }: { path: strin
 }
 
 function checkoutState({ account, item, storage, ...input }: CheckoutInput, credential?: { key?: string }) {
-  if (!storage) throw orderDataError('Convex requires the declared order data interface');
+  // Only zero-point diagnostic reads omit storage; that is the caller's error, not the app's.
+  if (!storage) throw new Error('Convex requires the declared order data interface');
   const columns = orderDataColumns(storage);
   const tables = readTables(Object.keys(columns), admin(input, credential));
   const rows = Object.fromEntries(Object.entries(columns).map(([table, fields]) => [table,

@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
-import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
+import { orderDataColumns, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import type { LeasedDatabase } from '../backend-reset-guard.js';
@@ -34,7 +34,8 @@ const orderDataReadScript = `
       const names=db.getCollectionNames(), result={};
       session.startTransaction({readConcern:{level:'snapshot'}});
       for (const [table, fields] of Object.entries(columns)) {
-        if (!names.includes(table)) throw new Error('ORDER_DATA_MISSING:'+table);
+        // MongoDB creates a collection on its first insert; until then it has no rows.
+        if (!names.includes(table)) { result[table]=[]; continue; }
         result[table]=store.getCollection(table).find({}).toArray().map(row=>Object.fromEntries(fields.map(field=>{
           let value=field==='id' ? row.id ?? row._id : row[field];
           if (value && value._bsontype) {
@@ -89,8 +90,7 @@ export function createMongoDbOrderDataReader({ lease, exec = execFileSync }: {
     }
     const current = pending;
     pending = null;
-    if (typeof reply.error === 'string') current.reject(/ORDER_DATA_MISSING:/.test(reply.error)
-      ? orderDataError('required order data collection is missing') : new Error(reply.error));
+    if (typeof reply.error === 'string') current.reject(new Error(reply.error));
     else if ('result' in reply) current.resolve(reply.result);
     else current.reject(new Error('MongoDB order reader returned an invalid reply'));
   };
@@ -176,16 +176,8 @@ export function getMongoDbCheckoutState({ account, item, app, lease, storage, ex
       const columns=${JSON.stringify(orderDataColumns(storage))};
       print(JSON.stringify(readOrderData(columns)));
     `;
-    let output: string;
-    try {
-      output = exec('docker', ['exec', container, ...mongoShell(lease), '--quiet', '--eval', script],
-        { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
-    } catch (error) {
-      if (/ORDER_DATA_MISSING:/.test(streams(error, 'stdout', 'stderr', 'message'))) {
-        throw orderDataError('required order data collection is missing', error);
-      }
-      throw error;
-    }
+    const output = exec('docker', ['exec', container, ...mongoShell(lease), '--quiet', '--eval', script],
+      { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
     return readOrderDataSnapshot(JSON.parse(output.trim()), account, item, storage);
   }
   const schemaSha256 = verifyCheckoutSchema('mongodb', app, ['server/src/models.ts', 'server/src/progression-models.ts']);
@@ -295,12 +287,10 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
       return [id];
     }
     const iid = references(it.id ?? it._id), wid = references(wh.id ?? wh._id);
-    const matches = db.stock.find({ $or: [
-      { item_id: { $in: iid }, warehouse_id: { $in: wid } },
-      { itemId: { $in: iid }, warehouseId: { $in: wid } }
-    ] }).limit(2).toArray();
+    const matches = db.stock.find({ item_id: { $in: iid }, warehouse_id: { $in: wid } }).limit(2).toArray();
     if (!matches.length) { print('NOMATCH'); quit(0); }
     if (matches.length !== 1) { print('AMBIGUOUS_STOCK'); quit(1); }
+    if (!Number.isSafeInteger(matches[0].quantity)) { print('INVALID_QUANTITY'); quit(1); }
     const r = db.stock.updateOne({ _id: matches[0]._id }, { $set: { quantity: ${quantity} } });
     print(r.matchedCount === 1 ? 'OK' : 'NOMATCH');
   `;
@@ -311,7 +301,11 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   } catch (error) {
     if (/^AMBIGUOUS_(PARENT|STOCK)$/m.test(streams(error, 'stdout').trim())) {
-      throw new Error('MongoDB stock correction refused: multiple matching item, warehouse, or stock rows', { cause: error });
+      throw stockInterfaceError('stock write is ambiguous: multiple matching item, warehouse, or stock rows',
+        { cause: error, invalid: true });
+    }
+    if (/^INVALID_QUANTITY$/m.test(streams(error, 'stdout').trim())) {
+      throw stockInterfaceError('stock quantity must be a safe whole number', { cause: error, invalid: true });
     }
     const missingRow = /^MISSING_(ITEM|WAREHOUSE)$/m.exec(streams(error, 'stdout').trim())?.[1];
     if (missingRow) throw stockInterfaceError(`required ${missingRow.toLowerCase()} row is absent`,
@@ -320,7 +314,7 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
     const detail = streams(error, 'stdout', 'stderr').trim().slice(-160);
     throw stockInterfaceError('direct stock correction requires singular collections '
       + '`item`, `warehouse`, and `stock`; stock rows must use '
-      + `item_id/warehouse_id or itemId/warehouseId: ${detail}`,
+      + `item_id/warehouse_id: ${detail}`,
     { cause: error });
   }
   if (/^NOMATCH$/m.test(output.trim())) {
@@ -354,14 +348,11 @@ export function getMongoDbStock({ item, warehouse, lease, exec = execFileSync }:
     function key(id) { return id && id._bsontype === 'ObjectId' ? id.toHexString() : String(id); }
     const iid = references(items[0].id ?? items[0]._id);
     const wid = ${warehouse === undefined ? 'null' : 'references(warehouses[0].id ?? warehouses[0]._id)'};
-    const matches = db.stock.find({ $or: [
-      { item_id: { $in: iid }${warehouse === undefined ? '' : ', warehouse_id: { $in: wid }'} },
-      { itemId: { $in: iid }${warehouse === undefined ? '' : ', warehouseId: { $in: wid }'} }
-    ] }).toArray();
+    const matches = db.stock.find({ item_id: { $in: iid }${warehouse === undefined ? '' : ', warehouse_id: { $in: wid }'} }).toArray();
     if (!matches.length) reject('required stock row is absent', 'stock');
     const seen = new Set();
     for (const row of matches) {
-      const id = key(row.warehouse_id ?? row.warehouseId);
+      const id = key(row.warehouse_id);
       if (warehouses.filter(w => key(w.id ?? w._id) === id).length !== 1 || seen.has(id)) reject('stock warehouse links are invalid or duplicated', undefined, true);
       seen.add(id);
     }

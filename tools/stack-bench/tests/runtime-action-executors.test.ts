@@ -434,17 +434,31 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
   assert.match(stockSql, /Kid''s Keyboard/);
   assert.deepEqual(waits, [17]);
 
-  const missed = createDatabaseWriteCapability({ backend: 'postgres', databaseLease,
+  const missed = (counts: Record<string, number>) => createDatabaseWriteCapability({ backend: 'postgres', databaseLease,
     expand: value => value, exec: (_command, args) => {
       if (args[0] === 'inspect') return 'postgres-id\n';
-      return 'UPDATE 0\n';
+      return `UPDATE 0\n${JSON.stringify(counts)}\n`;
     } });
   const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
-    quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
+    quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed({ items: 1, warehouses: 1, stocks: 0 }) }));
   assert.equal(failed.status, 'failed');
   assert.equal(failed.finding?.kind, 'stock-interface-missing');
   assert.match(String(failed.finding?.fields.detail), /could not locate one relational stock row/);
   assert.equal(failed.finding?.fields.missingRow, 'stock');
+  for (const [counts, row] of [[{ items: 0, warehouses: 1, stocks: 0 }, 'item'],
+    [{ items: 1, warehouses: 0, stocks: 0 }, 'warehouse']] as const) {
+    const result = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main', quantity: 7, settleMs: 0 },
+      services(new Map(), { databaseWrite: missed(counts) }));
+    assert.equal(result.finding?.kind, 'stock-interface-missing');
+    assert.equal(result.finding?.fields.missingRow, row);
+  }
+  // Duplicate names are an invalid interface, as they are for the stock read.
+  const ambiguous = await run({ do: 'dbSetStock', item: 'Keyboard', warehouse: 'Main', quantity: 7, settleMs: 0 },
+    services(new Map(), { databaseWrite: missed({ items: 2, warehouses: 1, stocks: 1 }) }));
+  assert.equal(ambiguous.status, 'failed');
+  assert.equal(ambiguous.finding?.kind, 'interface-invalid');
+  assert.equal(ambiguous.finding?.fields.action, 'set stock');
+  assert.match(String(ambiguous.finding?.fields.detail), /ambiguous/);
 });
 
 test('a database without the stock interface is an application failure that keeps its diagnostic', async () => {
@@ -517,9 +531,9 @@ test('direct MongoDB writes preserve IDs and reject ambiguous stock rows', async
               .fill({ id: parent, _id: 'generated-item-object-id' })) },
             warehouse: { find: () => cursor([{ id: stock.warehouse_id, _id: 'generated-warehouse-object-id' }]) },
             stock: {
-              find: (query: { $or: Array<{ item_id?: { $in: unknown[] }; warehouse_id?: { $in: unknown[] } }> }) => {
-                const matched = query.$or.some(row => row.item_id?.$in.some(id => equal(id, stock.item_id))
-                  && row.warehouse_id?.$in.includes(stock.warehouse_id));
+              find: (query: { item_id: { $in: unknown[] }; warehouse_id: { $in: unknown[] } }) => {
+                const matched = query.item_id.$in.some(id => equal(id, stock.item_id))
+                  && query.warehouse_id.$in.includes(stock.warehouse_id);
                 return cursor(matched ? (duplicates === 'stock' ? [stock, stock] : [stock]) : []);
               },
               updateOne: (query: { _id: string }, update: { $set: { quantity: number } }) => {
@@ -537,7 +551,9 @@ test('direct MongoDB writes preserve IDs and reject ambiguous stock rows', async
     });
     const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
       quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
-    assert.equal(result.status, duplicates ? 'harness_failure' : 'passed');
+    // Ambiguity is the application's invalid interface, graded as on every other stack.
+    assert.equal(result.status, duplicates ? 'failed' : 'passed');
+    assert.equal(result.finding?.kind, duplicates ? 'interface-invalid' : undefined);
     assert.equal(stock.quantity, duplicates ? 1 : 5);
     assert.deepEqual(calls.find(([, args]) => args.includes('mongosh'))?.[1].slice(0, 2),
       ['exec', 'mongodb-id']);

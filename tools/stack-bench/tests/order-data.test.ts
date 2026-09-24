@@ -13,6 +13,7 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { loadTrack } from '../src/composition/tracks.js';
@@ -296,6 +297,33 @@ test('order data preserves infrastructure failures instead of blaming the app', 
   assert.notEqual(result.status, 'failed');
 });
 
+test('MongoDB order data reads a not-yet-created collection as empty and keeps real read failures', () => {
+  const lease = { resources: { container: { id: 'owned', name: 'owned' }, database: 'bench' } };
+  const mongo = (collections: Record<string, Record<string, unknown>[]>, failure?: string) =>
+    (_command: string, args: readonly string[]) => {
+      if (args[0] === 'inspect') return 'owned';
+      let output = '';
+      const collection = (name: string) => ({ find: () => ({ toArray: () => {
+        if (name === failure) throw new Error(`MongoServerError: read of ${name} failed`);
+        return collections[name]!;
+      } }) });
+      const session = { getDatabase: () => ({ getCollection: collection }), startTransaction() {}, commitTransaction() {},
+        endSession() {} };
+      runInNewContext(args.at(-1)!, { db: { getName: () => 'bench', getCollectionNames: () => Object.keys(collections),
+        getMongo: () => ({ startSession: () => session }) }, print: (value: string) => { output += value; } });
+      return output;
+    };
+  const read = (collections: Record<string, Record<string, unknown>[]>, failure?: string) => getMongoDbCheckoutState({
+    account: 'buyer', item: 'Keyboard', app: '/not-a-reference', lease, storage: fullStorage, exec: mongo(collections, failure) });
+  const catalog = { item: data().item, warehouse: data().warehouse, stock: data().stock };
+  const empty = read(catalog).state;
+  assert.deepEqual([empty.cart, empty.reservations, empty.orders], [[], [], []]);
+  assert.equal(empty.stock[0]!.quantity, 10);
+  assert.deepEqual(read({ item: data().item }).state.stock, [], 'no stock collection yet is no stock rows');
+  assert.throws(() => read(catalog, 'stock'), (error: unknown) => error instanceof Error
+    && /read of stock failed/.test(error.message) && !('orderDataInterface' in error));
+});
+
 test('order-only purchase and cancellation reject no-op, wrong allocation and wrong refund effects', () => {
   const storage = { kind: 'order-data' as const, cart: false, warehouses: true };
   const raw = data();
@@ -402,14 +430,21 @@ for (const backend of ['postgres', 'mongodb'] as const) {
       assert.equal(read().state.orphanAllocations, 1);
       assert(orderCheckoutDifferences(before, prepared, read().state, 1).length > 0);
       run(pg ? 'DROP TABLE order_line;' : 'db.order_line.drop()');
-      assert.throws(read, error => error instanceof Error && 'orderDataInterface' in error);
+      // MongoDB creates a collection on first insert, so an absent collection has no rows.
+      if (pg) assert.throws(read, error => error instanceof Error && 'orderDataInterface' in error);
+      else assert.equal(read().state.orphanAllocations, 1);
       run(pg ? `CREATE TABLE order_line(id bigint, order_id bigint, item_id bigint, quantity integer, unit_price numeric);
           DROP TABLE stock, warehouse, order_allocation, order_reservation, order_cart;`
         : `db.createCollection('order_line'); for (const table of ['stock','warehouse','order_allocation','order_reservation','order_cart']) db[table].drop();`);
       const minimal = { kind: 'order-data' as const, cart: false, warehouses: false };
       assert.deepEqual(read(minimal).state.stock, []);
-      assert.throws(() => read({ ...minimal, cart: true }), error => error instanceof Error && 'orderDataInterface' in error);
-      assert.throws(() => read({ ...minimal, warehouses: true }), error => error instanceof Error && 'orderDataInterface' in error);
+      if (pg) {
+        assert.throws(() => read({ ...minimal, cart: true }), error => error instanceof Error && 'orderDataInterface' in error);
+        assert.throws(() => read({ ...minimal, warehouses: true }), error => error instanceof Error && 'orderDataInterface' in error);
+      } else {
+        assert.deepEqual(read({ ...minimal, cart: true }).state.cart, []);
+        assert.deepEqual(read({ ...minimal, warehouses: true }).state.stock, []);
+      }
       run(pg ? 'CREATE TABLE order_cart(account_id bigint, item_id bigint, quantity integer);' : "db.createCollection('order_cart')");
       assert.deepEqual(read({ ...minimal, cart: true }).state.cart, []);
     } finally { docker(['rm', '-f', id]); }

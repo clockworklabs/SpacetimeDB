@@ -41,14 +41,29 @@ WITH stock_interface AS (
 )
 `;
 
-const stockUpdateSql = (itemName: string, warehouseName: string, quantity: number): string => `
+// The update applies only to one stock row under one named item and warehouse;
+// the counts that follow name what was missing or ambiguous when it did not.
+const stockUpdateSql = (itemName: string, warehouseName: string, quantity: number): string => {
+  const item = sqlString(itemName), warehouse = sqlString(warehouseName);
+  const items = `(SELECT count(*) FROM public.item WHERE name = ${item})`;
+  const warehouses = `(SELECT count(*) FROM public.warehouse WHERE name = ${warehouse})`;
+  return `
 ${STOCK_INTERFACE_SQL}
 UPDATE public.stock SET quantity = ${quantity}
 FROM public.item, public.warehouse
 WHERE stock.item_id = item.id AND stock.warehouse_id = warehouse.id
-  AND item.name = ${sqlString(itemName)} AND warehouse.name = ${sqlString(warehouseName)}
+  AND item.name = ${item} AND warehouse.name = ${warehouse}
+  AND ${items} = 1 AND ${warehouses} = 1
+  AND (SELECT count(*) FROM public.stock linked
+    WHERE linked.item_id = item.id AND linked.warehouse_id = warehouse.id) = 1
   AND (SELECT valid FROM stock_interface);
+${STOCK_INTERFACE_SQL}
+SELECT json_build_object('items', ${items}, 'warehouses', ${warehouses},
+  'stocks', (SELECT count(*) FROM public.stock JOIN public.item ON stock.item_id = item.id
+    JOIN public.warehouse ON stock.warehouse_id = warehouse.id
+    WHERE item.name = ${item} AND warehouse.name = ${warehouse} AND (SELECT valid FROM stock_interface)))::text;
 `;
+};
 
 export function getPostgresCheckoutState({ account, item, app, lease, storage, exec = execFileSync }: {
   account: string; item: string; app: string; lease: LeasedDatabase; storage?: OrderDataStorage; exec?: TextCommandExecutor;
@@ -112,13 +127,12 @@ export function getPostgresStock({ item, warehouse, lease, exec = execFileSync }
   const sql = `${STOCK_INTERFACE_SQL}
 SELECT json_build_object(
   'items', (SELECT count(*) FROM public.item WHERE name = ${sqlString(item)}),
-  ${warehouse === undefined ? '' : `'namedWarehouses', (SELECT count(*) FROM public.warehouse WHERE name = ${sqlString(warehouse)}),`}
-  'warehouses', count(DISTINCT warehouse.id), 'quantities', json_agg(stock.quantity))::text
+  'namedWarehouses', (SELECT count(*) FROM public.warehouse${warehouse === undefined ? '' : ` WHERE name = ${sqlString(warehouse)}`}),
+  'warehouses', count(DISTINCT warehouse.id), 'quantities', COALESCE(json_agg(stock.quantity), '[]'::json))::text
 FROM public.stock JOIN public.item ON stock.item_id = item.id
 LEFT JOIN public.warehouse ON stock.warehouse_id = warehouse.id
 WHERE item.name = ${sqlString(item)} ${warehouse === undefined ? '' : `AND warehouse.name = ${sqlString(warehouse)}`}
-  AND (SELECT valid FROM stock_interface)
-HAVING count(*) > 0;`;
+  AND (SELECT valid FROM stock_interface);`;
   let output: string;
   try {
     output = exec('docker', ['exec', '-i', container,
@@ -132,12 +146,20 @@ HAVING count(*) > 0;`;
     throw error;
   }
   const rows = output.trim().split(/\r?\n/).filter(Boolean);
-  if (!rows.length) throw stockInterfaceError(`no stock data for ${item}${warehouse === undefined ? '' : ` / ${warehouse}`}`,
-    { missingRow: 'stock' });
-  if (rows.length !== 1) throw new Error('stock read is ambiguous: multiple relational stock interfaces match');
+  if (rows.length !== 1) throw new Error(rows.length ? 'stock read is ambiguous: multiple relational stock interfaces match'
+    : 'PostgreSQL stock read returned no result');
   const row: unknown = JSON.parse(rows[0]!);
-  if (!record(row) || !Array.isArray(row.quantities) || row.quantities.length === 0) {
+  if (!record(row) || !Array.isArray(row.quantities)) {
     throw new Error('PostgreSQL stock read returned an invalid result');
+  }
+  if (row.quantities.length === 0) {
+    const missing = `no stock data for ${item}${warehouse === undefined ? '' : ` / ${warehouse}`}`;
+    if (row.items === 0) throw stockInterfaceError(missing, { missingRow: 'item' });
+    if (row.namedWarehouses === 0) throw stockInterfaceError(missing, { missingRow: 'warehouse' });
+    if (row.items !== 1 || (warehouse !== undefined && row.namedWarehouses !== 1)) {
+      throw stockInterfaceError('stock read is ambiguous: duplicate item or warehouse rows', { invalid: true });
+    }
+    throw stockInterfaceError(missing, { missingRow: 'stock' });
   }
   if (row.items !== 1 || row.warehouses !== row.quantities.length
     || (warehouse !== undefined && (row.namedWarehouses !== 1 || row.quantities.length !== 1))) {
@@ -213,6 +235,17 @@ export function setPostgresStock({ item, warehouse, quantity, lease, exec = exec
   }
   if ((output.match(/UPDATE 1\b/g) ?? []).length === 1) {
     return { backend: 'postgres', item, warehouse, quantity };
+  }
+  let counts: unknown;
+  try { counts = JSON.parse(output.trim().split(/\r?\n/).find(line => line.startsWith('{')) ?? ''); }
+  catch { throw new Error('PostgreSQL stock write returned an invalid result'); }
+  if (!record(counts) || !['items', 'warehouses', 'stocks'].every(key => Number.isSafeInteger(counts[key]))) {
+    throw new Error('PostgreSQL stock write returned an invalid result');
+  }
+  if (counts.items === 0) throw stockInterfaceError(`required item ${item} is absent`, { missingRow: 'item' });
+  if (counts.warehouses === 0) throw stockInterfaceError(`required warehouse ${warehouse} is absent`, { missingRow: 'warehouse' });
+  if (counts.items !== 1 || counts.warehouses !== 1 || (counts.stocks as number) > 1) {
+    throw stockInterfaceError('stock write is ambiguous: duplicate item, warehouse, or stock rows', { invalid: true });
   }
   throw stockInterfaceError(`could not locate one relational stock row for ${item} / ${warehouse}`, { missingRow: 'stock' });
 }
