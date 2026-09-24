@@ -1,8 +1,9 @@
 import spacetimedb from '../../src/submodule/schema';
-import { installRateLimit } from '../../src/submodule/install';
+import { install } from '../../src/submodule/install';
 export {
   adminRateLimitBuckets,
   addRateLimitAdmin,
+  removeRateLimitAdmin,
   consume,
   rateLimitSweep,
   resetBuckets,
@@ -13,5 +14,5 @@ export {
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  installRateLimit(ctx);
+  install(ctx);
 });

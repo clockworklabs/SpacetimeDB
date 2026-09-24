@@ -5,6 +5,16 @@ import {
   type WriteCtx,
 } from './schema';
 
+const STATUS_ORDER = {
+  Queued: 0,
+  Sent: 1,
+  DeliveryDelayed: 2,
+  Delivered: 3,
+  Cancelled: 4,
+  Failed: 5,
+  Bounced: 6,
+};
+
 // Any field passed as `undefined` preserves the existing row's value. Used by webhooks (sparse per-event fields).
 export function upsertEmail(
   ctx: WriteCtx,
@@ -17,6 +27,7 @@ export function upsertEmail(
     html: string | undefined;
     text: string | undefined;
     status: EmailStatusValue | undefined;
+    statusUpdatedAt?: ModuleTimestamp;
     lastError: string | undefined;
     bouncedAt: ModuleTimestamp | undefined;
     bounceJson: string | undefined;
@@ -36,6 +47,16 @@ export function upsertEmail(
   }
 ) {
   const existing = ctx.db.resendEmail.resendId.find(args.resendId);
+  const statusTime = args.statusUpdatedAt ?? now;
+  // Late webhooks and send responses cannot undo a later delivery stage.
+  const replaceStatus =
+    args.status !== undefined &&
+    (!existing ||
+      (STATUS_ORDER[args.status.tag] >= STATUS_ORDER[existing.status.tag] &&
+        (existing.status.tag === 'Queued' ||
+          !existing.statusUpdatedAt ||
+          statusTime.microsSinceUnixEpoch >=
+            existing.statusUpdatedAt.microsSinceUnixEpoch)));
   const row = {
     resendId: args.resendId,
     fromAddress: args.fromAddress,
@@ -43,7 +64,11 @@ export function upsertEmail(
     subject: args.subject ?? existing?.subject,
     html: args.html ?? existing?.html,
     text: args.text ?? existing?.text,
-    status: args.status ?? existing?.status ?? EmailStatus.Queued,
+    status:
+      replaceStatus && args.status
+        ? args.status
+        : (existing?.status ?? EmailStatus.Queued),
+    statusUpdatedAt: replaceStatus ? statusTime : existing?.statusUpdatedAt,
     lastError: args.lastError ?? existing?.lastError,
     bouncedAt: args.bouncedAt ?? existing?.bouncedAt,
     bounceJson: args.bounceJson ?? existing?.bounceJson,

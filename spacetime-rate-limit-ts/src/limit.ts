@@ -1,11 +1,59 @@
 import { ScheduleAt, Timestamp } from 'spacetimedb';
+import { buildRateLimitKey } from './key';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const U32_MAX = 0xffff_ffff;
 
 export const DEFAULT_SWEEP_BATCH = 500;
 export const MAX_SWEEP_BATCH = 10_000;
-export const DEFAULT_SWEEP_INTERVAL_SECONDS = 30n;
+const DEFAULT_SWEEP_INTERVAL_SECONDS = 30n;
+
+export const errors = {
+  notAuthorized: 'rate_limit.not_authorized',
+  invalidScope: 'rate_limit.invalid_scope',
+  invalidActorKey: 'rate_limit.invalid_actor_key',
+  invalidLimit: 'rate_limit.invalid_limit',
+  invalidWindow: 'rate_limit.invalid_window',
+  invalidCost: 'rate_limit.invalid_cost',
+  invalidSweepBatch: 'rate_limit.invalid_sweep_batch',
+  invalidSweepInterval: 'rate_limit.invalid_sweep_interval_seconds',
+  configMissing: 'rate_limit.config_missing',
+} as const;
+
+export interface RateLimitPolicy {
+  scope: string;
+  limit: number;
+  windowSeconds: number;
+}
+
+/** Configure one policy. Calls may override limits for application-owned dynamic policy. */
+export function client({ scope, limit, windowSeconds }: RateLimitPolicy) {
+  if (scope.length === 0 || scope.length > 128)
+    throw new Error(errors.invalidScope);
+  assertPositiveInt(errors.invalidLimit, limit);
+  assertPositiveInt(errors.invalidWindow, windowSeconds);
+  return {
+    consume(
+      tx: RateLimitTxLike,
+      opts: {
+        key: string;
+        limit?: number;
+        windowSeconds?: number;
+        cost?: number;
+      }
+    ): RateLimitResult {
+      if (opts.key.length === 0 || opts.key.length > 256)
+        throw new Error(errors.invalidActorKey);
+      return consumeRateLimit(tx, {
+        key: buildRateLimitKey(scope, opts.key),
+        scope,
+        limit: opts.limit ?? limit,
+        windowSeconds: opts.windowSeconds ?? windowSeconds,
+        cost: opts.cost,
+      });
+    },
+  };
+}
 
 export interface ConsumeRateLimitOpts {
   key: string;
@@ -37,16 +85,16 @@ export type RateLimitResult =
       retryAfterSeconds: number;
     };
 
-function assertPositiveInt(name: string, value: number): void {
+function assertPositiveInt(code: string, value: number): void {
   if (!Number.isInteger(value) || value <= 0 || value > U32_MAX) {
-    throw new Error(`rate_limit.invalid_${name}`);
+    throw new Error(code);
   }
 }
 
 export function assertRateLimitSweepBatch(value: number): void {
-  assertPositiveInt('sweep_batch', value);
+  assertPositiveInt(errors.invalidSweepBatch, value);
   if (value > MAX_SWEEP_BATCH) {
-    throw new Error('rate_limit.invalid_sweep_batch');
+    throw new Error(errors.invalidSweepBatch);
   }
 }
 
@@ -130,17 +178,15 @@ export function installRateLimitState(
   assertRateLimitSweepBatch(sweepBatch);
   const sweepIntervalSeconds =
     opts?.sweepIntervalSeconds ?? DEFAULT_SWEEP_INTERVAL_SECONDS;
-  if (sweepIntervalSeconds <= 0n)
-    throw new Error('rate_limit.invalid_sweep_interval_seconds');
+  if (sweepIntervalSeconds <= 0n) throw new Error(errors.invalidSweepInterval);
 
   const existing = ctx.db.rateLimitConfig.singleton.find(true);
-  if (!existing) {
-    ctx.db.rateLimitConfig.insert({
-      singleton: true,
-      sweepBatch,
-      updatedAt: ctx.timestamp,
-    });
-  }
+  if (existing) return;
+  ctx.db.rateLimitConfig.insert({
+    singleton: true,
+    sweepBatch,
+    updatedAt: ctx.timestamp,
+  });
 
   ctx.db.rateLimitSweepTick.insert({
     scheduledId: 0n,
@@ -187,10 +233,10 @@ export function consumeRateLimit(
   tx: RateLimitTxLike,
   opts: ConsumeRateLimitOpts
 ): RateLimitResult {
-  assertPositiveInt('limit', opts.limit);
-  assertPositiveInt('window', opts.windowSeconds);
+  assertPositiveInt(errors.invalidLimit, opts.limit);
+  assertPositiveInt(errors.invalidWindow, opts.windowSeconds);
   const cost = opts.cost ?? 1;
-  assertPositiveInt('cost', cost);
+  assertPositiveInt(errors.invalidCost, cost);
 
   const now = tx.timestamp as Timestamp;
   const resetAt = plusSeconds(now, opts.windowSeconds);
@@ -289,7 +335,7 @@ export function sweepRateLimits(
   let deleted = 0;
   for (const row of expiredRows) {
     if (deleted >= maxRows) break;
-    if ((row.expiresAt.microsSinceUnixEpoch as bigint) > nowMicros) break;
+    if ((row.expiresAt.microsSinceUnixEpoch as bigint) > nowMicros) continue;
     tx.db.rateLimitBucket.delete(row);
     deleted++;
   }

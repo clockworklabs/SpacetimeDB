@@ -11,10 +11,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./limit": {
-      "types": "./src/limit.ts",
-      "default": "./src/limit.ts"
-    },
     "./submodule": {
       "types": "./src/submodule.ts",
       "default": "./src/submodule.ts"

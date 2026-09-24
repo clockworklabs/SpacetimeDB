@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { Timestamp } from 'spacetimedb';
 import {
   EmailStatus,
   WebhookEventStatus,
@@ -214,7 +215,18 @@ function applyResendEvent(
 
   const event = result.output;
   const now = ctx.timestamp;
-  upsertEmail(ctx, now, makeEmailUpsertArgs(event, now));
+  const eventMillis = Date.parse(event.created_at);
+  if (!Number.isFinite(eventMillis)) {
+    return {
+      status: WebhookEventStatus.Failed,
+      error: 'invalid event timestamp',
+    };
+  }
+  const eventTime = new Timestamp(BigInt(eventMillis) * 1000n);
+  upsertEmail(ctx, now, {
+    ...makeEmailUpsertArgs(event, eventTime),
+    statusUpdatedAt: eventTime,
+  });
   recordDeliveryEvent(ctx, now, {
     eventId,
     resendId: event.data.email_id,
@@ -280,27 +292,28 @@ function applyResendWebhook(
     return { status: 400, code: 'resend.webhook_metadata_mismatch' };
   }
 
-  // Idempotent: svix redelivers, so a known event id is a success no-op.
-  if (ctx.db.resendWebhookEvent.eventId.find(args.eventId)) {
+  const existing = ctx.db.resendWebhookEvent.eventId.find(args.eventId);
+  if (existing?.status.tag === 'Processed') {
     return { status: 200, code: 'ok' };
   }
 
-  ctx.db.resendWebhookEvent.insert({
-    eventId: args.eventId,
-    eventType: signedEventType,
-    payloadJson: args.payloadJson,
-    signatureHeader: args.signatureHeader,
-    timestampHeader: args.timestampHeader,
-    status: WebhookEventStatus.Received,
-    errorMessage: undefined,
-    receivedAt: ctx.timestamp,
-    processedAt: undefined,
-  });
+  if (!existing)
+    ctx.db.resendWebhookEvent.insert({
+      eventId: args.eventId,
+      eventType: signedEventType,
+      payloadJson: args.payloadJson,
+      signatureHeader: args.signatureHeader,
+      timestampHeader: args.timestampHeader,
+      status: WebhookEventStatus.Received,
+      errorMessage: undefined,
+      receivedAt: ctx.timestamp,
+      processedAt: undefined,
+    });
 
   const outcome = applyResendEvent(
     ctx as ReducerModuleCtx,
     args.eventId,
-    args.payloadJson
+    existing?.payloadJson ?? args.payloadJson
   );
   updateWebhookStatus(
     ctx as ReducerModuleCtx,
@@ -308,7 +321,9 @@ function applyResendWebhook(
     outcome.status,
     outcome.error
   );
-  return { status: 200, code: 'ok' };
+  return outcome.status.tag === 'Processed'
+    ? { status: 200, code: 'ok' }
+    : { status: 400, code: 'resend.webhook_payload_invalid' };
 }
 
 export const ingestResendWebhook = spacetimedb.reducer(

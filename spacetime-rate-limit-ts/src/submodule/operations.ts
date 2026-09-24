@@ -5,7 +5,8 @@ import {
   MAX_SWEEP_BATCH,
   runRateLimitSweep,
   sweepRateLimits,
-} from '../index';
+  errors,
+} from '../limit';
 import {
   rateLimitBucket,
   rateLimitSweepTick,
@@ -36,13 +37,13 @@ function isAdmin(ctx: ViewModuleCtx): boolean {
 
 function requireAdmin(ctx: ReducerModuleCtx): void {
   if (ctx.db.rateLimitAdminIdentity.identity.find(ctx.sender) == null) {
-    throw new SenderError('rate_limit.not_authorized');
+    throw new SenderError(errors.notAuthorized);
   }
 }
 
-function toU32(name: string, value: number, max = 0xffff_ffff): number {
+function toU32(code: string, value: number, max = 0xffff_ffff): number {
   if (!Number.isInteger(value) || value <= 0 || value > max) {
-    throw new SenderError(`rate_limit.invalid_${name}`);
+    throw new SenderError(code);
   }
   return value;
 }
@@ -64,14 +65,17 @@ export const consume = spacetimedb.procedure(
     const scope = sanitizePart(args.scope);
     const actorKey = sanitizePart(args.actorKey);
     if (scope.length === 0 || scope.length > MAX_SCOPE_LENGTH) {
-      throw new SenderError('rate_limit.invalid_scope');
+      throw new SenderError(errors.invalidScope);
     }
     if (actorKey.length === 0 || actorKey.length > MAX_ACTOR_KEY_LENGTH) {
-      throw new SenderError('rate_limit.invalid_actor_key');
+      throw new SenderError(errors.invalidActorKey);
     }
-    const limit = toU32('limit', Number(args.limit));
-    const windowSeconds = toU32('window_seconds', Number(args.windowSeconds));
-    const cost = toU32('cost', Number(args.cost ?? 1));
+    const limit = toU32(errors.invalidLimit, Number(args.limit));
+    const windowSeconds = toU32(
+      errors.invalidWindow,
+      Number(args.windowSeconds)
+    );
+    const cost = toU32(errors.invalidCost, Number(args.cost ?? 1));
     const key = buildRateLimitKey(scope, actorKey);
 
     const out = ctx.withTx(tx => {
@@ -94,7 +98,6 @@ export const consume = spacetimedb.procedure(
         resetAt: r.resetAt,
       };
     });
-    if (!out) throw new Error('rate_limit.consume_tx_failed');
     return out;
   }
 );
@@ -106,7 +109,11 @@ export const runSweep = spacetimedb.procedure(
     const maxRows =
       args.maxRows === undefined
         ? undefined
-        : toU32('sweep_batch', Number(args.maxRows), MAX_SWEEP_BATCH);
+        : toU32(
+            errors.invalidSweepBatch,
+            Number(args.maxRows),
+            MAX_SWEEP_BATCH
+          );
     return ctx.withTx(tx => {
       requireAdmin(tx);
       return sweepRateLimits(
@@ -127,9 +134,17 @@ export const addRateLimitAdmin = spacetimedb.reducer(
     if (ctx.db.rateLimitAdminIdentity.identity.find(args.identity) == null) {
       ctx.db.rateLimitAdminIdentity.insert({
         identity: args.identity,
-        addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+        addedAt: ctx.timestamp,
       });
     }
+  }
+);
+
+export const removeRateLimitAdmin = spacetimedb.reducer(
+  { identity: t.identity() },
+  (ctx, { identity }) => {
+    requireAdmin(ctx);
+    ctx.db.rateLimitAdminIdentity.identity.delete(identity);
   }
 );
 
@@ -138,11 +153,11 @@ export const updateConfig = spacetimedb.reducer(
   (ctx, args) => {
     requireAdmin(ctx);
     const cfg = ctx.db.rateLimitConfig.singleton.find(true);
-    if (!cfg) throw new Error('rate_limit.config_missing');
+    if (!cfg) throw new Error(errors.configMissing);
     ctx.db.rateLimitConfig.singleton.update({
       ...cfg,
       sweepBatch: toU32(
-        'sweep_batch',
+        errors.invalidSweepBatch,
         Number(args.sweepBatch),
         MAX_SWEEP_BATCH
       ),

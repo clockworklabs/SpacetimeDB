@@ -1,4 +1,4 @@
-// Smoke test: build, publish, ingest synthetic events, verify state. No API key or real webhooks needed. Usage: pnpm run test:resend:smoke [-- --skip-build-publish]
+// Synthetic signed events only; no provider requests. Add --example to test the native HTTP route.
 
 import { spawn } from 'node:child_process';
 import { createHmac } from 'node:crypto';
@@ -7,6 +7,7 @@ type Options = {
   server: string;
   database: string;
   skipBuildPublish: boolean;
+  example: boolean;
 };
 
 function parseArgs(argv: string[]): Options {
@@ -15,11 +16,13 @@ function parseArgs(argv: string[]): Options {
     // Dedicated DB so smoke test never overwrites the dev module's real config.
     database: 'resend-ts-smoke-test',
     skipBuildPublish: false,
+    example: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const raw = argv[i]!;
     const flag = raw.replace(/^-+/, '').toLowerCase();
     if (flag === 'skip-build-publish') opts.skipBuildPublish = true;
+    if (flag === 'example') opts.example = true;
     if (flag === 'server') opts.server = argv[++i]!;
     if (flag === 'database') opts.database = argv[++i]!;
   }
@@ -57,7 +60,7 @@ async function callReducer(
     '--server',
     opts.server,
     opts.database,
-    name,
+    opts.example ? `resend.${name}` : name,
     ...args,
   ]);
   if (result.code !== 0) {
@@ -81,7 +84,7 @@ async function expectCallFails(
     '--server',
     opts.server,
     opts.database,
-    name,
+    opts.example ? `resend.${name}` : name,
     ...args,
   ]);
   if (result.code === 0) {
@@ -137,6 +140,7 @@ function eventPayload(args: {
   to?: string[];
   subject?: string;
   extra?: Record<string, unknown>;
+  createdAt?: string;
 }): string {
   const data: Record<string, unknown> = {
     email_id: args.emailId,
@@ -148,7 +152,7 @@ function eventPayload(args: {
   };
   return JSON.stringify({
     type: args.type,
-    created_at: '2026-05-04T00:00:00Z',
+    created_at: args.createdAt ?? '2026-05-04T00:00:00Z',
     data,
   });
 }
@@ -183,7 +187,10 @@ async function main() {
 
   if (!opts.skipBuildPublish) {
     step('spacetime build');
-    const build = await run('spacetime', ['build']);
+    const modulePath = opts.example
+      ? ['--module-path', 'example/spacetimedb']
+      : [];
+    const build = await run('spacetime', ['build', ...modulePath]);
     if (build.code !== 0) {
       process.stderr.write(build.stderr);
       throw new Error('build failed');
@@ -196,6 +203,7 @@ async function main() {
       opts.server,
       '--yes',
       '--delete-data',
+      ...modulePath,
       opts.database,
     ]);
     if (publish.code !== 0) {
@@ -232,6 +240,36 @@ async function main() {
     some(RESEND_WEBHOOK_SECRET),
     some('onboarding@resend.dev'),
   ]);
+
+  if (opts.example) {
+    step('HTTP rejects failed payloads on first delivery and redelivery');
+    const eventId = evt('invalid_http');
+    const payloadJson = JSON.stringify({ type: 'email.sent', data: {} });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const response = await fetch(
+        `${opts.server}/v1/database/${opts.database}/route/webhook/resend`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'svix-id': eventId,
+            'svix-timestamp': timestamp,
+            'svix-signature': svixSignature({
+              eventId,
+              timestamp,
+              payloadJson,
+            }),
+          },
+          body: payloadJson,
+        }
+      );
+      if (response.status !== 400)
+        throw new Error(
+          `expected invalid payload HTTP 400 on attempt ${attempt}, got ${response.status}: ${await response.text()}`
+        );
+    }
+  }
 
   step('negative: anonymous callers cannot query email state');
   const unauthorized = await expectCallFails(
@@ -388,6 +426,32 @@ async function main() {
     throw new Error(`expected bounce reason in row: ${bouncedRow}`);
   }
 
+  step('late sent and delayed events do not undo a bounce');
+  for (const type of ['email.sent', 'email.delivery_delayed']) {
+    await ingestWebhook(
+      opts,
+      evt(`late_${type}`),
+      type,
+      eventPayload({
+        type,
+        emailId: em('c'),
+        createdAt: '2026-05-03T23:59:00Z',
+      })
+    );
+    const current = await callReducer(opts, 'get_email', [quote(em('c'))]);
+    if (emailStatus(current) !== 'Bounced')
+      throw new Error(`late ${type} changed bounce: ${current}`);
+  }
+  await callReducer(opts, 'replay_webhook_event', [
+    quote(evt('late_email.sent')),
+  ]);
+  if (
+    emailStatus(await callReducer(opts, 'get_email', [quote(em('c'))])) !==
+    'Bounced'
+  ) {
+    throw new Error('administrative replay regressed email status');
+  }
+
   // Email D delivery_delayed status path.
   step(`ingest email.delivery_delayed for ${em('d')}`);
   await ingestWebhook(
@@ -454,7 +518,7 @@ async function main() {
   }
 
   step(
-    'done: smoke test passed (8 event types + idempotency + replay + 2 negative)'
+    'done: signed webhook, status, idempotency, replay, and rejection checks passed'
   );
 }
 

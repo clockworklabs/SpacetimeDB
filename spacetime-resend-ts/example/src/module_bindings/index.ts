@@ -53,6 +53,7 @@ import RateLimit_AdminRateLimitBucketsRow from "./rateLimit/admin_rate_limit_buc
 import Resend_IngestResendWebhookReducer from "./resend/ingest_resend_webhook_reducer";
 import Resend_ReplayWebhookEventReducer from "./resend/replay_webhook_event_reducer";
 import RateLimit_AddRateLimitAdminReducer from "./rateLimit/add_rate_limit_admin_reducer";
+import RateLimit_RemoveRateLimitAdminReducer from "./rateLimit/remove_rate_limit_admin_reducer";
 import RateLimit_ResetBucketsReducer from "./rateLimit/reset_buckets_reducer";
 import RateLimit_UpdateConfigReducer from "./rateLimit/update_config_reducer";
 
@@ -115,6 +116,7 @@ const reducersSchema = __reducers(
   __reducerSchema("resend.ingest_resend_webhook", Resend_IngestResendWebhookReducer),
   __reducerSchema("resend.replay_webhook_event", Resend_ReplayWebhookEventReducer),
   __reducerSchema("rateLimit.add_rate_limit_admin", RateLimit_AddRateLimitAdminReducer),
+  __reducerSchema("rateLimit.remove_rate_limit_admin", RateLimit_RemoveRateLimitAdminReducer),
   __reducerSchema("rateLimit.reset_buckets", RateLimit_ResetBucketsReducer),
   __reducerSchema("rateLimit.update_config", RateLimit_UpdateConfigReducer),
 );
@@ -171,6 +173,7 @@ const __reducerAccessors = __convertToAccessorMap(reducersSchema.reducersType.re
 export const reducers = {
   rateLimit: {
     addRateLimitAdmin: __reducerAccessors["rateLimit.addRateLimitAdmin"],
+    removeRateLimitAdmin: __reducerAccessors["rateLimit.removeRateLimitAdmin"],
     resetBuckets: __reducerAccessors["rateLimit.resetBuckets"],
     updateConfig: __reducerAccessors["rateLimit.updateConfig"],
   },

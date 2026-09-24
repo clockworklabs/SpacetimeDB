@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
-import { installResend } from './install';
+import { install } from './install';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
 // Ignored = duplicate/unknown event type. Failed = signature/format error.
@@ -76,6 +76,7 @@ export const resendEmailRow = {
   orgId: t.option(t.string()),
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
+  statusUpdatedAt: t.option(t.timestamp()),
 };
 
 export const resendDeliveryEventRow = {
@@ -176,7 +177,7 @@ export const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  installResend(ctx);
+  install(ctx);
 });
 
 export default spacetimedb;

@@ -194,6 +194,8 @@ for (const malformed of [
   'Zh==',
   'Zm9=',
   'Zg==\n',
+  '\u0100AAA',
+  'AA\u0100A',
 ]) {
   let threw = false;
   try {

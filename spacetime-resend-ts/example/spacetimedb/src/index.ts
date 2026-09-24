@@ -59,6 +59,16 @@ const CALLER_SEND_LIMIT = 5;
 const CALLER_WINDOW_SECONDS = 10 * 60;
 const GLOBAL_SEND_LIMIT = 25;
 const GLOBAL_WINDOW_SECONDS = 60 * 60;
+const callerLimiter = rateLimit.client({
+  scope: 'dispatch.send.caller',
+  limit: CALLER_SEND_LIMIT,
+  windowSeconds: CALLER_WINDOW_SECONDS,
+});
+const globalLimiter = rateLimit.client({
+  scope: 'dispatch.send.global',
+  limit: GLOBAL_SEND_LIMIT,
+  windowSeconds: GLOBAL_WINDOW_SECONDS,
+});
 
 function fail(message: string): never {
   throw new SenderError(`dispatch.${message}`);
@@ -154,19 +164,11 @@ export const sendDispatch = spacetimedb.procedure(
     if (!allowed.includes(to)) fail('recipient_not_allowed');
 
     const authorization = ctx.withTx(tx => {
-      const caller = rateLimit.consumeRateLimit(tx.as.rateLimit, {
-        key: `dispatch:caller:${subjectFor(ctx)}`,
-        scope: 'dispatch.send.caller',
-        limit: CALLER_SEND_LIMIT,
-        windowSeconds: CALLER_WINDOW_SECONDS,
+      const caller = callerLimiter.consume(tx.as.rateLimit, {
+        key: subjectFor(ctx),
       });
       if (!caller.allowed) return 'rate_limited' as const;
-      const global = rateLimit.consumeRateLimit(tx.as.rateLimit, {
-        key: 'dispatch:global',
-        scope: 'dispatch.send.global',
-        limit: GLOBAL_SEND_LIMIT,
-        windowSeconds: GLOBAL_WINDOW_SECONDS,
-      });
+      const global = globalLimiter.consume(tx.as.rateLimit, { key: 'global' });
       return global.allowed ? ('allowed' as const) : ('rate_limited' as const);
     });
     if (authorization !== 'allowed') fail(authorization);
@@ -260,8 +262,8 @@ export const router = spacetimedb.httpRouter(
 );
 
 export const init = spacetimedb.init(ctx => {
-  resend.installResend(ctx.as.resend);
-  rateLimit.installRateLimit(ctx.as.rateLimit);
+  resend.install(ctx.as.resend);
+  rateLimit.install(ctx.as.rateLimit);
 });
 
 export default spacetimedb;

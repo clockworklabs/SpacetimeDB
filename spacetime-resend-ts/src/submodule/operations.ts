@@ -278,6 +278,7 @@ export const cancelEmail = spacetimedb.procedure(
       const updated = {
         ...existing,
         status: EmailStatus.Cancelled,
+        statusUpdatedAt: ctx.timestamp,
         updatedAt: ctx.timestamp,
       };
       tx.db.resendEmail.resendId.update(updated);

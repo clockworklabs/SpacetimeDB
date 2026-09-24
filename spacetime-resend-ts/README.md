@@ -34,7 +34,7 @@ const spacetimedb = schema({ resend });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  resend.installResend(ctx.as.resend);
+  resend.install(ctx.as.resend);
 });
 ```
 
@@ -88,7 +88,7 @@ Host modules should expose caller- or tenant-scoped views over `userId` or
 **Setup**
 
 - `set_resend_config(apiKey, webhookSigningSecret, defaultFrom)`
-- `get_resend_config_status()` - `{ isConfigured, hasWebhookSigningSecret, apiKeyLength, ... }`
+- `get_resend_config_status()` - `{ isConfigured, hasWebhookSecret, apiKeyLength, ... }`
 - `add_admin_identity(identity)` / `remove_admin_identity(identity)`
 
 **Outbound**
@@ -144,8 +144,16 @@ operators.
 - `makeResendWebhookHandler()` builds a direct HTTP webhook handler for a host
   router.
 
-Webhook application is atomic. Invalid event data rolls back the event row and
-email-state changes so Resend can redeliver the event.
+The HTTP handler returns 200 only after successful application or for an already
+processed event. Invalid payloads return 400 and retain a failed event record;
+redelivery retries failed records. Unexpected transaction failures propagate to
+the HTTP runtime. The reducer entrypoint throws on invalid payloads, rolling back
+its transaction.
+
+Delivery timestamps use the provider's event time. Older events cannot replace
+newer status, and an earlier delivery stage cannot replace a later one. Queued
+send responses preserve any webhook state already recorded. Opens, clicks, and
+complaints update their own fields without changing delivery status.
 
 **Admin queries**
 

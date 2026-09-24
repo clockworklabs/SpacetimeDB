@@ -42,4 +42,5 @@ export default __t.row({
   orgId: __t.option(__t.string()).name("org_id"),
   createdAt: __t.timestamp().name("created_at"),
   updatedAt: __t.timestamp().name("updated_at"),
+  statusUpdatedAt: __t.option(__t.timestamp()).name("status_updated_at"),
 });

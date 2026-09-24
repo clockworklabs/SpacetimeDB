@@ -86,6 +86,7 @@ export const ResendEmail = __t.object("ResendEmail", {
   orgId: __t.option(__t.string()),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
+  statusUpdatedAt: __t.option(__t.timestamp()),
 });
 export type ResendEmail = __Infer<typeof ResendEmail>;
 

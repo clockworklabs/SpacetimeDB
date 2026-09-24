@@ -34,6 +34,27 @@ const UPGRADE_LIMIT = 2;
 const REPAIR_LIMIT = 1;
 const REPAIR_WINDOW_SECONDS = 18;
 
+const tapLimiter = rateLimit.client({
+  scope: TAP_SCOPE,
+  limit: TAP_LIMIT,
+  windowSeconds: TAP_WINDOW_SECONDS,
+});
+const overchargeLimiter = rateLimit.client({
+  scope: OVERCHARGE_SCOPE,
+  limit: OVERCHARGE_LIMIT,
+  windowSeconds: OVERCHARGE_WINDOW_SECONDS,
+});
+const upgradeLimiter = rateLimit.client({
+  scope: UPGRADE_SCOPE,
+  limit: UPGRADE_LIMIT,
+  windowSeconds: upgradeWindowForState(null),
+});
+const repairLimiter = rateLimit.client({
+  scope: REPAIR_SCOPE,
+  limit: REPAIR_LIMIT,
+  windowSeconds: REPAIR_WINDOW_SECONDS,
+});
+
 const DEFAULT_RETAIN_EVENTS = 2000;
 const DEFAULT_EVENT_PRUNE_BATCH = 500;
 const DEFAULT_RETAIN_REACTOR_EVENTS = 80;
@@ -382,23 +403,6 @@ function recordReactorEvent(
   pruneReactorEvents(tx);
 }
 
-function consumeAction(
-  tx: Tx,
-  scope: string,
-  actorKey: string,
-  limit: number,
-  windowSeconds: number,
-  cost = 1
-) {
-  return rateLimit.consumeRateLimit(tx.as.rateLimit, {
-    key: rateLimit.buildRateLimitKey(scope, actorKey),
-    scope,
-    limit,
-    windowSeconds,
-    cost,
-  });
-}
-
 function emptyActionResult(tx: Tx, action: string, message: string) {
   const state = currentState(tx);
   return {
@@ -413,7 +417,7 @@ function emptyActionResult(tx: Tx, action: string, message: string) {
 }
 
 export const init = spacetimedb.init(ctx => {
-  rateLimit.installRateLimit(ctx.as.rateLimit);
+  rateLimit.install(ctx.as.rateLimit);
   if (ctx.db.rateLimitDemoConfig.singleton.find(true) == null) {
     ctx.db.rateLimitDemoConfig.insert({
       singleton: true,
@@ -570,13 +574,10 @@ export const tapReactor = spacetimedb.procedure(
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
       const tapLimit = tapLimitForState(currentState(tx));
-      const result = consumeAction(
-        tx,
-        TAP_SCOPE,
+      const result = tapLimiter.consume(tx.as.rateLimit, {
         key,
-        tapLimit,
-        TAP_WINDOW_SECONDS
-      );
+        limit: tapLimit,
+      });
       recordLimitHit(tx, {
         ...result,
         limit: tapLimit,
@@ -713,13 +714,7 @@ export const overcharge = spacetimedb.procedure(
     const key = actorKey(ctx);
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
-      const result = consumeAction(
-        tx,
-        OVERCHARGE_SCOPE,
-        key,
-        OVERCHARGE_LIMIT,
-        OVERCHARGE_WINDOW_SECONDS
-      );
+      const result = overchargeLimiter.consume(tx.as.rateLimit, { key });
       recordLimitHit(tx, {
         ...result,
         windowSeconds: OVERCHARGE_WINDOW_SECONDS,
@@ -810,13 +805,10 @@ export const buyUpgrade = spacetimedb.procedure(
       const upgradeWindowSeconds = upgradeWindowForState(
         tx.db.reactorRoomState.singleton.find(true)
       );
-      const result = consumeAction(
-        tx,
-        UPGRADE_SCOPE,
+      const result = upgradeLimiter.consume(tx.as.rateLimit, {
         key,
-        UPGRADE_LIMIT,
-        upgradeWindowSeconds
-      );
+        windowSeconds: upgradeWindowSeconds,
+      });
       recordLimitHit(tx, {
         ...result,
         windowSeconds: upgradeWindowSeconds,
@@ -969,13 +961,7 @@ export const repairReactor = spacetimedb.procedure(
     const key = actorKey(ctx);
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
-      const result = consumeAction(
-        tx,
-        REPAIR_SCOPE,
-        key,
-        REPAIR_LIMIT,
-        REPAIR_WINDOW_SECONDS
-      );
+      const result = repairLimiter.consume(tx.as.rateLimit, { key });
       recordLimitHit(tx, {
         ...result,
         windowSeconds: REPAIR_WINDOW_SECONDS,
