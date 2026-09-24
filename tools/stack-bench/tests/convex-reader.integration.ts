@@ -109,7 +109,11 @@ test('scoped Convex reader retains fresh state and refuses stale ownership', asy
       releaseBackendLease(leasePath, lease.ownershipToken);
       receipt.cleanup = readBackendLease(leasePath).state;
       assert.equal(receipt.cleanup, 'released');
-    } catch (error) { Object.assign(receipt, { result: 'failed', cleanup: String(error) }); throw error; }
-    finally { writeFileSync(`${out}/receipt.json`, JSON.stringify(receipt, null, 2)); }
+    } catch (error) {
+      Object.assign(receipt, { result: 'failed', cleanup: String(error) });
+      // A cleanup failure must fail the test even after an earlier error.
+      // eslint-disable-next-line no-unsafe-finally
+      throw error;
+    } finally { writeFileSync(`${out}/receipt.json`, JSON.stringify(receipt, null, 2)); }
   }
 });

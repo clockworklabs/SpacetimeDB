@@ -1,3 +1,4 @@
+/* global window, document, sessionStorage -- bundled for the browser page */
 import { ConvexClient } from 'convex/browser';
 const client = new ConvexClient(window.DEPLOYMENT_URL, { unsavedChangesWarning: false });
 let token = sessionStorage.getItem('session');

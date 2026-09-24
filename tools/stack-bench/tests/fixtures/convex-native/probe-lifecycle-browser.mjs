@@ -1,3 +1,4 @@
+/* global document, window -- used inside page.evaluate callbacks */
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 const [url, username, output] = process.argv.slice(2);

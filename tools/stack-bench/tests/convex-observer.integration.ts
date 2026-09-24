@@ -69,6 +69,8 @@ test('Convex native observer preserves ownership and lifecycle behavior over its
       assert.equal(receipt.cleanup, 'released');
     } catch (error) {
       Object.assign(receipt, { result: 'failed', cleanup: String(error) });
+      // A cleanup failure must fail the test even after an earlier error.
+      // eslint-disable-next-line no-unsafe-finally
       throw error;
     } finally { writeFileSync(join(out, 'receipt.json'), JSON.stringify(receipt, null, 2)); }
   }

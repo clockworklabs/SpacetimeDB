@@ -1,3 +1,4 @@
+/* global document, window -- used inside page.evaluate callbacks */
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
