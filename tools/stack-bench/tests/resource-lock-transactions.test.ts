@@ -6,7 +6,7 @@ import test from 'node:test';
 import { createBackendLease, runnerCapacity, claimBackendResources,
   claimBackendResourcesWhenAvailable, releaseResourceLocks } from '../src/runtime/backend-lease.js';
 import { hostResourceWaitReason, resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../src/composition/product-config.js';
+import { ATTEMPT_CONTAINER_LIMIT_TOTALS, ATTEMPT_STARTUP_MEMORY_BYTES } from '../src/composition/product-config.js';
 
 test('dynamic startup reservation counts the memory envelope once per worker across backends', () => {
   const root = mkdtempSync(join(tmpdir(), 'host-capacity-'));
@@ -14,7 +14,7 @@ test('dynamic startup reservation counts the memory envelope once per worker acr
   const next = createBackendLease({ runId: 'next', backend: 'stub', track: 'loop', runIndex: 1 });
   const start = Date.now();
   const keys = ['slot:loop:postgres:run0', 'slot:loop:mongodb:run0', 'slot:loop:spacetime:run0'];
-  const memoryBytes = ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
+  const memoryBytes = ATTEMPT_STARTUP_MEMORY_BYTES;
   try {
     const request = { root, lease: first, keys, operation: 'acquire' as const, capacity: null };
     const locks = resourceLockTransaction(request, (count, memory) => {
@@ -61,7 +61,10 @@ test('dynamic admission uses host pressure and retains exclusive resource owners
     assert.equal(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 7), null);
     assert.match(hostResourceWaitReason(46 * 1024 ** 3, 3 * 1024 ** 3, 32, 7)!, /GiB available/);
     assert.match(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 33)!, /CPU load/);
-    assert.match(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 7, 4)!, /GiB required/);
+    assert.match(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 7, 10)!, /GiB required/);
+    // Twelve launches fit a 46 GiB host with 40 GiB free; the summed container caps allowed three.
+    assert.equal(hostResourceWaitReason(46 * 1024 ** 3, 40 * 1024 ** 3, 32, 7, 12), null);
+    assert(ATTEMPT_STARTUP_MEMORY_BYTES < ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes);
     assert.throws(() => hostResourceWaitReason(NaN, 0, 32, 0), /valid host resource/);
     const start = Date.now();
     for (let index = 0; index < 12; index += 1) {

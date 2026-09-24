@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cpus, loadavg } from 'node:os';
 import { processIdentity } from './platform.js';
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../composition/product-config.js';
+import { ATTEMPT_STARTUP_MEMORY_BYTES } from '../composition/product-config.js';
 import type { BackendLease, BackendResourceLock } from './backend-lease.js';
 
 export interface ResourceLockTransaction {
@@ -45,7 +45,7 @@ const validHostPressure = ({ memTotalBytes: total, memAvailableBytes: available,
     && total > 0 && available >= 0 && available <= total && cpuCount > 0 && load >= 0;
 
 export function hostResourceWaitReason(total: number, available: number, cpuCount: number, load: number,
-  startingAttempts = 1, startingMemoryBytes = startingAttempts * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes): string | null {
+  startingAttempts = 1, startingMemoryBytes = startingAttempts * ATTEMPT_STARTUP_MEMORY_BYTES): string | null {
   if (!validHostPressure({ memTotalBytes: total, memAvailableBytes: available, cpuCount, load })
     || !Number.isSafeInteger(startingAttempts) || startingAttempts < 1
     || !Number.isSafeInteger(startingMemoryBytes) || startingMemoryBytes <= 0) {
@@ -95,7 +95,6 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
   readPressure: (startingAttempts: number, startingMemoryBytes: number) => string | null = readHostResourceWaitReason,
   now = Date.now()): BackendResourceLock[] {
   const { operation, root, lease, keys } = input;
-  const envelope = ATTEMPT_CONTAINER_LIMIT_TOTALS;
   const locks = resourceLockDescriptors(root, keys);
   const owned = (record: Record<string, unknown>): boolean => record.runId === lease.runId
     && record.ownerPid === lease.ownerPid
@@ -152,22 +151,21 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
       const slot = slotIdentity(key, owner);
       if (slot) starting.set(slot, Math.max(starting.get(slot) ?? 0, memoryBytes));
     };
-    // ponytail: reserve the full attempt envelope for the first minute of each launch.
-    // After that use measured pressure; phase reservations are needed for guarantees against later spikes.
+    // Hold the measured startup reservation for each launch's first minute, then
+    // use measured pressure; phase reservations would be needed to guarantee later spikes.
     for (const name of readdirSync(root).filter(name => name.endsWith('.lock.json'))) {
       const record: unknown = JSON.parse(readFileSync(resolve(root, name), 'utf8'));
       if (!object(record) || typeof record.key !== 'string'
         || typeof record.ownershipMarkerSha256 !== 'string' || typeof record.acquiredAt !== 'string'
         || !Number.isFinite(Date.parse(record.acquiredAt))) throw new Error('unreadable host resource claim');
-      const memoryBytes = record.startupMemoryBytes
-        ?? ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
+      const memoryBytes = record.startupMemoryBytes ?? ATTEMPT_STARTUP_MEMORY_BYTES;
       if (typeof memoryBytes !== 'number' || !Number.isSafeInteger(memoryBytes) || memoryBytes <= 0) {
         throw new Error('unreadable host resource claim startup memory');
       }
       if (now - Date.parse(record.acquiredAt) < 60_000) reserve(record.key, record.ownershipMarkerSha256,
         memoryBytes);
     }
-    for (const key of keys) reserve(key, hash(lease.ownershipToken), envelope.memoryBytes);
+    for (const key of keys) reserve(key, hash(lease.ownershipToken), ATTEMPT_STARTUP_MEMORY_BYTES);
     const reason = readPressure(starting.size, [...starting.values()].reduce((sum, value) => sum + value, 0));
     if (reason) throw new Error(reason);
   }
@@ -185,7 +183,7 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
             runId: lease.runId, ownerPid: lease.ownerPid,
             ownerStartMarker: processIdentity(lease.ownerPid)?.startMarker ?? null,
             ownershipMarkerSha256: hash(lease.ownershipToken), acquiredAt,
-            startupMemoryBytes: envelope.memoryBytes })}\n`);
+            startupMemoryBytes: ATTEMPT_STARTUP_MEMORY_BYTES })}\n`);
           fsyncSync(fd);
         } finally { closeSync(fd); }
         try { linkSync(temporary, lock.path); }

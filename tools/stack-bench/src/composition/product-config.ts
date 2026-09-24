@@ -34,6 +34,13 @@ export const ATTEMPT_CONTAINER_LIMIT_TOTALS = Object.freeze({
     + BROKER_CONTAINER_RESOURCE_LIMITS.memoryBytes,
 });
 
+// Admission holds this much for an attempt's first minute, before its real use
+// shows in the host's free memory; later launches then use measured free memory.
+// Across 29 attempts of the four-stack L3 reference and mutation runs of
+// 2026-09-24, whole-attempt memory (build, browser and backend containers) peaked
+// at 1.9 GiB in an attempt's first minute and 3.1 GiB overall.
+export const ATTEMPT_STARTUP_MEMORY_BYTES = 2.5 * 1024 ** 3;
+
 export const BUILD_OUTBOUND_DESTINATIONS = Object.freeze([
   'https://registry.npmjs.org',
 ]);

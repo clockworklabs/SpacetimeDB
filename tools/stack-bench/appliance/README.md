@@ -369,8 +369,9 @@ These caps do not reserve CPU or RAM and are not measured hardware minimums.
 
 Setup selects `STACK_BENCH_RUNNER_CAPACITY=dynamic`. Admission then checks
 current host memory and CPU load instead of a fixed slot count. New claims
-reserve startup headroom for one minute so concurrent launches cannot reuse the
-same free-memory estimate. Dashboard runs, `job start`, and standalone
+reserve 2.5 GiB of startup headroom for one minute so concurrent launches cannot
+reuse the same free-memory estimate. Measured attempts peaked at 1.9 GiB in
+their first minute and 3.1 GiB overall, well below the summed container caps. Dashboard runs, `job start`, and standalone
 qualification wait and retry when resources are busy. CLI `campaign run`,
 `trial`, `resume`, and `extend` do not wait. They stop launching, let active
 attempts finish, and exit 2 with the remaining attempts pending. The pressure
