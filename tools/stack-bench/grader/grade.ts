@@ -56,6 +56,7 @@ import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
+import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
 import { startNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
 import { recordConvexSession, recordConvexMutationResult } from '../src/stacks/backends/convex-browser-session.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -301,7 +302,8 @@ export class Actor {
   responseLoss?: Awaited<ReturnType<typeof installResponseLoss>>;
   networkInterruption?: NetworkInterruption;
 
-  constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false) {
+  constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false,
+    readonly replaySpacetime = false) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -311,6 +313,7 @@ export class Actor {
   async attach(page: Page): Promise<void> {
     this.page = page;
     if (this.patchAuthentication) await installAuthWebSocketCapture(page);
+    if (this.replaySpacetime) await installSpacetimeWriteCapture(page);
     // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
     this.lastWrites = {};
@@ -502,7 +505,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const fresh = await context.newPage();
         entry.page = fresh;
         fresh.setDefaultTimeout(defaultWithin);
-        const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication);
+        const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication, actor.replaySpacetime);
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -869,6 +872,12 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined
       || Boolean(step.branches?.some(branch => branch.some(needsAuthPatch)));
     const patchAuthentication = steps.some(needsAuthPatch);
+    const replayActors = new Set<string>();
+    const collectReplayActors = (step: CompiledStep): void => {
+      if (step.do === 'repeatFormWrite' && step.actor) replayActors.add(step.actor);
+      step.branches?.forEach(branch => branch.forEach(collectReplayActors));
+    };
+    if (args.backend === 'spacetime') steps.forEach(collectReplayActors);
     for (const name of feature.actors!) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
@@ -891,7 +900,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
-      const actor = new Actor(name, page, context, patchAuthentication);
+      const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name));
       actor.networkInterruption = networkInterruption;
       await actor.ready;
       actor.annotate = Boolean(args.media);

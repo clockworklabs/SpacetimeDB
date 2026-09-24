@@ -7,6 +7,7 @@ preflight, campaigns, and paid model work.
 ## Requirements
 
 - Node.js 22 or newer
+- The repository's pinned pnpm version, available through Corepack
 - Docker Engine with Compose v2
 - Chromium installed through the pinned Playwright dependency
 - Linux for campaign and resource-lock tests; use a Docker development container
@@ -15,6 +16,7 @@ preflight, campaigns, and paid model work.
 Install the locked dependencies and browser:
 
 ```bash
+pnpm --filter spacetimedb install --frozen-lockfile --ignore-scripts
 cd tools/stack-bench
 npm ci
 npm run bootstrap:browsers
@@ -78,6 +80,13 @@ Every npm script above builds `dist` first, and a build clears `dist`. To run
 several checks against one build, run `npm run build` once, then call
 `node --test dist/tests/...` or `node dist/commands/...` directly. Do not run
 two npm scripts at the same time.
+
+The build bundles the wire codec from the repository SDK with its locked build
+tool. Qualification hashes that executable bundle as a SpacetimeDB dependency.
+For a focused transport test, run `npm run build`, then
+`node --test dist/tests/spacetime-captured-replay.integration.js`.
+The controller image includes the codec from its pinned SDK build. It does not
+compile or load SDK source at runtime.
 
 Docker and qualification checks remain separate.
 Campaign and lock tests exercise native Linux `flock`. A Windows host cannot

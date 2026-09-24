@@ -43,6 +43,30 @@ const mutations: Record<TestStack, { backend: TestStack; executionSha256: string
   postgres: { backend: 'postgres', executionSha256: digest('e') },
 };
 
+test('SpacetimeDB replay qualification includes its executable codec and rejects missing or changed loaders', () => {
+  const root = fixture();
+  const replay = 'src/stacks/backends/spacetime-browser-session.ts';
+  const bundle = 'dist/src/stacks/spacetime-wire-codec.js';
+  const scope = () => qualificationScopeIdentity({ kind: 'reference', release,
+    stack: 'spacetime', reference: { backend: 'spacetime', id: 'reference', sourceSha256: digest('b') },
+    stackBenchRoot: root });
+  try {
+    write(root, 'grader/grade.ts', "import '../src/stacks/backends/spacetime-browser-session.js';\n");
+    write(root, replay, "import(new URL('../spacetime-wire-codec.js', import.meta.url).href);\n");
+    write(root, 'scripts/build-spacetime-codec.mjs', 'codec build');
+    write(root, 'src/stacks/spacetime-wire-codec.entry.mjs', 'codec entry');
+    assert.throws(scope, /mapped input does not exist/);
+    write(root, bundle, 'export const codec = 1;');
+    const before = scope();
+    const mongo = scoped(root, 'reference', 'mongodb');
+    write(root, bundle, 'export const codec = 2;');
+    assert.notEqual(scope().sha256, before.sha256);
+    assert.deepEqual(scoped(root, 'reference', 'mongodb'), mongo);
+    write(root, replay, "import(new URL('../other-codec.js', import.meta.url).href);\n");
+    assert.throws(scope, /unmapped dynamic import/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 function write(root: string, path: string, source = ''): void {
   const target = join(root, path);
   mkdirSync(dirname(target), { recursive: true });

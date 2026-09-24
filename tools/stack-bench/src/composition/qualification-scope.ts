@@ -101,6 +101,11 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
     'linter/lint.ts',
   ],
   'grader/mutation-test.ts': ['grader/grade.ts'],
+  'src/stacks/backends/spacetime-browser-session.ts': [
+    'dist/src/stacks/spacetime-wire-codec.js',
+    'src/stacks/spacetime-wire-codec.entry.mjs',
+    'scripts/build-spacetime-codec.mjs',
+  ],
 });
 const STACK_OWNED_MODULES = new Map<string, string>([
   ['src/stacks/backends/convex-adapter.ts', 'convex'],
@@ -119,6 +124,7 @@ const STACK_OWNED_MODULES = new Map<string, string>([
   ['src/stacks/backends/saved-postgres-checkout.ts', 'postgres'],
   ['src/stacks/backends/saved-spacetime-checkout.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-adapter.ts', 'spacetime'],
+  ['src/stacks/backends/spacetime-browser-session.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-identity.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-operations.ts', 'spacetime'],
   ['src/stacks/backends/stub-adapter.ts', 'stub'],
@@ -181,7 +187,13 @@ function localImports(path: string, root: string): string[] {
   const declaredRecoveryLoader = relativePath === 'src/runtime/backend-control.ts'
     && source.includes(selfLoaderCall)
     && source.includes('workerData: { module: import.meta.url, spec, target }');
-  if (dynamicCalls !== literalDynamicCalls + (declaredTrackLoader ? 1 : 0) + (declaredRecoveryLoader ? 1 : 0)) {
+  // The SDK codec is bundled at build time. Hash the executable bundle above,
+  // and reject any loader target that does not match that declared dependency.
+  const codecLoaderCall = ['import', "(new URL('../spacetime-wire-codec.js', import.meta.url).href)"].join('');
+  const declaredCodecLoader = relativePath === 'src/stacks/backends/spacetime-browser-session.ts'
+    && source.includes(codecLoaderCall);
+  if (dynamicCalls !== literalDynamicCalls + (declaredTrackLoader ? 1 : 0)
+    + (declaredRecoveryLoader ? 1 : 0) + (declaredCodecLoader ? 1 : 0)) {
     fail(`unmapped dynamic import in ${relativePath}`);
   }
   return imports;

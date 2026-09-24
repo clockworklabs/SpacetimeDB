@@ -29,6 +29,7 @@ import {
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
 import type { NamedActionRequest } from './named-action-runtime.js';
 import { capturedConvexMutation } from '../stacks/backends/convex-browser-session.js';
+import { repeatSpacetimeWrite } from '../stacks/backends/spacetime-browser-session.js';
 import { isFinding } from './action-findings.js';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -92,6 +93,12 @@ async function repeatFormWrite({ input, capabilities, signal }:
   const actor = actorFor(capabilities, input.actor), named = capabilities['named-actions'];
   const transport = transportFor(capabilities);
   const find = transport.expand(input.match), replacement = transport.expand(input.replacement);
+  const spacetime = await repeatSpacetimeWrite(actor.page, find, transport.expand(input.control), replacement, signal);
+  if (spacetime) {
+    if (!spacetime.accepted) fail('call-error', { action: 'repeatFormWrite', actor: input.actor,
+      status: null, required: 'accepted', operation: null });
+    return spacetime;
+  }
   let request: NamedActionRequest | null = null;
   let headers: HeaderRecord = {};
   const native = capturedConvexMutation(actor.page, find, replacement);
