@@ -368,6 +368,8 @@ test('resumed dependency costs separate prior, current, and cumulative execution
   assert.equal(totals.cumulativeCostUsd, 6);
   assert.equal(totals.costUsd, 6);
   assert.equal(totals.costComplete, true);
+  assert.equal(totals.currentExecutionCostComplete, true);
+  assert.equal(finalizeRunTotals(run, 1_000, { now: 3_000, costComplete: false }).currentExecutionCostComplete, false);
 });
 
 test('audit failures retain the exit code and stderr needed for diagnosis', () => {

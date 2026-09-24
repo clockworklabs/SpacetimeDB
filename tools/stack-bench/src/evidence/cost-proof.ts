@@ -34,6 +34,7 @@ export interface CostRun {
     costComplete?: boolean;
     costUsd?: number | null;
     currentExecutionCostUsd?: number;
+    currentExecutionCostComplete?: boolean;
   };
 }
 
@@ -179,7 +180,7 @@ export function durableCostLedger(run: CostRun, scope: 'run' | 'execution' = 'ru
     receiptCostUsd,
     differenceUsd,
     complete: (scope === 'execution' && run.progressionResume !== undefined
-      ? true : run.totals?.costComplete === true) && rows.every(row => row.complete)
+      ? run.totals?.currentExecutionCostComplete === true : run.totals?.costComplete === true) && rows.every(row => row.complete)
       && Math.abs(differenceUsd) <= 0.0001,
     exact: rows.every(row => row.exact),
     rows,

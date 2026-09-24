@@ -41,7 +41,7 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
   assert.equal(attemptMetrics({ ...attempt, result: { ...attempt.result!, firstBuildRate: null } })!.raw.first, null);
   assert.equal(attemptMetrics({ ...attempt, result: { ...attempt.result!, unreachedPoints: 10 } })!.final, 0.5);
   const resumed = { id: 'resumed', progressionResume: { priorRunId: 'measured', inheritedLevels: [1, 2] },
-    totals: { currentExecutionCostUsd: 1 }, levels: [{ level: 3, buildSessions: [session(1)] }] };
+    totals: { currentExecutionCostUsd: 1, currentExecutionCostComplete: true }, levels: [{ level: 3, buildSessions: [session(1)] }] };
   assert.deepEqual(campaignMeasuredRunCost(resumed, [failed, measured, resumed]), { status: 'exact', costUsd: 4 });
   assert.equal(campaignMeasuredRunCost(resumed, [resumed]).status, 'unknown');
   // A continued attempt's dashboard time is the export's chain time, not its latest execution.

@@ -174,6 +174,7 @@ export interface RunTotals {
   ungraded: number[];
   priorExecutionCostUsd?: number | null;
   currentExecutionCostUsd?: number;
+  currentExecutionCostComplete?: boolean;
   cumulativeCostUsd?: number | null;
 }
 
@@ -366,7 +367,7 @@ export function finalizeRunTotals(
       || (typeof priorExecutionCostUsd === 'number'
         && run.progressionResume.priorTotals?.costComplete !== false)),
     ...(run.progressionResume ? { priorExecutionCostUsd, currentExecutionCostUsd,
-      cumulativeCostUsd } : {}),
+      currentExecutionCostComplete: costComplete, cumulativeCostUsd } : {}),
     repairs: run.levels.reduce((n, level) => n + (level.repairs ?? 0), 0),
     sessions: run.levels.reduce((n, level) => n + (level.sessionTotals?.sessions ?? 0), 0),
     tokens: run.levels.reduce((n, level) => n + (level.sessionTotals?.tokens ?? 0), 0),

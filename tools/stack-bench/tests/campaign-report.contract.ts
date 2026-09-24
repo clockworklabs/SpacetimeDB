@@ -206,6 +206,7 @@ test('all-execution spend includes invalid work and never counts resumed inherit
     stateSha256: null, action: { type: 'build', level: 1 }, inheritedLevels: [], priorTotals: null };
   resumed.totals!.costUsd = 5;
   resumed.totals!.currentExecutionCostUsd = 3;
+  resumed.totals!.currentExecutionCostComplete = true;
   state = finishCampaignExecution(second.state, second.claim.executionId, { exitCode: 0, run: resumed }, { now: created });
   const report = buildCampaignReport(plan, state, (_attempt, execution) =>
     execution.id === first.claim!.executionId ? prior : resumed);

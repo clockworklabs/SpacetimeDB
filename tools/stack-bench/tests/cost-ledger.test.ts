@@ -95,12 +95,17 @@ test('missing totals never become an exact zero, even with complete set', () => 
 
 test('resumed execution spend excludes inherited costs and retains current bounds', () => {
   const resumed = { progressionResume: { inheritedLevels: [1] },
-    totals: { costUsd: 5, currentExecutionCostUsd: 3, costComplete: true }, levels: [
+    totals: { costUsd: 5, currentExecutionCostUsd: 3, currentExecutionCostComplete: true, costComplete: true }, levels: [
       { level: 1, buildSessions: [{ costUsd: 2, costComplete: true, costReceipts: [receipt(2)] }] },
       { level: 2, buildSessions: [{ costUsd: 3, costComplete: true,
         costReceipts: [{ receipt: { ...receipt(3).receipt, exact: false } }] }] },
     ] };
   assert.deepEqual(runCostEvidence(resumed, 'execution'), { status: 'upper-bound', costUsd: 3 });
+  // A session killed mid-flight leaves its spend out of the rows that still reconcile.
+  resumed.totals.currentExecutionCostComplete = false;
+  assert.equal(durableCostLedger(resumed, 'execution').complete, false);
+  assert.deepEqual(runCostEvidence(resumed, 'execution'), { status: 'unknown', costUsd: null });
+  resumed.totals.currentExecutionCostComplete = true;
   delete (resumed.totals as Partial<typeof resumed.totals>).currentExecutionCostUsd;
   assert.deepEqual(runCostEvidence(resumed, 'execution'), { status: 'unknown', costUsd: null });
 });
