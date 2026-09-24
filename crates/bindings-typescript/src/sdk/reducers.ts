@@ -1,10 +1,10 @@
-import type { ProductType } from '../lib/algebraic_type';
-import type { ReducerSchema } from '../lib/reducer_schema';
-import type { ParamsObj } from '../lib/reducers';
-import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders';
-import { toCamelCase } from '../lib/util';
-import type { SubscriptionEventContextInterface } from './event_context';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { ProductType } from '../lib/algebraic_type.ts';
+import type { ReducerSchema } from '../lib/reducer_schema.ts';
+import type { ParamsObj } from '../lib/reducers.ts';
+import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders.ts';
+import { toCamelCase } from '../lib/util.ts';
+import type { SubscriptionEventContextInterface } from './event_context.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type SubscriptionEventCallback<
   RemoteModule extends UntypedRemoteModule,

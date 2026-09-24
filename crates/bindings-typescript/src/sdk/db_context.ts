@@ -1,7 +1,7 @@
-import type { ClientDbView } from './db_view';
-import type { ReducersView } from './reducers';
-import type { UntypedRemoteModule } from './spacetime_module';
-import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
+import type { ClientDbView } from './db_view.ts';
+import type { ReducersView } from './reducers.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { SubscriptionBuilderImpl } from './subscription_builder_impl.ts';
 
 /**
  * Interface representing a database context.

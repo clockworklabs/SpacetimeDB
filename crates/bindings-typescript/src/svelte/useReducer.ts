@@ -1,9 +1,9 @@
 import { onDestroy } from 'svelte';
 import { get } from 'svelte/store';
-import type { InferTypeOfParams } from '../lib/type_builders';
-import type { UntypedReducerDef } from '../sdk/reducers';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { Prettify } from '../lib/type_util';
+import type { InferTypeOfParams } from '../lib/type_builders.ts';
+import type { UntypedReducerDef } from '../sdk/reducers.ts';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { Prettify } from '../lib/type_util.ts';
 
 type IsEmptyObject<T> = [keyof T] extends [never] ? true : false;
 type MaybeParams<T> = IsEmptyObject<T> extends true ? [] : [params: T];

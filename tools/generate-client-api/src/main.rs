@@ -48,8 +48,9 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
 
 fn main() -> Result<()> {
     let out_dir = "src/sdk/client_api";
-    let index_replacement = "../../index";
-    let other_replacement = "../../lib/type_builders";
+    // Explicit extensions keep the emitted .d.ts files resolvable under NodeNext.
+    let index_replacement = "../../index.ts";
+    let other_replacement = "../../lib/type_builders.ts";
 
     let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
