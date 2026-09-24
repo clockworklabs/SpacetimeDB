@@ -550,7 +550,9 @@ public static class GeneratorSnapshotTests
                 "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\")]",
                 lifecycle)).GetRunResult();
             Assert.Contains(lifecycleResult.Diagnostics, diagnostic =>
-                diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
+                diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Descriptor.Title.ToString() == "Root-only declarations in mounted dependency"
+                && diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
                 && diagnostic.GetMessage().Contains("Auth"));
             // The same dependency can still be published alone or merged into the root scope.
             Generate(Create("FlatLifecycleConsumer", "", lifecycle));
