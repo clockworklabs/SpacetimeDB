@@ -92,10 +92,11 @@ configure_csharp_modules_sdk() {
 run_client() {
     local dir="$1"
     local dotnet_version="$2"
+    shift 2
     if [ "$dotnet_version" = "10" ]; then
-        (cd "$dir" && EXPERIMENTAL_WASM_AOT=1 dotnet run -c Debug)
+        (cd "$dir" && EXPERIMENTAL_WASM_AOT=1 dotnet run -c Debug "$@")
     else
-        (cd "$dir" && env -u EXPERIMENTAL_WASM_AOT dotnet run -c Debug)
+        (cd "$dir" && env -u EXPERIMENTAL_WASM_AOT dotnet run -c Debug "$@")
     fi
 }
 
@@ -132,8 +133,11 @@ for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
     run_client "$SDK_PATH/examples~/regression-tests/procedure-client" "$dotnet_version"
 
     if [ "$dotnet_version" = "10" ]; then
-        cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/namespace-test-cs" namespace-tests
-        # The module needs .NET 10; its generated client deliberately stays on C# 9 / .NET 8.
-        run_client "$SDK_PATH/examples~/regression-tests/namespaces" 8
+        # The module needs .NET 10; test its C# 9 bindings on both client runtimes.
+        for client_version in 8 10; do
+            echo "Running namespace client with .NET $client_version against the .NET 10 module"
+            cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/namespace-test-cs" namespace-tests
+            run_client "$SDK_PATH/examples~/regression-tests/namespaces" "$client_version" --framework "net$client_version.0"
+        done
     fi
 done
