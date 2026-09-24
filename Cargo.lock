@@ -1023,6 +1023,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-llm-benchmark-summary"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "serde_json",
+]
+
+[[package]]
 name = "ci-module-latest-deps"
 version = "0.1.0"
 dependencies = [
