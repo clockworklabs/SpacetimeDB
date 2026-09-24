@@ -3,8 +3,8 @@
 //   Resend (svix): https://docs.svix.com/receiving/verifying-payloads/how-manual
 //   GitHub:  https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
 
-import { hmacSha256 } from './hmac.ts';
-import { timingSafeEqual, hexToBytes, base64ToBytes } from './timing.ts';
+import { hmacSha256 } from './hmac';
+import { timingSafeEqual, hexToBytes, base64ToBytes } from './timing';
 
 const enc = new TextEncoder();
 
