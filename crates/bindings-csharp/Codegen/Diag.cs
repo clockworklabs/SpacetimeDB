@@ -365,7 +365,7 @@ internal static class ErrorDescriptor
     public static readonly ErrorDescriptor<(
         ISymbol symbol,
         string message
-        )> InvalidEnvironmentDeclaration =
+    )> InvalidEnvironmentDeclaration =
         new(group, "Invalid environment declaration", ctx => $"{ctx.message}", ctx => ctx.symbol);
 
     public static readonly ErrorDescriptor<(
