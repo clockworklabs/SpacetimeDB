@@ -395,6 +395,7 @@ fn validate_submodules(
 ) -> Result<IndexMap<Identifier, ModuleDef>> {
     let mut errors = vec![];
     let mut map = IndexMap::with_capacity(submodules.len());
+    let mut accessors = std::collections::HashSet::with_capacity(submodules.len());
 
     for submodule in submodules {
         let source = RawIdentifier::from(submodule.namespace.clone());
@@ -431,7 +432,11 @@ fn validate_submodules(
             continue;
         }
 
-        if map.contains_key(&namespace) {
+        if !accessors.insert(accessor.clone()) {
+            errors.push(ValidationError::DuplicateName {
+                name: accessor.as_raw().clone(),
+            });
+        } else if map.contains_key(&namespace) {
             errors.push(ValidationError::DuplicateName {
                 name: namespace.as_raw().clone(),
             });
@@ -1802,6 +1807,18 @@ mod tests {
         let sub = def.submodules().get("myAuth").expect("verbatim canonical namespace");
         assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
         assert_eq!(sub.path().to_string(), "myAuth.");
+    }
+
+    #[test]
+    fn duplicate_submodule_accessor_namespaces_are_rejected() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        root.add_submodule("myAuth", sessions_submodule());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            &name[..] == "myAuth"
+        });
     }
 
     /// Two accessor namespaces that canonicalize to the same name are a duplicate.

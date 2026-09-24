@@ -506,11 +506,13 @@ impl ModuleDef {
         let mut warnings = Vec::new();
         for (namespace, submodule_def) in self.submodules() {
             if !submodule_def.http_routes().is_empty() {
+                // Module code narrows contexts by accessor name, not by canonical namespace.
+                let accessor = submodule_def.mount_accessor_name().unwrap_or(namespace);
                 warnings.push(format!(
                     "The submodule under namespace '{namespace}' registers HTTP routes via a router. \
                      Route registrations in submodules are ignored. Only the root module's routes \
                      are served. Define routes in the root module and call the submodule's HTTP handler \
-                     functions via `ctx.as.{namespace}`."
+                     functions via `ctx.as.{accessor}`."
                 ));
             }
             warnings.extend(submodule_def.collect_warnings());
