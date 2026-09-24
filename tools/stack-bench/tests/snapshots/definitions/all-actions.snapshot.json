@@ -344,6 +344,21 @@
             },
             {
               "actor": "a",
+              "control": "Item 1",
+              "do": "repeatFormWrite",
+              "fields": [
+                {
+                  "testid": "name",
+                  "text": "{value}"
+                }
+              ],
+              "match": "Item 2",
+              "replacement": "{value}",
+              "settleMs": 1,
+              "submit": "save"
+            },
+            {
+              "actor": "a",
               "do": "replayAs",
               "from": "b",
               "match": "write"

@@ -69,6 +69,7 @@
             { "do": "recordTime", "as": "started" },
             { "do": "expectElapsed", "since": "started", "atMost": 1000 },
             { "do": "reload", "actor": "a", "settleMs": 1 },
+            { "do": "repeatFormWrite", "actor": "a", "match": "Item 2", "control": "Item 1", "replacement": "{value}", "fields": [{ "testid": "name", "text": "{value}" }], "submit": "save", "settleMs": 1 },
             { "do": "replayAs", "actor": "a", "from": "b", "match": "write" },
             { "do": "replayConcurrently", "actors": ["a", "b"], "settleMs": 1 },
             { "do": "restartBackend", "settleMs": 1 },
