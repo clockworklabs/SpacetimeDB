@@ -12,7 +12,7 @@
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true }
+        { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true, "unlessVisible": "schedule-restock-item" }
       ],
       "criteria": [
         {

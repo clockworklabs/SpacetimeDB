@@ -436,6 +436,58 @@ test('declared subview openers accept inline content and tabs without accepting 
   } finally { await browser.close(); }
 });
 
+test('restock setup uses an open form and waits for delayed navigation without accepting broken forms', async () => {
+  // Failure cases: closing an inline form, skipping a closed/delayed drawer,
+  // accepting a broken opener or a form blocked by another modal.
+  const names = ['03-deferred-access.json', '03-deferred-integrity.json',
+    '03-scheduled-restock-apply.json', '03-scheduled-restock-cancel.json', '03-scheduled-restocks.json'];
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    page.setDefaultTimeout(250);
+    const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+    let sleeps = 0;
+    const service = { defaultWithin: 700, expand: (value: string) => value, testId: stableElementSelector,
+      sleep: async (ms: number) => { sleeps++; await new Promise(resolve => setTimeout(resolve, ms)); } };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service };
+    for (const name of names) {
+      const feature = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+        'tracks/ecommerce/scenarios', name), 'utf8'))).features[0]!;
+      const step = feature.setup.find(step => step.testid === 'restocks-link')!;
+      for (const layout of ['inline', 'delayed-inline', 'tab', 'delayed-tab', 'drawer', 'broken', 'blocked']) {
+        await page.setContent(`<style>#panel.closed { position:fixed;right:0;top:0;transform:translateX(100%); }</style>
+          ${layout.endsWith('inline') || layout === 'blocked' ? '' : `<button id="restocks-link" ${layout === 'delayed-tab' ? 'hidden' : ''}>Restocks</button>`}
+          <section id="panel" ${['tab', 'delayed-tab', 'delayed-inline', 'broken'].includes(layout) ? 'hidden' : ''}
+            class="${layout === 'drawer' ? 'closed' : ''}"><input id="schedule-restock-item">
+            <button id="schedule-restock-submit" onclick="document.body.dataset.submitted='yes'">Schedule</button></section>
+          ${layout === 'blocked' ? '<dialog id="blocker">Blocked</dialog>' : ''}
+          <script>{
+            const panel=document.querySelector('#panel'), opener=document.querySelector('#restocks-link');
+            if(opener)opener.onclick=()=>{document.body.dataset.clicked='yes';
+              ${layout === 'broken' ? '' : "panel.hidden=!panel.hidden;panel.classList.remove('closed');"}
+              ${layout === 'drawer' ? 'panel.hidden=false;' : ''}};
+            ${layout === 'delayed-inline' ? 'setTimeout(()=>panel.hidden=false,150);' : ''}
+            ${layout === 'delayed-tab' ? 'setTimeout(()=>opener.hidden=false,150);' : ''}
+            ${layout === 'blocked' ? 'blocker.showModal();' : ''}
+          }</script>`);
+        sleeps = 0;
+        const opened = await executeAction(ACTION_REGISTRY, 'click', step, { capabilities });
+        assert.equal(opened.status, 'passed', `${name}: ${layout}: ${opened.summary}`);
+        if (layout === 'inline') assert.equal(sleeps, 0, 'an already open form needs no optional-link wait');
+        const filled = await executeAction(ACTION_REGISTRY, 'fill',
+          { do: 'fill', actor: 'admin', testid: 'schedule-restock-item', text: 'Webcam' }, { capabilities });
+        const submitted = filled.status !== 'passed' ? filled : await executeAction(ACTION_REGISTRY, 'click',
+          { do: 'click', actor: 'admin', testid: 'schedule-restock-submit', within: 250 }, { capabilities });
+        const invalid = layout === 'broken' || layout === 'blocked';
+        assert.equal(submitted.status, invalid ? 'failed' : 'passed', `${name}: ${layout}: ${submitted.summary}`);
+        assert.equal(await page.getAttribute('body', 'data-submitted'), invalid ? null : 'yes');
+        assert.equal(await page.getAttribute('body', 'data-clicked'),
+          ['tab', 'delayed-tab', 'drawer', 'broken'].includes(layout) ? 'yes' : null);
+      }
+    }
+  } finally { await browser.close(); }
+});
+
 test('promotions follow the staff path and delivery setup returns from persistent settings', async () => {
   const read = (name: string) => compileScenarioDefinition(JSON.parse(readFileSync(
     join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', name), 'utf8'))).features[0]!;
