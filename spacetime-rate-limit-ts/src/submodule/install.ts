@@ -1,12 +1,14 @@
-import { DEFAULT_SWEEP_BATCH, installRateLimitState } from '../index';
+import { installRateLimitState, type RateLimitInstallOpts } from '../limit';
 import type { ReducerModuleCtx } from './schema';
 
-export function installRateLimit(ctx: ReducerModuleCtx) {
+/** Call from the host's init reducer to seed its publishing identity and cleanup timer. */
+export function install(ctx: ReducerModuleCtx, opts?: RateLimitInstallOpts) {
+  if (ctx.db.rateLimitConfig.singleton.find(true)) return;
   if (ctx.db.rateLimitAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.rateLimitAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
-  installRateLimitState(ctx, { sweepBatch: DEFAULT_SWEEP_BATCH });
+  installRateLimitState(ctx, opts);
 }

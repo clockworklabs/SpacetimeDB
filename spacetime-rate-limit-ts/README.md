@@ -47,7 +47,7 @@ const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  rateLimit.installRateLimit(ctx.as.rateLimit);
+  rateLimit.install(ctx.as.rateLimit);
 });
 
 export default spacetimedb;
@@ -58,19 +58,19 @@ transaction as the protected write. Derive the actor key from trusted request
 or session state:
 
 ```ts
-export const create_post = spacetimedb.procedure(
+const postLimiter = rateLimit.client({
+  scope: 'post.create',
+  limit: 10,
+  windowSeconds: 60,
+});
+
+export const createPost = spacetimedb.procedure(
   { body: t.string() },
   t.unit(),
   (ctx, args) => {
     ctx.withTx(tx => {
-      const scope = 'post.create';
       const actor = ctx.sender.toHexString();
-      const result = rateLimit.consumeRateLimit(tx.as.rateLimit, {
-        key: rateLimit.buildRateLimitKey(scope, actor),
-        scope,
-        limit: 10,
-        windowSeconds: 60,
-      });
+      const result = postLimiter.consume(tx.as.rateLimit, { key: actor });
       if (!result.allowed) throw new SenderError('rate_limit.blocked');
       const body = args.body.trim();
       if (!body) throw new SenderError('post.empty');
@@ -104,19 +104,28 @@ The view returns at most 1,000 rows and returns an empty set to non-admins.
 
 ## API
 
-The root package exports lower-level helpers for custom standalone
-implementations:
+Configure a policy once with `client({ scope, limit, windowSeconds })`. Call
+`limiter.consume(ctx, { key, cost?, limit?, windowSeconds? })` in the caller's
+transaction. `key` identifies the actor; the library combines it with the scope.
+Override limits or windows only for application-owned dynamic policies.
+
+`install(ctx, { sweepBatch?, sweepIntervalSeconds? })` seeds the publishing
+identity and cleanup timer from the host's `init` reducer. Repeated installation
+does not add administrators or timers. Admins can grant and revoke access with
+`addRateLimitAdmin` and `removeRateLimitAdmin`.
+
+`errors` exports stable error codes for callers that distinguish failures.
+
+The root package also exports lower-level helpers for standalone integrations:
 
 - `consumeRateLimit`
 - `buildRateLimitKey`
 - `installRateLimitState`
-- `runRateLimitSweep`
 - `sweepRateLimits`
-- `resolveRateLimitSweepBatch`
 
-The submodule `consume`, `runSweep`, and `reset_buckets` operations are admin-only.
+The submodule `consume`, `runSweep`, and `resetBuckets` operations are admin-only.
 Application-facing operations should enforce a fixed policy in host code and use
-`consumeRateLimit` as shown above. `reset_buckets({ maxRows })` removes
+the configured limiter shown above. `resetBuckets({ maxRows })` removes
 1,000 rows by default and accepts a maximum of 10,000 per call, so destructive
 maintenance remains bounded.
 
@@ -127,18 +136,19 @@ Package entrypoints:
 
 - `@spacetimedb/rate-limit/submodule` supplies the submodule namespace,
   maintenance operations, and host helpers.
-- `@spacetimedb/rate-limit/limit` exports standalone policy functions.
 - `@spacetimedb/rate-limit` re-exports the supported helper surface.
 
 See the
 [Powerhouse host module](./example/spacetimedb/)
 for per-action policies, caller-visible status, and admin controls.
 
-## Exported defaults
+## Cleanup defaults
 
-- `DEFAULT_SWEEP_BATCH = 500`
-- `MAX_SWEEP_BATCH = 10_000`
-- `DEFAULT_SWEEP_INTERVAL_SECONDS = 30n`
+- 500 expired rows per sweep; at most 10,000.
+- One sweep every 30 seconds.
+
+Use `buildRateLimitKey(scope, actorKey)` only when reading an existing bucket for
+a status view. Consuming a configured policy does not require constructing keys.
 
 ## Testing
 

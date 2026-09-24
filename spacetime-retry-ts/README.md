@@ -65,7 +65,7 @@ export const submitRetryTask = db.reducer(
   retry.reducers.submitRetryTask.handler
 );
 
-export const init = db.init(ctx => retry.installRetry(ctx));
+export const init = db.init(ctx => retry.install(ctx));
 export default db;
 ```
 
@@ -88,7 +88,7 @@ view returns these attempts newest first.
 - `makeRetryDispatch(handlers)` creates a typed tagged-union dispatcher.
 - `createRetrySubmodule(deps, handlers, auth?)` returns tables, enum helpers,
   reducers, admin views, and installation.
-- `installRetry(ctx)` seeds the publishing identity as the initial admin.
+- `install(ctx)` seeds the publishing identity as the initial admin.
 
 The generated client can submit a task when the host exports
 `submitRetryTask`. The default factory authorization restricts this operation

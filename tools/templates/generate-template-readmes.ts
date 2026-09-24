@@ -8,6 +8,7 @@
  * Usage: pnpm run generate-readmes (from tools/templates/)
  */
 
+import { readFileSync } from 'node:fs';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,13 +109,24 @@ function stripRemainingStepTags(content: string): string {
   return out;
 }
 
+/**
+ * The front-matter `slug` of a doc. Nearly every doc sets one, and when it
+ * does it replaces the folder-shaped path as the URL the page is served at.
+ */
+function frontMatterSlug(file: string): string | undefined {
+  const frontMatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(
+    readFileSync(file, 'utf-8')
+  )?.[1];
+  return /^slug:\s*['"]?(\/[^'"\s]*)['"]?\s*$/m.exec(frontMatter ?? '')?.[1];
+}
+
 function rewriteDocLinks(
   content: string,
   quickstartDir: string,
   docsRoot: string
 ): string {
   return content.replace(
-    /\[([^\]]+)\]\((\.\.\/)*(.+?\.md)(#[\w-]+)?\)/g,
+    /\[([^\]]+)\]\(((?:\.\.\/)*)(.+?\.md)(#[\w-]+)?\)/g,
     (_, linkText, parentRefs, docPath, hash) => {
       const relPath = (parentRefs || '') + docPath;
       const resolved = path.resolve(quickstartDir, relPath);
@@ -122,11 +134,14 @@ function rewriteDocLinks(
         .relative(docsRoot, resolved)
         .replace(/\\/g, '/');
       const withoutExt = relativeToDocs.replace(/\.md$/, '');
-      const slug = withoutExt
-        .split('/')
-        .map(seg => seg.replace(/^\d+-/, ''))
-        .join('/');
-      const url = `${DOCS_BASE}/${slug}${hash || ''}`;
+      const route =
+        frontMatterSlug(resolved) ??
+        '/' +
+          withoutExt
+            .split('/')
+            .map(seg => seg.replace(/^\d+-/, ''))
+            .join('/');
+      const url = `${DOCS_BASE}${route}${hash || ''}`;
       return `[${linkText}](${url})`;
     }
   );
