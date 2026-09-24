@@ -15,6 +15,8 @@ public sealed class AuthCtx
         _jwtLazy = new Lazy<JwtClaims?>(() => jwtFactory?.Invoke());
     }
 
+    internal static AuthCtx Anonymous() => new(isInternal: false, jwtFactory: () => null);
+
     /// <summary>
     /// Capture verified invocation authority independently from lazy JWT loading.
     /// </summary>

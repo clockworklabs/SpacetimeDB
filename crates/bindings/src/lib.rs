@@ -707,7 +707,7 @@ pub use spacetimedb_bindings_macro::table;
 /// <!-- TODO: SLAs? -->
 ///
 /// [`&ReducerContext`]: `ReducerContext`
-/// [clients]: https://spacetimedb.com/docs/#client
+/// [clients]: https://spacetimedb.com/docs/intro/key-architecture#client
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
@@ -777,7 +777,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
 /// when a database is under heavy load.
 ///
-/// [clients]: https://spacetimedb.com/docs/#client
+/// [clients]: https://spacetimedb.com/docs/intro/key-architecture#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::procedure;
