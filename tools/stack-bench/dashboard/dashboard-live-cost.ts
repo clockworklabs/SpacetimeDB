@@ -49,8 +49,9 @@ export function cumulativeResponseCosts(points: readonly UsagePoint[]): Array<{ 
 
 interface CodexUsageState { session?: string; model?: string; totals?: [number, number, number] }
 
-export function codexResponseCosts(text: string, rates: PricingRates, model: string, startedAt: string): UsagePoint[] {
-  const state: CodexUsageState = {};
+/** `state` carries session, model and cumulative totals across incremental reads; it is updated in place. */
+export function codexResponseCosts(text: string, rates: PricingRates, model: string, startedAt: string,
+  state: CodexUsageState = {}): UsagePoint[] {
   const points: UsagePoint[] = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -86,7 +87,8 @@ export function codexResponseCosts(text: string, rates: PricingRates, model: str
   return points;
 }
 
-const cache = new Map<string, { size: number; modified: number; offset: number; points: UsagePoint[] }>();
+const cache = new Map<string, { size: number; modified: number; offset: number; points: UsagePoint[];
+  codex: CodexUsageState }>();
 
 export async function liveTranscriptCost(directory: string, adapter: string, rates: PricingRates,
   model: string, startedAt: string) {
@@ -97,8 +99,9 @@ export async function liveTranscriptCost(directory: string, adapter: string, rat
     const key = `${directory}/${file.id}/${startedAt}/${JSON.stringify(rates)}/${model}`;
     const prior = cache.get(key);
     if (prior?.size === file.size && prior.modified === file.modified) { points.push(...prior.points); continue; }
-    // Read Codex session metadata and cumulative counters together.
-    const offsetStart = adapter !== 'codex' && prior && file.size > prior.size ? prior.offset : 0;
+    // Codex counters are cumulative; the cached state continues them from the last complete line.
+    const offsetStart = prior && file.size > prior.size ? prior.offset : 0;
+    const codex: CodexUsageState = offsetStart ? structuredClone(prior!.codex) : {};
     // Bound catch-up work; do not label a partial file as a complete live total.
     if (file.size - offsetStart > 16 * 1024 * 1024) return { activityUpdatedAt, costs: [] };
     const chunks: Buffer[] = [];
@@ -109,10 +112,10 @@ export async function liveTranscriptCost(directory: string, adapter: string, rat
     const end = bytes.lastIndexOf(10);
     const text = end < 0 ? '' : bytes.subarray(0, end + 1).toString();
     const parsed = [...(offsetStart ? prior!.points : []), ...(adapter === 'codex'
-      ? codexResponseCosts(text, rates, model, startedAt)
+      ? codexResponseCosts(text, rates, model, startedAt, codex)
       : responseCosts(text, rates, model, startedAt))];
     if (cache.size >= 128) cache.delete(cache.keys().next().value!);
-    cache.set(key, { size: file.size, modified: file.modified, offset: offsetStart + end + 1, points: parsed });
+    cache.set(key, { size: file.size, modified: file.modified, offset: offsetStart + end + 1, points: parsed, codex });
     points.push(...parsed);
   }
   return { activityUpdatedAt, costs: cumulativeResponseCosts(points) };

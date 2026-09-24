@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { parseArgs as parseNodeArgs } from 'node:util';
 
-import { contained, discoverPlans, readCampaignArtifactBody,
+import { contained, readCampaignArtifactBody,
   readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
@@ -114,7 +114,7 @@ export interface DashboardServerOptions {
   token?: string;
   feed?: OperationFeed;
   launch?: (input: LaunchInput) => LaunchChild;
-  plans?: () => DashboardPlan[];
+  plans?: () => DashboardPlan[] | Promise<DashboardPlan[]>;
 }
 
 function errorMessage(error: unknown): string {
@@ -247,7 +247,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
   const token = options.token ?? randomBytes(24).toString('base64url');
   const feed = options.feed ?? createOperationFeed(resultsRoot);
   const launch = options.launch ?? launchCampaign;
-  const plans = options.plans ?? (() => discoverPlans(plansRoot));
+  // Plan compilation runs in the reader worker, which keeps its cache.
+  const plans = options.plans ?? (() => reader.read('discoverPlans', plansRoot));
   const launchReservations = new Set<string>();
   const dispatchJob = (job: ReturnType<typeof submitExecutionJob>) => {
     const status = readExecutionJob(resultsRoot, job.id);
@@ -356,7 +357,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 200, { canStart: allowLaunch, csrfToken: token });
       }
       if (request.method === 'GET' && url.pathname === '/api/plans') {
-        return json(response, 200, plans());
+        return json(response, 200, await plans());
       }
       const jobRoute = url.pathname.match(/^\/api\/jobs(?:\/([a-f0-9]{64})(?:\/(cancel|start))?)?$/);
       if (jobRoute) {
@@ -491,7 +492,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         if (campaign.mode !== 'dependency' || campaign.status !== 'prepared' || priorExecutions < 1) {
           return json(response, 409, { error: 'Only an interrupted campaign that is ready can resume.' });
         }
-        const plan = plans().find(item => item.id === campaign.id && item.sha256 === campaign.sha256);
+        const plan = (await plans()).find(item => item.id === campaign.id && item.sha256 === campaign.sha256);
         // A draft campaign can only exist as a model-free trial, which `campaign resume` continues.
         if (!plan || !['frozen', 'draft'].includes(plan.state)) {
           return json(response, 409, { error: 'The test plan used by this campaign is unavailable.' });

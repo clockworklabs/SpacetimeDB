@@ -477,13 +477,25 @@ export interface DashboardPlan {
   error?: string;
 }
 
+// Compiling a plan resolves its whole composition (tens of seconds each). The
+// inputs outside the file ship with this release, so reuse a result until the
+// file's size or modification time changes.
+const planCache = new Map<string, { fingerprint: string; plan: DashboardPlan }>();
+
 export function discoverPlans(plansRoot: string): DashboardPlan[] {
   if (!existsSync(plansRoot)) return [];
   const plans: DashboardPlan[] = [];
+  const seen = new Set<string>();
   for (const entry of readdirSync(plansRoot, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
     const path = join(plansRoot, entry.name);
+    seen.add(path);
+    let fingerprint: string | null = null;
     try {
+      const stat = statSync(path);
+      fingerprint = `${stat.size}:${stat.mtimeMs}`;
+      const cached = planCache.get(path);
+      if (cached?.fingerprint === fingerprint) { plans.push(cached.plan); continue; }
       const plan = compileCampaignFile(path);
       plans.push({ id: plan.id, version: plan.version, title: plan.title, state: plan.state,
         mode: plan.definition.mode?.id ?? 'sequential',
@@ -499,7 +511,9 @@ export function discoverPlans(plansRoot: string): DashboardPlan[] {
       plans.push({ id: entry.name.slice(0, -5), title: entry.name, state: 'invalid',
         error: errorMessage(error), file: entry.name });
     }
+    if (fingerprint) planCache.set(path, { fingerprint, plan: plans.at(-1)! });
   }
+  for (const path of planCache.keys()) if (dirname(path) === plansRoot && !seen.has(path)) planCache.delete(path);
   return plans.sort((left, right) => left.title.localeCompare(right.title));
 }
 

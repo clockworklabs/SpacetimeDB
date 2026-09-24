@@ -1,9 +1,10 @@
 import { isMainThread, parentPort, Worker } from 'node:worker_threads';
 import { overviewPage, campaignLiveSheet, campaignLiveUpdate, campaignLiveProgression,
   attemptChecks, attemptPackage, attemptTranscript, attemptLogSlice } from './dashboard-views.js';
+import { discoverPlans } from './dashboard-model.js';
 
 const reads = { overviewPage, campaignLiveSheet, campaignLiveUpdate, campaignLiveProgression,
-  attemptChecks, attemptPackage, attemptTranscript, attemptLogSlice };
+  attemptChecks, attemptPackage, attemptTranscript, attemptLogSlice, discoverPlans };
 type ReadName = keyof typeof reads;
 
 if (!isMainThread) {

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import { responseCosts, codexResponseCosts, cumulativeResponseCosts, liveCostTotal } from '../../dashboard/dashboard-live-cost.js';
+import { responseCosts, codexResponseCosts, cumulativeResponseCosts, liveCostTotal,
+  liveTranscriptCost } from '../../dashboard/dashboard-live-cost.js';
+import { emptyArtifactIdentities, writeArtifact } from '../../src/evidence/artifacts.js';
 
 test('live cost uses pinned response usage once, excludes inherited history, and rejects conflicting or unpriced usage', () => {
   const rates = { input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4 };
@@ -47,4 +54,40 @@ test('Codex live usage counts cumulative deltas across sessions without counting
   assert.throws(() => parse(prefix + row(999, 800, 100)), /decreased/);
   assert.throws(() => codexResponseCosts(header('x', 'other') + row(1000, 0, 1), rates, 'gpt-6-astra', start), /pinned price/);
   assert.throws(() => codexResponseCosts(header('x') + row(1, 2, 1), rates, 'gpt-6-astra', start), /Invalid Codex/);
+});
+
+test('Codex live cost reads only bytes appended since the last refresh', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'dashboard-codex-live-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeArtifact(join(directory, 'backend-lease.json'), { kind: 'backend_lease_evidence', id: 'lease',
+    identities: emptyArtifactIdentities(), payload: { track: 'ecommerce', backend: 'spacetime',
+      runIndex: 1, runId: 'codex-live-test', state: 'active',
+      resources: { buildContainer: { owned: true, name: 'owned-build', id: 'exact-id' } } } });
+  const rates = { input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 0, cacheWrite1h: 0 };
+  const start = '2026-09-12T01:00:00Z';
+  const row = (input: number, cached: number, output: number) => JSON.stringify({
+    type: 'event_msg', timestamp: start, payload: { type: 'token_count', info: { total_token_usage: {
+      input_tokens: input, cached_input_tokens: cached, output_tokens: output } } } }) + '\n';
+  let text = JSON.stringify({ type: 'session_meta', payload: { id: 'one' } }) + '\n'
+    + JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-astra' } }) + '\n' + row(1000, 800, 100);
+  let modified = 1000;
+  const reads: number[] = [];
+  t.mock.method(childProcess, 'execFile', (...args: unknown[]) => {
+    const command = args[1] as string[];
+    const done = args[3] as (error: null, stdout: Buffer) => void;
+    const [name, from, count] = command.slice(-3).map(String) as [string, string, string];
+    if (command[0] === 'inspect') return done(null, Buffer.from('exact-id'));
+    if (name === '') return done(null, Buffer.from(JSON.stringify([['s.jsonl', Buffer.byteLength(text), modified]])));
+    reads.push(Number(from));
+    done(null, Buffer.from(text).subarray(Number(from), Number(from) + Number(count)));
+  });
+  syncBuiltinESMExports();
+  const read = () => liveTranscriptCost(directory, 'codex', rates, 'gpt-6-astra', start);
+  assert.deepEqual((await read()).costs.map(point => point.costUsd), [0.00156]);
+  const offset = Buffer.byteLength(text);
+  text += row(2000, 1600, 200); modified = 2000;
+  const grown = await read();
+  assert.deepEqual(reads, [0, offset], 'the second refresh starts after the first complete line set');
+  assert.deepEqual(grown.costs.map(point => point.costUsd),
+    cumulativeResponseCosts(codexResponseCosts(text, rates, 'gpt-6-astra', start)).map(point => point.costUsd));
 });
