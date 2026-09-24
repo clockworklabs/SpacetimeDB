@@ -48,7 +48,7 @@ AuthLib helpers continue to use `ctx.Db.User` and `ctx.From.User()`, regardless
 of the namespace selected by the root. Ordinary helper calls share the caller's
 context and transaction; a namespace is not a security boundary between helpers.
 
-#### Current restrictions
+#### Restrictions and limitations
 
 - Only the consuming root chooses namespace placement. A dependency that itself
   declares namespace mounts cannot be composed, even in `public`. Nested mounts,
@@ -71,11 +71,7 @@ context and transaction; a namespace is not a security boundary between helpers.
   on to protect data.
 - HTTP routes retain the existing root-level routing and environment authority;
   mounting a dependency does not add an HTTP namespace prefix.
-- Composition uses C# assemblies, not TypeScript or Rust module binaries.
-  Cross-language module composition is not implemented by this mechanism.
-
-These restrictions do not require C# 14 in clients. See
-[C# namespace bindings](../../sdks/csharp/DEVELOP.md#namespace-bindings).
+- Cross-language module composition is not currently supported.
 
 ### Declared environment
 
