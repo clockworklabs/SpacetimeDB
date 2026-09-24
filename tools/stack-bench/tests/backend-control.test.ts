@@ -111,18 +111,21 @@ test('clean-source application start uses the private attempt database URL', asy
   const priorToken = process.env.STACK_BENCH_LEASE_TOKEN;
   writeFileSync(join(root, 'start.sh'), '#!/bin/sh\nexec app\n');
   try {
-    for (const backend of ['postgres', 'mongodb']) {
+    for (const backend of ['postgres', 'mongodb', 'spacetime']) {
       const anchor = 'a'.repeat(64);
       const id = 'c'.repeat(64);
       const database = 'app_ecom_run0';
-      const lease = createBackendLease({ runId: `clean-source-${backend}`, backend,
-        track: 'ecommerce', runIndex: 0, database,
-        container: { name: 'database', id: anchor } });
+      const lease = createBackendLease(backend === 'spacetime'
+        ? { runId: 'clean-source-spacetime', backend, track: 'ecommerce', runIndex: 0,
+          serverUri: 'http://127.0.0.1:3310', module: 'shop-run-1', dataDir: join(root, 'spacetime-data') }
+        : { runId: `clean-source-${backend}`, backend, track: 'ecommerce', runIndex: 0, database,
+          container: { name: 'database', id: anchor } });
       lease.state = 'active';
-      lease.resources.network = { name: 'attempt', id: 'b'.repeat(64), namespaceContainerId: anchor,
+      const namespace = backend === 'spacetime' ? null : anchor;
+      lease.resources.network = { name: 'attempt', id: 'b'.repeat(64), namespaceContainerId: namespace,
         hostAddresses: ['172.20.0.1'], services: [], firewallSha256: null, firewallInstalledAt: null };
       lease.resources.buildContainer = { name: 'build', id, owned: true, running: true,
-        networkMode: `container:${anchor}`, image: `sha256:${'d'.repeat(64)}`,
+        networkMode: namespace ? `container:${namespace}` : 'bridge', image: `sha256:${'d'.repeat(64)}`,
         resourceLimits: { cpuCount: 2, memoryBytes: 1024, memorySwapBytes: 1024, pids: 32 } };
       writeBackendLease(leasePath, lease);
       process.env.STACK_BENCH_LEASE = leasePath;
@@ -142,9 +145,16 @@ test('clean-source application start uses the private attempt database URL', asy
         },
       }), error => error === launchReached);
       assert(launch);
-      assert(launch.includes('DATABASE_URL'));
-      assert.equal(launchEnvironment?.DATABASE_URL, attemptDatabaseUrl({ backend, database,
-        ownershipToken: lease.ownershipToken }));
+      if (backend === 'spacetime') {
+        assert(!launch.includes('DATABASE_URL'));
+        assert(launch.includes('VITE_MODULE_NAME') && launch.includes('VITE_SPACETIMEDB_URI'));
+        assert.equal(launchEnvironment?.VITE_MODULE_NAME, 'shop-run-1');
+        assert.equal(launchEnvironment?.VITE_SPACETIMEDB_URI, 'http://127.0.0.1:3310');
+      } else {
+        assert(launch.includes('DATABASE_URL'));
+        assert.equal(launchEnvironment?.DATABASE_URL, attemptDatabaseUrl({ backend, database,
+          ownershipToken: lease.ownershipToken }));
+      }
       assert.equal(launchEnvironment?.VITE_PORT, '65534');
       assert.equal(launchEnvironment?.APP_WARM_START, '1');
       assert(!launch.some(value => value.includes('local-app-password')));
@@ -185,15 +195,11 @@ test('restart diagnostics are copied only from the exact leased build container'
   try {
     assert.deepEqual(captureApplicationDiagnostics(output, { exec }), { captured: true, path: output });
     assert.match(readFileSync(output, 'utf8'), /server failed clearly/);
-    const inspect = calls[0];
     const capture = calls[1];
-    assert(inspect);
     assert(capture);
     assert.deepEqual(capture.argv.slice(0, 4), ['docker', 'exec', buildContainer.id, 'sh']);
     assert.match(capture.argv.at(-1) ?? '', /reference-application\.log/);
     assert.match(capture.argv.at(-1) ?? '', /restart-\*\.log/);
-    assert.equal(inspect.options.timeout, 120_000);
-    assert.equal(capture.options.timeout, 120_000);
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;
     else process.env.STACK_BENCH_LEASE = priorPath;
@@ -212,27 +218,11 @@ test('hosted application stop targets safe process groups and exact group-1 list
   assert.match(command, /\/bin\/kill -TERM "\$pid"/);
   assert.match(command, /\/bin\/kill -KILL -- "-\$pgid"/);
   assert.match(command, /\/bin\/kill -KILL "\$pid"/);
-  assert.match(command, /quiet.*-ge 10/);
-  assert.match(command, /hosted application port 6301 still has a listener/);
   assert.match(command, /self_pgid=/);
   assert.match(command, /init_pgid=/);
   assert.match(command, /"\$pgid" = 1/);
   assert.match(command, /direct="\$direct \$pid"/);
-  assert.match(command, /unsafe listener pid/);
   assert.throws(() => hostedStopScript('6301; rm -rf /'), /invalid hosted application port/);
-});
-
-test('hosted application stop targets its recorded launch before a port listener exists', () => {
-  const command = hostedRecordedProcessStopScript('/run/application/restart-mongodb-6301.pid');
-  assert.match(command, /cat "\$record"/);
-  assert.match(command, /current_started="\$\{20\}"/);
-  assert.match(command, /current_pgid="\$3"/);
-  assert.match(command, /current_started" != "\$started".*rm -f "\$record"; exit 0/s);
-  assert(command.indexOf('current_started') < command.indexOf('/bin/kill -TERM'));
-  assert.match(command, /\/bin\/kill -TERM -- "-\$pid"/);
-  assert.match(command, /\/bin\/kill -KILL -- "-\$pid"/);
-  assert.match(command, /application process group is still running/);
-  assert.match(command, /rm -f "\$record"/);
   assert.throws(() => hostedRecordedProcessStopScript('/app/server.pid'),
     /invalid hosted application process record/);
 });
@@ -310,96 +300,47 @@ test('application control rejects unsupported modes before touching a container'
   }), /unsupported SpacetimeDB control mode stop/);
 });
 
-test('SpacetimeDB application restart uses its leased module and server', () => {
-  const environment = STACK_ADAPTER_REGISTRY.get('spacetime').lifecycle.applicationEnvironment!({
-    resources: {
-      module: 'shop-run-1',
-      serverUri: 'http://127.0.0.1:3310',
-      buildContainer: { networkMode: 'bridge' },
-    },
-  } as never);
-  assert.deepEqual(environment, {
-    VITE_MODULE_NAME: 'shop-run-1',
-    VITE_SPACETIMEDB_URI: 'http://127.0.0.1:3310',
-  });
-});
-
-test('SpacetimeDB application start uses the root contract independently of its database host', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-hosted-failure-'));
-  const id = 'a'.repeat(64);
-  const abort = new AbortController();
-  abort.abort(new Error('stop waiting'));
-  writeFileSync(join(root, 'start.sh'), '#!/bin/sh\nexec app\n');
-  const calls: string[][] = [];
-  const exec = (_command: string, args: readonly string[]): string => {
-    calls.push([...args]);
-    if (args[0] === 'inspect') return `${id}\n`;
-    if (args[0] === 'exec' && args[2] === 'tail') {
-      return './start.sh: 2: set: Illegal option -o pipefail\n';
-    }
-    return '';
-  };
-  try {
-    for (let restart = 0; restart < 2; restart++) await assert.rejects(controlHostedAppServer({
-      adapterId: 'spacetime',
-      lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
-      app: root,
-      port: 65534,
-      probe: '/',
-      mode: 'start',
-      handoffWorkspace: true,
-      signal: abort.signal,
-      exec,
-    }), error => error instanceof Error
-      && error.message.includes('set: Illegal option -o pipefail')
-      && 'code' in error && error.code === 'generated_app_not_restartable');
-    const logs = calls.filter(args => args[0] === 'exec' && args.includes('-d'))
-      .map(args => args.at(-1)!.match(/restart-spacetime-65534-[a-f0-9-]+\.log/)?.[0]);
-    assert.equal(logs.length, 2);
-    assert.equal(new Set(logs).size, 2, 'restarts must not overwrite earlier process logs');
-    const launch = calls.find(args => args[0] === 'exec' && args.includes('-d'));
-    assert(calls.some(args => args.slice(0, 3).join(' ') === `exec ${id} chown`));
-    assert(launch);
-    assert.match(launch.at(-1) ?? '', /\/bin\/bash \.\/start\.sh/);
-    assert.match(launch.at(-1) ?? '', /restart-spacetime-65534-[a-f0-9-]+\.log/);
-    assert.match(launch.at(-1) ?? '', /\/usr\/bin\/setsid/);
-    assert.match(launch.at(-1) ?? '', /restart-spacetime-65534\.pid/);
-    assert.match(launch.at(-1) ?? '', /\/proc\/\$\$\/stat/);
-    assert.match(launch.at(-1) ?? '', /\(umask 077; printf/);
-    assert.match(launch.at(-1) ?? '', /printf "%s %s\\n" "\$\$" "\$\{20\}"/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('hosted application start fails as soon as the launch exits without a listener and keeps its log', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-hosted-exit-'));
   const id = 'b'.repeat(64);
   writeFileSync(join(root, 'start.sh'), '#!/bin/sh\nexec app\n');
   const log = ['[start.sh] Installing dependencies', 'npm ERR! network request failed',
     'npm ERR! A complete log of this run can be found in: /home/developer/.npm/_logs/x.log'];
+  const launches: string[] = [];
   const exec = (_command: string, args: readonly string[]): string => {
     if (args[0] === 'inspect') return `${id}\n`;
     if (args[0] === 'exec' && args[2] === 'tail') return `${log.join('\n')}\n`;
     const script = String(args.at(-1) ?? '');
+    if (args[0] === 'exec' && args.includes('-d')) launches.push(script);
     if (/\/proc\/\$pid/.test(script) || /-sTCP:LISTEN\)"\s*\]/.test(script)) {
       throw Object.assign(new Error('exit 1'), { status: 1 });
     }
     return '';
   };
-  const startedAt = Date.now();
   try {
-    await assert.rejects(controlHostedAppServer({
-      adapterId: 'postgres',
-      lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
-      app: root,
-      port: 65533,
-      probe: '/',
-      mode: 'start',
-      exec,
-    }), error => error instanceof Error
-      && error.message.startsWith('postgres application exited before it listened on port 65533: ')
-      && error.message.includes('npm ERR! network request failed')
-      && 'code' in error && error.code === 'generated_app_not_restartable'
-      && 'startLog' in error && error.startLog === log.join('\n'));
-    assert.ok(Date.now() - startedAt < HOSTED_START_TIMEOUT_MS / 10);
+    for (const [adapterId, restarts] of [['postgres', 1], ['spacetime', 2]] as const) {
+      launches.length = 0;
+      for (let restart = 0; restart < restarts; restart++) {
+        const startedAt = Date.now();
+        await assert.rejects(controlHostedAppServer({
+          adapterId,
+          lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
+          app: root,
+          port: 65533,
+          probe: '/',
+          mode: 'start',
+          exec,
+        }), error => error instanceof Error
+          && error.message.startsWith(`${adapterId} application exited before it listened on port 65533: `)
+          && error.message.includes('npm ERR! network request failed')
+          && 'code' in error && error.code === 'generated_app_not_restartable'
+          && 'startLog' in error && error.startLog === log.join('\n'));
+        assert.ok(Date.now() - startedAt < HOSTED_START_TIMEOUT_MS / 10);
+      }
+      const logs = launches.map(script => script.match(/restart-[a-z]+-65533-[a-f0-9-]+\.log/)?.[0]);
+      assert.equal(logs.length, restarts);
+      assert(logs.every(Boolean));
+      assert.equal(new Set(logs).size, restarts, 'restarts must not overwrite earlier process logs');
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

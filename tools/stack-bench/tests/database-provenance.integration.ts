@@ -9,11 +9,13 @@ import { verifyApplicationDatabaseMarker, writeApplicationDatabaseMarker } from 
 test('browser signup provenance requires independent storage and releases its browser context', async () => {
   const stored = new Set<string>();
   let persist = false;
+  let signedUp: string | null = null;
   const app = createServer(async (request, response) => {
     if (request.url === '/signup') {
       let body = '';
       for await (const chunk of request) body += String(chunk);
       const { username } = JSON.parse(body) as { username: string };
+      signedUp = username;
       if (persist) stored.add(username);
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end('{}');
@@ -38,13 +40,21 @@ test('browser signup provenance requires independent storage and releases its br
   try {
     browser = await chromium.launch({ headless: true });
     const track = loadTrack('ecommerce');
+    assert.deepEqual(track.databaseProvenance, { browserAction: 'signUp' });
     for (persist of [false, true]) {
+      signedUp = null;
+      let observed: string | null = null;
       const result = await verifyApplicationDatabaseMarker(
         { backend: 'postgres', url: `http://127.0.0.1:${address.port}` }, track.databaseProvenance, {
           write: (args, definition) => writeApplicationDatabaseMarker(args, definition, { browser }),
-          read: (_args, marker) => ({ ok: !!marker && stored.has(marker), verified: true, reason: 'independent store' }),
+          read: (_args, marker) => {
+            observed = marker ?? null;
+            return { ok: !!marker && stored.has(marker), verified: true, reason: 'independent store' };
+          },
         });
       assert.equal(result.write.ok, true, 'the same visible signup succeeds in both controls');
+      assert(signedUp);
+      assert.equal(observed, signedUp, 'the independent read looks for the marker the browser submitted');
       assert.equal(result.runtime?.ok, persist, 'a success page alone cannot prove persistence');
       assert.equal(browser.contexts().length, 0);
     }

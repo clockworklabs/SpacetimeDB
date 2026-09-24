@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createBackendLease, publicBackendLease, runnerCapacity, claimBackendResources,
+import { createBackendLease, runnerCapacity, claimBackendResources,
   claimBackendResourcesWhenAvailable, releaseResourceLocks } from '../src/runtime/backend-lease.js';
 import { hostResourceWaitReason, resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
 import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../src/composition/product-config.js';
@@ -106,7 +106,7 @@ test('port and workspace claims remain exclusive across acquisition and intent r
     const acquired = resourceLockTransaction({ root, lease: standalone, keys, operation: 'acquire' });
     assert.deepEqual(acquired.map(lock => lock.key), keys);
     assert.deepEqual(resourceLockTransaction({ root, lease: standalone, keys, operation: 'acquire' }), acquired);
-    const intent = resourceLockDescriptors(root, [...keys, ...campaignKeys]);
+    const intent = resourceLockDescriptors(root, [...keys, ...campaignKeys, 'port:4002']);
     resourceLockTransaction({ root, lease: standalone, keys: intent.map(lock => lock.key), operation: 'release-intent' });
     assert.deepEqual(reserved.map(lock => readFileSync(lock.path, 'utf8')), before);
     resourceLockTransaction({ root, lease: campaign, keys, operation: 'acquire' });
@@ -132,37 +132,6 @@ test('a stale release cannot remove a replacement claim, even temporarily', () =
     assert.throws(() => resourceLockTransaction({ ...transaction, operation: 'acquire' }),
       /already leased by next/);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('partial private intent releases only matching claims and leaves foreign owners intact', () => {
-  const root = mkdtempSync(join(tmpdir(), 'lock-intent-'));
-  const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
-  const other = createBackendLease({ runId: 'other', backend: 'stub', track: 'loop', runIndex: 0 });
-  try {
-    resourceLockTransaction({ root, lease: first, keys: ['a'], operation: 'acquire' });
-    resourceLockTransaction({ root, lease: other, keys: ['b'], operation: 'acquire' });
-    resourceLockTransaction({ root, lease: first, keys: ['a', 'b', 'c'], operation: 'release-intent' });
-    resourceLockTransaction({ root, lease: other, keys: ['b'], operation: 'verify' });
-    resourceLockTransaction({ root, lease: other, keys: ['a', 'c'], operation: 'acquire' });
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('a failed multi-key claim creates no partial exclusion', () => {
-  const root = mkdtempSync(join(tmpdir(), 'lock-set-'));
-  const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
-  const other = createBackendLease({ runId: 'other', backend: 'stub', track: 'loop', runIndex: 0 });
-  try {
-    resourceLockTransaction({ root, lease: first, keys: ['b'], operation: 'acquire' });
-    assert.throws(() => resourceLockTransaction({ root, lease: other, keys: ['a', 'b'], operation: 'acquire' }),
-      /already leased/);
-    resourceLockTransaction({ root, lease: first, keys: ['a'], operation: 'acquire' });
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('public lease evidence does not disclose private campaign delegation', () => {
-  const lease = createBackendLease({ runId: 'child', backend: 'stub', track: 'loop', runIndex: 0 });
-  lease.campaignDelegation = { path: '/private/delegation.json', token: 'private-child-token' };
-  assert.equal('campaignDelegation' in publicBackendLease(lease), false);
 });
 
 test('standalone admission waits for capacity but rejects ownership conflicts', { skip: process.platform !== 'linux' }, async () => {

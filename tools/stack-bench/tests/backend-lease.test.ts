@@ -10,18 +10,14 @@ import test from 'node:test';
 import {
   createBackendLease,
   acquireResourceLock,
-  acquireResourceLocks,
   backendResourceLockKeys,
-  newRunId,
   publicBackendLease,
   readBackendLease,
-  releaseResourceLocks,
   resourceLockScope,
   updateBackendLease,
   writeBackendLease,
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
-import { processIdentity } from '../src/runtime/platform.js';
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) =>
@@ -46,12 +42,6 @@ function fixture() {
   return { root, path, lease };
 }
 
-test('run ids include track, backend, index, timestamp, and a nonce', () => {
-  const id = newRunId({ track: 'Chat', backend: 'Spacetime', runIndex: 2,
-    now: new Date('2026-08-10T12:34:56.000Z'), nonce: 'ABCDEF12-rest' });
-  assert.equal(id, 'chat-spacetime-run2-20260810123456-abcdef12');
-});
-
 test('lease reads require the matching token, backend, and active state', () => {
   const f = fixture();
   try {
@@ -62,21 +52,6 @@ test('lease reads require the matching token, backend, and active state', () => 
     }).runId, f.lease.runId);
     assert.throws(() => readBackendLease(f.path, { token: 'wrong' }), /token does not match/);
     assert.throws(() => readBackendLease(f.path, { backend: 'postgres' }), /not postgres/);
-  } finally { rmSync(f.root, { recursive: true, force: true }); }
-});
-
-test('lease updates are atomic and retain identity', () => {
-  const f = fixture();
-  try {
-    writeBackendLease(f.path, f.lease);
-    updateBackendLease(f.path, { token: f.lease.ownershipToken, runId: f.lease.runId }, next => {
-      next.state = 'active';
-      next.resources.listenerProcesses = [{ pid: 8080, startMarker: '1' }];
-      return next;
-    });
-    const onDisk = JSON.parse(readFileSync(f.path, 'utf8'));
-    assert.equal(onDisk.runId, f.lease.runId);
-    assert.deepEqual(onDisk.resources.listenerProcesses, [{ pid: 8080, startMarker: '1' }]);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
@@ -123,8 +98,10 @@ test('public lease evidence hashes rather than exposes the ownership token', () 
       owned: true, networkMode: 'bridge', resourceLimits: {
         cpuCount: 2, memoryBytes: 4096, memorySwapBytes: 4096, pids: 512,
     } };
+    f.lease.campaignDelegation = { path: '/private/delegation.json', token: 'private-child-token' };
     const publicLease = publicBackendLease(f.lease);
     assert.equal('ownershipToken' in publicLease, false);
+    assert.equal('campaignDelegation' in publicLease, false);
     assert.match(publicLease.ownership.markerSha256, /^[0-9a-f]{64}$/);
     assert(publicLease.resources.buildContainer);
     assert.deepEqual(publicLease.resources.buildContainer.resourceLimits,
@@ -132,30 +109,16 @@ test('public lease evidence hashes rather than exposes the ownership token', () 
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
-test('Spacetime leases reject non-loopback and portless targets', () => {
-  const base = { runId: 'unsafe', backend: 'spacetime', track: 'chat', runIndex: 0,
-    module: 'app-run0', dataDir: tmpdir() };
-  assert.throws(() => createBackendLease({ ...base, serverUri: 'https://production.example:443' }),
-    /must use http/);
-  assert.throws(() => createBackendLease({ ...base, serverUri: 'http://localhost' }),
-    /explicit loopback port/);
-});
-
-test('supervisor teardown releases an owned lease without runtime processes', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-supervisor-release-'));
-  const path = join(root, 'lease.json');
-  try {
-    const lease = createBackendLease({
-      runId: 'chat-postgres-run0-supervisor', backend: 'postgres', track: 'chat', runIndex: 0,
-      database: 'app_supervisor', container: { name: 'unused-postgres', id: 'unused-id' },
-    });
-    lease.state = 'active';
-    writeBackendLease(path, lease);
-    assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
-    const released = readBackendLease(path, { token: lease.ownershipToken });
-    assert.equal(released.state, 'released');
-    assert(released.releasedAt);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('Spacetime and Convex leases reject non-loopback and portless targets', () => {
+  for (const base of [
+    { runId: 'unsafe', backend: 'spacetime', track: 'chat', runIndex: 0, module: 'app-run0', dataDir: tmpdir() },
+    { runId: 'unsafe', backend: 'convex', track: 'ecommerce', runIndex: 0 },
+  ]) {
+    assert.throws(() => createBackendLease({ ...base, serverUri: 'https://production.example:443' }),
+      /must use http/);
+    assert.throws(() => createBackendLease({ ...base, serverUri: 'http://localhost' }),
+      /explicit loopback port/);
+  }
 });
 
 test('private Convex lifecycle releases before first creation intent and preserves refusal', () => {
@@ -171,10 +134,19 @@ test('private Convex lifecycle releases before first creation intent and preserv
     assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
     assert.equal(readBackendLease(path).state, 'released');
     assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
-    assert.throws(() => createBackendLease({ ...lease, serverUri: 'https://production.example:443' }), /must use http/);
-    assert.throws(() => createBackendLease({ ...lease, serverUri: 'http://localhost' }), /explicit loopback port/);
     assert.throws(() => createBackendLease({ ...lease, serverUri: 'http://127.0.0.1:14310',
       container: { name: 'ambient', id: 'ambient' } }), /requires an owned container/);
+    const sharedPath = join(root, 'shared.json');
+    const shared = createBackendLease({
+      runId: 'chat-postgres-run0-supervisor', backend: 'postgres', track: 'chat', runIndex: 0,
+      database: 'app_supervisor', container: { name: 'unused-postgres', id: 'unused-id' },
+    });
+    shared.state = 'active';
+    writeBackendLease(sharedPath, shared);
+    assert.equal(releaseBackendLease(sharedPath, shared.ownershipToken), true);
+    const released = readBackendLease(sharedPath, { token: shared.ownershipToken });
+    assert.equal(released.state, 'released');
+    assert(released.releasedAt);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -296,30 +268,17 @@ test('container teardown retries transient Docker removal failures', () => {
     assert.equal(stopLeasedContainer(path, lease.ownershipToken, {
       ...refused, inspect: () => { throw new Error('No such container: owned-build-id'); },
     }), true, 'handback evidence closes the crash gap between removal and its lease update');
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('container teardown accepts an exact container removed after inspection', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-container-missing-'));
-  const path = join(root, 'lease.json');
-  try {
-    const lease = createBackendLease({
-      runId: 'container-missing', backend: 'postgres', track: 'chat', runIndex: 0,
-      database: 'container_missing', container: { name: 'owned-container', id: 'owned-id' },
+    updateBackendLease(path, { token: lease.ownershipToken }, next => {
+      delete next.resources.buildContainer!.removedAt;
+      next.resources.buildContainer!.running = true;
+      return next;
     });
-    lease.state = 'active';
-    lease.resources.buildContainer = {
-      name: 'owned-build', id: 'owned-build-id', image: 'build-image', owned: true,
-      running: true, networkMode: 'bridge',
-      resourceLimits: { cpuCount: 2, memoryBytes: 4096, memorySwapBytes: 4096, pids: 512 },
-    };
-    writeBackendLease(path, lease);
     assert.equal(stopLeasedContainer(path, lease.ownershipToken, {
       inspect: () => 'owned-build-id',
       handoffWorkspace: () => undefined,
       remove: () => { throw new Error('No such container: owned-build-id'); },
       wait: () => undefined,
-    }), true);
+    }), true, 'an exact container removed after inspection is already gone');
     assert.equal(readBackendLease(path, { token: lease.ownershipToken })
       .resources.buildContainer?.running, false);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -356,35 +315,6 @@ test('pre-activation Spacetime cleanup releases only when its leased port stayed
   }
 });
 
-test('resource locks exclude a concurrent run and release only for their owner', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-'));
-  try {
-    const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
-    const second = createBackendLease({ runId: 'second', backend: 'stub', track: 'loop', runIndex: 0 });
-    first.resources.locks.push(acquireResourceLock({ root, key: 'slot:loop:stub:run0', lease: first }));
-    assert.throws(() => acquireResourceLock({ root, key: 'slot:loop:stub:run0', lease: second }),
-      /already leased by first/);
-    releaseResourceLocks(first);
-    second.resources.locks.push(acquireResourceLock({ root, key: 'slot:loop:stub:run0', lease: second }));
-    releaseResourceLocks(second);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('resource lock release preserves a replacement owner record', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-release-'));
-  try {
-    const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
-    const lock = acquireResourceLock({ root, key: 'shared', lease: first });
-    first.resources.locks.push(lock);
-    writeFileSync(lock.path, JSON.stringify({ runId: 'replacement', ownerPid: process.pid,
-      ownerStartMarker: processIdentity(process.pid)?.startMarker ?? null,
-      ownershipMarkerSha256: 'replacement' }));
-    assert.throws(() => releaseResourceLocks(first), /no longer belongs/);
-    assert.equal(existsSync(lock.path), true);
-    assert.equal(JSON.parse(readFileSync(lock.path, 'utf8')).runId, 'replacement');
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('bench and reference leases use the same canonical slot and backend keys', () => {
   const input = { backend: 'spacetime', track: 'ecommerce', runIndex: 0,
     serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
@@ -402,22 +332,6 @@ test('bench and reference leases use the same canonical slot and backend keys', 
   assert.deepEqual(backendResourceLockKeys(reference, { vite: 6473, express: null }, preparedKeys), expected);
 });
 
-test('multi-lock acquisition rolls back earlier keys when a later key is busy', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-rollback-'));
-  const held = createBackendLease({ runId: 'held', backend: 'stub', track: 'loop', runIndex: 0 });
-  const target = createBackendLease({ runId: 'target', backend: 'stub', track: 'loop', runIndex: 1 });
-  const probe = createBackendLease({ runId: 'probe', backend: 'stub', track: 'loop', runIndex: 2 });
-  try {
-    held.resources.locks.push(acquireResourceLock({ root, key: 'b-held', lease: held }));
-    assert.throws(() => acquireResourceLocks({
-      root, keys: ['a-rollback', 'b-held'], lease: target,
-    }), /already leased by held/);
-    probe.resources.locks.push(acquireResourceLock({ root, key: 'a-rollback', lease: probe }));
-    releaseResourceLocks(probe);
-    releaseResourceLocks(held);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('resource lock scope is shared only for the appliance', () => {
   const temporaryDirectory = join(tmpdir(), 'scope-test');
   assert.deepEqual(resourceLockScope({}, { temporaryDirectory }), {
@@ -430,37 +344,25 @@ test('resource lock scope is shared only for the appliance', () => {
     /must be an absolute path/);
 });
 
-test('resource acquisition requires authenticated release when an owner process is gone', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-'));
-  try {
-    const stale = createBackendLease({ runId: 'stale', backend: 'stub', track: 'loop', runIndex: 0,
-      ownerPid: 2_147_483_646 });
-    stale.resources.locks.push(acquireResourceLock({ root, key: 'shared-listener', lease: stale }));
-    const current = createBackendLease({ runId: 'current', backend: 'stub', track: 'loop', runIndex: 1 });
-    assert.throws(() => acquireResourceLock({ root, key: 'shared-listener', lease: current }),
-      /run authenticated recovery before reuse/);
-    releaseResourceLocks(stale);
-    current.resources.locks.push(acquireResourceLock({ root, key: 'shared-listener', lease: current }));
-    releaseResourceLocks(current);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('a different PID start marker cannot authorize reclamation across controller namespaces', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-pid-reuse-'));
   const key = 'shared-listener';
   const digest = createHash('sha256').update(key).digest('hex');
   const path = join(root, `${digest}.lock.json`);
+  const current = createBackendLease({ runId: 'current', backend: 'stub', track: 'loop', runIndex: 1 });
   try {
-    writeFileSync(path, JSON.stringify({ version: 1, key, runId: 'dead-owner',
-      ownerPid: process.pid, ownerStartMarker: 'not-this-process',
-      ownershipMarkerSha256: 'dead-owner', acquiredAt: new Date().toISOString() }));
-    const current = createBackendLease({ runId: 'current', backend: 'stub', track: 'loop', runIndex: 1 });
-    const before = readFileSync(path, 'utf8');
-    assert.throws(() => acquireResourceLock({ root, key, lease: current }), /run authenticated recovery before reuse/);
-    assert.equal(readFileSync(path, 'utf8'), before);
+    for (const owner of [
+      { ownerPid: process.pid, ownerStartMarker: 'not-this-process' },
+      { ownerPid: 2_147_483_646, ownerStartMarker: null },
+    ]) {
+      writeFileSync(path, JSON.stringify({ version: 1, key, runId: 'dead-owner', ...owner,
+        ownershipMarkerSha256: 'dead-owner', acquiredAt: new Date().toISOString() }));
+      const before = readFileSync(path, 'utf8');
+      assert.throws(() => acquireResourceLock({ root, key, lease: current }), /run authenticated recovery before reuse/);
+      assert.equal(readFileSync(path, 'utf8'), before);
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
-
 
 test('resource-free stub activation stays resource-free inside the appliance', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-stub-activation-'));

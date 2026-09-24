@@ -21,14 +21,10 @@ test('OpenAI account auth extracts only an unexpired access token and rejects AP
     { provider: 'openai', mode: 'api-key', credential: 'key' });
 });
 
-test('container auth resolves a direct subscription token in controller memory', () => {
-  const secret = 'subscription-secret-value';
-  const auth = resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN: secret },
-    credentialsPath: '/unused/credentials' });
-  assert.deepEqual(auth, { mode: 'subscription-token', credential: secret });
-});
-
 test('container auth resolves a selected subscription token only in the controller', () => {
+  const secret = 'subscription-secret-value';
+  assert.deepEqual(resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN: secret },
+    credentialsPath: '/unused/credentials' }), { mode: 'subscription-token', credential: secret });
   const tokenPath = resolve('/private/token');
   const auth = resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN_FILE: tokenPath },
     credentialsPath: '/unused/credentials', exists: path => path === tokenPath,

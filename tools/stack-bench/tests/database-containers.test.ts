@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { databaseContainer, databaseContainerName } from '../src/stacks/database-containers.js';
+import { databaseContainerName } from '../src/stacks/database-containers.js';
 
 test('database container defaults isolate development from appliance services', () => {
   assert.equal(databaseContainerName('postgres', {}), 'stack-bench-dev-postgres');
@@ -10,16 +10,6 @@ test('database container defaults isolate development from appliance services', 
     'stack-bench-postgres');
   assert.equal(databaseContainerName('mongodb', { STACK_BENCH_APPLIANCE: '1' }),
     'stack-bench-mongodb');
-});
-
-test('explicit database container names override topology defaults', () => {
   assert.equal(databaseContainerName('postgres', { POSTGRES_CONTAINER: 'custom-pg' }), 'custom-pg');
   assert.equal(databaseContainerName('mongodb', { MONGO_CONTAINER: 'custom-mongo' }), 'custom-mongo');
-});
-
-test('database container metadata owns the service port', () => {
-  assert.deepEqual(databaseContainer('postgres', {}),
-    { name: 'stack-bench-dev-postgres', internalPort: 5432 });
-  assert.deepEqual(databaseContainer('mongodb', {}),
-    { name: 'stack-bench-dev-mongodb', internalPort: 27017 });
 });

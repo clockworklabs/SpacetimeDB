@@ -7,14 +7,9 @@ import test from 'node:test';
 import { runAuditNetworkContext } from '../commands/bench.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { auditTranscript, networkTargetsFromBash, pathsFromBash } from '../commands/leak-audit.js';
+import { auditTranscript, networkTargetsFromBash } from '../commands/leak-audit.js';
 import { archiveTranscripts, transcriptDirectories } from '../src/agents/transcript-archive.js';
 import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
-
-test('Bash reader extraction keeps absolute file arguments', () => {
-  assert.deepEqual(pathsFromBash('cat /app/src/main.ts; rg secret /outside/notes.md'),
-    ['/app/src/main.ts', '/outside/notes.md']);
-});
 
 test('Codex tool events use the shared restricted access and refusal audit', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-codex-audit-'));
@@ -92,8 +87,11 @@ test('a completed external Bash read contaminates the transcript', () => {
   try {
     const events = [
       { cwd: '/app', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Bash',
-        input: { command: 'cat /tools/stack-bench/grader/grade.ts' } }] } },
+        input: { command: 'cat /tools/stack-bench/grader/grade.ts; rg secret /outside/notes.md' } }] } },
       { message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', is_error: false }] } },
+      { message: { content: [{ type: 'tool_use', id: 'read-2', name: 'Bash',
+        input: { command: 'cat stack-bench/bundle.json' } }] } },
+      { message: { content: [{ type: 'tool_result', tool_use_id: 'read-2', is_error: false }] } },
     ];
     writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
 
@@ -101,32 +99,11 @@ test('a completed external Bash read contaminates the transcript', () => {
 
     assert.equal(result.cwd, '/app');
     assert.equal(result.refused.length, 0);
-    assert.deepEqual(result.hits.map(hit => ({ path: hit.path, kind: hit.kind })), [{
-      path: '/tools/stack-bench/grader/grade.ts',
-      kind: 'GRADER / TEST SPECS',
-    }]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('private grading reads inside the app contaminate the transcript', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-private-leak-audit-'));
-  const transcript = join(root, 'session.jsonl');
-  try {
-    const events = [
-      { cwd: '/app', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Bash',
-        input: { command: 'cat stack-bench/bundle.json' } }] } },
-      { message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', is_error: false }] } },
-    ];
-    writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
-
-    const result = auditTranscript(transcript, '/app');
-
-    assert.deepEqual(result.hits.map(hit => ({ path: hit.path, kind: hit.kind })), [{
-      path: '/app/stack-bench/bundle.json',
-      kind: 'GRADER / TEST SPECS',
-    }]);
+    assert.deepEqual(result.hits.map(hit => ({ path: hit.path, kind: hit.kind })), [
+      { path: '/tools/stack-bench/grader/grade.ts', kind: 'GRADER / TEST SPECS' },
+      { path: '/outside/notes.md', kind: 'other' },
+      { path: '/app/stack-bench/bundle.json', kind: 'GRADER / TEST SPECS' },
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { gradeArgv } from '../commands/bench.js';
+import { contractLintArgv } from '../commands/run-suite.js';
 import { agentRequestArgv } from '../src/agents/agent-adapter-contract.js';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.js';
 import type { AgentRequest } from '../src/agents/agent-adapter-contract.js';
@@ -48,6 +49,7 @@ test('neutral guidance gives the agent and grader the same credential aliases', 
   assert.equal(staff.text, 'store-staff-2026');
   assert.equal(ordinary.text, 'ordinary text');
   assert.equal(originalSignIn.password, 'stackbench-admin-2026');
+  assert.equal(seededAdminPassword(guidance.credentialAliases), 'store-admin-2026');
 });
 
 test('campaign agent and grader argv carry aliases only when the condition declares them', () => {
@@ -64,21 +66,23 @@ test('campaign agent and grader argv carry aliases only when the condition decla
     track, 'attempt');
   assert.equal(graderArgs[graderArgs.indexOf('--credential-aliases-json') + 1],
     JSON.stringify(aliases));
+  const lintArgs = { url: 'http://app', level: '1', track: 'ecommerce', label: 'attempt',
+    out: '/results', bundleArtifactId: 'attempt', credentialAliases: aliases };
+  const lintArgv = contractLintArgv(lintArgs);
+  assert.equal(lintArgv[lintArgv.indexOf('--credential-aliases-json') + 1], JSON.stringify(aliases));
+
+  const fixtureArgs = { ...args, gradingCredentialAliases: {} };
+  const fixtureGraderArgs = gradeArgv(fixtureArgs, '/app', 'http://app', 'attempt', 1, track, 'attempt');
+  assert.equal(fixtureGraderArgs[fixtureGraderArgs.indexOf('--credential-aliases-json') + 1], '{}');
+  assert.deepEqual(fixtureArgs.condition.guidance.credentialAliases, aliases);
 
   const unaliasedRequest: AgentRequest = { ...request, credentialAliases: null };
   const unaliasedArgs = { ...args, condition: undefined };
   assert.equal(agentRequestArgv(adapter, unaliasedRequest).includes('--credential-aliases-json'), false);
   assert.equal(gradeArgv(unaliasedArgs, '/app', 'http://app', 'attempt', 1,
     track, 'attempt').includes('--credential-aliases-json'), false);
-});
-
-test('a run graded with the fixture credentials keeps its recorded condition', () => {
-  const args = { backend: 'mongodb', track: 'ecommerce', runIndex: 0, media: false,
-    condition: { guidance: { credentialAliases: aliases } }, gradingCredentialAliases: {} };
-  const track = loadTrack('ecommerce');
-  const graderArgs = gradeArgv(args, '/app', 'http://app', 'attempt', 1, track, 'attempt');
-  assert.equal(graderArgs[graderArgs.indexOf('--credential-aliases-json') + 1], '{}');
-  assert.deepEqual(args.condition.guidance.credentialAliases, aliases);
+  assert.equal(contractLintArgv({ ...lintArgs, credentialAliases: undefined })
+    .includes('--credential-aliases-json'), false);
 });
 
 test('model-free scenarios keep their original credentials without aliases', () => {
@@ -90,10 +94,6 @@ test('model-free scenarios keep their original credentials without aliases', () 
   assert.throws(() => agentVisibleContractText('stackbench-staff-2026'),
     /contains internal language/);
   assert.equal(seededAdminPassword({}), 'stackbench-admin-2026');
-});
-
-test('the contract walk uses the same neutral admin credential', () => {
-  assert.equal(seededAdminPassword(aliases), 'store-admin-2026');
 });
 
 test('credential aliases reject ambiguous or ineffective maps', () => {

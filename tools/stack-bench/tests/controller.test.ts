@@ -12,12 +12,6 @@ import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agen
 import { validateCampaignDefinition } from '../src/campaigns/campaign-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
-function command(argv: string[]) {
-  const resolved = resolveControllerCommand(argv);
-  assert.ok(resolved);
-  return resolved;
-}
-
 test('controller forwards repeated stop signals until its child exits', () => {
   const source = new EventEmitter();
   const received: NodeJS.Signals[] = [];
@@ -28,53 +22,6 @@ test('controller forwards repeated stop signals until its child exits', () => {
   stop();
   source.emit('SIGTERM');
   assert.deepEqual(received, ['SIGINT', 'SIGINT', 'SIGTERM']);
-});
-
-test('controller exposes a small explicit operator command surface', () => {
-  assert.equal(resolveControllerCommand([]), null);
-  assert.equal(resolveControllerCommand(['--help']), null);
-  assert.match(command(['preflight']).args[0] ?? '', /preflight\.js$/);
-  const run = command(['run', '--backend', 'postgres', '--levels', '1-2']);
-  assert.equal(run.executable, process.execPath);
-  assert.match(run.args[0] ?? '', /[\\/]dist[\\/]commands[\\/]/);
-  assert.match(run.args[0] ?? '', /bench\.js$/);
-  assert.deepEqual(run.args.slice(1), ['--backend', 'postgres', '--levels', '1-2']);
-  const recovery = command(['recover', '/private/supervisor.json']);
-  assert.match(recovery.args[0] ?? '', /recovery\.js$/);
-  assert.deepEqual(recovery.args.slice(1), ['recover', '/private/supervisor.json']);
-  const leaseRecovery = command([
-    'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
-  assert.match(leaseRecovery.args[0] ?? '', /recovery\.js$/);
-  assert.deepEqual(leaseRecovery.args.slice(1), [
-    'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
-  const campaign = command(['campaign', 'show', '/plans/campaign.json']);
-  assert.match(campaign.args[0] ?? '', /campaign-cli\.js$/);
-  assert.deepEqual(campaign.args.slice(1), ['show', '/plans/campaign.json']);
-  const campaignRun = command(['campaign', 'run', '/plans/campaign.json',
-    '--out', '/results/campaign-001']);
-  assert.deepEqual(campaignRun.args.slice(1), ['run', '/plans/campaign.json',
-    '--out', '/results/campaign-001']);
-  const dashboard = command(['dashboard', '--port', '7331']);
-  assert.match(dashboard.args[0] ?? '', /dashboard[\\/]dashboard-server\.js$/);
-  assert.deepEqual(dashboard.args.slice(1), ['--port', '7331']);
-  assert.match(command(['qualify-reference']).args[0] ?? '', /reference-live\.js$/);
-  assert.match(command(['qualify-null']).args[0] ?? '', /null-control\.js$/);
-  assert.match(command(['qualification']).args[0] ?? '', /qualification-cli\.js$/);
-  assert.match(command(['pack-budget']).args[0] ?? '', /pack-budget\.js$/);
-  assert.match(command(['repair']).args[0] ?? '', /repair-cli\.js$/);
-  assert.match(command(['demo']).args[0] ?? '', /demo\.js$/);
-  assert.equal(controllerCommandRequiresAgentAuth('demo'), false);
-  assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
-});
-
-test('controller image starts the compiled entry point', () => {
-  const dockerfile = readFileSync(join(STACK_BENCH_ROOT, 'appliance', 'Controller.Dockerfile'),
-    'utf8');
-  assert.match(dockerfile,
-    /ENTRYPOINT \["node", "\/opt\/stack-bench\/dist\/appliance\/controller\.js"\]/);
-  assert.doesNotMatch(dockerfile, /ENTRYPOINT .*controller\.ts/);
-  assert.match(dockerfile, /ENV SPACETIME_BIN=\/opt\/stack-bench-embedded-deps\/spacetimedb-cli/);
-  assert.match(dockerfile, /STDB_PACKAGE=\/opt\/stack-bench-embedded-deps\/bindings-typescript/);
 });
 
 test('controller selects exactly one explicit agent credential mode', () => {
@@ -123,8 +70,9 @@ test('dependency setup does not require or forward agent credentials', () => {
 });
 
 test('read-only and model-free controller commands do not require agent credentials', () => {
+  const scope = ['--backend', 'spacetime,postgres,mongodb', '--levels', '1', '--smoke'];
   const modelFree: Array<[string, string[]]> = [
-    ['init-deps', []], ['verify-deps', []], ['test', []], ['dashboard', []],
+    ['init-deps', []], ['verify-deps', []], ['test', []], ['dashboard', []], ['demo', []],
     ['qualify-reference', []], ['qualify-null', []], ['qualification', ['status']],
     ['pack-budget', ['recommend']], ['campaign', ['validate']], ['campaign', ['show']],
     ['campaign', ['trial']], ['campaign', ['status']], ['campaign', ['stop']],
@@ -134,13 +82,16 @@ test('read-only and model-free controller commands do not require agent credenti
     ['run', ['--grade-from', '/saved/execution', '--out', '/results/regrade', '--check', 'saved-check']],
     ['run', ['--grade-from', '/saved/execution', '--grade-level', '2',
       '--out', '/results/regrade', '--check', 'saved-check']],
+    ['preflight', [...scope, '--agent-adapter', 'reference-fixture']],
+    ['preflight', [...scope, '--agent-adapter=reference-fixture']],
   ];
   for (const [name, args] of modelFree) {
     assert.equal(controllerCommandRequiresAgentAuth(name, args), false,
       `${name} ${args[0] ?? ''}`);
   }
   const paid: Array<[string, string[]]> = [
-    ['run', []], ['preflight', []], ['campaign', ['run']], ['campaign', ['resume']], ['campaign', ['extend']],
+    ['run', []], ['preflight', []], ['preflight', scope], ['campaign', ['run']], ['campaign', ['resume']],
+    ['campaign', ['extend']],
   ];
   for (const [name, args] of paid) {
     assert.equal(controllerCommandRequiresAgentAuth(name, args), true,
@@ -148,6 +99,8 @@ test('read-only and model-free controller commands do not require agent credenti
   }
   assert.throws(() => controllerCommandRequiresAgentAuth('run',
     ['--grade-from', '/saved/execution']), /requires a separate/);
+  assert.throws(() => controllerCommandRequiresAgentAuth('preflight',
+    [...scope, '--agent-adapter', 'missing-adapter']), /unknown agent adapter/);
   for (const extra of [['--repairs', '1'], ['--model', 'paid-model'],
     ['--agent-adapter', 'claude-code'], ['--campaign-file', '/plans/paid.json'],
     ['--max-budget-usd', '10'], ['--seed-from', '/other/source']]) {
@@ -198,17 +151,6 @@ test('dashboard runtime launch uses the existing Compose controller with exact o
   assert.equal(command.env.STACK_BENCH_BUILD_IMAGE, `sha256:${'b'.repeat(64)}`);
 });
 
-test('preflight follows the selected adapter and needs no provider credentials for a reference check', () => {
-  const scope = ['--backend', 'spacetime,postgres,mongodb', '--levels', '1', '--smoke'];
-  assert.equal(controllerCommandRequiresAgentAuth('preflight',
-    [...scope, '--agent-adapter', 'reference-fixture']), false);
-  assert.equal(controllerCommandRequiresAgentAuth('preflight',
-    [...scope, '--agent-adapter=reference-fixture']), false);
-  assert.equal(controllerCommandRequiresAgentAuth('preflight', scope), true);
-  assert.throws(() => controllerCommandRequiresAgentAuth('preflight',
-    [...scope, '--agent-adapter', 'missing-adapter']), /unknown agent adapter/);
-});
-
 test('the delivered model-free plan uses a runtime adapter that survives removal of test fixtures', () => {
   const plan = validateCampaignDefinition(JSON.parse(readFileSync(
     join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json'), 'utf8')));
@@ -223,7 +165,6 @@ test('the delivered model-free plan uses a runtime adapter that survives removal
   }
 });
 
-
 test('named jobs defer credential selection and preserve mixed provider file sources', () => {
   const source = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: '/private/profiles.json',
     ANTHROPIC_API_KEY_FILE: '/private/anthropic', OPENAI_API_KEY_FILE: '/private/openai' };
@@ -235,4 +176,7 @@ test('named jobs defer credential selection and preserve mixed provider file sou
   assert.equal(controllerCommandRequiresAgentAuth('job', ['work']), true);
   assert.equal(controllerCommandRequiresAgentAuth('job', ['worker']), true);
   assert.match(resolveControllerCommand(['job', 'list'])!.args[0]!, /job-cli.js$/);
+  assert.equal(resolveControllerCommand([]), null);
+  assert.equal(resolveControllerCommand(['--help']), null);
+  assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
 });

@@ -8,6 +8,8 @@ import test from 'node:test';
 import { assertAppSourceIdentity, assertPlainAppSourceTree, hashAppSource, resetAppToSource,
   restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 
+const TOOL_CACHES = ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache'];
+
 const put = (path: string, content: string): void => {
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, content);
@@ -34,6 +36,8 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'ui', 'vite.log'), 'client output\n');
   put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = true;\n');
   put(join(app, 'src', 'server.txt'), 'model-authored input\n');
+  put(join(app, 'ui', 'tsconfig.tsbuildinfo'), 'compiler cache\n');
+  for (const directory of TOOL_CACHES) put(join(app, directory, 'tool-artifact'), 'not application source\n');
 
   const watchedDirectoryIdentity = statSync(client).ino;
   snapshotAppSource(app, snapshot);
@@ -53,6 +57,8 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(existsSync(join(snapshot, 'ui', 'vite.log')), false);
   assert.equal(existsSync(join(snapshot, 'src', 'stack-bench', 'runtime.ts')), true);
   assert.equal(existsSync(join(snapshot, 'src', 'server.txt')), true);
+  assert.equal(existsSync(join(snapshot, 'ui', 'tsconfig.tsbuildinfo')), false);
+  for (const directory of TOOL_CACHES) assert.equal(existsSync(join(snapshot, directory)), false, directory);
 
   put(join(client, 'App.tsx'), 'export const value = "bad fix";\n');
   put(join(client, 'introduced.ts'), 'remove me\n');
@@ -76,6 +82,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(readFileSync(join(app, 'new-layout', 'node_modules', 'installed', 'index.js'), 'utf8'), 'keep me\n');
   assert.equal(readFileSync(join(app, 'backend', 'spacetimedb', 'node_modules', 'dep', 'index.js'), 'utf8'), 'dependency\n');
   assert.equal(existsSync(join(app, 'ui', 'dist')), false);
+  assert.equal(existsSync(join(app, 'ui', 'tsconfig.tsbuildinfo')), false);
   assert.equal(existsSync(join(app, 'ui', 'src', 'module_bindings')), true);
   assert.equal(readFileSync(join(app, 'BUG_REPORT.md'), 'utf8'), 'latest harness report\n');
   assert.equal(readFileSync(join(app, 'bug-report-quality.json'), 'utf8'), '{}\n');
@@ -177,60 +184,6 @@ test('source restore replaces symbolic links without touching their targets',
     }
   });
 
-test('source snapshots exclude package and browser tool caches', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-caches-'));
-  const app = join(root, 'app');
-  const snapshot = join(root, 'snapshot');
-  try {
-    put(join(app, 'src', 'app.ts'), 'export const app = true;\n');
-    put(join(app, 'client', 'tsconfig.tsbuildinfo'), 'compiler cache\n');
-    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache']) {
-      put(join(app, directory, 'tool-artifact'), 'not application source\n');
-    }
-    const before = hashAppSource(app);
-    snapshotAppSource(app, snapshot);
-    assert.equal(readFileSync(join(snapshot, 'src', 'app.ts'), 'utf8'),
-      'export const app = true;\n');
-    assert.equal(existsSync(join(snapshot, 'client', 'tsconfig.tsbuildinfo')), false);
-    restoreAppSource(snapshot, app);
-    assert.equal(existsSync(join(app, 'client', 'tsconfig.tsbuildinfo')), false);
-    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache']) {
-      assert.equal(existsSync(join(snapshot, directory)), false);
-    }
-    assert.equal(hashAppSource(snapshot).sha256, before.sha256);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('log and pid files an application writes at startup do not change its source identity', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-runtime-files-'));
-  const app = join(root, 'app');
-  try {
-    put(join(app, 'src', 'app.ts'), 'export const app = true;\n');
-    put(join(app, 'start.sh'), 'npm start\n');
-    const accepted = hashAppSource(app);
-    put(join(app, 'app.log'), 'listening\n');
-    put(join(app, '.app.pid'), '4242\n');
-    // A log written into a nested directory at startup is runtime output too.
-    put(join(app, '.run', 'frontend.log'), 'ready\n');
-    assert.equal(hashAppSource(app).sha256, accepted.sha256);
-    const snapshot = join(root, 'snapshot');
-    const fresh = join(root, 'fresh');
-    snapshotAppSource(app, snapshot);
-    seedAppSource(snapshot, fresh);
-    assert.equal(hashAppSource(fresh).sha256, accepted.sha256);
-    assert.equal(existsSync(join(fresh, '.run', 'frontend.log')), false);
-    assert.equal(existsSync(join(fresh, 'app.log')), false);
-    assert.equal(readFileSync(join(fresh, 'src', 'app.ts'), 'utf8'), 'export const app = true;\n');
-    // Any other file the startup writes into the tree still changes its identity.
-    put(join(app, '.run', 'frontend.json'), '{}\n');
-    assert.notEqual(hashAppSource(app).sha256, accepted.sha256);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('clean source reset removes all runtime state and preserves only root git metadata', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-clean-source-reset-'));
   const app = join(root, 'app');
@@ -300,6 +253,7 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'client', 'vite.log'), 'client output v1\n');
     put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = 1;\n');
     put(join(app, 'src', 'server.txt'), 'model-authored input v1\n');
+    put(join(app, '.npm-cache', 'tool-artifact'), 'cache v1\n');
     const first = hashAppSource(app);
     assert.deepEqual(assertAppSourceIdentity(app, first.sha256), first);
     snapshotAppSource(app, snapshot);
@@ -310,7 +264,15 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'server.log'), 'server output v2\n');
     put(join(app, '.server.pid'), '200\n');
     put(join(app, 'client', 'vite.log'), 'client output v2\n');
+    put(join(app, '.npm-cache', 'tool-artifact'), 'cache v2\n');
+    // Log and pid files an application writes at startup, at any depth.
+    put(join(app, 'app.log'), 'listening\n');
+    put(join(app, '.app.pid'), '4242\n');
+    put(join(app, '.run', 'frontend.log'), 'ready\n');
     assert.equal(hashAppSource(app).sha256, first.sha256);
+    put(join(app, '.run', 'frontend.json'), '{}\n');
+    assert.notEqual(hashAppSource(app).sha256, first.sha256);
+    rmSync(join(app, '.run', 'frontend.json'));
     put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = 2;\n');
     assert.notEqual(hashAppSource(app).sha256, first.sha256);
     put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = 1;\n');

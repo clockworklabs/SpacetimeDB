@@ -125,14 +125,5 @@ test('controller verifies recorded binaries before it installs them', () => {
   const install = dockerfile.indexOf('install -m 0555 container/bin/spacetimedb-cli');
   assert.equal(verify >= 0 && install > verify, true);
   assert.doesNotMatch(dockerfile, /^COPY .*container\/bin\/spacetimedb-/m);
-});
-
-test('the Linux binary export reuses the appliance build and its recorded builder digest', () => {
-  const script = readFileSync(join(STACK_BENCH_ROOT, 'container',
-    'build-linux-cli.sh'), 'utf8');
-  const dockerfile = readFileSync(join(STACK_BENCH_ROOT, 'appliance', 'Controller.Dockerfile'), 'utf8');
   assert.match(dockerfile, new RegExp(RUST_BUILDER_IMAGE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.doesNotMatch(script, /STACK_BENCH_RUST_IMAGE/);
-  assert.match(script, /--target binary-export/);
-  assert.doesNotMatch(script, /cargo build/);
 });

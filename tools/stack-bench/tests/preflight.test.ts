@@ -266,36 +266,6 @@ test('pure preflight creates no containers and does not claim smoke evidence', (
 test('preflight validates campaign-owned dependency selections through the progression graph', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-progression-'));
   try {
-    const plan = progressionPlan();
-    const report = runPreflight({
-      backends: ['mongodb'],
-      track: plan.definition.track,
-      levelList: plan.definition.levels,
-      runIndex: 0,
-      agentAdapter: 'reference-fixture',
-      guidance: plan.conditions[0].guidance.mode,
-      packIds: [],
-      checkKeys: [],
-      requestedScopes: plan.conditions.map(condition => condition.requested),
-      featureCatalog: plan.featureCatalog,
-      mode: plan.definition.mode,
-      smoke: false,
-      image: 'unavailable-in-focused-test',
-      resultsDir: root,
-    }, {
-      run: () => { throw new Error('Docker unavailable in this focused test'); },
-      env: {}, home: root,
-      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
-      pidsOnPort: () => [], probePort: () => ({ free: true }),
-    });
-    const scope = requiredCheck(report, 'request.scope');
-    assert.equal(scope.status, 'pass', scope.summary);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('preflight validates each sequential catalog level without cumulative scope', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-sequential-'));
-  try {
     const manifest = validateCampaignDefinition(
       JSON.parse(readFileSync(progressionCampaign, 'utf8')),
       { source: progressionCampaign },
@@ -308,23 +278,31 @@ test('preflight validates each sequential catalog level without cumulative scope
     manifest.selection.levels = manifest.selection.levels.slice(0, 2);
     const path = join(root, 'campaign.json');
     writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
-    const plan = compileCampaignFile(path);
-    const report = runPreflight({
-      backends: ['mongodb'], track: plan.definition.track,
-      levelList: plan.definition.levels, runIndex: 0,
-      agentAdapter: 'reference-fixture', guidance: plan.conditions[0].guidance.mode,
-      packIds: [], checkKeys: [],
-      requestedScopes: plan.conditions.map(condition => condition.requested),
-      featureCatalog: plan.featureCatalog, mode: plan.definition.mode,
-      smoke: false, image: 'unavailable-in-focused-test', resultsDir: root,
-    }, {
-      run: () => { throw new Error('Docker unavailable in this focused test'); },
-      env: {}, home: root,
-      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
-      pidsOnPort: () => [], probePort: () => ({ free: true }),
-    });
-    const scope = requiredCheck(report, 'request.scope');
-    assert.equal(scope.status, 'pass', scope.summary);
+    for (const plan of [progressionPlan(), compileCampaignFile(path)]) {
+      const report = runPreflight({
+        backends: ['mongodb'],
+        track: plan.definition.track,
+        levelList: plan.definition.levels,
+        runIndex: 0,
+        agentAdapter: 'reference-fixture',
+        guidance: plan.conditions[0].guidance.mode,
+        packIds: [],
+        checkKeys: [],
+        requestedScopes: plan.conditions.map(condition => condition.requested),
+        featureCatalog: plan.featureCatalog,
+        mode: plan.definition.mode,
+        smoke: false,
+        image: 'unavailable-in-focused-test',
+        resultsDir: root,
+      }, {
+        run: () => { throw new Error('Docker unavailable in this focused test'); },
+        env: {}, home: root,
+        statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+        pidsOnPort: () => [], probePort: () => ({ free: true }),
+      });
+      const scope = requiredCheck(report, 'request.scope');
+      assert.equal(scope.status, 'pass', scope.summary);
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -365,48 +343,38 @@ test('preflight fails before a paid run when the selected agent executable is ab
 test('expired OpenAI account credentials fail preflight without exposing the token', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-codex-'));
   try {
-    const credential = join(root, 'auth.json');
+    const codexHome = join(root, 'codex');
+    const claudeHome = join(root, 'claude');
+    mkdirSync(codexHome);
+    mkdirSync(join(claudeHome, '.claude'), { recursive: true });
+    const codexAuth = join(codexHome, 'auth.json');
     const token = 'header.eyJleHAiOjF9.signature';
-    writeFileSync(credential, JSON.stringify({ auth_mode: 'chatgpt',
+    writeFileSync(codexAuth, JSON.stringify({ auth_mode: 'chatgpt',
       tokens: { access_token: token, account_id: 'account' } }));
-    const selected = parsePreflightArgs(['node', 'preflight.js', '--backend', 'stub',
-      '--track', 'loop', '--levels', '1', '--agent-adapter', 'codex', '--results-dir', root]);
-    const report = runPreflight(selected, { run: (_file, args) => {
-      if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
-      if (args[0] === 'ps') return '';
-      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : `${IMAGE_ID}\n`;
-      throw new Error('unexpected Docker command');
-    }, env: { CODEX_AUTH_FILE: credential }, home: root,
-    statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
-    probePort: () => ({ free: true }) });
-    assert.equal(requiredCheck(report, 'agent.credentials').status, 'fail');
-    assert.match(requiredCheck(report, 'agent.credentials').summary, /expired/);
-    assert.doesNotMatch(JSON.stringify(report), new RegExp(token));
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('a rotating interactive credential cannot satisfy preflight', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-credential-'));
-  try {
-    const credential = join(root, '.claude', '.credentials.json');
-    mkdirSync(join(root, '.claude'));
-    writeFileSync(credential, '{}');
-    const selected = parsePreflightArgs(['node', 'preflight.js', '--backend', 'stub',
-      '--track', 'loop', '--levels', '1', '--agent-adapter', 'claude-code',
-      '--results-dir', root]);
-    const run: DockerCommand = (_file, args) => {
-      if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
-      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
-        ? 'linux/amd64' : `${IMAGE_ID}\n`;
-      throw new Error(`unexpected docker command: ${args.join(' ')}`);
-    };
-    const report = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
-      env: {}, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
-      pidsOnPort: () => [], probePort: () => ({ free: true }) });
-    assert.equal(report.ok, false);
-    assert.equal(requiredCheck(report, 'agent.credentials').status, 'fail');
+    const rotating = 'rotating-interactive-secret';
+    writeFileSync(join(claudeHome, '.claude', '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: rotating } }));
+    for (const { adapter, home, env, secret, summary } of [
+      { adapter: 'codex', home: codexHome, env: { CODEX_AUTH_FILE: codexAuth }, secret: token, summary: /expired/ },
+      { adapter: 'claude-code', home: claudeHome, env: {}, secret: rotating,
+        summary: /No declared credential source/ },
+    ]) {
+      const selected = parsePreflightArgs(['node', 'preflight.js', '--backend', 'stub',
+        '--track', 'loop', '--levels', '1', '--agent-adapter', adapter, '--results-dir', home]);
+      const report = runPreflight(selected, { run: (_file, args) => {
+        if (args[0] === 'info') return dockerInfo();
+        if (args[0] === 'compose') return '2.40.0';
+        if (args[0] === 'ps') return '';
+        if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : `${IMAGE_ID}\n`;
+        throw new Error('unexpected Docker command');
+      }, now: Date.parse('2026-08-12T12:00:00.100Z'), env, home,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
+      probePort: () => ({ free: true }) });
+      assert.equal(report.ok, false, adapter);
+      assert.equal(requiredCheck(report, 'agent.credentials').status, 'fail', adapter);
+      assert.match(requiredCheck(report, 'agent.credentials').summary, summary);
+      assert.doesNotMatch(JSON.stringify(report), new RegExp(secret));
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -587,9 +555,6 @@ test('preflight argument parsing rejects ambiguous ranges and missing backends',
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'postgres',
     '--track', 'ecommerce', '--levels', '1-2', '--recipe', 'ecommerce.sequential-l1']),
   /exactly one/);
-});
-
-test('appliance preflight defaults to its configured persistent result directory', () => {
   const resultsDir = resolve(tmpdir(), 'stack-bench-appliance-results');
   const parsed = parsePreflightArgs(['node', 'preflight.js', '--backend', 'postgres'], {
     env: { STACK_BENCH_RESULTS_DIR: resultsDir, STACK_BENCH_IMAGE: 'exact-build-image' },

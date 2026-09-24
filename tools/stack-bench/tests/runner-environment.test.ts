@@ -4,7 +4,7 @@ import test from 'node:test';
 import { controllerRunner, missingRunnerObservation, runnerEnvironmentIdentity, RUNNER_OBSERVATION_FIELDS }
   from '../src/runtime/runner-environment.js';
 
-test('local controllers record only host identity', () => {
+test('appliance controllers record Docker daemon observations', () => {
   assert.deepEqual(controllerRunner({ env: {}, platform: 'win32', architecture: 'x64', hostname: 'dev-box' }), {
     schemaVersion: 1,
     mode: 'local-controller',
@@ -12,9 +12,6 @@ test('local controllers record only host identity', () => {
     architecture: 'x64',
     hostname: 'dev-box',
   });
-});
-
-test('appliance controllers record Docker daemon observations', () => {
   const runner = controllerRunner({
     env: { STACK_BENCH_APPLIANCE: '1' },
     platform: 'linux',

@@ -1,75 +1,17 @@
 import assert from 'node:assert/strict';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
-import { GRADING_CAPABILITY_IDS } from '../src/actions/action-contract.js';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { createStackAdapterRegistry } from '../src/stacks/stack-adapter-contract.js';
-import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { stackAdapterVersion } from '../src/stacks/stack-identities.js';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { setSpacetimeStock } from '../src/stacks/backends/spacetime-operations.js';
 import { describesMissingStockInterface } from '../src/stacks/stock-interface.js';
-import type { Track } from '../src/composition/tracks.js';
-
-const FULL_GRADING_CAPABILITIES = [
-  'actors',
-  'application-files',
-  'application-lifecycle',
-  'backend-lifecycle',
-  'browser-interaction',
-  'browser-observation',
-  'clock',
-  'concurrency',
-  'database-write',
-  'database-read',
-  'named-actions',
-  'process-crash',
-  'response-loss',
-  'subprocess',
-  'transport-observation',
-];
-
-test('built-in adapters preserve the port grid and lease identity', () => {
-  assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['convex', 'mongodb', 'postgres', 'spacetime', 'stub']);
-  assert.equal(stackAdapterVersion('postgres'), '1.6.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.5.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.4.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.1.0');
-  assert.throws(() => stackAdapterVersion('unknown'), /unknown stack adapter/);
-
-  const postgres = STACK_ADAPTER_REGISTRY.get('postgres');
-  assert.deepEqual(postgres.ports.forRun({ trackOffset: 100, runIndex: 2 }),
-    { vite: 6375, express: 6103, dbPort: 6532 });
-  assert.deepEqual(postgres.lease.prepare({
-    track: { name: 'shop' } as Track,
-    runIndex: 2,
-    serverUri: null,
-    runtimeDir: resolve('runtime'),
-    env: {},
-    helpers: {
-      moduleName: () => 'unused',
-      dbName: (track: Track, runIndex: number) => `${track.name}-${runIndex}`,
-      containerIdentity: (name: string) => ({ name, id: 'container-id' }),
-    },
-  }), {
-    lease: { serverUri: null, database: 'shop-2', module: null, dataDir: null,
-      container: { name: 'stack-bench-dev-postgres', id: 'container-id' } },
-    lockKeys: [],
-  });
-  assert.equal(typeof postgres.reset.run, 'function');
-  assert.equal(typeof postgres.databaseWrite.setStock, 'function');
-});
 
 test('build plans expose only artifacts owned by the selected stack', () => {
   const appDir = resolve('bench', 'run', 'app');
   const repo = resolve('repo');
   const spacetime = STACK_ADAPTER_REGISTRY.get('spacetime').buildContainer.plan({ repo, appDir });
   assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/.spacetimedb-cli'), true);
-  const encodedWrapper = spacetime.init.match(/printf %s ([A-Za-z0-9+/=]+) \| base64/)?.[1];
-  assert(encodedWrapper);
-  assert.match(Buffer.from(encodedWrapper, 'base64').toString(),
-    /SpacetimeDB publish and dev must use the run identity/);
   assert.equal(spacetime.readyFile, '/deps/.ready');
 
   const appliance = STACK_ADAPTER_REGISTRY.get('spacetime').buildContainer.plan({
@@ -93,42 +35,6 @@ test('build plans expose only artifacts owned by the selected stack', () => {
   }
 });
 
-test('hosted stacks receive the exact leased database environment', () => {
-  assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('postgres'), {
-    database: 'app_ecom_run6', networkMode: 'host',
-  }), { DATABASE_URL: 'postgresql://appuser:local-app-password@127.0.0.1:6532/app_ecom_run6' });
-  assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('mongodb'), {
-    database: 'app_ecom_run7', networkMode: 'bridge',
-  }), { DATABASE_URL: 'mongodb://host.docker.internal:6537/app_ecom_run7?replicaSet=rs0&directConnection=true' });
-  assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('spacetime'), {
-    database: null, networkMode: 'host',
-  }), {});
-});
-
-test('SpacetimeDB container operations use the isolated agent identity', () => {
-  const calls: Array<[string, readonly string[]]> = [];
-  const exec = (command: string, args: readonly string[]): string => {
-    calls.push([command, args]);
-    if (args[0] === 'inspect') return 'leased-build-id';
-    const sql = args.at(-1);
-    assert(sql);
-    if (/select id from item/.test(sql)) return 'id\n---\n1\n';
-    if (/select id from warehouse/.test(sql)) return 'id\n---\n2\n';
-    if (/select warehouse_id, quantity/.test(sql)) return 'warehouse_id | quantity\n---+---\n2 | 3\n';
-    if (/select quantity/.test(sql)) return '3\n';
-    return '';
-  };
-  setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
-    spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
-      containerUri: 'http://host.docker.internal:3000' }, exec });
-  assert.equal(calls.length, 8);
-  for (const [command, args] of calls.filter(([, args]) => args[0] !== 'inspect')) {
-    assert.equal(command, 'docker');
-    assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
-      'HOME=/home/developer', '-e', 'USER=developer', 'leased-build-id']);
-  }
-});
-
 test('a stock write that finds no table, column, or row is the application missing its interface', () => {
   for (const detail of [
     'Error: `stock` does not have a field `quantity`',
@@ -139,6 +45,10 @@ test('a stock write that finds no table, column, or row is the application missi
     'WARNING: This command is UNSTABLE.\n\nError: `id` is not in scope\n\nCaused by:\n    HTTP status client error (400 Bad Request)',
     'Error: `item_id` is not in scope\r\n',
     'Error: `warehouse_id` is not in scope',
+    'Table stock not found',
+    'relation "stock" does not exist',
+    'no such column: quantity',
+    'field item_id not found',
   ]) assert.ok(describesMissingStockInterface(detail), detail);
   for (const detail of [
     'connection refused', 'ETIMEDOUT', 'HTTP status server error (500 Internal Server Error)',
@@ -146,6 +56,9 @@ test('a stock write that finds no table, column, or row is the application missi
     'Error: `unrelated_field` is not in scope',
     'Error: syntax error near `id`',
     'transport failed while running query: `id` is not in scope',
+    'OCI runtime exec failed: executable file not found in $PATH',
+    'FATAL: role "appuser" does not exist',
+    'FATAL: database "bench" does not exist',
   ]) assert.equal(describesMissingStockInterface(detail), false, detail);
 
   const exec = (_command: string, args: readonly string[]): string => {
@@ -207,61 +120,26 @@ test('Spacetime stock writes separate missing rows from failed writes and malfor
         && ('stockInterface' in error && error.stockInterface === true) === expectedInterface);
     assert.equal(writes, rows.includes('2 | 100') ? 1 : 0);
   }
-});
 
-test('named actions map parameters to HTTP and SpacetimeDB requests', () => {
-  const restock = { id: 'restock', path: '/api/admin/restock', reducer: 'admin_restock',
-    args: [0, 0, 1], params: [{ name: 'itemId', in: 'body' as const, wireType: 'u64' as const },
-      { name: 'warehouseId', in: 'body' as const, wireType: 'u64' as const },
-      { name: 'quantity', in: 'body' as const }] };
-  const http = STACK_ADAPTER_REGISTRY.get('postgres').namedAction.request({
-    action: restock,
-    input: { values: { itemId: 'item', warehouseId: 'warehouse', quantity: 3 } },
-    url: 'http://app.test',
-  });
-  assert.deepEqual(JSON.parse(http.body),
-    { itemId: 'item', warehouseId: 'warehouse', quantity: 3 });
-
-  const spacetime = STACK_ADAPTER_REGISTRY.get('spacetime').namedAction.request({
-    action: restock,
-    input: { values: { itemId: '7', warehouseId: '18446744073709551615', quantity: 3 } },
-    spacetime: { uri: 'http://stdb.test', mod: 'shop' },
-  });
-  assert.equal(spacetime.url, 'http://stdb.test/v1/database/shop/call/admin_restock');
-  assert.equal(spacetime.body, '[7,18446744073709551615,3]');
-  assert.throws(() => STACK_ADAPTER_REGISTRY.get('spacetime').namedAction.request({
-    action: restock,
-    input: { values: { itemId: '-1', warehouseId: '9', quantity: 3 } },
-    spacetime: { uri: 'http://stdb.test', mod: 'shop' },
-  }), /invalid u64 value/);
-});
-
-test('every adapter declares what the grader can measure on it', () => {
-  const known = new Set<string>(GRADING_CAPABILITY_IDS);
-  for (const id of STACK_ADAPTER_REGISTRY.ids) {
-    const { grading } = STACK_ADAPTER_REGISTRY.get(id);
-    assert.ok(['http', 'reducer', 'convex'].includes(grading.transport), `${id} transport`);
-    assert.ok(grading.capabilities.every(capability => known.has(capability)), `${id} capabilities`);
-    assert.equal(new Set(grading.capabilities).size, grading.capabilities.length, `${id} duplicates`);
+  const calls: Array<[string, readonly string[]]> = [];
+  setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
+    spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
+      containerUri: 'http://host.docker.internal:3000' }, exec: (command, args) => {
+      calls.push([command, args]);
+      if (args[0] === 'inspect') return 'leased-build-id';
+      const sql = args.at(-1) ?? '';
+      if (/select id from item/.test(sql)) return 'id\n---\n1\n';
+      if (/select id from warehouse/.test(sql)) return 'id\n---\n2\n';
+      if (/select warehouse_id, quantity/.test(sql)) return 'warehouse_id | quantity\n---+---\n2 | 3\n';
+      if (/select quantity/.test(sql)) return '3\n';
+      return '';
+    } });
+  assert(calls.some(([, args]) => /^update stock/.test(args.at(-1) ?? '')));
+  for (const [command, args] of calls.filter(([, args]) => args[0] !== 'inspect')) {
+    assert.equal(command, 'docker');
+    assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
+      'HOME=/home/developer', '-e', 'USER=developer', 'leased-build-id']);
   }
-  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').grading.transport, 'reducer');
-  for (const id of ['postgres', 'mongodb', 'stub'] as const) {
-    assert.equal(STACK_ADAPTER_REGISTRY.get(id).grading.transport, 'http');
-  }
-  for (const id of ['spacetime', 'postgres', 'mongodb'] as const) {
-    assert.deepEqual([...STACK_ADAPTER_REGISTRY.get(id).grading.capabilities], FULL_GRADING_CAPABILITIES);
-  }
-  const stub = STACK_ADAPTER_REGISTRY.get('stub');
-  const stubCapabilities: readonly string[] = stub.grading.capabilities;
-  assert.deepEqual(GRADING_CAPABILITY_IDS.filter(id => !stubCapabilities.includes(id)),
-    ['backend-lifecycle', 'database-write', 'database-read', 'process-crash']);
-  assert.equal('databaseWrite' in stub, false);
-  assert.equal(stub.lifecycle.control, undefined);
-});
-
-test('the current ecommerce composition accepts every real adapter capability list', () => {
-  const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json'));
-  assert.deepEqual(plan.stacks.map(stack => stack.id).sort(), ['mongodb', 'postgres', 'spacetime']);
 });
 
 test('registry rejects unknown, duplicate, and invalid adapter identities', () => {

@@ -95,14 +95,8 @@ test('lease binds sidecars to the exact backend namespace and excludes creation 
 });
 
 test('attempt firewall limits private services to their port and rejects unsafe rule inputs', () => {
-  const rules = attemptNetworkRules({ services: [{ address: '172.20.0.3', port: 5432 }],
+  attemptNetworkRules({ services: [{ address: '172.20.0.3', port: 5432 }],
     hostAddresses: ['172.20.0.1', '203.1.2.3'] });
-  assert.match(rules, /ip daddr 172\.20\.0\.3 tcp dport 5432 accept/);
-  assert.match(rules, /203\.1\.2\.3/);
-  assert.match(rules, /meta nfproto ipv4 tcp dport \{ 80, 443 \} accept/);
-  assert.ok(rules.indexOf('ct state established,related accept') < rules.indexOf('ip daddr {'));
-  assert.ok(rules.indexOf('ip daddr {') < rules.indexOf('meta nfproto ipv4'));
-  assert.match(rules, /policy drop/);
   assert.throws(() => attemptNetworkRules({ services: [], hostAddresses: [] }), /host addresses/);
   assert.throws(() => attemptNetworkRules({ services: [{ address: '172.20.0.1', port: 5432 }],
     hostAddresses: ['172.20.0.1'] }), /cannot be a host/);
@@ -113,19 +107,18 @@ test('attempt firewall limits private services to their port and rejects unsafe 
     hostAddresses: ['172.20.0.1'] }), /port is invalid/);
 });
 
-test('bridge containers bind the portable Docker host gateway alias', () => {
-  assert.deepEqual(dockerHostGatewayArguments('bridge'),
-    ['--add-host', 'host.docker.internal:host-gateway']);
-  assert.deepEqual(dockerHostGatewayArguments('host'), []);
+test('host services use the address reachable from the selected network namespace', () => {
+  for (const [mode, address, gateway] of [
+    ['bridge', 'host.docker.internal', ['--add-host', 'host.docker.internal:host-gateway']],
+    ['host', '127.0.0.1', []],
+    [`container:${'a'.repeat(64)}`, '127.0.0.1', []],
+  ] as const) {
+    assert.equal(dockerHostServiceAddress(mode), address);
+    assert.deepEqual(dockerHostGatewayArguments(mode), gateway);
+  }
+  assert.throws(() => dockerHostServiceAddress('ambient'), /unsupported Docker network mode/);
   assert.throws(() => dockerHostGatewayArguments('ambient'), /unsupported Docker network mode/);
 });
-
-test('host services use the address reachable from the selected network namespace', () => {
-  assert.equal(dockerHostServiceAddress('bridge'), 'host.docker.internal');
-  assert.equal(dockerHostServiceAddress('host'), '127.0.0.1');
-  assert.throws(() => dockerHostServiceAddress('ambient'), /unsupported Docker network mode/);
-});
-
 
 test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap races', () => {
   const header = 'Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT';

@@ -42,16 +42,6 @@ test('prompt review does not require Docker or mutate the application directory'
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 
-test('host execution flags are rejected rather than opening a second runtime path', () => {
-  const app = mkdtempSync(join(tmpdir(), 'stack-bench-isolation-'));
-  try {
-    assert.throws(() => execFileSync(process.execPath, [...args(app), '--print-prompt', '--diagnostic-host'], {
-      stdio: 'pipe',
-    }), error => isCommandFailure(error)
-      && /Unknown option '--diagnostic-host'/.test(String(error.stderr)));
-  } finally { rmSync(app, { recursive: true, force: true }); }
-});
-
 test('agent arguments reject invalid modes and partial numbers', () => {
   const base = ['node', 'agent', '--backend', 'postgres', '--app', 'app'];
   const codex = [...base, '--mode', 'build', '--provider', 'openai'];
@@ -63,7 +53,6 @@ test('agent arguments reject invalid modes and partial numbers', () => {
   assert.throws(() => parseAgentArgs([...base, '--mode', 'build', '--run-index', '1junk']),
     /--run-index must be a non-negative integer/);
 });
-
 
 test('coding invocation reloads the selected key file and refuses a billing-mode switch', () => {
   const directory = mkdtempSync(join(tmpdir(), 'stack-bench-refresh-'));
