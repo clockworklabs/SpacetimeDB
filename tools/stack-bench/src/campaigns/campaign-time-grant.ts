@@ -15,8 +15,8 @@ import { publicRecoveryProvesCleanup, remainingAttemptCostBudget } from './campa
 
 const safeId = z.string().regex(/^[a-z0-9][a-z0-9.-]*$/);
 const minutes = z.number().int().positive().refine(n => Number.isSafeInteger(n * 60_000));
-export { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
-export type { TimeGrantReceipt, CampaignTimeBudget } from './campaign-scheduler.js';
+export { campaignTimeBudget } from './campaign-scheduler.js';
+export type { CampaignTimeBudget } from './campaign-scheduler.js';
 import { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
 import type { TimeGrantReceipt, CampaignTimeBudget } from './campaign-scheduler.js';
 

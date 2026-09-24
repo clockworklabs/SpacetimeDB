@@ -3,12 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime, drainApplicationDatabase, hostedStopScript,
+import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime, drainApplicationDatabase,
   parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { controlHostedAppServer, HOSTED_START_TIMEOUT_MS, hostedLaunchCommand, hostedRecordedProcessStopScript }
+import { controlHostedAppServer, HOSTED_START_TIMEOUT_MS, hostedLaunchCommand, hostedRecordedProcessStopScript,
+  hostedStopScript }
   from '../src/stacks/hosted-lifecycle.js';
 import type { TextCommandOptions } from '../src/runtime/command-executor.js';
 import { attemptDatabaseUrl } from '../src/stacks/hosted-database-identity.js';

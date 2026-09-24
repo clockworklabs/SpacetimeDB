@@ -6,8 +6,6 @@ import { readFileSync } from 'node:fs';
 const isWindows = process.platform === 'win32';
 const nullDevice = isWindows ? 'NUL' : '/dev/null';
 
-/** Discard a command's output the way this platform expects. */
-
 export interface ProcessIdentity { pid: number; startMarker: string }
 
 export function processIdentity(pidValue: string | number): ProcessIdentity | null {

@@ -18,7 +18,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { recoverConvex } from '../stacks/backends/convex-lifecycle.js';
 import { loadTrack, portsFor } from '../composition/tracks.js';
 
-export { hostedStopScript } from '../stacks/hosted-lifecycle.js';
 export type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 
 export interface RuntimeControlSpec {

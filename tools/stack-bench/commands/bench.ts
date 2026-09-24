@@ -438,10 +438,6 @@ function recipeRequestIdentity(value: unknown): { recipeSha256: string; selectio
     taskPacks: value.selection.taskPacks, taskSha256: value.task.sha256 };
 }
 
-function snapshotSource(appDir: string, to: string): void {
-  snapshotAppSource(appDir, to);
-}
-
 // Match the database and registry endpoints supplied to the coding container.
 // A matching port on another host is not owned by this run.
 export function runAuditNetworkContext(track: Parameters<typeof portsFor>[0],
@@ -581,8 +577,8 @@ export async function runAgent(
   if (remainingBudget !== null && adapter.costLimit === 'unsupported') {
     throw new Error(`agent adapter ${adapter.id} cannot enforce --max-budget-usd`);
   }
-  const recipeTask = args.recipeTasks?.get(level)?.agentRequest
-    ?? args.recipeTasks?.get(level)?.request ?? null;
+  const recipeTask = args.recipeTasks.get(level)?.agentRequest
+    ?? args.recipeTasks.get(level)?.request ?? null;
   const request: AgentRequest = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
     productionQuality: args.productionQuality,
@@ -1628,7 +1624,6 @@ async function main() {
     if (!progressionExecution) return null;
     const selected = progressionExecution.bind(level);
     if (!isProgressionWorkRecipeAction(selected)) return selected;
-    if (!args.recipeTasks) throw new Error('recipe task map is unavailable');
     args.recipeTasks.set(level, {
       request: selected.grader.request,
       selection: selected.grader.selection,
@@ -2137,7 +2132,7 @@ async function main() {
         let reason = `could not restore the accepted repair source: ${errorMessage(error)}`;
         const preserved = join(outputDir, `repair-rollback-l${level}${featureActionSuffix}-round${repairs}`);
         try {
-          snapshotSource(sourcePath, join(preserved, 'source'));
+          snapshotAppSource(sourcePath, join(preserved, 'source'));
           if (existsSync(gradingPath)) cpSync(gradingPath, join(preserved, 'grading'), { recursive: true });
           keepStartLog(error, `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`);
           reason += `; accepted source and available grading evidence kept at ${preserved}`;
@@ -2155,7 +2150,7 @@ async function main() {
       const path = join(outputDir, directory);
       rmSync(path, { recursive: true, force: true });
       const live = hashAppSource(appDir);
-      snapshotSource(appDir, path);
+      snapshotAppSource(appDir, path);
       const preserved = hashDirectory(path);
       if (live.sha256 !== preserved.sha256 || live.files.length !== preserved.files.length) {
         throw new Error('preserved repair source differs from the live application source');
@@ -2234,7 +2229,7 @@ async function main() {
     let materializationOutcome: RunOutcome | null = null;
     try {
       const liveSource = hashAppSource(appDir);
-      snapshotSource(appDir, firstBuildPath);
+      snapshotAppSource(appDir, firstBuildPath);
       const preservedSource = hashDirectory(firstBuildPath);
       if (liveSource.sha256 !== preservedSource.sha256) {
         throw new Error('preserved first-build source differs from the live application source');
@@ -2317,7 +2312,7 @@ async function main() {
         build ? [runSessionRecord(build)] : [], accepted);
     }
 
-    const selectedObservedChecks = checksForGrade(args.recipeTasks?.get(level), 'observed');
+    const selectedObservedChecks = checksForGrade(args.recipeTasks.get(level), 'observed');
     if (!continuing && !resumedRepair && selectedObservedChecks.length) {
       const observationOut = join(args.out,
         `first-build-l${level}${featureActionSuffix}-observed`);
@@ -2337,7 +2332,7 @@ async function main() {
       }
       firstBuild.observations = {
         sourceSha256: firstBuildSource?.sha256 ?? null,
-        selectionSha256: args.recipeTasks?.get(level)?.selection.sha256 ?? null,
+        selectionSha256: args.recipeTasks.get(level)?.selection.sha256 ?? null,
         selectedChecks: selectedObservedChecks.map(check => check.stableKey),
         reportedChecks: observationBundle?.selection?.reportedChecks ?? [],
         passedPoints: observationBundle?.totals?.score ?? null,
@@ -2613,7 +2608,7 @@ async function main() {
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       const gradingSnapshot = `${snapshot}-grading`;
       const acceptedSource = hashAppSource(appDir);
-      snapshotSource(appDir, snapshot);
+      snapshotAppSource(appDir, snapshot);
       rmSync(gradingSnapshot, { recursive: true, force: true });
       if (existsSync(privateGradingDirectory(appDir))) {
         cpSync(privateGradingDirectory(appDir), gradingSnapshot, { recursive: true });
@@ -2708,7 +2703,7 @@ async function main() {
         break;
       }
       const repairedSource = `${snapshot}-accepted`;
-      snapshotSource(appDir, repairedSource);
+      snapshotAppSource(appDir, repairedSource);
       try {
         bundle = await gradeAcceptedSource(repairedSource, `${args.backend}-l${level}-fix${repairs}`);
       } finally {

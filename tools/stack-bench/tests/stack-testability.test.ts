@@ -52,7 +52,7 @@ const resolve = (checkKeys: string[], stacks = [http, reducer, stub], setup?: Co
 test('a replay without a named action only resolves where HTTP writes are captured', () => {
   assert.deepEqual(resolve(keys('replay')), [
     'spacetime cannot measure pack.feature.replay: replayAs re-issues a captured HTTP write, '
-    + 'and spacetime issues writes as reducer calls; give the step a named action',
+    + 'which spacetime grading cannot replay; give the step a named action',
   ]);
   assert.deepEqual(resolve(keys('namedReplay')), []);
 });
@@ -77,7 +77,7 @@ test('runtime capabilities come from the action registry and the stack declarati
 test('branches and feature setup count, unselected criteria do not', () => {
   assert.deepEqual(resolve(keys('raced'), [reducer]), [
     'spacetime cannot measure pack.feature.raced: forgeWrite re-issues a captured HTTP write, '
-    + 'and spacetime issues writes as reducer calls; give the step a named action',
+    + 'which spacetime grading cannot replay; give the step a named action',
   ]);
   assert.deepEqual(resolve(keys('browser'), [stub], criteria.stock), [
     'stub cannot measure pack.feature.browser: dbSetStock needs the database-write capability, which stub does not provide',

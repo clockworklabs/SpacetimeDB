@@ -92,7 +92,7 @@ export function resolveStackTestability(input: StackTestabilityInput): StackTest
         }
         if (readsCapturedHttpWrite(step, stack.grading.transport) && stack.grading.transport !== 'http') {
           report({ stack: stack.id, check, action,
-            reason: `re-issues a captured HTTP write, and ${stack.id} issues writes as reducer calls; give the step a named action` });
+            reason: `re-issues a captured HTTP write, which ${stack.id} grading cannot replay; give the step a named action` });
         }
         const named = applicationAction(step, input.trackActions);
         if (named === undefined) continue;

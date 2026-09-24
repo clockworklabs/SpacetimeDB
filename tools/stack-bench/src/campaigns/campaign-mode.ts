@@ -30,15 +30,8 @@ function validateIdentity(value: unknown, at: string): asserts value is Campaign
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id is invalid`);
 }
 
-export function createCampaignModeRegistry(modes: CampaignModeDefinition[]): CampaignModeRegistry {
-  if (!Array.isArray(modes) || modes.length === 0) fail('registry requires at least one mode');
-  const entries = new Map<string, CampaignModeDefinition>();
-  for (const mode of modes) {
-    validateIdentity(mode, 'registry entry');
-    if (typeof mode.validate !== 'function') fail(`${mode.id} requires validate()`);
-    if (entries.has(mode.id)) fail(`registry repeats ${mode.id}`);
-    entries.set(mode.id, Object.freeze({ ...mode }));
-  }
+function createCampaignModeRegistry(modes: CampaignModeDefinition[]): CampaignModeRegistry {
+  const entries = new Map(modes.map(mode => [mode.id, Object.freeze({ ...mode })]));
   return Object.freeze({
     ids: Object.freeze([...entries.keys()].sort()),
     validate(input: unknown, { at = 'mode' }: { at?: string } = {}) {
