@@ -16,7 +16,7 @@ namespace SpacetimeDB.Types.@class
         public sealed class ScheduleResultHandle : RemoteTableHandle<global::SpacetimeDB.Types.EventContext, ScheduleResult>
         {
             public override string RemoteTableName => "class.schedule_result";
-            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result");
+            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName("class", "schedule_result");
             protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => SqlName;
 
             public sealed class JobIdUniqueIndex : UniqueIndexBase<uint>
