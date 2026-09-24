@@ -21,6 +21,21 @@ using chat history or operator memory.
 No layer can silently replace a decision from a layer above it. A view can
 summarize durable data, but it cannot create new run state.
 
+## Where code lives
+
+The source is TypeScript; builds emit ESM JavaScript into `dist/`.
+
+| Path | Owns |
+|---|---|
+| `src/campaigns/` | Plan compilation, scheduling, jobs, budgets, and reporting |
+| `src/progression/` | Feature dependencies, work selection, repair state, and event history |
+| `src/composition/` | Pack and recipe compilation, prompt composition, and bound identities |
+| `tracks/` | Product work, interfaces, scenarios, and feature graphs |
+| `src/agents/`, `container/` | Coding adapters, provider protocols, brokers, and transcripts |
+| `src/stacks/`, `src/runtime/` | Stack operations, isolation, source checkpoints, and owned cleanup |
+| `grader/`, `src/evidence/` | Executable checks, defect controls, evidence validation, and provenance |
+| `commands/`, `dashboard/` | CLI and browser interfaces to the shared engine |
+
 ## Terms
 
 One word per thing. The CLI, dashboard, and artifacts use these.

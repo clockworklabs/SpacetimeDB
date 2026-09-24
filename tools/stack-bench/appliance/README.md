@@ -285,6 +285,11 @@ parallelism, pricing, controller image, and build image. When the run starts,
 Stack Bench records these settings with the results. This prevents settings
 from changing during a campaign.
 
+In dependency mode, `mode.workSelection` decides how much ready work each build
+session receives: `feature` (one ready feature), `progressive` (default; every
+currently ready feature), or `all-at-once` (the full selected graph). The graph
+still owns prerequisites, and the choice does not change the scored target.
+
 The manifest also defines how repair work is selected and limited:
 
 ```json

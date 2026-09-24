@@ -40,9 +40,7 @@ Use the root [README](../README.md) for the product summary and
 ## Visuals
 
 - [Dependency graph](dependency-graph.html): generated ecommerce feature graph
-- [Technical guide](technical-guide.html): current run path
 - [Presentation](stack-bench.html): product presentation and illustrative checks
-- [How it works](how-it-works.html): system map with a guided tour of a campaign and its qualification
 
 These illustrations do not carry qualification status; use the current
 definition and evidence. `dependency-graph.html` is generated from the current
