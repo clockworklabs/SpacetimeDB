@@ -64,9 +64,16 @@ export function SpacetimeDBProvider<
     [key]
   );
 
+  const reconnect = React.useCallback(
+    (builder: DbConnectionBuilder<any>) => {
+      ConnectionManager.rebuild(key, builder);
+    },
+    [key]
+  );
+
   const contextValue = React.useMemo<ConnectionState>(
-    () => ({ ...state, getConnection }),
-    [state, getConnection]
+    () => ({ ...state, getConnection, reconnect }),
+    [state, getConnection, reconnect]
   );
 
   React.useEffect(() => {

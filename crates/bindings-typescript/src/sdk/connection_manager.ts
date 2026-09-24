@@ -315,6 +315,10 @@ class ConnectionManagerImpl {
    *
    * Pass `resumeSession: false` when the caller is deliberately changing
    * identity — see {@link rebuild} — so the builder's own token wins.
+   *
+   * A builder with a token provider is never overwritten: the provider is
+   * called for every attempt and already decides the identity, and resuming
+   * its last token would reuse a short-lived credential after it expired.
    */
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
@@ -322,7 +326,7 @@ class ConnectionManagerImpl {
     { resumeSession = true }: { resumeSession?: boolean } = {}
   ): T {
     managed.builder = builder;
-    if (resumeSession && managed.state.token) {
+    if (resumeSession && managed.state.token && !builder.hasTokenProvider()) {
       builder.withToken(managed.state.token);
     }
     const connection = builder.build();

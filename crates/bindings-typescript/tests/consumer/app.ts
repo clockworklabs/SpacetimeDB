@@ -6,6 +6,7 @@ import { DbConnection } from '../../case-conversion-test-client/src/module_bindi
 const conn = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('test')
+  .withToken(async () => 'token')
   .build();
 
 export const created: Promise<void> = conn.reducers.createPlayer1({
