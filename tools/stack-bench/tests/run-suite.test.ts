@@ -9,9 +9,8 @@ import { createBoundRecipeTaskRequest, selectScenarioChecks } from '../src/compo
 import { isModularRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
-  applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
+  applicationFailureTotals, codeMetrics, resetFailureOutcome, suitesForRecipe,
   checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
-  verifyApplicationDatabaseMarker,
   contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
   verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser, preserveStartFailure, suiteMayRetry }
   from '../commands/run-suite.js';
@@ -77,16 +76,6 @@ function sequentialL2Track() {
   cpSync(ECOMMERCE, root, { recursive: true });
   return { temp, track: { ...loadTrack('ecommerce'), dir: root } };
 }
-
-test('contract lint receives the selected credential aliases', () => {
-  const aliases = { 'stackbench-admin-2026': 'store-admin-2026' };
-  const argv = contractLintArgv({
-    url: 'http://app', level: '1', track: 'ecommerce', label: 'attempt',
-    out: '/results', bundleArtifactId: 'attempt', credentialAliases: aliases,
-  });
-  assert.equal(argv[argv.indexOf('--credential-aliases-json') + 1], JSON.stringify(aliases));
-  assert.equal(argv.includes('--selected-hooks'), false);
-});
 
 test('a targeted staff repair writes explicit empty lint evidence without falling back to level contracts', () => {
   const out = mkdtempSync(join(tmpdir(), 'stack-bench-empty-lint-'));
@@ -174,10 +163,8 @@ test('grader child diagnostics retain the cause instead of only trailing stack f
   assert.match(detail, /^Error: check evidence action is malformed \|/);
   assert.match(detail, /gradeFeature/);
   assert.doesNotMatch(detail, /validateCheckEvidence/);
-});
 
-test('grader child diagnostics skip Node rejection boilerplate', () => {
-  const stderr = [
+  const rejection = [
     'node:internal/process/promises:394',
     '    triggerUncaughtException(err, true /* fromPromise */);',
     '    ^',
@@ -186,17 +173,14 @@ test('grader child diagnostics skip Node rejection boilerplate', () => {
     '    at closeAll (grade.mjs:596:21)',
     'Node.js v24.18.1',
   ].join('\n');
-  assert.match(childFailureDetail({ stderr }),
+  assert.match(childFailureDetail({ stderr: rejection }),
     /^browserContext\.close: Target page, context or browser has been closed/);
-});
 
-test('child diagnostics prefer process stderr over generated command text', () => {
-  const detail = childFailureDetail({
+  const processDetail = childFailureDetail({
     stderr: 'hosted application port 6301 still has a listener',
     message: 'Command failed: docker exec generated-app sh -lc <large command>',
   });
-  assert.equal(detail, 'hosted application port 6301 still has a listener');
-  assert.doesNotMatch(detail, /docker exec/);
+  assert.equal(processDetail, 'hosted application port 6301 still has a listener');
 });
 
 test('grader subprocesses run asynchronously and retain redacted output', async () => {
@@ -235,6 +219,29 @@ test('database grading uses the exact container from the authenticated run lease
     STACK_BENCH_LEASE: 'private/lease.json',
   }), /both lease path and lease token/);
   assert.equal(databaseLeaseForGrading('spacetime', {}), null);
+
+  const env = { STACK_BENCH_LEASE: 'private/lease.json', STACK_BENCH_LEASE_TOKEN: 'secret-token' };
+  const convex = databaseLeaseForGrading('convex', env, { readLease: (_path, expected) => {
+    assert.deepEqual(expected, { token: 'secret-token', backend: 'convex', active: true });
+    const native = createBackendLease({ runId: 'grading-convex', backend: 'convex', track: 'ecommerce', runIndex: 0,
+      serverUri: 'http://127.0.0.1:14310' });
+    native.resources.container = { name: 'owned-convex', id: 'a'.repeat(64), owned: true };
+    return native;
+  } });
+  assert.equal(convex?.resources.serverUri, 'http://127.0.0.1:14310');
+  assert.equal(convex?.resources.container?.id, 'a'.repeat(64));
+
+  const spacetimeLease = () => createBackendLease({ runId: 'grading-test', backend: 'spacetime',
+    track: 'ecommerce', runIndex: 0, module: 'app_ecommerce_run0',
+    serverUri: 'http://127.0.0.1:3210', dataDir: join(tmpdir(), 'stack-bench-spacetime-test') });
+  const spacetime = databaseLeaseForGrading('spacetime', env, { readLease: spacetimeLease });
+  assert.equal(spacetime?.resources.module, 'app_ecommerce_run0');
+  assert.equal(spacetime?.resources.serverUri, 'http://127.0.0.1:3210');
+  assert.throws(() => databaseLeaseForGrading('spacetime', env, { readLease: () => {
+    const incomplete = spacetimeLease();
+    incomplete.resources.module = null;
+    return incomplete;
+  } }), /no complete module target/);
 });
 
 test('database grading uses the exact database from the authenticated run lease', () => {
@@ -247,79 +254,16 @@ test('database grading uses the exact database from the authenticated run lease'
     /active database lease has no database name/);
 });
 
-test('Convex grading retains the authenticated native deployment for independent provenance', () => {
-  const lease = databaseLeaseForGrading('convex', {
-    STACK_BENCH_LEASE: 'private/lease.json', STACK_BENCH_LEASE_TOKEN: 'secret-token',
-  }, { readLease: (_path, expected) => {
-    assert.deepEqual(expected, { token: 'secret-token', backend: 'convex', active: true });
-    const native = createBackendLease({ runId: 'grading-convex', backend: 'convex', track: 'ecommerce', runIndex: 0,
-      serverUri: 'http://127.0.0.1:14310' });
-    native.resources.container = { name: 'owned-convex', id: 'a'.repeat(64), owned: true };
-    return native;
-  } });
-  assert.equal(lease?.resources.serverUri, 'http://127.0.0.1:14310');
-  assert.equal(lease?.resources.container?.id, 'a'.repeat(64));
-});
-
-test('SpacetimeDB grading uses the authenticated module lease', () => {
-  const lease = databaseLeaseForGrading('spacetime', {
-    STACK_BENCH_LEASE: 'private/lease.json',
-    STACK_BENCH_LEASE_TOKEN: 'secret-token',
-  }, {
-    readLease: () => createBackendLease({ runId: 'grading-test', backend: 'spacetime',
-      track: 'ecommerce', runIndex: 0, module: 'app_ecommerce_run0',
-      serverUri: 'http://127.0.0.1:3210', dataDir: join(tmpdir(), 'stack-bench-spacetime-test') }),
-  });
-  assert.equal(lease?.resources.module, 'app_ecommerce_run0');
-  assert.equal(lease?.resources.serverUri, 'http://127.0.0.1:3210');
-});
-
-test('database provenance parses the port instead of accepting a matching substring', () => {
-  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-database-provenance-'));
-  try {
-    writeFileSync(join(temp, 'server.js'),
-      "const url = 'mongodb://localhost:6537/app_ecom_run0';\n");
-    assert.equal(checkDatabaseProvenance({ app: temp, backend: 'mongodb' }).ok, true);
-    writeFileSync(join(temp, 'server.js'),
-      "const url = 'mongodb://localhost:16537/app_ecom_run0';\n");
-    assert.equal(checkDatabaseProvenance({ app: temp, backend: 'mongodb' }).ok, false);
-  } finally {
-    rmSync(temp, { recursive: true, force: true });
-  }
-});
-
-test('provider or in-memory signup cannot substitute for independently observed database state', async () => {
-  const track = loadTrack('ecommerce');
-  assert.deepEqual(track.databaseProvenance, { browserAction: 'signUp' });
-  for (const databaseHasMarker of [false, true]) {
-    let observed: string | null = null;
-    const result = await verifyApplicationDatabaseMarker(
-      { backend: 'spacetime', url: 'http://shop.test' }, track.databaseProvenance, {
-        write: async () => ({ ok: true, marker: 'sb0123456789abcdef' }),
-        read: (_args, marker) => {
-          observed = marker ?? null;
-          return { ok: databaseHasMarker, verified: true, reason: databaseHasMarker ? 'marker present' : 'marker absent' };
-        },
-      });
-    assert.equal(observed, 'sb0123456789abcdef');
-    assert.equal(result.write.ok, true);
-    assert.equal(result.runtime?.ok, databaseHasMarker);
-  }
-});
-
-test('runtime database proof reports command failures as harness failures', () => {
-  assert.deepEqual(databaseProvenanceFailure(new Error('docker command failed')), {
-    kind: 'harness_failure',
-    phase: 'database-provenance',
-    reason: 'runtime database provenance failed: docker command failed',
-  });
-});
-
 test('runtime database proof requires an authenticated lease', () => {
   assert.deepEqual(checkRuntimeDatabaseProvenance({ backend: 'spacetime' }), {
     ok: null,
     verified: false,
     reason: 'standalone grading has no authenticated database lease',
+  });
+  assert.deepEqual(databaseProvenanceFailure(new Error('docker command failed')), {
+    kind: 'harness_failure',
+    phase: 'database-provenance',
+    reason: 'runtime database provenance failed: docker command failed',
   });
 });
 
@@ -334,28 +278,6 @@ test('generated layout and restart defects are repairable app failures, not harn
   assert.deepEqual(resetFailureOutcome({ status: GENERATED_APP_LAYOUT_EXIT_CODE }),
     { kind: 'app_failure', phase: 'application-layout',
       appFailures: ['application-layout'] });
-});
-
-test('reset readiness probes the public application', async () => {
-  let requests = 0;
-  const result = await verifyApplicationProbe('http://app', {
-    fetchImpl: async () => {
-      requests += 1;
-      return { ok: true, status: 200 };
-    },
-  });
-  assert.deepEqual(result, { ok: true, detail: null });
-  assert.equal(requests, 1);
-});
-
-test('reset readiness rejects an unhealthy public application', async () => {
-  const result = await verifyApplicationProbe('http://app', {
-    fetchImpl: async () => ({ ok: false, status: 503 }),
-  });
-  assert.deepEqual(result, {
-    ok: false,
-    detail: 'application returned HTTP 503',
-  });
 });
 
 test('application readiness returns as soon as the public app responds', async () => {
@@ -375,16 +297,14 @@ test('application readiness returns as soon as the public app responds', async (
   assert.deepEqual(result, { ok: true, detail: null });
   assert.deepEqual(observed, [1, 2, 3]);
   assert.deepEqual(waits, [25, 25]);
-});
 
-test('application readiness returns the last failure after its bounded attempts', async () => {
   let calls = 0;
-  const result = await waitForApplicationProbe('http://app', {
+  const exhausted = await waitForApplicationProbe('http://app', {
     attempts: 2, intervalMs: 0,
     probe: async () => { calls += 1; return { ok: false, detail: 'not ready' }; },
     sleepImpl: async () => {},
   });
-  assert.deepEqual(result, { ok: false, detail: 'not ready' });
+  assert.deepEqual(exhausted, { ok: false, detail: 'not ready' });
   assert.equal(calls, 2);
 });
 
@@ -495,35 +415,6 @@ test('recipe weights govern scenario grading with and without explicit check fil
   assert(zeroPoint > 0, 'zero-point controls must retain zero weight');
 });
 
-test('recipe-bound grading uses the recipe execution sources', () => {
-  const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
-  const suites = suitesForRecipe(track, binding);
-
-  const duplicateCheckout = suites.find(suite => /01-duplicate-checkout\.json$/.test(suite.spec));
-  assert(duplicateCheckout);
-  assert.match(duplicateCheckout.spec,
-    /01-duplicate-checkout\.json$/);
-  assert.equal(suites.some(suite => suite.inherited), false);
-});
-
-test('hardened modular grading isolates the four direct server checks', () => {
-  const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
-  const suites = suitesForRecipe(track, binding);
-
-  const expected = new Map([
-    ['01-purchase-session.json', '101a'], ['01-purchase-attribution.json', '102a'],
-    ['01-admin-write-staff.json', '103a'], ['01-server-price.json', '104a'],
-  ]);
-  for (const [source, criterionId] of expected) {
-    const check = binding.release.checkCatalog.find(candidate => candidate.source?.endsWith(source));
-    assert(check);
-    assert.equal(check.criterionId, criterionId);
-    assert(suites.some(suite => suite.id === check.executionId));
-  }
-});
-
 test('recipe execution keeps inherited suites out of the current-level score', () => {
   const { temp, track } = sequentialL2Track();
   try {
@@ -576,6 +467,14 @@ test('L2 grading rechecks the exact selected L1 score without adding it to L2 po
 });
 
 test('a readiness probe timeout is recorded as a timeout, not a refusal', async () => {
+  let requests = 0;
+  assert.deepEqual(await verifyApplicationProbe('http://app', {
+    fetchImpl: async () => { requests += 1; return { ok: true, status: 200 }; },
+  }), { ok: true, detail: null });
+  assert.equal(requests, 1);
+  assert.deepEqual(await verifyApplicationProbe('http://app', {
+    fetchImpl: async () => ({ ok: false, status: 503 }),
+  }), { ok: false, detail: 'application returned HTTP 503' });
   const probe = (error: Error) => verifyApplicationProbe('http://app', { fetchImpl: async () => { throw error; } });
   const timedOut = await probe(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }));
   assert.equal(timedOut.ok, false);

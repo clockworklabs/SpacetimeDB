@@ -72,33 +72,6 @@ test('container transcript command reads private ranges and nested usage only in
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('hosted fallback reads through its supplied owner and polls only the transcript tail', async () => {
-  const directory = join(tmpdir(), 'not-a-host-transcript-directory');
-  const path = join(directory, `${sessionId}.jsonl`);
-  const content = Buffer.from(' '.repeat(200_000) + '\n' + JSON.stringify(assistant()) + '\n');
-  const reads: [number, number][] = [];
-  const result = await runTranscriptAwareProcess({ command: process.execPath,
-    args: ['-e', 'setInterval(()=>{},1000)'], timeoutMs: 5_000,
-    transcriptDirectory: directory, transcriptSnapshot: new Map(),
-    transcriptReader: {
-      snapshot: () => new Map([[path, content.length]]),
-      read(file, start, length) {
-        assert.equal(file, path);
-        reads.push([start, length]);
-        return content.subarray(start, start + length);
-      },
-    },
-    marker: 'FIX_COMPLETE', model: 'claude-sonnet-5', exitGraceMs: 80, pollMs: 10,
-    terminate: child => child.kill('SIGTERM'),
-  });
-  assert.equal(result.status, 0);
-  assert.equal(result.terminalRecovery?.kind, 'terminal-transcript');
-  assert.deepEqual(reads[0], [content.length - 128 * 1024, 128 * 1024]);
-  assert(reads.length > 3, 'the grace period must include multiple tail polls');
-  assert.equal(reads.filter(([start]) => start === 0).length, 1,
-    'full records must be read only once after grace expires');
-});
-
 test('new assistant activity invalidates an earlier completion marker during grace', async () => {
   const directory = join(tmpdir(), 'not-a-host-transcript-directory');
   const path = join(directory, `${sessionId}.jsonl`);
@@ -201,53 +174,62 @@ test('terminal recovery includes subagent usage created by the active session', 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('terminal recovery rejects billable usage without a stable request ID', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
-  try {
-    const snapshot = localReader(root).snapshot();
-    const record = assistant() as Record<string, unknown>;
-    delete record.requestId;
-    delete (record.message as Record<string, unknown>).id;
-    writeFileSync(join(root, `${sessionId}.jsonl`), `${JSON.stringify(record)}\n`);
-    assert.throws(() => recoverClaudeTerminalResult({ directory: root, snapshot, reader: localReader(root),
-      marker: 'FIX_COMPLETE', model: 'claude-sonnet-5' }), /stable request ID/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('terminal recovery rejects conflicting usage for one request ID', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
-  try {
-    const snapshot = localReader(root).snapshot();
-    const changed = assistant();
-    (changed.message.usage as Record<string, unknown>).output_tokens = 21;
-    writeFileSync(join(root, `${sessionId}.jsonl`), [
-      JSON.stringify(assistant({ stop: 'tool_use' })), JSON.stringify(changed),
-    ].join('\n') + '\n');
-    assert.throws(() => recoverClaudeTerminalResult({ directory: root, snapshot, reader: localReader(root),
-      marker: 'FIX_COMPLETE', model: 'claude-sonnet-5' }), /usage changed/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  const missing = assistant() as Record<string, unknown>;
+  delete missing.requestId;
+  delete (missing.message as Record<string, unknown>).id;
+  const changed = assistant();
+  (changed.message.usage as Record<string, unknown>).output_tokens = 21;
+  for (const [records, error] of [
+    [[missing], /stable request ID/],
+    [[assistant({ stop: 'tool_use' }), changed], /usage changed/],
+  ] as const) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
+    try {
+      const snapshot = localReader(root).snapshot();
+      writeFileSync(join(root, `${sessionId}.jsonl`),
+        records.map(record => JSON.stringify(record)).join('\n') + '\n');
+      assert.throws(() => recoverClaudeTerminalResult({ directory: root, snapshot, reader: localReader(root),
+        marker: 'FIX_COMPLETE', model: 'claude-sonnet-5' }), error);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('a hung process becomes a successful transcript recovery after the exit grace', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
-  try {
-    const transcript = join(root, `${sessionId}.jsonl`);
-    const snapshot = localReader(root).snapshot();
-    const script = `const fs=require('node:fs');`
-      + `fs.writeFileSync(${JSON.stringify(transcript)}, JSON.stringify(${JSON.stringify(assistant())})+'\\n');`
-      + `setInterval(()=>{},1000);`;
-    const result = await runTranscriptAwareProcess({ command: process.execPath,
-      args: ['-e', script], input: '', env: process.env, timeoutMs: 5_000,
-      transcriptDirectory: root, transcriptSnapshot: snapshot, transcriptReader: localReader(root),
-      marker: 'FIX_COMPLETE', model: 'claude-sonnet-5',
-      exitGraceMs: 20, pollMs: 10,
-      terminate: child => child.kill('SIGTERM') });
-    assert.equal(result.status, 0);
-    assert.equal(jsonRecord(result.stdout).session_id, sessionId);
-    assert(result.terminalRecovery, 'transcript recovery evidence is required');
-    assert.equal(result.terminalRecovery.kind, 'terminal-transcript');
-    assert.equal(result.error, null);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  for (const hosted of [false, true]) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
+    try {
+      const transcript = join(root, `${sessionId}.jsonl`);
+      const hostedDirectory = join(tmpdir(), 'not-a-host-transcript-directory');
+      const hostedPath = join(hostedDirectory, `${sessionId}.jsonl`);
+      const hostedContent = Buffer.from(JSON.stringify(assistant()) + '\n');
+      let hostedReads = 0;
+      const reader: ClaudeTranscriptReader = hosted ? {
+        snapshot: () => new Map([[hostedPath, hostedContent.length]]),
+        read(file, start, length) {
+          assert.equal(file, hostedPath);
+          hostedReads += 1;
+          return hostedContent.subarray(start, start + length);
+        },
+      } : localReader(root);
+      const script = hosted ? 'setInterval(()=>{},1000);' : `const fs=require('node:fs');`
+        + `fs.writeFileSync(${JSON.stringify(transcript)}, JSON.stringify(${JSON.stringify(assistant())})+'\\n');`
+        + `setInterval(()=>{},1000);`;
+      const result = await runTranscriptAwareProcess({ command: process.execPath,
+        args: ['-e', script], input: '', env: process.env, timeoutMs: 5_000,
+        transcriptDirectory: hosted ? hostedDirectory : root,
+        transcriptSnapshot: hosted ? new Map() : localReader(root).snapshot(), transcriptReader: reader,
+        marker: 'FIX_COMPLETE', model: 'claude-sonnet-5',
+        exitGraceMs: 20, pollMs: 10,
+        terminate: child => child.kill('SIGTERM') });
+      assert.equal(result.status, 0);
+      assert.equal(jsonRecord(result.stdout).session_id, sessionId);
+      assert(result.terminalRecovery, 'transcript recovery evidence is required');
+      assert.equal(result.terminalRecovery.kind, 'terminal-transcript');
+      assert.equal(result.error, null);
+      if (hosted) assert(hostedReads > 0, 'the hosted fallback must read through its supplied owner');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('a normal CLI exit keeps its authoritative result instead of using recovery', async () => {

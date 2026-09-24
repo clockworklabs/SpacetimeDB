@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
+import { compileCampaignFile, validateCampaignDefinition,
   validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { campaignComparisonKey } from '../src/campaigns/campaign-report.js';
 import { attemptArgv } from '../src/campaigns/campaign-runner.js';
@@ -38,7 +38,7 @@ test('campaign duration follows safe deadline arithmetic rather than a twelve-ho
   }
 });
 
-test('campaign effort is retained per attempt and changes campaign identity', () => {
+test('campaign effort is retained per attempt, and campaign choices change campaign identity', () => {
   const value = manifest('campaign.example.json');
   value.stacks = (value.stacks as Array<{ id: string }>).filter(stack => stack.id === 'postgres');
   const agents = value.agents as Array<Record<string, unknown>>;
@@ -50,6 +50,9 @@ test('campaign effort is retained per attempt and changes campaign identity', ()
   assert.deepEqual(validateCompiledCampaignPlan(medium), medium);
   assert.throws(() => compile({ ...value,
     agents: agents.map(agent => ({ ...agent, effort: 'invalid' })) }), /effort/);
+  const reseeded = compile({ ...value, agents: agents.map(agent => ({ ...agent, effort: 'high' })),
+    ordering: { ...(value.ordering as object), seed: 'another-seed' } });
+  assert.notEqual(reseeded.contentSha256, high.contentSha256);
 });
 
 test('campaign repetitions use checked expansion rather than a hundred-run policy', () => {
@@ -61,27 +64,13 @@ test('campaign repetitions use checked expansion rather than a hundred-run polic
   assert.throws(() => validateCampaignDefinition({ ...value, repetitions: Number.MAX_SAFE_INTEGER + 1 }), /repetitions/);
 });
 
-test('a campaign preserves its own version and state while binding authored content by hash', () => {
-  const plan = compile(manifest('campaign.example.json'));
-  assert.equal(plan.definition.version, '2.0.0');
-  assert.equal(plan.definition.state, 'draft');
-  assert.equal(plan.bindings[0]?.recipe.id, 'ecommerce.sequential-l1');
-  assert.match(plan.bindings[0]?.recipe.contentSha256 ?? '', /^[a-f0-9]{64}$/);
-  assert.deepEqual(campaignIdentity(plan), {
-    id: plan.id,
-    version: plan.version,
-    sha256: plan.contentSha256,
-    state: plan.state,
-  });
-  assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
-});
-
 test('dependency campaigns bind a graph and feature catalog by stable ID and content hash', () => {
   const plan = compile(manifest('campaign.ecommerce-progression-reference.json'));
   assert(plan.featureCatalog && plan.dependencyPolicy);
   assert.match(plan.featureCatalog.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.match(plan.dependencyPolicy.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
+  assert(plan.bindings.every(binding => /^[a-f0-9]{64}$/.test(binding.recipe.contentSha256)));
   assert.deepEqual(plan.bindings.map(binding => binding.level), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(plan.bindings.map(binding => binding.calibration?.id ?? null),
     ['ecommerce.dependency-l3-calibration', 'ecommerce.dependency-l3-calibration',
@@ -150,14 +139,6 @@ test('campaign runtime accepts immutable local IDs and registry digests, but rej
   }
 });
 
-test('campaign identities change when a campaign choice changes', () => {
-  const first = compile(manifest('campaign.example.json'));
-  const changed = manifest('campaign.example.json');
-  (changed.ordering as { seed: string }).seed = 'another-seed';
-  const second = compile(changed);
-  assert.notEqual(second.contentSha256, first.contentSha256);
-});
-
 test('cost/completion thresholds are declared numeric campaign policy, not inferred from results', () => {
   const value = manifest('campaign.example.json');
   const analysis = value.analysis as Record<string, unknown>;
@@ -215,6 +196,10 @@ test('OpenRouter fixes one provider route in the campaign and attempt identity',
     assert.equal(parsed.maxOutputTokens, selection.maxOutputTokens);
     assert.throws(() => parseBenchArguments(['node', ...argv, '--provider-route', 'other']),
       /campaign|cannot/);
+    const attemptIndex = argv.indexOf('--campaign-attempt-id') + 1;
+    assert.throws(() => parseBenchArguments(['node',
+      ...argv.map((item, index) => index === attemptIndex ? 'unknown-attempt' : item)]),
+    /--campaign-attempt-id is not in the compiled campaign plan/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
   assert.throws(() => validateCampaignDefinition({ ...value,
     agents: [{ ...selection, providerRoute: undefined }] }), /providerRoute/);

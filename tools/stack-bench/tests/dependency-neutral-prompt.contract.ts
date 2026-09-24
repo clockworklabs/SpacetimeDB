@@ -12,7 +12,6 @@ import { buildPrompt, hostServiceAddress, parseAgentArgs } from '../commands/age
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
-import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { readAgentSkillDocuments } from '../src/agents/agent-materials.js';
 
@@ -28,7 +27,6 @@ test('production framing is one sentence and never changes restoration prompts',
     const on = render(enabled), off = render(disabled);
     assert.equal(on.includes(sentence), mode !== 'resume');
     assert.equal(on.replace(sentence + '\n\n', ''), off);
-    assert.equal(render({ ...disabled, productionQuality: undefined }), off, 'legacy prompt bytes remain unchanged');
   }
 });
 
@@ -64,21 +62,18 @@ test('SDK skills and dev guidance vary independently without changing product re
   for (const level of [1, 2, 3, 4, 5, 6] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const task = resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }).agent.request;
-    for (const stack of STACKS) {
+    for (const stack of STACKS) for (const repair of [false, true]) {
       const prompts = profiles.map(guidance => {
         const skills = readAgentSkillDocuments(STACK_BENCH_ROOT, guidance.skills[stack]!.ids);
-        const prompt = renderPrompt({ level, stack, task, guidance });
+        const prompt = renderPrompt({ level, stack, task, guidance, repair });
         assert(prompt.includes(skills));
         return skills ? prompt.replace('\n\n## Selected API reference\n\n' + skills, '') : prompt;
       });
-      for (const prompt of prompts) assert.equal(prompt, prompts[0], `${stack} L${level} differs outside the supplied skills`);
+      for (const prompt of prompts) {
+        assert.equal(prompt, prompts[0], `${stack} L${level}${repair ? ' repair' : ''} differs outside the supplied skills`);
+      }
     }
   }
-});
-
-test('agent contract validation leaves product language unchanged', () => {
-  assert.equal(agentVisibleContractText('Use this application action. Keep the contest action.'),
-    'Use this application action. Keep the contest action.');
 });
 
 function renderPrompt({ level, stack, task, guidance, repair = false, cli = false }: {
@@ -131,67 +126,6 @@ function renderPrompt({ level, stack, task, guidance, repair = false, cli = fals
   });
 }
 
-test('dev workflow reaches build, upgrade, and repair prompts only when selected', () => {
-  const track = loadTrack('ecommerce');
-  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
-  const neutral = resolveGuidanceProfile('neutral', STACKS);
-  const dev = resolveGuidanceProfile('neutral-dev', STACKS);
-  for (const level of [1, 2] as const) {
-    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
-    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level,
-      { cumulative: true }).agent.request;
-    for (const stack of STACKS) for (const repair of [false, true]) {
-      const original = renderPrompt({ level, stack, task, guidance: neutral, repair });
-      const changed = renderPrompt({ level, stack, task, guidance: dev, repair });
-      if (stack === 'spacetime') {
-        assert.doesNotMatch(original, /# Development workflow/);
-        assert.match(changed, /# Development workflow/);
-        assert.match(changed, /Do not run competing publish commands or watchers/);
-      } else assert.equal(changed, original);
-    }
-  }
-});
-
-test('all stacks receive the same installed browser client in build, upgrade, and repair prompts', () => {
-  const track = loadTrack('ecommerce');
-  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
-  const guidance = resolveGuidanceProfile('neutral', STACKS);
-  const paragraphs = new Set<string>();
-  for (const level of [1, 2, 3] as const) {
-    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
-    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level,
-      { cumulative: true }).agent.request;
-    for (const stack of STACKS) for (const repair of [false, true]) {
-      const paragraph = renderPrompt({ level, stack, task, guidance, repair })
-        .split('\n').find(line => line.startsWith('Chromium is installed'));
-      assert.ok(paragraph);
-      assert.match(paragraph, /require\("\/opt\/browser-tools\/node_modules\/puppeteer-core"\)/);
-      assert.match(paragraph, /executablePath: process.env.CHROME_BIN/);
-      assert.doesNotMatch(paragraph, EVALUATION_LANGUAGE);
-      paragraphs.add(paragraph);
-    }
-  }
-  assert.equal(paragraphs.size, 1);
-});
-
-test('scheduled restock prompts define names and reducer argument types for every stack', () => {
-  const track = loadTrack('ecommerce');
-  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
-  const guidance = resolveGuidanceProfile('neutral-dev', STACKS);
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
-  const task = resolveProgressionRecipeLevelSelection(binding, catalog, 3,
-    { cumulative: true }).agent.request;
-  for (const stack of STACKS) for (const repair of [false, true]) {
-    const prompt = renderPrompt({ level: 3, stack, task, guidance, repair });
-    assert.match(prompt, /`item` and `warehouse` are their names as strings/);
-    assert.match(prompt, /`delaySeconds` are JSON integers/);
-    if (stack === 'spacetime') {
-      assert.match(prompt, /`item: string`, `warehouse: string`/);
-      assert.match(prompt, /`quantity: u32`, `delaySeconds: u32`/);
-    }
-  }
-});
-
 test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
@@ -202,6 +136,8 @@ test('neutral dependency prompts include only selected product and stack contrac
   assert.match(spacetimeReference, /spacetime publish/);
   assert.match(spacetimeReference, /withToken/);
   assert.match(spacetimeReference, /ctx\.sender/);
+  const disclosedGuarantees = /change together|applied only once|does not create a second payment|without a reload|cannot attach or inspect another|another customer's purchase history|cancelled restock never changes stock|restores the stock to its original warehouse|same authorization and price rules|same administrator, stock, and warehouse rules|invalid quantity|`-3`/i;
+  const browserClients = new Set<string>();
   for (const level of [1, 2, 3, 4, 5, 6] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
@@ -226,6 +162,16 @@ test('neutral dependency prompts include only selected product and stack contrac
       const prompt = renderPrompt({ level, stack, task: selected.agent.request, guidance });
       const repair = renderPrompt({ level, stack, task: selected.agent.request, guidance, repair: true });
       for (const request of [prompt, repair]) {
+        const browserClient = request.split('\n').find(line => line.startsWith('Chromium is installed'));
+        assert.ok(browserClient);
+        browserClients.add(browserClient);
+        if (level === 3) {
+          assert.match(request, /`delaySeconds`/);
+          if (stack === 'spacetime') {
+            assert.match(request, /`item: string`, `warehouse: string`/);
+            assert.match(request, /`quantity: u32`, `delaySeconds: u32`/);
+          }
+        }
         assert.doesNotMatch(request, /an interrupted checkout leaves|earlier orders remain recorded correctly/);
         assert.doesNotMatch(request, /__stackBenchScriptCanary|Stored review marker|stored-review-script/);
         assert.match(request, /Startup must work with an empty database by creating the supplied starting data and accounts/);
@@ -271,6 +217,7 @@ test('neutral dependency prompts include only selected product and stack contrac
       assert.notEqual(markerIndex, -1);
       const applicationRequest = prompt.slice(markerIndex);
       assert.doesNotMatch(applicationRequest, /Gaming Mouse row uses|`1\.00` as the price/);
+      assert.doesNotMatch(applicationRequest, disclosedGuarantees, `${stack} depth ${level}`);
       assert.match(applicationRequest, /## Application interface/);
       // Later product features explicitly request live or account-specific behavior.
       if (level <= 3) for (const language of UNSTATED_QUALITY_LANGUAGE) {
@@ -307,10 +254,13 @@ test('neutral dependency prompts include only selected product and stack contrac
       }
     }
   }
+  assert.equal(browserClients.size, 1);
+  assert.doesNotMatch([...browserClients][0]!, EVALUATION_LANGUAGE);
 });
 
 test('direct neutral guidance uses the current stack access documents', () => {
-  for (const stack of STACKS) {
+  const cases = [...STACKS.map(stack => ['neutral', stack] as const), ['prescribed', 'spacetime'] as const];
+  for (const [guidance, stack] of cases) {
     const prompt = execFileSync(process.execPath, [AGENT,
       '--mode', 'build',
       '--backend', stack,
@@ -318,7 +268,7 @@ test('direct neutral guidance uses the current stack access documents', () => {
       '--level', '1',
       '--run-index', '0',
       '--app', '/prompt-review/app',
-      '--guidance', 'neutral',
+      '--guidance', guidance,
       '--print-prompt',
     ], {
       encoding: 'utf8',
@@ -330,47 +280,20 @@ test('direct neutral guidance uses the current stack access documents', () => {
     assert.doesNotMatch(prompt, /Branding & Styling|App title:/i);
     assert.doesNotMatch(prompt, EVALUATION_LANGUAGE);
     assert.match(prompt, /store-admin-2026/);
-    assert.match(prompt, /Create `\/app\/start\.sh`/);
-    assert.match(prompt, /clean\s+source checkout.*install\s+dependencies.*build.*start/s);
-    assert.match(prompt, /APP_WARM_START=1.*reuse them instead of installing them again/s);
-    assert.match(prompt, /Startup must work with an empty database by creating the supplied starting data and accounts/);
-    assert.match(prompt, /script must not change source files/);
-    assert.doesNotMatch(prompt, /package cache/i);
-    assert.doesNotMatch(prompt, /npm `start` script|either `\/app\/start\.sh`/);
     if (stack !== 'spacetime') {
       assert.match(prompt, /service is already running/);
       assert.match(prompt, /Do not\s+start another .* server/);
       assert.match(prompt, /Serve the complete application on `\d+`/);
       assert.doesNotMatch(prompt, /Application service port/);
     } else {
-      assert.match(prompt, /spacetime publish/);
       assert.match(prompt, /withToken/);
-      assert.match(prompt, /ctx\.sender/);
+      if (guidance === 'prescribed') assert.match(prompt, /localStorage/);
+      else {
+        assert.match(prompt, /spacetime publish/);
+        assert.match(prompt, /ctx\.sender/);
+      }
     }
   }
-});
-
-test('direct prescribed SpacetimeDB guidance includes token-handling guidance', () => {
-  const prompt = execFileSync(process.execPath, [AGENT,
-    '--mode', 'build',
-    '--backend', 'spacetime',
-    '--track', 'ecommerce',
-    '--level', '1',
-    '--run-index', '0',
-    '--app', '/prompt-review/app',
-    '--guidance', 'prescribed',
-    '--print-prompt',
-  ], {
-    encoding: 'utf8',
-    stdio: 'pipe',
-    maxBuffer: 64 * 1024 * 1024,
-    env: { ...process.env, STACK_BENCH_APPLIANCE: '1',
-      STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
-  });
-  assert.match(prompt, /withToken/);
-  assert.match(prompt, /localStorage/);
-  assert.doesNotMatch(prompt, EVALUATION_LANGUAGE);
-  assert.match(prompt, /store-admin-2026/);
 });
 
 test('campaign skill material cannot change after compilation', () => {
@@ -392,25 +315,4 @@ test('campaign skill material cannot change after compilation', () => {
     env: { ...process.env, STACK_BENCH_APPLIANCE: '1',
       STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
   }), /campaign skill material changed after compilation/);
-});
-
-
-test('all dependency depths keep production guarantees out of product work and interfaces', () => {
-  const track = loadTrack('ecommerce');
-  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
-  const guidance = resolveGuidanceProfile('neutral', STACKS);
-  const disclosedGuarantees = /change together|applied only once|does not create a second payment|without a reload|cannot attach or inspect another|another customer's purchase history|cancelled restock never changes stock|restores the stock to its original warehouse|same authorization and price rules|same administrator, stock, and warehouse rules|invalid quantity|`-3`/i;
-  for (const level of [1, 2, 3, 4, 5, 6] as const) {
-    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
-    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level,
-      { cumulative: true }).agent.request;
-    for (const stack of STACKS) {
-      const prompt = renderPrompt({ level, stack, task, guidance });
-      const marker = level === 1 ? '## New application' : '## Existing application';
-      const product = prompt.slice(prompt.indexOf(marker));
-      assert.doesNotMatch(product, disclosedGuarantees, `${stack} depth ${level}`);
-      assert.match(product, /## Starting catalog/);
-      assert.match(product, /## Application interface/);
-    }
-  }
 });

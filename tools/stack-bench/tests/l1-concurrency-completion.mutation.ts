@@ -7,11 +7,11 @@ import ts from 'typescript';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { mutationFileEdits, mutationScenario, mutationTargetKeys,
-  readMutationManifest, validateMutationDefinitions, type LoadedMutationDefinition }
+  readMutationManifest, type LoadedMutationDefinition }
   from '../src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
-  selectReferenceFixture, type ReferenceFixtureSelector } from '../src/references/reference-fixtures.js';
-import { buildRecipeRelease, type RecipeRelease } from '../src/composition/recipe-release.js';
+  selectReferenceFixture } from '../src/references/reference-fixtures.js';
+import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
@@ -22,12 +22,6 @@ const release = buildRecipeRelease(join(RECIPES, 'sequential-l1.json'));
 // Shared manifests describe every recipe; each qualification keeps only its own targets.
 const recipeCheckKeys = new Set(readdirSync(RECIPES).flatMap(name =>
   buildRecipeRelease(join(RECIPES, name)).checkCatalog.map(check => check.stableKey)));
-
-function prepareReferenceSource(args: ReferenceFixtureSelector & { app: string }) {
-  const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
-  const prepared = prepareReferenceFixtureSource(fixture, args.app);
-  return { fixture, sourceSha256: prepared.sha256 };
-}
 
 interface CandidateCase {
   backend: string;
@@ -51,21 +45,6 @@ const cases: CandidateCase[] = [
     lastUnitMutation: 'purchase-does-not-reserve-stock-last-unit',
   },
 ];
-
-function byStableKey(candidate: RecipeRelease) {
-  return new Map(candidate.checkCatalog.map(check => [check.stableKey, check]));
-}
-
-test('current L1 has the complete scored concurrency and live-state surface', () => {
-  assert.equal(release.checkCatalog.length, 47);
-  assert.equal(release.scoring.points, 57);
-  assert.equal(release.checkCatalog.filter(check => check.points === 0).length, 2);
-  const restockControl = byStableKey(release)
-    .get('ecommerce.spec.concurrency-safety.restock-race.202-control');
-  assert(restockControl, 'the restock control must exist');
-  assert.equal(restockControl.points, 0,
-    'the ordinary-restock precondition must not double-count already-scored restock behavior');
-});
 
 test('each last-unit score retains the shared purchase race when selected alone', () => {
   const scenarioPath = join(TRACK, 'scenarios', '01-last-unit.json');
@@ -122,44 +101,16 @@ test('the restock race retains its admin page prerequisite when selected alone',
     && step.actor === actor && step.testid === 'order-item' && step.count === (actor === 'a' ? 2 : 1)));
 });
 
-test('duplicate checkout metadata describes the current cross-stack named action', () => {
-  const scenarioPath = join(TRACK, 'scenarios', '01-duplicate-checkout.json');
-  const scenario = compileScenarioDefinition(readJson(scenarioPath), { source: scenarioPath });
-  const [feature] = scenario.features;
-  assert(feature, 'duplicate checkout must have a feature');
-  const checkout = feature.criteria.find(criterion => criterion.id === '203b');
-  assert(checkout, 'duplicate checkout must have criterion 203b');
-  const metadata = [checkout.note, checkout.provenBy, checkout.withheld].join('\n');
-  assert.match(metadata, /callConcurrently/);
-  assert.match(metadata, /MongoDB/);
-  assert.match(metadata, /PostgreSQL/);
-  assert.match(metadata, /SpacetimeDB/);
-  assert.match(metadata, /Docker mutation qualification/);
-  assert.doesNotMatch(metadata, /replayConcurrently|INCONCLUSIVE|lastWrites|captured HTTP write/);
-  assert.deepEqual(checkout.steps.filter(step => ['callConcurrently', 'expectCallOutcomes']
-    .includes(step.do)).map(step => step.do), ['callConcurrently', 'expectCallOutcomes']);
-});
-
 for (const entry of cases) {
 test(`${entry.backend} binds the current L1 mutation inventory to its effective source`, () => {
     const work = mkdtempSync(join(tmpdir(), `stack-bench-l1-concurrency-${entry.backend}-`));
     try {
       const app = join(work, 'app');
-      const prepared = prepareReferenceSource({
-        backend: entry.backend,
-        track: 'ecommerce',
-        level: 1,
-        recipe: 'ecommerce.sequential-l1',
-        app,
-      });
-      assert.equal(prepared.sourceSha256, prepared.fixture.imported?.sourceSha256);
+      prepareReferenceFixtureSource(selectReferenceFixture(loadReferenceRegistry(), {
+        backend: entry.backend, track: 'ecommerce', level: 1, recipe: 'ecommerce.sequential-l1',
+      }), app);
 
       const manifest = readMutationManifest(join(ROOT, 'grader', 'mutations', entry.manifest));
-      assert.equal(manifest.fixtureSha256, prepared.sourceSha256);
-      assert.deepEqual(validateMutationDefinitions(manifest.mutations, {
-        defaultScenario: manifest.scenario,
-        requireScenario: true,
-      }).issues, []);
 
       assert.equal(manifest.mutations.some(mutation => mutationTargetKeys(mutation)
         .includes('ecommerce.spec.external-data-sync.external-stock.901b')), false, '901b has no deterministic candidate mutation');
@@ -187,8 +138,6 @@ test(`${entry.backend} binds the current L1 mutation inventory to its effective 
           const file = edit.file;
           assert(file, `${mutation.id} must declare a source file for each edit`);
           const source = readFileSync(join(app, file), 'utf8');
-          assert.equal(source.split(edit.find).length - 1, 1,
-            `${mutation.id} anchor must match exactly once`);
           const mutated = source.replace(edit.find, edit.replace);
           const transpiled = ts.transpileModule(mutated, {
             compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

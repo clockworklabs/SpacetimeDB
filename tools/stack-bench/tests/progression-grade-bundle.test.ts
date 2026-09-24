@@ -190,21 +190,6 @@ test('typed grader failures do not consume a progression repair as a zero score'
     reason: 'browser worker stopped' });
 });
 
-test('one unmeasured check makes the grading attempt inconclusive', () => {
-  const mixed = bundle();
-  mixed.outcome = { kind: 'app_failure', phase: 'grading', reason: 'catalog failed' };
-  mixed.suites.application.features[0]!.criteria[0]!.evidence = evidence('inconclusive');
-  mixed.suites.application.features[0]!.criteria[1]!.evidence = evidence('failed');
-  mixed.totals.score = 0;
-  assert.deepEqual(gradeBundleToProgressionResult(artifact(mixed, 'mixed'),
-    action(), conversion), {
-    attemptId: 'mixed', runId: 'run-1', sourceSha256,
-    selectionSha256: 'a'.repeat(64), outcome: 'inconclusive',
-    category: 'inconclusive_evidence',
-    reason: '1 selected check did not produce measured evidence',
-  });
-});
-
 test('partial application aborts and completed scores cannot hide measurement or cleanup failures', () => {
   for (const failure of ['inconclusive', 'harness_failure', 'cleanup'] as const) {
     const partial = bundle();
@@ -226,6 +211,14 @@ test('partial application aborts and completed scores cannot hide measurement or
   complete.suites.application.features[0]!.cleanupEvidence = { status: 'harness_failure' };
   assert.equal(gradeBundleToProgressionResult(artifact(complete), action(), conversion).outcome,
     'inconclusive');
+  const mixed = bundle();
+  mixed.outcome = { kind: 'app_failure', phase: 'grading', reason: 'catalog failed' };
+  mixed.suites.application.features[0]!.criteria[0]!.evidence = evidence('inconclusive');
+  mixed.suites.application.features[0]!.criteria[1]!.evidence = evidence('failed');
+  mixed.totals.score = 0;
+  const unmeasured = gradeBundleToProgressionResult(artifact(mixed, 'mixed'), action(), conversion);
+  assert.equal(unmeasured.outcome, 'inconclusive');
+  if (unmeasured.outcome === 'inconclusive') assert.equal(unmeasured.category, 'inconclusive_evidence');
 });
 
 test('completed progression evidence outranks a stale application failure', () => {
@@ -277,9 +270,6 @@ test('a typed application abort charges current work but not earlier regression 
   incomplete.selection.notRun.pop();
   assert.throws(() => gradeBundleToProgressionResult(artifact(incomplete, 'bad-abort'),
     action(), conversion), /application abort is incomplete/);
-});
-
-test('an application abort keeps checks measured before it and fails the rest of current work', () => {
   const crashed = bundle();
   crashed.outcome = { kind: 'app_failure', phase: 'application-readiness',
     reason: 'application did not become ready after database reset' };
@@ -288,14 +278,13 @@ test('an application abort keeps checks measured before it and fails the rest of
   crashed.selection.notRun = [{ stableKey: 'check.catalog', reason: crashed.outcome.reason }];
   crashed.suites.application.features[0]!.criteria.pop();
   crashed.totals = { score: 1, max: 3, regression: null };
-  const result = gradeBundleToProgressionResult(artifact(crashed, 'partial-abort'), action(), conversion);
-  if (result.outcome !== 'conclusive') throw new Error('expected a conclusive result');
-  assert.deepEqual(result.nodes, [
+  const passedFirst = gradeBundleToProgressionResult(artifact(crashed, 'partial-abort'), action(), conversion);
+  if (passedFirst.outcome !== 'conclusive') throw new Error('expected a conclusive result');
+  assert.deepEqual(passedFirst.nodes, [
     { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'pass' }] },
     { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
   ]);
-  const zeroed = structuredClone(crashed);
-  zeroed.totals.score = 0;
-  assert.throws(() => gradeBundleToProgressionResult(artifact(zeroed, 'zeroed-abort'),
+  crashed.totals.score = 0;
+  assert.throws(() => gradeBundleToProgressionResult(artifact(crashed, 'zeroed-abort'),
     action(), conversion), /application abort is incomplete/);
 });

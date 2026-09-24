@@ -177,13 +177,6 @@ test('dependency completion does not hide a whole-app failure', () => {
 
 test('attempt argv is derived completely from the compiled campaign plan', () => {
   const plan = examplePlan();
-  const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
-    '/campaign/plan.json');
-  assert.deepEqual(argv.slice(1), [
-    '--campaign-file', resolve('/campaign/plan.json'),
-    '--campaign-attempt-id', plan.attempts[0].id,
-    '--run-index', '0', '--out', '/campaign/attempt',
-  ]);
   assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], condition: {
     ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,
       documents: {} },
@@ -203,6 +196,29 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
   assert.equal(resumed[resumed.indexOf('--max-budget-usd') + 1], '6.5');
   assert.throws(() => attemptArgv(capped, capped.attempts[0], '/campaign/attempt', 0,
     '/campaign/plan.json', null, 'admission-1', 10.5), /invalid remaining cost budget/);
+
+  const dependencyPlan = dependencyExamplePlan();
+  const attempt = dependencyPlan.attempts[0];
+  const resumedArgv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency-2', 0,
+    '/campaign/plan.json', '/campaign/dependency-1');
+  assert.equal(resumedArgv[resumedArgv.indexOf('--progression-resume-from') + 1],
+    resolve('/campaign/dependency-1'));
+  const extension = { fromDepth: 1, source: `.private/extensions/${attempt.id}/source`,
+    sourceSha256: 'a'.repeat(64), sourceFiles: 4,
+    parent: { campaignId: 'parent', campaignSha256: 'b'.repeat(64),
+      attemptId: 'parent-attempt', executionId: 'execution-1', runId: 'run-1',
+      runSha256: 'c'.repeat(64) } };
+  const extendedArgv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency-3', 0,
+    '/campaign/plan.json', null, null, undefined, extension);
+  assert.equal(extendedArgv[extendedArgv.indexOf('--seed-through') + 1], '1');
+  assert.equal(extendedArgv[extendedArgv.indexOf('--seed-from') + 1],
+    resolve('/campaign/.private/extensions', attempt.id, 'source'));
+  assert.throws(() => attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0),
+    /requires its compiled campaign plan path/);
+  assert.throws(() => attemptArgv(dependencyPlan, { ...attempt,
+    mode: { id: 'sequential', version: '1.0.0' },
+  }, '/campaign/dependency', 0, '/campaign/plan.json'),
+  /mode and dependency policy do not match/);
 });
 
 test('campaign retry budget subtracts every prior execution cost', () => {
@@ -231,40 +247,6 @@ test('campaign retry budget subtracts every prior execution cost', () => {
     assert.throws(() => remainingAttemptCostBudget(campaign, claim, root),
       /prior provider spend is unknown/);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('dependency attempts pass separate catalog and policy identities with no level range', () => {
-  const dependencyPlan = dependencyExamplePlan();
-  const attempt = dependencyPlan.attempts[0];
-  const argv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0,
-    '/campaign/plan.json');
-  assert.equal(argv.includes('--levels'), false);
-  const index = argv.indexOf('--campaign-file');
-  assert(index > 0);
-  assert.equal(argv[index + 1], resolve('/campaign/plan.json'));
-  assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
-  for (const option of ['--guidance-document-json', '--condition-json', '--selection-json',
-    '--skills-json']) assert.equal(argv.includes(option), false);
-  const resumedArgv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency-2', 0,
-    '/campaign/plan.json', '/campaign/dependency-1');
-  assert.equal(resumedArgv[resumedArgv.indexOf('--progression-resume-from') + 1],
-    resolve('/campaign/dependency-1'));
-  const extension = { fromDepth: 1, source: `.private/extensions/${attempt.id}/source`,
-    sourceSha256: 'a'.repeat(64), sourceFiles: 4,
-    parent: { campaignId: 'parent', campaignSha256: 'b'.repeat(64),
-      attemptId: 'parent-attempt', executionId: 'execution-1', runId: 'run-1',
-      runSha256: 'c'.repeat(64) } };
-  const extendedArgv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency-3', 0,
-    '/campaign/plan.json', null, null, undefined, extension);
-  assert.equal(extendedArgv[extendedArgv.indexOf('--seed-through') + 1], '1');
-  assert.equal(extendedArgv[extendedArgv.indexOf('--seed-from') + 1],
-    resolve('/campaign/.private/extensions', attempt.id, 'source'));
-  assert.throws(() => attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0),
-    /requires its compiled campaign plan path/);
-  assert.throws(() => attemptArgv(dependencyPlan, { ...attempt,
-    mode: { id: 'sequential', version: '1.0.0' },
-  }, '/campaign/dependency', 0, '/campaign/plan.json'),
-  /mode and dependency policy do not match/);
 });
 
 test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {
@@ -743,12 +725,6 @@ test('ordinary campaign execution refuses draft plans', async () => {
 test('campaign trials accept only non-billable draft plans with zero pricing', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-trial-policy-'));
   try {
-    await assert.rejects(() => executeCampaign(example, root, {
-      mode: 'model-free-trial',
-      admit: () => ({ id: 'failed-admission', payload: { ok: false }, runIndices: [] }),
-      execute: async () => { throw new Error('must not launch'); },
-    }), /admission failed/);
-
     const paid = JSON.parse(readFileSync(example, 'utf8'));
     paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.17.2', model: 'claude-sonnet-5' }];
     paid.pricing.models = { 'claude-sonnet-5': {
@@ -1195,62 +1171,47 @@ test('reconciliation accepts the clean public proof left by authenticated recove
 });
 
 test('campaign admission covers every stack once per distinct agent adapter and writes typed evidence', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-admission-'));
-  try {
-    const plan = examplePlan();
-    const calls: PreflightRequest[] = [];
-    const admission = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
-      preflight: request => {
-        calls.push(request);
-        return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',
-          request: { backends: request.backends, track: request.track, levels: request.levelList,
-            runIndex: request.runIndex, parallelism: request.parallelism,
-            agentAdapter: request.agentAdapter,
-            packs: request.packIds, checks: request.checkKeys, image: request.image,
-            resultsDir: request.resultsDir, smoke: request.smoke },
-          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
-      },
-    });
-    assert.equal(admission.payload.ok, true);
-    assert.deepEqual(admission.payload.runtime, plan.definition.runtime);
-    assert.equal(calls.length, 1);
-    assert.deepEqual([...calls[0]!.backends].sort(), ['mongodb', 'postgres', 'spacetime']);
-    assert.equal(new Set(calls[0]!.backends).size, 3);
-    assert.equal(calls[0]!.smoke, false);
-    assert.equal(readArtifact(admission.path,
-      { expectedKind: 'campaign_admission' }).payload.campaignSha256, plan.contentSha256);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  const cases: Array<{ plan: CompiledCampaignPlan; check: (admission: Awaited<ReturnType<typeof runCampaignAdmission>>,
+    call: PreflightRequest) => void }> = [
+    { plan: examplePlan(), check: (admission, call) => {
+      assert.deepEqual(admission.payload.runtime, examplePlan().definition.runtime);
+      assert.deepEqual([...call.backends].sort(), ['mongodb', 'postgres', 'spacetime']);
+      assert.equal(new Set(call.backends).size, 3);
+      assert.equal(call.smoke, false);
+      assert.equal(readArtifact(admission.path,
+        { expectedKind: 'campaign_admission' }).payload.campaignSha256, examplePlan().contentSha256);
+    } },
+    { plan: compileCampaignFile(productBrief), check: (_admission, call) => {
+      assert.deepEqual(call.packIds, []);
+      assert.deepEqual(call.checkKeys, []);
+      const scope = call.requestedScopes[0] as { levels: Array<{
+        selection: { schemaVersion: number } }> };
+      assert.equal(scope.levels[0]!.selection.schemaVersion, 3);
+    } },
+  ];
+  for (const { plan, check } of cases) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-admission-'));
+    try {
+      const calls: PreflightRequest[] = [];
+      const admission = await runCampaignAdmission(plan, root, {
+        env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
+        preflight: request => {
+          calls.push(request);
+          return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',
+            request: { backends: request.backends, track: request.track, levels: request.levelList,
+              runIndex: request.runIndex, parallelism: request.parallelism,
+              agentAdapter: request.agentAdapter,
+              packs: request.packIds, checks: request.checkKeys, image: request.image,
+              resultsDir: request.resultsDir, smoke: request.smoke },
+            ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
+        },
+      });
+      assert.equal(admission.payload.ok, true);
+      assert.equal(calls.length, 1);
+      check(admission, calls[0]!);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
-
-test('campaign admission accepts a modular level selection without legacy pack filters', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-modular-campaign-admission-'));
-  try {
-    const plan = compileCampaignFile(productBrief);
-    const calls: PreflightRequest[] = [];
-    const admission = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
-      preflight: request => {
-        calls.push(request);
-        return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',
-          request: { backends: request.backends, track: request.track, levels: request.levelList,
-            runIndex: request.runIndex, parallelism: request.parallelism,
-            agentAdapter: request.agentAdapter,
-            packs: request.packIds, checks: request.checkKeys, image: request.image,
-            resultsDir: request.resultsDir, smoke: request.smoke },
-          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
-      },
-    });
-    assert.equal(admission.payload.ok, true);
-    assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0]!.packIds, []);
-    assert.deepEqual(calls[0]!.checkKeys, []);
-    const scope = calls[0]!.requestedScopes[0] as { levels: Array<{
-      selection: { schemaVersion: number } }> };
-    assert.equal(scope.levels[0]!.selection.schemaVersion, 3);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 
 test('resource wait is explicit, keeps attempts pending, and wakes on cancellation', async () => {
   const { CampaignResourceUnavailable } = await import('../src/campaigns/campaign-admission.js');

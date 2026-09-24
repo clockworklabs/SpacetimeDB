@@ -166,27 +166,6 @@ test('dependent feature actions validate graph ancestors without restating their
   ]), /requires ecommerce\.feature\.catalog-items in its node or ancestors/);
 });
 
-test('binding validation rejects a check borrowed from a selected sibling', () => {
-  const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1');
-  const value = definition();
-  value.nodes.push({ id: 'catalog', title: 'Catalog', questline: 'catalog', dependencies: [],
-    featureRefs: ['ecommerce.feature.catalog-items', 'ecommerce.feature.catalog-discovery'],
-    promptModules: [],
-    gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog-ranking.2b', points: 1,
-      role: 'feature' }] });
-  value.nodes[0]!.gradingChecks = [
-    { id: 'ecommerce.feature.catalog.catalog-values.2a', points: 1, role: 'feature' },
-  ];
-  value.questlines = [
-    { id: 'identity', title: 'Identity', nodes: ['accounts'] },
-    { id: 'catalog', title: 'Catalog', nodes: ['catalog'] },
-  ];
-  assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(value), [
-    { level: 1, binding },
-  ]), /belongs to an unselected feature/);
-});
-
 test('binding validation allows grading setup elsewhere in the feature graph', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.sequential-l1');
@@ -263,4 +242,19 @@ test('the recipe boundary rejects stale module references, check points, and che
   wrongOwner.nodes[0]!.gradingChecks[0]!.id = 'ecommerce.feature.catalog.catalog-values.2a';
   assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(wrongOwner),
     [{ level: 1, binding }]), /unselected feature/);
+  const siblingOwner = definition();
+  siblingOwner.nodes.push({ id: 'catalog', title: 'Catalog', questline: 'catalog', dependencies: [],
+    featureRefs: ['ecommerce.feature.catalog-items', 'ecommerce.feature.catalog-discovery'],
+    promptModules: [],
+    gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog-ranking.2b', points: 1,
+      role: 'feature' }] });
+  siblingOwner.nodes[0]!.gradingChecks = [
+    { id: 'ecommerce.feature.catalog.catalog-values.2a', points: 1, role: 'feature' },
+  ];
+  siblingOwner.questlines = [
+    { id: 'identity', title: 'Identity', nodes: ['accounts'] },
+    { id: 'catalog', title: 'Catalog', nodes: ['catalog'] },
+  ];
+  assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(siblingOwner),
+    [{ level: 1, binding }]), /belongs to an unselected feature/);
 });

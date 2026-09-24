@@ -9,21 +9,17 @@ const paid = { id: 'paid', apiKeyEnvironmentVariable: 'PROVIDER_API_KEY' };
 const modelFree = { id: 'model-free', apiKeyEnvironmentVariable: null };
 
 test('credential resolution reads only the selected adapter secret file', () => {
-  let readPath: string | null = null;
-  const args: AgentCredentialArgs = {};
-  applyAgentCredential(args, paid, { env: {
-    PROVIDER_API_KEY_FILE: '/selected/key',
-    ANTHROPIC_API_KEY_FILE: '/unrelated/key',
-  }, read: path => { readPath = path; return 'selected-secret\n'; } });
-  assert.equal(readPath, resolve('/selected/key'));
-  assert.equal(args.apiKey, 'selected-secret');
-});
-
-test('credential resolution normalizes explicit paths', () => {
-  const input: AgentCredentialArgs = { apiKeyFile: 'relative-key' };
-  applyAgentCredential(input, paid, { env: {}, read: () => 'secret' });
-  assert.equal(input.apiKeyFile, resolve('relative-key'));
-  assert.equal(input.apiKey, 'secret');
+  for (const { args, env, path } of [
+    { args: {}, env: { PROVIDER_API_KEY_FILE: '/selected/key', ANTHROPIC_API_KEY_FILE: '/unrelated/key' },
+      path: '/selected/key' },
+    { args: { apiKeyFile: 'relative-key' }, env: {}, path: 'relative-key' },
+  ] as { args: AgentCredentialArgs; env: Record<string, string>; path: string }[]) {
+    let readPath: string | null = null;
+    applyAgentCredential(args, paid, { env, read: file => { readPath = file; return 'selected-secret\n'; } });
+    assert.equal(readPath, resolve(path));
+    assert.equal(args.apiKey, 'selected-secret');
+    assert.equal(args.apiKeyFile, resolve(path));
+  }
 });
 
 test('model-free adapters ignore unrelated provider secrets but reject explicit credentials', () => {

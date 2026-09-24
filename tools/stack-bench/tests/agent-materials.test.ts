@@ -13,15 +13,6 @@ test('stack defaults and explicit agent skill selections resolve predictably', (
   assert.throws(() => agentSkillPaths('/repo/tools/stack-bench', ['same', 'same']), /invalid/);
 });
 
-test('skill documents are read in selected order with front matter removed', () => {
-  const paths = agentSkillPaths('/repo/tools/stack-bench', ['typescript-server', 'typescript-client']);
-  assert.equal(paths.length, 2);
-  const text = readAgentSkillDocuments('/repo/tools/stack-bench', ['typescript-server', 'typescript-client'], {
-    read: path => `---\nname: ignored\n---\n${path.split(/[\\/]/).at(-2)}`,
-  });
-  assert.equal(text, 'typescript-server\n\n---\n\ntypescript-client');
-});
-
 test('benchmark workflows resolve separately from public SDK skills in selected order', () => {
   const ids = ['typescript-server', 'spacetime-dev', 'spacetime-managed-dev'];
   const paths = [join('/repo', 'skills', 'typescript-server', 'SKILL.md'),

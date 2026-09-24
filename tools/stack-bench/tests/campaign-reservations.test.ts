@@ -174,40 +174,6 @@ test('three concurrent nine-worker campaigns claim 27 disjoint workers within ho
   }
 });
 
-test('dynamic admission skips live legacy capacity and port reservations without reclaiming them', linux, async () => {
-  const root = mkdtempSync(join(tmpdir(), 'campaign-legacy-reservation-'));
-  const locks = join(root, 'locks');
-  const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
-  const track = loadTrack(plan.definition.track);
-  const legacy = createBackendLease({ runId: 'live-legacy', backend: 'stub', track: track.name, runIndex: 0 });
-  try {
-    const keys = Array.from({ length: 9 }, (_, index) => [
-      `capacity:runner:${index}`,
-      ...plan.stacks.flatMap(stack => runResourceLockKeys({
-        backend: stack.id, track: track.name, runIndex: index,
-        serverUri: stack.id === 'spacetime' ? `http://127.0.0.1:${3210 + index}` : null,
-        ports: portsFor(track, stack.id, index) })),
-    ]).flat();
-    claimBackendResources(join(root, 'legacy.json'), legacy, { root: locks, keys, capacity: 64 });
-    const before = legacy.resources.locks.map(lock => readFileSync(lock.path, 'utf8'));
-    const admitted = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
-      preflight: request => ({ schemaVersion: 1, generatedAt: new Date().toISOString(),
-        request: { backends: request.backends, track: request.track, levels: request.levelList,
-          runIndex: request.runIndex, parallelism: request.parallelism, agentAdapter: request.agentAdapter,
-          packs: request.packIds, checks: request.checkKeys, image: request.image,
-          resultsDir: request.resultsDir, smoke: request.smoke },
-        ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
-    });
-    assert.deepEqual(admitted.runIndices, [9]);
-    assert.deepEqual(legacy.resources.locks.map(lock => readFileSync(lock.path, 'utf8')), before);
-    releaseCampaignReservation(admitted.reservation!);
-    verifyResourceLocks(legacy);
-    releaseResourceLocks(legacy);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-
 test('attempt admissions reserve only their stack and release slots for another campaign', linux, async () => {
   const root = mkdtempSync(join(tmpdir(), 'campaign-attempt-reservation-'));
   const locks = join(root, 'locks');
@@ -246,6 +212,17 @@ test('attempt admissions reserve only their stack and release slots for another 
     reservations.splice(reservations.indexOf(first.reservation!), 1);
     assert.deepEqual((await admit(pg, 'first')).runIndices, [0]);
     verifyResourceLocks(live);
+    const track = loadTrack(plan.definition.track);
+    const standalone = createBackendLease({ runId: 'live-standalone', backend: 'stub',
+      track: track.name, runIndex: 0 });
+    claimBackendResources(join(root, 'standalone.json'), standalone, { root: locks, capacity: 64,
+      keys: runResourceLockKeys({ backend: 'postgres', track: track.name, runIndex: 2,
+        ports: portsFor(track, 'postgres', 2) }) });
+    const before = standalone.resources.locks.map(lock => readFileSync(lock.path, 'utf8'));
+    assert.deepEqual((await admit(pg, 'third')).runIndices, [3]);
+    assert.deepEqual(standalone.resources.locks.map(lock => readFileSync(lock.path, 'utf8')), before);
+    verifyResourceLocks(standalone);
+    releaseResourceLocks(standalone);
   } finally {
     for (const reservation of reservations) releaseCampaignReservation(reservation);
     rmSync(root, { recursive: true, force: true });

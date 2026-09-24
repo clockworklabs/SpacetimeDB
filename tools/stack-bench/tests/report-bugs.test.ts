@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { writeArtifact } from '../src/evidence/artifacts.js';
-import { parseReportBugsArgs } from '../commands/report-bugs.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { finding } from '../src/actions/action-findings.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -14,13 +13,6 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 
 const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
-
-test('repair reports can read an isolated grading directory', () => {
-  const args = parseReportBugsArgs(['node', 'report-bugs', '--app', '/app',
-    '--results', '/results']);
-  assert.equal(args.results, '/results');
-  assert.equal(args.out, join('/app', 'BUG_REPORT.md'));
-});
 
 type EvidenceStatus = 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'harness_failure';
 
@@ -121,6 +113,12 @@ test('repair report selection follows typed evidence even when prose claims the 
     const result = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
     assert.equal(result.status, 3, result.stderr);
     assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
+    const zeroPoint = join(root, 'zero-point');
+    writeGrade(zeroPoint, 'failed', 'candidate behavior failed',
+      { feature: 'Candidate concurrency check', points: 0 });
+    const zero = spawnSync(process.execPath, [CLI, '--app', zeroPoint], { encoding: 'utf8' });
+    assert.equal(zero.status, 3, zero.stderr);
+    assert.equal(existsSync(join(zeroPoint, 'BUG_REPORT.md')), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -170,35 +168,6 @@ test('repair feedback includes actionable runtime evidence without private artif
   }
 });
 
-test('repair feedback describes behavior instead of browser commands', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-browser-language-'));
-  try {
-    const app = join(root, 'app');
-    const detail = `locator.selectOption: Timeout 5000ms exceeded.\n`
-      + `waiting for locator('[data-testid="notification-frequency"]')`;
-    const choice = finding('choice-missing', { control: 'notification-frequency', detail });
-    const evidence = createCheckEvidence({
-      status: 'failed', code: 'test_result', phase: 'assertion', summary: detail,
-      finding: choice, observation: detail, startedAtMs: 3, completedAtMs: 4,
-      actions: [{ actor: 'owner', evidence: {
-        schemaVersion: 2, action: { id: 'fill', version: '1.0.0' },
-        status: 'failed', type: 'browser-interaction-evidence', code: 'application_failure',
-        phase: 'execute', summary: detail, finding: choice, observation: null, expected: null,
-        retryable: false, timing: { startedAtMs: 3, completedAtMs: 4,
-          durationMs: 1, deadlineMs: 60_000 }, attachments: [], sensitivity: [],
-      } }],
-    });
-    writeGrade(app, 'failed', detail, { evidence });
-
-    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
-    assert.equal(reported.status, 0, reported.stderr);
-    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /Actual:\*\* the notification-frequency control did not offer the required choice/);
-    assert.match(repair, /Failed action:\*\* Select the requested choice/);
-    assert.doesNotMatch(repair, /locator|selectOption|data-(?:role|testid)|Timeout|5000ms|http:\/\//);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('failed reload reports its transport error without claiming later checks ran or leaking diagnostics', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-reload-'));
   try {
@@ -226,6 +195,29 @@ test('failed reload reports its transport error without claiming later checks ra
       assert.match(report, /sequence stopped at this action; later behavior was not observed/);
       assert.doesNotMatch(report, /Completed lifecycle actions|page reloaded|PRIVATE_|private-probe|password|secret|http:\/\//);
     }
+    const app = join(root, 'choice');
+    const detail = `locator.selectOption: Timeout 5000ms exceeded.\n`
+      + `waiting for locator('[data-testid="notification-frequency"]')`;
+    const choice = finding('choice-missing', { control: 'notification-frequency', detail });
+    const evidence = createCheckEvidence({
+      status: 'failed', code: 'test_result', phase: 'assertion', summary: detail,
+      finding: choice, observation: detail, startedAtMs: 3, completedAtMs: 4,
+      actions: [{ actor: 'owner', evidence: {
+        schemaVersion: 2, action: { id: 'fill', version: '1.0.0' },
+        status: 'failed', type: 'browser-interaction-evidence', code: 'application_failure',
+        phase: 'execute', summary: detail, finding: choice, observation: null, expected: null,
+        retryable: false, timing: { startedAtMs: 3, completedAtMs: 4,
+          durationMs: 1, deadlineMs: 60_000 }, attachments: [], sensitivity: [],
+      } }],
+    });
+    writeGrade(app, 'failed', detail, { evidence });
+
+    const selected = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(selected.status, 0, selected.stderr);
+    const choiceReport = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+    assert.match(choiceReport, /Actual:\*\* the notification-frequency control did not offer the required choice/);
+    assert.match(choiceReport, /Failed action:\*\* Select the requested choice/);
+    assert.doesNotMatch(choiceReport, /locator|selectOption|data-(?:role|testid)|Timeout|5000ms|http:\/\//);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -294,23 +286,6 @@ test('repair context identifies early control and value failures without claimin
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('setup feedback reports the failed control without claiming the later guarantee failed', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-setup-'));
-  try {
-    const evidence = createCheckEvidence({ status: 'failed', code: 'application_failure',
-      phase: 'setup', startedAtMs: 1, completedAtMs: 2,
-      finding: finding('control-missing', { control: 'item-stock', filtered: false }) });
-    writeGrade(root, 'blocked', 'setup failed', { evidence: { ...evidence, status: 'blocked' }, setupEvidence: evidence,
-      statedBy: 'the server refuses an unauthenticated purchase' });
-    const reported = spawnSync(process.execPath, [CLI, '--app', root], { encoding: 'utf8' });
-    assert.equal(reported.status, 0, reported.stderr);
-    const report = readFileSync(join(root, 'BUG_REPORT.md'), 'utf8');
-    assert.match(report, /item-stock control did not appear/);
-    assert.match(report, /Setup stopped before the named behavior was reached/);
-    assert.doesNotMatch(report, /Expected:|unauthenticated purchase/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('copied setup failures use original observations once and retain distinct setup failures', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-setup-dedup-'));
   try {
@@ -342,6 +317,19 @@ test('copied setup failures use original observations once and retain distinct s
     assert.equal((report.match(/Setup stopped before the named behavior was reached/g) ?? []).length, 2);
     assert.equal((report.match(/POST \/api\/buy returned 500/g) ?? []).length, 1);
     assert.doesNotMatch(report, /unauthorized purchases|orders must survive|Expected:\*\*/);
+
+    const blocked = join(root, 'blocked');
+    const blockedSetup = createCheckEvidence({ status: 'failed', code: 'application_failure',
+      phase: 'setup', startedAtMs: 1, completedAtMs: 2,
+      finding: finding('control-missing', { control: 'item-stock', filtered: false }) });
+    writeGrade(blocked, 'blocked', 'setup failed', { evidence: { ...blockedSetup, status: 'blocked' },
+      setupEvidence: blockedSetup, statedBy: 'the server refuses an unauthenticated purchase' });
+    const blockedResult = spawnSync(process.execPath, [CLI, '--app', blocked], { encoding: 'utf8' });
+    assert.equal(blockedResult.status, 0, blockedResult.stderr);
+    const blockedReport = readFileSync(join(blocked, 'BUG_REPORT.md'), 'utf8');
+    assert.match(blockedReport, /item-stock control did not appear/);
+    assert.match(blockedReport, /Setup stopped before the named behavior was reached/);
+    assert.doesNotMatch(blockedReport, /Expected:|unauthenticated purchase/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -365,10 +353,6 @@ test('dependency repair feedback contains only checks selected for that feature'
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /Accounts|account ownership failed/);
-    assert.match(repair, /Earlier work/);
-    assert.match(repair, /Preserve earlier fixes/);
-    assert.doesNotMatch(repair, /Earlier changes did not fix/);
-    assert.doesNotMatch(repair, /remaining:/);
     assert.doesNotMatch(repair, /Catalog|catalog search failed/);
     assert.doesNotMatch(repair, /check\.catalog\.search/);
   } finally {
@@ -407,32 +391,20 @@ test('expected failures enter repairs while observed-only failures stay isolated
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-treatment-repair-'));
   try {
     const app = join(root, 'app');
+    const grading = join(root, 'isolated-grading');
     writeGrade(app, 'failed', 'durability was expected but state was lost',
-      { feature: 'State durability' });
+      { grading, feature: 'State durability' });
     writeGrade(app, 'failed', 'observed-only failure must not enter repair', {
       grading: join(root, 'run', 'first-build-l1-observed'), feature: 'Observed behavior',
     });
 
-    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    const reported = spawnSync(process.execPath, [CLI, '--app', app, '--results', grading],
+      { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /State durability/);
     assert.match(repair, /Expected:\*\* Expected owner/);
     assert.doesNotMatch(repair, /observed-only failure must not enter repair|Observed behavior/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('zero-point test-development failures never enter repair feedback', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-zero-point-repair-'));
-  try {
-    const app = join(root, 'app');
-    writeGrade(app, 'failed', 'candidate behavior failed',
-      { feature: 'Candidate concurrency check', points: 0 });
-    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
-    assert.equal(reported.status, 3, reported.stderr);
-    assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -30,6 +30,15 @@ test('incomplete dependency measurement is excluded without hiding provider fail
   }
   assert.equal(classifyCampaignExecution({ exitCode: 0,
     run: { ...run, progressionStatus: { phase: 'terminal' } } }).status, 'completed');
+  assert.deepEqual(classifyCampaignExecution({ exitCode: 1, run: { outcome: {
+    kind: 'provider_failure', reason: 'provider-connection-error',
+  } } }), { status: 'invalid', outcome: 'provider_failure',
+    reason: 'attempt process exited 1: provider-connection-error' });
+  assert.deepEqual(classifyCampaignExecution({ exitCode: 4, run: {
+    contaminated: true,
+    contamination: { verdict: 'scores unusable' },
+    outcome: { kind: 'ungraded' },
+  } }), { status: 'invalid', outcome: 'contaminated', reason: 'scores unusable' });
 });
 
 const example = join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json');
@@ -66,6 +75,9 @@ test('time grants are idempotent requests and retain cumulative elapsed time', (
     assert.deepEqual(requestCampaignTimeGrant(directory, request), result);
     assert.throws(() => requestCampaignTimeGrant(directory, { ...request, minutes: 61 }), /different content/);
     assert.throws(() => requestCampaignTimeGrant(directory, { ...request, minutes: Number.MAX_SAFE_INTEGER }));
+    for (const minutes of [0, -1, 1.5, Number.POSITIVE_INFINITY]) {
+      assert.throws(() => requestCampaignTimeGrant(directory, { ...request, grantId: 'invalid-minutes', minutes }));
+    }
     assert.equal(readCampaignTimeBudget(directory, request.attemptId).grants.length, 1);
     const attempt = claimed.state.attempts.find(a => a.plan.id === request.attemptId)!;
     const original = plan().definition.budgets.attemptTimeoutMinutes;
@@ -110,21 +122,6 @@ function requireClaim(result: { state: CampaignState; claim: CampaignClaim | nul
 const claimed = () => requireClaim(claimNextAttempt(prepared(), {
   now: '2026-08-12T00:01:00.000Z', admissionId: 'admission-1',
 }));
-
-test('provider failures remain distinct from harness failures in campaign state', () => {
-  assert.deepEqual(classifyCampaignExecution({ exitCode: 1, run: { outcome: {
-    kind: 'provider_failure', reason: 'provider-connection-error',
-  } } }), { status: 'invalid', outcome: 'provider_failure',
-    reason: 'attempt process exited 1: provider-connection-error' });
-});
-
-test('a contaminated run remains contaminated when its process exits nonzero', () => {
-  assert.deepEqual(classifyCampaignExecution({ exitCode: 4, run: {
-    contaminated: true,
-    contamination: { verdict: 'scores unusable' },
-    outcome: { kind: 'ungraded' },
-  } }), { status: 'invalid', outcome: 'contaminated', reason: 'scores unusable' });
-});
 
 test('a targeted dependency grant schedules one exact completed attempt for resume', () => {
   let state = prepared();
@@ -211,48 +208,38 @@ function parallelPlan(parallelism = 3, repetitions = 1) {
   finally { rmSync(root, { recursive: true, force: true }); }
 }
 
-test('serial campaign state materializes every attempt and enforces its one-slot capacity', () => {
-  const campaign = plan();
-  const initial = prepared();
-  assert.deepEqual(initial.summary, { completed: 0, executions: 0, invalid: 0, pending: 9,
-    running: 0, total: 9 });
-  const claimed = requireClaim(claimNextAttempt(initial, {
-    now: '2026-08-12T00:01:00.000Z', admissionId: 'admission-1',
-  }));
-  const firstPlan = campaign.attempts[0];
-  assert(firstPlan);
-  assert.equal(claimed.claim.attempt.id, firstPlan.id);
-  assert.equal(claimed.claim.executionId, `${firstPlan.id}-execution1`);
-  assert.equal(claimed.state.summary.running, 1);
-  const full = claimNextAttempt(claimed.state, { admissionId: 'admission-1' });
-  assert.equal(full.claim, null);
-  assert.equal(full.capacityFull, true);
-});
-
 test('parallel campaign claims unique slots and reuses a slot only after completion', () => {
-  const campaign = parallelPlan(3, 2);
-  let state = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
-  const claims: CampaignClaim[] = [];
-  for (let index = 0; index < 3; index += 1) {
-    const next = requireClaim(claimNextAttempt(state, {
-      now: `2026-08-12T00:0${index + 1}:00.000Z`, admissionId: 'admission-1',
+  for (const parallelism of [1, 3]) {
+    const campaign = parallelPlan(parallelism, 2);
+    let state = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
+    const claims: CampaignClaim[] = [];
+    for (let index = 0; index < parallelism; index += 1) {
+      const next = requireClaim(claimNextAttempt(state, {
+        now: `2026-08-12T00:0${index + 1}:00.000Z`, admissionId: 'admission-1',
+      }));
+      state = next.state;
+      claims.push(next.claim);
+    }
+    const firstPlan = campaign.attempts[0];
+    assert(firstPlan);
+    assert.equal(claims[0]?.attempt.id, firstPlan.id);
+    assert.equal(claims[0]?.executionId, `${firstPlan.id}-execution1`);
+    assert.deepEqual(claims.map(claim => claim.runIndex), [...Array(parallelism).keys()]);
+    assert.equal(state.summary.running, parallelism);
+    const full = claimNextAttempt(state, { admissionId: 'admission-1' });
+    assert.equal(full.claim, null);
+    assert.equal(full.capacityFull, true);
+    const releasedClaim = claims[Math.min(1, parallelism - 1)];
+    assert(releasedClaim);
+    state = finishCampaignExecution(state, releasedClaim.executionId,
+      { exitCode: 0, run: { outcome: { kind: 'passed' } } },
+      { now: '2026-08-12T00:05:00.000Z' });
+    const reused = requireClaim(claimNextAttempt(state, {
+      now: '2026-08-12T00:06:00.000Z', admissionId: 'admission-1',
     }));
-    state = next.state;
-    claims.push(next.claim);
+    assert.equal(reused.claim.runIndex, releasedClaim.runIndex);
+    assert.equal(reused.capacityFull, false);
   }
-  assert.deepEqual(claims.map(claim => claim.runIndex), [0, 1, 2]);
-  assert.equal(state.summary.running, 3);
-  assert.equal(claimNextAttempt(state, { admissionId: 'admission-1' }).capacityFull, true);
-  const releasedClaim = claims[1];
-  assert(releasedClaim);
-  state = finishCampaignExecution(state, releasedClaim.executionId,
-    { exitCode: 0, run: { outcome: { kind: 'passed' } } },
-    { now: '2026-08-12T00:05:00.000Z' });
-  const reused = requireClaim(claimNextAttempt(state, {
-    now: '2026-08-12T00:06:00.000Z', admissionId: 'admission-1',
-  }));
-  assert.equal(reused.claim.runIndex, 1);
-  assert.equal(reused.capacityFull, false);
 });
 
 test('invalid executions remain visible and retries append rather than overwrite', () => {

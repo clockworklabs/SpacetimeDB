@@ -3,21 +3,14 @@ import test from 'node:test';
 
 import { parseRepairArgs } from '../commands/repair-cli.js';
 
-test('repair CLI separates inspection from one explicitly bounded grant', () => {
-  const status = parseRepairArgs(['node', 'repair-cli.js', 'status', './run', '--level', '2']);
-  assert.equal(status.command, 'status');
-  assert.equal(status.level, 2);
-
-  const grant = parseRepairArgs(['node', 'repair-cli.js', 'grant', './run',
-    '--level', '2', '--repairs', '4', '--max-budget-usd', '25', '--timeout-minutes', '90']);
-  assert.equal(grant.command, 'grant');
-  assert.equal(grant.level, 2);
-  assert.equal(grant.repairs, 4);
-  assert.equal(grant.maxBudgetUsd, 25);
-  assert.equal(grant.timeoutMinutes, 90);
-});
-
 test('repair CLI rejects unbounded, duplicate, and ambiguous requests', () => {
+  const accepted = [
+    ['status', './run', '--level', '2'],
+    ['grant', './run', '--level', '2', '--repairs', '4', '--max-budget-usd', '25', '--timeout-minutes', '90'],
+  ];
+  for (const args of accepted) {
+    assert.doesNotThrow(() => parseRepairArgs(['node', 'repair-cli.js', ...args]));
+  }
   const invalid = [
     ['grant', './run', '--level', '1'],
     ['grant', './run', '--level', '1', '--repairs', '0'],

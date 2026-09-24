@@ -4,37 +4,33 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { checkpointChecks, checkpointSessions, completionCurve, recordRunCheckpoint } from '../src/evidence/run-checkpoints.js';
 import type { CheckpointRun } from '../src/evidence/run-checkpoints.js';
 
-test('checkpoint counts preserve blocked prerequisites without changing the denominator', () => {
-  const checks = checkpointChecks([{id:'target',points:4}], [], {
-    selection:{reportedChecks:['target']}, suites:{app:{features:[{criteria:[{
-      stableKey:'target', evidence:createCheckEvidence({status:'blocked',phase:'setup',
-        code:'application_failure',startedAtMs:1,completedAtMs:2}),
-    }]}]}},
-  });
-  assert.deepEqual(checks,[{id:'target',status:'blocked'}]);
-});
-
 const selected = [{ stableKey: 'feature.a', points: 9 }, { stableKey: 'feature.b', points: 1 },
   { stableKey: 'control', points: 0 }];
 const run = (): CheckpointRun => ({ condition: { requested: { levels: [{ selection: { scoredChecks: selected } }] } } });
 const session = (costUsd: number, exact = true) => ({ costUsd, costComplete: true,
   costReceipts: [{ receipt: { costUsd, exact, complete: true, reconciled: true, error: null } }] });
-function measure(target: CheckpointRun, passed: string[], costUsd: number, accepted = true, exact = true) {
+function measure(target: CheckpointRun, passed: string[], costUsd: number, accepted = true, exact = true,
+  blocked: string[] = []) {
   const sequence = (target.checkpoints?.length ?? 0) + 1;
   return recordRunCheckpoint(target, { phase: sequence === 1 ? 'first-build' : 'repair', level: 1,
     accepted, extraSessions: [session(costUsd, exact)], sourceSha256: String(sequence).repeat(64),
     evidence: { path: `grades/${sequence}/bundle.json`, sha256: 'a'.repeat(64) },
     bundle: { selection: { sha256: 'b'.repeat(64), reportedChecks: selected.map(check => check.stableKey) },
       suites: { app: { features: [{ criteria: selected.map(check => ({ ...check,
-        evidence: createCheckEvidence({ status: passed.includes(check.stableKey) ? 'passed' : 'failed',
-          code: passed.includes(check.stableKey) ? 'completed' : 'application_assertion',
-          phase: 'assertion', startedAtMs: 1, completedAtMs: 2 }) })) }] } } } });
+        evidence: blocked.includes(check.stableKey)
+          ? createCheckEvidence({ status: 'blocked', phase: 'setup', code: 'application_failure',
+            startedAtMs: 1, completedAtMs: 2 })
+          : createCheckEvidence({ status: passed.includes(check.stableKey) ? 'passed' : 'failed',
+            code: passed.includes(check.stableKey) ? 'completed' : 'application_assertion',
+            phase: 'assertion', startedAtMs: 1, completedAtMs: 2 }) })) }] } } } });
 }
 
 test('check completion has a fixed denominator, excludes zero-point controls, and counts no weighted points', () => {
   const point = measure(run(), ['feature.a'], 2);
   assert.deepEqual(point.completion, { selected: 2, passed: 1, failed: 1, blocked: 0, unmeasured: 0, rate: 0.5 });
   assert.deepEqual(point.cost, { status: 'exact', costUsd: 2 });
+  const blocked = measure(run(), ['feature.a'], 2, true, true, ['feature.b']);
+  assert.deepEqual(blocked.completion, { selected: 2, passed: 1, failed: 0, blocked: 1, unmeasured: 0, rate: 0.5 });
 });
 
 test('cost curves use measured checkpoints, preserve regressions, bounds, and targets not reached', () => {

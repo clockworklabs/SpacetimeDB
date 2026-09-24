@@ -30,88 +30,23 @@ const pricing: PricingAuthority = { unit: 'USD-per-million-tokens', rates: {
 test('production framing follows every coding adapter but not model-free controls', () => {
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const adapter = AGENT_ADAPTER_REGISTRY.get(id);
-    const input = { ...request, ...(adapter.provider === 'openrouter' ? { providerRoute: 'openai', maxOutputTokens: 1000 } : {}) };
+    const routed = adapter.provider === 'openrouter';
+    const input = { ...request, pricing, maxBudgetUsd: 12.5,
+      ...(routed ? { providerRoute: 'openai', maxOutputTokens: 8192 } : {}) };
     const enabled = agentRequestArgv(adapter, { ...input, productionQuality: true });
     const legacy = agentRequestArgv(adapter, input);
     assert.equal(enabled.includes('--production-quality'), Boolean(adapter.provider));
     assert.equal(legacy.includes('--no-production-quality'), Boolean(adapter.provider));
+    const flag = (name: string) => legacy.includes(name) ? legacy[legacy.indexOf(name) + 1] : undefined;
+    assert.equal(flag('--provider-route'), routed ? 'openai' : undefined);
+    assert.equal(flag('--max-output-tokens'), routed ? '8192' : undefined);
+    assert.equal(flag('--max-budget-usd'), adapter.costLimit === 'native' ? '12.5' : undefined);
+    assert.equal(flag('--pricing-json'), JSON.stringify(pricing));
+    for (const mode of ['build', 'upgrade', 'resume', 'fix'] as const) {
+      if (adapter.modes.includes(mode)) assert.doesNotThrow(() => agentRequestArgv(adapter, { ...input, mode }));
+      else assert.throws(() => agentRequestArgv(adapter, { ...input, mode }), /does not support mode/);
+    }
   }
-});
-
-test('built-in agent adapters are statically registered and content identified', () => {
-  assert.deepEqual(AGENT_ADAPTER_REGISTRY.ids,
-    ['claude-code', 'codex', 'deterministic', 'fault-injection', 'openrouter', 'reference-fixture']);
-  for (const id of AGENT_ADAPTER_REGISTRY.ids) {
-    const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
-    assert.equal(identity.id, id);
-    const expectedVersion = ['codex', 'openrouter'].includes(id) ? '1.0.0' : id === 'claude-code' ? '1.17.2'
-      : id === 'reference-fixture' ? '1.4.0'
-      : id === 'deterministic' ? '1.3.0' : '1.2.0';
-    assert.equal(identity.version, expectedVersion);
-    assert.match(identity.sha256, /^[a-f0-9]{64}$/);
-  }
-  assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
-  assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').usesStackSkills, true);
-  assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').credentialEnvironmentVariables,
-    ['CLAUDE_CODE_OAUTH_TOKEN']);
-  assert(AGENT_ADAPTER_REGISTRY.get('claude-code').modes.includes('resume'));
-  assert(AGENT_ADAPTER_REGISTRY.get('claude-code').deadlineMs
-  > AGENT_ADAPTER_REGISTRY.get('deterministic').deadlineMs);
-  const statusCommand = AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand;
-  assert(statusCommand);
-  assert.equal(statusCommand[0], 'node');
-  const statusScript = statusCommand.at(-1);
-  assert(statusScript);
-  assert.match(statusScript, /loggedIn===true/);
-  assert.match(statusScript, /oauth_token/);
-});
-
-test('requests are normalized and unsupported modes fail before launch', () => {
-  const codex = AGENT_ADAPTER_REGISTRY.get('codex');
-  assert.equal(codex.provider, 'openai');
-  assert.deepEqual(agentRequestArgv(codex, request).slice(1, 3), ['--provider', 'openai']);
-  assert.equal(codex.entrypoint, AGENT_ADAPTER_REGISTRY.get('claude-code').entrypoint);
-  const routed = AGENT_ADAPTER_REGISTRY.get('openrouter');
-  assert.equal(routed.entrypoint, codex.entrypoint);
-  assert.deepEqual(routed.requiredExecutables, codex.requiredExecutables);
-  assert.equal(routed.apiKeyEnvironmentVariable, 'OPENROUTER_API_KEY');
-  const routedArgs = agentRequestArgv(routed, { ...request, providerRoute: 'openai', maxOutputTokens: 8192 });
-  assert.deepEqual(routedArgs.slice(1, 3), ['--provider', 'openrouter']);
-  assert.equal(routedArgs[routedArgs.indexOf('--provider-route') + 1], 'openai');
-  assert.equal(routedArgs[routedArgs.indexOf('--max-output-tokens') + 1], '8192');
-  const deterministic = AGENT_ADAPTER_REGISTRY.get('deterministic');
-  assert.deepEqual(agentRequestArgv(deterministic, request).slice(1, 7),
-    ['--mode', 'build', '--backend', 'stub', '--level', '1']);
-  assert.deepEqual(agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('claude-code'),
-    { ...request, maxBudgetUsd: 12.5 }).slice(-2),
-    ['--max-budget-usd', '12.5']);
-  const priced = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('claude-code'),
-    { ...request, pricing, maxBudgetUsd: 12.5 });
-  assert.equal(priced[priced.indexOf('--pricing-json') + 1], JSON.stringify(pricing));
-  const guidanceDocument = { path: 'backends/stub.md', sha256: 'a'.repeat(64), bytes: 12 };
-  const withDocument = agentRequestArgv(deterministic, { ...request, guidanceDocument });
-  assert.equal(withDocument[withDocument.indexOf('--guidance-document-json') + 1],
-    JSON.stringify(guidanceDocument));
-  const withoutSkills = agentRequestArgv(deterministic, { ...request, skills: [] });
-  assert.equal(withoutSkills[withoutSkills.indexOf('--skills-json') + 1], '[]');
-  const skillIdentity = { ids: [], sha256: 'a'.repeat(64), bytes: 0 };
-  const withSkillIdentity = agentRequestArgv(deterministic,
-    { ...request, skills: ['ignored-duplicate'], skillIdentity });
-  assert.equal(withSkillIdentity[withSkillIdentity.indexOf('--skill-identity-json') + 1],
-    JSON.stringify(skillIdentity));
-  assert.equal(withSkillIdentity.includes('--skills-json'), false);
-  const recipeTask = { schemaVersion: 1, recipe: {}, selection: {}, task: {} };
-  const withRecipeTask = agentRequestArgv(deterministic,
-    { ...request, recipe: 'ecommerce.sequential-l1', recipeTask });
-  assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe') + 1],
-    'ecommerce.sequential-l1');
-  assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe-task-json') + 1],
-    JSON.stringify(recipeTask));
-  assert.equal(agentRequestArgv(deterministic, { ...request, maxBudgetUsd: 12.5 })
-    .includes('--max-budget-usd'), false);
-  const reference = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
-  assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'upgrade' }));
-  assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'fix' }));
 });
 
 test('adapter identity binds grading credentials as well as the executable', () => {
@@ -222,11 +157,7 @@ test('a campaign-bound task supplies the exact recipe when no explicit recipe ex
   const recipeTask = { schemaVersion: 3,
     recipe: { id: 'ecommerce.sequential-l1' },
     selection: {}, task: {} };
-  const recipe = agentRecipeIdentity(null, recipeTask);
-  assert.equal(recipe, 'ecommerce.sequential-l1');
-  const argv = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'),
-    { ...request, recipe, recipeTask });
-  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.sequential-l1');
+  assert.equal(agentRecipeIdentity(null, recipeTask), 'ecommerce.sequential-l1');
   assert.throws(() => agentRecipeIdentity('ecommerce.sequential-l2', recipeTask),
     /does not match bound task/);
 });

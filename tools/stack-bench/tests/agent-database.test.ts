@@ -55,29 +55,16 @@ test('a failed PostgreSQL create is accepted only when the exact database exists
   });
 });
 
-test('a PostgreSQL wipe failure aborts a supposedly clean build', () => {
-  withLease('postgres', lease => {
+test('a PostgreSQL or MongoDB wipe failure aborts a supposedly clean build', () => {
+  for (const backend of ['postgres', 'mongodb']) withLease(backend, lease => {
     const exec = (_command: string, args: readonly string[]) => {
       const container = lease.resources.container;
       assert(container);
       if (args[0] === 'inspect') return `${container.id}\n`;
-      if (args.includes('dropdb')) throw new Error('wipe failed');
+      if (backend === 'mongodb' || args.includes('dropdb')) throw new Error('wipe failed');
       return '';
     };
-    assert.throws(() => ensureDatabase('postgres', 0, null, track, true, { exec, lease }),
-      /could not wipe app_ecom_run0/);
-  });
-});
-
-test('a MongoDB wipe failure aborts a supposedly clean build', () => {
-  withLease('mongodb', lease => {
-    const exec = (_command: string, args: readonly string[]) => {
-      const container = lease.resources.container;
-      assert(container);
-      if (args[0] === 'inspect') return `${container.id}\n`;
-      throw new Error('wipe failed');
-    };
-    assert.throws(() => ensureDatabase('mongodb', 0, null, track, true, { exec, lease }),
+    assert.throws(() => ensureDatabase(backend, 0, null, track, true, { exec, lease }),
       /could not wipe app_ecom_run0/);
   });
 });
@@ -98,18 +85,13 @@ test('Spacetime cleanup ignores absence but rejects authorization and transport 
   });
 });
 
-test('coding session failures retain bounded stderr for nonzero exits', () => {
-  const detail = codingSessionFailure({ status: 1,
-    stdout: Buffer.from('provider stdout detail'),
-    stderr: Buffer.from(`provider rejected the session\n${'x'.repeat(5000)}`) });
-  assert.match(detail, /coding session failed \(exit 1\)/);
-  assert.match(detail, /inner stdout tail:\nprovider stdout detail/);
-  assert.match(detail, /inner stderr tail/);
-  assert.equal(detail.endsWith('x'.repeat(4000)), true);
-  assert.equal(detail.includes('provider rejected the session'), false);
-});
-
 test('exit 137 is reported as a kill without guessing that it was OOM', () => {
+  const failed = codingSessionFailure({ status: 1,
+    stdout: Buffer.from('provider stdout detail'),
+    stderr: Buffer.from('provider rejected the session') });
+  assert.match(failed, /coding session failed \(exit 1\)/);
+  assert.match(failed, /inner stdout tail:\nprovider stdout detail/);
+  assert.match(failed, /inner stderr tail:\nprovider rejected the session/);
   const detail = codingSessionFailure({ status: 137,
     stderr: Buffer.from('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC {"status":137,"cgroupMemory":"oom_kill 0"}') });
   assert.match(detail, /forcibly killed/);

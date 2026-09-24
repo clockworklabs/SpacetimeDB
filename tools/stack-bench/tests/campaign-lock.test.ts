@@ -29,36 +29,26 @@ const releaseCampaignLock = (lock: CampaignLock): boolean =>
   campaignLockTransaction({ operation: 'release', lock });
 
 test('controller identity prefers explicit configuration over container and host identity', () => {
-  let mountRead = false;
-  assert.equal(controllerInstance({ STACK_BENCH_CONTROLLER_INSTANCE: '  controller-explicit  ' }, {
-    readMountInfo: () => { mountRead = true; return 'unused'; },
-    fallbackHostname: () => 'unused-host',
-  }), 'controller-explicit');
-  assert.equal(mountRead, false);
-});
-
-test('controller identity uses the exact Docker container id from its hostname mount', () => {
   const id = 'ab'.repeat(32);
-  const mountInfo = [
+  const containerMount = [
     '1044 997 0:81 / / rw,relatime - overlay overlay rw',
     `1051 1044 0:70 /docker/containers/${id}/hostname /etc/hostname rw,relatime - tmpfs tmpfs rw`,
     '1052 1044 0:70 /docker/containers/not-an-id/hostname /etc/hostname rw - tmpfs tmpfs rw',
   ].join('\n');
-  assert.equal(controllerInstance({}, {
-    readMountInfo: () => mountInfo,
-    fallbackHostname: () => 'docker-desktop',
-  }), id);
-});
-
-test('controller identity falls back to hostname when container mount identity is unavailable', () => {
-  assert.equal(controllerInstance({}, {
-    readMountInfo: () => { throw Object.assign(new Error('no procfs'), { code: 'ENOENT' }); },
-    fallbackHostname: () => 'host-controller',
-  }), 'host-controller');
-  assert.equal(controllerInstance({}, {
-    readMountInfo: () => '/docker/containers/short-id/hostname /etc/hostname',
-    fallbackHostname: () => 'host-controller',
-  }), 'host-controller');
+  const noProcfs = (): string => { throw Object.assign(new Error('no procfs'), { code: 'ENOENT' }); };
+  for (const [env, readMountInfo, fallback, expected] of [
+    [{ STACK_BENCH_CONTROLLER_INSTANCE: '  controller-explicit  ' }, null, 'unused-host', 'controller-explicit'],
+    [{}, () => containerMount, 'docker-desktop', id],
+    [{}, noProcfs, 'host-controller', 'host-controller'],
+    [{}, () => '/docker/containers/short-id/hostname /etc/hostname', 'host-controller', 'host-controller'],
+  ] as const) {
+    let mountRead = false;
+    assert.equal(controllerInstance(env, {
+      readMountInfo: () => { mountRead = true; return readMountInfo ? readMountInfo() : 'unused'; },
+      fallbackHostname: () => fallback,
+    }), expected);
+    assert.equal(mountRead, readMountInfo !== null);
+  }
 });
 
 test('cross-controller liveness fails closed when Docker cannot answer', () => {
@@ -91,8 +81,11 @@ test('a campaign lock admits one exact controller and only its token can release
   try {
     const lock = acquireCampaignLock(root, campaign, { ownerInstance: 'controller-a',
       uuid: () => 'owner-token', alive: () => true });
-    assert.throws(() => acquireCampaignLock(root, campaign,
-      { ownerInstance: 'controller-a', alive: () => true }), /already controlled/);
+    for (const ownerInstance of ['controller-a', 'controller-b']) {
+      assert.throws(() => acquireCampaignLock(root, campaign, { ownerInstance,
+        alive: record => record.ownerInstance === 'controller-a' }),
+      new RegExp(`already controlled by controller-a pid ${process.pid}`));
+    }
     assert.throws(() => releaseCampaignLock({ ...lock, token: 'wrong-token' }), /token does not match|no longer belongs/);
     assert.equal(releaseCampaignLock(lock), true);
     assert.equal(releaseCampaignLock(lock), false);
@@ -104,47 +97,18 @@ test('dead-owner reclamation preserves campaign binding and rejects the old rele
   try {
     const first = acquireCampaignLock(root, campaign, { ownerPid: 1001,
       ownerInstance: 'dead-controller', uuid: () => 'first-token', alive: () => false });
+    const inspected: Array<{ record: { ownerInstance: string; ownerPid: number }; current: string }> = [];
     const second = acquireCampaignLock(root, campaign, { ownerPid: 1002,
       ownerInstance: 'new-controller',
       uuid: (() => { let index = 0; return () => `second-token-${++index}`; })(),
-      alive: () => false });
+      alive: (record, current) => { inspected.push({ record, current }); return false; } });
+    assert.equal(inspected[0]?.record.ownerInstance, 'dead-controller');
+    assert.equal(inspected[0]?.current, 'new-controller');
     const record = JSON.parse(readFileSync(second.path, 'utf8'));
     assert.equal(record.ownerPid, 1002);
     assert.equal(record.campaignSha256, campaign.contentSha256);
     assert.throws(() => releaseCampaignLock(first), /no longer belongs/);
     assert.equal(releaseCampaignLock(second), true);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('a reused pid in a different dead controller does not keep a stale lock alive', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-container-pid-'));
-  try {
-    const first = acquireCampaignLock(root, campaign, { ownerPid: 14,
-      ownerInstance: 'old-container', uuid: () => 'old-token', alive: () => false });
-    const inspected: Array<{
-      record: { ownerInstance: string; ownerPid: number };
-      current: string;
-    }> = [];
-    const second = acquireCampaignLock(root, campaign, { ownerPid: 14,
-      ownerInstance: 'new-container', uuid: () => 'new-token',
-      alive: (record, current) => { inspected.push({ record, current }); return false; } });
-    assert.equal(inspected[0]?.record.ownerInstance, 'old-container');
-    assert.equal(inspected[0]?.current, 'new-container');
-    assert.equal(second.record.ownerInstance, 'new-container');
-    assert.throws(() => releaseCampaignLock(first), /no longer belongs/);
-    assert.equal(releaseCampaignLock(second), true);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('a live controller in a different container retains its lock', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-live-container-'));
-  try {
-    const first = acquireCampaignLock(root, campaign, { ownerPid: 14,
-      ownerInstance: 'running-container', uuid: () => 'running-token', alive: () => false });
-    assert.throws(() => acquireCampaignLock(root, campaign, { ownerPid: 14,
-      ownerInstance: 'replacement-container', alive: record => record.ownerInstance === 'running-container' }),
-    /already controlled by running-container pid 14/);
-    assert.equal(releaseCampaignLock(first), true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

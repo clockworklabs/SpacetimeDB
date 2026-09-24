@@ -8,8 +8,7 @@ import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,
-  codingContainerAgentExecOptions, codingContainerTranscriptHandoffCommands,
-  codingContainerWorkspaceHandoffCommands }
+  codingContainerAgentExecOptions, codingContainerTranscriptHandoffCommands }
   from '../src/runtime/coding-container-policy.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
   from '../src/stacks/stack-adapters.js';
@@ -18,13 +17,6 @@ import { POSTGRES_APPLICATION_IDENTITY, attemptDatabaseIdentity, attemptDatabase
 import { spacetimeBuildContainerPlan } from '../src/stacks/stack-agent-operations.js';
 
 const FORBIDDEN_IDENTITY = /stackbench|stack[-_ ]bench|benchmark|harness|test|grader/i;
-
-test('workspace handoff keeps the agent owner and gives the controller group access', () => {
-  assert.deepEqual(codingContainerWorkspaceHandoffCommands(42), [
-    ['chown', '-R', '10001:42', '/app'],
-    ['chmod', '-R', 'u+rwX,g+rwX,o-rwx', '/app'],
-  ]);
-});
 
 test('transcript handoff gives only the controller group read access', () => {
   assert.deepEqual(codingContainerTranscriptHandoffCommands(42), [
@@ -51,8 +43,14 @@ test('the materialized agent runtime uses neutral application identities', () =>
     postgres: leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('postgres'), {
       database, networkMode: 'bridge',
     }),
+    postgresHostNetwork: leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('postgres'), {
+      database, networkMode: 'host',
+    }),
     mongodb: leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('mongodb'), {
       database, networkMode: 'bridge',
+    }),
+    spacetime: leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('spacetime'), {
+      database: null, networkMode: 'host',
     }),
     spacetimeConfigTarget: (() => {
       const mount = spacetimePlan.mounts[0];
@@ -68,6 +66,9 @@ test('the materialized agent runtime uses neutral application identities', () =>
     'postgresql://appuser:local-app-password@host.docker.internal:6532/app_ecom_run4');
   assert.equal(visibleRuntime.mongodb.DATABASE_URL,
     'mongodb://host.docker.internal:6537/app_ecom_run4?replicaSet=rs0&directConnection=true');
+  assert.equal(visibleRuntime.postgresHostNetwork.DATABASE_URL,
+    'postgresql://appuser:local-app-password@127.0.0.1:6532/app_ecom_run4');
+  assert.deepEqual(visibleRuntime.spacetime, {});
   assert.equal(visibleRuntime.module, 'app-ecom-run4');
 });
 

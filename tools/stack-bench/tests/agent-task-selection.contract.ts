@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { agentRecipeRequest, agentScenarioPaths } from '../commands/agent.js';
+import { agentScenarioPaths } from '../commands/agent.js';
 import { agentVisibleContractText, contractInterfaceNames }
   from '../src/composition/agent-visible-contract.js';
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
@@ -51,8 +51,9 @@ test('selected contract linting uses only declared interface names', () => {
 });
 
 test('agent-facing documents reject internal evaluation language', () => {
-  assert.equal(agentVisibleContractText('Expose the account controls.'),
-    'Expose the account controls.');
+  for (const accepted of ['Expose the account controls.', 'Keep the contest action.']) {
+    assert.equal(agentVisibleContractText(accepted), accepted);
+  }
   for (const source of [
     'Stack Bench checks this.',
     'The grader checks this.',
@@ -181,6 +182,18 @@ test('ordinary runs select scored checks while test-development checks require e
   assert.deepEqual(development.selection.checks.map(check => check.stableKey), [candidate.stableKey]);
   assert.equal(development.selection.scoredPoints, 0);
   assert.equal(development.selection.completeness, 'subset');
+
+  const featureIds = binding.release.components.packs
+    .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
+  const expectedSpecifications = binding.release.components.packs
+    .filter(pack => pack.moduleType === 'specification').map(pack => pack.id);
+  const scoped = createBoundRecipeTaskRequest(binding, { featureIds, expectedSpecifications });
+  const exact = createBoundRecipeTaskRequest(binding, { featureIds, expectedSpecifications,
+    checkKeys: binding.release.checkCatalog.map(check => check.stableKey) });
+  assert.equal(exact.selection.checks.length, 47);
+  assert.equal(exact.selection.scoredPoints, 57);
+  assert.equal(exact.selection.checks.filter(check => check.points === 0).length, 2);
+  assert.deepEqual(exact.selection.promptPacks, scoped.selection.promptPacks);
 });
 
 test('selected pack prompts contain only their own framework-neutral named actions', () => {
@@ -245,27 +258,6 @@ test('the real unprescribed prompt withholds every expected quality specificatio
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 
-test('exact modular qualification can include supporting checks without changing the prompt scope', () => {
-  const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1');
-  const features = modular.release.components.packs
-    .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
-  const expectedSpecifications = modular.release.components.packs
-    .filter(pack => pack.moduleType === 'specification')
-    .map(pack => pack.id);
-  const ordinary = createBoundRecipeTaskRequest(modular, { featureIds: features,
-    expectedSpecifications });
-  const exact = createBoundRecipeTaskRequest(modular, { featureIds: features,
-    expectedSpecifications, checkKeys: modular.release.checkCatalog.map(check => check.stableKey) });
-
-  assert.equal(ordinary.selection.checks.length, 45);
-  assert.equal(ordinary.selection.checks.every(check => check.points > 0), true);
-  assert.equal(exact.selection.checks.length, 47);
-  assert.equal(exact.selection.scoredPoints, 57);
-  assert.equal(exact.selection.checks.filter(check => check.points === 0).length, 2);
-  assert.deepEqual(exact.selection.promptPacks, ordinary.selection.promptPacks);
-});
-
 test('agent provenance uses the exact recipe execution instead of level suites', () => {
   const track = loadTrack('ecommerce');
   const modular = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
@@ -292,7 +284,5 @@ test('a standalone recipe selects its exact prompt and cannot disagree with a bo
     assert.throws(() => printPrompt(app, request,
       ['--recipe', 'ecommerce.sequential-l2']), error =>
       /does not match bound task/.test(commandStderr(error)));
-    assert.equal(agentRecipeRequest('ecommerce.sequential-l1'),
-      'ecommerce.sequential-l1');
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

@@ -71,32 +71,26 @@ function parentFixture(root: string, overrides: FixtureOverrides = {}) {
 }
 
 test('a finite grant is derived only from the exact exhausted parent checkpoint', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-grant-'));
-  try {
-    const fixture = parentFixture(root);
-    const resolved = createRepairGrant(root, { level: 1, repairs: 4 });
-    assert.equal(resolved.parent.id, 'parent-run');
-    assert.equal(resolved.sourcePath, join(root, fixture.checkpoint.directory));
-    assert.equal(resolved.grant.repairsGranted, 4);
-    assert.equal(resolved.grant.cumulativeRepairsBefore, 3);
-    assert.equal(resolved.grant.cumulativeRepairsAfter, 3);
-    assert.equal(resolved.configuration.agentAdapter, 'deterministic');
-    assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1');
-    assert.equal(resolved.configuration.runIndex, 0);
-    assert.equal(resolved.configuration.url, 'http://localhost:1234');
-    assert.equal(resolved.configuration.productionQuality, undefined);
-    assert.equal(resolved.grant.cumulativeCostBeforeUsd, 101.5);
-    assert.equal(resolved.grant.cumulativeDurationBeforeSec, 160);
-    assert.deepEqual(resolved.grant.downstreamLevelsToRerun, [2]);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('a direct repair preserves its recorded production framing', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-framing-'));
-  try {
-    parentFixture(root, { productionQuality: true });
-    assert.equal(createRepairGrant(root, { level: 1, repairs: 1 }).configuration.productionQuality, true);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  for (const productionQuality of [undefined, true]) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-grant-'));
+    try {
+      const fixture = parentFixture(root, { productionQuality });
+      const resolved = createRepairGrant(root, { level: 1, repairs: 4 });
+      assert.equal(resolved.parent.id, 'parent-run');
+      assert.equal(resolved.sourcePath, join(root, fixture.checkpoint.directory));
+      assert.equal(resolved.grant.repairsGranted, 4);
+      assert.equal(resolved.grant.cumulativeRepairsBefore, 3);
+      assert.equal(resolved.grant.cumulativeRepairsAfter, 3);
+      assert.equal(resolved.configuration.agentAdapter, 'deterministic');
+      assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1');
+      assert.equal(resolved.configuration.runIndex, 0);
+      assert.equal(resolved.configuration.url, 'http://localhost:1234');
+      assert.equal(resolved.configuration.productionQuality, productionQuality);
+      assert.equal(resolved.grant.cumulativeCostBeforeUsd, 101.5);
+      assert.equal(resolved.grant.cumulativeDurationBeforeSec, 160);
+      assert.deepEqual(resolved.grant.downstreamLevelsToRerun, [2]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('a finite grant can continue an explicitly paused checkpoint', () => {
@@ -110,15 +104,10 @@ test('a finite grant can continue an explicitly paused checkpoint', () => {
       assert.equal(resolved.grant.repairsGranted, 3);
       assert.equal(resolved.grant.cumulativeRepairsBefore, 4);
     }
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('a no-source-change pause can occur on the final budgeted round', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-no-change-'));
-  try {
+    rmSync(root, { recursive: true, force: true });
     parentFixture(root, { repair: { status: 'incomplete', limit: 3,
       used: 3, stopReason: 'no-source-change' } });
-    assert.doesNotThrow(() => inspectRepairParent(root, 1));
+    assert.doesNotThrow(() => inspectRepairParent(root, 1), 'a no-source-change pause can use the final round');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -126,6 +115,7 @@ test('repair grants reject incomplete evidence, remaining budget, and changed so
   const incompleteRoot = mkdtempSync(join(tmpdir(), 'stack-bench-repair-incomplete-'));
   const remainingRoot = mkdtempSync(join(tmpdir(), 'stack-bench-repair-remaining-'));
   const changedRoot = mkdtempSync(join(tmpdir(), 'stack-bench-repair-changed-'));
+  const boundedRoot = mkdtempSync(join(tmpdir(), 'stack-bench-repair-rounds-'));
   try {
     parentFixture(incompleteRoot, { outcome: { kind: 'app_failure', phase: 'grading', reason: null,
       appFailures: ['failure'], inconclusive: ['missing'], harnessFailures: [] } });
@@ -139,7 +129,13 @@ test('repair grants reject incomplete evidence, remaining budget, and changed so
     writeFileSync(join(changedRoot, changed.checkpoint.directory, 'app.js'),
       'export const broken = false;\n');
     assert.throws(() => inspectRepairParent(changedRoot, 1), /source bytes do not match/);
+
+    parentFixture(boundedRoot);
+    for (const repairs of [0, 1.5]) {
+      assert.throws(() => createRepairGrant(boundedRoot, { level: 1, repairs }), /positive safe integer/);
+    }
   } finally {
+    rmSync(boundedRoot, { recursive: true, force: true });
     rmSync(incompleteRoot, { recursive: true, force: true });
     rmSync(remainingRoot, { recursive: true, force: true });
     rmSync(changedRoot, { recursive: true, force: true });
@@ -152,16 +148,6 @@ test('generic repair grants reject dependency campaigns', () => {
     parentFixture(root, { mode: { id: 'dependency', version: '3.2.0' } });
     assert.throws(() => createRepairGrant(root, { level: 1, repairs: 2 }),
       /do not support dependency campaigns/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('repair grants are finite and explicitly bounded', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-rounds-'));
-  try {
-    parentFixture(root);
-    for (const repairs of [0, 1.5]) {
-      assert.throws(() => createRepairGrant(root, { level: 1, repairs }), /positive safe integer/);
-    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

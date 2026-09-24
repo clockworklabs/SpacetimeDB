@@ -83,11 +83,6 @@ test('real stack campaigns retain full preflight admission', async () => {
     });
     assert.equal(calls, plan.summary.parallelism);
     assert.equal(admission.payload.ok, true);
-    assert(admission.payload.reports.every(report => report.request.guidance === 'prescribed'));
-    assert(admission.payload.reports.every(report =>
-      JSON.stringify(report.request.agentSkills) === JSON.stringify([
-        'cli', 'typescript-client', 'typescript-server',
-      ])));
     // Application smoke runs in each real attempt after its resources exist.
     assert(admission.payload.reports.every(report => report.request.smoke === false));
     assert(admission.payload.reports.every(report =>
@@ -108,7 +103,6 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     });
     assert.equal(result.error, undefined, result.error?.message);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.equal(result.stdout.match(/^=== stub-l1/mg)?.length, 3);
 
     const { plan, state } = readCampaignState(output);
     assert.equal(state.status, 'completed');

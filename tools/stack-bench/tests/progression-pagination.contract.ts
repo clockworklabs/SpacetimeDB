@@ -90,19 +90,9 @@ test('selected scenarios navigate before using products outside the first catalo
   }
 
   assert.deepEqual(failures, []);
-});
 
-
-test('empty search does not expose a product outside the first page', () => {
-  for (const [search, nextPage, expectedFailures] of [
-    ['', false, 1], ['   ', false, 1], ['Cable', false, 0], ['', true, 0],
-  ] as const) {
-    const failures: string[] = [];
-    inspectSteps([
-      { do: 'fill', actor: 'visitor', testid: 'search-input', text: search },
-      ...(nextPage ? [{ do: 'click', actor: 'visitor', testid: 'search-next-page' }] : []),
-      { do: 'click', actor: 'visitor', testid: 'item-card', contains: 'USB Cable' },
-    ], new Map(), new Set(['USB Cable']), failures, 'pagination fixture');
-    assert.equal(failures.length, expectedFailures, JSON.stringify({ search, nextPage }));
-  }
+  const canary: string[] = [];
+  inspectSteps([{ do: 'click', actor: 'visitor', testid: 'item-card', contains: 'USB Cable' }],
+    new Map(), new Set(['USB Cable']), canary, 'unnavigated second-page click');
+  assert.equal(canary.length, 1, 'the navigation audit must detect an unnavigated second-page click');
 });

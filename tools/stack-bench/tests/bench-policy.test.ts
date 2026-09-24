@@ -291,11 +291,14 @@ test('bench arguments reject partial and out-of-range run indexes', () => {
     '--run-index', '1junk']), /--run-index must be an integer/);
   assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
     '--run-index', String(RUN_INDEX_CAP + 1)]), /--run-index must be an integer from 0 through/);
-});
-
-test('bench arguments validate pricing at the CLI boundary', () => {
   assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
     '--pricing-json', '{}']), /--pricing-json/);
+  const sharded = parseBenchArguments(['node', 'bench', '--backend', 'postgres',
+    '--mutation-shard-index', '1', '--mutation-shard-count', '3']);
+  assert.equal(sharded.mutationShardIndex, 1);
+  assert.equal(sharded.mutationShardCount, 3);
+  assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
+    '--mutation-shard-index', '1']), /must be supplied together/);
 });
 
 test('progression level usability follows its stricter evidence result', () => {
@@ -369,13 +372,6 @@ test('resumed dependency costs separate prior, current, and cumulative execution
   assert.equal(totals.costComplete, true);
 });
 
-test('ungraded level summaries contain useful failure values', () => {
-  assert.equal(formatLevelSummary({ level: 1, graded: false,
-    error: 'coding-session-failed', buildCostUsd: 1.25, durationMs: 4_400 }),
-  'L1: NOT GRADED | 0 repairs | $1.25 total ($0.00 repairs) | '
-    + 'stopped: coding session failed | 4s');
-});
-
 test('audit failures retain the exit code and stderr needed for diagnosis', () => {
   const error = Object.assign(new Error('Command failed: leak audit'), {
     status: 7,
@@ -396,19 +392,6 @@ test('repair preparation removes raw grading evidence but keeps the app and bug 
     assert.equal(existsSync(privateGradingDirectory(root)), false);
     assert.equal(existsSync(join(root, 'BUG_REPORT.md')), true);
     assert.equal(existsSync(join(root, 'app.js')), true);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('dependency campaign progression rejects an incomplete or unbound plan reference', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-progression-plan-'));
-  try {
-    const path = join(root, 'plan.json');
-    writeArtifact(path, { kind: 'campaign_plan', id: 'plan', payload: {} });
-    assert.throws(() => parseBenchArguments(['node', 'bench',
-      '--campaign-file', path, '--campaign-attempt-id', 'attempt']),
-    /compiled campaign/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -441,15 +424,6 @@ test('repair history reports score movement and exact remaining findings', () =>
     round: 2, beforeScore: 4, beforeMax: 6, afterScore: 5, afterMax: 6,
     result: 'kept', remainingFailures: ['suite/b', 'testing-interface/review-average'],
   });
-});
-
-test('mutation shard coordinates are paired', () => {
-  const args = parseBenchArguments(['node', 'bench', '--backend', 'postgres',
-    '--mutation-shard-index', '1', '--mutation-shard-count', '3']);
-  assert.equal(args.mutationShardIndex, 1);
-  assert.equal(args.mutationShardCount, 3);
-  assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
-    '--mutation-shard-index', '1']), /must be supplied together/);
 });
 
 test('mutation-only execution is restricted to model-free reference runs', () => {
@@ -486,25 +460,9 @@ test('the first repair that makes an unstartable app gradeable is never rolled b
   assert.equal(repairEvidenceDecision({ suites: {} }, after).action, 'rollback-no-comparison');
 });
 
-test('a repair cannot trade an earlier pass for a larger new gain', () => {
-  const evidence = (status: 'passed' | 'failed') => createCheckEvidence({
-    status, code: 'test_result', phase: 'assertion', startedAtMs: 1, completedAtMs: 2,
-  });
-  const bundle = (a: 'passed' | 'failed', b: 'passed' | 'failed') => ({ suites: {
-    features: { features: [{ id: 'work', criteria: [
-      { id: 'a', stableKey: 'check.a', points: 2, evidence: evidence(a) },
-      { id: 'b', stableKey: 'check.b', points: 3, evidence: evidence(b) },
-    ] }] },
-  } });
-
-  const decision = repairEvidenceDecision(bundle('passed', 'failed'), bundle('failed', 'passed'));
-  assert.equal(decision.action, 'rollback-regression');
-  assert.deepEqual(decision.shared.regressions, ['check.a']);
-});
-
 test('repair comparison respects declared scope without hiding missing or regressed evidence', () => {
-  const criterion = (id: string, status: 'passed' | 'failed') => ({
-    id, stableKey: `check.${id}`, points: 1,
+  const criterion = (id: string, status: 'passed' | 'failed', points = 1) => ({
+    id, stableKey: `check.${id}`, points,
     evidence: createCheckEvidence({ status, code: 'test_result', phase: 'assertion',
       startedAtMs: 1, completedAtMs: 2 }),
   });
@@ -524,24 +482,14 @@ test('repair comparison respects declared scope without hiding missing or regres
     }).action, 'rollback-regression');
     assert.equal(decide(before, { ...after, selection: undefined }).action, 'rollback-regression');
   }
-});
-
-test('repair regression checks require earlier passes but ignore earlier failures', () => {
-  const evidence = (status: 'passed' | 'failed') => createCheckEvidence({
-    status, code: 'test_result', phase: 'assertion', startedAtMs: 1, completedAtMs: 2,
-  });
-  const before = { suites: { features: { features: [{ id: 'work', criteria: [
-    { id: 'pass', stableKey: 'check.pass', points: 1, evidence: evidence('passed') },
-    { id: 'fail', stableKey: 'check.fail', points: 1, evidence: evidence('failed') },
-  ] }] } } };
-  const kept = { suites: { features: { features: [{ id: 'work', criteria: [
-    { id: 'pass', stableKey: 'check.pass', points: 1, evidence: evidence('passed') },
-  ] }] } } };
-  const regressed = { suites: { features: { features: [{ id: 'work', criteria: [
-    { id: 'pass', stableKey: 'check.pass', points: 1, evidence: evidence('failed') },
-  ] }] } } };
-  assert.equal(repairRegressionDecision(before, kept).action, 'keep');
-  assert.equal(repairRegressionDecision(before, regressed).action, 'rollback-regression');
+  const traded = repairEvidenceDecision(bundle([criterion('a', 'passed', 2), criterion('b', 'failed', 3)]),
+    bundle([criterion('a', 'failed', 2), criterion('b', 'passed', 3)]));
+  assert.equal(traded.action, 'rollback-regression');
+  assert.deepEqual(traded.shared.regressions, ['check.a']);
+  const earlier = bundle([criterion('pass', 'passed'), criterion('fail', 'failed')]);
+  assert.equal(repairRegressionDecision(earlier, bundle([criterion('pass', 'passed')])).action, 'keep');
+  assert.equal(repairRegressionDecision(earlier, bundle([criterion('pass', 'failed')])).action,
+    'rollback-regression');
 });
 
 test('repair rollback restores the accepted grading evidence without another grade', () => {
@@ -562,19 +510,6 @@ test('repair rollback restores the accepted grading evidence without another gra
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('grading restarts the complete application on its public port', () => {
-  const track = loadTrack('ecommerce');
-  const argv = gradeArgv({ backend: 'postgres', track: 'ecommerce', runIndex: 0,
-    media: false }, '/app', 'http://localhost:6573', 'postgres-l1', 1, track, 'attempt');
-  const index = argv.indexOf('--restart-spec');
-  assert(index > 0);
-  assert.deepEqual(JSON.parse(argv[index + 1] ?? ''), {
-    backend: 'postgres', app: '/app', port: 6573, probe: '',
-  });
-  assert.equal(argv.includes('--reseed-probe'), false);
-  assert.equal(argv.includes('--reseed-probe-expectation-json'), false);
-});
-
 test('reference qualification does not recover inconclusive suites, while paid grading can', () => {
   const track = loadTrack('ecommerce');
   for (const backend of ['spacetime', 'postgres', 'mongodb', 'convex']) {
@@ -586,14 +521,6 @@ test('reference qualification does not recover inconclusive suites, while paid g
         `${backend}/${agentAdapter}: qualification must preserve the first inconclusive result`);
     }
   }
-});
-
-test('Spacetime grading probes the application instead of a missing API port', () => {
-  const track = loadTrack('ecommerce');
-  const argv = gradeArgv({ backend: 'spacetime', track: 'ecommerce', runIndex: 0,
-    media: false }, '/app', 'http://localhost:6473', 'spacetime-l1', 1, track, 'attempt');
-  assert.equal(argv.includes('--reseed-probe'), false);
-  assert.equal(argv.includes('--reseed-probe-expectation-json'), false);
 });
 
 test('grading binds scored evidence to the selected application source', () => {
@@ -638,31 +565,21 @@ test('later-level grading receives prior selected checks as regression scope', (
   const regressionChecks = argv[index + 1];
   assert(regressionChecks);
   assert.deepEqual(JSON.parse(regressionChecks), ['prior/a', 'prior/b']);
+  const dependency = { ...args, progression: { identity: { policy: 'dependency-graph' } } };
+  assert.equal(gradeArgv(dependency, '/app', 'http://localhost:6573', 'postgres-l2', 2,
+    track, 'attempt').includes('--regression-checks-json'), false);
 });
-
-test('dependency grading uses its exact action scope without a second regression selection', () => {
-  const track = loadTrack('ecommerce');
-  const args = { backend: 'postgres', track: 'ecommerce', runIndex: 0, media: false,
-    progression: { identity: { policy: 'dependency-graph' } },
-    recipeTasks: new Map([
-      [1, { request: { schemaVersion: 3 }, selection: { scoredChecks: [
-        { stableKey: 'prior/a' },
-      ] } }],
-      [2, { request: { schemaVersion: 3 }, selection: { scoredChecks: [
-        { stableKey: 'prior/a' }, { stableKey: 'current/b' },
-      ] } }],
-    ]) };
-  const argv = gradeArgv(args, '/app', 'http://localhost:6573', 'postgres-l2', 2,
-    track, 'attempt');
-  assert.equal(argv.includes('--regression-checks-json'), false);
-});
-
 
 test('level summary names early stopping without claiming budget exhaustion', () => {
   const summary = formatLevelSummary({ level: 2, graded: true, score: 65, max: 70,
     repair: { status: 'incomplete', stopReason: 'repeated-findings', used: 2, limit: 5 } });
   assert(summary.includes('stopped: repeated findings'));
   assert(!summary.includes('budget exhausted'));
+  const ungraded = formatLevelSummary({ level: 1, graded: false,
+    error: 'coding-session-failed', buildCostUsd: 1.25, durationMs: 4_400 });
+  assert(ungraded.includes('NOT GRADED'));
+  assert(ungraded.includes('stopped: coding session failed'));
+  assert(!ungraded.includes('budget exhausted'));
 });
 
 

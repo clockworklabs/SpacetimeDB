@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { CAMPAIGN_MODE_REGISTRY, createCampaignModeRegistry }
+import { CAMPAIGN_MODE_REGISTRY }
   from '../src/campaigns/campaign-mode.js';
 
 test('the campaign mode registry requires an exact supported mode', () => {
@@ -24,19 +24,4 @@ test('the campaign mode registry requires an exact supported mode', () => {
   assert.throws(() => CAMPAIGN_MODE_REGISTRY.validate({
     id: 'dependency', repairSelection: 'feature',
   }), /repairSelection is unknown/);
-});
-
-test('new modes can be registered without changing campaign validation', () => {
-  const registry = createCampaignModeRegistry([{
-    id: 'example',
-    validate(value) {
-      if (typeof value.definition !== 'string' || !value.definition) {
-        throw new Error('example mode requires definition');
-      }
-      return value;
-    },
-  }]);
-  assert.deepEqual(registry.validate({
-    id: 'example', definition: 'example',
-  }), { id: 'example', definition: 'example' });
 });
