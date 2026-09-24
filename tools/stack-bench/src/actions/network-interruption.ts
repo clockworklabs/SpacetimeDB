@@ -26,7 +26,9 @@ type Reply = { id?: number; ok?: boolean; port?: number; closed?: string[]; tool
 
 // Start before the actor's context exists; register dispose() with its cleanup at once.
 export async function startNetworkInterruption(): Promise<NetworkInterruption> {
-  const container = browserContainer();
+  // The proxy runs where the browser runs: the leased browser container, or this
+  // host for an unleased browser such as the null control's own browser server.
+  const container = process.env.STACK_BENCH_LEASE ? browserContainer() : null;
   const helper = compiledEntrypoint('container', 'browser-network-proxy.js');
   const child = container
     ? spawn('docker', ['exec', '-i', container, 'node', helper], { stdio: ['pipe', 'pipe', 'ignore'] })

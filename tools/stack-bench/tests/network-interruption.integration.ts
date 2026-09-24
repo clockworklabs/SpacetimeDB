@@ -204,3 +204,18 @@ test('a disposed interruption releases its listener and cannot report a cut', as
   await assert.rejects(interruption.interrupt(), /stopped/);
   await assert.rejects(interruption.restore(), /stopped/);
 });
+
+test('an unleased appliance browser, such as the null control, gets a local proxy', async () => {
+  const prior = { appliance: process.env.STACK_BENCH_APPLIANCE, lease: process.env.STACK_BENCH_LEASE };
+  process.env.STACK_BENCH_APPLIANCE = '1';
+  delete process.env.STACK_BENCH_LEASE;
+  try {
+    const interruption = await startNetworkInterruption();
+    assert.match(interruption.proxy.server, /^http:\/\/127\.0\.0\.1:\d+$/);
+    await interruption.dispose();
+  } finally {
+    if (prior.appliance === undefined) delete process.env.STACK_BENCH_APPLIANCE;
+    else process.env.STACK_BENCH_APPLIANCE = prior.appliance;
+    if (prior.lease !== undefined) process.env.STACK_BENCH_LEASE = prior.lease;
+  }
+});
