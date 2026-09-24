@@ -1,6 +1,6 @@
-import { schema } from './schema';
-import { table } from '../lib/table';
-import t from '../lib/type_builders';
+import { schema } from './schema.ts';
+import { table } from '../lib/table.ts';
+import t from '../lib/type_builders.ts';
 
 const person = table(
   {

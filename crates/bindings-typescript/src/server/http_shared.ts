@@ -3,7 +3,7 @@ import type {
   HttpHeaders,
   HttpMethod,
   HttpVersion,
-} from '../lib/autogen/types';
+} from '../lib/autogen/types.ts';
 
 export { Headers };
 

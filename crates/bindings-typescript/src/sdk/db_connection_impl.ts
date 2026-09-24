@@ -1,5 +1,5 @@
-import { ConnectionId, ProductBuilder, ProductType } from '../';
-import { AlgebraicType, type ComparablePrimitive } from '../';
+import { ConnectionId, ProductBuilder, ProductType } from '../index.ts';
+import { AlgebraicType, type ComparablePrimitive } from '../index.ts';
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import {
@@ -10,7 +10,7 @@ import {
   ServerMessage,
   TableUpdateRows,
   UnsubscribeFlags,
-} from './client_api/types';
+} from './client_api/types.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { INTERNAL_REMOTE_MODULE } from './internal.ts';
@@ -28,14 +28,14 @@ import type {
   Identity,
   InferTypeOfParams,
   Serializer,
-} from '../';
+} from '../index.ts';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
+import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query.ts';
 import {
   type TableCache,
   type Operation,
@@ -57,7 +57,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -69,7 +69,7 @@ import {
   V2_WS_PROTOCOL,
   V3_WS_PROTOCOL,
   type NegotiatedWsProtocol,
-} from './websocket_protocols';
+} from './websocket_protocols.ts';
 import {
   countClientMessagesForV3Frame,
   encodeClientMessagesV3,

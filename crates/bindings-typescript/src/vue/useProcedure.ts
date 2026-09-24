@@ -1,10 +1,10 @@
 import { shallowRef, watch, onUnmounted } from 'vue';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { UntypedProcedureDef } from '../sdk/procedures';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { UntypedProcedureDef } from '../sdk/procedures.ts';
 import type {
   ProcedureParamsType,
   ProcedureReturnType,
-} from '../sdk/type_utils';
+} from '../sdk/type_utils.ts';
 
 export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
   procedureDef: ProcedureDef

@@ -1,14 +1,17 @@
-import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
-import { EventEmitter } from './event_emitter';
+import {
+  DbConnectionImpl,
+  type ConnectionEvent,
+} from './db_connection_impl.ts';
+import { EventEmitter } from './event_emitter.ts';
 import type {
   DbConnectionConfig,
   ErrorContextInterface,
   Identity,
   RemoteModuleOf,
-} from '../';
-import { ensureMinimumVersionOrThrow } from './version';
-import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
-import type { WebSocketFactory } from './ws';
+} from '../index.ts';
+import { ensureMinimumVersionOrThrow } from './version.ts';
+import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
+import type { WebSocketFactory } from './ws.ts';
 
 /**
  * The database client connection to a SpacetimeDB server.
