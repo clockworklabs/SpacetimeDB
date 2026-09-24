@@ -692,6 +692,74 @@ public static class GeneratorSnapshotTests
             );
         }
 
+        string Policy(string? policy) =>
+            policy is null
+                ? ""
+                : $$"""
+                    public static class NamingSettings {
+                        [SpacetimeDB.Settings]
+                        public const SpacetimeDB.CaseConversionPolicy Naming = SpacetimeDB.CaseConversionPolicy.{{policy}};
+                    }
+                    """;
+        foreach (
+            var (rootPolicy, dependencyPolicy) in new (string?, string?)[]
+            {
+                ("SnakeCase", "None"),
+                (null, "None"),
+                ("None", "SnakeCase"),
+                ("None", "None"),
+                ("SnakeCase", "SnakeCase"),
+                (null, "SnakeCase"),
+                ("None", null),
+            }
+        )
+        {
+            var dependency = Emit(
+                Generate(
+                    Create("PolicyDependency", Table("PolicyDependency") + Policy(dependencyPolicy))
+                )
+            );
+            foreach (var mount in new[] { "", "public", "Named" })
+            {
+                var source =
+                    (
+                        mount.Length == 0
+                            ? ""
+                            : $"[assembly: SpacetimeDB.Namespace(typeof(PolicyDependency.Sentinel), Accessor = \"{mount}\")]\n"
+                    ) + Policy(rootPolicy);
+                var compilation = Create("PolicyConsumer", source, dependency);
+                if (
+                    mount != "Named"
+                    && dependencyPolicy is not null
+                    && dependencyPolicy != (rootPolicy ?? "SnakeCase")
+                )
+                {
+                    var result = CSharpGeneratorDriver
+                        .Create(
+                            [new Module().AsSourceGenerator()],
+                            parseOptions: fixture.ParseOptions
+                        )
+                        .RunGenerators(compilation)
+                        .GetRunResult();
+                    Assert.Contains(
+                        result.Diagnostics,
+                        diagnostic =>
+                            diagnostic.Severity == DiagnosticSeverity.Error
+                            && diagnostic.Descriptor.Title.ToString()
+                                == "Conflicting case conversion policies"
+                            && diagnostic.GetMessage().Contains("PolicyConsumer")
+                            && diagnostic.GetMessage().Contains("PolicyDependency")
+                            && diagnostic.GetMessage().Contains("SnakeCase")
+                            && diagnostic.GetMessage().Contains("None")
+                    );
+                }
+                else
+                {
+                    Generate(compilation);
+                }
+            }
+        }
+
         // An unrelated utility alone must not cause an otherwise empty module to register.
         var plainUtility = Emit(Create("PlainUtility", "public class PlainUtility { }"));
         var empty = Generate(Create("Empty", "", plainUtility));

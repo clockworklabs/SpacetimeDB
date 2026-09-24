@@ -56,6 +56,9 @@ context and transaction; a namespace is not a security boundary between helpers.
 - An assembly can be mounted only once, and the root cannot mount itself.
   Omitting the attribute, or explicitly using `Accessor = "public"`, registers
   the dependency in the default scope with flat accessors.
+- Dependencies in `public` inherit the root's case-conversion policy (`SnakeCase`
+  by default). An explicitly different policy is a compilation error. Mount the
+  dependency in a named namespace to keep its independent naming policy.
 - `Accessor` is currently both the C# accessor and database namespace. There is
   no separate SQL-level `Name`. It must be a valid C# and database identifier,
   at most 63 UTF-8 bytes. Names are checked for case-insensitive duplicates;
