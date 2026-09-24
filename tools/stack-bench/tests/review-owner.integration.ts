@@ -12,11 +12,15 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 test('review eligibility sends the claimed username with the nonbuyer credentials', async t => {
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());
-  const page = await browser.newPage();
-  await page.setContent(`<div data-role="item-card" data-buy-input='{"itemId":"9007199254740993"}'>Keyboard</div>`);
+  const context = await browser.newContext();
+  await context.route('http://app.test/**', route => route.fulfill({ contentType: 'text/html',
+    body: `<div data-role="item-card" data-buy-input='{"itemId":"9007199254740993"}'>Keyboard</div>` }));
+  const page = await context.newPage();
+  await page.goto('http://app.test/');
   const actors = new Map(['owner', 'stranger'].map(name => [name, {
-    name, page, context: page.context(), record() {},
-    writes: [{ headers: { authorization: `Bearer ${name}` } }],
+    name, page, context, record() {},
+    writes: ['http://app.test/api/session', 'http://native.test/v1/database/shop/call/sign_in']
+      .map(url => ({ url, headers: { authorization: `Bearer ${name}` } })),
     loc: () => page.locator('[data-role="item-card"]'),
   }]));
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,

@@ -64,10 +64,12 @@ test('promotion and role access controls reject optimistic writes that disappear
           expand: (value: string) => value, scopedUser: (value: string) => value,
           testId: stableElementSelector, sleep: async () => {} };
         const customerPage = await context.newPage();
-        await customerPage.setContent('<strong>Customer</strong>');
-        const customer = { name: 'customer', page: customerPage,
+        await customerPage.route('http://controls.test/**', route => route.fulfill({ contentType: 'text/html',
+          body: '<strong>Customer</strong>' }));
+        await customerPage.goto('http://controls.test/');
+        const customer = { name: 'customer', page: customerPage, context,
           loc: (id: string) => customerPage.locator(stableElementSelector(id)),
-          writes: [{ headers: { authorization: 'Bearer customer' } }] };
+          writes: [{ url: 'http://controls.test/write', headers: { authorization: 'Bearer customer' } }] };
         let replayRequests = 0;
         const named = createNamedActionsCapability({ actions: [], backend: 'postgres', url: 'http://controls.test',
           lastCalls: { get: () => null, set: () => {} }, sleep: async () => {}, now: Date.now,
@@ -87,18 +89,29 @@ test('promotion and role access controls reject optimistic writes that disappear
         const steps = [...(sequential ? scenario.features[0]!.criteria.find(c => c.id === '620a')!.steps : []),
           ...(kind === 'promotion' ? criterion.steps : criterion.steps.slice(0, criterion.steps.findIndex(step => step.actor !== actor.name)))];
         let failure: string | null = null;
+        let reloads = 0;
+        let writeReloads = 0;
+        let unreloadedWrite = false;
         for (const step of steps) {
           if (step.do === 'reload') {
-            await page.waitForFunction(count => performance.getEntriesByType('resource').filter(entry => entry.name.endsWith('/write')).length === count, sequential ? 2 : 1);
-            assert.equal(writes, sequential ? 2 : 1);
-            assert.equal(kind === 'role' ? await page.locator('#staff-role-select').inputValue()
-              : (await page.locator('[data-role="promotion-item"]').innerText()).slice(0, 8), kind === 'role' ? 'staff' : 'ACCESS10');
+            reloads++;
+            // The scenario also reloads before the write and after the replay; the reload after the write decides.
+            if (unreloadedWrite) {
+              unreloadedWrite = false;
+              writeReloads++;
+              await page.waitForFunction(count => performance.getEntriesByType('resource').filter(entry => entry.name.endsWith('/write')).length === count, sequential ? 2 : 1);
+              assert.equal(writes, sequential ? 2 : 1);
+              assert.equal(kind === 'role' ? await page.locator('#staff-role-select').inputValue()
+                : (await page.locator('[data-role="promotion-item"]').innerText()).slice(0, 8), kind === 'role' ? 'staff' : 'ACCESS10');
+            }
           }
+          if (step.do === 'click' && ['promotion-submit', 'staff-role-save'].includes(String(step.testid))) unreloadedWrite = true;
           const input = ['expect', 'click'].includes(step.do) ? { ...step, within: 300 } : step;
           const result = await executeAction(ACTION_REGISTRY, step.do, input, { capabilities });
           if (result.status !== 'passed') { assert.equal(result.status, 'failed', result.summary ?? undefined); failure = String(step.testid); break; }
         }
-        assert.equal(loads, layout === 'route' ? 3 : 2, 'the control must read the server state after a real reload');
+        assert.equal(writeReloads, 1, 'the optimistic write must be followed by a reload');
+        assert.equal(loads, (layout === 'route' ? 2 : 1) + reloads, 'the control must read the server state after a real reload');
         assert.equal(failure, persists ? null : kind === 'role' ? 'staff-role-select' : 'promotion-item', `${kind}/${layout}/sequential=${sequential}`);
         assert.equal(replayRequests, kind === 'promotion' && persists ? 1 : 0);
       } finally { await context.close(); }
@@ -136,8 +149,8 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
       let readsAfterRestock = 0;
       let freshClients = 0;
       let waitMs = 0;
-      const actors = new Map<string, { name: string; page: Page;
-        writes: { headers: { authorization: string } }[];
+      const actors = new Map<string, { name: string; page: Page; context: BrowserContext; record(): void;
+        writes: { url: string; headers: { authorization: string } }[];
         loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string | RegExp } }) => ReturnType<Page['locator']> }>();
       try {
         const makeActor = async (name: string) => {
@@ -151,7 +164,7 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
             const count = deliveries + (elapsed >= deliveryDue ? 1 : 0) + (elapsed >= duplicateDue ? 1 : 0);
             return user === 'stock-subscriber' || mode === 'leak' ? count : 0;
           });
-          await page.setContent(`<form id="signin">
+          await context.route('http://app.test/**', route => route.fulfill({ contentType: 'text/html', body: `<form id="signin">
             <input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button>
             </form><strong id="current-user" hidden></strong>
             <button id="notifications-toggle">Notifications</button><button id="catalog-link">Catalog</button>
@@ -189,8 +202,9 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
               document.querySelector('#overlay-close')?.addEventListener('click', event => {
                 panel.hidden = true; event.target.hidden = true;
               });
-            </script>`);
-          const actor = { name, page, writes: [{ headers: { authorization: 'Bearer fixture-admin' } }],
+            </script>` }));
+          await page.goto('http://app.test/');
+          const actor = { name, page, context, record() {}, writes: [{ url: 'http://app.test/api/session', headers: { authorization: 'Bearer fixture-admin' } }],
             loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string | RegExp } }) => {
               const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid),
                 { hasText: options.scope.contains }).first() : page;
