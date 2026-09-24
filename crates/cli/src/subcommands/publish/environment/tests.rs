@@ -168,7 +168,6 @@ async fn actual_precompiled_declarations_are_inspected_without_server_or_values(
         .await
         .unwrap();
     let schema = inspected.environment();
-    assert!(inspected.environment_declared());
     assert!(!schema.get("REQUIRED").unwrap().optional);
     assert_eq!(
         schema.get("MODE").unwrap().ty,

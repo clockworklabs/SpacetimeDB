@@ -1,5 +1,7 @@
 //! Limits shared by the database environment store and its clients.
 
+use crate::db::raw_def::v10::{RawEnvVarTypeV10, RawEnvironmentDeclarationV10};
+
 pub const MAX_ENV_KEY_BYTES: usize = 256;
 pub const MAX_ENV_VALUE_BYTES: usize = 8 * 1024;
 pub const MAX_ENV_VARS: usize = 256;
@@ -90,6 +92,46 @@ pub struct EnvironmentDeclaration {
     pub optional: bool,
 }
 
+impl From<EnvironmentDeclaration> for RawEnvironmentDeclarationV10 {
+    fn from(decl: EnvironmentDeclaration) -> Self {
+        Self {
+            name: decl.name,
+            ty: decl.ty.into(),
+            optional: decl.optional,
+        }
+    }
+}
+
+impl From<EnvVarType> for RawEnvVarTypeV10 {
+    fn from(ty: EnvVarType) -> Self {
+        match ty {
+            EnvVarType::String => Self::String,
+            EnvVarType::StringLiteral(s) => Self::StringLiteral(s),
+            EnvVarType::Union(ss) => Self::Union(ss),
+        }
+    }
+}
+
+impl From<RawEnvironmentDeclarationV10> for EnvironmentDeclaration {
+    fn from(decl: RawEnvironmentDeclarationV10) -> Self {
+        Self {
+            name: decl.name,
+            ty: decl.ty.into(),
+            optional: decl.optional,
+        }
+    }
+}
+
+impl From<RawEnvVarTypeV10> for EnvVarType {
+    fn from(ty: RawEnvVarTypeV10) -> Self {
+        match ty {
+            RawEnvVarTypeV10::String => Self::String,
+            RawEnvVarTypeV10::StringLiteral(s) => Self::StringLiteral(s),
+            RawEnvVarTypeV10::Union(ss) => Self::Union(ss),
+        }
+    }
+}
+
 /// An environment schema whose declarations have passed host validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvironmentSchema {
@@ -146,6 +188,12 @@ impl std::fmt::Display for EnvironmentSchemaError {
 impl std::error::Error for EnvironmentSchemaError {}
 
 impl EnvironmentSchema {
+    pub const fn empty() -> Self {
+        Self {
+            declarations: std::collections::BTreeMap::new(),
+        }
+    }
+
     fn validate_metadata(declarations: &[EnvironmentDeclaration]) -> Result<(), EnvironmentSchemaError> {
         use EnvironmentSchemaErrorKind as Kind;
         if declarations.len() > MAX_ENV_VARS {
@@ -216,8 +264,8 @@ impl EnvironmentSchema {
     }
 
     /// Check bounds before cloning raw untrusted metadata into the validated schema.
-    pub fn from_declarations(declarations: &[EnvironmentDeclaration]) -> Result<Self, EnvironmentSchemaError> {
-        Self::validate_metadata(declarations)?;
+    pub fn from_declarations(declarations: Vec<EnvironmentDeclaration>) -> Result<Self, EnvironmentSchemaError> {
+        Self::validate_metadata(&declarations)?;
         Self::new(declarations.to_vec())
     }
 

@@ -18,7 +18,6 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
-use std::sync::LazyLock;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -200,16 +199,10 @@ pub enum RawModuleDefVersion {
 impl ModuleDef {
     /// The validated root environment schema. Legacy modules have an empty schema.
     pub fn environment(&self) -> &EnvironmentSchema {
-        static EMPTY: LazyLock<EnvironmentSchema> = LazyLock::new(EnvironmentSchema::default);
         match &self.environment {
             Some(schema) => schema,
-            None => &EMPTY,
+            None => const { &EnvironmentSchema::empty() },
         }
-    }
-
-    /// Whether the raw module explicitly required environment support.
-    pub fn environment_declared(&self) -> bool {
-        self.environment.is_some()
     }
 
     /// The raw module definition version this module was authored under.
@@ -1116,7 +1109,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         let mut sections = Vec::new();
         if let Some(environment) = environment {
-            sections.push(RawModuleDefV10Section::Environment(environment.into_declarations()));
+            sections.push(RawModuleDefV10Section::Environment(
+                environment.into_declarations().into_iter().map(|x| x.into()).collect(),
+            ));
         }
         let mut explicit_names = ExplicitNames::default();
 

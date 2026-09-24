@@ -2154,10 +2154,9 @@ mod tests {
         use spacetimedb_datastore::system_tables::{ModuleKind, ST_ENV_ID};
         use spacetimedb_datastore::traits::Program;
         use spacetimedb_lib::db::raw_def::{
-            v10::{RawModuleDefV10Builder, RawModuleDefV10Section},
+            v10::{RawEnvVarTypeV10, RawEnvironmentDeclarationV10, RawModuleDefV10Builder, RawModuleDefV10Section},
             v9::TableAccess,
         };
-        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
         use spacetimedb_lib::identity::AuthCtx;
         use spacetimedb_schema::auto_migrate::ponder_migrate;
         use std::collections::BTreeMap;
@@ -2189,12 +2188,13 @@ mod tests {
                     .finish();
             }
             let mut raw = builder.finish();
-            raw.sections
-                .push(RawModuleDefV10Section::Environment(vec![EnvironmentDeclaration {
+            raw.sections.push(RawModuleDefV10Section::Environment(vec![
+                RawEnvironmentDeclarationV10 {
                     name: "TOKEN".into(),
-                    ty: EnvVarType::String,
+                    ty: RawEnvVarTypeV10::String,
                     optional: false,
-                }]));
+                },
+            ]));
             raw.try_into().expect("valid ENV view module")
         }
 

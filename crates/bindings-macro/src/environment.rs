@@ -63,11 +63,13 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
         let constraint = match values.as_deref() {
             None => quote!(<#ty as ::spacetimedb::rt::EnvironmentValue>::constraint()),
             Some([value]) => {
-                quote!(::spacetimedb::spacetimedb_lib::environment::EnvVarType::StringLiteral(#value.into()))
+                quote!(::spacetimedb::spacetimedb_lib::db::raw_def::v10::RawEnvVarTypeV10::StringLiteral(#value.into()))
             }
-            Some(values) => quote!(::spacetimedb::spacetimedb_lib::environment::EnvVarType::Union(
-                ::std::vec![#(#values.into()),*]
-            )),
+            Some(values) => quote!(
+                ::spacetimedb::spacetimedb_lib::db::raw_def::v10::RawEnvVarTypeV10::Union(
+                    ::std::vec![#(#values.into()),*]
+                )
+            ),
         };
         let constraint = if values.is_some() {
             quote!(<#ty as ::spacetimedb::rt::StringEnvironmentValue>::with_constraint(#constraint))
@@ -75,7 +77,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
             constraint
         };
         declarations.push(
-            quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentDeclaration {
+            quote!(::spacetimedb::spacetimedb_lib::db::raw_def::v10::RawEnvironmentDeclarationV10 {
                 name: #name.into(),
                 ty: #constraint,
                 optional: <#ty as ::spacetimedb::rt::EnvironmentValue>::OPTIONAL,
@@ -96,7 +98,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
     }
     let vis = &item.vis;
     let access = format_ident!("{}Access", item.ident.unraw());
-    let symbol = format!("__preinit__20_register_environment_{}", item.ident.unraw());
+    let symbol = "__preinit__20_register_environment_there_can_only_be_one";
     Ok(quote! {
         #[allow(non_snake_case)]
         #item

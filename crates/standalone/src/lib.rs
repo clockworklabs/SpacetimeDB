@@ -530,7 +530,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .update_environment(database, environment, expected_module_hash)
             .await?;
         if update_result.was_successful() {
-            self.scale_replicas(database_id, &database_identity, num_replicas)
+            self.scale_replicas(database_id, database_identity, num_replicas)
                 .await?;
         }
 
