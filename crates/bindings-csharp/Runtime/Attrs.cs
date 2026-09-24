@@ -250,7 +250,7 @@ namespace SpacetimeDB
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
     public sealed class HttpRouterAttribute() : Attribute { }
-    
+
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
     public sealed class ModuleDescriptorAttribute(Type descriptorType) : Attribute
     {

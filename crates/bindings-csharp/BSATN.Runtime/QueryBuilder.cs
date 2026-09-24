@@ -149,8 +149,7 @@ public readonly struct Col<TRow, TValue>(SqlTableName tableName, string columnNa
     public Col(string tableName, string columnName)
         : this(new SqlTableName(tableName), columnName) { }
 
-    internal string RefSql =>
-        $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
+    internal string RefSql => $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 
@@ -185,8 +184,7 @@ public readonly struct IxCol<TRow, TValue>(SqlTableName tableName, string column
     public IxCol(string tableName, string columnName)
         : this(new SqlTableName(tableName), columnName) { }
 
-    internal string RefSql =>
-        $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
+    internal string RefSql => $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 

@@ -13,16 +13,6 @@ using Microsoft.CodeAnalysis.CSharp;
 [Generator]
 public sealed class EnvironmentGenerator : IIncrementalGenerator
 {
-    private static readonly DiagnosticDescriptor InvalidDeclaration =
-        new(
-            "STDBENV001",
-            "Invalid environment declaration",
-            "{0}",
-            "SpacetimeDB",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true
-        );
-
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var declarations = Declarations(context);
@@ -173,11 +163,7 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
             sharedContexts,
             (symbol, message) =>
                 context.ReportDiagnostic(
-                    Diagnostic.Create(
-                        InvalidDeclaration,
-                        symbol.Locations.FirstOrDefault(),
-                        message
-                    )
+                    ErrorDescriptor.InvalidEnvironmentDeclaration.ToDiag((symbol, message))
                 )
         );
         if (sharedContexts)

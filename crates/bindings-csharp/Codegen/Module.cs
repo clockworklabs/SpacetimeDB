@@ -500,30 +500,32 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     private string TableHandlesNamespace => handlesNamespace + ".TableHandles";
     private string ViewHandlesNamespace => handlesNamespace + ".ViewHandles";
 
-    private string LookupName(string localName) => sharedContexts
-        ? $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(localName, true)})"
-        : SymbolDisplay.FormatLiteral(localName, true);
+    private string LookupName(string localName) =>
+        sharedContexts
+            ? $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(localName, true)})"
+            : SymbolDisplay.FormatLiteral(localName, true);
 
     private string HandleLookupName(string localName) =>
         sharedContexts ? "__resolvedName" : LookupName(localName);
 
-    private string HandleLookupNameCache(string typeName, string localName) => sharedContexts
-        ? $$"""
-            private static readonly string __resolvedName = {{LookupName(localName)}};
-            // Prevent eager initialization before the root installs namespace placements.
-            static {{typeName}}() { }
-            """
-        : "";
+    private string HandleLookupNameCache(string typeName, string localName) =>
+        sharedContexts
+            ? $$"""
+                private static readonly string __resolvedName = {{LookupName(localName)}};
+                // Prevent eager initialization before the root installs namespace placements.
+                static {{typeName}}() { }
+                """
+            : "";
 
-    private string IndexInstanceCache(string typeName, string identifier) => sharedContexts
-        ? $$"""
-            private static {{typeName}}? __{{identifier.TrimStart('@')}};
-            """
-        : "";
+    private string IndexInstanceCache(string typeName, string identifier) =>
+        sharedContexts
+            ? $$"""
+                private static {{typeName}}? __{{identifier.TrimStart('@')}};
+                """
+            : "";
 
-    private string IndexInstance(string identifier) => sharedContexts
-        ? $"__{identifier.TrimStart('@')} ??= new()"
-        : "new()";
+    private string IndexInstance(string identifier) =>
+        sharedContexts ? $"__{identifier.TrimStart('@')} ??= new()" : "new()";
 
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
@@ -546,7 +548,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var compilation = context.SemanticModel.Compilation;
         assemblyIdentity = compilation.Assembly.Identity.ToString();
         sharedContexts = Module.UsesSharedContexts(compilation);
-        handlesNamespace = sharedContexts ? Module.AssemblyNamespace(compilation.Assembly) : "SpacetimeDB.Internal";
+        handlesNamespace = sharedContexts
+            ? Module.AssemblyNamespace(compilation.Assembly)
+            : "SpacetimeDB.Internal";
 
         isRowStruct = ((INamedTypeSymbol)context.TargetSymbol).IsValueType;
 
@@ -596,8 +600,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     private void ValidateGeneratedNames(DiagReporter diag, Location location)
     {
-        var names = new GeneratedNames((scope, name, first, second) =>
-            diag.Report(ErrorDescriptor.GeneratedNameCollision, (location, scope, name, first, second)));
+        var names = new GeneratedNames(
+            (scope, name, first, second) =>
+                diag.Report(
+                    ErrorDescriptor.GeneratedNameCollision,
+                    (location, scope, name, first, second)
+                )
+        );
         foreach (var table in TableAccessors)
         {
             var owner = $"table '{table.Name}' on '{FullName}'";
@@ -605,7 +614,20 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var readOnly = $"{ViewHandlesNamespace}.{table.Name}ReadOnly";
             names.Add(writable, table.Identifier, "enclosing table handle");
             names.Add(readOnly, table.Identifier + "ReadOnly", "enclosing read-only handle");
-            foreach (var member in new[] { "LookupName", "ReadGenFields", "MakeTableDesc", "MakeScheduleDesc", "Count", "Iter", "Insert", "Delete", "Clear" })
+            foreach (
+                var member in new[]
+                {
+                    "LookupName",
+                    "ReadGenFields",
+                    "MakeTableDesc",
+                    "MakeScheduleDesc",
+                    "Count",
+                    "Iter",
+                    "Insert",
+                    "Delete",
+                    "Clear",
+                }
+            )
                 names.Add(writable, member, "generated table member");
             foreach (var member in new[] { "__resolvedName", "Count", "Iter" })
                 names.Add(readOnly, member, "generated read-only table member");
@@ -615,13 +637,27 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 foreach (var scope in new[] { writable, readOnly })
                 {
                     names.Add(scope, identifier, contributor);
-                    names.Add(scope, "__" + identifier.TrimStart('@'), $"cache field for {contributor}");
-                    names.Add(scope, identifier + (unique && scope == writable ? "UniqueIndex" : "Index"),
-                        $"index type for {contributor}");
+                    names.Add(
+                        scope,
+                        "__" + identifier.TrimStart('@'),
+                        $"cache field for {contributor}"
+                    );
+                    names.Add(
+                        scope,
+                        identifier + (unique && scope == writable ? "UniqueIndex" : "Index"),
+                        $"index type for {contributor}"
+                    );
                 }
             }
-            foreach (var constraint in GetConstraints(table, ColumnAttrs.Unique).Where(c => c.Col.IsEquatable))
-                Index(constraint.Col.Identifier, true, $"unique column '{constraint.Col.Name}' of {owner}");
+            foreach (
+                var constraint in GetConstraints(table, ColumnAttrs.Unique)
+                    .Where(c => c.Col.IsEquatable)
+            )
+                Index(
+                    constraint.Col.Identifier,
+                    true,
+                    $"unique column '{constraint.Col.Name}' of {owner}"
+                );
             foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
                 Index(index.AccessorIdentifier, false, $"index '{index.AccessorName}' of {owner}");
 
@@ -631,8 +667,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
                 names.Add(container, table.Identifier, owner);
             if (table.Name is "GetType" or "ToString" or "Equals" or "GetHashCode")
-                diag.Report(ErrorDescriptor.GeneratedNameCollision,
-                    (location, "context database/query receiver", table.Name, "existing receiver member", owner));
+                diag.Report(
+                    ErrorDescriptor.GeneratedNameCollision,
+                    (
+                        location,
+                        "context database/query receiver",
+                        table.Name,
+                        "existing receiver member",
+                        owner
+                    )
+                );
             var cols = table.Identifier + "Cols";
             names.Add(cols, cols, "enclosing query columns type");
             foreach (var column in Members)
@@ -640,10 +684,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var ixCols = table.Identifier + "IxCols";
             names.Add(ixCols, ixCols, "enclosing indexed query columns type");
             var indexedPositions = new HashSet<int>(
-                GetConstraints(table, ColumnAttrs.PrimaryKey | ColumnAttrs.Unique).Select(c => c.Pos));
+                GetConstraints(table, ColumnAttrs.PrimaryKey | ColumnAttrs.Unique)
+                    .Select(c => c.Pos)
+            );
             foreach (var index in GetIndexes(table))
-                foreach (var column in index.Columns.Array)
-                    indexedPositions.Add(column.Index);
+            foreach (var column in index.Columns.Array)
+                indexedPositions.Add(column.Index);
             foreach (var position in indexedPositions)
             {
                 var column = Members[position];
@@ -663,7 +709,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
-        var uniqueIndexBase = "global::SpacetimeDB.Internal." + (isRowStruct ? "UniqueIndex" : "RefUniqueIndex");
+        var uniqueIndexBase =
+            "global::SpacetimeDB.Internal." + (isRowStruct ? "UniqueIndex" : "RefUniqueIndex");
 
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
@@ -681,7 +728,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             yield return $$"""
                 {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     {{HandleLookupNameCache(f.Identifier + "UniqueIndex", standardIndexName)}}
-                    internal {{f.Identifier}}UniqueIndex() : base({{HandleLookupName(standardIndexName)}}) {}
+                    internal {{f.Identifier}}UniqueIndex() : base({{HandleLookupName(
+                    standardIndexName
+                )}}) {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
@@ -689,7 +738,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     {{updateMethod}}
                 }
                 {{IndexInstanceCache(f.Identifier + "UniqueIndex", f.Identifier)}}
-                {{vis}} {{f.Identifier}}UniqueIndex {{f.Identifier}} => {{IndexInstance(f.Identifier)}};
+                {{vis}} {{f.Identifier}}UniqueIndex {{f.Identifier}} => {{IndexInstance(
+                    f.Identifier
+                )}};
                 """;
         }
 
@@ -709,7 +760,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var standardIndexName = index.StandardIndexName(tableAccessor);
 
             yield return $$"""
-                    {{vis}} sealed class {{identifierName}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>({{HandleLookupName(standardIndexName)}}) {
+                    {{vis}} sealed class {{identifierName}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>({{HandleLookupName(
+                    standardIndexName
+                )}}) {
                         {{HandleLookupNameCache(identifierName + "Index", standardIndexName)}}
                 """;
 
@@ -785,13 +838,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                           {{{f.Type.BSATNName}}}>
                 {
                     {{{HandleLookupNameCache(f.Identifier + "Index", standardIndexName)}}}
-                    internal {{{f.Identifier}}}Index() : base({{{HandleLookupName(standardIndexName)}}}) { }
+                    internal {{{f.Identifier}}}Index() : base({{{HandleLookupName(
+                    standardIndexName
+                )}}}) { }
 
                     public {{{globalName}}}? Find({{{f.Type.Name}}} key) => FindSingle(key);
                 }
 
                 {{{IndexInstanceCache(f.Identifier + "Index", f.Identifier)}}}
-                public {{{f.Identifier}}}Index {{{f.Identifier}}} => {{{IndexInstance(f.Identifier)}}};
+                public {{{f.Identifier}}}Index {{{f.Identifier}}} => {{{IndexInstance(
+                    f.Identifier
+                )}}};
                 """;
         }
 
@@ -814,7 +871,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     : global::SpacetimeDB.Internal.ReadOnlyIndexBase<{{{globalName}}}>
                     {
                     {{{HandleLookupNameCache(identifierName + "Index", standardIndexName)}}}
-                    internal {{{identifierName}}}Index() : base({{{HandleLookupName(standardIndexName)}}}) {}
+                    internal {{{identifierName}}}Index() : base({{{HandleLookupName(
+                        standardIndexName
+                    )}}}) {}
                     """,
             };
 
@@ -858,7 +917,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 );
             }
 
-            blocks.Add($"}}\n{IndexInstanceCache(identifierName + "Index", identifierName)}\n{vis} {identifierName}Index {identifierName} => {IndexInstance(identifierName)};");
+            blocks.Add(
+                $"}}\n{IndexInstanceCache(identifierName + "Index", identifierName)}\n{vis} {identifierName}Index {identifierName} => {IndexInstance(identifierName)};"
+            );
             yield return string.Join("\n", blocks);
         }
     }
@@ -996,7 +1057,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     : global::SpacetimeDB.Internal.ReadOnlyTableView<{{{globalName}}}>
                 {
                     {{{HandleLookupNameCache(accessorIdentifier + "ReadOnly", accessor.Name)}}}
-                    internal {{{accessorIdentifier}}}ReadOnly() : base({{{HandleLookupName(accessor.Name)}}}) { }
+                    internal {{{accessorIdentifier}}}ReadOnly() : base({{{HandleLookupName(
+                    accessor.Name
+                )}}}) { }
 
                     /// <summary>
                     /// Returns the number of rows in this table.
@@ -1090,7 +1153,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var ixColsDecls = string.Join("\n    ", ixMembers.Select(IxColDecl));
             var ixColsInits = string.Join("\n        ", ixMembers.Select(IxColInit));
             var nameType = useExtensions ? "global::SpacetimeDB.SqlTableName" : "string";
-            var queryType = $"global::SpacetimeDB.Table<{globalRowName}, {colsTypeName}, {ixColsTypeName}>";
+            var queryType =
+                $"global::SpacetimeDB.Table<{globalRowName}, {colsTypeName}, {ixColsTypeName}>";
             var queryMember = useExtensions
                 ? $$"""
                     public static partial class AssemblyDescriptor
@@ -1098,7 +1162,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         private static class {{accessorIdentifier}}SqlNameCache
                         {
                             internal static readonly global::SpacetimeDB.SqlTableName Name =
-                                global::SpacetimeDB.Internal.Module.ResolveSqlName({{SymbolDisplay.FormatLiteral(assemblyIdentity, true)}}, {{SymbolDisplay.FormatLiteral(tableName, true)}});
+                                global::SpacetimeDB.Internal.Module.ResolveSqlName({{SymbolDisplay.FormatLiteral(
+                        assemblyIdentity,
+                        true
+                    )}}, {{SymbolDisplay.FormatLiteral(tableName, true)}});
                             // Prevent eager initialization before the root installs namespace placements.
                             static {{accessorIdentifier}}SqlNameCache() { }
                         }
@@ -1129,7 +1196,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     }
                     """;
 
-            
             yield return $$"""
                 {{vis}} readonly struct {{colsTypeName}}
                 {
@@ -1654,7 +1720,8 @@ record ReducerDeclaration
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         declaringAssembly = Module.UsesSharedContexts(context.SemanticModel.Compilation)
-            ? context.SemanticModel.Compilation.Assembly.Identity.ToString() : null;
+            ? context.SemanticModel.Compilation.Assembly.Identity.ToString()
+            : null;
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
         var attr = context.Attributes.Single().ParseAs<ReducerAttribute>();
@@ -1741,15 +1808,20 @@ record ReducerDeclaration
         if (declaringAssembly is not null)
         {
             var cacheName = $"__Schedule{Name}Name";
-            extensions.Contents.Append($$"""
+            extensions.Contents.Append(
+                $$"""
                 private static class {{cacheName}}
                 {
-                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(declaringAssembly, true)}}, {{functionName}});
+                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(
+                    declaringAssembly,
+                    true
+                )}}, {{functionName}});
                     // Prevent eager initialization before the root installs namespace placements.
                     static {{cacheName}}() { }
                 }
-
-                """);
+                
+                """
+            );
             functionName = cacheName + ".Name";
         }
 
@@ -1801,7 +1873,8 @@ record ProcedureDeclaration
     public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         declaringAssembly = Module.UsesSharedContexts(context.SemanticModel.Compilation)
-            ? context.SemanticModel.Compilation.Assembly.Identity.ToString() : null;
+            ? context.SemanticModel.Compilation.Assembly.Identity.ToString()
+            : null;
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
         var attr = context.Attributes.Single().ParseAs<ProcedureAttribute>();
@@ -1982,15 +2055,20 @@ record ProcedureDeclaration
         if (declaringAssembly is not null)
         {
             var cacheName = $"__Schedule{Name}Name";
-            extensions.Contents.Append($$"""
+            extensions.Contents.Append(
+                $$"""
                 private static class {{cacheName}}
                 {
-                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(declaringAssembly, true)}}, {{functionName}});
+                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(
+                    declaringAssembly,
+                    true
+                )}}, {{functionName}});
                     // Prevent eager initialization before the root installs namespace placements.
                     static {{cacheName}}() { }
                 }
-
-                """);
+                
+                """
+            );
             functionName = cacheName + ".Name";
         }
 
@@ -2208,9 +2286,11 @@ record AssemblyDeclaration(
 public class Module : IIncrementalGenerator
 {
     internal static bool UsesSharedContexts(Compilation compilation) =>
-        compilation.SyntaxTrees.Any(tree => tree.Options is CSharpParseOptions options
-            && options.PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER"));
-    
+        compilation.SyntaxTrees.Any(tree =>
+            tree.Options is CSharpParseOptions options
+            && options.PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER")
+        );
+
     internal static string AssemblyNamespace(IAssemblySymbol assembly)
     {
         var name = Regex.Replace(assembly.Name, @"[^A-Za-z0-9_]", "_");
@@ -2224,9 +2304,7 @@ public class Module : IIncrementalGenerator
         var hash = sha256.ComputeHash(
             System.Text.Encoding.UTF8.GetBytes(assembly.Identity.ToString())
         );
-        var suffix = string.Concat(
-            hash.Take(8).Select(b => b.ToString("X2"))
-        );
+        var suffix = string.Concat(hash.Take(8).Select(b => b.ToString("X2")));
 
         return $"SpacetimeDB.Generated.{name}_{suffix}";
     }
@@ -2257,7 +2335,9 @@ public class Module : IIncrementalGenerator
         }
 
         var visited = new HashSet<AssemblyIdentity> { compilation.Assembly.Identity };
-        var pending = new Stack<IAssemblySymbol>(compilation.SourceModule.ReferencedAssemblySymbols);
+        var pending = new Stack<IAssemblySymbol>(
+            compilation.SourceModule.ReferencedAssemblySymbols
+        );
         var assemblies = new List<AssemblyDeclaration>();
         while (pending.Count > 0)
         {
@@ -2277,9 +2357,11 @@ public class Module : IIncrementalGenerator
                 }
             }
 
-            var marker = assembly.GetAttributes().FirstOrDefault(attribute =>
-                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
-            );
+            var marker = assembly
+                .GetAttributes()
+                .FirstOrDefault(attribute =>
+                    SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
+                );
             if (
                 marker is null
                 || marker.ConstructorArguments.Length != 1
@@ -2294,37 +2376,61 @@ public class Module : IIncrementalGenerator
                 new AssemblyDeclaration(
                     assembly.Identity.ToString(),
                     descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    assembly.GetAttributes().Any(attribute =>
-                        attribute.AttributeClass?.ToDisplayString() == "SpacetimeDB.NamespaceAttribute"),
-                    descriptor.GetMembers("RootOnlyDeclarations").OfType<IFieldSymbol>()
-                        .FirstOrDefault()?.ConstantValue as string ?? "",
+                    assembly
+                        .GetAttributes()
+                        .Any(attribute =>
+                            attribute.AttributeClass?.ToDisplayString()
+                            == "SpacetimeDB.NamespaceAttribute"
+                        ),
+                    descriptor
+                        .GetMembers("RootOnlyDeclarations")
+                        .OfType<IFieldSymbol>()
+                        .FirstOrDefault()
+                        ?.ConstantValue as string
+                        ?? "",
                     ReadAccessors("Tables"),
                     ReadAccessors("ReadOnlyTables"),
-                    new(descriptor.GetTypeMembers("Queries").SelectMany(type => type.GetMembers())
-                        .OfType<IMethodSymbol>()
-                        .Where(method => method.DeclaredAccessibility == Accessibility.Public
-                            && method.MethodKind == MethodKind.Ordinary && method.Parameters.IsEmpty
-                            && !method.IsStatic)
-                        .Select(method => new AssemblyTableAccessor(
-                            method.Name,
-                            method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                        )).ToImmutableArray())
+                    new(
+                        descriptor
+                            .GetTypeMembers("Queries")
+                            .SelectMany(type => type.GetMembers())
+                            .OfType<IMethodSymbol>()
+                            .Where(method =>
+                                method.DeclaredAccessibility == Accessibility.Public
+                                && method.MethodKind == MethodKind.Ordinary
+                                && method.Parameters.IsEmpty
+                                && !method.IsStatic
+                            )
+                            .Select(method => new AssemblyTableAccessor(
+                                method.Name,
+                                method.ReturnType.ToDisplayString(
+                                    SymbolDisplayFormat.FullyQualifiedFormat
+                                )
+                            ))
+                            .ToImmutableArray()
+                    )
                 )
             );
 
-            EquatableArray<AssemblyTableAccessor> ReadAccessors(string container) => new(
-                descriptor.GetTypeMembers(container).SelectMany(type => type.GetMembers())
-                    .OfType<IPropertySymbol>()
-                    .Where(property => property.DeclaredAccessibility == Accessibility.Public)
-                    .Select(property => new AssemblyTableAccessor(
-                        property.Name,
-                        property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                    )).ToImmutableArray()
-            );
+            EquatableArray<AssemblyTableAccessor> ReadAccessors(string container) =>
+                new(
+                    descriptor
+                        .GetTypeMembers(container)
+                        .SelectMany(type => type.GetMembers())
+                        .OfType<IPropertySymbol>()
+                        .Where(property => property.DeclaredAccessibility == Accessibility.Public)
+                        .Select(property => new AssemblyTableAccessor(
+                            property.Name,
+                            property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                        ))
+                        .ToImmutableArray()
+                );
         }
 
         return new(
-            assemblies.OrderBy(assembly => assembly.Identity, StringComparer.Ordinal).ToImmutableArray()
+            assemblies
+                .OrderBy(assembly => assembly.Identity, StringComparer.Ordinal)
+                .ToImmutableArray()
         );
     }
 
@@ -2587,7 +2693,10 @@ public class Module : IIncrementalGenerator
             "Reducer",
             context,
             reducers
-                .Select((r, ct) => (r.Name, r.FullName, r.CanonicalName, r.Kind, Class: r.GenerateClass()))
+                .Select(
+                    (r, ct) =>
+                        (r.Name, r.FullName, r.CanonicalName, r.Kind, Class: r.GenerateClass())
+                )
                 .WithTrackingName("SpacetimeDB.Reducer.GenerateClass"),
             r => r.Name,
             r => r.FullName
@@ -2716,38 +2825,59 @@ public class Module : IIncrementalGenerator
             .Combine(columnDefaultValues)
             .Select((tuple, ct) => FlattenModuleOutputInputs(tuple));
 
-        var environment = EnvironmentGenerator.Declarations(context).Select((types, _) => (
-            HasDeclarations: types.Length != 0,
-            Registrations: EnvironmentGenerator.RegistrationCode(types)
-        ));
-        var extensionNamespace = context.CompilationProvider.Select(
-            (compilation, _) => (
-                Name: AssemblyNamespace(compilation.Assembly),
-                Identity: compilation.Assembly.Identity.ToString(),
-                SharedContexts: UsesSharedContexts(compilation)
+        var environment = EnvironmentGenerator
+            .Declarations(context)
+            .Select(
+                (types, _) =>
+                    (
+                        HasDeclarations: types.Length != 0,
+                        Registrations: EnvironmentGenerator.RegistrationCode(types)
+                    )
+            );
+        var extensionNamespace = context
+            .CompilationProvider.Select(
+                (compilation, _) =>
+                    (
+                        Name: AssemblyNamespace(compilation.Assembly),
+                        Identity: compilation.Assembly.Identity.ToString(),
+                        SharedContexts: UsesSharedContexts(compilation)
+                    )
             )
-        ).Combine(environment).Select((input, _) => (
-            input.Left.Name,
-            input.Left.Identity,
-            input.Left.SharedContexts,
-            HasEnvironment: input.Right.HasDeclarations,
-            EnvironmentRegistrations: input.Right.Registrations
-        ));
-        
+            .Combine(environment)
+            .Select(
+                (input, _) =>
+                    (
+                        input.Left.Name,
+                        input.Left.Identity,
+                        input.Left.SharedContexts,
+                        HasEnvironment: input.Right.HasDeclarations,
+                        EnvironmentRegistrations: input.Right.Registrations
+                    )
+            );
+
         var referencedAssemblies = context.CompilationProvider.Select(DiscoverAssemblies);
-        var namespaceDeclarations = context.CompilationProvider
-            .Combine(referencedAssemblies)
+        var namespaceDeclarations = context
+            .CompilationProvider.Combine(referencedAssemblies)
             .Combine(tableDecls)
-            .SelectMany((input, ct) => new[]
-            {
-                DiagReporter.With(Location.None, diag => NamespaceDeclaration.Parse(
-                    input.Left.Left,
-                    input.Left.Right,
-                    input.Right.SelectMany(t => t.TableAccessors.Select(a => a.Name)),
-                    diag,
-                    ct
-                ))
-            })
+            .SelectMany(
+                (input, ct) =>
+                    new[]
+                    {
+                        DiagReporter.With(
+                            Location.None,
+                            diag =>
+                                NamespaceDeclaration.Parse(
+                                    input.Left.Left,
+                                    input.Left.Right,
+                                    input.Right.SelectMany(t =>
+                                        t.TableAccessors.Select(a => a.Name)
+                                    ),
+                                    diag,
+                                    ct
+                                )
+                        ),
+                    }
+            )
             .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Namespace.Parse")
             .Collect();
@@ -2755,14 +2885,33 @@ public class Module : IIncrementalGenerator
         // Register the generated source code with the compilation context as part of module publishing
         // Once the compilation is complete, the generated code will be used to create tables and reducers in the database
         context.RegisterSourceOutput(
-            moduleOutputInputs.Combine(extensionNamespace).Combine(referencedAssemblies)
+            moduleOutputInputs
+                .Combine(extensionNamespace)
+                .Combine(referencedAssemblies)
                 .Combine(namespaceDeclarations),
             (context, input) =>
             {
-                var (((inputs, (extensionNamespaceName, identity, sharedContexts, hasEnvironment, environmentRegistrations)), assemblies), mounts) = input;
+                var (
+                    (
+                        (
+                            inputs,
+                            (
+                                extensionNamespaceName,
+                                identity,
+                                sharedContexts,
+                                hasEnvironment,
+                                environmentRegistrations
+                            )
+                        ),
+                        assemblies
+                    ),
+                    mounts
+                ) = input;
                 var handlesNamespace = sharedContexts
-                    ? extensionNamespaceName : "SpacetimeDB.Internal";
-                var mountByIdentity = mounts.SelectMany(m => m)
+                    ? extensionNamespaceName
+                    : "SpacetimeDB.Internal";
+                var mountByIdentity = mounts
+                    .SelectMany(m => m)
                     .ToDictionary(m => m.AssemblyIdentity, StringComparer.Ordinal);
                 bool IsChild(AssemblyDeclaration assembly) =>
                     mountByIdentity.TryGetValue(assembly.Identity, out var mount)
@@ -2771,23 +2920,40 @@ public class Module : IIncrementalGenerator
                 var mountedAssemblies = assemblies.Where(IsChild).ToArray();
                 var registrationOrder = publicScopeAssemblies.Concat(mountedAssemblies).ToArray();
                 foreach (var assembly in assemblies.Where(a => a.DeclaresMounts))
-                    context.ReportDiagnostic(ErrorDescriptor.DependencyNamespaceMounts.ToDiag(assembly.Identity));
-                foreach (var assembly in mountedAssemblies.Where(a => a.RootOnlyDeclarations.Length != 0))
-                    context.ReportDiagnostic(ErrorDescriptor.MountedRootOnlyDeclarations.ToDiag(
-                        (assembly.Identity, mountByIdentity[assembly.Identity].Accessor, assembly.RootOnlyDeclarations)));
+                    context.ReportDiagnostic(
+                        ErrorDescriptor.DependencyNamespaceMounts.ToDiag(assembly.Identity)
+                    );
+                foreach (
+                    var assembly in mountedAssemblies.Where(a => a.RootOnlyDeclarations.Length != 0)
+                )
+                    context.ReportDiagnostic(
+                        ErrorDescriptor.MountedRootOnlyDeclarations.ToDiag(
+                            (
+                                assembly.Identity,
+                                mountByIdentity[assembly.Identity].Accessor,
+                                assembly.RootOnlyDeclarations
+                            )
+                        )
+                    );
 
                 string GenerateDispatchRouting(string category, string arguments, string unknownId)
                 {
                     // Match Main's registration order; each category has its own local IDs.
-                    var descriptors = new[] { $"global::{extensionNamespaceName}.AssemblyDescriptor" }
-                        .Concat(registrationOrder.Select(assembly => assembly.DescriptorTypeName));
-                    var routes = descriptors.Select(descriptor => $$"""
+                    var descriptors = new[]
+                    {
+                        $"global::{extensionNamespaceName}.AssemblyDescriptor",
+                    }.Concat(registrationOrder.Select(assembly => assembly.DescriptorTypeName));
+                    var routes = descriptors.Select(descriptor =>
+                        $$"""
                         if ((uint)localId < (uint){{descriptor}}.{{category}}Count)
                             return {{descriptor}}.CallLocal{{category}}(localId, {{arguments}});
                         localId -= {{descriptor}}.{{category}}Count;
-                        """);
+                        """
+                    );
                     return $"if (id < 0) {{ {unknownId} }}\nvar localId = id;\n"
-                        + string.Join("\n", routes) + "\n" + unknownId;
+                        + string.Join("\n", routes)
+                        + "\n"
+                        + unknownId;
                 }
 
                 var (
@@ -2806,14 +2972,27 @@ public class Module : IIncrementalGenerator
 
                 if (sharedContexts)
                 {
-                    var generatedNames = new GeneratedNames((scope, name, first, second) =>
-                        context.ReportDiagnostic(ErrorDescriptor.GeneratedNameCollision.ToDiag(
-                            (Location.None, scope, name, first, second))));
+                    var generatedNames = new GeneratedNames(
+                        (scope, name, first, second) =>
+                            context.ReportDiagnostic(
+                                ErrorDescriptor.GeneratedNameCollision.ToDiag(
+                                    (Location.None, scope, name, first, second)
+                                )
+                            )
+                    );
                     foreach (var table in tableAccessors)
                     {
                         var owner = $"table '{table.TableAccessorName}' on '{table.TableName}'";
-                        generatedNames.Add(extensionNamespaceName, EscapeIdentifier(table.TableAccessorName + "Cols"), owner);
-                        generatedNames.Add(extensionNamespaceName, EscapeIdentifier(table.TableAccessorName + "IxCols"), owner);
+                        generatedNames.Add(
+                            extensionNamespaceName,
+                            EscapeIdentifier(table.TableAccessorName + "Cols"),
+                            owner
+                        );
+                        generatedNames.Add(
+                            extensionNamespaceName,
+                            EscapeIdentifier(table.TableAccessorName + "IxCols"),
+                            owner
+                        );
                     }
                 }
 
@@ -2828,8 +3007,11 @@ public class Module : IIncrementalGenerator
                         if (used.TryGetValue(name, out var previous))
                         {
                             if (container == "Tables")
-                                context.ReportDiagnostic(ErrorDescriptor.NamespaceAccessorCollision.ToDiag(
-                                    (name, previous, owner)));
+                                context.ReportDiagnostic(
+                                    ErrorDescriptor.NamespaceAccessorCollision.ToDiag(
+                                        (name, previous, owner)
+                                    )
+                                );
                             return;
                         }
                         used.Add(name, owner);
@@ -2839,8 +3021,11 @@ public class Module : IIncrementalGenerator
                     {
                         if (mountByIdentity.TryGetValue(assembly.Identity, out var mount))
                         {
-                            Add(mount.Accessor, assembly.Identity,
-                                $"public {assembly.DescriptorTypeName}.{container} {mount.AccessorIdentifier} => new();");
+                            Add(
+                                mount.Accessor,
+                                assembly.Identity,
+                                $"public {assembly.DescriptorTypeName}.{container} {mount.AccessorIdentifier} => new();"
+                            );
                         }
                         else
                         {
@@ -2852,8 +3037,11 @@ public class Module : IIncrementalGenerator
                             };
                             var invocation = container == "Queries" ? "()" : "";
                             foreach (var table in accessors)
-                                Add(table.Name, assembly.Identity,
-                                    $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}().{EscapeIdentifier(table.Name)}{invocation};");
+                                Add(
+                                    table.Name,
+                                    assembly.Identity,
+                                    $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}().{EscapeIdentifier(table.Name)}{invocation};"
+                                );
                         }
                     }
                     return string.Join("\n", members);
@@ -2865,19 +3053,33 @@ public class Module : IIncrementalGenerator
                 var compositionRegistration = new List<string>
                 {
                     "global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry("
-                    + SymbolDisplay.FormatLiteral(identity, true) + ", new global::System.Collections.Generic.KeyValuePair<string, string>[] {"
-                    + string.Join(",", mountByIdentity.Values.Select(m =>
-                        $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)})")) + "}));",
-                    $"global::{extensionNamespaceName}.AssemblyDescriptor.Register(global::SpacetimeDB.Internal.Module.RootBuilder);"
+                        + SymbolDisplay.FormatLiteral(identity, true)
+                        + ", new global::System.Collections.Generic.KeyValuePair<string, string>[] {"
+                        + string.Join(
+                            ",",
+                            mountByIdentity.Values.Select(m =>
+                                $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)})"
+                            )
+                        )
+                        + "}));",
+                    $"global::{extensionNamespaceName}.AssemblyDescriptor.Register(global::SpacetimeDB.Internal.Module.RootBuilder);",
                 };
                 foreach (var assembly in publicScopeAssemblies)
-                    compositionRegistration.Add($"{assembly.DescriptorTypeName}.Register(global::SpacetimeDB.Internal.Module.RootBuilder);");
+                    compositionRegistration.Add(
+                        $"{assembly.DescriptorTypeName}.Register(global::SpacetimeDB.Internal.Module.RootBuilder);"
+                    );
                 for (var i = 0; i < mountedAssemblies.Length; i++)
                 {
                     var assembly = mountedAssemblies[i];
-                    compositionRegistration.Add($"var child{i} = new global::SpacetimeDB.Internal.ModuleBuilder();");
-                    compositionRegistration.Add($"{assembly.DescriptorTypeName}.Register(child{i}, global::SpacetimeDB.Internal.Module.RootBuilder);");
-                    compositionRegistration.Add($"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Accessor, true)}, child{i});");
+                    compositionRegistration.Add(
+                        $"var child{i} = new global::SpacetimeDB.Internal.ModuleBuilder();"
+                    );
+                    compositionRegistration.Add(
+                        $"{assembly.DescriptorTypeName}.Register(child{i}, global::SpacetimeDB.Internal.Module.RootBuilder);"
+                    );
+                    compositionRegistration.Add(
+                        $"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Accessor, true)}, child{i});"
+                    );
                 }
 
                 if (settings.Array.Length > 1)
@@ -2969,7 +3171,9 @@ public class Module : IIncrementalGenerator
                 );
                 var queryBuilderExtensionMembers = string.Join(
                     "\n",
-                    tableDecls.Array.SelectMany(t => t.GenerateQueryBuilderMembers(useExtensions: true))
+                    tableDecls.Array.SelectMany(t =>
+                        t.GenerateQueryBuilderMembers(useExtensions: true)
+                    )
                 );
                 if (string.IsNullOrWhiteSpace(queryBuilderMembers))
                 {
