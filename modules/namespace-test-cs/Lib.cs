@@ -36,7 +36,7 @@ public static partial class Functions
 
     [HttpRouter]
     public static Router Routes() =>
-        Router.New().Get("/root-auth-count", new Handler(nameof(RootAuthCount)));
+        Router.New().Get("/root-auth-count", SpacetimeDB.Handlers.RootAuthCount);
 
 #pragma warning disable STDB_UNSTABLE
     [ClientVisibilityFilter]
