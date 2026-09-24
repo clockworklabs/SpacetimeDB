@@ -70,21 +70,17 @@
       ]
     },
     {
-      "id": "cart-hydration-loses-account-state",
+      "id": "sign-in-starts-an-empty-cart",
       "scenario": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
       "targets": [
         "ecommerce.spec.state-durability.account-state-recovery.105a"
       ],
-      "desc": "Existing-token page loads discard cart hydration from the native subscription; the first signup page and its working cart are unchanged.",
-      "file": "client/src/App.tsx",
+      "desc": "A successful sign-in deletes the account's stored cart lines, so a fresh sign-in after a restart finds an empty cart; sign-up, token-restored sessions and orders are unchanged.",
+      "file": "convex/accounts.js",
       "edits": [
         {
-          "find": "const CATALOG_PAGE_SIZE = 10;",
-          "replace": "const CATALOG_PAGE_SIZE = 10;\nconst discardHydratedCart = Boolean(localStorage.getItem(TOKEN_KEY));"
-        },
-        {
-          "find": "    setCart(state.cart);",
-          "replace": "    setCart(discardHydratedCart ? { items: [], total: 0 } : state.cart);"
+          "find": "  if (await ctx.db.query('order_account').withIndex('auth_user', q => q.eq('auth_user_id', userId)).unique()) return;",
+          "replace": "  const existing = await ctx.db.query('order_account').withIndex('auth_user', q => q.eq('auth_user_id', userId)).unique();\n  if (existing) {\n    // mutant: each sign-in starts a new cart instead of restoring the account cart\n    for (const line of await ctx.db.query('order_cart').withIndex('account', q => q.eq('account_id', existing._id)).collect()) await ctx.db.delete(line._id);\n    return;\n  }"
         }
       ]
     },

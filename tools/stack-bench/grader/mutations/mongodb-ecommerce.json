@@ -345,17 +345,17 @@
       ]
     },
     {
-      "id": "cart-hydration-loses-account-state",
+      "id": "backend-restart-discards-account-carts",
       "scenario": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
       "targets": [
         "ecommerce.spec.state-durability.account-state-recovery.105a"
       ],
-      "desc": "Reload hydration discards the account's persisted cart response.",
-      "file": "client/src/App.tsx",
+      "desc": "Server startup deletes every cart as leftover session state, so an account cart does not survive a backend restart; accounts, sessions and orders persist, and carts work normally between restarts.",
+      "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  const refreshCart = useCallback(async (tok: string) => {\n    const data = await apiFetch(\"/api/cart\", tok);\n    setCart(data);\n  }, []);",
-          "replace": "  const refreshCart = useCallback(async (tok: string) => {\n    await apiFetch(\"/api/cart\", tok);\n    setCart({ items: [], total: 0 }); // mutant: account state is discarded on hydration\n  }, []);"
+          "find": "  await initializeOrderData(mongoose.connection);\n  server.listen(PORT, () => {",
+          "replace": "  await initializeOrderData(mongoose.connection);\n  // mutant: carts are treated as process-lifetime session state\n  await Cart.deleteMany({});\n  server.listen(PORT, () => {"
         }
       ]
     },

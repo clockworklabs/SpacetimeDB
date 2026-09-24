@@ -486,17 +486,17 @@
       ]
     },
     {
-      "id": "account-state-token-is-not-restored-after-reload",
+      "id": "sign-in-starts-an-empty-cart",
       "scenario": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
       "targets": [
         "ecommerce.spec.state-durability.account-state-recovery.105a"
       ],
-      "desc": "Discard the saved token after connection, preserving signup but losing access to the account, cart and orders on the next reload.",
-      "file": "client/src/main.tsx",
+      "desc": "A successful sign-in deletes the account's stored cart lines, so a fresh sign-in after a restart finds an empty cart; sign-up, token-restored sessions and orders are unchanged.",
+      "file": "backend/spacetimedb/src/auth.ts",
       "edits": [
         {
-          "find": ".onConnect((_connection, _identity, token) => saveToken(token));",
-          "replace": ".onConnect((_connection, _identity, token) => { saveToken(token); sessionStorage.clear(); });"
+          "find": "      if (!current || current.passwordHash !== account.passwordHash) return false;\n      bindSession(tx, account.id);",
+          "replace": "      if (!current || current.passwordHash !== account.passwordHash) return false;\n      // mutant: each sign-in starts a new cart instead of restoring the account cart\n      for (const line of [...tx.db.cartItem.byAccountItem.filter(account.id)]) tx.db.cartItem.id.delete(line.id);\n      bindSession(tx, account.id);"
         }
       ]
     },
