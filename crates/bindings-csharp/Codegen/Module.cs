@@ -3197,6 +3197,7 @@ public class Module : IIncrementalGenerator
                     && addProcedures.Array.IsEmpty
                     && addHttpHandlers.Array.IsEmpty
                     && views.Array.IsEmpty
+                    && rlsFilters.Array.IsEmpty
                     && assemblies.Array.IsEmpty
                     && !hasEnvironment
                 )
