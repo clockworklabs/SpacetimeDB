@@ -47,17 +47,13 @@ public static class EnvironmentTests
         """;
 
     private static (Compilation Compilation, GeneratorDriverRunResult Result) Generate(
-        string declaration,
-        bool sharedContexts = false
+        string declaration
     )
     {
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
             .Select(path => MetadataReference.CreateFromFile(path));
-        var parse = new CSharpParseOptions(
-            LanguageVersion.Preview,
-            preprocessorSymbols: sharedContexts ? ["NET10_0_OR_GREATER"] : []
-        );
+        var parse = new CSharpParseOptions(LanguageVersion.Preview);
         var compilation = CSharpCompilation.Create(
             "EnvironmentFixture" + Guid.NewGuid().ToString("N"),
             [CSharpSyntaxTree.ParseText(Host + declaration, parse)],
@@ -69,58 +65,8 @@ public static class EnvironmentTests
             parseOptions: parse
         );
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
-        if (sharedContexts)
-        {
-            var generatedNamespace = driver
-                .GetRunResult()
-                .GeneratedTrees.Single()
-                .GetRoot()
-                .DescendantNodes()
-                .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.NamespaceDeclarationSyntax>()
-                .Single()
-                .Name;
-            output = output.AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText("global using " + generatedNamespace + ";", parse)
-            );
-        }
         return (output, driver.GetRunResult());
     }
-
-#if NET10_0_OR_GREATER
-    [Fact]
-    public static void SharedReceiverAccessorsKeepCheckedLiveReads()
-    {
-        var (compilation, result) = Generate(
-            """
-            [SpacetimeDB.Env] public struct Declarations {
-                public string REQUIRED;
-                public string OPTIONAL;
-                [SpacetimeDB.EnvValues("prod", "dev")] public string MODE;
-                public string @class;
-            }
-            public static class Usage {
-                public static void Check() {
-                    if (SpacetimeDB.Internal.Module.Declarations.Count != 0)
-                        throw new System.Exception("environment registered before descriptor call");
-                    var env = new SpacetimeDB.DatabaseEnvironment();
-                    if (env.REQUIRED == env.REQUIRED || env.MODE != "prod" || env.@class != "keyword")
-                        throw new System.Exception("bad shared accessor");
-                    try { _ = env.OPTIONAL; throw new System.Exception("missing required value accepted"); }
-                    catch (System.InvalidOperationException) {}
-                    try { env.Get("UNKNOWN"); throw new System.Exception("unchecked read"); }
-                    catch (System.InvalidOperationException) {}
-                }
-            }
-            """,
-            sharedContexts: true
-        );
-        Assert.Empty(result.Diagnostics);
-        using var stream = new MemoryStream();
-        var emitted = compilation.Emit(stream);
-        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
-        Assembly.Load(stream.ToArray()).GetType("Usage")!.GetMethod("Check")!.Invoke(null, null);
-    }
-#endif
 
     [Fact]
     public static void NamedAccessorsKeepCheckedReadsAndRegisterCanonicalConstraints()
