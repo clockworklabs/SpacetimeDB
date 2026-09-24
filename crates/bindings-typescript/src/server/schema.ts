@@ -775,7 +775,25 @@ type SubmoduleNamespace = {
   [key: string]: unknown;
 };
 
-type SchemaEntry = UntypedTableSchema | SubmoduleNamespace;
+/**
+ * A submodule mount that picks the canonical namespace name explicitly.
+ *
+ *
+ * @example
+ * ```ts
+ * import * as authLib from 'auth_lib';
+ * const spacetimedb = schema({
+ *   myAuth: { name: 'myAuth', module: authLib }, // force canonical name to 'myAuth' instead of 'my_auth'
+ * });
+ * ```
+ */
+export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
+  {
+    name?: string;
+    module: M;
+  };
+
+type SchemaEntry = UntypedTableSchema | SubmoduleNamespace | SubmoduleMount;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
@@ -784,10 +802,19 @@ type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   >;
 };
 
+/** The submodule namespace object behind a schema entry, or `never` for tables. */
+type SubmoduleOfEntry<E> = E extends { default: Schema<any> }
+  ? E
+  : E extends { module: infer M extends { default: Schema<any> } }
+    ? M
+    : never;
+
 type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as H[K] extends { default: Schema<any> }
-    ? K
-    : never]: H[K] extends { default: Schema<infer S extends UntypedSchemaDef> }
+  [K in keyof H as [SubmoduleOfEntry<H[K]>] extends [never]
+    ? never
+    : K]: SubmoduleOfEntry<H[K]> extends {
+    default: Schema<infer S extends UntypedSchemaDef>;
+  }
     ? S
     : never;
 };
@@ -808,6 +835,61 @@ function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
     hasOwn(x, 'default') &&
     x.default instanceof Schema
   );
+}
+
+/**
+ * Whether `x` has the `{ name?, module }` shape.
+ */
+function isSubmoduleMount(x: unknown): x is SubmoduleMount {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'module') &&
+    !hasOwn(x, 'default') &&
+    !hasOwn(x, 'tableDef')
+  );
+}
+
+function defaultImportError(accName: string): TypeError {
+  return new TypeError(
+    `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
+  );
+}
+
+/**
+ * Resolves a schema entry to the submodule it mounts, or `undefined` for tables.
+ * Returns the module-namespace object and the explicit canonical name, if any.
+ */
+function resolveSubmoduleEntry(
+  accName: string,
+  entry: unknown
+): { submodule: SubmoduleNamespace; canonicalName?: string } | undefined {
+  if (entry instanceof Schema) {
+    throw defaultImportError(accName);
+  }
+  if (isSubmoduleNamespace(entry)) {
+    return { submodule: entry };
+  }
+  if (!isSubmoduleMount(entry)) {
+    return undefined;
+  }
+  if (entry.module instanceof Schema) {
+    throw defaultImportError(accName);
+  }
+  if (!isSubmoduleNamespace(entry.module)) {
+    throw new TypeError(
+      `schema entry '${accName}' has a \`module\` that is not a submodule namespace object; pass the result of \`import * as ${accName} from '...'\`.`
+    );
+  }
+  if (entry.name === undefined) {
+    return { submodule: entry.module };
+  }
+  if (typeof entry.name !== 'string' || entry.name.length === 0) {
+    throw new TypeError(
+      `schema entry '${accName}' has an invalid \`name\`; expected a non-empty string for the canonical namespace name.`
+    );
+  }
+  return { submodule: entry.module, canonicalName: entry.name };
 }
 
 function registerModuleExports(
@@ -851,22 +933,25 @@ export function schema<
 
     const tableSchemas: Record<string, UntypedTableDef> = {};
     for (const [accName, entry] of Object.entries(entries)) {
-      if (entry instanceof Schema) {
-        throw new TypeError(
-          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
-        );
-      }
-      if (isSubmoduleNamespace(entry)) {
+      const mount = resolveSubmoduleEntry(accName, entry);
+      if (mount !== undefined) {
+        const { submodule, canonicalName } = mount;
         const { rawDef, dispatch } =
-          entry.default.buildSubmoduleDispatch(entry);
+          submodule.default.buildSubmoduleDispatch(submodule);
         dispatch.namespace = accName;
         ctx.addSubmodule({ namespace: accName, module: rawDef });
+        if (canonicalName !== undefined) {
+          ctx.moduleDef.explicitNames.entries.push({
+            tag: 'Namespace',
+            value: { sourceName: accName, canonicalName },
+          });
+        }
         ctx.submoduleDispatchInfos.push(dispatch);
         continue;
       }
       if (!isUntypedTableSchema(entry)) {
         throw new TypeError(
-          `schema entry '${accName}' must be a table or a submodule namespace object`
+          `schema entry '${accName}' must be a table, a submodule namespace object, or a \`{ name, module }\` submodule mount`
         );
       }
 

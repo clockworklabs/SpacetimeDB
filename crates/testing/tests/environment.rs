@@ -74,7 +74,11 @@ async fn expect_view_update(handle: &mut ModuleHandle) {
 async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
     values.insert("EMPTY".into(), "root-visible".into());
     let module = publish(handle, values).await;
-    assert!(module.info.module_def.reducer_by_name("lib.env_read_reducer").is_some());
+    assert!(module
+        .info
+        .module_def
+        .reducer_by_name("my_lib.env_read_reducer")
+        .is_some());
     let child = module
         .call_reducer(
             Identity::ZERO,
@@ -82,19 +86,23 @@ async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
             None,
             None,
             None,
-            "lib.env_read_reducer",
+            "my_lib.env_read_reducer",
             FunctionArgs::Nullary,
         )
         .await;
     assert!(child.is_err() || child.unwrap().outcome.into_result().is_err());
-    for procedure in ["lib.env_read_procedure", "lib.env_read_in_tx"] {
+    for procedure in ["my_lib.env_read_procedure", "my_lib.env_read_in_tx"] {
         assert!(module.info.module_def.procedure_by_name(procedure).is_some());
         let result = module
             .call_procedure(Identity::ZERO, None, None, procedure, FunctionArgs::Nullary)
             .await;
         assert!(result.result.is_err(), "submodule procedure read the root environment");
     }
-    for view in ["lib.env_read_view", "lib.env_read_sql_view", "env_read_root_sql_view"] {
+    for view in [
+        "my_lib.env_read_view",
+        "my_lib.env_read_sql_view",
+        "env_read_root_sql_view",
+    ] {
         assert!(module.info.module_def.view_by_name_with_module(view).is_some());
         let result = spacetimedb::sql::execute::run(
             module.relational_db().clone(),

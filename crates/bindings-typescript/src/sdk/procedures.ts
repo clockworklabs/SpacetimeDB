@@ -62,9 +62,10 @@ type ProcedureDef<
   Name extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
+  AccessorName extends string = CamelCase<Name>,
 > = {
   name: Name;
-  accessorName: CamelCase<Name>;
+  accessorName: AccessorName;
   params: CoerceParams<Params>;
   returnType: ReturnType;
 };
@@ -73,14 +74,16 @@ export function procedureSchema<
   ProcedureName extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
+  AccessorName extends string = CamelCase<ProcedureName>,
 >(
   name: ProcedureName,
   params: Params,
-  returnType: ReturnType
-): ProcedureDef<ProcedureName, Params, ReturnType> {
+  returnType: ReturnType,
+  accessorName?: AccessorName
+): ProcedureDef<ProcedureName, Params, ReturnType, AccessorName> {
   return {
     name,
-    accessorName: toCamelCase(name),
+    accessorName: accessorName ?? (toCamelCase(name) as AccessorName),
     params: coerceParams(params),
     returnType,
   };

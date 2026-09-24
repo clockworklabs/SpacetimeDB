@@ -248,7 +248,9 @@ const spacetimedb = schema({
     playerLikeRow
   ),
   tableToRemove: table({ name: 'table_to_remove' }, { id: t.u32() }),
-  lib: libSubmodule,
+  // Mounted under a camelCase accessor so the canonical namespace (`my_lib`)
+  // differs from the name module code uses (`ctx.db.myLib`, `ctx.as.myLib`).
+  myLib: libSubmodule,
 }, { env: {
   MISSING: t.string().optional(),
   EMPTY: t.string().optional(),
@@ -537,13 +539,13 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
 export const useSubmodule = spacetimedb.reducer(
   { value: t.string() },
   (ctx, { value }) => {
-    libSubmodule.libInsert(ctx.as.lib, { value });
+    libSubmodule.libInsert(ctx.as.myLib, { value });
   }
 );
 
 // useSubmoduleProcedure: calls the lib submodule's libCount procedure and returns the result.
 export const useSubmoduleProcedure = spacetimedb.procedure(t.u64(), ctx =>
-  libSubmodule.libCount(ctx.as.lib, {})
+  libSubmodule.libCount(ctx.as.myLib, {})
 );
 
 export const getSimple = spacetimedb.httpHandler(
@@ -552,13 +554,13 @@ export const getSimple = spacetimedb.httpHandler(
 
 // Delegates to the lib submodule's HTTP handler, demonstrating cross-namespace HTTP dispatch.
 export const libHello = spacetimedb.httpHandler((ctx, req) => {
-  return libSubmodule.libHello(ctx.as.lib, req);
+  return libSubmodule.libHello(ctx.as.myLib, req);
 });
 
-// Ordinary JS delegation retains this root host entry, even with ctx.as.lib.
-// Direct host dispatch to lib.envReadHandler is the separate denied case.
+// Ordinary JS delegation retains this root host entry, even with ctx.as.myLib.
+// Direct host dispatch to my_lib.envReadHandler is the separate denied case.
 export const envReadChildHandler = spacetimedb.httpHandler((ctx, req) =>
-  libSubmodule.envReadHandler(ctx.as.lib, req)
+  libSubmodule.envReadHandler(ctx.as.myLib, req)
 );
 
 // Root entries must use the checked accessor too; returning raw st_env SQL is

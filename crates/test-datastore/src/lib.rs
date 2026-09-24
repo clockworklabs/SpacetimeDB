@@ -479,7 +479,7 @@ impl TestDatastoreError {
             Self::Database(DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))) => {
                 Some(spacetimedb_primitives::errno::UNIQUE_ALREADY_EXISTS.get())
             }
-            Self::Database(DBError::Sequence2(SequenceError::UnableToAllocate(_))) => {
+            Self::Database(DBError::Sequence2(SequenceError::Overflow(_))) => {
                 Some(spacetimedb_primitives::errno::AUTO_INC_OVERFLOW.get())
             }
             _ => None,

@@ -156,7 +156,6 @@ impl PortableDatastore {
     pub fn rollback_tx(&self, mut tx: PortableTransaction) -> Result<(), PortableDatastoreError> {
         if let Some(inner) = tx.tx.take() {
             let _ = self.datastore.rollback_mut_tx(inner);
-            self.datastore.rebuild_sequence_state_from_committed()?;
         }
         Ok(())
     }
@@ -374,7 +373,6 @@ impl PortableDatastore {
             .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let result = f(&tx);
         let _ = self.datastore.rollback_mut_tx(tx);
-        self.datastore.rebuild_sequence_state_from_committed()?;
         result
     }
 
@@ -413,7 +411,6 @@ impl Drop for PortableTransaction {
     fn drop(&mut self) {
         if let Some(tx) = self.tx.take() {
             let _ = self.datastore.rollback_mut_tx(tx);
-            let _ = self.datastore.rebuild_sequence_state_from_committed();
         }
     }
 }
@@ -456,7 +453,7 @@ impl PortableDatastoreError {
             Self::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {
                 Some(spacetimedb_primitives::errno::UNIQUE_ALREADY_EXISTS.get())
             }
-            Self::Datastore(DatastoreError::Sequence(SequenceError::UnableToAllocate(_))) => {
+            Self::Datastore(DatastoreError::Sequence(SequenceError::Overflow(_))) => {
                 Some(spacetimedb_primitives::errno::AUTO_INC_OVERFLOW.get())
             }
             _ => None,

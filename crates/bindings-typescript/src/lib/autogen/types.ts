@@ -79,6 +79,9 @@ export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Index() {
     return NameMapping;
   },
+  get Namespace() {
+    return NameMapping;
+  },
 });
 export type ExplicitNameEntry = __Infer<typeof ExplicitNameEntry>;
 

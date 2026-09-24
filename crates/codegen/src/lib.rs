@@ -1,6 +1,5 @@
 use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
-use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 mod code_indenter;
 pub mod cpp;
@@ -40,13 +39,13 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -
             .all_tables_with_prefix()
             .into_iter()
             .filter(|(prefix, _, table)| !prefix.is_empty() && table.table_access == TableAccess::Public)
-            .map(|(prefix, owning_def, table)| lang.generate_submodule_table_file(owning_def, &prefix, table)),
+            .map(|(_, owning_def, table)| lang.generate_submodule_table_file(owning_def, table)),
         // Views from submodules (views are currently always public)
         module
             .all_views_with_prefix()
             .into_iter()
             .filter(|(prefix, _, _)| !prefix.is_empty())
-            .map(|(prefix, owning_def, view)| lang.generate_submodule_view_file(owning_def, &prefix, view)),
+            .map(|(_, owning_def, view)| lang.generate_submodule_view_file(owning_def, view)),
         module.types().flat_map(|typ| lang.generate_type_files(module, typ)),
         util::iter_reducers(module, options.visibility).map(|reducer| lang.generate_reducer_file(module, reducer)),
         util::iter_procedures(module, options.visibility)
@@ -56,14 +55,13 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -
             .all_reducers_with_prefix()
             .into_iter()
             .filter(|(prefix, _, reducer)| !prefix.is_empty() && !reducer.visibility.is_private())
-            .map(|(prefix, owning_def, reducer)| lang.generate_submodule_reducer_file(owning_def, &prefix, reducer)),
+            .map(|(_, owning_def, reducer)| lang.generate_submodule_reducer_file(owning_def, reducer)),
         // Procedures from submodules
         module
             .all_procedures_with_prefix()
             .into_iter()
             .filter(|(prefix, _, procedure)| !prefix.is_empty() && !procedure.visibility.is_private())
-            .map(|(prefix, owning_def, procedure)| lang
-                .generate_submodule_procedure_file(owning_def, &prefix, procedure)),
+            .map(|(_, owning_def, procedure)| lang.generate_submodule_procedure_file(owning_def, procedure)),
         lang.generate_global_files(module, options),
     )
     .collect()
@@ -98,65 +96,45 @@ pub trait Lang {
 
     /// Generate a row-type file for a public table from a submodule.
     /// Uses `owning_def`'s typespace for type resolution.
-    /// Filename goes in a subdirectory named after the namespace:
-    /// e.g. `alias/table_name_table.ts` for namespace `"alias."`, table `tableName`.
-    fn generate_submodule_table_file(
-        &self,
-        owning_def: &ModuleDef,
-        namespace: &NamespacePath,
-        table: &TableDef,
-    ) -> OutputFile {
+    /// Filename goes in a subdirectory named after the *accessor* namespace path:
+    /// e.g. `myLib/table_name_table.ts` for a submodule mounted as `myLib`, table `tableName`.
+    fn generate_submodule_table_file(&self, owning_def: &ModuleDef, table: &TableDef) -> OutputFile {
         let schema = TableSchema::from_module_def(owning_def, table, (), 0.into())
             .validated()
             .expect("Failed to generate submodule table file");
         let mut file = self.generate_table_file_from_schema(owning_def, table, schema);
-        let ns_path = namespace.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
 
     /// Generate a row-type file for a view from a submodule.
-    /// Filename goes in a subdirectory named after the namespace prefix.
-    fn generate_submodule_view_file(
-        &self,
-        owning_def: &ModuleDef,
-        namespace: &NamespacePath,
-        view: &ViewDef,
-    ) -> OutputFile {
+    /// Filename goes in a subdirectory named after the accessor namespace path.
+    fn generate_submodule_view_file(&self, owning_def: &ModuleDef, view: &ViewDef) -> OutputFile {
         let tbl = TableDef::from(view.clone());
         let schema = TableSchema::from_view_def_for_codegen(owning_def, view)
             .validated()
             .expect("Failed to generate submodule view file");
         let mut file = self.generate_table_file_from_schema(owning_def, &tbl, schema);
-        let ns_path = namespace.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
 
     /// Generate an arg-schema file for a reducer from a submodule.
-    /// Filename goes in a subdirectory named after the namespace prefix.
-    fn generate_submodule_reducer_file(
-        &self,
-        owning_def: &ModuleDef,
-        prefix: &NamespacePath,
-        reducer: &ReducerDef,
-    ) -> OutputFile {
+    /// Filename goes in a subdirectory named after the accessor namespace path.
+    fn generate_submodule_reducer_file(&self, owning_def: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
         let mut file = self.generate_reducer_file(owning_def, reducer);
-        let ns_path = prefix.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
 
     /// Generate an arg-schema file for a procedure from a submodule.
-    /// Filename goes in a subdirectory named after the namespace prefix.
-    fn generate_submodule_procedure_file(
-        &self,
-        owning_def: &ModuleDef,
-        prefix: &NamespacePath,
-        procedure: &ProcedureDef,
-    ) -> OutputFile {
+    /// Filename goes in a subdirectory named after the accessor namespace path.
+    fn generate_submodule_procedure_file(&self, owning_def: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
         let mut file = self.generate_procedure_file(owning_def, procedure);
-        let ns_path = prefix.join_segments("/");
+        let ns_path = owning_def.accessor_path().join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
