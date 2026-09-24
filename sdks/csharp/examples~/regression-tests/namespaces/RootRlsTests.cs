@@ -10,7 +10,9 @@ internal static class RootRlsTests
     private static void Require(bool condition, string message)
     {
         if (!condition)
+        {
             throw new Exception(message);
+        }
     }
 
     public static void Run(string host)
@@ -39,15 +41,23 @@ internal static class RootRlsTests
             while (!done())
             {
                 if (error != null)
+                {
                     throw error;
+                }
+
                 if (timer.Elapsed > TimeSpan.FromSeconds(30))
+                {
                     throw new TimeoutException("Root RLS: " + phase);
+                }
+
                 first.FrameTick();
                 second.FrameTick();
                 Thread.Sleep(5);
             }
             if (error != null)
+            {
                 throw error;
+            }
         }
 
         try
