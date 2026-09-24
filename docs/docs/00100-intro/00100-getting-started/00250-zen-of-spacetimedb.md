@@ -42,7 +42,9 @@ You will be tempted to ask for "ephemeral state". This is a mistake. Persistent 
 
 Write your code as if memory were infinite and permanent. Insert rows freely. Query without fear. Spacetime handles the persistence, you handle the logic.
 
-## Everything is Real-Time
+## Everything is Reactive
+
+If you use React, this should feel familiar. You change state, and the UI updates. Spacetime extends that idea to the server and database. Your components subscribe to tables, and reducers change the data. When a change comes from another user, it reaches your components through the same subscription. You don't have to build a separate system to make shared state feel like ordinary application state.
 
 Think of your client as a **replica** of your server. When you subscribe to data, Spacetime mirrors that data to your client and keeps it synchronized automatically. You don't poll. You don't fetch. You subscribe, and the data flows.
 

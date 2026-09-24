@@ -17,7 +17,7 @@ code, or access database contents.
 
 Read [The Zen of Spacetime](https://spacetimedb.com/docs/intro/zen/) before
 designing an application. Its five principles are the foundation of the programming
-model: everything is a table, persistent, real-time, transactional, and programmable.
+model: everything is a table, persistent, reactive, transactional, and programmable.
 
 Bring that philosophy to the applications you help users build. Keep application
 state in tables, use subscriptions to keep clients current, express atomic state
