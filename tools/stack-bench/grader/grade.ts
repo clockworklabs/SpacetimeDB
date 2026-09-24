@@ -301,7 +301,7 @@ export class Actor {
   responseLoss?: Awaited<ReturnType<typeof installResponseLoss>>;
   networkInterruption?: NetworkInterruption;
 
-  constructor(name: string, page: Page, context: BrowserContext) {
+  constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -310,7 +310,7 @@ export class Actor {
   }
   async attach(page: Page): Promise<void> {
     this.page = page;
-    await installAuthWebSocketCapture(page);
+    if (this.patchAuthentication) await installAuthWebSocketCapture(page);
     // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
     this.lastWrites = {};
@@ -502,7 +502,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const fresh = await context.newPage();
         entry.page = fresh;
         fresh.setDefaultTimeout(defaultWithin);
-        const observer = new Actor(`${actor.name}-fresh`, fresh, context);
+        const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication);
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -861,8 +861,14 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   try {
     if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
     // Actors this feature takes offline send their traffic through a harness proxy.
-    const offlineActors = new Set([...feature.setup ?? [], ...feature.criteria.flatMap(criterion => criterion.steps)]
+    const steps = [...feature.setup ?? [], ...feature.criteria.flatMap(criterion => criterion.steps)];
+    const offlineActors = new Set(steps
       .filter(step => step.do === 'setOffline').map(step => step.actor));
+    // Routing replaces native WebSocket delivery. Only credential probes need it;
+    // passive transport observation must not pay for forwarding every live update.
+    const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined
+      || Boolean(step.branches?.some(branch => branch.some(needsAuthPatch)));
+    const patchAuthentication = steps.some(needsAuthPatch);
     for (const name of feature.actors!) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
@@ -885,7 +891,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
-      const actor = new Actor(name, page, context);
+      const actor = new Actor(name, page, context, patchAuthentication);
       actor.networkInterruption = networkInterruption;
       await actor.ready;
       actor.annotate = Boolean(args.media);
