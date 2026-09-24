@@ -129,7 +129,9 @@ record NamespaceDeclaration(string AssemblyIdentity, string Accessor)
             if (tables.Contains(accessor))
                 Error($"Namespace accessor '{accessor}' conflicts with a root table accessor.");
             if (accessor is "GetType" or "ToString" or "Equals" or "GetHashCode")
-                Error($"Namespace accessor '{accessor}' conflicts with an existing context database/query receiver member.");
+                Error(
+                    $"Namespace accessor '{accessor}' conflicts with an existing context database/query receiver member."
+                );
 
             if (valid)
                 result.Add(new(identity, accessor));

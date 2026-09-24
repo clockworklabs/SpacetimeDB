@@ -58,7 +58,9 @@ public interface IStructuralReadWrite
     /// <returns></returns>
 #if NET10_0_OR_GREATER
     // Avoid an extra per-row call in NativeAOT scan iterators.
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
 #endif
     static T Read<T>(BinaryReader reader)
         where T : IStructuralReadWrite, new()
