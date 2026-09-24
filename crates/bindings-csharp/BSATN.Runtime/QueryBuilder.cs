@@ -1,7 +1,6 @@
 namespace SpacetimeDB;
 
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 
 /// <summary>A table identifier with a separately quoted optional namespace and local name.</summary>
@@ -18,12 +17,7 @@ public readonly struct SqlTableName
 
     public SqlTableName(string @namespace, string localName)
     {
-        if (@namespace is null)
-        {
-            throw new ArgumentNullException(nameof(@namespace));
-        }
-
-        Namespace = @namespace;
+        Namespace = @namespace ?? throw new ArgumentNullException(nameof(@namespace));
         LocalName = localName;
     }
 
