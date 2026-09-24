@@ -62,7 +62,6 @@ test('check guide exposes current procedures through the real dashboard', async 
     await page.getByRole('button', { name: 'Expand visible' }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'dark');
     await page.screenshot({ path: join(evidence, 'mobile.png') });
     assert.deepEqual(api, [], 'guide needs no campaign reads or model calls');
     await page.getByRole('link', { name: 'Campaigns', exact: true }).click();

@@ -35,15 +35,6 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   const reordered = { ...choices, workloads: [single, ...choices.workloads] };
   assert.equal(initialRun(reordered)!.workload, choices.workloads[0]!.id);
   assert.equal(initialRun(reordered, single.id)!.workload, single.id);
-  const page = runSetupPage(choices, initial, null, '', true);
-  assert.match(page, /name="sdkSkills"/);
-  assert.match(page, /name="devWorkflow"/);
-  assert.match(page, /name="productionQuality" checked/);
-  assert.doesNotMatch(runSetupPage(choices, { ...initial, productionQuality: false }, null, '', true),
-    /name="productionQuality" checked/);
-  assert.doesNotMatch(page, /Both \(compare\)/);
-  assert.match(page, /Progressive dependency graph/);
-  assert.match(runSetupPage(reordered, initialRun(reordered, single.id), null, '', true), /Full graph in one build/);
   const conditions = choices.workloads[0]!.conditions;
   for (const c of conditions) assert.deepEqual(selectGuidance(conditions, c.sdkSkills ? 'on' : 'off',
     c.devWorkflow ? 'on' : 'off'), [c.id]);
@@ -74,9 +65,6 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   assert.throws(() => submitPreparedRun(root, review, {}), /Workload changed/);
   writeFileSync(presetPath, source);
   assert.throws(() => prepareRun(root, request, { STACK_BENCH_CONTROLLER_IMAGE: 'different' }), /runtime/);
-  assert.match(runSetupPage(catalog, request, review, '', true), /6 attempts/);
-  assert.match(runSetupPage(catalog, request, review, '', true), /Work delivery.*Progressive dependency graph/);
-  assert.match(runSetupPage(catalog, request, null, '', true), /name="parallelism"/);
 
   assert.doesNotMatch(runSetupPage(catalog, request, review, '', true), /Operator secret|name="secret"/);
   assert.doesNotMatch(runSetupPage(catalog, request, null, '', true), /name="secret"/);

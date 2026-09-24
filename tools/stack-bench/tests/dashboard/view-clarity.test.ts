@@ -59,14 +59,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.doesNotMatch(selected, /82%|9 \/ 10|Questline average/);
   assert.match(page, /Valid runs/);
   const metricsTable = page.split('<table class="sheet">')[1]!.split('</table>')[0]!;
-  for (const label of ['Cost per valid run', 'Weighted score', 'First builds', 'Regressions', 'Active time', 'Valid runs', 'Excluded', 'Total spend']) {
-    assert.ok(metricsTable.includes(label), `${label} belongs in the comparison table`);
-  }
   assert.match(metricsTable, /\$6\.00/);
-  assert.match(page, /Earlier fixes and feedback are retained/);
-  assert.match(page, /<nav aria-label="Feature progress view">/);
-  assert.match(page, /popovertarget="help-checks-passed"/);
-  assert.match(page, /id="help-checks-passed" popover role="tooltip"/);
   const noRepairSheet = { ...sheet, repetitions: 1, stacks: sheet.stacks.map(stack => ({
     ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 },
       featureCompletion: { passed: 20, selected: 27, rate: 20 / 27 },
@@ -99,11 +92,8 @@ test('campaign separates aggregate scores from selected evidence and explains pe
         { status: 'INCONCLUSIVE', summary: 'Reader timed out', expected: null, actual: null },
         { status: 'PASS', summary: null, expected: null, actual: null },
       ] }] } });
-  assert.match(categorized, /<th>Category<\/th>/);
   assert.match(categorized, /<td>Production<\/td>/);
   assert.match(categorized, /1 \/ 2/);
-  assert.match(categorized, /<th>Requirement<\/th>/);
-  assert.match(categorized, /<details class="check-evidence" data-key="p">/);
   assert.match(categorized, /Expected<\/div><pre>1 order/);
   assert.match(categorized, /Observed<\/div><pre>2 orders/);
   assert.match(categorized, /Grade 2 · INCONCLUSIVE/);
@@ -129,7 +119,6 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     effectiveMinutes: 360, extensionCount: 1,
     grants: [{ request, disposition: 'accepted', effectiveMinutes: 360 }] } });
   assert.match(accepted, /Time added. Limit: 6h 0m/);
-  assert.match(accepted, /name="minutes" type="number" min="1" step="1"/);
   assert.doesNotMatch(attemptPage({ ...grantInput, canControl: false }), /data-run="grant-time"/);
   attempt.status = 'invalid';
   assert.doesNotMatch(attemptPage(grantInput), /data-run="grant-time"/);

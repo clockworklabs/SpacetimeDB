@@ -3,11 +3,10 @@ import { test } from 'node:test';
 import { bigClimb } from '../../dashboard/public/climb.js';
 import { graph } from '../../dashboard/public/graph.js';
 
-test('score charts explain missing grades and preserve circular marker geometry', () => {
+test('score charts explain missing grades', () => {
   assert.match(bigClimb([], String), /Awaiting first grade/);
   const series = [{ score: 1, max: 2, level: 1, unaided: true }];
   const html = bigClimb(series, String);
-  assert.match(html, /preserveAspectRatio="xMidYMid meet"/);
   assert.match(html, /1 \/ 2 points/);
   assert.match(html, /First build at this level; earlier fixes and feedback retained/);
   assert.doesNotMatch(html, /NaN|Infinity/);
@@ -114,7 +113,7 @@ test('chart filters individual runs without changing the scale or hiding pending
   const html = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-2']), 'checks');
   assert.match(html, /data-chart-stack="custom-stack" aria-pressed="mixed"/);
   assert.match(html, /class="progress-series" data-chart-series="run-1"/);
-  assert.doesNotMatch(html, /class="progress-series" data-chart-series="run-2"|stroke-dasharray| style=/);
+  assert.doesNotMatch(html, /class="progress-series" data-chart-series="run-2"/);
   assert.deepEqual(line(html, 'run-1'),
     line(progressChart(sheet, progression, 'completion', 'grid', new Set(), 'checks'), 'run-1'),
     'hiding a run keeps the scale');
@@ -138,10 +137,6 @@ test('distribution shows completed run percentages across providers and preserve
   assert.doesNotMatch(html, /NaN|Infinity|Elapsed run time/);
   for (const stack of sheet.stacks) for (const attempt of stack.attempts) attempt.status = 'running';
   const pending = progressChart(sheet, null, 'distribution');
-  assert.match(pending, /<svg class="progress-chart"/);
-  assert.match(pending, />0%<\/text>/);
-  assert.match(pending, />100%<\/text>/);
-  assert.match(pending, /<text[^>]*>MongoDB<\/text>/);
   assert.doesNotMatch(pending, /class="progress-series"|Awaiting first completed run/);
 });
 

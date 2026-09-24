@@ -13,7 +13,8 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
     costReceipts: [{ receipt: { costUsd, exact: true, complete: true, reconciled: true, error: null } }] });
   const failed = { id: 'failed', totals: { costUsd: 2, costComplete: true },
     levels: [{ level: 1, buildSessions: [session(2)] }] };
-  const measured = { id: 'measured', totals: { costUsd: 3, costComplete: true, durationSec: 100, pausedDurationSec: 10 },
+  const measured = { id: 'measured', totals: { costUsd: 3, costComplete: true, tokens: 2_400_000,
+    durationSec: 100, pausedDurationSec: 10 },
     levels: [
       { level: 1, firstBuild: { score: 5, max: 10 }, buildSessions: [session(1)], repairSessions: [session(1)],
         sessionTotals: { providerThrottle: { waitedMs: 20_000 } } },
@@ -34,6 +35,7 @@ test('dashboard and export share retry, prior-repair, wait and pause definitions
   const row = compareCampaign({ attempts: [attempt] }).rows[0]!;
   assert.equal(row.first, report.firstBuildScoreRate);
   assert.equal(row.duration, report.totalDurationMs! / 1000);
+  assert.equal(report.totalTokens, 2_400_000);
   assert.equal(row.costPerValidRun, report.totalCostUsd);
   assert.equal(row.costPerValidRun, 3); assert.equal(row.spendSoFar, 5);
   assert.equal(attemptMetrics({ ...attempt, result: { ...attempt.result!, firstBuildRate: null } })!.raw.first, null);
@@ -124,6 +126,10 @@ test('stopped attempts do not claim a previous grading or repair phase is live',
     assert.equal(parseRunProgress(log, { running: false, status: 'pending' }).phase, 'Waiting to start');
     assert.notEqual(parseRunProgress(log, { running: true, status: 'running' }).phase, 'Finished');
   }
+  const prepared = parseRunProgress('', { repairs: 10, running: false, status: 'pending' });
+  assert.equal(prepared.phase, 'Waiting to start');
+  assert.equal(prepared.completedGrades, 0);
+  assert.equal(prepared.latestScore, null);
 });
 
 test('activity warnings require agent evidence and exclude planned pauses', () => {

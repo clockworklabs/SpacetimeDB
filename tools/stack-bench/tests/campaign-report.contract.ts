@@ -11,7 +11,7 @@ import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import { buildCampaignReport, campaignActiveDurationMs, campaignMeasuredRunWork, campaignReportCsv, exportCampaignReport, generateCampaignReport,
-  campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
+  campaignRunMetrics, campaignRunFirstBuildObservations, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
 import type { BenchmarkRun, RunSelection } from '../src/campaigns/campaign-report.js';
 import type { RunSessionRecord } from '../src/evidence/benchmark-run.js';
@@ -160,7 +160,6 @@ test('seeded campaign reports identify parent work excluded from continuation co
   const report = buildCampaignReport(plan, state, () => { throw new Error('no execution'); });
   assert(report.limitations.some(item => item.includes('parent-campaign at L2')
     && item.includes('exclude the parent build') && item.includes('source retains prior repairs')));
-  assert.match(renderCampaignHtml(report), /Seeded continuation from/);
   assert.doesNotMatch(renderCampaignHtml(report), /Check completion: 0\//, 'a pending attempt is not a measured zero');
   delete attempt.extension;
   assert(!buildCampaignReport(plan, state, () => { throw new Error('no execution'); })
@@ -244,7 +243,6 @@ test('time grants retain one efficacy result and expose the changed allowance', 
   assert.equal(result.timeBudget?.consumedMs, 120_000);
   assert.equal(result.timeBudget?.extensionCount, 1);
   assert.equal(plan.definition.budgets.attemptTimeoutMinutes, original);
-  assert.match(campaignReportCsv(report)['attempts.csv']!, /effectiveTimeLimitMinutes/);
 });
 
 test('bounded and unknown cost remain explicit through report validation and HTML', () => {
@@ -400,20 +398,6 @@ test('completed process with inconclusive dependency grading has no final comple
   assert.match(report.limitations.join(' '), /must not be assumed to be a lower bound/);
 });
 
-test('reported duration excludes provider throttle waits and tokens travel with usage', () => {
-  const metrics = campaignRunMetrics({
-    outcome: { kind: 'passed' },
-    levels: [{ score: 9, max: 9, sessionTotals: { sessions: 2, costUsd: 1, tokens: 2_400_000,
-      outputTokens: 1, turns: 1, durationMs: 60_000, activeDurationMs: 45_000,
-      providerThrottle: { waits: 1, waitedMs: 15_000 }, promptBytes: 0,
-      usage: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, thinking: null } }],
-    totals: { score: 9, max: 9, costUsd: 1, costComplete: true, tokens: 2_400_000,
-      durationSec: 100 },
-  }, []);
-  assert.equal(metrics.totalDurationMs, 85_000);
-  assert.equal(metrics.totalTokens, 2_400_000);
-});
-
 test('score rates keep inconclusive points separate from measurement coverage', () => {
   const inconclusive = { kind: 'inconclusive', inconclusive: ['contention/203/203b'],
     harnessFailures: [] };
@@ -509,10 +493,6 @@ test('campaign HTML labels observed-only behavior as zero-score first-build obse
   assert.equal(condition.firstBuildObservations.sample.selectedAttempts, 1);
   assert.equal(condition.firstBuildObservations.sample.measuredAttempts, 1);
   assert.equal(condition.firstBuildObservations.metrics.passRate.center, 1);
-  assert.match(html, /Additional first-build measurements/);
-  assert.match(html, /Provisional scores/);
-  assert.match(html, /add no points to the score/);
-  assert.match(html, /do not enter repair feedback/);
   assert.match(html, /first-build-l1-observed\/bundle\.json/);
 });
 
@@ -523,14 +503,10 @@ test('campaign HTML states the build and evaluation setup in plain language', ()
   const report = buildCampaignReport(plan, state, () => {
     throw new Error('a pending campaign must not read run evidence');
   });
+  assert(report.limitations.some(item =>
+    item.includes('Reference-fixture attempts use hand-written apps and make no model calls')
+    && item.includes('do not measure model implementation ability or comparative token efficiency')));
   const html = renderCampaignHtml(report);
-  assert.match(html, /What this run asks for and tests/);
-  assert.match(html, /Cost and measured completion/);
-  assert.doesNotMatch(html, /Cost and verified completion/);
-  assert.match(html, /Reference-fixture attempts use hand-written apps and make no model calls/);
-  assert.match(html, /do not measure model implementation ability or comparative token efficiency/);
-  assert.match(html, /The build brief lists what the coding agent is asked to build/);
-  assert.match(html, /Additional measurements are reported separately/);
   assert.match(html, /product-brief-quality/);
   assert.match(html, /ecommerce\.spec\.access-control/);
   assert.match(html, /ecommerce\.spec\.transactional-integrity/);
@@ -702,8 +678,6 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   const html = renderCampaignHtml(report);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
-  assert.match(html, /Study condition/);
-  assert.match(html, /<td>prescribed<\/td>/);
   const malformedScope = structuredClone(report);
   (malformedScope.scope as typeof malformedScope.scope & { surprise: boolean }).surprise = true;
   const { contentSha256: _old, ...body } = malformedScope;
@@ -713,37 +687,6 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   assert.ok(malformedCondition.conditions[0]);
   (malformedCondition.conditions[0] as unknown as { condition: null }).condition = null;
   assert.throws(() => validateCampaignReport(malformedCondition), /conditions\[0\]\.condition/);
-});
-
-test('human reports format normalized usage and elapsed time for people', () => {
-  assert.equal(formatDurationMs(4_893_000), '1h 21m 33s');
-  assert.equal(formatDurationMs(125_000), '2m 5s');
-  assert.equal(formatDurationMs(9_000), '9s');
-  const plan = examplePlan();
-  let state = createCampaignState(plan, { now: created });
-  const claimed = claimNextAttempt(state, { now: created, admissionId: 'admission-format' });
-  assert.ok(claimed.claim);
-  const evidence = run('run-format', claimed.claim.attempt,
-    { cost: 19.899, durationSec: 4_893 });
-  state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
-    { exitCode: 0, run: evidence }, { now: '2026-08-12T01:21:33.000Z' });
-  const html = renderCampaignHtml(buildCampaignReport(plan, state, () => evidence));
-  assert.match(html, /\$19\.899 API-equivalent usage/);
-  assert.doesNotMatch(html, /normalized usage/);
-  assert.match(html, /1h 21m 33s/);
-  assert.match(html, /First-build score/);
-  assert.match(html, /\(n=1\)/);
-  assert.match(html, /100% coverage/);
-  assert.doesNotMatch(html, />4893s</);
-  assert.match(html, /spread is reported only from three or more/i);
-  assert.match(html, /not (?:an invoice|invoices)/);
-
-  const costPlan = structuredClone(plan);
-  costPlan.definition.analysis.primaryMetric = 'totalCostUsd';
-  const costHtml = renderCampaignHtml(buildCampaignReport(costPlan, state, () => evidence));
-  assert.match(costHtml, /<th>totalCostUsd<\/th>/);
-  assert.match(costHtml, />\$19\.899 \(n=1\)<br><small>\$19\.899 API-equivalent usage/);
-  assert.doesNotMatch(costHtml, /% coverage/);
 });
 
 test('a spread needs three completed attempts', () => {

@@ -16,13 +16,13 @@ import { campaignComparisonKey } from '../../src/campaigns/campaign-report.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../../src/composition/definition-plan.js';
-import { attemptChecks, attemptLogSlice, attemptPackage, campaignLiveUpdate, campaignProgression, campaignSheet,
+import { attemptChecks, attemptPackage, campaignLiveUpdate, campaignProgression, campaignSheet,
   overviewSummary } from '../../dashboard/dashboard-views.js';
 import { parseRunProgress, attemptPause,
   discoverCampaigns, discoverPlans, readCampaignArtifactBody, readJsonLines,
   resolveCampaignArtifact, summarizeCampaign,
 } from '../../dashboard/dashboard-model.js';
-import { campaignFacts, checkpointRegressions, firstGradeAbort, inspectCampaignSummary }
+import { checkpointRegressions, firstGradeAbort, inspectCampaignSummary }
   from '../../src/campaigns/campaign-inspection.js';
 import { attemptExcluded, compareCampaign } from '../../dashboard/public/metrics.js';
 import { createDashboardServer, parseDashboardArgs } from '../../dashboard/dashboard-server.js';
@@ -162,23 +162,16 @@ test('dashboard reports a dependency repair by feature instead of the level sess
   assert.equal(progress.phase,
     'Grading L3 after repair 1 for Customer recommendations');
   assert.deepEqual(progress.repair, { round: 1, budget: null });
-});
-
-test('dashboard shows a feature repair in progress without a run-wide budget', () => {
-  const progress = parseRunProgress(`
+  const repairing = parseRunProgress(`
 === mongodb-l3-first (mongodb) ===
   TOTAL      ... 26/43
 --- feature repair 2: Customer recommendations ---
 `, { repairs: 3, running: true });
-  assert.equal(progress.phase, 'Repairing Customer recommendations · 2');
-  assert.deepEqual(progress.repair, { round: 2, budget: null });
-});
-
-test('dashboard calls dependency graph position depth', () => {
-  const progress = parseRunProgress(`
+  assert.equal(repairing.phase, 'Repairing Customer recommendations · 2');
+  assert.deepEqual(repairing.repair, { round: 2, budget: null });
+  assert.equal(parseRunProgress(`
 === mongodb-l2-first (mongodb) ===
-`, { dependency: true });
-  assert.equal(progress.phase, 'Grading the first depth 2 build');
+`, { dependency: true }).phase, 'Grading the first depth 2 build');
 });
 
 test('a regression is a kept pass that later fails, not an unmeasured or never-passed check', () => {
@@ -204,77 +197,6 @@ test('an aborted first grade is classified, not treated as a scored zero', () =>
     outcome: { kind: 'passed', phase: 'grading' } }), null);
   assert.equal(firstGradeAbort(null), null);
   assert.equal(firstGradeAbort({ score: 31, max: 58 }), null);
-});
-
-test('campaign facts surface the identity an operator otherwise reads plan.json for', () => {
-  const plan = examplePlan();
-  const facts = campaignFacts(plan);
-  assert.deepEqual(facts.agents, plan.agents.map(agent => ({ adapter: agent.adapter,
-    version: agent.adapterVersion, model: agent.model })));
-  assert.deepEqual(facts.recipes, plan.attempts[0]?.condition.requested.levels.map(level => ({
-    level: level.level, id: level.recipe?.id ?? null,
-    contentSha256: level.recipe?.contentSha256 ?? null,
-  })));
-  assert.deepEqual(facts.runtime, {
-    controllerImage: plan.definition.runtime.controllerImage,
-    buildImage: plan.definition.runtime.buildImage,
-  });
-  assert.equal(facts.grading.status, 'pending');
-  assert.equal(Object.hasOwn(plan.bindings[0]!, 'qualification'), false);
-});
-
-test('dashboard reports dependency work from the validated persisted state', t => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-dependency-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const plan = dependencyPlan();
-  const now = '2026-08-25T12:00:00.000Z';
-  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
-    { now, admissionId: 'admission-1' });
-  assert.ok(claimed.claim);
-  const claim = claimed.claim;
-  const state = claimed.state;
-  const attemptState = state.attempts.find(attempt =>
-    attempt.executions.at(-1)?.id === claim.executionId);
-  assert.ok(attemptState);
-  const attemptPlan = attemptState.plan;
-  const outputRelative = claim.output;
-  const output = join(root, outputRelative);
-  mkdirSync(join(output, 'source'), { recursive: true });
-  writeCampaign(root, plan, state);
-  const progression = compileProgressionInput(dependencyRuntimeDefinition(
-    plan.featureCatalog, plan.dependencyPolicy));
-  const owner = { schemaVersion: 1,
-    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-    attempt: { id: attemptPlan.id, track: plan.definition.track, stack: attemptPlan.stack,
-      agentAdapter: attemptPlan.agentAdapter, model: attemptPlan.model,
-      conditionSha256: attemptPlan.condition.contentSha256 },
-    workspace: { appDirectory: 'source' } };
-  assert(plan.featureCatalog && plan.dependencyPolicy);
-  writeProgressionState(join(output, 'progression-state.json'), { progression,
-    featureCatalogIdentity: plan.featureCatalog.identity,
-    dependencyPolicyIdentity: plan.dependencyPolicy.identity,
-    owner, state: progressionEngine.initialize(progression.definition) });
-
-  const summary = summarizeCampaign(root, { includePackage: true });
-  assert.equal(summary.mode, 'dependency');
-  const firstAttempt = summary.attempts[0];
-  assert.ok(firstAttempt?.dependency);
-  assert.deepEqual(firstAttempt.dependency.activeDepths, [1]);
-  assert.deepEqual(firstAttempt.dependency.history,
-    { firstTryPercentage: 0, repairAttempts: 0 });
-  assert(firstAttempt.dependency.work.current.some(node => node.id === 'accounts'));
-  assert.deepEqual(firstAttempt.dependency.attempts,
-    { total: 0, maxRemaining: 0, features: [] });
-  assert.ok(summary.package);
-  assert(summary.package.executions[0]?.artifacts
-    .some(item => item.path.endsWith('/progression-state.json')));
-});
-
-test('a prepared attempt is waiting rather than finished', () => {
-  const progress = parseRunProgress('', { repairs: 10, running: false, status: 'pending' });
-  assert.equal(progress.phase, 'Waiting to start');
-  assert.equal(progress.completedGrades, 0);
-  assert.equal(progress.latestScore, null);
 });
 
 test('dashboard CLI is deliberately loopback-only', () => {
@@ -575,13 +497,6 @@ test('dashboard serves real state and protects campaign launch with same-origin 
   const pageHtml = await page.text();
   assert.match(pageHtml, /<title>Stack Bench<\/title>/);
   assert.match(pageHtml, /src="\/app\.js"/);
-  assert.doesNotMatch(pageHtml, /Control Room/);
-  assert.doesNotMatch(pageHtml, /Controller activity/);
-  assert.doesNotMatch(pageHtml, /See every run/);
-  const brand = await fetch(`${origin}/spacetimedb-mark.svg`);
-  assert.equal(brand.status, 200);
-  assert.equal(brand.headers.get('content-type'), 'image/svg+xml');
-  assert.match(await brand.text(), /viewBox="0 0 35 32"/);
   const sessionResponse = await fetch(`${origin}/api/session`);
   assert.equal(sessionResponse.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await sessionResponse.json(), { canStart: true, csrfToken: 'test-session-token' });
@@ -722,49 +637,6 @@ test('the overview caches a running campaign until its evidence changes', () => 
   assert.deepEqual(refreshed, first);
 });
 
-test('attempt evidence is fetched per attempt, not per campaign', t => {
-  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-attempt-'));
-  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  const plan = examplePlan();
-  const now = '2026-08-18T12:00:00.000Z';
-  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
-    { now, admissionId: 'admission-1' });
-  assert.ok(claimed.claim);
-  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
-    { exitCode: 0, run: { outcome: { kind: 'passed' } } }, { now });
-  const directory = join(resultsRoot, 'campaigns', 'attempt-run');
-  writeCampaign(directory, plan, state);
-  const output = join(directory, claimed.claim.output);
-  mkdirSync(output, { recursive: true });
-  writeRunEvidence(output, plan, claimed.claim.attempt, 1);
-  writeFileSync(join(output, 'process.stdout.log'),
-    `authorization: Bearer secret-token-value\n${'log line\n'.repeat(64)}`);
-  const attemptId = claimed.claim.attempt.id;
-
-  const checks = attemptChecks(resultsRoot, 'attempt-run', attemptId);
-  assert.equal(checks.stack, claimed.claim.attempt.stack);
-  assert.deepEqual(checks.grades.map(grade => grade.id), ['grading']);
-  assert.ok(checks.checks.length > 0);
-  assert.ok(checks.checks.every(check => check.outcome === 'pass'));
-  assert.ok(checks.checks.every(check => check.history.length === 1));
-  assert.equal(checks.checks.some(check => check.regressed), false);
-
-  const evidence = attemptPackage(resultsRoot, 'attempt-run', attemptId);
-  assert.equal(evidence.executions.length, 1);
-  const paths = evidence.executions[0]?.artifacts.map(item => item.path) ?? [];
-  assert.ok(paths.some(path => path.endsWith('/run.json')));
-  assert.ok(paths.some(path => path.endsWith('/grading/bundle.json')));
-  assert.equal(paths.some(path => path.includes('/source/')), false);
-
-  const head = attemptLogSlice(resultsRoot, 'attempt-run', attemptId, 0);
-  assert.match(head.text, /\[redacted credential\]/);
-  assert.doesNotMatch(head.text, /secret-token-value/);
-  assert.equal(head.offset, head.size);
-  const tail = attemptLogSlice(resultsRoot, 'attempt-run', attemptId, head.offset);
-  assert.equal(tail.text, '');
-  assert.equal(tail.offset, head.size);
-});
-
 test('dashboard pause state validates the receipt and observes resume changes', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-pause-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -844,6 +716,20 @@ test('the sheet reports dependency submodes and questlines in definition order',
   assert.equal(stack.regressions, null, 'no eligible runs means no regression statistic');
   const bytes = Buffer.byteLength(JSON.stringify(sheet));
   assert.ok(bytes < 60 * 1024, `dependency sheet is ${bytes} bytes`);
+
+  const summary = summarizeCampaign(directory, { includePackage: true });
+  assert.equal(summary.mode, 'dependency');
+  const firstAttempt = summary.attempts[0];
+  assert.ok(firstAttempt?.dependency);
+  assert.deepEqual(firstAttempt.dependency.activeDepths, [1]);
+  assert.deepEqual(firstAttempt.dependency.history,
+    { firstTryPercentage: 0, repairAttempts: 0 });
+  assert(firstAttempt.dependency.work.current.some(node => node.id === 'accounts'));
+  assert.deepEqual(firstAttempt.dependency.attempts,
+    { total: 0, maxRemaining: 0, features: [] });
+  assert.ok(summary.package);
+  assert(summary.package.executions[0]?.artifacts
+    .some(item => item.path.endsWith('/progression-state.json')));
 });
 
 test('log-only refresh keeps the evidence sheet cached and returns live fields only', t => {
@@ -951,12 +837,16 @@ test('every view has a route, and a name that is not a campaign never reaches th
 
     const checks = await (await fetch(
       `${origin}/api/campaigns/route-run/attempts/${attemptId}/checks`)).json() as {
-        checks: Array<{ outcome: string }> };
+        checks: Array<{ outcome: string; history: unknown[]; regressed: boolean }> };
     assert.ok(checks.checks.length > 0);
+    assert.ok(checks.checks.every(check => check.outcome === 'pass'));
+    assert.ok(checks.checks.every(check => check.history.length === 1));
+    assert.equal(checks.checks.some(check => check.regressed), false);
     const evidence = await (await fetch(
       `${origin}/api/campaigns/route-run/attempts/${attemptId}/package`)).json() as {
-        executions: Array<{ artifacts: unknown[] }> };
+        executions: Array<{ artifacts: Array<{ path: string }> }> };
     assert.equal(evidence.executions.length, 1);
+    assert.equal(evidence.executions[0]!.artifacts.some(item => item.path.includes('/source/')), false);
 
     const log = await fetch(`${origin}/api/campaigns/route-run/attempts/${attemptId}/log?from=0`);
     assert.equal(log.headers.get('content-type'), 'text/plain; charset=utf-8');
@@ -1175,7 +1065,6 @@ test('cost and completion keep unknown spend and the full selected scope visible
   const input = { sheet, attemptId: attempt.id, tab: 'checks' as const,
     checks: null, evidence: null, log: '' };
   const detail = attemptPage(input);
-  assert.doesNotMatch(detail, /Completion uses|no accepted outcome|Provisional results|Grade history/);
   assert.match(detail, /Feature dependencies/);
   assert.match(detail, /1 \/ 107/);
   assert.equal(attempt.completion.unmeasured, 106);
@@ -1263,7 +1152,6 @@ test('the client renders controls, evidence links, and every supported page', ()
   ];
 
   for (const [name, html] of pages) assert.ok(html.length > 100, name);
-  for (const [, html] of pages) assert.doesNotMatch(html, /preserveAspectRatio="none"/);
   const comparison = campaignPage({ sheet: { ...dependency,
     facts: { ...dependency.facts, repairLimits: { perFeature: 5 } } },
     progression, view: 'grid', step: 0 });

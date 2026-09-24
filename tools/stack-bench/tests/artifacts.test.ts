@@ -33,15 +33,6 @@ test('an invalid replacement cannot overwrite an existing run artifact', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('an unversioned stale file is rejected before its run id can be trusted', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
-  try {
-    const path = join(root, 'run.json');
-    writeFileSync(path, JSON.stringify({ id: 'old-run' }));
-    assert.throws(() => readRunJson(path, 'current-run'), /unsupported schema missing/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('unknown artifact schemas fail rather than being guessed', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
   try {
@@ -262,5 +253,8 @@ test('active readers reject unversioned files without inferring their kind', () 
     const unknown = join(root, 'unknown.json');
     writeFileSync(unknown, JSON.stringify({ kind: 'future_thing', id: 'x' }));
     assert.throws(() => readArtifact(unknown), /unsupported schema missing/);
+    const staleRun = join(root, 'run.json');
+    writeFileSync(staleRun, JSON.stringify({ id: 'old-run' }));
+    assert.throws(() => readRunJson(staleRun, 'current-run'), /unsupported schema missing/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

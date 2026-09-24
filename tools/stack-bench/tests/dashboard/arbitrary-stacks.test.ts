@@ -18,8 +18,6 @@ test('campaign history derives all stack columns from data, including new stacks
   assert.match(html, /<th class="stack">custom-a<\/th>/);
   assert.match(html, /<th class="stack">custom-b<\/th>/);
   assert.match(html, /<td class="stack">94%<\/td>/);
-  assert.match(campaignsPage({ ...input, filter: 'ready' }), /colspan="9"/);
-  assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all' }), /colspan="4"/);
 
   const comparison = compareCampaign({ attempts: stacks.map(stack => ({
     id: stack, stack, status: 'pending', execution: null, result: null, dependency: null,

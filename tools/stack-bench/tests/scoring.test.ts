@@ -58,20 +58,14 @@ test('unchanged repair evidence is reported without hiding the overall scores', 
   'no improvement among 1 criterion measured in both rounds (1/1 points); overall 1/1 -> 1/1');
 });
 
-test('pass to inconclusive is reported as lost evidence', () => {
-  const result = compareCriterionEvidence(
-    bundle([criterion('a', true)]),
-    bundle([criterion('a', false, { inconclusive: true })]),
-  );
-  assert.deepEqual(result.lostEvidence, ['features/1/a']);
-});
-
-test('fail to inconclusive is reported as lost evidence', () => {
-  const result = compareCriterionEvidence(
-    bundle([criterion('a', false)]),
-    bundle([criterion('a', false, { inconclusive: true })]),
-  );
-  assert.deepEqual(result.lostEvidence, ['features/1/a']);
+test('pass or fail to inconclusive is reported as lost evidence', () => {
+  for (const passedBefore of [true, false]) {
+    const result = compareCriterionEvidence(
+      bundle([criterion('a', passedBefore)]),
+      bundle([criterion('a', false, { inconclusive: true })]),
+    );
+    assert.deepEqual(result.lostEvidence, ['features/1/a']);
+  }
 });
 
 test('a real regression is compared on stable evidence', () => {
