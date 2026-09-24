@@ -37,6 +37,18 @@ function parseProviderRequest(body: Buffer, path: string, config: BrokerConfig):
       || payload.max_tokens > config.maxOutputTokens)) {
     fail(`max_tokens must be from 1 through ${config.maxOutputTokens}`);
   }
+  // Token-only receipts cannot price server tools, MCP connectors, containers,
+  // or fast-mode speed. Client tools carry no type or 'custom'.
+  if (path === '/v1/messages'
+    && ((payload.tools !== undefined && (!Array.isArray(payload.tools)
+      || payload.tools.some(tool => !isRecord(tool)
+        || (tool.type !== undefined && tool.type !== 'custom'))))
+      || payload.mcp_servers !== undefined || payload.container !== undefined
+      || (payload.speed !== undefined && payload.speed !== 'standard')
+      || (payload.service_tier !== undefined && payload.service_tier !== 'auto'
+        && payload.service_tier !== 'standard_only'))) {
+    fail('request requires unsupported pricing or server-side state');
+  }
   return payload;
 }
 

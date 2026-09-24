@@ -164,6 +164,32 @@ test('credential broker rejects unauthorized and unsupported requests before ups
   });
 });
 
+test('Anthropic broker rejects server-side tools and tiers that token receipts cannot price', async () => {
+  await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
+    const headers = { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' };
+    const request = { model: 'test-model', max_tokens: 1,
+      messages: [{ role: 'user', content: 'hello' }] };
+    for (const override of [
+      { tools: [{ type: 'web_search_20250305', name: 'web_search' }] },
+      { mcp_servers: [{ type: 'url', url: 'https://mcp.example', name: 'remote' }] },
+      { container: 'container-id' },
+      { speed: 'fast' },
+      { service_tier: 'priority' },
+    ]) {
+      assert.deepEqual(await send(brokerPort, { headers,
+        body: JSON.stringify({ ...request, ...override }) }),
+      { status: 400, body: 'invalid provider request' });
+    }
+    assert.equal(seen.length, 0);
+    const clientTools = { ...request, service_tier: 'auto', tools: [
+      { name: 'Bash', description: 'Run a command', input_schema: { type: 'object' } },
+      { type: 'custom', name: 'Edit', input_schema: { type: 'object' } },
+    ] };
+    assert.equal((await send(brokerPort, { headers, body: JSON.stringify(clientTools) })).status, 200);
+    assert.equal(seen.length, 1);
+  });
+});
+
 test('credential broker rejects an unauthorized request before its body completes', async () => {
   await withBroker('api-key', async ({ brokerPort }) => {
     const result = await new Promise<SendResult>((resolveResult, reject) => {

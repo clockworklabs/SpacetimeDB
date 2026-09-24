@@ -1213,7 +1213,8 @@ async function main() {
       image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
       resultsDir: resolve(args.out ?? stackBenchResultsRoot(ROOT)),
     }, { ownedLease: { path: leasePath, runId }, env: args.apiKey && agentAdapter.apiKeyEnvironmentVariable
-      ? { ...process.env, [agentAdapter.apiKeyEnvironmentVariable]: '<provided-by-argument>' }
+      ? { ...process.env, [agentAdapter.apiKeyEnvironmentVariable]: '<provided-by-argument>',
+        [`${agentAdapter.apiKeyEnvironmentVariable}_FILE`]: undefined }
       : process.env });
     if (preflight) writeArtifact(join(outputDir, ARTIFACT_FILE.preflight), {
       kind: 'preflight', id: `${runId}-preflight`,

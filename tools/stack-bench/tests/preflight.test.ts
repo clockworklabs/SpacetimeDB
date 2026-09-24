@@ -6,8 +6,9 @@ import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { parsePreflightArgs } from '../commands/preflight-cli.js';
-import { probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
+import { credentialReady, probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
   from '../src/runtime/preflight.js';
+import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.js';
 import type { PreflightCheck, PreflightReport } from '../src/runtime/preflight.js';
 import { isExactImageReference } from '../src/runtime/container-image.js';
 import { createArtifact, validateArtifact } from '../src/evidence/artifacts.js';
@@ -620,5 +621,19 @@ test('OpenRouter preflight requires its own key and a pinned route without revea
     assert.equal(missingRoute.ok, false);
     assert(missingRoute.checks.some(check => check.status === 'fail'
       && check.summary.includes('providerRoute')));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a key read from its file reaches preflight as the one selected source', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-key-file-'));
+  try {
+    const keyFile = join(root, 'openrouter.key');
+    writeFileSync(keyFile, 'sk-or-test');
+    const adapter = AGENT_ADAPTER_REGISTRY.get('openrouter');
+    // Bench reads the file itself, then passes a placeholder and clears the file variable.
+    assert.equal(credentialReady(adapter, { OPENROUTER_API_KEY: '<provided-by-argument>',
+      OPENROUTER_API_KEY_FILE: undefined }, root, () => true).ok, true);
+    assert.match(String(credentialReady(adapter, { OPENROUTER_API_KEY: '<provided-by-argument>',
+      OPENROUTER_API_KEY_FILE: keyFile }, root, () => true).reason), /only one API key source/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
