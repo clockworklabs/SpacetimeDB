@@ -385,11 +385,11 @@ internal static class ErrorDescriptor
             _ => Location.None
         );
 
-    public static readonly ErrorDescriptor<(string assembly, string name, string reducers)> MountedLifecycleReducers =
+    public static readonly ErrorDescriptor<(string assembly, string name, string declarations)> MountedRootOnlyDeclarations =
         new(
             group,
-            "Mounted dependency declares lifecycle reducers",
-            ctx => $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares lifecycle reducers: {ctx.reducers}. Lifecycle reducers are only supported in the root scope; remove them or omit the dependency's namespace declaration so it registers automatically in public.",
+            "Root-only declarations in mounted dependency",
+            ctx => $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares {ctx.declarations}. These declarations are only supported in the root scope. Move them to the root, or omit the namespace declaration so the dependency registers automatically in public. Root-defined RLS may target namespace-qualified tables.",
             _ => Location.None
         );
 
@@ -399,13 +399,5 @@ internal static class ErrorDescriptor
             "Conflicting generated C# names",
             ctx => $"Generated C# name '{ctx.scope}.{ctx.name}' is used by both {ctx.first} and {ctx.second}. Choose distinct accessors or member names.",
             ctx => ctx.location
-        );
-
-    public static readonly ErrorDescriptor<(string assembly, string name, string declarations)> MountedRootOnlyDeclarations =
-        new(
-            group,
-            "Mounted dependency declares root-only configuration",
-            ctx => $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares {ctx.declarations}. These declarations are only supported in the root scope. Move them to the root, or omit the namespace declaration so the dependency registers automatically in public. Root-defined RLS may target namespace-qualified tables.",
-            _ => Location.None
         );
 }
