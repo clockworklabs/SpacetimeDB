@@ -155,7 +155,7 @@ class JwtClaimsImpl implements JwtClaims {
   }
 }
 
-export class AuthCtxImpl implements AuthCtx {
+class AuthCtxImpl implements AuthCtx {
   public readonly isInternal: boolean;
 
   // Source of the JWT payload string, if there is one.
@@ -204,9 +204,9 @@ export class AuthCtxImpl implements AuthCtx {
   /** If there is a connection id, look up the JWT payload from the system tables. */
   static fromSystemTables(
     connectionId: ConnectionId | null,
-    sender: Identity,
-    callAuthFlags: number
+    sender: Identity
   ): AuthCtx {
+    const callAuthFlags = sys.get_call_auth_flags();
     if (connectionId === null) {
       return new AuthCtxImpl({
         isInternal: (callAuthFlags & 1) !== 0,
@@ -234,7 +234,7 @@ export const ReducerCtxImpl = class ReducerCtx<
 > implements IReducerCtx<SchemaDef>
 {
   #identity: Identity | undefined;
-  #senderAuth: AuthCtx;
+  #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   sender: Identity;
@@ -249,8 +249,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
     dbView: DbView<any>,
-    asViews: object = {},
-    senderAuth?: AuthCtx
+    asViews: object = {}
   ) {
     Object.seal(this);
     this.sender = sender;
@@ -258,13 +257,6 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.connectionId = connectionId;
     this.db = dbView as unknown as DbView<SchemaDef>;
     this.as = asViews as AliasViews<SchemaDef>;
-    this.#senderAuth =
-      senderAuth ??
-      AuthCtxImpl.fromSystemTables(
-        connectionId,
-        sender,
-        sys.get_call_auth_flags()
-      );
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -280,11 +272,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.timestamp = timestamp;
     me.connectionId = connectionId;
     me.#uuidCounter = undefined;
-    me.#senderAuth = AuthCtxImpl.fromSystemTables(
-      connectionId,
-      sender,
-      sys.get_call_auth_flags()
-    );
+    me.#senderAuth = undefined;
     if (dbView !== undefined) {
       me.db = dbView;
     }
@@ -302,7 +290,10 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   get senderAuth() {
-    return this.#senderAuth;
+    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+      this.connectionId,
+      this.sender
+    ));
   }
 
   get random() {

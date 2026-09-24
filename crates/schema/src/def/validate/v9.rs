@@ -391,11 +391,7 @@ impl ModuleValidatorV9<'_> {
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
             lifecycle,
-            visibility: if lifecycle.is_some() {
-                FunctionVisibility::Private
-            } else {
-                FunctionVisibility::ClientCallable
-            },
+            visibility: FunctionVisibility::ClientCallable,
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         };

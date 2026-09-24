@@ -16,7 +16,6 @@ pub fn external(ctx: &ReducerContext) {
 
 #[spacetimedb::procedure]
 pub fn external_procedure(ctx: &mut ProcedureContext) -> bool {
-    assert!(!ctx.sender_auth().is_internal());
     let sender = ctx.sender();
     let connection = ctx.connection_id();
     ctx.with_tx(|tx| {

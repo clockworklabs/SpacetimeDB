@@ -2853,6 +2853,14 @@ mod capability_tests {
     use super::*;
     use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     #[test]
+    fn v9_schema_export_remains_available_for_capable_v10_modules() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_capability("hosted_auth_v1");
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        let _: spacetimedb_lib::db::raw_def::v9::RawModuleDefV9 = module.into();
+    }
+
+    #[test]
     fn capabilities_are_explicit_bounded_and_preserved() {
         let bare: ModuleDef = RawModuleDefV10Builder::new().finish().try_into().unwrap();
         assert!(!bare.supports_hosted_auth_v1());
@@ -2860,7 +2868,7 @@ mod capability_tests {
         builder.add_capability("hosted_auth_v1");
         let module: ModuleDef = builder.finish().try_into().unwrap();
         assert!(module.supports_hosted_auth_v1());
-        let reloaded: ModuleDef = module.into_raw().try_into().unwrap();
+        let reloaded: ModuleDef = RawModuleDefV10::from(module).try_into().unwrap();
         assert!(reloaded.supports_hosted_auth_v1());
         for names in [
             vec!["".to_string()],

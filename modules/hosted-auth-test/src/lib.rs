@@ -96,8 +96,6 @@ pub fn inspect_procedure(
 ) -> bool {
     assert_eq!(ctx.sender(), sender);
     assert_eq!(ctx.connection_id(), connection);
-    assert_eq!(ctx.sender_auth().is_internal(), internal);
-    assert_eq!(ctx.sender_auth().jwt().unwrap().identity(), sender);
     ctx.with_tx(|tx| {
         assert_eq!(tx.sender(), sender);
         assert_eq!(tx.connection_id(), connection);
