@@ -202,7 +202,8 @@ test('SpacetimeDB reservation and catalog mutants declare their observed targets
   const catalog = mutations.get('catalog-product-is-not-published');
   assert(catalog, 'the catalog mutation must exist');
   assert.deepEqual(catalog.targets,
-    ['ecommerce.progression.catalog-management.catalog-management.622a']);
+    ['ecommerce.progression.catalog-management.catalog-management.622a',
+      'ecommerce.progression.catalog-management.catalog-management.622b']);
   const catalogEdit = mutationFileEdits(catalog)[0];
   assert(catalogEdit, 'the catalog mutation must have an edit');
   const catalogPath = join(ROOT, fixture.targetPath, ...catalogEdit.file.split('/'));
@@ -234,9 +235,10 @@ test('catalog name and variant mutants target separate checks and checkout targe
     const variants = mutations.get(item.variantsId);
     assert(name, `missing ${item.nameId}`);
     assert(variants, `missing ${item.variantsId}`);
-    // 622b opens the product by name, so a hidden name stops it before any observation.
+    // 622b first expects the named product, so a hidden name fails both checks at an observation.
     assert.deepEqual(name.targets,
-      ['ecommerce.progression.catalog-management.catalog-management.622a']);
+      ['ecommerce.progression.catalog-management.catalog-management.622a',
+        'ecommerce.progression.catalog-management.catalog-management.622b']);
     assert.deepEqual(variants.targets,
       ['ecommerce.progression.catalog-management.catalog-management.622b']);
 

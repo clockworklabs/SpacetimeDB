@@ -37,6 +37,12 @@
               "within": 6000
             },
             {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "absent": true
+            },
+            {
               "do": "reload",
               "actor": "shopper",
               "application": true,

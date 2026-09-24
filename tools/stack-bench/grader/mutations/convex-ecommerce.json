@@ -182,7 +182,8 @@
       "id": "catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a"
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
       "desc": "The public product card omits the submitted name while retaining its product and variants.",
       "file": "client/src/App.tsx",

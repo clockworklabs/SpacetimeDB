@@ -1342,7 +1342,8 @@
       "id": "catalog-product-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a"
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
       "desc": "The public product card omits the submitted name.",
       "file": "client/src/components/ItemCard.tsx",

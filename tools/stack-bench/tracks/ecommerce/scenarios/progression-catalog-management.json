@@ -37,6 +37,7 @@
           "points": 2,
           "statedBy": "Products can have named variants.",
           "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Travel Mug", "within": 10000 },
             { "do": "openItem", "actor": "visitor", "item": "Travel Mug", "unlessVisible": "item-variant" },
             { "do": "expectElementCount", "actor": "visitor", "testid": "item-variant", "contains": "Black", "equals": 1, "within": 10000 },
             { "do": "expectElementCount", "actor": "visitor", "testid": "item-variant", "contains": "Silver", "equals": 1, "within": 10000 }
