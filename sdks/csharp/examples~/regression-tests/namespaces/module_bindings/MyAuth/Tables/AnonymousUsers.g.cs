@@ -16,7 +16,7 @@ namespace SpacetimeDB.Types.@MyAuth
         public sealed class AnonymousUsersHandle : RemoteTableHandle<global::SpacetimeDB.Types.EventContext, User>
         {
             public override string RemoteTableName => "MyAuth.anonymous_users";
-            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "anonymous_users");
+            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName("MyAuth", "anonymous_users");
             protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => SqlName;
 
             internal AnonymousUsersHandle(global::SpacetimeDB.Types.DbConnection conn) : base(conn)

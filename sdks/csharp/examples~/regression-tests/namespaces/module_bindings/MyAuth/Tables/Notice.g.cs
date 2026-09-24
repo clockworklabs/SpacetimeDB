@@ -16,7 +16,7 @@ namespace SpacetimeDB.Types.@MyAuth
         public sealed class NoticeHandle : RemoteEventTableHandle<global::SpacetimeDB.Types.EventContext, Notice>
         {
             public override string RemoteTableName => "MyAuth.notice";
-            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "notice");
+            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName("MyAuth", "notice");
             protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => SqlName;
 
             internal NoticeHandle(global::SpacetimeDB.Types.DbConnection conn) : base(conn)
