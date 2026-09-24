@@ -771,6 +771,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 {
     public static partial class AssemblyDescriptor
     {
+        public const string? CaseConversionPolicy = null;
         public const string RootOnlyDeclarations =
             "row-level security filters, environment variables, lifecycle reducer Timers.Init (Init)";
         public const int ReducerCount = 6;
