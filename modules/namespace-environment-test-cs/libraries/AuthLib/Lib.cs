@@ -24,7 +24,9 @@ public static partial class Functions
     public static void ExpectEnvironment(ReducerContext ctx, string? expected)
     {
         if (ctx.Env.Get("NAMESPACE_TEST") != expected)
+        {
             throw new Exception("Library environment mismatch");
+        }
     }
 
     [Procedure]
@@ -36,7 +38,10 @@ public static partial class Functions
     {
         var value = ctx.Env.Get("NAMESPACE_TEST");
         if (ctx.WithTx(tx => tx.Env.Get("NAMESPACE_TEST")) != value)
+        {
             throw new Exception("Handler transaction environment mismatch");
+        }
+
         return new(200, HttpVersion.Http11, [], HttpBody.FromString(value ?? "unset"));
     }
 
