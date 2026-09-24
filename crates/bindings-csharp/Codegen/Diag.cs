@@ -423,4 +423,18 @@ internal static class ErrorDescriptor
                 $"Generated C# name '{ctx.scope}.{ctx.name}' is used by both {ctx.first} and {ctx.second}. Choose distinct accessors or member names.",
             ctx => ctx.location
         );
+
+    public static readonly ErrorDescriptor<(
+        string root,
+        string rootPolicy,
+        string dependency,
+        string dependencyPolicy
+    )> ConflictingCaseConversionPolicies =
+        new(
+            group,
+            "Conflicting case conversion policies",
+            ctx =>
+                $"Root assembly '{ctx.root}' uses case conversion policy '{ctx.rootPolicy}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the shared public scope. Use the same policy, remove the dependency's setting to inherit the root policy, or mount the dependency in a distinct namespace.",
+            _ => Location.None
+        );
 }
