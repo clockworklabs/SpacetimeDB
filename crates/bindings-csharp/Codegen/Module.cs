@@ -2198,7 +2198,6 @@ record AssemblyDeclaration(
     string Identity,
     string DescriptorTypeName,
     bool DeclaresMounts,
-    string LifecycleReducers,
     string RootOnlyDeclarations,
     EquatableArray<AssemblyTableAccessor> Tables,
     EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
@@ -2297,8 +2296,6 @@ public class Module : IIncrementalGenerator
                     descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     assembly.GetAttributes().Any(attribute =>
                         attribute.AttributeClass?.ToDisplayString() == "SpacetimeDB.NamespaceAttribute"),
-                    descriptor.GetMembers("LifecycleReducers").OfType<IFieldSymbol>()
-                        .FirstOrDefault()?.ConstantValue as string ?? "",
                     descriptor.GetMembers("RootOnlyDeclarations").OfType<IFieldSymbol>()
                         .FirstOrDefault()?.ConstantValue as string ?? "",
                     ReadAccessors("Tables"),
@@ -2775,9 +2772,6 @@ public class Module : IIncrementalGenerator
                 var registrationOrder = publicScopeAssemblies.Concat(mountedAssemblies).ToArray();
                 foreach (var assembly in assemblies.Where(a => a.DeclaresMounts))
                     context.ReportDiagnostic(ErrorDescriptor.DependencyNamespaceMounts.ToDiag(assembly.Identity));
-                foreach (var assembly in mountedAssemblies.Where(a => a.LifecycleReducers.Length != 0))
-                    context.ReportDiagnostic(ErrorDescriptor.MountedLifecycleReducers.ToDiag(
-                        (assembly.Identity, mountByIdentity[assembly.Identity].Accessor, assembly.LifecycleReducers)));
                 foreach (var assembly in mountedAssemblies.Where(a => a.RootOnlyDeclarations.Length != 0))
                     context.ReportDiagnostic(ErrorDescriptor.MountedRootOnlyDeclarations.ToDiag(
                         (assembly.Identity, mountByIdentity[assembly.Identity].Accessor, assembly.RootOnlyDeclarations)));
@@ -3255,11 +3249,13 @@ public class Module : IIncrementalGenerator
                     #if NET10_0_OR_GREATER
                     namespace {{extensionNamespaceName}} {
                         public static partial class AssemblyDescriptor {
-                            public const string LifecycleReducers = {{SymbolDisplay.FormatLiteral(string.Join(", ", addReducers.Where(r => r.Kind != ReducerKind.UserDefined).Select(r => $"{r.FullName} ({r.Kind})")), true)}};
                             public const string RootOnlyDeclarations = {{SymbolDisplay.FormatLiteral(string.Join(", ", new[] {
                                 rlsFilters.Array.Length != 0 ? "row-level security filters" : null,
                                 environmentRegistrations.Length != 0 ? "environment variables" : null
-                            }.Where(value => value is not null)), true)}};
+                            }.Where(value => value is not null).Concat(
+                                addReducers.Where(r => r.Kind != ReducerKind.UserDefined)
+                                    .Select(r => $"lifecycle reducer {r.FullName} ({r.Kind})")
+                            )), true)}};
                             public const int ReducerCount = {{addReducers.Array.Length}};
                             public const int ProcedureCount = {{addProcedures.Array.Length}};
                             public const int HttpHandlerCount = {{addHttpHandlers.Array.Length}};
