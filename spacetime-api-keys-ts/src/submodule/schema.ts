@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { installApiKeys } from './install';
+import { install } from './install';
 
 export const apiKeyStatus = t.enum('ApiKeyStatus', ['Active', 'Revoked']);
 
@@ -115,7 +115,7 @@ export const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  installApiKeys(ctx);
+  install(ctx);
 });
 
 export default spacetimedb;

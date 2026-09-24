@@ -1,4 +1,4 @@
-import type { Coord, Connectivity, GridKind } from './coords.ts';
+import type { Coord, Connectivity, GridKind } from './coords';
 
 const SQUARE_4: ReadonlyArray<readonly [number, number]> = [
   [0, -1],

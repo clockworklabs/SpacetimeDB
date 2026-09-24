@@ -5,14 +5,14 @@ export {
   fileSummary,
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
-} from './rows.ts';
+} from './rows';
 
 export {
   FILE_BYTES_MAX,
   FILE_LIST_PAGE_MAX,
   FILE_MIME_TYPE_MAX,
   FILE_PATH_MAX,
-} from './constants.ts';
+} from './constants';
 
 export {
   FileValidationError,
@@ -22,7 +22,7 @@ export {
   validateFilePath,
   validateFilePrefix,
   validateMimeType,
-} from './validation.ts';
+} from './validation';
 
 export {
   fileSha256Hex,
@@ -38,6 +38,6 @@ export {
   readFileBytes,
   setFileVisibilityParams,
   setFileVisibility,
-} from './procedures.ts';
+} from './procedures';
 
-export { createFileHttpHandler } from './handlers.ts';
+export { createFileHttpHandler } from './handlers';

@@ -1,4 +1,4 @@
-import type { AuthHandlerCtx } from './context.ts';
+import type { AuthHandlerCtx } from './context';
 
 export interface MailParams {
   to: string;

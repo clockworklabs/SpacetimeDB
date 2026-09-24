@@ -6,7 +6,7 @@ import {
   type TransactionCtx,
 } from 'spacetimedb/server';
 import { getCallerUserId } from '@spacetimedb/auth/submodule';
-import { consumeRateLimit } from '@spacetimedb/rate-limit/submodule';
+import type { client } from '@spacetimedb/rate-limit/submodule';
 import { removePresence, upsertPresence } from '@spacetimedb/presence';
 import { PRESENCE_SCOPE_GLOBAL, typingScope } from './chat-policy';
 import { ChatUserStatus } from './model';
@@ -53,16 +53,11 @@ export function requireAuthenticatedUserId(ctx: CallerCtx): string {
 export function enforceChatRateLimit(
   tx: Tx,
   userId: string,
-  scope: string,
-  limit: number,
-  windowSeconds: number,
+  policy: ReturnType<typeof client>,
   cost = 1
 ): void {
-  const result = consumeRateLimit(tx.as.rateLimit, {
-    key: `${scope}:user:${userId}`,
-    scope,
-    limit,
-    windowSeconds,
+  const result = policy.consume(tx.as.rateLimit, {
+    key: userId,
     cost,
   });
   if (!result.allowed)

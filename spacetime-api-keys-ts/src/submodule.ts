@@ -10,7 +10,7 @@ export {
   apiKeyVerifyResult,
   t,
 } from './submodule/schema';
-export { installApiKeys } from './submodule/install';
+export { install } from './submodule/install';
 export {
   addAdminIdentity,
   apiKeyUsageAdmin,

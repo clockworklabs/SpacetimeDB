@@ -29,11 +29,11 @@ const spacetimedb = schema({ agents });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  agents.installAgents(ctx.as.agents);
+  agents.install(ctx.as.agents);
 });
 ```
 
-`installAgents` makes the installing identity the first Agents administrator
+`install` makes the installing identity the first Agents administrator
 and schedules stale-lock cleanup. Configure provider keys through the submodule
 administration operations after publishing the host module.
 

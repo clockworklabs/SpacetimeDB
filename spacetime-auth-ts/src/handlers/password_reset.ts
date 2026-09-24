@@ -1,10 +1,10 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
-import { hashPassword, randomToken, uuidV7 } from '../crypto.ts';
+import { hashPassword, randomToken, uuidV7 } from '../crypto';
 import {
   buildPasswordResetEmail,
   MailerNotConfiguredError,
   type SendMailFn,
-} from '../mailer.ts';
+} from '../mailer';
 import {
   type AuthHandlerCtx,
   ConfigMissingError,
@@ -12,7 +12,7 @@ import {
   jsonResponse,
   requireConfig,
   safeJson,
-} from './http.ts';
+} from './http';
 import { Timestamp } from 'spacetimedb';
 import {
   AUTH_RATE_LIMITS,
@@ -20,7 +20,7 @@ import {
   clientKey,
   enforceIpRateLimit,
   enforceRateLimits,
-} from '../rate_limit.ts';
+} from '../rate_limit';
 
 const PURPOSE = 'password_reset';
 const TOKEN_TTL_SECONDS = 60n * 60n;

@@ -1,7 +1,7 @@
 import { SyncResponse, type Infer, type Request } from 'spacetimedb/server';
-import { fileBlobRow, fileRow, FILE_VISIBILITY_PUBLIC } from './rows.ts';
-import { queryParam } from './query.ts';
-import { safeMimeType } from './validation.ts';
+import { fileBlobRow, fileRow, FILE_VISIBILITY_PUBLIC } from './rows';
+import { queryParam } from './query';
+import { safeMimeType } from './validation';
 
 type FileRow = Infer<typeof fileRow>;
 type FileBlobRow = Infer<typeof fileBlobRow>;

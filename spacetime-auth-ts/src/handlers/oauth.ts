@@ -6,9 +6,9 @@ import {
   pkceChallenge,
   randomToken,
   uuidV7,
-} from '../crypto.ts';
-import { signJwt } from '../jwt.ts';
-import { privateKeyFromPem } from '../keys.ts';
+} from '../crypto';
+import { signJwt } from '../jwt';
+import { privateKeyFromPem } from '../keys';
 import {
   type AuthHandlerCtx,
   shouldUseSecureCookies,
@@ -19,15 +19,15 @@ import {
   parseQueryString,
   redirectResponse,
   requireConfig,
-} from './http.ts';
+} from './http';
 import {
   AUTH_RATE_LIMITS,
   type AuthHttpOptions,
   clientKey,
   enforceRateLimits,
-} from '../rate_limit.ts';
-import { safeRedirectPath } from '../request-trust.ts';
-import type { AuthAccount, AuthConfig } from '../types.ts';
+} from '../rate_limit';
+import { safeRedirectPath } from '../request-trust';
+import type { AuthAccount, AuthConfig } from '../types';
 
 const OAUTH_STATE_TTL_SECONDS = 600n;
 const MAX_OAUTH_CODE_LENGTH = 4096;

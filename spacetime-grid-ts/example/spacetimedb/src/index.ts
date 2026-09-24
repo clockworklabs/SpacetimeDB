@@ -1,7 +1,6 @@
 import { t, SenderError, type ProcedureCtx } from 'spacetimedb/server';
 import { Timestamp, type Identity } from 'spacetimedb';
 import * as auth from '@spacetimedb/auth/submodule';
-import * as gridSubmodule from '@spacetimedb/grid/submodule';
 import { getCallerUserId } from '@spacetimedb/auth/submodule';
 import {
   GRID_KIND_HEX,
@@ -36,8 +35,7 @@ function requireUserId(ctx: ProcedureCtx<Schema>): string {
 export * from './views';
 
 export const init = spacetimedb.init(ctx => {
-  auth.installAuth(ctx.as.auth);
-  gridSubmodule.installGrid(ctx.as.grid);
+  auth.install(ctx.as.auth);
 
   const types = [
     {

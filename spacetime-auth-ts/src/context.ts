@@ -10,7 +10,7 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { authTables } from './tables.ts';
+import { authTables } from './tables';
 
 const authSweeperTick = table(
   { name: 'auth_sweeper_tick' },

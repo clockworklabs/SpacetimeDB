@@ -16,14 +16,14 @@ export {
   authConfigRow,
   authConnectionBindingRow,
   authAdminIdentityRow,
-} from './tables.ts';
+} from './tables';
 
 export {
   authAdminVerdict,
   denyIfNotAdmin,
   seedAuthAdmin,
   type AdminVerdict,
-} from './admin.ts';
+} from './admin';
 
 export {
   passwordLoginHandler,
@@ -45,7 +45,7 @@ export {
   type OAuthProfile,
   type VerifyRequestOpts,
   type ForgotPasswordOpts,
-} from './handlers/index.ts';
+} from './handlers/index';
 
 export {
   clearCookie,
@@ -58,7 +58,7 @@ export {
   readSession,
   configKeys,
   type CookieOptions,
-} from './handlers/http.ts';
+} from './handlers/http';
 
 export {
   setAuthConfigParams,
@@ -78,7 +78,7 @@ export {
   unlinkConnection,
   updateProfileParams,
   updateProfile,
-} from './procedures.ts';
+} from './procedures';
 
 export {
   signJwt,
@@ -88,7 +88,7 @@ export {
   type JwtHeader,
   type VerifyResult,
   type VerifyJwtOptions,
-} from './jwt.ts';
+} from './jwt';
 
 export {
   hashPassword,
@@ -101,7 +101,7 @@ export {
   uuidV7,
   type RandomSource,
   type ScryptParams,
-} from './crypto.ts';
+} from './crypto';
 
 export {
   generateEs256Keypair,
@@ -110,32 +110,20 @@ export {
   publicKeyFromPem,
   type Es256Keypair,
   type PublicKeyJwk,
-} from './keys.ts';
+} from './keys';
 
-export {
-  getCallerUserId,
-  findCallerUser,
-  requireCallerUserId,
-} from './caller.ts';
-
-export {
-  consumeRateLimit,
-  sweepRateLimits,
-  type ConsumeRateLimitOpts,
-  type RateLimitResult,
-} from '@spacetimedb/rate-limit/submodule';
+export { getCallerUserId, findCallerUser, requireCallerUserId } from './caller';
 
 export {
   AUTH_RATE_LIMITS,
   clientKey,
   enforceIpRateLimit,
   enforceRateLimits,
-  rateLimitKey,
   rateLimitResponse,
   type AuthHttpOptions,
   type AuthRateLimitPolicy,
   type TrustedProxyHeader,
-} from './rate_limit.ts';
+} from './rate_limit';
 
 export {
   MailerNotConfiguredError,
@@ -143,7 +131,7 @@ export {
   buildPasswordResetEmail,
   type SendMailFn,
   type MailParams,
-} from './mailer.ts';
+} from './mailer';
 
 export type {
   AuthUser,
@@ -153,4 +141,4 @@ export type {
   AuthOauthState,
   AuthConfig,
   AuthConnectionBinding,
-} from './types.ts';
+} from './types';

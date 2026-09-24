@@ -7,7 +7,7 @@ import type {
   authOauthStateRow,
   authConfigRow,
   authConnectionBindingRow,
-} from './tables.ts';
+} from './tables';
 
 export type AuthUser = Infer<typeof authUserRow>;
 export type AuthSession = Infer<typeof authSessionRow>;

@@ -1,4 +1,5 @@
 import { t, type ViewCtx } from 'spacetimedb/server';
+import { buildRateLimitKey } from '@spacetimedb/rate-limit/submodule';
 import {
   RATE_LIMIT_PROFILE,
   RATE_LIMIT_REACTION,
@@ -342,7 +343,7 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
         RATE_LIMIT_PROFILE,
       ]) {
         const row = ctx.db.rateLimit.rateLimitBucket.key.find(
-          `${limit.scope}:user:${binding.userId}`
+          buildRateLimitKey(limit.scope, binding.userId)
         );
         if (!row) continue;
         out.push({

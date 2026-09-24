@@ -13,7 +13,7 @@ const SWEEP_INTERVAL_SECONDS = 10n;
 type Schema = InferSchema<typeof spacetimedb>;
 type InstallCtx = ReducerCtx<Schema>;
 
-export function installPresence(ctx: InstallCtx) {
+export function install(ctx: InstallCtx) {
   if (ctx.db.presenceAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.presenceAdminIdentity.insert({
       identity: ctx.sender,

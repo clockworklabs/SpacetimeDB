@@ -25,8 +25,8 @@ changes like any other table.
 
 ### Integrate into an application
 
-Register the Grid namespace, initialize it from the host lifecycle hook, and wrap
-its helpers with the application's ownership rules:
+Register the Grid namespace and wrap its helpers with the application's ownership
+rules:
 
 ```ts
 import { schema, t } from 'spacetimedb/server';
@@ -34,10 +34,6 @@ import * as grid from '@spacetimedb/grid/submodule';
 
 const spacetimedb = schema({ grid });
 export default spacetimedb;
-
-export const init = spacetimedb.init(ctx => {
-  grid.installGrid(ctx.as.grid);
-});
 
 export const create_player_grid = spacetimedb.procedure(
   grid.createGridParams,

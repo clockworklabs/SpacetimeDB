@@ -16,7 +16,7 @@ import {
   GRID_ORIENTATION_POINTY,
   GRID_MODE_OWNER,
   GRID_MODE_COLLABORATIVE,
-} from './rows.ts';
+} from './rows';
 import {
   type Coord,
   type GridKind,
@@ -26,11 +26,11 @@ import {
   distance,
   findPathAstar,
   dijkstra,
-} from './math/index.ts';
+} from './math/index';
 import type {
   ProcedureModuleCtx,
   TransactionModuleCtx,
-} from './submodule/schema.ts';
+} from './submodule/schema';
 
 type GridRow = Infer<typeof gridRow>;
 

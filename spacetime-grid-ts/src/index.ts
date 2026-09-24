@@ -12,7 +12,7 @@ export {
   GRID_ORIENTATION_POINTY,
   GRID_MODE_OWNER,
   GRID_MODE_COLLABORATIVE,
-} from './rows.ts';
+} from './rows';
 
 export {
   createGridParams,
@@ -33,6 +33,6 @@ export {
   cellsInRangeParams,
   cellsInRangeReturn,
   cellsInRange,
-} from './procedures.ts';
+} from './procedures';
 
-export * from './math/index.ts';
+export * from './math/index';

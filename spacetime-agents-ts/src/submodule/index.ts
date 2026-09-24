@@ -11,7 +11,7 @@ import {
 } from 'spacetimedb/server';
 import { Timestamp, type Identity } from 'spacetimedb';
 import { deleteStaleThreadLocks, staleLockCutoffMicros } from '../stale-locks';
-import { installAgents } from './install';
+import { install } from './install';
 import { agentTool, defineAgent, makeAgentRegistry } from '../agent';
 import {
   callChat,
@@ -175,7 +175,7 @@ function requireOwnedThread(tx: WriteCtx, threadId: bigint, owner: Identity) {
 }
 
 export const init = spacetimedb.init(ctx => {
-  installAgents(ctx);
+  install(ctx);
 });
 
 export const setAgentSecret = spacetimedb.reducer(
@@ -210,7 +210,9 @@ export const setApiKey = spacetimedb.reducer(
     if (args.provider.length === 0)
       throwSenderError('agent.invalid_provider:empty');
     if (args.key.length === 0) throwSenderError('agent.invalid_api_key:empty');
-    if (!Object.hasOwn(BUILT_IN_PROVIDERS, args.provider)) {
+    if (
+      !Object.prototype.hasOwnProperty.call(BUILT_IN_PROVIDERS, args.provider)
+    ) {
       throwSenderError(`agent.unknown_provider:${args.provider}`);
     }
     const tx = ctx;
@@ -256,7 +258,7 @@ export const setAgentOverride = spacetimedb.reducer(
     }
     if (
       args.provider !== undefined &&
-      !Object.hasOwn(BUILT_IN_PROVIDERS, args.provider)
+      !Object.prototype.hasOwnProperty.call(BUILT_IN_PROVIDERS, args.provider)
     ) {
       throwSenderError(`agent.unknown_provider:${args.provider}`);
     }

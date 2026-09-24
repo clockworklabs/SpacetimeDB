@@ -4,16 +4,16 @@ export {
   defineAgent,
   makeAgentRegistry,
   typeBuilderToJsonSchema,
-} from './agent.ts';
+} from './agent';
 export type {
   AgentTool,
   AgentDefinition,
   AgentRegistry,
   InvokeResult,
   ToolMap,
-} from './agent.ts';
+} from './agent';
 
-export { callChat, isRetryableError } from './openrouter.ts';
+export { callChat, isRetryableError } from './openrouter';
 export type {
   HttpLike,
   ChatMessage,
@@ -26,14 +26,14 @@ export type {
   ChatResult,
   ResponseFormat,
   Provider,
-} from './openrouter.ts';
+} from './openrouter';
 
 export {
   openRouterProvider,
   openAiProvider,
   anthropicProvider,
   BUILT_IN_PROVIDERS,
-} from './providers.ts';
+} from './providers';
 
 export {
   cosineSimilarity,
@@ -41,8 +41,8 @@ export {
   openAiEmbeddingsProvider,
   openRouterEmbeddingsProvider,
   BUILT_IN_EMBEDDING_PROVIDERS,
-} from './embeddings.ts';
-export type { EmbeddingProvider, EmbeddingResult } from './embeddings.ts';
+} from './embeddings';
+export type { EmbeddingProvider, EmbeddingResult } from './embeddings';
 
 export {
   pickSummarizationCandidates,

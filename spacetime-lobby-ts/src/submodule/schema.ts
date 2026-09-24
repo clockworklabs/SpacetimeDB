@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { installLobby } from './install';
+import { install } from './install';
 
 export const ticketStatus = t.enum('LobbyTicketStatus', [
   'Queued',
@@ -255,7 +255,7 @@ export const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  installLobby(ctx);
+  install(ctx);
 });
 
 export default spacetimedb;

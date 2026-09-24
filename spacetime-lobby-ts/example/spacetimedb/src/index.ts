@@ -842,6 +842,6 @@ export const queueAgain = spacetimedb.reducer(
 );
 
 export const init = spacetimedb.init(ctx => {
-  lobby.installLobby(ctx.as.lobby);
+  lobby.install(ctx.as.lobby);
   seedCatalog(ctx);
 });

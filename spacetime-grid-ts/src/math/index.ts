@@ -6,11 +6,11 @@ export {
   coordKey,
   parseCoordKey,
   coordsEqual,
-} from './coords.ts';
+} from './coords';
 
-export { neighbors } from './neighbors.ts';
+export { neighbors } from './neighbors';
 
-export { manhattan, chebyshev, hexDistance, distance } from './distance.ts';
+export { manhattan, chebyshev, hexDistance, distance } from './distance';
 
 export {
   type PathResult,
@@ -19,4 +19,4 @@ export {
   type DijkstraNode,
   findPathAstar,
   dijkstra,
-} from './pathfind.ts';
+} from './pathfind';

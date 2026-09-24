@@ -1,5 +1,5 @@
 import { Timestamp, type Identity } from 'spacetimedb';
-import { installPresence } from './install';
+import { install } from './install';
 import {
   schema,
   table,
@@ -112,7 +112,7 @@ function toU32(name: string, value: number, max = 0xffff_ffff): number {
 
 // Fresh publishes seed the publishing owner as admin, install config, and start the expiry sweeper.
 export const init = spacetimedb.init(ctx => {
-  installPresence(ctx);
+  install(ctx);
 });
 
 export const heartbeat = spacetimedb.procedure(

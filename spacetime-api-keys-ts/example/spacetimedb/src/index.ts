@@ -86,8 +86,7 @@ const STRUCTURE_KINDS = new Set(['dome', 'pod', 'solar', 'road']);
 const NATURE_KINDS = new Set(['tree', 'shrub', 'boulder']);
 
 export const init = spacetimedb.init(ctx => {
-  apiKeys.installApiKeys(ctx.as.apiKeys);
-  gridSubmodule.installGrid(ctx.as.grid);
+  apiKeys.install(ctx.as.apiKeys);
   installPresenceConfig(ctx, {
     defaultTtlSeconds: PRESENCE_TTL_SECONDS,
     sweepBatch: 500,

@@ -5,9 +5,9 @@ import {
   verifyPassword,
   newSessionToken,
   uuidV7,
-} from '../crypto.ts';
-import { signJwt } from '../jwt.ts';
-import { privateKeyFromPem } from '../keys.ts';
+} from '../crypto';
+import { signJwt } from '../jwt';
+import { privateKeyFromPem } from '../keys';
 import {
   type AuthHandlerCtx,
   shouldUseSecureCookies,
@@ -18,14 +18,14 @@ import {
   makeCookie,
   requireConfig,
   safeJson,
-} from './http.ts';
+} from './http';
 import {
   AUTH_RATE_LIMITS,
   type AuthHttpOptions,
   clientKey,
   enforceRateLimits,
-} from '../rate_limit.ts';
-import type { AuthAccount } from '../types.ts';
+} from '../rate_limit';
+import type { AuthAccount } from '../types';
 
 interface SignupBody {
   email: string;

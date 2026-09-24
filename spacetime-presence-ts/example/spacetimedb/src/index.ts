@@ -125,9 +125,8 @@ export const {
   myRateLimitStatus,
 } = registerChatViews(spacetimedb);
 export const init = spacetimedb.init(ctx => {
-  auth.installAuth(ctx.as.auth);
-  files.installFiles(ctx.as.files);
-  rateLimit.installRateLimit(ctx.as.rateLimit);
+  auth.install(ctx.as.auth);
+  rateLimit.install(ctx.as.rateLimit);
   installPresenceConfig(ctx, {
     defaultTtlSeconds: GLOBAL_PRESENCE_TTL_SECONDS,
     sweepBatch: 1000,
@@ -257,13 +256,7 @@ export const setDisplayName = spacetimedb.reducer(
       DISPLAY_NAME_MAX
     );
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_PROFILE.scope,
-      RATE_LIMIT_PROFILE.limit,
-      RATE_LIMIT_PROFILE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_PROFILE);
     const user = ensureUser(tx, userId);
     const next = { ...user, displayName, lastActiveAt: tx.timestamp };
     tx.db.chatUser.identity.update(next);
@@ -276,13 +269,7 @@ export const setStatus = spacetimedb.reducer(
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_PROFILE.scope,
-      RATE_LIMIT_PROFILE.limit,
-      RATE_LIMIT_PROFILE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_PROFILE);
     const user = ensureUser(tx, userId);
     const next = { ...user, status: args.status, lastActiveAt: tx.timestamp };
     tx.db.chatUser.identity.update(next);
@@ -296,13 +283,7 @@ export const createServer = spacetimedb.reducer(
     const userId = requireAuthenticatedUserId(ctx);
     const name = normalizeText('server_name', args.name, ROOM_NAME_MAX);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     ensureUser(tx, userId);
     const srv = tx.db.server.insert({
       id: 0n,
@@ -333,13 +314,7 @@ export const renameServer = spacetimedb.reducer(
     const userId = requireAuthenticatedUserId(ctx);
     const name = normalizeText('server_name', args.name, ROOM_NAME_MAX);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const srv = requireServer(tx, args.serverId);
     if (srv.createdByUserId !== userId) senderError('chat.not_server_owner');
     tx.db.server.id.update({ ...srv, name });
@@ -351,13 +326,7 @@ export const deleteServer = spacetimedb.reducer(
   (ctx, { serverId }) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const srv = requireServer(tx, serverId);
     if (srv.createdByUserId !== userId) senderError('chat.not_server_owner');
 
@@ -384,13 +353,7 @@ export const joinServer = spacetimedb.reducer(
   (ctx, { serverId }) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     ensureUser(tx, userId);
     requireServer(tx, serverId);
     if (findServerMembership(tx, serverId, userId)) return;
@@ -435,13 +398,7 @@ export const createRoom = spacetimedb.reducer(
       ? normalizeText('room_category', args.category, ROOM_NAME_MAX)
       : undefined;
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     ensureUser(tx, userId);
     requireServer(tx, args.serverId);
     requireServerMembership(tx, args.serverId, userId);
@@ -461,13 +418,7 @@ export const joinRoom = spacetimedb.reducer(
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     ensureUser(tx, userId);
     const targetRoom = requireRoom(tx, roomId);
     if (targetRoom.isPrivate) senderError('chat.room_private');
@@ -501,13 +452,7 @@ export const renameRoom = spacetimedb.reducer(
     const userId = requireAuthenticatedUserId(ctx);
     const name = normalizeText('room_name', args.name, ROOM_NAME_MAX);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
     tx.db.room.id.update({ ...room, name });
   }
@@ -521,13 +466,7 @@ export const setRoomCategory = spacetimedb.reducer(
       ? normalizeText('room_category', args.category, ROOM_NAME_MAX)
       : undefined;
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
     tx.db.room.id.update({ ...room, category });
   }
@@ -538,13 +477,7 @@ export const setRoomPrivacy = spacetimedb.reducer(
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
     tx.db.room.id.update({ ...room, isPrivate: args.isPrivate });
   }
@@ -555,13 +488,7 @@ export const deleteRoom = spacetimedb.reducer(
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_ROOM_WRITE.scope,
-      RATE_LIMIT_ROOM_WRITE.limit,
-      RATE_LIMIT_ROOM_WRITE.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     requireRoomAdminOrOwner(tx, roomId, userId);
 
     for (const m of [...tx.db.message.roomId.filter(roomId)]) {
@@ -655,13 +582,7 @@ export const sendMessage = spacetimedb.reducer(
     }
 
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_SEND.scope,
-      RATE_LIMIT_SEND.limit,
-      RATE_LIMIT_SEND.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     const user = ensureUser(tx, userId);
     requireRoom(tx, args.roomId);
     requireMembership(tx, args.roomId, userId);
@@ -734,13 +655,7 @@ export const editMessage = spacetimedb.reducer(
     const userId = requireAuthenticatedUserId(ctx);
     const content = normalizeText('message', args.content, MESSAGE_MAX);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_SEND.scope,
-      RATE_LIMIT_SEND.limit,
-      RATE_LIMIT_SEND.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     ensureUser(tx, userId);
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');
@@ -760,13 +675,7 @@ export const deleteMessage = spacetimedb.reducer(
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_SEND.scope,
-      RATE_LIMIT_SEND.limit,
-      RATE_LIMIT_SEND.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     ensureUser(tx, userId);
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');
@@ -786,13 +695,7 @@ export const sendThreadMessage = spacetimedb.reducer(
     const userId = requireAuthenticatedUserId(ctx);
     const content = normalizeText('thread_message', args.content, MESSAGE_MAX);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_SEND.scope,
-      RATE_LIMIT_SEND.limit,
-      RATE_LIMIT_SEND.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     const user = ensureUser(tx, userId);
     const root = tx.db.message.id.find(args.rootMessageId);
     if (!root) senderError('chat.message_not_found');
@@ -837,13 +740,7 @@ export const editThreadMessage = spacetimedb.reducer(
     const userId = requireAuthenticatedUserId(ctx);
     const content = normalizeText('thread_message', args.content, MESSAGE_MAX);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_SEND.scope,
-      RATE_LIMIT_SEND.limit,
-      RATE_LIMIT_SEND.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     ensureUser(tx, userId);
     const msg = tx.db.threadMessage.id.find(args.threadMessageId);
     if (!msg) senderError('chat.thread_message_not_found');
@@ -861,13 +758,7 @@ export const deleteThreadMessage = spacetimedb.reducer(
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_SEND.scope,
-      RATE_LIMIT_SEND.limit,
-      RATE_LIMIT_SEND.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     ensureUser(tx, userId);
     const msg = tx.db.threadMessage.id.find(args.threadMessageId);
     if (!msg) senderError('chat.thread_message_not_found');
@@ -900,13 +791,7 @@ export const startTyping = spacetimedb.reducer(
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_TYPING.scope,
-      RATE_LIMIT_TYPING.limit,
-      RATE_LIMIT_TYPING.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_TYPING);
     const user = ensureUser(tx, userId);
     requireRoom(tx, roomId);
     requireMembership(tx, roomId, userId);
@@ -961,13 +846,7 @@ export const toggleReaction = spacetimedb.reducer(
     if (!ALLOWED_REACTIONS.has(emoji))
       senderError('chat.invalid_reaction_emoji');
     const tx: Tx = ctx;
-    enforceChatRateLimit(
-      tx,
-      userId,
-      RATE_LIMIT_REACTION.scope,
-      RATE_LIMIT_REACTION.limit,
-      RATE_LIMIT_REACTION.windowSeconds
-    );
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_REACTION);
     ensureUser(tx, userId);
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');

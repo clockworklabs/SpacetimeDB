@@ -34,10 +34,6 @@ import * as files from '@spacetimedb/files/submodule';
 const spacetimedb = schema({ files });
 export default spacetimedb;
 
-export const init = spacetimedb.init(ctx => {
-  files.installFiles(ctx.as.files);
-});
-
 export const uploadFile = spacetimedb.procedure(
   files.uploadFileParams,
   t.u64(),
@@ -45,7 +41,7 @@ export const uploadFile = spacetimedb.procedure(
 );
 ```
 
-The host module owns `init`, derives owners from its auth model, and wraps the
+The host module derives owners from its auth model and wraps the
 helper procedures and HTTP handler with `ctx.as.files`.
 See the
 [Vault host module](./example/spacetimedb/)

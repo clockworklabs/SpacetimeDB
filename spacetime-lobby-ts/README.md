@@ -32,7 +32,7 @@ import * as lobby from '@spacetimedb/lobby/submodule';
 const spacetimedb = schema({ lobby });
 
 export const init = spacetimedb.init(ctx => {
-  lobby.installLobby(ctx.as.lobby);
+  lobby.install(ctx.as.lobby);
 });
 
 export default spacetimedb;

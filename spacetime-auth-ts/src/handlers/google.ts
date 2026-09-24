@@ -2,7 +2,7 @@ import {
   makeOAuthCallbackHandler,
   makeOAuthStartHandler,
   type OAuthProviderSpec,
-} from './oauth.ts';
+} from './oauth';
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null

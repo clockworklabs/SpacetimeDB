@@ -1,8 +1,8 @@
 import { SyncResponse, type Request } from 'spacetimedb/server';
-import { verifyJwt, type JwtClaims } from '../jwt.ts';
-import { privateKeyFromPem, publicKeyFromPem } from '../keys.ts';
-import type { AuthConfig } from '../types.ts';
-import type { AuthHandlerCtx, AuthTransactionCtx } from '../context.ts';
+import { verifyJwt, type JwtClaims } from '../jwt';
+import { privateKeyFromPem, publicKeyFromPem } from '../keys';
+import type { AuthConfig } from '../types';
+import type { AuthHandlerCtx, AuthTransactionCtx } from '../context';
 
 export type { AuthHandlerCtx, AuthTransactionCtx };
 
@@ -35,7 +35,7 @@ export function clearCookie(name: string, options: CookieOptions = {}): string {
   return makeCookie(name, '', { ...options, maxAgeSeconds: 0 });
 }
 
-export { shouldUseSecureCookies, userAgent } from '../request-trust.ts';
+export { shouldUseSecureCookies, userAgent } from '../request-trust';
 
 export function parseCookies(
   header: string | null | undefined

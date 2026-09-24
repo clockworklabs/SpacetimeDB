@@ -3,7 +3,7 @@ import type { ReducerModuleCtx } from './schema';
 const DEFAULT_TICKET_TTL_SECONDS = 60;
 const DEFAULT_MAX_MATCH_SIZE = 16;
 
-export function installLobby(ctx: ReducerModuleCtx) {
+export function install(ctx: ReducerModuleCtx) {
   if (ctx.db.lobbyConfig.singleton.find(true) == null) {
     ctx.db.lobbyConfig.insert({
       singleton: true,

@@ -62,7 +62,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  auth.installAuth(ctx.as.auth);
+  auth.install(ctx.as.auth);
 });
 
 export const setAuthConfig = spacetimedb.reducer(

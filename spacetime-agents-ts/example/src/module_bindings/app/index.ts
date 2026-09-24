@@ -85,9 +85,11 @@ import Auth_SetAuthConfigReducer from "./auth/set_auth_config_reducer";
 import Auth_UnlinkConnectionReducer from "./auth/unlink_connection_reducer";
 import Auth_UpdateProfileReducer from "./auth/update_profile_reducer";
 import AuthRateLimit_AddRateLimitAdminReducer from "./auth/rateLimit/add_rate_limit_admin_reducer";
+import AuthRateLimit_RemoveRateLimitAdminReducer from "./auth/rateLimit/remove_rate_limit_admin_reducer";
 import AuthRateLimit_ResetBucketsReducer from "./auth/rateLimit/reset_buckets_reducer";
 import AuthRateLimit_UpdateConfigReducer from "./auth/rateLimit/update_config_reducer";
 import AgentRateLimit_AddRateLimitAdminReducer from "./agentRateLimit/add_rate_limit_admin_reducer";
+import AgentRateLimit_RemoveRateLimitAdminReducer from "./agentRateLimit/remove_rate_limit_admin_reducer";
 import AgentRateLimit_ResetBucketsReducer from "./agentRateLimit/reset_buckets_reducer";
 import AgentRateLimit_UpdateConfigReducer from "./agentRateLimit/update_config_reducer";
 
@@ -227,9 +229,11 @@ const reducersSchema = __reducers(
   __reducerSchema("auth.unlink_connection", Auth_UnlinkConnectionReducer),
   __reducerSchema("auth.update_profile", Auth_UpdateProfileReducer),
   __reducerSchema("auth.rateLimit.add_rate_limit_admin", AuthRateLimit_AddRateLimitAdminReducer),
+  __reducerSchema("auth.rateLimit.remove_rate_limit_admin", AuthRateLimit_RemoveRateLimitAdminReducer),
   __reducerSchema("auth.rateLimit.reset_buckets", AuthRateLimit_ResetBucketsReducer),
   __reducerSchema("auth.rateLimit.update_config", AuthRateLimit_UpdateConfigReducer),
   __reducerSchema("agentRateLimit.add_rate_limit_admin", AgentRateLimit_AddRateLimitAdminReducer),
+  __reducerSchema("agentRateLimit.remove_rate_limit_admin", AgentRateLimit_RemoveRateLimitAdminReducer),
   __reducerSchema("agentRateLimit.reset_buckets", AgentRateLimit_ResetBucketsReducer),
   __reducerSchema("agentRateLimit.update_config", AgentRateLimit_UpdateConfigReducer),
 );
@@ -311,6 +315,7 @@ export const reducers = {
   updateThread: __reducerAccessors.updateThread,
   agentRateLimit: {
     addRateLimitAdmin: __reducerAccessors["agentRateLimit.addRateLimitAdmin"],
+    removeRateLimitAdmin: __reducerAccessors["agentRateLimit.removeRateLimitAdmin"],
     resetBuckets: __reducerAccessors["agentRateLimit.resetBuckets"],
     updateConfig: __reducerAccessors["agentRateLimit.updateConfig"],
   },
@@ -323,6 +328,7 @@ export const reducers = {
     updateProfile: __reducerAccessors["auth.updateProfile"],
     rateLimit: {
       addRateLimitAdmin: __reducerAccessors["auth.rateLimit.addRateLimitAdmin"],
+      removeRateLimitAdmin: __reducerAccessors["auth.rateLimit.removeRateLimitAdmin"],
       resetBuckets: __reducerAccessors["auth.rateLimit.resetBuckets"],
       updateConfig: __reducerAccessors["auth.rateLimit.updateConfig"],
     },

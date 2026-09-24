@@ -33,7 +33,7 @@ const spacetimedb = schema({
 });
 
 export const init = spacetimedb.init(ctx => {
-  apiKeys.installApiKeys(ctx.as.apiKeys);
+  apiKeys.install(ctx.as.apiKeys);
 });
 
 export default spacetimedb;

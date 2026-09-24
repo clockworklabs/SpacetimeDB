@@ -7,7 +7,7 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { fileBlobRow, fileRow } from '../rows.ts';
+import { fileBlobRow, fileRow } from '../rows';
 
 export const file = table(
   {

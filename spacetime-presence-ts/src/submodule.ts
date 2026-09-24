@@ -1,5 +1,5 @@
 export { default } from './submodule/index';
-export { installPresence } from './submodule/install';
+export { install } from './submodule/install';
 export {
   addPresenceAdmin,
   clearPresence,

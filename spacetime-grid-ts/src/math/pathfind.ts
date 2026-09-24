@@ -1,8 +1,8 @@
 // Pathfinding over an abstract graph. Caller injects `cost` and `neighbors`
 // so this module knows nothing about STDB or grid kind. cost <= 0 = blocked.
 
-import type { Coord } from './coords.ts';
-import { coordKey } from './coords.ts';
+import type { Coord } from './coords';
+import { coordKey } from './coords';
 
 export type PathResult =
   | { found: true; cells: Coord[]; cost: number; expanded: number }

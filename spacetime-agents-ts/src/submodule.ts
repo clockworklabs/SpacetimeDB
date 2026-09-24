@@ -1,5 +1,5 @@
 export { default } from './submodule/index';
-export { installAgents } from './submodule/install';
+export { install } from './submodule/install';
 export {
   addAgentAdminIdentity,
   clearAgentOverride,

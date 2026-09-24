@@ -217,9 +217,8 @@ function bumpRateLimit(tx: WriteCtx, userId: string, tokens: bigint): void {
 }
 
 export const init = spacetimedb.init(ctx => {
-  auth.installAuth(ctx.as.auth);
-  files.installFiles(ctx.as.files);
-  agentRateLimit.installRateLimit(ctx.as.agentRateLimit);
+  auth.install(ctx.as.auth);
+  agentRateLimit.install(ctx.as.agentRateLimit);
   ctx.db.agentAdminIdentity.insert({
     identity: ctx.sender,
     addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,

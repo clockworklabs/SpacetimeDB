@@ -15,7 +15,7 @@ export {
   t,
   ticketStatus,
 } from './submodule/schema';
-export { installLobby } from './submodule/install';
+export { install } from './submodule/install';
 export {
   addAdminIdentity,
   cancelTicketForSubject,

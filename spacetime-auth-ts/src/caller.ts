@@ -1,12 +1,8 @@
 // Browser clients must call link_connection after connecting to SpacetimeDB.
 
 import { SenderError } from 'spacetimedb/server';
-import type {
-  AuthProcedureCtx,
-  AuthReducerCtx,
-  AuthViewCtx,
-} from './context.ts';
-import type { AuthUser } from './types.ts';
+import type { AuthProcedureCtx, AuthReducerCtx, AuthViewCtx } from './context';
+import type { AuthUser } from './types';
 
 type CallerContext = AuthReducerCtx | AuthProcedureCtx | AuthViewCtx;
 
