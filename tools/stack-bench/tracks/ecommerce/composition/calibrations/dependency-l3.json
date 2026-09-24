@@ -273,6 +273,79 @@
     }
   },
   "equivalenceDecisions": [],
+  "qualificationReuse": {
+    "sourceRecipe": {
+      "id": "ecommerce.progression-catalog",
+      "contentSha256": "c1e134ac66ea4682989a814c3916122b34c3ccc1a628d956c77ffb0ae81db87e",
+      "executionSha256": "a46d0e87e384a1b969982afd22809ceb790c9d4a5bbf14b566b14e1e64914f6e"
+    },
+    "sourceCalibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "contentSha256": "63aaee2df48f7f6e8a0caaf5c04981a99a3be63aa9c6c99d05b5fc04be3f031c"
+    },
+    "rationale": "Only admission and the scope hash changed: the first-minute startup memory reservation is 2.5 GiB instead of the 9.25 GiB sum of container caps, based on measured attempt peaks of 1.9 GiB in the first minute and 3.1 GiB overall; the qualification scope hashes text with Git line endings. No grading, action, scenario, adapter or check code changed; admission decides when an attempt starts, not how it is graded.",
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/reuse-review.json",
+        "sha256": "1ff8e45b9eb6fc4c8d45e71a859f3058a9145736f44955cb279cbbe9374730a6"
+      }
+    ],
+    "scopes": [
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+        "toExecutableSha256": "7c26408fbcc0d4bb106dfe0a01b756dcb761e37096dca10f62a7aaa2acc3a058"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+        "toExecutableSha256": "7c26408fbcc0d4bb106dfe0a01b756dcb761e37096dca10f62a7aaa2acc3a058"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+        "toExecutableSha256": "b5451d7806f3b8810a72b5a9ca38be0dd15ed7776b4ddbf678cfa285e7109a4a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+        "toExecutableSha256": "b5451d7806f3b8810a72b5a9ca38be0dd15ed7776b4ddbf678cfa285e7109a4a"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+        "toExecutableSha256": "f4aac956bd69b09a16e00fd21c2efde2848603a4b857c027c25db7fef6b9f74c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+        "toExecutableSha256": "f4aac956bd69b09a16e00fd21c2efde2848603a4b857c027c25db7fef6b9f74c"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+        "toExecutableSha256": "c0a033fe2ff7781a11e4f665c372116971564f4329d979e11a8e201c467d7858"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+        "toExecutableSha256": "c0a033fe2ff7781a11e4f665c372116971564f4329d979e11a8e201c467d7858"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+        "toExecutableSha256": "28d3b9aa62cabbab4f0745be1ffc7c353ea6446d459b6c49557f7e20b1ce0269"
+      }
+    ]
+  },
   "selection": {
     "path": "composition/dependency.json",
     "sha256": "e73002df8a7a42e612f2bd1ee5de1f9db2d6c13cb9c819e405a5f2512eca3048",

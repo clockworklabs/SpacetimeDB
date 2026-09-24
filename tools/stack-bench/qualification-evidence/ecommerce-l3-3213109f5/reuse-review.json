@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "sourceCommit": "3213109f50",
+  "targetCommit": "23d7105869",
+  "changedFiles": [
+    "src/composition/product-config.ts",
+    "src/runtime/resource-lock-worker.ts",
+    "src/evidence/provenance.ts",
+    "src/composition/qualification-scope.ts",
+    "tests/resource-lock-transactions.test.ts",
+    "tests/provenance.test.ts",
+    "appliance/README.md"
+  ],
+  "change": "Admission reserves ATTEMPT_STARTUP_MEMORY_BYTES (2.5 GiB) for each launch in its first minute instead of the 9.25 GiB sum of container caps. Container caps are unchanged. The qualification scope hash also reads text with LF line endings, as Git stores it, so a CRLF checkout of the same commit hashes like the appliance; LF-tree hashes are unchanged.",
+  "gradingImpact": "None. No grader, action, scenario, stack adapter, reference app, mutation, check or scoring code changed. Admission decides when an attempt may start; it does not change how an attempt is graded.",
+  "measurement": {
+    "source": "docker stats every 5 s during the 2026-09-24 L3 qualification runs",
+    "attempts": 29,
+    "maxConcurrentAttempts": 12,
+    "firstMinuteAttemptMiB": {
+      "p99": 1664,
+      "max": 1909
+    },
+    "wholeAttemptMiB": {
+      "p50": 676,
+      "p99": 2341,
+      "max": 3151
+    }
+  },
+  "verification": {
+    "tests": [
+      "tests/resource-lock-transactions.test.ts",
+      "tests/backend-lease.test.ts",
+      "tests/provenance.test.ts"
+    ],
+    "result": "resource-lock-transactions and backend-lease 18 pass; provenance and qualification-scope 12 pass",
+    "compilerStaleness": "qualification status at 23d7105869 reports only executableSha256 changed for all nine scopes"
+  },
+  "scopes": [
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "7c26408fbcc0d4bb106dfe0a01b756dcb761e37096dca10f62a7aaa2acc3a058"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "7c26408fbcc0d4bb106dfe0a01b756dcb761e37096dca10f62a7aaa2acc3a058"
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+      "toExecutableSha256": "b5451d7806f3b8810a72b5a9ca38be0dd15ed7776b4ddbf678cfa285e7109a4a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+      "toExecutableSha256": "b5451d7806f3b8810a72b5a9ca38be0dd15ed7776b4ddbf678cfa285e7109a4a"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+      "toExecutableSha256": "f4aac956bd69b09a16e00fd21c2efde2848603a4b857c027c25db7fef6b9f74c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+      "toExecutableSha256": "f4aac956bd69b09a16e00fd21c2efde2848603a4b857c027c25db7fef6b9f74c"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "c0a033fe2ff7781a11e4f665c372116971564f4329d979e11a8e201c467d7858"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "c0a033fe2ff7781a11e4f665c372116971564f4329d979e11a8e201c467d7858"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+      "toExecutableSha256": "28d3b9aa62cabbab4f0745be1ffc7c353ea6446d459b6c49557f7e20b1ce0269"
+    }
+  ]
+}
