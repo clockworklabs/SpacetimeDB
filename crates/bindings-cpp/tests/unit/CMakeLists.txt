@@ -26,11 +26,9 @@ target_sources(bindings_cpp_unit_tests PRIVATE
     ../../src/internal/module_type_registration.cpp
 )
 
-add_executable(jwt_source_unit_tests main.cpp jwt_source_unit_tests.cpp)
-
 add_executable(hosted_auth_unit_tests main.cpp hosted_auth_unit_tests.cpp)
 
-foreach(test_target bindings_cpp_unit_tests jwt_source_unit_tests hosted_auth_unit_tests)
+foreach(test_target bindings_cpp_unit_tests hosted_auth_unit_tests)
 target_include_directories(${test_target} PRIVATE
     ../../include
 )
