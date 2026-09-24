@@ -3030,8 +3030,9 @@ public class Module : IIncrementalGenerator
                     }
                     foreach (var assembly in assemblies)
                     {
-                        if (mountByIdentity.TryGetValue(assembly.Identity, out var mount))
+                        if (IsChild(assembly))
                         {
+                            var mount = mountByIdentity[assembly.Identity];
                             Add(
                                 mount.Accessor,
                                 assembly.Identity,
