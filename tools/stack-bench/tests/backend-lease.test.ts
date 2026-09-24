@@ -7,7 +7,10 @@ import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { runBounded } from '../src/runtime/bounded-process.js';
 import {
+  CAPACITY_WAIT_RECEIPT_ENV,
+  readCapacityWait,
   createBackendLease,
   acquireResourceLocks,
   backendResourceLockKeys,
@@ -383,4 +386,26 @@ test('resource-free stub activation stays resource-free inside the appliance', (
     else process.env.STACK_BENCH_APPLIANCE = previous;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a supervised child waiting for host capacity does not spend its timeout', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'capacity-wait-'));
+  const receipt = join(root, 'capacity-wait.json');
+  const lease = new URL('../src/runtime/backend-lease.js', import.meta.url).href;
+  const child = `import { writeCapacityWait } from ${JSON.stringify(lease)};
+    const startedAt = Date.now();
+    writeCapacityWait({ startedAt, resumedAt: null });
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    writeCapacityWait({ startedAt, resumedAt: Date.now() });
+    await new Promise(resolve => setTimeout(resolve, 300));`;
+  try {
+    const result = await runBounded(process.execPath, ['--input-type=module', '-e', child], {
+      stdio: 'ignore', timeoutMs: 2500, env: { ...process.env, [CAPACITY_WAIT_RECEIPT_ENV]: receipt },
+      pauseInterval: () => readCapacityWait(receipt), terminate: pid => process.kill(pid, 'SIGKILL'),
+    });
+    assert.equal(result.error, null);
+    assert.equal(result.timedOut, false);
+    assert.equal(result.ok, true);
+    assert(result.pausedMs! >= 3900, String(result.pausedMs));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

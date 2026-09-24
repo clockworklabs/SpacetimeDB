@@ -9,7 +9,7 @@ import { cancelExecutionJob, listExecutionJobs, readExecutionJob, submitExecutio
   workExecutionJob } from '../src/campaigns/execution-jobs.js';
 import type { executeCampaign, inspectCampaign } from '../src/campaigns/campaign-runner.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { jobCommand, resumeExecutionJob } from '../commands/job-cli.js';
+import { jobCommand, resumeExecutionJob, runJobCli } from '../commands/job-cli.js';
 import { DEPENDENCY_CAMPAIGN } from './fixtures/dashboard-fixture.js';
 
 test('job submission, exclusive workers, cancellation and retained failures use durable records', async () => {
@@ -174,4 +174,28 @@ test('job CLI rejects options its command does not use and resolves results like
       { jobs: Array<{ job: { id: string } }> };
     assert.equal(packageResults.jobs.some(entry => entry.job.id === job.id), false);
   } finally { process.chdir(cwd); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('job CLI prints one JSON document and separates usage errors from command failures', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-exit-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'plans'));
+  copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/campaign.deterministic.json'), join(root, 'plans/test.json'));
+  const job = submitExecutionJob(root, { key: 'exit-job', planFile: 'test.json' });
+  const failure = (async () => { throw new Error('synthetic failure'); }) as typeof executeCampaign;
+  await workExecutionJob(root, job.id, 'h', { execute: failure });
+  const env = { STACK_BENCH_RESULTS_DIR: root };
+  const printed = t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'error', () => {});
+  for (const command of ['status', 'cancel']) {
+    printed.mock.resetCalls();
+    assert.equal(await runJobCli([command, job.id], env), 0, command);
+    assert.equal(printed.mock.callCount(), 1);
+    assert.equal(JSON.parse(printed.mock.calls[0]!.arguments[0] as string).status, 'failed');
+  }
+  assert.equal(await runJobCli(['work', job.id, '--host', 'h'], env), 1, 'running a job to failure fails');
+  assert.equal(await runJobCli(['status'], env), 2);
+  assert.equal(await runJobCli(['status', job.id, '--bogus'], env), 2);
+  assert.equal(await runJobCli(['start', 'review.json'], env), 2, 'start without a host');
+  assert.equal(await runJobCli(['status', 'f'.repeat(64)], env), 1);
 });

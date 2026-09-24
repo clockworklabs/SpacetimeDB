@@ -46,6 +46,12 @@ Pass `--results` or set an absolute `STACK_BENCH_RESULTS_DIR`. Otherwise the pac
 sets runtime image identity for `job work` and `job resume`. A worker must use the matching frozen controller
 and coding images. Named secret paths must exist on that worker.
 
+Each command prints one JSON document to stdout. It exits 0 when the command did what
+was asked; `status` and `cancel` report a failed job in the JSON and still exit 0.
+`start`, `work`, and `resume` run the campaign before they return and exit 1 when that
+job fails. `start` prints the job ID to stderr while it runs. Other command failures
+exit 1, and usage errors exit 2.
+
 Submission snapshots the plan. Repeating the same key and request returns the same job.
 Reusing a key for different inputs fails. Submission does not start a model call.
 `job work` claims and runs one job; an existing task queue can invoke that command on the

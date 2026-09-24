@@ -36,6 +36,9 @@ test('crash database drain requires observed zero work and preserves errors or a
         assert(args.some(arg => arg.includes('maxPoolSize=1')));
         assert.match(args.at(-1)!, /idleSessions:true/);
         assert.match(args.at(-1)!, /connectionId:\{\$ne:self\}/);
+        // Only idle sessions end; a running commit is still waited for.
+        assert.match(args.at(-1)!, /op\.type === 'idleSession' && op\.lsid/);
+        assert.match(args.at(-1)!, /killSessions: idle/);
       }
       return counts.shift()!;
     });

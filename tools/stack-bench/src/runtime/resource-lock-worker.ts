@@ -31,25 +31,49 @@ function addSlot(slots: Set<string>, key: unknown, owner: unknown): void {
   if (slot) slots.add(slot);
 }
 
+export interface HostPressure {
+  readonly memTotalBytes: number;
+  readonly memAvailableBytes: number;
+  readonly cpuCount: number;
+  readonly load: number;
+}
+
+const memoryFloor = (total: number): number => Math.max(2 * 1024 ** 3, total * 0.1);
+
+const validHostPressure = ({ memTotalBytes: total, memAvailableBytes: available, cpuCount, load }: HostPressure):
+  boolean => [total, available, cpuCount, load].every(Number.isFinite)
+    && total > 0 && available >= 0 && available <= total && cpuCount > 0 && load >= 0;
+
 export function hostResourceWaitReason(total: number, available: number, cpuCount: number, load: number,
   startingAttempts = 1, startingMemoryBytes = startingAttempts * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes): string | null {
-  if (![total, available, cpuCount, load].every(Number.isFinite)
-    || total <= 0 || available < 0 || available > total || cpuCount <= 0 || load < 0
+  if (!validHostPressure({ memTotalBytes: total, memAvailableBytes: available, cpuCount, load })
     || !Number.isSafeInteger(startingAttempts) || startingAttempts < 1
     || !Number.isSafeInteger(startingMemoryBytes) || startingMemoryBytes <= 0) {
     throw new Error('cannot read valid host resource pressure');
   }
-  const required = Math.max(2 * 1024 ** 3, total * 0.1)
-    + startingMemoryBytes;
+  const required = memoryFloor(total) + startingMemoryBytes;
   if (available < required) return `host capacity unavailable: ${(available / 1024 ** 3).toFixed(1)} GiB available; ${(required / 1024 ** 3).toFixed(1)} GiB required before another attempt`;
   if (load >= cpuCount) return `host capacity unavailable: CPU load ${load.toFixed(1)} on ${cpuCount} CPUs`;
   return null;
 }
 
-function readHostResourceWaitReason(startingAttempts: number, startingMemoryBytes: number): string | null {
+// The kernel this process runs under. In the controller container that is the Docker VM.
+export function readHostPressure(): HostPressure {
   const mem = readFileSync('/proc/meminfo', 'utf8');
-  return hostResourceWaitReason(Number(mem.match(/^MemTotal:\s+(\d+)/m)?.[1]) * 1024,
-    Number(mem.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024, cpus().length, loadavg()[0]!, startingAttempts, startingMemoryBytes);
+  const pressure = { memTotalBytes: Number(mem.match(/^MemTotal:\s+(\d+)/m)?.[1]) * 1024,
+    memAvailableBytes: Number(mem.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024,
+    cpuCount: cpus().length, load: loadavg()[0]! };
+  if (!validHostPressure(pressure)) throw new Error('cannot read valid host resource pressure');
+  return pressure;
+}
+
+// Admission's floor with no attempt starting: CPU saturated or memory below its reserve.
+export const hostOverCapacity = (pressure: HostPressure): boolean =>
+  pressure.load >= pressure.cpuCount || pressure.memAvailableBytes < memoryFloor(pressure.memTotalBytes);
+
+function readHostResourceWaitReason(startingAttempts: number, startingMemoryBytes: number): string | null {
+  const { memTotalBytes, memAvailableBytes, cpuCount, load } = readHostPressure();
+  return hostResourceWaitReason(memTotalBytes, memAvailableBytes, cpuCount, load, startingAttempts, startingMemoryBytes);
 }
 
 export function resourceLockDescriptors(root: string, keys: string[]): BackendResourceLock[] {

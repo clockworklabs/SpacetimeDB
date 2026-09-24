@@ -47,8 +47,8 @@ export interface DatabaseDrainReceipt {
   samples: Array<{ atMs: number; pending: number }>;
 }
 
-// The app stays stopped while this read-only probe waits for its old database
-// connections and transactions. A client SIGKILL cannot retract a sent COMMIT.
+// The app stays stopped while this probe waits for its old database connections
+// and transactions. A client SIGKILL cannot retract a sent COMMIT.
 export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: number,
   signal: AbortSignal, exec: TextCommandExecutor = execFileSync): Promise<DatabaseDrainReceipt> {
   const database = requireLeasedDatabase(lease);
@@ -68,11 +68,16 @@ export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: 
       '--quiet', '--eval', `
         const self = db.hello().connectionId;
         if (!Number.isSafeInteger(Number(self)) || Number(self) <= 0) throw new Error('missing observer connection');
-        const work = db.getSiblingDB('admin').aggregate([
+        const admin = db.getSiblingDB('admin');
+        const work = admin.aggregate([
           {$currentOp:{allUsers:false,idleConnections:true,idleSessions:true}},
-          {$match:{connectionId:{$ne:self}}}, {$count:'pending'}
+          {$match:{connectionId:{$ne:self}}}
         ]).toArray();
-        print(work.length ? work[0].pending : 0);`];
+        // The killed app cannot resume its idle transactions. End them now instead
+        // of waiting up to 90 seconds for MongoDB's 60-second transaction sweep.
+        const idle = work.filter(op => op.type === 'idleSession' && op.lsid).map(op => ({ id: op.lsid.id }));
+        if (idle.length && admin.runCommand({ killSessions: idle }).ok !== 1) throw new Error('could not end orphaned sessions');
+        print(work.length);`];
   } else throw new Error('database drain requires a separate hosted application');
   try {
     while (Date.now() < deadlineMs) {
@@ -106,8 +111,7 @@ export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: Cras
   const signal = AbortSignal.timeout(target === 'application' ? 110_000 : 45_000);
   if (target === 'application') {
     let drain: DatabaseDrainReceipt | undefined, failure: Error | undefined;
-    // MongoDB's default 60-second transaction lifetime is enforced by a
-    // 30-second sweep. Allow both intervals before declaring work unsettled.
+    // A commit still running in the database is waited for, not ended.
     try { drain = await drainApplicationDatabase(lease, Date.now() + 100_000, signal); }
     catch (error) { failure = error instanceof Error ? error : new Error('database drain failed'); }
     if (signal.aborted) throw failure ?? Object.assign(new Error('crash recovery interrupted'), { databaseDrain: drain ?? null });

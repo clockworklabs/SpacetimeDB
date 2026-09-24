@@ -667,3 +667,35 @@ test('a crashed page during a concurrency barrier or click remains a harness fai
     assert.equal(result.code, 'unclassified_exception', phase);
   }
 });
+
+test('concurrent click timeouts on a starved host are retryable and inconclusive', async () => {
+  const gib = 1024 ** 3;
+  const idle = { memTotalBytes: 32 * gib, memAvailableBytes: 20 * gib, cpuCount: 8, load: 2 };
+  const timeout = () => Object.assign(new Error('locator timed out'), { name: 'TimeoutError' });
+  for (const phase of ['barrier', 'click']) {
+    const actor = { loc: () => ({
+      waitFor: async () => { if (phase === 'barrier') throw timeout(); },
+      isEnabled: async () => true,
+      click: async () => { throw timeout(); },
+      count: async () => 1,
+    }) };
+    for (const [pressure, status] of [
+      [idle, 'failed'],
+      [{ ...idle, load: 8 }, 'inconclusive'],
+      [{ ...idle, memAvailableBytes: 3 * gib }, 'inconclusive'],
+    ] as const) {
+      const result = await run({ do: 'clickConcurrently', actors: ['a', 'b'], testid: 'buy', settleMs: 0 },
+        services(new Map([['a', actor], ['b', actor]]), { concurrency: {
+          defaultWithin: 5000, dispatch: async () => null, expand: (value: string | undefined) => value,
+          hostPressure: () => pressure, sleep, testId: (id: string) => id,
+        } }));
+      assert.equal(result.status, status, phase);
+      assert.equal(result.retryable, status === 'inconclusive', phase);
+      assert.equal(result.finding?.kind ?? null, status === 'failed'
+        ? (phase === 'barrier' ? 'control-not-ready' : 'clicks-failed') : null, phase);
+      assert.deepEqual(observation(result).hostPressure, pressure, phase);
+      assert.deepEqual(observation(result).attached,
+        [{ actor: 'a', attached: true }, { actor: 'b', attached: true }], phase);
+    }
+  }
+});

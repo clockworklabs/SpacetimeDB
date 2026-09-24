@@ -21,7 +21,7 @@ import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { referenceRuns } from './dashboard-reference-runs.js';
 import { checkGuidePage } from './check-guide.js';
-import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
+import { SAFE_RESULT_NAME, stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import { controllerRuntimeCommand, controllerChildEnvironment } from '../appliance/controller.js';
 import { requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
 import { readCampaignTimeBudget, requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
@@ -31,7 +31,6 @@ import { submitExecutionJob, listExecutionJobs, readExecutionJob, cancelExecutio
 
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_ROOT = join(DASHBOARD_ROOT, 'public');
-const SAFE_NAME = /^[a-z0-9][a-z0-9.-]{2,119}$/;
 const SPA_PATH = /^\/(?:new|plans|c\/[^/]+(?:\/a\/[^/]+)?)$/;
 const HEARTBEAT_MS = 25_000;
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -418,7 +417,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const timeRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/attempts\/([^/]+)\/time$/);
       if (timeRoute && (request.method === 'GET' || request.method === 'POST')) {
         const key = decodeURIComponent(timeRoute[1] ?? '');
-        if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
+        if (!SAFE_RESULT_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
         const directory = contained(campaignsRoot, key, 'campaign');
         const attemptId = decodeURIComponent(timeRoute[2] ?? '');
         if (request.method === 'GET') {
@@ -458,7 +457,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return json(response, 403, { error: 'The stop request is not authorized.' });
         }
         const key = decodeURIComponent(stopRoute[1] ?? '');
-        if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
+        if (!SAFE_RESULT_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
         const input = await body(request);
         const owner = input && typeof input === 'object' && 'owner' in input ? input.owner : null;
         if (typeof owner !== 'string' || !/^[a-f0-9]{64}$/.test(owner)) {
@@ -484,7 +483,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return json(response, 403, { error: 'The run request is not authorized.' });
         }
         const key = decodeURIComponent(resumeRoute[1] ?? '');
-        if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
+        if (!SAFE_RESULT_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
         const directory = contained(campaignsRoot, key, 'campaign');
         if (!existsSync(directory)) return json(response, 404, { error: 'Not found' });
         const campaign = summarizeCampaign(directory, { includeAttempts: false });
@@ -556,7 +555,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       if (request.method === 'GET' && campaignRoute) {
         const key = decodeURIComponent(campaignRoute[1] ?? '');
         const rest = campaignRoute[2] ?? '';
-        if (!SAFE_NAME.test(key)) {
+        if (!SAFE_RESULT_NAME.test(key)) {
           return json(response, 400, { error: 'The campaign name is invalid.' });
         }
         if (!rest && /^job-[a-f0-9]{64}$/.test(key)
@@ -571,7 +570,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         const attemptRoute = rest.match(/^attempts\/([^/]+)\/(checks|package|log|transcript)$/);
         const attemptId = attemptRoute ? decodeURIComponent(attemptRoute[1] ?? '') : '';
-        if (attemptRoute && !SAFE_NAME.test(attemptId)) {
+        if (attemptRoute && !SAFE_RESULT_NAME.test(attemptId)) {
           return json(response, 400, { error: 'The attempt name is invalid.' });
         }
         const from = url.searchParams.get('from') ?? '0';

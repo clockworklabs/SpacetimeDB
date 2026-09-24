@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
@@ -22,6 +23,7 @@ import { prepareCampaignExtension } from '../src/campaigns/campaign-extension.js
 import { campaignDepthPauseStatus, continueCampaignDepth } from '../src/campaigns/campaign-depth-pause.js';
 import { statusWord } from '../src/evidence/status-words.js';
 import { readCampaignLock, requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
+import { SAFE_RESULT_NAME } from '../src/runtime/operational-paths.js';
 
 interface CampaignSummaryPlan {
   id: string;
@@ -149,6 +151,16 @@ export function validateResumeCampaign(path: string, directory: string): ResumeC
   return validateResumeCampaignState(compileCampaignFile(path), inspectCampaign(directory));
 }
 
+/** A new campaign directory must have a name the dashboard can open; existing ones continue. */
+function newCampaignDirectory(path: string): string {
+  const directory = resolve(path);
+  if (!existsSync(directory) && !SAFE_RESULT_NAME.test(basename(directory))) {
+    throw new Error(`campaign folder name "${basename(directory)}" is not supported: use 3-120 `
+      + 'lowercase letters, digits, dots, or hyphens, starting with a letter or digit');
+  }
+  return directory;
+}
+
 export function parseCampaignArgs(argv: string[]): CampaignArgs {
   const [command, path, ...rest] = argv.slice(2);
   if ((command === 'pause-status' || command === 'continue-depth') && path && rest.length === 0) {
@@ -240,11 +252,12 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
       throw new Error('extend --depth must be a positive integer');
     }
     return { command, path: resolve(path), parentDirectory: resolve(rest[1]!),
-      fromDepth, directory: resolve(rest[5]!), prepareOnly: rest.length === 7 };
+      fromDepth, directory: newCampaignDirectory(rest[5]!), prepareOnly: rest.length === 7 };
   }
   if (isOneOf(command, ['trial', 'run', 'resume', 'reconcile'])
     && path && rest.length === 2 && rest[0] === '--out') {
-    return { command, path: resolve(path), directory: resolve(rest[1]!) };
+    return { command, path: resolve(path),
+      directory: command === 'run' || command === 'trial' ? newCampaignDirectory(rest[1]!) : resolve(rest[1]!) };
   }
   throw new Error('usage: campaign-cli.js modes | validate|show <campaign.json> '
     + '| trial|run|resume|reconcile <campaign.json> --out <directory> '

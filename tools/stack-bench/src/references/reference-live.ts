@@ -29,7 +29,8 @@ import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { controllerRunner } from '../runtime/runner-environment.js';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.js';
-import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.js';
+import { CAPACITY_WAIT_RECEIPT_ENV, existingResourceLockKeys, readCapacityWait,
+  resourceLockScope } from '../runtime/backend-lease.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
@@ -512,6 +513,9 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   const app = join(work, 'app');
   const output = join(String(args.runsRoot), `r${repetition + 1}`);
   const supervisorState = join(work, 'supervisor-state.json');
+  // A mutation worker's parent names the receipt so both clocks pause together.
+  const capacityWait = process.env[CAPACITY_WAIT_RECEIPT_ENV] || join(work, 'capacity-wait.json');
+  let capacityWaitMs = 0;
   const started = Date.now();
   const harnessBefore = qualificationInputs();
   const cancellation = new AbortController();
@@ -522,7 +526,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   try {
     prepareReferenceFixtureSource(fixture, app);
     const env = { ...referenceQualificationEnvironment(fixture.backend, args),
-      STACK_BENCH_SUPERVISOR_STATE: supervisorState };
+      STACK_BENCH_SUPERVISOR_STATE: supervisorState, [CAPACITY_WAIT_RECEIPT_ENV]: capacityWait };
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(args.level), '--run-index', String(args.runIndex), '--repairs', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--no-media'];
@@ -558,7 +562,8 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
     }
     const child = await runBounded(process.execPath, benchArgs,
       { cwd: ROOT, stdio: 'inherit', env, timeoutMs: Number(args.timeoutMs),
-        signal: cancellation.signal });
+        pauseInterval: () => readCapacityWait(capacityWait), signal: cancellation.signal });
+    capacityWaitMs = child.pausedMs ?? 0;
     if (!child.ok) {
       const reason = child.timedOut
         ? `benchmark exceeded ${args.timeoutMinutes} minute repetition deadline`
@@ -607,7 +612,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   audit.ok = audit.failures.length === 0;
   return { repetition: repetition + 1,
     output: relative(String(args.artifactDirectory), output).replaceAll('\\', '/'),
-    durationMs: Date.now() - started, processError,
+    durationMs: Date.now() - started, capacityWaitMs, processError,
     harnessSha256Before: harnessBefore.sha256, harnessSha256After: harnessAfter.sha256, ...audit };
 }
 
@@ -795,7 +800,7 @@ async function runParallelMutationRepetition(fixture: ReferenceFixture,
       outcome: 'incomplete', mutations: { caught: 0, total: 0 } };
   }
   if (onCleanBaseline) onCleanBaseline(clean);
-  const remainingMs = started + Number(args.timeoutMs) - Date.now();
+  const remainingMs = started + Number(args.timeoutMs) + Number(clean.capacityWaitMs ?? 0) - Date.now();
   if (remainingMs <= 0) {
     return { ...clean, ok: false, durationMs: Date.now() - started,
       processError: 'mutation qualification exhausted its repetition deadline after the clean baseline',
@@ -822,8 +827,11 @@ async function runParallelMutationRepetition(fixture: ReferenceFixture,
       const argv = parallelMutationChildArgv(args, context,
         { artifactPath, baselineBundle, workerIndex,
           workerCount: args.mutationWorkers });
+      const capacityWait = join(workerRoot, `w${workerIndex + 1}.capacity-wait.json`);
+      rmSync(capacityWait, { force: true });
       const processResult = await runBounded(process.execPath, argv,
-        { cwd: ROOT, env: process.env, timeoutMs: remainingMs, logs,
+        { cwd: ROOT, env: { ...process.env, [CAPACITY_WAIT_RECEIPT_ENV]: capacityWait },
+          timeoutMs: remainingMs, logs, pauseInterval: () => readCapacityWait(capacityWait),
           signal: cancellation.signal, gracefulCancellationMs: 10_000 });
       const worker = { workerIndex, runIndex: args.runIndex + workerIndex,
         artifactPath, logs, processResult };

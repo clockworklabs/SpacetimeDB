@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -149,7 +149,10 @@ test('automatic accounts are explicit in the review and ambiguous accounts requi
   assert.deepEqual(request.credentials, {});
   assert.doesNotMatch(JSON.stringify(review), /SYNTHETIC_ONLY/);
   writeFileSync(registry, JSON.stringify({ ...profiles, other: profiles.openai }));
+  const saved = readdirSync(join(root, 'plans'));
   assert.throws(() => prepareRun(root, request, env), /Choose an account for codex/);
+  assert.throws(() => prepareRun(root, { ...request, key: 'rejected-review' }, env), /Choose an account for codex/);
+  assert.deepEqual(readdirSync(join(root, 'plans')), saved, 'a rejected review must not save a plan');
   assert.equal(prepareRun(root, review.request, env).reviewId, review.reviewId);
   assert.equal(existsSync(join(root, 'jobs')), false);
 });

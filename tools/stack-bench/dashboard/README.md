@@ -204,9 +204,9 @@ node dist/commands/job-cli.js start review.json --results /path/to/results --hos
 (empty for appliance defaults).
 The response records the review identity, immutable plan, cost cap, account mode,
 and grading qualification. `start` accepts that response. Any change requires a
-new review. It starts the same worker as the dashboard. It prints the job ID first,
-then waits for the campaign and prints the final job status. No model or reasoning
-level is substituted.
+new review. It starts the same worker as the dashboard. It prints the job ID to stderr,
+waits for the campaign, and prints the final job status as one JSON document. No model
+or reasoning level is substituted.
 
 HTTP clients use `GET /api/run-setup`, `POST /api/runs/prepare`, and `POST /api/runs`.
 Writes require the same origin and browser token as other controls.

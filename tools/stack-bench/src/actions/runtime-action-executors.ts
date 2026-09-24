@@ -3,7 +3,7 @@ import { evidenceNowMs } from '../evidence/evidence-timing.js';
 import { resolveOrderDataStorage, type OrderDataSelection, type OrderDataStorage } from '../stacks/order-data.js';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
-import { finding, isFinding, renderFinding } from './action-findings.js';
+import { finding, isFinding, renderFinding, type Finding } from './action-findings.js';
 import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, orderOperationDifferences, type OrderOperation, cancellationDifferences, orderCancellationDifferences,
   purchaseDifferences, orderPurchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
 import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
@@ -28,6 +28,7 @@ import type { LeasedDatabase } from '../stacks/backend-reset-guard.js';
 import type { LeasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 import type { RuntimeControlMode, RuntimeControlSpec } from '../runtime/backend-control.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
+import { hostOverCapacity, readHostPressure, type HostPressure } from '../runtime/resource-lock-worker.js';
 
 type UnknownRecord = Record<string, unknown>;
 type Sleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
@@ -44,6 +45,7 @@ interface CapturedWrite {
 
 interface Locator {
   click(options?: unknown): Promise<void>;
+  count(): Promise<number>;
   isEnabled(): Promise<boolean>;
   waitFor(options?: unknown): Promise<void>;
 }
@@ -73,6 +75,7 @@ interface ConcurrencyCapability {
   readonly defaultWithin: number;
   dispatch(step: ActionStep, signal: AbortSignal): Promise<unknown>;
   expand(value: string | undefined): string | undefined;
+  hostPressure?(): HostPressure;
   sleep: Sleep;
   testId(id: string): string;
 }
@@ -672,6 +675,30 @@ async function replayConcurrently(
   return { attempted: pending.length, answered: answered.length, replies };
 }
 
+// A visible, enabled control that times out does not show DOM churn when the
+// host was starved. Measure the host and whether each control is attached.
+async function timeoutObservation(concurrency: ConcurrencyCapability,
+  resolved: readonly { target: ClickTarget; locator: Locator }[]) {
+  let hostPressure: HostPressure | null = null;
+  let hostPressureError: string | null = null;
+  try { hostPressure = (concurrency.hostPressure ?? readHostPressure)(); }
+  catch (error) { hostPressureError = String(errorShape(error).message ?? error).split('\n')[0] ?? null; }
+  const attached = await Promise.all(resolved.map(async ({ target, locator }) => ({
+    actor: String(target.actor),
+    attached: await locator.count().then(count => count > 0, () => null),
+  })));
+  return { hostPressure: hostPressure ? { ...hostPressure } : null, hostPressureError, attached };
+}
+
+function concurrentTimeout(value: Finding,
+  observation: Awaited<ReturnType<typeof timeoutObservation>>): never {
+  if (observation.hostPressure && hostOverCapacity(observation.hostPressure)) {
+    throw new ActionInconclusive(`host was over capacity when ${renderFinding(value)}`,
+      { retryable: true, observation });
+  }
+  throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+}
+
 async function clickConcurrently(
   { input, capabilities, signal }: ActionArguments<ClickConcurrentlyInput>,
 ) {
@@ -684,17 +711,21 @@ async function clickConcurrently(
       : undefined;
     return { target, locator: actorFor(capabilities, target.actor).loc(input.testid, { scope }) };
   });
+  let readyTimedOut = false;
   const notReady = (await settleConcurrentActions(resolved.map(async ({ target, locator }) => {
     try {
       await locator.waitFor({ state: 'visible', timeout: input.readyWithin ?? 15000 });
       return await locator.isEnabled() ? null : target.actor;
     } catch (error) {
       if (errorShape(error).name !== 'TimeoutError') throw error;
+      readyTimedOut = true;
       return target.actor;
     }
   }))).filter(Boolean);
   if (notReady.length) {
-    fail('control-not-ready', { control: input.testid, actors: notReady.map(String) });
+    const fields = { control: input.testid, actors: notReady.map(String) };
+    if (!readyTimedOut) fail('control-not-ready', fields);
+    concurrentTimeout(finding('control-not-ready', fields), await timeoutObservation(concurrency, resolved));
   }
   const outcomes = await settleConcurrentActions(resolved.map(({ target, locator }) =>
     locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
@@ -704,8 +735,8 @@ async function clickConcurrently(
       })));
   const failed = outcomes.filter(Boolean);
   if (failed.length) {
-    fail('clicks-failed', { control: input.testid, failed: failed.length, total: targets.length,
-      detail: failed.join(' | ') });
+    concurrentTimeout(finding('clicks-failed', { control: input.testid, failed: failed.length,
+      total: targets.length, detail: failed.join(' | ') }), await timeoutObservation(concurrency, resolved));
   }
   await concurrency.sleep(input.settleMs ?? 3000, signal);
   return { dispatched: targets.length };

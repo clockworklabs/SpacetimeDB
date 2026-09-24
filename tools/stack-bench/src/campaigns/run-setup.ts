@@ -1,8 +1,8 @@
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { credentialReady } from '../runtime/preflight.js';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import type { CampaignDefinition } from './campaign-compiler.js';
 import { compileCampaignFile, campaignGradingQualification, validateCampaignDefinition } from './campaign-compiler.js';
@@ -12,8 +12,9 @@ import { executionCredentialsSchema, listCredentialProfiles, resolveExecutionCre
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { resolveGuidanceProfile } from './condition-compiler.js';
+import { SAFE_RESULT_NAME } from '../runtime/operational-paths.js';
 
-const name = z.string().regex(/^[a-z0-9][a-z0-9.-]{2,119}$/);
+const name = z.string().regex(SAFE_RESULT_NAME);
 const requestSchema = z.strictObject({
   key: name, workload: name, workloadSha256: z.string().regex(/^[a-f0-9]{64}$/), level: z.number().int().positive(),
   stacks: z.array(z.string()).min(1),
@@ -133,11 +134,15 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
   delete d.mode.pauseAfterDepth;
   if (request.pauseAfterDepth !== null) d.mode.pauseAfterDepth = request.pauseAfterDepth;
   d.ordering.seed = request.key;
-  const plans = join(results, 'plans'); mkdirSync(plans, { recursive: true });
-  const sourceId = sha256(canonicalDefinitionJson(d));
-  const planFile = join(plans, `setup-${sourceId}.json`);
-  writeOnce(planFile, d);
-  const plan = compileCampaignFile(planFile);
+  validateCampaignDefinition(d, { source: 'setup' });
+  const planFile = join(results, 'plans', `setup-${sha256(canonicalDefinitionJson(d))}.json`);
+  // Compile a scratch copy so a rejected review never leaves a plan in plans/.
+  const scratch = mkdtempSync(join(tmpdir(), 'stack-bench-setup-'));
+  let plan: ReturnType<typeof compileCampaignFile>;
+  try {
+    writeCampaignRecord(join(scratch, basename(planFile)), d);
+    plan = compileCampaignFile(join(scratch, basename(planFile)));
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
   // Resolve profile metadata now, before a job can spend money. Secrets stay server-side.
   const profiles = listCredentialProfiles(env);
   for (const { adapter } of plan.agents) {
@@ -156,6 +161,7 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
     return { adapter: agent.adapter, profile: resolved.assignment, source: ready.kind ?? 'model-free' };
   });
   if (!Number.isFinite(request.maxCostUsd * plan.attempts.length)) throw new Error('Total cost cap is too large');
+  writeOnce(planFile, d);
   const reviewId = sha256(canonicalDefinitionJson({ request, planSha256: plan.contentSha256, authentication }));
   return { request, reviewId, planFile, planSha256: plan.contentSha256,
     attempts: plan.attempts.length, parallelism: plan.summary.parallelism,

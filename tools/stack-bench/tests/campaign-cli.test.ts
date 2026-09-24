@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { auditCompletedReferenceCampaign, campaignStateSummary,
+import { auditCompletedReferenceCampaign, campaignStateSummary, parseCampaignArgs,
   validateResumeCampaignState } from '../commands/campaign-cli.js';
+import { SAFE_RESULT_NAME } from '../src/runtime/operational-paths.js';
 
 test('campaign commands print a compact result and retain failed attempt details', () => {
   const plan = { id: 'campaign', version: '1.0.0', contentSha256: 'a'.repeat(64) };
@@ -68,4 +69,17 @@ test('campaign CLI resumes only an existing matching dependency campaign', () =>
   assert.throws(() => validateResumeCampaignState(requested, {
     ...existing, state: { ...existing.state, status: 'running' },
   }), /scheduled work/);
+});
+
+test('new campaign folders must use a name the dashboard can open', () => {
+  for (const out of ['campaigns/Pilot_1', 'campaigns/l3']) {
+    assert.throws(() => parseCampaignArgs(['node', 'x', 'run', 'p.json', '--out', out]), /folder name/);
+    assert.throws(() => parseCampaignArgs(['node', 'x', 'extend', 'p.json', '--from', 'campaigns/a1', '--depth', '2',
+      '--out', out]), /folder name/);
+    assert.equal(SAFE_RESULT_NAME.test(out.slice('campaigns/'.length)), false);
+  }
+  const trial = parseCampaignArgs(['node', 'x', 'trial', 'p.json', '--out', 'campaigns/pilot-1']) as { directory: string };
+  assert.match(trial.directory, /pilot-1$/);
+  // Resume and reconcile act on folders that already exist.
+  assert.doesNotThrow(() => parseCampaignArgs(['node', 'x', 'resume', 'p.json', '--out', 'campaigns/Pilot_1']));
 });

@@ -2780,6 +2780,7 @@ async function main() {
       }
       if (decision.action === 'rollback-no-comparison') {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
+        archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-rejected${repairs}`);
         if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}-rollback${repairs}`)) break;
@@ -2822,6 +2823,7 @@ async function main() {
           regressionReportFailure = errorMessage(error).split(/\r?\n/)[0]
             ?? 'regression report generation failed';
         }
+        archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-rejected${repairs}`);
         if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (regressionReportFailure) {
           repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,

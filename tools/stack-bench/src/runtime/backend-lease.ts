@@ -549,17 +549,47 @@ export function claimBackendResources(path: string, lease: BackendLease, input: 
   return lease;
 }
 
+/** A supervisor that names this file pauses its timeout for the capacity wait. */
+export const CAPACITY_WAIT_RECEIPT_ENV = 'STACK_BENCH_CAPACITY_WAIT_RECEIPT';
+
+interface CapacityWait { startedAt: number; resumedAt: number | null }
+
+export function writeCapacityWait(wait: CapacityWait, env: NodeJS.ProcessEnv = process.env): void {
+  const path = env[CAPACITY_WAIT_RECEIPT_ENV];
+  if (!path) return;
+  // Readers poll this file; a partial write must never be visible.
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(wait)}\n`, { mode: 0o600 });
+  renameSync(temporary, path);
+}
+
+export function readCapacityWait(path: string): CapacityWait | null {
+  if (!existsSync(path)) return null;
+  const wait: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (!isRecord(wait) || !Number.isSafeInteger(wait.startedAt)
+    || (wait.resumedAt !== null && !Number.isSafeInteger(wait.resumedAt))) {
+    throw new Error('capacity wait receipt is malformed');
+  }
+  return { startedAt: wait.startedAt as number, resumedAt: wait.resumedAt as number | null };
+}
+
 /** Standalone runs wait before startup; their supervising process owns cancellation. */
 export async function claimBackendResourcesWhenAvailable(path: string, lease: BackendLease,
-  input: Parameters<typeof claimBackendResources>[2]): Promise<BackendLease> {
-  let reported = false;
+  input: Parameters<typeof claimBackendResources>[2], env: NodeJS.ProcessEnv = process.env): Promise<BackendLease> {
+  let waitStartedAt: number | null = null;
   while (true) {
-    try { return claimBackendResources(path, lease, input); }
-    catch (error) {
+    try {
+      const claimed = claimBackendResources(path, lease, input);
+      if (waitStartedAt !== null) writeCapacityWait({ startedAt: waitStartedAt, resumedAt: Date.now() }, env);
+      return claimed;
+    } catch (error) {
       // Only capacity is transient. Ownership conflicts and corrupt evidence must stop.
       if (!(error instanceof Error) || !error.message.includes('host capacity unavailable:')) throw error;
-      if (!reported) console.error(`Waiting for host resources: ${error.message}`);
-      reported = true;
+      if (waitStartedAt === null) {
+        console.error(`Waiting for host resources: ${error.message}`);
+        waitStartedAt = Date.now();
+        writeCapacityWait({ startedAt: waitStartedAt, resumedAt: null }, env);
+      }
       await delay(1000);
     }
   }

@@ -19,6 +19,11 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   status: [], cancel: [], resume: [], work: ['host'], worker: ['host', 'concurrency'],
 };
 
+const EXECUTING = new Set(['start', 'work', 'resume']);
+
+class JobUsageError extends Error {}
+const usage = (message: string) => new JobUsageError(message);
+
 /** Continue a job's interrupted campaign with the accounts and capacity policy the job saved. */
 export async function resumeExecutionJob(results: string, id: string,
   { env = process.env, signal, execute = executeCampaign, inspect = inspectCampaign }:
@@ -36,17 +41,21 @@ export async function resumeExecutionJob(results: string, id: string,
 }
 
 export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = process.env) {
-  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: {
-    results: { type: 'string' }, host: { type: 'string' }, after: { type: 'string' },
-    limit: { type: 'string' }, concurrency: { type: 'string' },
-  } });
+  let parsed;
+  try {
+    parsed = parseArgs({ args: argv, allowPositionals: true, options: {
+      results: { type: 'string' }, host: { type: 'string' }, after: { type: 'string' },
+      limit: { type: 'string' }, concurrency: { type: 'string' },
+    } });
+  } catch (error) { throw usage(error instanceof Error ? error.message : String(error)); }
+  const { values, positionals } = parsed;
   const [command, argument] = positionals;
-  if (argv[0] !== command) throw new Error('put the job command before its options');
-  if (positionals.length > 2) throw new Error('unexpected job arguments');
+  if (argv[0] !== command) throw usage('put the job command before its options');
+  if (positionals.length > 2) throw usage('unexpected job arguments');
   if (command && Object.hasOwn(COMMAND_OPTIONS, command)) {
     const extra = Object.keys(values).find(option => option !== 'results'
       && !COMMAND_OPTIONS[command]!.includes(option));
-    if (extra) throw new Error(`job ${command} does not take --${extra}`);
+    if (extra) throw usage(`job ${command} does not take --${extra}`);
   }
   const results = values.results ? resolve(values.results) : stackBenchResultsRoot(STACK_BENCH_ROOT, env);
   if (command === 'options' && !argument) return runSetupCatalog(results, env);
@@ -54,9 +63,10 @@ export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = proces
     JSON.parse(readFileSync(argument === '-' ? 0 : argument, 'utf8')), env);
   if (command === 'start' && argument) {
     const host = values.host ?? env.STACK_BENCH_HOST_ID;
-    if (!host) throw new Error('job start requires --host or STACK_BENCH_HOST_ID');
+    if (!host) throw usage('job start requires --host or STACK_BENCH_HOST_ID');
     const job = submitPreparedRun(results, JSON.parse(readFileSync(argument === '-' ? 0 : argument, 'utf8')), env);
-    console.log(JSON.stringify({ jobId: job.id, campaignKey: `job-${job.id}` }));
+    // stdout carries only the final job status; the ID is available while the run blocks.
+    console.error(`job ${job.id} submitted; running campaign job-${job.id}`);
     return jobCommand(['work', job.id, '--results', results, '--host', host], env);
   }
   if (command === 'submit' && argument) return submitExecutionJob(results,
@@ -70,7 +80,7 @@ export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = proces
   if ((command === 'work' && argument) || (command === 'worker' && !argument)
     || (command === 'resume' && argument)) {
     const host = values.host ?? env.STACK_BENCH_HOST_ID;
-    if (!host && command !== 'resume') throw new Error('job work/worker requires --host or STACK_BENCH_HOST_ID');
+    if (!host && command !== 'resume') throw usage('job work/worker requires --host or STACK_BENCH_HOST_ID');
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.on('SIGTERM', stop); process.on('SIGINT', stop);
@@ -85,14 +95,25 @@ export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = proces
     }
     finally { process.off('SIGTERM', stop); process.off('SIGINT', stop); }
   }
-  throw new Error('use job options, prepare <json|->, start <review-json|-> --host <host>, submit <json|->, list, status <id>, cancel <id>, resume <id>, work <id> --host <host>, or worker --host <host> --concurrency <jobs>');
+  throw usage('use job options, prepare <json|->, start <review-json|-> --host <host>, submit <json|->, list, status <id>, cancel <id>, resume <id>, work <id> --host <host>, or worker --host <host> --concurrency <jobs>');
+}
+
+/**
+ * Prints one JSON document and returns the exit code: 0 when the command did what was
+ * asked, 1 when it failed (including a job that `start`, `work` or `resume` ran to a
+ * failure), 2 for a usage error. `status` and `cancel` report a failed job with 0.
+ */
+export async function runJobCli(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  try {
+    const result = await jobCommand(argv, env);
+    console.log(JSON.stringify(result, null, 2));
+    return EXECUTING.has(argv[0] ?? '') && 'status' in result && result.status === 'failed' ? 1 : 0;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return error instanceof JobUsageError ? 2 : 1;
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  jobCommand(process.argv.slice(2)).then(result => {
-    console.log(JSON.stringify(result, null, 2));
-    if ('status' in result && result.status === 'failed') process.exitCode = 1;
-  }).catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1;
-  });
+  void runJobCli(process.argv.slice(2)).then(code => { process.exitCode = code; });
 }
