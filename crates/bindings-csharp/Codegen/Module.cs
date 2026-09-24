@@ -2285,6 +2285,7 @@ record AssemblyDeclaration(
     string DescriptorTypeName,
     bool DeclaresMounts,
     string RootOnlyDeclarations,
+    string? CaseConversionPolicy,
     EquatableArray<AssemblyTableAccessor> Tables,
     EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
     EquatableArray<AssemblyTableAccessor> Queries
@@ -2396,6 +2397,11 @@ public class Module : IIncrementalGenerator
                         .FirstOrDefault()
                         ?.ConstantValue as string
                         ?? "",
+                    descriptor
+                        .GetMembers("CaseConversionPolicy")
+                        .OfType<IFieldSymbol>()
+                        .FirstOrDefault()
+                        ?.ConstantValue as string,
                     ReadAccessors("Tables"),
                     ReadAccessors("ReadOnlyTables"),
                     new(
@@ -3112,11 +3118,29 @@ public class Module : IIncrementalGenerator
                     );
                 }
 
-                var settingsRegistration =
-                    settings.Array.Length == 1
-                    && settings.Array[0].CaseConversionPolicy is { } policyName
-                        ? $"builder.SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy.{policyName});"
-                        : string.Empty;
+                var declaredCasePolicy =
+                    settings.Array.Length == 1 ? settings.Array[0].CaseConversionPolicy : null;
+                // A shared typespace also has one naming policy. Unspecified dependency
+                // settings inherit the root policy, whose host default is SnakeCase.
+                var rootCasePolicy = declaredCasePolicy ?? "SnakeCase";
+                foreach (var assembly in publicScopeAssemblies)
+                {
+                    if (
+                        assembly.CaseConversionPolicy is { } dependencyPolicy
+                        && dependencyPolicy != rootCasePolicy
+                    )
+                    {
+                        context.ReportDiagnostic(
+                            ErrorDescriptor.ConflictingCaseConversionPolicies.ToDiag(
+                                (identity, rootCasePolicy, assembly.Identity, dependencyPolicy)
+                            )
+                        );
+                    }
+                }
+
+                var settingsRegistration = declaredCasePolicy is { } policyName
+                    ? $"builder.SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy.{policyName});"
+                    : string.Empty;
 
                 var explicitTableRegistrations = string.Join(
                     "\n",
@@ -3466,6 +3490,7 @@ public class Module : IIncrementalGenerator
                     #if NET10_0_OR_GREATER
                     namespace {{extensionNamespaceName}} {
                         public static partial class AssemblyDescriptor {
+                            public const string? CaseConversionPolicy = {{(declaredCasePolicy is null ? "null" : SymbolDisplay.FormatLiteral(declaredCasePolicy, true))}};
                             public const string RootOnlyDeclarations = {{SymbolDisplay.FormatLiteral(string.Join(", ", new[] {
                                 rlsFilters.Array.Length != 0 ? "row-level security filters" : null,
                                 environmentRegistrations.Length != 0 ? "environment variables" : null

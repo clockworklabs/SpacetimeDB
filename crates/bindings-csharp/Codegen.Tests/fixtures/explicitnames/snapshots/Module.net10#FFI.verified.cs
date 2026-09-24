@@ -321,6 +321,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 {
     public static partial class AssemblyDescriptor
     {
+        public const string? CaseConversionPolicy = "SnakeCase";
         public const string RootOnlyDeclarations = "";
         public const int ReducerCount = 1;
         public const int ProcedureCount = 1;

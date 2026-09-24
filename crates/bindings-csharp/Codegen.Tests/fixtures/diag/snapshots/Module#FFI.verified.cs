@@ -937,6 +937,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 {
     public static partial class AssemblyDescriptor
     {
+        public const string? CaseConversionPolicy = "SnakeCase";
         public const string RootOnlyDeclarations =
             "row-level security filters, lifecycle reducer Reducers.TestDuplicateReducerKind1 (Init), lifecycle reducer Reducers.TestDuplicateReducerKind2 (Init)";
         public const int ReducerCount = 8;
