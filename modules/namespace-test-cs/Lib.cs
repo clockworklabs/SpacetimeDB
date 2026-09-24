@@ -56,9 +56,13 @@ public static partial class Functions
             Value = value,
         };
         if (ctx.Db.MyAuth.ProtectedRow.Id.Find(id) is null)
+        {
             ctx.Db.MyAuth.ProtectedRow.Insert(row);
+        }
         else
+        {
             ctx.Db.MyAuth.ProtectedRow.Id.Update(row);
+        }
     }
 
     [Reducer]
@@ -71,7 +75,10 @@ public static partial class Functions
             || ReferenceEquals(ctx.Db.User.Id, ctx.Db.MyAuth.User.Id)
             || ReferenceEquals(ctx.Db.MyAuth.User.Id, ctx.Db.@class.User.Id)
         )
+        {
             throw new Exception("Index handles must be reused within, but not across, table scopes.");
+        }
+
         ctx.Db.User.Insert(new User { Id = 2 });
         AuthLib.Functions.Insert(ctx, 2);
         ctx.Db.MyAuth.User.Insert(new AuthLib.User { Id = 3, Score = 43 });
@@ -82,14 +89,23 @@ public static partial class Functions
             || ctx.Db.@class.User.Count != 1
             || ctx.Db.ExtraRow.Count != 1
         )
+        {
             throw new Exception("Namespace counts are not isolated.");
+        }
+
         var row = ctx.Db.MyAuth.User.Id.Find(2)!.Value;
         row.Score = 99;
         ctx.Db.MyAuth.User.Id.Update(row);
         if (ctx.Db.MyAuth.User.ByScore.Filter(99u).Single().Id != 2)
+        {
             throw new Exception("Mounted index lookup failed.");
+        }
+
         if (!ctx.Db.MyAuth.User.Id.Delete(3) || ctx.Db.MyAuth.User.Count != 1)
+        {
             throw new Exception("Mounted unique deletion failed.");
+        }
+
         Log.Info("namespace composition works");
     }
 
@@ -105,7 +121,10 @@ public static partial class Functions
             AuthLib.Functions.Insert(tx, id);
             tx.Db.@class.User.Insert(new AuditLib.User { Id = id, Message = "procedure" });
             if (fail)
+            {
                 throw new Exception("cross-namespace procedure rollback");
+            }
+
             return tx.Db.MyAuth.User.Id.Find(id)!.Value.Score;
         });
 

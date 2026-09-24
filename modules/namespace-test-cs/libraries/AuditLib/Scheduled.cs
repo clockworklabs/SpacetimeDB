@@ -108,9 +108,13 @@ public static partial class ScheduledFunctions
             ScheduledId = job.Id,
         };
         if (previous is null)
+        {
             ctx.Db.ScheduleResult.Insert(result);
+        }
         else
+        {
             ctx.Db.ScheduleResult.JobId.Update(result);
+        }
     }
 
     [Procedure(Name = "run_procedure_job")]
@@ -128,9 +132,14 @@ public static partial class ScheduledFunctions
                 ScheduledId = job.Id,
             };
             if (previous is null)
+            {
                 tx.Db.ScheduleResult.Insert(result);
+            }
             else
+            {
                 tx.Db.ScheduleResult.JobId.Update(result);
+            }
+
             return 0;
         });
     }
@@ -140,7 +149,10 @@ public static partial class ScheduledFunctions
     {
         var repeat = ctx.Db.ScheduleResult.JobId.Find(5)!.Value;
         if (repeat.Executions < 2)
+        {
             throw new Exception("Repeating schedule has not run twice.");
+        }
+
         ctx.Db.ReducerJob.Id.Delete(repeat.ScheduledId);
         ctx.Db.ScheduleResult.Insert(
             new ScheduleResult

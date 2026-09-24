@@ -454,7 +454,11 @@ namespace SpacetimeDB
         {
             // Fully qualified to avoid clash with UnityEngine.Debug
             System.Diagnostics.Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
-            if (IsEventTable) return; // Event tables have no deletes.
+            if (IsEventTable)
+            {
+                return; // Event tables have no deletes.
+            }
+
             var delta = (ParsedTableUpdate)parsedTableUpdate;
             foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {

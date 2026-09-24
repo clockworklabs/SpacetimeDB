@@ -92,7 +92,10 @@ public static partial class Functions
             !ReferenceEquals(ctx.Db.User.Id, ctx.Db.User.Id)
             || !ReferenceEquals(ctx.Db.User.ByScore, ctx.Db.User.ByScore)
         )
+        {
             throw new Exception("Read-only index handles must be reused.");
+        }
+
         return ctx.Db.User.Id.Find(2);
     }
 

@@ -595,7 +595,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 .ToImmutableArray()
         );
         if (sharedContexts)
+        {
             ValidateGeneratedNames(diag, typeSyntax.GetLocation());
+        }
     }
 
     private void ValidateGeneratedNames(DiagReporter diag, Location location)
@@ -663,10 +665,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
                 if (table.Name == container)
+                {
                     names.Add(container, container, "enclosing descriptor container");
+                }
+
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
                 names.Add(container, table.Identifier, owner);
             if (table.Name is "GetType" or "ToString" or "Equals" or "GetHashCode")
+            {
                 diag.Report(
                     ErrorDescriptor.GeneratedNameCollision,
                     (
@@ -677,6 +683,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         owner
                     )
                 );
+            }
+
             var cols = table.Identifier + "Cols";
             names.Add(cols, cols, "enclosing query columns type");
             foreach (var column in Members)
@@ -3007,11 +3015,14 @@ public class Module : IIncrementalGenerator
                         if (used.TryGetValue(name, out var previous))
                         {
                             if (container == "Tables")
+                            {
                                 context.ReportDiagnostic(
                                     ErrorDescriptor.NamespaceAccessorCollision.ToDiag(
                                         (name, previous, owner)
                                     )
                                 );
+                            }
+
                             return;
                         }
                         used.Add(name, owner);
