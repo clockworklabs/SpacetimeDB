@@ -78,6 +78,33 @@ impl From<CaseConversionPolicy> for ValidationCase {
 /// Validate a `RawModuleDefV10` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
+    let mut seen_capabilities = false;
+    let mut capabilities = std::collections::BTreeSet::new();
+    for section in &def.sections {
+        if let RawModuleDefV10Section::Capabilities(names) = section {
+            if seen_capabilities {
+                return Err(ValidationError::DuplicateModuleSection {
+                    section: "Capabilities".into(),
+                }
+                .into());
+            }
+            seen_capabilities = true;
+            if names.len() > 32 {
+                return Err(ValidationError::InvalidModuleCapabilities.into());
+            }
+            for name in names {
+                if name.is_empty()
+                    || name.len() > 64
+                    || !name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+                    || !capabilities.insert(name.clone())
+                {
+                    return Err(ValidationError::InvalidModuleCapabilities.into());
+                }
+            }
+        }
+    }
     let environment = validate_environment(&def);
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
@@ -321,6 +348,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         http_handlers,
         http_routes,
+        capabilities,
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
         environment,
@@ -2821,6 +2849,45 @@ mod tests {
 }
 
 #[cfg(test)]
+mod capability_tests {
+    use super::*;
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    #[test]
+    fn v9_schema_export_remains_available_for_capable_v10_modules() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_capability("hosted_auth_v1");
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        let _: spacetimedb_lib::db::raw_def::v9::RawModuleDefV9 = module.into();
+    }
+
+    #[test]
+    fn capabilities_are_explicit_bounded_and_preserved() {
+        let bare: ModuleDef = RawModuleDefV10Builder::new().finish().try_into().unwrap();
+        assert!(!bare.supports_hosted_auth_v1());
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_capability("hosted_auth_v1");
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        assert!(module.supports_hosted_auth_v1());
+        let reloaded: ModuleDef = RawModuleDefV10::from(module).try_into().unwrap();
+        assert!(reloaded.supports_hosted_auth_v1());
+        for names in [
+            vec!["".to_string()],
+            vec!["Uppercase".to_string()],
+            vec!["with-dash".to_string()],
+            vec!["a".repeat(65)],
+            vec!["duplicate".to_string(); 2],
+            (0..33).map(|i| format!("cap_{i}")).collect(),
+        ] {
+            let mut builder = RawModuleDefV10Builder::new();
+            for name in names {
+                builder.add_capability(name);
+            }
+            assert!(ModuleDef::try_from(builder.finish()).is_err());
+        }
+    }
+}
+
+#[cfg(test)]
 mod environment_tests {
     use super::*;
     use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
@@ -2858,6 +2925,26 @@ mod environment_tests {
         assert_eq!(
             spacetimedb_lib::bsatn::to_vec(&RawModuleDefV10Section::Environment(vec![])).unwrap(),
             vec![15, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn environment_and_capabilities_have_distinct_sections_and_survive_validation() {
+        let mut raw = declared("SECRET");
+        raw.sections
+            .push(RawModuleDefV10Section::Capabilities(vec!["hosted_auth_v1".into()]));
+        let encoded = spacetimedb_lib::bsatn::to_vec(&raw).unwrap();
+        let decoded = spacetimedb_lib::bsatn::from_slice(&encoded).unwrap();
+        let module = validate(decoded).unwrap();
+        assert!(module.environment().get("SECRET").is_some());
+        assert!(module.supports_hosted_auth_v1());
+        let roundtrip = validate(module.into()).unwrap();
+        assert!(roundtrip.environment_declared());
+        assert!(roundtrip.environment().get("SECRET").is_some());
+        assert!(roundtrip.supports_hosted_auth_v1());
+        assert_eq!(
+            spacetimedb_lib::bsatn::to_vec(&RawModuleDefV10Section::Capabilities(vec![])).unwrap(),
+            vec![16, 0, 0, 0, 0]
         );
     }
 

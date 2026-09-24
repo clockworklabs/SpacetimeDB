@@ -169,6 +169,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         procedures,
         http_handlers: IndexMap::new(),
         http_routes: Vec::new(),
+        capabilities: Default::default(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
         submodules: IndexMap::new(),
         environment: None,

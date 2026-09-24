@@ -67,8 +67,7 @@ public:
             return ReducerContext(
                 Identity{},
                 std::nullopt,
-                tx_timestamp,
-                AuthCtx(false, [] { return std::nullopt; })
+                tx_timestamp
             );
         };
         return Internal::with_tx(make_reducer_ctx, body);
@@ -80,8 +79,7 @@ public:
             return ReducerContext(
                 Identity{},
                 std::nullopt,
-                tx_timestamp,
-                AuthCtx(false, [] { return std::nullopt; })
+                tx_timestamp
             );
         };
         return Internal::try_with_tx(make_reducer_ctx, body);

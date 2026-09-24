@@ -15,7 +15,7 @@
 //! After validation, a `ModuleDef` can be converted to the `*Schema` types in `crate::schema` for use in the database.
 //! (Eventually, we may unify these types...)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 use std::sync::LazyLock;
@@ -184,6 +184,9 @@ pub struct ModuleDef {
 
     /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
     environment: Option<EnvironmentSchema>,
+
+    /// Validated module bindings capabilities. Legacy modules have none.
+    capabilities: BTreeSet<RawIdentifier>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -195,6 +198,14 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
+    /// Whether the bindings use host-verified invocation authority and sender identity.
+    /// Container Hosting's admission and publication checks require this marker to
+    /// reject legacy modules on new hosts. Those callers are introduced in the
+    /// Container Hosting PR; this prerequisite only defines and emits the marker.
+    pub fn supports_hosted_auth_v1(&self) -> bool {
+        self.capabilities.contains(&RawIdentifier::new("hosted_auth_v1"))
+    }
+
     /// The validated root environment schema. Legacy modules have an empty schema.
     pub fn environment(&self) -> &EnvironmentSchema {
         static EMPTY: LazyLock<EnvironmentSchema> = LazyLock::new(EnvironmentSchema::default);
@@ -1018,6 +1029,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             raw_module_def_version: _,
             submodules: _,
             environment: _,
+            capabilities: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1079,6 +1091,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             raw_module_def_version: _,
             submodules,
             environment,
+            capabilities,
         } = val;
 
         let mut sections = Vec::new();
@@ -1246,6 +1259,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
 
+        if !capabilities.is_empty() {
+            sections.push(RawModuleDefV10Section::Capabilities(capabilities.into_iter().collect()));
+        }
         RawModuleDefV10 { sections }
     }
 }

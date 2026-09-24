@@ -14,21 +14,24 @@ add_executable(bindings_cpp_unit_tests
     environment_unit_tests.cpp
 )
 
-target_include_directories(bindings_cpp_unit_tests PRIVATE
+add_executable(hosted_auth_unit_tests main.cpp hosted_auth_unit_tests.cpp)
+
+foreach(test_target bindings_cpp_unit_tests hosted_auth_unit_tests)
+target_include_directories(${test_target} PRIVATE
     ../../include
 )
 
-target_compile_definitions(bindings_cpp_unit_tests PRIVATE
+target_compile_definitions(${test_target} PRIVATE
     SPACETIMEDB_UNSTABLE_FEATURES
 )
 
 if(MSVC)
-    target_compile_options(bindings_cpp_unit_tests PRIVATE /W4)
+    target_compile_options(${test_target} PRIVATE /W4)
 else()
-    target_compile_options(bindings_cpp_unit_tests PRIVATE -Wall -Wextra)
+    target_compile_options(${test_target} PRIVATE -Wall -Wextra)
 endif()
 
-target_link_options(bindings_cpp_unit_tests PRIVATE
+target_link_options(${test_target} PRIVATE
     "SHELL:-sWASM=1"
     "SHELL:-sENVIRONMENT=node"
     "SHELL:-sEXIT_RUNTIME=1"
@@ -36,4 +39,5 @@ target_link_options(bindings_cpp_unit_tests PRIVATE
     "SHELL:-O2"
 )
 
-set_target_properties(bindings_cpp_unit_tests PROPERTIES SUFFIX ".cjs")
+set_target_properties(${test_target} PROPERTIES SUFFIX ".cjs")
+endforeach()

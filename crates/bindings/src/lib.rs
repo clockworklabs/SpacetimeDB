@@ -1139,7 +1139,7 @@ impl ReducerContext {
             sender,
             timestamp,
             connection_id,
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthCtx::from_connection_id_opt(connection_id, sender),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1272,7 +1272,6 @@ fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
     connection_id: Option<ConnectionId>,
-    is_http_handler: bool,
 ) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
@@ -1284,11 +1283,7 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        let mut tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
-        if is_http_handler {
-            // HTTP requests have no connection ID, but are not host-originated calls.
-            tx.sender_auth = AuthCtx::new(false, || None);
-        }
+        let tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
         let tx = TxContext(tx);
 
         struct DoOnDrop<F: Fn()>(F);
@@ -1321,14 +1316,9 @@ fn try_with_tx<T, E>(
     res
 }
 
-fn with_tx<T>(
-    body: impl Fn(&TxContext) -> T,
-    identity: Identity,
-    connection_id: Option<ConnectionId>,
-    is_http_handler: bool,
-) -> T {
+fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id, is_http_handler) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1469,7 +1459,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id(), false)
+        with_tx(body, self.sender(), self.connection_id())
     }
 
     /// Acquire a mutable transaction
@@ -1502,7 +1492,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, self.sender(), self.connection_id(), false)
+        try_with_tx(body, self.sender(), self.connection_id())
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -1935,6 +1925,7 @@ impl CtxWithHttp for ProcedureContext {
 /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
 #[non_exhaustive]
 pub struct JwtClaims {
+    identity: Option<Identity>,
     payload: String,
     parsed: OnceCell<serde_json::Value>,
     audience: OnceCell<Vec<String>>,
@@ -1950,10 +1941,16 @@ pub struct AuthCtx {
 }
 
 impl AuthCtx {
-    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
-    /// and for when there isn't.
-    fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
-        conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
+    /// Capture host authority immediately. JWT loading remains independent and lazy.
+    fn from_connection_id_opt(connection_id: Option<ConnectionId>, sender: Identity) -> Self {
+        let flags = spacetimedb_bindings_sys::get_call_auth_flags();
+        Self::from_host_auth(sender, flags, move || connection_id.and_then(rt::get_jwt))
+    }
+
+    fn from_host_auth(sender: Identity, flags: u32, jwt_fn: impl FnOnce() -> Option<String> + 'static) -> Self {
+        Self::new(flags & 1 != 0, move || {
+            jwt_fn().map(|payload| JwtClaims::new(payload, Some(sender)))
+        })
     }
 
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
@@ -1976,14 +1973,7 @@ impl AuthCtx {
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
-        Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
-    }
-
-    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
-    ///
-    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
-        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
+        Self::new(false, move || Some(JwtClaims::new(jwt_payload, None)))
     }
 
     /// Returns whether this reducer was spawned from inside the database.
@@ -1991,8 +1981,8 @@ impl AuthCtx {
         self.is_internal
     }
 
-    /// Checks if there is a [JWT] without loading it.
-    /// If [`AuthCtx::is_internal`] returns true, this will return false.
+    /// Returns whether this invocation has a [JWT]. Internal invocations may
+    /// also carry a JWT; internal authority and credential presence are independent.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
@@ -2008,8 +1998,9 @@ impl AuthCtx {
 }
 
 impl JwtClaims {
-    fn new(jwt: String) -> Self {
+    fn new(jwt: String, identity: Option<Identity>) -> Self {
         Self {
+            identity,
             payload: jwt,
             parsed: OnceCell::new(),
             audience: OnceCell::new(),
@@ -2051,10 +2042,11 @@ impl JwtClaims {
         self.audience.get_or_init(|| self.extract_audience())
     }
 
-    /// Returns the identity for these credentials, which is
-    /// based on the iss and sub claims.
+    /// The effective sender verified by the host for this invocation.
+    /// Hosted database credentials need not derive this Identity from iss/sub.
     pub fn identity(&self) -> Identity {
-        Identity::from_claims(self.issuer(), self.subject())
+        self.identity
+            .unwrap_or_else(|| Identity::from_claims(self.issuer(), self.subject()))
     }
 
     /// Get the whole JWT payload as a json string.
@@ -2205,5 +2197,50 @@ mod tests {
         let audience = auth.jwt().unwrap().audience();
         assert_eq!(audience.len(), 1);
         assert_eq!(audience, &["my-project-id".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod hosted_auth_tests {
+    use super::*;
+
+    #[test]
+    fn host_authority_is_independent_of_jwt_presence() {
+        for internal in [false, true] {
+            for has_jwt in [false, true] {
+                let flags = u32::from(internal) | (1 << 31);
+                let auth = AuthCtx::from_host_auth(Identity::ONE, flags, move || {
+                    has_jwt.then(|| r#"{"iss":"hosted","sub":"generation","hex_identity":"untrusted"}"#.to_string())
+                });
+                assert_eq!(auth.is_internal(), internal);
+                assert_eq!(auth.has_jwt(), has_jwt);
+                if let Some(jwt) = auth.jwt() {
+                    assert_eq!(jwt.identity(), Identity::ONE);
+                    assert_ne!(jwt.identity(), Identity::from_claims(jwt.issuer(), jwt.subject()));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn verified_sender_wins_over_signed_payload_identity_claims() {
+        let payload = format!(
+            r#"{{"iss":"hosted","sub":"generation","hex_identity":"{}"}}"#,
+            Identity::ZERO.to_hex()
+        );
+        let auth = AuthCtx::from_host_auth(Identity::ONE, 1, move || Some(payload));
+        assert_eq!(auth.jwt().unwrap().identity(), Identity::ONE);
+        assert!(auth.is_internal());
+        assert!(auth.has_jwt());
+    }
+
+    #[test]
+    fn test_payload_remains_lazy_and_can_omit_identity_claims() {
+        let auth = AuthCtx::from_jwt_payload("not JSON".into());
+        assert_eq!(auth.jwt().unwrap().raw_payload(), "not JSON");
+        let auth = AuthCtx::from_jwt_payload(r#"{"aud":"test"}"#.into());
+        assert_eq!(auth.jwt().unwrap().audience(), &["test"]);
+        let auth = AuthCtx::from_jwt_payload(r#"{"iss":"test","sub":"user"}"#.into());
+        assert_eq!(auth.jwt().unwrap().identity(), Identity::from_claims("test", "user"));
     }
 }

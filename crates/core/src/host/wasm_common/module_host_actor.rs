@@ -1063,6 +1063,7 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
             client,
             request_id,
             reducer_id,
@@ -1086,6 +1087,7 @@ impl InstanceCommon {
             name: reducer_name,
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
+            call_auth_flags,
             timestamp,
             args: &args,
         };
@@ -1963,6 +1965,9 @@ pub trait InstanceOp {
     fn name(&self) -> &NamespacedIdentifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
+    fn call_auth_flags(&self) -> u32 {
+        0
+    }
 }
 
 /// Describes a view call in a cheaply shareable way.
@@ -2023,6 +2028,7 @@ pub struct ReducerOp<'a> {
     pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
+    pub call_auth_flags: u32,
     pub timestamp: Timestamp,
     /// The arguments passed to the reducer.
     pub args: &'a ArgsTuple,
@@ -2038,6 +2044,9 @@ impl InstanceOp for ReducerOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Reducer
     }
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
+    }
 }
 
 impl From<ReducerOp<'_>> for execution_context::ReducerContext {
@@ -2047,6 +2056,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             name,
             caller_identity,
             caller_connection_id,
+            call_auth_flags: _,
             timestamp,
             args,
         }: ReducerOp<'_>,
@@ -2068,6 +2078,7 @@ pub struct ProcedureOp {
     pub name: NamespacedIdentifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub call_auth_flags: u32,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
 }
@@ -2084,6 +2095,7 @@ impl ProcedureOp {
                 name,
                 caller_identity: params.caller_identity,
                 caller_connection_id: params.caller_connection_id,
+                call_auth_flags: params.call_auth_flags,
                 timestamp: params.timestamp,
                 arg_bytes: params.args.get_bsatn().clone(),
             },
@@ -2102,6 +2114,9 @@ impl InstanceOp for ProcedureOp {
     }
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Procedure
+    }
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
     }
 }
 
@@ -2345,7 +2360,7 @@ mod tests {
             .into_iter()
             .enumerate()
         {
-            let params = CallProcedureParams::from_system(
+            let mut params = CallProcedureParams::from_system(
                 Timestamp::UNIX_EPOCH,
                 Identity::ZERO,
                 ProcedureId::from(index),
@@ -2355,6 +2370,19 @@ mod tests {
             assert_eq!(&**op.name(), expected_name);
             assert_eq!(op.name().is_namespaced(), index != 0);
             assert_eq!(op.id, params.procedure_id);
+            assert_eq!(
+                op.call_auth_flags(),
+                1,
+                "system authority survives canonical resolution"
+            );
+            params.call_auth_flags = 0;
+            let (external_op, _, _) = ProcedureOp::for_module(&module, &params).unwrap();
+            assert_eq!(external_op.name(), op.name());
+            assert_eq!(
+                external_op.call_auth_flags(),
+                0,
+                "namespaces cannot grant internal authority"
+            );
             assert_eq!(&*def.name, "read_env", "declaration names remain local");
             if index == 2 {
                 let expected = AlgebraicValue::Product(ProductValue::from_iter([AlgebraicValue::Bool(true)]));

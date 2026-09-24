@@ -143,12 +143,12 @@ impl HandlerContext {
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, Identity::ZERO, None, true)
+        with_tx(body, Identity::ZERO, None)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, Identity::ZERO, None, true)
+        try_with_tx(body, Identity::ZERO, None)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -827,6 +827,11 @@ mod tests {
     // Native host stubs exercise the real transaction path, including a commit retry.
     std::thread_local! {
         static COMMIT_ATTEMPTS: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn get_call_auth_flags() -> u32 {
+        0 // HTTP handlers are external invocations.
     }
 
     #[unsafe(no_mangle)]

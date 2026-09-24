@@ -104,6 +104,10 @@ pub enum RawModuleDefV10Section {
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
     Environment(Vec<crate::environment::EnvironmentDeclaration>),
+
+    /// Module bindings capabilities, independent of function visibility.
+    /// Older hosts reject this section instead of silently ignoring its requirements.
+    Capabilities(Vec<RawIdentifier>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -1225,6 +1229,22 @@ impl RawModuleDefV10Builder {
         });
     }
 
+    /// Declare a module bindings capability.
+    pub fn add_capability(&mut self, capability: impl Into<RawIdentifier>) {
+        if let Some(RawModuleDefV10Section::Capabilities(names)) = self
+            .module
+            .sections
+            .iter_mut()
+            .find(|section| matches!(section, RawModuleDefV10Section::Capabilities(_)))
+        {
+            names.push(capability.into());
+        } else {
+            self.module
+                .sections
+                .push(RawModuleDefV10Section::Capabilities(vec![capability.into()]));
+        }
+    }
+
     /// Add a row-level security policy to the module.
     ///
     /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
@@ -1505,5 +1525,122 @@ impl RawTableDefBuilderV10<'_> {
             .iter()
             .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    use crate::{bsatn, RawModuleDef};
+
+    // Frozen pre-extension wire types. Do not replace the visibility, function,
+    // or section definitions below with their current counterparts.
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    enum LegacyVisibility {
+        Private,
+        ClientCallable,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    struct LegacyReducer {
+        source_name: RawIdentifier,
+        params: ProductType,
+        visibility: LegacyVisibility,
+        ok_return_type: AlgebraicType,
+        err_return_type: AlgebraicType,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    struct LegacyProcedure {
+        source_name: RawIdentifier,
+        params: ProductType,
+        return_type: AlgebraicType,
+        visibility: LegacyVisibility,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    enum LegacySection {
+        Typespace(Typespace),
+        Types(Vec<RawTypeDefV10>),
+        Tables(Vec<RawTableDefV10>),
+        Reducers(Vec<LegacyReducer>),
+        Procedures(Vec<LegacyProcedure>),
+        Views(Vec<RawViewDefV10>),
+        Schedules(Vec<RawScheduleDefV10>),
+        LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
+        RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>),
+        CaseConversionPolicy(CaseConversionPolicy),
+        ExplicitNames(ExplicitNames),
+        HttpHandlers(Vec<RawHttpHandlerDefV10>),
+        HttpRoutes(Vec<RawHttpRouteDefV10>),
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    struct LegacyV10 {
+        sections: Vec<LegacySection>,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    enum LegacyModule {
+        V8BackCompat(crate::RawModuleDefV8),
+        V9(super::super::v9::RawModuleDefV9),
+        V10(LegacyV10),
+    }
+
+    #[test]
+    fn existing_v10_wire_tags_and_function_products_are_unchanged() {
+        for (visibility, expected) in [
+            (FunctionVisibility::Private, 0),
+            (FunctionVisibility::ClientCallable, 1),
+        ] {
+            assert_eq!(bsatn::to_vec(&visibility).unwrap(), [expected]);
+        }
+        let legacy = LegacyModule::V10(LegacyV10 {
+            sections: vec![
+                LegacySection::Reducers(vec![LegacyReducer {
+                    source_name: "run".into(),
+                    params: ProductType::unit(),
+                    visibility: LegacyVisibility::ClientCallable,
+                    ok_return_type: reducer_default_ok_return_type(),
+                    err_return_type: reducer_default_err_return_type(),
+                }]),
+                LegacySection::Procedures(vec![LegacyProcedure {
+                    source_name: "read".into(),
+                    params: ProductType::unit(),
+                    return_type: AlgebraicType::U64,
+                    visibility: LegacyVisibility::Private,
+                }]),
+            ],
+        });
+        let bytes = bsatn::to_vec(&legacy).unwrap();
+        assert_eq!(bytes[0], 2);
+        let current: RawModuleDef = bsatn::from_slice(&bytes).unwrap();
+        assert_eq!(bsatn::to_vec(&current).unwrap(), bytes);
+        let frozen: LegacyModule = bsatn::from_slice(&bsatn::to_vec(&current).unwrap()).unwrap();
+        assert_eq!(bsatn::to_vec(&frozen).unwrap(), bytes);
+
+        assert_eq!(
+            bsatn::to_vec(&RawModuleDefV10Section::HttpRoutes(vec![])).unwrap(),
+            [12, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            bsatn::to_vec(&RawModuleDefV10Section::Capabilities(vec![])).unwrap(),
+            [16, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn older_hosts_reject_new_capabilities() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_capability("hosted_auth_v1");
+        let bytes = bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap();
+        assert!(bsatn::from_slice::<LegacyModule>(&bytes).is_err());
+        assert!(bsatn::from_slice::<RawModuleDef>(&bytes).is_ok());
     }
 }
