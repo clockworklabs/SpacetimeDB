@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../../lib/util';
 import {
   assertInInjectionContext,
   inject,
@@ -120,7 +121,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
       return [];
     }
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath(connection.db, accessorName);
 
     if (whereExpr) {
       return Array.from(table.iter()).filter(row =>
@@ -149,7 +150,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
       return;
     }
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath(connection.db, accessorName);
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,

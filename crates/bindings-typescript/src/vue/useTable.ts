@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import {
   onUnmounted,
   readonly,
@@ -89,7 +90,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     const connection = conn.getConnection();
     if (!connection) return [];
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath(connection.db, accessorName);
     if (!table) return [];
 
     const allRows = Array.from(table.iter()) as Row[];
@@ -105,7 +106,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     const connection = conn.getConnection();
     if (!connection) return;
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath(connection.db, accessorName);
     if (!table) return;
 
     const onInsert = (

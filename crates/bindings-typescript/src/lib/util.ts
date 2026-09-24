@@ -118,6 +118,32 @@ export function coerceToBigInt(value: unknown, what: string): bigint {
 }
 
 /**
+ * Returns the object holding a dotted accessor key and the key's last segment,
+ * creating intermediate objects as needed: `myAuth.login` -> `[root.myAuth, 'login']`.
+ */
+export function accessorSlot(
+  root: Record<string, any>,
+  accessorName: string
+): [Record<string, any>, string] {
+  const path = accessorName.split('.');
+  const leaf = path.pop()!;
+  let target = root;
+  for (const segment of path) {
+    target = target[segment] ??= Object.create(null);
+  }
+  return [target, leaf];
+}
+
+/** Reads a dotted accessor key from nested objects: `myAuth.login` -> `root.myAuth.login`. */
+export function getByAccessorPath(root: any, accessorName: string): any {
+  let value = root;
+  for (const segment of accessorName.split('.')) {
+    value = value?.[segment];
+  }
+  return value;
+}
+
+/**
  * Converts a string to PascalCase (UpperCamelCase).
  * @param str The string to convert
  * @returns The converted string
