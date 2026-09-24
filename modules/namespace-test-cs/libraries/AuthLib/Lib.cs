@@ -112,6 +112,5 @@ public static partial class Functions
         );
 
     [HttpRouter]
-    public static Router Routes() =>
-        Router.New().Get("/auth-count", new Handler(nameof(AuthCount)));
+    public static Router Routes() => Router.New().Get("/auth-count", Handlers.AuthCount);
 }
