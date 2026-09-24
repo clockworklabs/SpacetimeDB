@@ -3256,7 +3256,7 @@ public class Module : IIncrementalGenerator
                         #if !NET10_0_OR_GREATER
                         {{IndentGeneratedCode(queryBuilderMembers, 4)}}
                         #endif
-                        public static class Handlers {
+                        internal static class Handlers {
                             {{IndentGeneratedCode(string.Join("\n", addHttpHandlers.Select(r =>
                                 $"public static readonly global::SpacetimeDB.Handler {EscapeIdentifier(r.Name)} = new(nameof({r.FullName}));"
                             )), 8)}}

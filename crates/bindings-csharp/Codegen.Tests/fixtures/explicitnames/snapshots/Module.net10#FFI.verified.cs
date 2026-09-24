@@ -56,7 +56,7 @@ namespace SpacetimeDB
     }
 #endif
 
-    public static class Handlers { }
+    internal static class Handlers { }
 
 #if !NET10_0_OR_GREATER
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext

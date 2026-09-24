@@ -692,6 +692,27 @@ public static class GeneratorSnapshotTests
             );
         }
 
+        string HttpModule(string name) =>
+            $$"""
+                namespace {{name}}Module {
+                    using SpacetimeDB;
+                    public static partial class Functions {
+                        [HttpHandler]
+                        public static HttpResponse {{name}}(HandlerContext ctx, HttpRequest request) =>
+                            throw new Exception();
+                        [HttpRouter]
+                        public static Router Routes() => Router.New()
+                            .Get("/short", Handlers.{{name}})
+                            .Get("/qualified", global::SpacetimeDB.Handlers.{{name}});
+                    }
+                }
+                """;
+        // The library references a table-only module, which also generates a Handlers container.
+        var httpLibrary = Emit(
+            Generate(Create("HttpLibrary", HttpModule("LibraryHandler"), alpha, shared))
+        );
+        Generate(Create("HttpConsumer", HttpModule("RootHandler"), httpLibrary, alpha, shared));
+
         string Policy(string? policy) =>
             policy is null
                 ? ""
