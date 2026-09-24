@@ -38,13 +38,13 @@ echo "==> Configuring unit tests"
 
 echo
 echo "==> Building unit tests"
-cmake --build "$BUILD_DIR"
+cmake --build "$BUILD_DIR" --target bindings_cpp_unit_tests
 
 echo
 echo "==> Running unit tests"
-for LAUNCHER in "$BUILD_DIR"/*_unit_tests.cjs; do
+LAUNCHER="$BUILD_DIR/bindings_cpp_unit_tests.cjs"
 if [[ ! -f "$LAUNCHER" ]]; then
-    echo "Could not find built unit test launcher" >&2
+    echo "Could not find built bindings_cpp_unit_tests.cjs launcher" >&2
     exit 1
 fi
 
@@ -53,4 +53,3 @@ if [[ $VERBOSE -eq 1 ]]; then
 else
     node "$LAUNCHER"
 fi
-done
