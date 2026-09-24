@@ -1175,14 +1175,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         if !http_routes.is_empty() {
-            let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
-                .into_iter()
-                .map(|route| RawHttpRouteDefV10 {
-                    handler_function: route.handler_name.into(),
-                    method: route.method,
-                    path: RawIdentifier::new(route.path.as_ref()),
-                })
-                .collect();
+            let raw_http_routes: Vec<RawHttpRouteDefV10> =
+                http_routes.into_iter().map(RawHttpRouteDefV10::from).collect();
             sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
         }
 
@@ -1464,6 +1458,15 @@ impl From<ViewDef> for TableDef {
 }
 
 /// A sequence definition for a database table column.
+///
+/// Previous versions of this definition exposed options `start`, `min_value`, `max_value` and `increment`.
+/// SpacetimeDB never exercised these options in any useful way,
+/// and supporting them caused considerable implementation burden,
+/// so we chose to remove them.
+/// All sequences start at some arbitrary nonnegative value near zero,
+/// have the range of the non-negative `i128`s,
+/// and increment by 1.
+/// Raw defs still have these values, but we reject any def that uses values other than the defaults.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
     /// The name of the sequence. Must be unique within the containing `ModuleDef`.
@@ -1480,22 +1483,11 @@ pub struct SequenceDef {
     /// The column must have integral type.
     /// This must be the unique `RawSequenceDef` for this column.
     pub column: ColId,
+}
 
-    /// The value to start assigning to this column.
-    /// Will be incremented by 1 for each new row.
-    /// If not present, an arbitrary start point may be selected.
-    pub start: Option<i128>,
-
-    /// The minimum allowed value in this column.
-    /// If not present, no minimum.
-    pub min_value: Option<i128>,
-
-    /// The maximum allowed value in this column.
-    /// If not present, no maximum.
-    pub max_value: Option<i128>,
-
-    /// The increment to use when updating the sequence.
-    pub increment: i128,
+impl SequenceDef {
+    /// All sequences increment by 1.
+    pub const INCREMENT: i128 = 1;
 }
 
 impl From<SequenceDef> for RawSequenceDefV9 {
@@ -1503,10 +1495,10 @@ impl From<SequenceDef> for RawSequenceDefV9 {
         RawSequenceDefV9 {
             name: Some(val.name),
             column: val.column,
-            start: val.start,
-            min_value: val.min_value,
-            max_value: val.max_value,
-            increment: val.increment,
+            start: None,
+            min_value: None,
+            max_value: None,
+            increment: SequenceDef::INCREMENT,
         }
     }
 }
@@ -1516,10 +1508,10 @@ impl From<SequenceDef> for RawSequenceDefV10 {
         RawSequenceDefV10 {
             source_name: Some(val.name),
             column: val.column,
-            start: val.start,
-            min_value: val.min_value,
-            max_value: val.max_value,
-            increment: val.increment,
+            start: None,
+            min_value: None,
+            max_value: None,
+            increment: SequenceDef::INCREMENT,
         }
     }
 }
@@ -2457,6 +2449,16 @@ pub struct HttpRouteDef {
     pub handler_name: Identifier,
     pub method: spacetimedb_lib::db::raw_def::v10::MethodOrAny,
     pub path: Box<str>,
+}
+
+impl From<HttpRouteDef> for RawHttpRouteDefV10 {
+    fn from(val: HttpRouteDef) -> Self {
+        RawHttpRouteDefV10 {
+            handler_function: val.handler_name.into(),
+            method: val.method,
+            path: RawIdentifier::new(val.path.as_ref()),
+        }
+    }
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {

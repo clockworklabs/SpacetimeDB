@@ -702,7 +702,7 @@ fn record_scheduled_function_delay(module_info: &ModuleInfo, function_name: &str
         return;
     }
 
-    log::warn!(
+    log::trace!(
         "scheduled function `{}` for database {} is delayed by {:.3}s, exceeding the {:.3}s threshold",
         function_name,
         module_info.database_identity,

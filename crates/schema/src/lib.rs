@@ -4,10 +4,12 @@
 
 pub mod auto_migrate;
 pub mod def;
+pub mod describe;
 pub mod error;
 pub mod identifier;
 pub mod reducer_name;
 pub mod relation;
 pub mod schema;
+mod styled_writer;
 pub mod table_name;
 pub mod type_for_generate;
