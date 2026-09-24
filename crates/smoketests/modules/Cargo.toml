@@ -104,6 +104,7 @@ members = [
 
     # Connection tests
     "connect-disconnect",
+    "connection-session",
     "confirmed-reads",
     "delete-database",
     "client-connection-reject",
@@ -119,6 +120,7 @@ members = [
     "new-user-flow",
     "module-nested-op",
     "noop",
+    "environment-publish",
     "fail-initial-publish-broken",
     "fail-initial-publish-fixed",
 

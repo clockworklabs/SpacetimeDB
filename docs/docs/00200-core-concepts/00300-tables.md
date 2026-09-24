@@ -224,15 +224,15 @@ The accessor is the key passed to `schema({...})`, verbatim. By convention the k
 
 ```typescript
 // Table definition
-const player_scores = table(
+const playerScores = table(
   { name: 'player_scores', public: true },
   { /* columns */ }
 );
 
-const spacetimedb = schema({ player_scores });
+const spacetimedb = schema({ playerScores });
 
 // Accessor is the schema key, verbatim
-ctx.db.player_scores.insert({ /* ... */ });
+ctx.db.playerScores.insert({ /* ... */ });
 ```
 
 | Schema Key | Accessor |
