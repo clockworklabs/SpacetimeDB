@@ -1,4 +1,5 @@
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import type { Page } from 'playwright';
 import { inconclusive } from '../src/actions/actor-action-runtime.js';
 
@@ -63,6 +64,7 @@ export class ReceivedTransport {
 }
 
 export async function captureResponses(page: Page, received: ReceivedTransport): Promise<void> {
+  let reportedBodyFailures = 0;
   page.on('response', async response => {
     const type = response.headers()['content-type'] ?? '';
     // Native EventSource messages are captured below without waiting for stream closure.
@@ -76,7 +78,18 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
     }
     received.pending++;
     try { received.record(await response.text()); }
-    catch { received.markIncomplete('bodyReadFailures'); }
+    catch (error) {
+      received.markIncomplete('bodyReadFailures');
+      if (reportedBodyFailures++ < 8) {
+        const url = new URL(response.url());
+        process.stderr.write(`transport body unavailable ${JSON.stringify({
+          origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
+          status: response.status(), contentType: type, resourceType: response.request().resourceType(),
+          pageClosed: page.isClosed(), failure: response.request().failure()?.errorText ?? null,
+          error: error instanceof Error ? error.name : typeof error,
+        })}\n`);
+      }
+    }
     finally { received.pending--; }
   });
   const session = await page.context().newCDPSession(page);

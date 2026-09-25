@@ -1,7 +1,9 @@
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { Page, WebSocketRoute } from 'playwright';
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
+import type { LeasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import { inconclusive } from '../../actions/actor-action-runtime.js';
 
 interface Reader { readonly offset: number; readonly remaining: number }
@@ -36,13 +38,17 @@ interface Socket {
   ids: Set<number>;
   nextId: number;
   pending?: { id: number; finish(result: string): void };
+  authPending?: { id: number; finish(result: string): void };
 }
 interface Template { socket: Socket; call: Call; args: unknown[]; at: number; encode(args: unknown[]): Uint8Array }
 interface Capture {
   page: Page; codec: Codec; sockets: Socket[];
   handshakes: Map<string, { url: string; protocol?: string }>;
   template?: { match: string; control: string; count: number; value: Template };
+  auth?: { change(message: Message, socket: Socket): Message | null; fail(): void };
 }
+type AuthReceipt = { shape: string; success: boolean; transport: 'spacetime-websocket';
+  bodySha256: string; absentParameters?: string[] };
 const captures = new WeakMap<object, Capture>();
 let codec: Promise<Codec> | undefined;
 
@@ -68,9 +74,25 @@ function serverBytes(bytes: string | Buffer): Buffer {
   throw new Error('Unsupported compression');
 }
 
+function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeTarget,
+  allowAppProxy = false): boolean {
+  const url = new URL(socket.url);
+  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  const handshakes = [...capture.handshakes.values()].filter(item => item.url === socket.url);
+  const path = `/v1/database/${target.mod}/subscribe`;
+  const direct = url.origin === new URL(target.uri).origin && url.pathname === path;
+  const appProxy = allowAppProxy && url.origin === new URL(capture.page.url()).origin
+    && (url.pathname === path || url.pathname === `/db${path}`);
+  return !socket.closed && !socket.invalid && socket.identified
+    && (direct || appProxy)
+    && handshakes.length === 1
+    && ['v2.bsatn.spacetimedb', 'v3.bsatn.spacetimedb'].includes(handshakes[0]!.protocol ?? '');
+}
+
 // Only selected repeatFormWrite actors use this route. Forward all application
 // traffic unchanged, including replies for native setup writes, on the SAME socket.
 export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
+  if (captures.has(page)) return;
   const wire = await (codec ??= import(new URL('../spacetime-wire-codec.js', import.meta.url).href));
   const capture: Capture = { page, codec: wire, sockets: [], handshakes: new Map() }; captures.set(page, capture);
   // Read the actual server handshake outside the app's mutable JavaScript realm.
@@ -92,22 +114,40 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
       identified: false, calls: [], ids: new Set(), nextId: 0xffffffff };
     capture.sockets = capture.sockets.filter(item => !item.closed);
     capture.sockets.push(socket);
-    const invalidate = () => { socket.invalid = true; socket.pending?.finish('unknown'); };
+    const invalidate = () => {
+      socket.invalid = true;
+      socket.pending?.finish('unknown');
+      socket.authPending?.finish('unknown');
+      capture.auth?.fail();
+    };
     client.onMessage(bytes => {
+      let outbound = bytes;
       try {
-        for (const message of decode(wire, wire.ClientMessage, bytes)) {
+        let changedFrame = false;
+        const messages = decode(wire, wire.ClientMessage, bytes);
+        for (const message of messages) {
           const id = message.value?.requestId;
           if (id !== undefined) {
             if (socket.ids.has(id) || socket.ids.size >= 10000) invalidate();
             socket.ids.add(id);
           }
           if (message.tag === 'CallReducer') {
+            const changed = capture.auth?.change(message, socket);
+            if (changed) {
+              message.value = changed.value;
+              changedFrame = true;
+            }
             if (socket.calls.length >= 200) invalidate();
             else socket.calls.push({ call: message.value, committed: false });
           }
         }
-      } catch { invalidate(); }
-      try { server.send(bytes); } catch { invalidate(); }
+        if (changedFrame) outbound = Buffer.concat(messages.map(message => encode(wire, wire.ClientMessage, message)));
+      } catch {
+        const patchActive = Boolean(capture.auth);
+        invalidate();
+        if (patchActive) return;
+      }
+      try { server.send(outbound); } catch { invalidate(); }
     });
     server.onMessage(bytes => {
       try {
@@ -121,6 +161,7 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
             for (const item of socket.calls) if (item.call.requestId === requestId)
               item.committed = result.tag === 'Ok' || result.tag === 'OkEmpty';
             if (socket.pending?.id === requestId) socket.pending.finish(result.tag);
+            if (socket.authPending?.id === requestId) socket.authPending.finish(result.tag);
           }
         }
       } catch { invalidate(); }
@@ -131,6 +172,91 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
   });
 }
 
+// Patch the app's own credential reducer call on its existing socket. The
+// declared reducer parameters are the only authority for locating extra fields.
+export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
+  patch: (args: unknown[], parameters: readonly { name: string }[]) =>
+    { body: string; shape: string; absentParameters?: string[] } | null) {
+  const capture = captures.get(page);
+  if (!capture) return null;
+  if (capture.auth) throw new Error('Authentication request patch is already active');
+  const target = leasedSpacetimeTarget();
+  const schemaUrl = new URL(`/v1/database/${target.mod}/schema?version=9`, target.uri);
+  let schema: { reducers?: { name: string; params?: { elements?: { name?: { some?: string };
+    algebraic_type?: Record<string, unknown> }[] } }[]; typespace?: { types?: Record<string, unknown>[] } };
+  try {
+    const response = await capture.page.request.get(schemaUrl.href, { timeout: 10_000 });
+    if (!response.ok()) return { receipt: async () => undefined, dispose: () => {} };
+    schema = await response.json();
+    if (!schema || typeof schema !== 'object') return { receipt: async () => undefined, dispose: () => {} };
+  } catch { return { receipt: async () => undefined, dispose: () => {} }; }
+  const stringType = (raw: Record<string, unknown> | undefined, depth = 0): boolean => {
+    if (!raw || depth > 8) return false;
+    return typeof raw.Ref === 'number'
+      ? stringType(schema.typespace?.types?.[raw.Ref], depth + 1)
+      : Object.keys(raw).length === 1 && Object.hasOwn(raw, 'String');
+  };
+  const declarations = new Map<string, { names: string[]; read: ((reader: Reader) => unknown)[];
+    write: ((writer: Writer, value: unknown) => void)[] }>();
+  for (const reducer of schema.reducers ?? []) {
+    if (!/^(signup|signin)$/i.test(reducer.name.replaceAll('_', ''))) continue;
+    const fields = reducer.params?.elements;
+    if (!fields?.length || !fields.every(field => stringType(field.algebraic_type)
+      && typeof field.name?.some === 'string')) continue;
+    const type = { tag: 'String' };
+    declarations.set(reducer.name, {
+      names: fields.map(field => field.name!.some!),
+      read: fields.map(() => capture.codec.AlgebraicType.makeDeserializer(type)),
+      write: fields.map(() => capture.codec.AlgebraicType.makeSerializer(type)),
+    });
+  }
+  let matched = false, settled = false, timer: ReturnType<typeof setTimeout> | undefined;
+  let finish!: (value: AuthReceipt | undefined) => void;
+  const done = new Promise<AuthReceipt | undefined>(resolve => {
+    finish = value => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
+  });
+  capture.auth = {
+    change(message, socket) {
+      const declaration = declarations.get(message.value.reducer);
+      if (!declaration) return null;
+      const reader = new capture.codec.BinaryReader(message.value.args);
+      const values = declaration.read.map(read => read(reader));
+      if (reader.remaining || values.filter(value => value === username).length !== 1
+        || values.filter(value => value === password).length !== 1) return null;
+      if (!leasedSocket(capture, socket, target, true)) return null;
+      const writer = new capture.codec.BinaryWriter(128);
+      declaration.write.forEach((write, index) => write(writer, values[index]));
+      if (!Buffer.from(writer.getBuffer()).equals(Buffer.from(message.value.args))
+        || matched || socket.authPending || socket.invalid) { finish(undefined); throw new Error('Ambiguous credential call'); }
+      const changed = patch(values, declaration.names.map(name => ({ name })));
+      if (!changed) return null;
+      const args = JSON.parse(changed.body) as unknown[];
+      if (!Array.isArray(args) || args.length !== values.length || args.some(value => typeof value !== 'string')) {
+        finish(undefined); throw new Error('Unsupported credential arguments');
+      }
+      const encoded = new capture.codec.BinaryWriter(128);
+      declaration.write.forEach((write, index) => write(encoded, args[index]));
+      const sent = { ...message, value: { ...message.value, args: encoded.getBuffer() } };
+      const bodySha256 = createHash('sha256').update(encode(capture.codec, capture.codec.ClientMessage, sent)).digest('hex');
+      matched = true;
+      socket.authPending = { id: message.value.requestId, finish(result) {
+        socket.authPending = undefined;
+        finish(['Ok', 'OkEmpty', 'Err'].includes(result) && !socket.invalid
+          ? { shape: changed.shape, success: result !== 'Err', transport: 'spacetime-websocket',
+              bodySha256, ...(changed.absentParameters ? { absentParameters: changed.absentParameters } : {}) }
+          : undefined);
+      } };
+      timer = setTimeout(() => socket.authPending?.finish('unknown'), 30_000);
+      return sent;
+    },
+    fail: () => finish(undefined),
+  };
+  return {
+    receipt: async () => matched ? done : undefined,
+    dispose: () => { capture.auth = undefined; finish(undefined); },
+  };
+}
+
 async function template(capture: Capture, match: string, control: string, signal: AbortSignal): Promise<Template | null> {
   const live = capture.sockets.filter(socket => !socket.closed);
   if (live.length !== 1 || !match || match === control) return null;
@@ -138,9 +264,7 @@ async function template(capture: Capture, match: string, control: string, signal
   if (socket.invalid || !socket.identified || socket.pending) return null;
   const target = leasedSpacetimeTarget(), url = new URL(socket.url);
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  if (url.origin !== new URL(target.uri).origin || url.pathname !== `/v1/database/${target.mod}/subscribe`) return null;
-  const connections = [...capture.handshakes.values()].filter(item => item.url === socket.url);
-  if (connections.length !== 1 || !['v2.bsatn.spacetimedb', 'v3.bsatn.spacetimedb'].includes(connections[0]!.protocol ?? '')) return null;
+  if (!leasedSocket(capture, socket, target)) return null;
   const cached = capture.template;
   if (cached?.value.socket === socket && cached.match === match && cached.control === control && cached.count === socket.calls.length) return cached.value;
   signal.throwIfAborted();

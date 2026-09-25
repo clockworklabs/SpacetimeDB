@@ -17,11 +17,14 @@ export async function crossOriginPost(context: Pick<BrowserContext, 'newPage' | 
   if (site === 'cross-site') origin.hostname = target.hostname === '127.0.0.2' ? '127.0.0.3' : '127.0.0.2';
   origin.pathname = '/__stack_bench_origin__';
   const page = await context.newPage();
+  const targetRequests = new Set<string>();
+  const targetResponses = new Map<string, number>();
   const errors: string[] = [];
   page.on('console', message => { if (message.type() === 'error' && errors.length < 3) errors.push(message.text().slice(0,500)); });
   let closeOnAbort: Promise<void> | undefined;
   const abort = () => { closeOnAbort ??= page.close(); void closeOnAbort.catch(() => {}); };
   signal.addEventListener('abort', abort, { once: true });
+  let observer: Awaited<ReturnType<BrowserContext['newCDPSession']>> | undefined;
   try {
     signal.throwIfAborted();
     // The appliance uses private/loopback addresses. Grant only this fixture's
@@ -38,6 +41,14 @@ export async function crossOriginPost(context: Pick<BrowserContext, 'newPage' | 
     if (actualOrigin !== origin.origin || actualOrigin === target.origin) {
       throw new Error('Cross-origin observer did not establish the attacker origin');
     }
+    observer = await page.context().newCDPSession(page);
+    observer.on('Network.requestWillBeSent', event => {
+      if (event.request.url === target.href && event.request.method === 'POST') targetRequests.add(event.requestId);
+    });
+    observer.on('Network.responseReceivedExtraInfo', event => {
+      targetResponses.set(event.requestId, event.statusCode);
+    });
+    await observer.send('Network.enable');
     let sent: Request | undefined, response: Response | undefined, requestFailure: string | undefined;
     page.on('request', value => {
       if (value.url() === target.href && value.method() === 'POST') sent = value;
@@ -60,11 +71,16 @@ export async function crossOriginPost(context: Pick<BrowserContext, 'newPage' | 
     // Opaque responses do not expose their body. Chromium can discard JSON
     // after fetch resolves, leaving Playwright's finished() pending. The browser
     // reply and observed headers prove delivery; stored effects own the verdict.
-    if (!('type' in browserResult) || browserResult.type !== 'opaque' || !sent || !response
-      || sent.redirectedTo()) {
+    const networkStatus = targetRequests.size === 1
+      ? targetResponses.get([...targetRequests][0]!) : undefined;
+    const browserAccepted = 'type' in browserResult && browserResult.type === 'opaque';
+    const policyBlocked = requestFailure === 'net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin';
+    if (!sent || sent.redirectedTo() || networkStatus === undefined
+      || networkStatus >= 300 && networkStatus < 400
+      || !(browserAccepted && response || policyBlocked && !response)) {
       inconclusive('replay-unavailable', { actor: 'cross-origin browser', detail: `Cross-origin POST did not retain a complete browser request and response: ${JSON.stringify({
         browserResult, requestObserved: Boolean(sent), responseObserved: Boolean(response),
-        requestFailure, errors,
+        networkStatus, requestFailure, errors,
       })}` });
     }
     const headers = await sent.allHeaders();
@@ -72,10 +88,11 @@ export async function crossOriginPost(context: Pick<BrowserContext, 'newPage' | 
       throw new Error('Cross-origin request has an invalid origin or an injected authorization header');
     }
     return { site, sourceOrigin: origin.origin, targetOrigin: target.origin, localNetworkAccess: 'granted',
-      method: 'POST', cookieSent: Boolean(headers.cookie), responseStatus: response.status(),
-      browserResponseType: browserResult.type };
+      method: 'POST', cookieSent: Boolean(headers.cookie), responseStatus: networkStatus,
+      browserResponseType: browserAccepted ? browserResult.type : 'blocked-by-policy' };
   } finally {
     signal.removeEventListener('abort', abort);
+    await observer?.detach().catch(() => {});
     await (closeOnAbort ?? page.close());
   }
 }

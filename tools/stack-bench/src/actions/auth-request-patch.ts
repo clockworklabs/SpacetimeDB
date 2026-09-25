@@ -3,13 +3,15 @@ import type { Page, Request, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
 import { ActionApplicationFailure } from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
+import { startSpacetimeAuthPatch } from '../stacks/backends/spacetime-browser-session.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
   readonly password?: unknown;
 }
 
-type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string; transport?: 'convex-websocket';
+type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string;
+  transport?: 'convex-websocket' | 'spacetime-websocket';
   absentParameters?: string[] };
 type SocketPatch = {
   change(body: unknown): ReturnType<typeof patchAuthRequest>;
@@ -230,6 +232,17 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     receipt(value) { receipt = value; clearTimeout(socketTimeout); finishSocket?.(); },
     fail() { error = true; clearTimeout(socketTimeout); finishSocket?.(); },
   };
+  let spacetime: Awaited<ReturnType<typeof startSpacetimeAuthPatch>>;
+  try {
+    spacetime = await startSpacetimeAuthPatch(page, username, password, (args, parameters) => {
+      const changed = patchAuthRequest(args, username, password, patch, parameters);
+      if (changed && ++matches !== 1) throw new Error('Multiple credential requests');
+      return changed;
+    });
+  } catch (error) {
+    if (sockets) sockets.active = undefined;
+    throw error;
+  }
   const handler = async (route: Route) => {
     const request = route.request();
     let body: unknown;
@@ -262,6 +275,8 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     try { result = await browserApplicationBoundary(submit)(undefined); }
     catch (error) { submissionFailure = { error }; }
     await Promise.all(pending);
+    const spacetimeReceipt = await spacetime?.receipt();
+    if (spacetimeReceipt) receipt = spacetimeReceipt;
     // A request the probe aborted itself explains whatever failure followed it.
     if (!error && submissionFailure && !(submissionFailure.error instanceof ActionApplicationFailure)) {
       throw submissionFailure.error;
@@ -274,6 +289,7 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
   } finally {
     clearTimeout(socketTimeout);
     if (sockets) sockets.active = undefined;
+    spacetime?.dispose();
     await page.unroute('**/*', handler);
   }
 }

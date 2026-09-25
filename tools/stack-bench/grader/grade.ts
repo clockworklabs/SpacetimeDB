@@ -303,7 +303,7 @@ export class Actor {
   networkInterruption?: NetworkInterruption;
 
   constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false,
-    readonly replaySpacetime = false) {
+    readonly replaySpacetime = false, readonly spacetimeBackend = false) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -313,7 +313,7 @@ export class Actor {
   async attach(page: Page): Promise<void> {
     this.page = page;
     if (this.patchAuthentication) await installAuthWebSocketCapture(page);
-    if (this.replaySpacetime) await installSpacetimeWriteCapture(page);
+    if (this.replaySpacetime || this.patchAuthentication && this.spacetimeBackend) await installSpacetimeWriteCapture(page);
     // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
     this.lastWrites = {};
@@ -906,7 +906,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       if (networkInterruption) await runBrowserInfrastructureOperation('network interruption attach', () =>
         networkInterruption.attach(context, page));
       page.setDefaultTimeout(SETUP_WITHIN);
-      const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name));
+      const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name), args.backend === 'spacetime');
       actor.networkInterruption = networkInterruption;
       await actor.ready;
       actor.annotate = Boolean(args.media);

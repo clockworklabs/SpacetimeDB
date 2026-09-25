@@ -275,7 +275,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -400,7 +399,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -525,7 +523,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -650,7 +647,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -775,7 +771,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -900,7 +895,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -972,7 +966,6 @@
             "ecommerce.feature.catalog.catalog-values.2a",
             "ecommerce.feature.purchasing.purchase-order.3c",
             "ecommerce.feature.reviews.reviews.6a",
-            "ecommerce.feature.warehouse-admin.admin-write.103a",
             "ecommerce.feature.warehouse-admin.warehouse-view.7b",
             "ecommerce.inventory-operations.operational-views.5c",
             "ecommerce.inventory-operations.operational-views.5d",
@@ -1025,7 +1018,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -1036,7 +1028,6 @@
             "ecommerce.spec.access-control.support-history-logout.612d",
             "ecommerce.spec.access-control.support-history-privacy.612b",
             "ecommerce.spec.access-control.warehouse-area-boundary.7a",
-            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
             "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
             "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
             "ecommerce.spec.concurrency-safety.last-unit.201a",
@@ -1097,7 +1088,6 @@
             "ecommerce.feature.catalog.catalog-values.2a",
             "ecommerce.feature.purchasing.purchase-order.3c",
             "ecommerce.feature.reviews.reviews.6a",
-            "ecommerce.feature.warehouse-admin.admin-write.103a",
             "ecommerce.feature.warehouse-admin.warehouse-view.7b",
             "ecommerce.inventory-operations.operational-views.5c",
             "ecommerce.inventory-operations.operational-views.5d",
@@ -1150,7 +1140,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -1161,7 +1150,6 @@
             "ecommerce.spec.access-control.support-history-logout.612d",
             "ecommerce.spec.access-control.support-history-privacy.612b",
             "ecommerce.spec.access-control.warehouse-area-boundary.7a",
-            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
             "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
             "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
             "ecommerce.spec.concurrency-safety.last-unit.201a",
@@ -1274,7 +1262,6 @@
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
-            "ecommerce.spec.access-control.purchase-session.101a",
             "ecommerce.spec.access-control.review-eligibility.108a",
             "ecommerce.spec.access-control.review-eligibility.108b",
             "ecommerce.spec.access-control.signed-out-purchase.3a",
@@ -1285,7 +1272,6 @@
             "ecommerce.spec.access-control.support-history-logout.612d",
             "ecommerce.spec.access-control.support-history-privacy.612b",
             "ecommerce.spec.access-control.warehouse-area-boundary.7a",
-            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
             "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
             "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
             "ecommerce.spec.concurrency-safety.last-unit.201a",
@@ -1478,6 +1464,154 @@
             "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
           }
         }
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/convex-reference.json",
+        "sha256": "5014cfb529e1aaaf1856a57df8eeaa0277a21d2bf95ddc27e6b7aa9560a632c5",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/mongodb-reference.json",
+        "sha256": "8a1b0401a315a98b0bb7f3eff88b49f31f6bfb11b684ed886ab5fd53409539e0",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/postgres-reference.json",
+        "sha256": "f0c09920c161731aec994937bb063db575784b895b4ef0ebe4a5468d9eb2e860",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/spacetime-reference.json",
+        "sha256": "6f4cae86212ff78a704606d9c4aa0481b39183f926fcfc6039a41ce294d93f38",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/null-auth.json",
+        "sha256": "a7b5f0d576352d94ebaa29792e629cb59df20a9cc02b470ff21694b32e050077",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/mongodb-mutation.json",
+        "sha256": "0881b3aaa5f4f934d2aafffcaf98beee74c3595f83fa2818d542b90948c0ac70",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/postgres-mutation.json",
+        "sha256": "ae267e2d6f5ce83c9b373468832ddc0587daabdb25e24f7cd2406829da132b84",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/convex-mutation.json",
+        "sha256": "d39e8b6aacca0b609bac518fa55c9a9c9174ed80ffb883117a8e7fa3e2b52d51",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/spacetime-mutation.json",
+        "sha256": "330eec5f01cf5627936f8e952167949706ea7dc292ee49b2b3c548238d016fc9",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
       }
     ],
     "featureCatalog": {
@@ -1507,11 +1641,15 @@
       "id": "ecommerce.dependency-l3-calibration",
       "contentSha256": "63aaee2df48f7f6e8a0caaf5c04981a99a3be63aa9c6c99d05b5fc04be3f031c"
     },
-    "rationale": "The other 110 selected checks use scenarios without setOffline. Their actors do not start a network interruption proxy. Grader cleanup sees an empty interruptions list for them. The qualification dependency map changed hashes but does not change execution. Prior admission and accounting changes were reviewed in the retained reuse-review.json.",
+    "rationale": "The retained reconnect review covers the prior runtime change. The current review limits executable reuse to unchanged checks and requires current positive, defect, and null evidence for credential replay and cross-origin delivery.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
         "sha256": "2bc7bc26b2db46f44bb6b5fa813e33abfbd094d59be1792c8dfc49c8e4d7c205"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/reuse-review.json",
+        "sha256": "6b6d38c12c209104c5cf28379d6d2d9bbdf660ee34bfa55f68dd14d2393757cb"
       }
     ],
     "scopes": [
@@ -1519,54 +1657,107 @@
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d"
+        "toExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d"
+        "toExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4"
+        "toExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4"
+        "toExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b"
+        "toExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b"
+        "toExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e"
+        "toExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e"
+        "toExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
-        "toExecutableSha256": "272845b7811dc374c203909430f73e21d0e798ea627b80b9f635b9fcfded0fd2"
+        "toExecutableSha256": "898c8a692a2c7ab9a721c39d35b3b2ca3982d28f2d01e52d5db72ef219991563"
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
+        "toExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
+        "toExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
+        "toExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
+        "toExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
+        "toExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
+        "toExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
+        "toExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
+        "toExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "272845b7811dc374c203909430f73e21d0e798ea627b80b9f635b9fcfded0fd2",
+        "toExecutableSha256": "898c8a692a2c7ab9a721c39d35b3b2ca3982d28f2d01e52d5db72ef219991563"
       }
     ]
   }
