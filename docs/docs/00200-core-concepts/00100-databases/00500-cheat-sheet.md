@@ -928,8 +928,7 @@ spacetime delete <NAME>                  # Delete database
 spacetime logs <NAME>                    # View logs
 spacetime logs --follow <NAME>           # Stream logs
 spacetime sql <NAME> "SELECT * FROM t"   # Run SQL query
-spacetime describe <NAME>                # Show schema (human-readable)
-spacetime describe <NAME> --json         # Show schema as JSON (machine-readable)
+spacetime describe <NAME> --json         # Show schema
 spacetime call <NAME> reducer arg1 arg2  # Call reducer
 
 # Code generation

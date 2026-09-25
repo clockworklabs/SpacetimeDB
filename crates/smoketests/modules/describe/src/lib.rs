@@ -1,11 +1,4 @@
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-use spacetimedb::{log, ReducerContext, Table, ViewContext};
-
-#[spacetimedb::env]
-pub struct Env {
-    #[env(values("en", "fr"))]
-    pub LANGUAGE: Option<String>,
-}
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(accessor = person)]
 pub struct Person {
@@ -23,19 +16,4 @@ pub fn say_hello(ctx: &ReducerContext) {
         log::info!("Hello, {}!", person.name);
     }
     log::info!("Hello, World!");
-}
-
-#[spacetimedb::view(accessor = nobody, public)]
-pub fn nobody(_ctx: &ViewContext) -> Option<Person> {
-    None
-}
-
-#[spacetimedb::http::handler]
-fn health(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("ok"))
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new().get("/health", health)
 }

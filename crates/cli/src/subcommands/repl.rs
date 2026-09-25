@@ -1,6 +1,5 @@
 use crate::api::{ClientApi, Connection};
-use crate::common_args::Format;
-use crate::sql::run_sql;
+use crate::sql::{run_sql, Format};
 use colored::*;
 use dirs::home_dir;
 use std::env::temp_dir;
