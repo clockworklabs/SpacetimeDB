@@ -262,7 +262,7 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                         num_replicas: None,
                         host_type: None,
                     },
-                    Default::default(),
+                    reset,
                 )
                 .await?;
             assert_ne!(
