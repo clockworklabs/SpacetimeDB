@@ -188,7 +188,7 @@ async function run() {
     }
   };
 
-  if (hooks.length) {
+  if (hooks.some(hook => hook.stage !== 'scenario')) {
     const browser = await chromium.launch({ headless: !args.headed, ...attemptBrowserLaunchOptions() });
     const page = await browser.newContext().then(c => c.newPage());
     page.setDefaultTimeout(CHECK_TIMEOUT);
@@ -208,6 +208,8 @@ async function run() {
     } finally {
       await browser.close();
     }
+  } else {
+    completeUnvisitedHooks(hooks, results);
   }
 
   const failures = results.filter(r => r.status !== 'PASS' && r.status !== 'SCENARIO');
