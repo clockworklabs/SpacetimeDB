@@ -1475,8 +1475,8 @@ impl InstanceCommon {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
                     let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender),
-                        None => ViewCallInfo::anonymous(view_id),
+                        Some(sender) => ViewCallInfo::sender(view_id, sender, &ProductValue::default()),
+                        None => ViewCallInfo::anonymous(view_id, &ProductValue::default()),
                     };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let row_product_type = view_typespace
@@ -1672,7 +1672,7 @@ fn collect_subscribed_view_calls(
         }
 
         for sub in subs {
-            let ViewInstanceArgs::Sender(identity) = sub else {
+            let ViewInstanceArgs::Sender { sender: identity, .. } = sub else {
                 continue;
             };
             view_calls.push(CallViewParams {
@@ -1987,7 +1987,11 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
+        FuncCallType::View(ViewCallInfo::sender(
+            self.view_id,
+            *self.sender,
+            &ProductValue::default(),
+        ))
     }
 }
 
@@ -2012,7 +2016,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
+        FuncCallType::View(ViewCallInfo::anonymous(self.view_id, &ProductValue::default()))
     }
 }
 
@@ -2133,7 +2137,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
     use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
-    use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
+    use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductValue};
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
@@ -2205,9 +2209,14 @@ mod tests {
             update::create_table_from_def(&db, &mut tx, &old, table)?;
         }
         let (view_id, _) = db.create_view(&mut tx, &old, old.view("environment_view").unwrap())?;
-        let call = ViewCallInfo::anonymous(view_id);
+        let call = ViewCallInfo::anonymous(view_id, &ProductValue::default());
         // Ordinary SQL materialization has no live subscriber to disconnect.
-        tx.update_view_timestamp(call.clone(), ViewInstanceArgs::Anonymous)?;
+        tx.update_view_timestamp(
+            call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+        )?;
         tx.record_table_scan(&FuncCallType::View(call.clone()), ST_ENV_ID);
         environment::replace(&db, &mut tx, old.environment(), &before)?;
         db.commit_tx(tx)?;
@@ -2280,7 +2289,7 @@ mod tests {
             &BTreeMap::from([("TOKEN".into(), "private-value".into())]),
         )?;
         let row_type = ProductType::from_iter([("key", AlgebraicType::String), ("value", AlgebraicType::String)]);
-        let call = ViewCallInfo::anonymous(ViewId(99));
+        let call = ViewCallInfo::anonymous(ViewId(99), &ProductValue::default());
         let run = |tx: &mut _, query| run_query_for_view(tx, query, &row_type, &call, db.database_identity());
         assert_eq!(
             run(&mut tx, "SELECT * FROM visible")?,
@@ -2408,13 +2417,17 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
-            ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
-            ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2445,13 +2458,19 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
-            ViewCallInfo::sender(view_id, Identity::ZERO),
-            ViewInstanceArgs::Sender(Identity::ZERO),
+            ViewCallInfo::sender(view_id, Identity::ZERO, &ProductValue::default()),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ZERO,
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
-            ViewCallInfo::sender(view_id, Identity::ONE),
-            ViewInstanceArgs::Sender(Identity::ONE),
+            ViewCallInfo::sender(view_id, Identity::ONE, &ProductValue::default()),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ONE,
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 

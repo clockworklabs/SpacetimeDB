@@ -3005,12 +3005,8 @@ impl ModuleHost {
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let args = if is_anonymous {
-                ViewInstanceArgs::Anonymous
-            } else {
-                ViewInstanceArgs::Sender(caller)
-            };
-            let view_call = ViewCallInfo::from_args(view_id, args);
+            let args = ViewInstanceArgs::for_schema(is_anonymous, caller, ProductValue::default());
+            let view_call = ViewCallInfo::from_args(view_id, &args);
             let sender = args.sender();
             let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
@@ -3023,7 +3019,7 @@ impl ModuleHost {
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_call.clone(), args)?;
+                tx.update_view_timestamp(view_call.clone(), args.clone())?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
