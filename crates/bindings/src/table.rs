@@ -870,6 +870,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumnReadOnly<Tbl, Col
 /// and the number of columns the index indexes.
 pub trait Index {
     /// The generated runtime name of this index.
+    ///
+    /// Portable test backends use this name to resolve the index within their
+    /// datastore instance. Host-backed modules use [`Self::index_id`] instead,
+    /// preserving its process-local cached lookup.
     const INDEX_NAME: &'static str;
 
     /// The number of columns the index indexes.
@@ -878,11 +882,11 @@ pub trait Index {
     /// is actually a point scan or whether there's a suffix, e.g., `(c, d)`.
     const NUM_COLS_INDEXED: usize;
 
-    /// Determine the `IndexId` of this index.
+    /// Returns the host `IndexId` of this index.
     ///
-    /// For generated implementations,
-    /// this results in a *memoized* syscall to determine the index,
-    /// based on the hard coded name of the index.
+    /// Generated implementations memoize the host syscall that resolves the
+    /// index's generated name. Portable test backends do not call this method;
+    /// they resolve [`Self::INDEX_NAME`] against their own datastore instance.
     fn index_id() -> IndexId;
 }
 

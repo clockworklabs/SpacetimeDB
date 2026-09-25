@@ -677,6 +677,7 @@ impl ValidatedIndex<'_> {
             #vis struct #index_ident;
             impl spacetimedb::table::#index_kind_trait for #index_ident {}
             impl spacetimedb::table::Index for #index_ident {
+                // Test backends resolve the index by name; the host uses the cached `index_id` below.
                 const INDEX_NAME: &'static str = #index_name;
                 const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
