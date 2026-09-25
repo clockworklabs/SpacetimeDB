@@ -672,7 +672,7 @@ async fn execute_publish_configs<'a>(
             command_config.get_config_value("env"),
             |key| std::env::var_os(key),
         )?;
-        print!("{}", environment.display());
+        print!("{}", environment);
 
         let server_address = {
             let url = Url::parse(&database_host)?;

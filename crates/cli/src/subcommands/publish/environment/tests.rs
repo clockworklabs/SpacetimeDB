@@ -54,10 +54,10 @@ fn declared_shell_overrides_are_redacted() {
     );
     assert_eq!(checked, vec!["A", "B", "C", "OPTIONAL"]);
     assert_eq!(
-        resolved.display(),
+        resolved.to_string(),
         "Environment A (shell)\nEnvironment B (config)\nEnvironment C (shell)\n"
     );
-    assert!(!resolved.display().contains("sentinel"));
+    assert!(!resolved.to_string().contains("sentinel"));
     // No declaration means no ambient lookup, including PATH or credentials.
     let empty = resolve(&EnvironmentSchema::default(), None, |_| panic!("ambient access")).unwrap();
     assert!(empty.values.is_empty());
@@ -104,7 +104,7 @@ fn invalid_inputs_fail_without_values_or_lower_priority_fallback() {
     .unwrap();
     assert_eq!(resolved.values["UNDECLARED"], "secret");
     assert!(!looked_up.iter().any(|key| key == "UNDECLARED"));
-    assert!(!resolved.display().contains("secret"));
+    assert!(!resolved.to_string().contains("secret"));
 }
 
 #[test]
@@ -176,7 +176,7 @@ async fn actual_precompiled_declarations_are_inspected_without_server_or_values(
     let config = serde_json::json!({"REQUIRED":"generated-local-inspection-sentinel","MODE":"ready"});
     let resolved = resolve(schema, Some(&config), |_| None).unwrap();
     assert_eq!(resolved.values.len(), 2);
-    assert!(!resolved.display().contains("generated-local-inspection-sentinel"));
+    assert!(!resolved.to_string().contains("generated-local-inspection-sentinel"));
     assert!(resolve(schema, None, |_| None).unwrap().values.is_empty());
 }
 

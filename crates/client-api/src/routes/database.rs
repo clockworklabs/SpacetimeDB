@@ -1,5 +1,5 @@
 use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
-use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentUpdate};
+use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentRemove, EnvironmentUpdate};
 
 use std::borrow::Cow;
 use std::future::Future;
@@ -14,7 +14,6 @@ use crate::auth::{
 };
 use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::serde::humantime_duration;
-use crate::util::OptionalHeader;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
     log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
@@ -640,17 +639,15 @@ pub async fn environment_set<S>(
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
     Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
-    TypedHeader(SpacetimeEnvironment(env)): TypedHeader<SpacetimeEnvironment>,
+    axum::Json(values): axum::Json<EnvironmentMap>,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization,
 {
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
-    let update = EnvironmentUpdate {
-        values: env,
-        remove: EnvironmentRemove::All,
-    };
+    let remove = EnvironmentRemove::All;
+    let update = EnvironmentUpdate { values, remove };
     update
         .validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -670,13 +667,13 @@ pub async fn environment_patch<S>(
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
     Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
-    TypedHeader(SpacetimeEnvironment(env)): TypedHeader<SpacetimeEnvironment>,
-    OptionalHeader(remove): OptionalHeader<SpacetimeEnvironmentRemove>,
+    TypedHeader(SpacetimeEnvironmentRemove(remove)): TypedHeader<SpacetimeEnvironmentRemove>,
+    axum::Json(values): axum::Json<EnvironmentMap>,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization,
 {
-    if let Some(SpacetimeEnvironmentRemove(EnvironmentRemove::All)) = remove {
+    if remove == EnvironmentRemove::All {
         // if you want to fully replace, just PUT /environment
         return Err(bad_request(
             format!(
@@ -689,10 +686,7 @@ where
     }
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
-    let update = EnvironmentUpdate {
-        values: env,
-        remove: remove.unwrap_or_default().0,
-    };
+    let update = EnvironmentUpdate { values, remove };
     update
         .validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;

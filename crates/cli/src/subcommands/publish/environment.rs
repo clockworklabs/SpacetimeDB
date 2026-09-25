@@ -1,6 +1,7 @@
 //! Resolve explicit overrides without fetching stored secrets.
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fmt;
 
 pub(super) use crate::schema_extract::{inspect, read_program};
 use crate::util::ResponseExt;
@@ -30,14 +31,13 @@ pub(super) struct Resolved {
     pub values: BTreeMap<String, String>,
     pub sources: BTreeMap<String, Source>,
 }
-impl Resolved {
-    pub fn display(&self) -> String {
-        use std::fmt::Write;
-        let mut output = String::new();
+
+impl fmt::Display for Resolved {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (name, source) in &self.sources {
-            let _ = writeln!(output, "Environment {name} ({source})");
+            writeln!(f, "Environment {name} ({source})")?;
         }
-        output
+        Ok(())
     }
 }
 
@@ -123,7 +123,7 @@ pub(super) async fn publish_only(
     let schema = EnvironmentSchema::new(metadata.declarations)?;
     let resolved = resolve(&schema, input, |key| std::env::var_os(key))?;
     options.validate_values(&resolved.values)?;
-    print!("{}", resolved.display());
+    print!("{}", resolved);
     let request = if let EnvironmentRemove::All = options.remove {
         client.put(url)
     } else {
@@ -131,6 +131,7 @@ pub(super) async fn publish_only(
     };
     let mut request = add_auth_header_opt(request, &auth)
         .query(&[("expected_module_hash", &metadata.module_hash)])
+        .json(&resolved.values)
         .build()?;
     if let EnvironmentRemove::Keys(_) = options.remove {
         request
