@@ -20,6 +20,7 @@ use anyhow::{anyhow, Context as _};
 use prometheus::IntGauge;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_engine::error::DBError;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
@@ -1803,7 +1804,13 @@ impl WasmInstanceEnv {
             )));
         };
 
-        let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+        let views_for_refresh = tx
+            .views_for_refresh()
+            .map_err(DBError::from)
+            .map_err(NodesError::from)
+            .map_err(WasmError::from)?
+            .cloned()
+            .collect::<Vec<_>>();
         let mut tx = Some(tx);
         let mut tx_slot = caller.data().instance_env.tx.clone();
 

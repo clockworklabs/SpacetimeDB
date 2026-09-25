@@ -545,14 +545,14 @@ pub struct UpdateFlags {
 }
 
 pub trait TxDatastore: DataRow + Tx {
-    type IterTx<'a>: Iterator<Item = Self::RowRef<'a>>
+    type IterTx<'a>: Iterator<Item = Result<Self::RowRef<'a>>>
     where
         Self: 'a;
 
-    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Result<Self::RowRef<'a>>>
     where
         Self: 'a;
-    type IterByColEqTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColEqTx<'a, 'r>: Iterator<Item = Result<Self::RowRef<'a>>>
     where
         Self: 'a;
 
@@ -592,15 +592,15 @@ pub trait TxDatastore: DataRow + Tx {
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
-    type IterMutTx<'a>: Iterator<Item = Self::RowRef<'a>>
+    type IterMutTx<'a>: Iterator<Item = Result<Self::RowRef<'a>>>
     where
         Self: 'a;
 
-    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Result<Self::RowRef<'a>>>
     where
         Self: 'a;
 
-    type IterByColEqMutTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColEqMutTx<'a, 'r>: Iterator<Item = Result<Self::RowRef<'a>>>
     where
         Self: 'a;
 
@@ -621,7 +621,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(tx, ST_TABLE_ID)?.collect::<Vec<_>>();
         for row in table_rows {
-            let table_id = self.read_table_id(row)?;
+            let table_id = self.read_table_id(row?)?;
             tables.push(self.schema_for_table_mut_tx(tx, table_id)?);
         }
         Ok(tables)

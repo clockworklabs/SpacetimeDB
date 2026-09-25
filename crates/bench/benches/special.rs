@@ -9,7 +9,7 @@ use spacetimedb_lib::sats::{self, bsatn};
 use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::tiered::{PageEvictionPolicy, PageManager};
 use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -141,8 +141,9 @@ fn serialize_benchmarks<
     let mut table = spacetimedb_table::table::Table::new(
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
+        PageManager::new_for_test().into(),
+        PageEvictionPolicy::NeverEvict,
     );
-    let pool = PagePool::new_for_test();
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
 
     let ptrs = data_pv
@@ -150,7 +151,7 @@ fn serialize_benchmarks<
         .iter()
         .map(|row| {
             table
-                .insert(&pool, &mut blob_store, row.as_product().unwrap())
+                .insert(&mut blob_store, row.as_product().unwrap())
                 .unwrap()
                 .1
                 .pointer()
@@ -158,7 +159,7 @@ fn serialize_benchmarks<
         .collect::<Vec<_>>();
     let refs = ptrs
         .into_iter()
-        .map(|ptr| table.get_row_ref(&blob_store, ptr).unwrap())
+        .map(|ptr| table.get_row_ref(&blob_store, ptr).unwrap().unwrap())
         .collect::<Vec<_>>();
     group.bench_function(format!("bflatn_to_bsatn_slow_path/count={count}"), |b| {
         b.iter(|| {

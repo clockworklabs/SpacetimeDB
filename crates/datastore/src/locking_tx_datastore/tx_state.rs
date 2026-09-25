@@ -6,6 +6,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
+use spacetimedb_table::tiered::PageError;
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -15,6 +16,7 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::collections::{btree_map, BTreeMap};
+use std::iter::Peekable;
 use thin_vec::ThinVec;
 
 /// A mapping to find the actual index given an `IndexId`.
@@ -104,7 +106,7 @@ impl MemoryUsage for TxState {
 /// The places that do need to care about changes are those that make them, and merge/rollback.
 /// Architecting this way should benefit performance both during transactions and merge.
 /// On rollback, it should be fairly cheap to e.g., just re-add an index or drop it on the floor.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum PendingSchemaChange {
     /// The [`TableIndex`] / [`IndexSchema`] with `IndexId`
     /// was removed from the table with [`TableId`].
@@ -229,7 +231,7 @@ impl TxState {
     // with `table_id`
     // and has not been passed to `self.delete`
     // is sufficient to demonstrate that a call to `self.get` is safe.
-    pub(super) fn get(&self, table_id: TableId, row_ptr: RowPointer) -> RowRef<'_> {
+    pub(super) fn get(&self, table_id: TableId, row_ptr: RowPointer) -> Result<RowRef<'_>, PageError> {
         debug_assert!(
             row_ptr.squashed_offset().is_tx_state(),
             "Cannot get COMMITTED_STATE row_ptr from TxState.",
@@ -240,7 +242,9 @@ impl TxState {
             .expect("Attempt to get TX_STATE row from table not present in insert_tables.");
 
         // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
-        table.get_row_ref(&self.blob_store, row_ptr).unwrap()
+        Ok(table
+            .get_row_ref(&self.blob_store, row_ptr)?
+            .expect("row pointer to be present"))
     }
 
     pub(super) fn is_deleted(&self, table_id: TableId, row_ptr: RowPointer) -> bool {
@@ -302,6 +306,83 @@ impl TxState {
         // SAFETY: we successfully got a `delete_table` before and haven't removed it since.
         let delete_table = unsafe { delete_table.unwrap_unchecked() };
         (tx_table, tx_blob_store, delete_table)
+    }
+
+    /// Iterate over the insert and delete tables in this transaction, grouped
+    /// by table.
+    pub(super) fn tx_tables<'a>(&'a self) -> TxTables<'a> {
+        TxTables {
+            deletes: self.delete_tables.iter().peekable(),
+            inserts: self.insert_tables.iter().peekable(),
+        }
+    }
+}
+
+/// Deletes and inserts for a table.
+pub struct TxTable<'a> {
+    pub id: TableId,
+    pub deletes: Option<&'a DeleteTable>,
+    pub inserts: Option<&'a Table>,
+}
+
+/// Iterator created by [TxState::tx_tables()].
+pub struct TxTables<'a> {
+    deletes: Peekable<btree_map::Iter<'a, TableId, DeleteTable>>,
+    inserts: Peekable<btree_map::Iter<'a, TableId, Table>>,
+}
+
+impl<'a> Iterator for TxTables<'a> {
+    type Item = TxTable<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use std::cmp::Ordering::*;
+
+        match (self.deletes.peek(), self.inserts.peek()) {
+            (None, None) => None,
+            (None, Some(_insert)) => {
+                let (&id, inserts) = self.inserts.next().unwrap();
+                Some(TxTable {
+                    id,
+                    deletes: None,
+                    inserts: Some(inserts),
+                })
+            }
+            (Some(_delete), None) => {
+                let (&id, deletes) = self.deletes.next().unwrap();
+                Some(TxTable {
+                    id,
+                    deletes: Some(deletes),
+                    inserts: None,
+                })
+            }
+            (Some(&(&delete_table_id, _)), Some(&(insert_table_id, _))) => match delete_table_id.cmp(insert_table_id) {
+                Less => {
+                    let (_, deletes) = self.deletes.next().unwrap();
+                    Some(TxTable {
+                        id: delete_table_id,
+                        deletes: Some(deletes),
+                        inserts: None,
+                    })
+                }
+                Greater => {
+                    let (_, inserts) = self.inserts.next().unwrap();
+                    Some(TxTable {
+                        id: *insert_table_id,
+                        deletes: None,
+                        inserts: Some(inserts),
+                    })
+                }
+                Equal => {
+                    let (_, deletes) = self.deletes.next().unwrap();
+                    let (_, inserts) = self.inserts.next().unwrap();
+                    Some(TxTable {
+                        id: delete_table_id,
+                        deletes: Some(deletes),
+                        inserts: Some(inserts),
+                    })
+                }
+            },
+        }
     }
 }
 
