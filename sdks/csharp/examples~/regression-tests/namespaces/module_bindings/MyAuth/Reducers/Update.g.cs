@@ -67,7 +67,7 @@ namespace SpacetimeDB.Types.@MyAuth
             {
             }
 
-            string IReducerArgs.ReducerName => "MyAuth.update";
+            string IReducerArgs.ReducerName => "auth_data.update";
         }
     }
 }
