@@ -75,23 +75,13 @@ impl TableHandleBackend {
         }
     }
 
-    pub fn index_id(&self, index_name: &str) -> Result<IndexId, sys::Errno> {
+    pub fn index_id<I: Index>(&self) -> Result<IndexId, sys::Errno> {
         match self {
-            Self::Host => {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    sys::index_id_from_name(index_name)
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let _ = index_name;
-                    Err(sys::Errno::HOST_CALL_FAILURE)
-                }
-            }
+            Self::Host => Ok(I::index_id()),
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-            Self::Test { datastore, .. } => datastore.index_id(index_name).map_err(|_| sys::Errno::NO_SUCH_INDEX),
+            Self::Test { datastore, .. } => datastore.index_id(I::INDEX_NAME).map_err(|_| sys::Errno::NO_SUCH_INDEX),
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-            Self::TestTx { tx } => tx.index_id(index_name).map_err(|_| sys::Errno::NO_SUCH_INDEX),
+            Self::TestTx { tx } => tx.index_id(I::INDEX_NAME).map_err(|_| sys::Errno::NO_SUCH_INDEX),
         }
     }
 
@@ -728,7 +718,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 
         let index_id = self
             .backend
-            .index_id(Col::INDEX_NAME)
+            .index_id::<Col>()
             .expect("index_id_from_name() call failed");
         let point = IterBuf::serialize(col_val).unwrap();
         let n_del = self
@@ -766,7 +756,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let buf = IterBuf::take();
         let index_id = self
             .backend
-            .index_id(Col::INDEX_NAME)
+            .index_id::<Col>()
             .expect("index_id_from_name() call failed");
         update::<Tbl>(&self.backend, index_id, new_row, buf)
     }
@@ -814,9 +804,7 @@ fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(
     }
 
     // Find the row with a match.
-    let index_id = backend
-        .index_id(Col::INDEX_NAME)
-        .expect("index_id_from_name() call failed");
+    let index_id = backend.index_id::<Col>().expect("index_id_from_name() call failed");
     let point = IterBuf::serialize(col_val).unwrap();
 
     let iter = if Tbl::IS_EVENT {
@@ -1052,7 +1040,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
 
         let index_id = self
             .backend
-            .index_id(Idx::INDEX_NAME)
+            .index_id::<Idx>()
             .expect("index_id_from_name() call failed");
         point.with_point_arg(|point| {
             self.backend
@@ -1080,9 +1068,7 @@ where
         backend.assert_event_table_available(Tbl::TABLE_NAME);
     }
 
-    let index_id = backend
-        .index_id(Idx::INDEX_NAME)
-        .expect("index_id_from_name() call failed");
+    let index_id = backend.index_id::<Idx>().expect("index_id_from_name() call failed");
     let iter = point.with_point_arg(|point| datastore_index_scan_point_bsatn(backend, index_id, point));
     TableIter::new(iter)
 }
@@ -1392,7 +1378,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
 
         let index_id = self
             .backend
-            .index_id(Idx::INDEX_NAME)
+            .index_id::<Idx>()
             .expect("index_id_from_name() call failed");
         if const { is_point_scan::<Idx, B, _, _>() } {
             b.with_point_arg(|point| {
@@ -1431,9 +1417,7 @@ where
         backend.assert_event_table_available(Tbl::TABLE_NAME);
     }
 
-    let index_id = backend
-        .index_id(Idx::INDEX_NAME)
-        .expect("index_id_from_name() call failed");
+    let index_id = backend.index_id::<Idx>().expect("index_id_from_name() call failed");
 
     let iter = if const { is_point_scan::<Idx, B, _, _>() } {
         b.with_point_arg(|point| datastore_index_scan_point_bsatn(backend, index_id, point))
