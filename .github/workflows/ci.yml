@@ -95,7 +95,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -295,7 +295,7 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -386,7 +386,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
@@ -579,7 +579,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
 
     env:
       RUST_BACKTRACE: full
@@ -725,7 +725,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -807,7 +807,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
@@ -928,7 +928,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -1025,7 +1025,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1281,7 +1281,7 @@ jobs:
     permissions:
       contents: read
     # The .NET packaging, Godot project build, and integration test make this too heavy for a small runner.
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       ARTIFACT_SUFFIX: linux
       UseLocalBsatnRuntime: true
@@ -1384,7 +1384,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
@@ -1584,7 +1584,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
     # Building the documentation site nearly saturated a small runner and used substantial memory.
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1624,7 +1624,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
