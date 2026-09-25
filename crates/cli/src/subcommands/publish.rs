@@ -8,7 +8,7 @@ use clap::ArgAction::{self, Set, SetTrue};
 use clap::{value_parser, ArgMatches, ValueEnum};
 use headers::HeaderMapExt;
 use reqwest::{StatusCode, Url};
-use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
+use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, EnvironmentPublishError, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
 use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
 use spacetimedb_lib::environment::EnvironmentRemove;
@@ -793,9 +793,10 @@ async fn execute_publish_configs<'a>(
                     \tspacetime publish {suggested_tld}\n",
                 ));
             }
-            PublishResult::MissingRequiredEnvironment { keys } => {
+            PublishResult::EnvironmentError(EnvironmentPublishError::MissingRequiredEnvironment { keys }) => {
                 anyhow::bail!("Missing required environment variable(s) {keys:?}")
             }
+            PublishResult::EnvironmentError(EnvironmentPublishError::VersionConflict(e)) => anyhow::bail!(e),
         }
     }
 

@@ -11,6 +11,7 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+use spacetimedb::host::module_host::UpdateEnvironmentResult;
 use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
@@ -220,7 +221,7 @@ impl Host {
         database: Database,
         environment: spacetimedb_lib::environment::EnvironmentUpdate,
         expected_module_hash: Hash,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
         self.host_controller
             .update_module_environment(database, self.replica_id, environment, expected_module_hash)
             .await
@@ -382,7 +383,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         database_identity: &Identity,
         environment: EnvironmentUpdate,
         expected_module_hash: Hash,
-    ) -> anyhow::Result<UpdateDatabaseResult>;
+    ) -> anyhow::Result<UpdateEnvironmentResult>;
 }
 
 #[async_trait]
@@ -521,7 +522,7 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         database_identity: &Identity,
         environment: EnvironmentUpdate,
         expected_module_hash: Hash,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
         (**self)
             .update_environment(publisher, database_identity, environment, expected_module_hash)
             .await

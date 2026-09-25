@@ -33,7 +33,7 @@ use log::{debug, info, warn};
 use serde::Deserialize;
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited};
+use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited, UpdateEnvironmentResult};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
@@ -42,8 +42,9 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
-    PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
+    self, DatabaseName, DomainName, EnvironmentPublishError, EnvironmentVersionConflict, MigrationPolicy,
+    PrePublishAutoMigrateResult, PrePublishManualMigrateResult, PrePublishResult, PrettyPrintStyle, PublishOp,
+    PublishResult,
 };
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
@@ -579,39 +580,44 @@ impl From<Database> for DatabaseResponse {
     }
 }
 
-fn environment_validation_error(mut error: &anyhow::Error) -> Option<axum::response::ErrorResponse> {
+fn extract_environment_error(mut error: &anyhow::Error) -> Option<axum::response::Result<EnvironmentPublishError>> {
     // TODO(noa): clean up these errors my g-d this is bad
     use spacetimedb::host::module_host::InitDatabaseError;
     use spacetimedb_lib::environment::EnvironmentSchemaError;
     while let Some(InitDatabaseError::Other(e)) = error.downcast_ref::<InitDatabaseError>() {
         error = e;
     }
-    let error = error.chain().find_map(|x| x.downcast_ref())?;
-    // Only typed host validation can ask the caller for a secret. Never infer
-    // missing keys from module failures or arbitrary diagnostic text.
-    let res = if let EnvironmentSchemaError::MissingRequired { key } = error {
-        // TODO(noa): in the future, return multiple missing keys at once
-        let result = PublishResult::MissingRequiredEnvironment { keys: vec![key.into()] };
-        (StatusCode::BAD_REQUEST, axum::Json(result)).into()
+    let res = if let Some(error) = error.chain().find_map(|x| x.downcast_ref::<EnvironmentSchemaError>()) {
+        // Only typed host validation can ask the caller for a secret. Never infer
+        // missing keys from module failures or arbitrary diagnostic text.
+        if let EnvironmentSchemaError::MissingRequired { key } = error {
+            // TODO(noa): in the future, return multiple missing keys at once
+            Ok(EnvironmentPublishError::MissingRequiredEnvironment { keys: vec![key.into()] })
+        } else {
+            Err((StatusCode::BAD_REQUEST, error.to_string()).into())
+        }
+    } else if let Some(error) = error.downcast_ref::<EnvironmentVersionConflict>() {
+        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
     } else {
-        (StatusCode::BAD_REQUEST, error.to_string()).into()
+        return None;
     };
     Some(res)
 }
 
 fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
-    if let Some(response) = environment_validation_error(&error) {
-        return response;
+    match extract_environment_error(&error) {
+        Some(Ok(err)) => (err.status_code(), axum::Json(err)).into(),
+        Some(Err(e)) => e,
+        None => log_and_500(error),
     }
-    if let Some(error) = error.downcast_ref::<spacetimedb::host::EnvironmentVersionConflict>() {
-        return (StatusCode::CONFLICT, error.to_string()).into();
-    }
-    log_and_500(error)
 }
 
 fn publish_migration_error(error: anyhow::Error) -> axum::response::ErrorResponse {
-    environment_validation_error(&error)
-        .unwrap_or_else(|| bad_request(format!("Failed to create or update the database: {error}").into()))
+    match extract_environment_error(&error) {
+        Some(Ok(err)) => (err.status_code(), axum::Json(err)).into(),
+        Some(Err(e)) => e,
+        None => bad_request(format!("Failed to create or update the database: {error}").into()),
+    }
 }
 
 pub async fn environment_metadata<S>(
@@ -640,7 +646,7 @@ pub async fn environment_set<S>(
     Extension(auth): Extension<SpacetimeAuth>,
     Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
     axum::Json(values): axum::Json<EnvironmentMap>,
-) -> axum::response::Result<impl IntoResponse>
+) -> EnvironmentPublishResult
 where
     S: ControlStateDelegate + NodeDelegate + Authorization,
 {
@@ -651,15 +657,16 @@ where
     update
         .validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    ctx.update_environment(
-        &auth.claims.identity,
-        &database.database_identity,
-        update,
-        expected_module_hash,
-    )
-    .await
-    .map_err(publish_error)?;
-    Ok(())
+    let result = ctx
+        .update_environment(
+            &auth.claims.identity,
+            &database.database_identity,
+            update,
+            expected_module_hash,
+        )
+        .await;
+
+    environment_publish_result(result)
 }
 
 pub async fn environment_patch<S>(
@@ -669,7 +676,7 @@ pub async fn environment_patch<S>(
     Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
     TypedHeader(SpacetimeEnvironmentRemove(remove)): TypedHeader<SpacetimeEnvironmentRemove>,
     axum::Json(values): axum::Json<EnvironmentMap>,
-) -> axum::response::Result<impl IntoResponse>
+) -> EnvironmentPublishResult
 where
     S: ControlStateDelegate + NodeDelegate + Authorization,
 {
@@ -690,16 +697,32 @@ where
     update
         .validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    ctx.update_environment(
-        &auth.claims.identity,
-        &database.database_identity,
-        update,
-        expected_module_hash,
-    )
-    .await
-    .map_err(publish_error)?;
+    let result = ctx
+        .update_environment(
+            &auth.claims.identity,
+            &database.database_identity,
+            update,
+            expected_module_hash,
+        )
+        .await;
 
-    Ok(())
+    environment_publish_result(result)
+}
+
+type EnvironmentPublishResult = axum::response::Result<(StatusCode, axum::Json<Result<(), EnvironmentPublishError>>)>;
+
+fn environment_publish_result(result: anyhow::Result<UpdateEnvironmentResult>) -> EnvironmentPublishResult {
+    let result = match result {
+        Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e)) => return Err(publish_migration_error(e)),
+        Ok(UpdateEnvironmentResult::NoUpdateNeeded | UpdateEnvironmentResult::UpdatePerformed { .. }) => Ok(()),
+        Err(e) => match extract_environment_error(&e) {
+            Some(Ok(e)) => Err(e),
+            Some(Err(e)) => return Err(e),
+            None => return Err(log_and_500(e)),
+        },
+    };
+    let status = result.as_ref().err().map_or(StatusCode::OK, |e| e.status_code());
+    Ok((status, axum::Json(result)))
 }
 
 pub async fn db_info<S: ControlStateDelegate>(
@@ -1841,6 +1864,7 @@ mod tests {
     use spacetimedb::auth::token_validation::{TokenSigner, TokenValidationError, TokenValidator};
     use spacetimedb::client::ClientActorIndex;
     use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+    use spacetimedb::host::module_host::UpdateEnvironmentResult;
     use spacetimedb::identity::AuthCtx;
     use spacetimedb::messages::control_db::{Database, Node, Replica};
     use spacetimedb_client_api_messages::name::{
@@ -2219,7 +2243,7 @@ mod tests {
             _database_identity: &Identity,
             _environment: EnvironmentUpdate,
             _expected_module_hash: Hash,
-        ) -> anyhow::Result<UpdateDatabaseResult> {
+        ) -> anyhow::Result<UpdateEnvironmentResult> {
             Err(anyhow::anyhow!("unused"))
         }
     }

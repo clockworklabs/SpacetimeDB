@@ -12,8 +12,8 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
     CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
-    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, ViewCallResult,
-    ViewCommand, ViewCommandResult, ViewOutcome,
+    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult,
+    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -508,7 +508,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     pub fn update_environment(
         &mut self,
         environment: std::collections::BTreeMap<String, String>,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
         self.common.update_environment(environment, &mut self.instance)
     }
 
@@ -711,7 +711,7 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         if program.hash == old_module_info.module_hash {
-            return self.update_environment(environment, inst);
+            return self.update_environment(environment, inst).map(Into::into);
         }
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
@@ -832,7 +832,7 @@ impl InstanceCommon {
         &mut self,
         environment: std::collections::BTreeMap<String, String>,
         inst: &mut I,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
         let replica_ctx = inst.replica_ctx().clone();
         let db = replica_ctx.relational_db();
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -853,7 +853,7 @@ impl InstanceCommon {
         if trapped || out.outcome != ViewOutcome::Success {
             let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
             db.report_mut_tx_metrics(reducer, metrics, None);
-            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(
+            return Ok(UpdateEnvironmentResult::ErrorExecutingMigration(anyhow::anyhow!(
                 "view evaluation failed during environment publication"
             )));
         }
@@ -872,7 +872,7 @@ impl InstanceCommon {
         let durable_offset = db.durable_tx_offset();
         let CommitAndBroadcastEventSuccess { tx_offset, .. } =
             commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
-        Ok(UpdateDatabaseResult::UpdatePerformed {
+        Ok(UpdateEnvironmentResult::UpdatePerformed {
             tx_offset,
             durable_offset,
         })

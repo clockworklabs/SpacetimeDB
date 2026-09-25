@@ -14,6 +14,7 @@ use spacetimedb::config::{CertificateAuthority, MetadataFile, ModuleHttpConfig, 
 use spacetimedb::db;
 use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
+use spacetimedb::host::module_host::UpdateEnvironmentResult;
 use spacetimedb::host::{DiskStorage, HostController, HostRuntimeConfig, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
@@ -511,7 +512,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         database_identity: &Identity,
         environment: EnvironmentUpdate,
         expected_module_hash: Hash,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
         let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
         };

@@ -1,4 +1,6 @@
-use super::module_host::{DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule};
+use super::module_host::{
+    DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule, UpdateEnvironmentResult,
+};
 use super::scheduler::SchedulerStarter;
 use super::v8::V8HeapMetrics;
 use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
@@ -31,6 +33,7 @@ use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use scopeguard::{defer, guard};
+use spacetimedb_client_api_messages::name::EnvironmentVersionConflict;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
@@ -91,10 +94,6 @@ where
 }
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
-
-#[derive(Debug, thiserror::Error)]
-#[error("database program changed before publication; reload environment metadata and retry")]
-pub struct EnvironmentVersionConflict;
 
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
@@ -679,7 +678,7 @@ impl HostController {
                     if environment == previous {
                         return Ok(UpdateDatabaseResult::NoUpdateNeeded);
                     }
-                    return module.update_environment(environment).await;
+                    return module.update_environment(environment).await.map(Into::into);
                 }
                 host.update_module(
                     this.runtimes.clone(),
@@ -707,7 +706,7 @@ impl HostController {
         replica_id: u64,
         environment: spacetimedb_lib::environment::EnvironmentUpdate,
         expected_module_hash: Hash,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
         environment.validate()?;
 
         self.update_module_inner(database, replica_id, async move |_, host| {
@@ -722,7 +721,7 @@ impl HostController {
                     .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
                 let environment = environment.resulting_values(&previous)?;
                 if environment == previous {
-                    return Ok(UpdateDatabaseResult::NoUpdateNeeded);
+                    return Ok(UpdateEnvironmentResult::NoUpdateNeeded);
                 }
                 module.update_environment(environment).await
             }

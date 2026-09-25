@@ -1,9 +1,10 @@
 //! Publish-only environment configuration through the real CLI and local server.
 use serde_json::{json, Value};
 use spacetimedb_guard::ensure_binaries_built;
+use spacetimedb_lib::Hash;
 use spacetimedb_smoketests::{modules, random_string, require_local_server, Smoketest};
 use std::{
-    fs,
+    assert_matches, fs,
     io::{Read as _, Seek as _},
     path::PathBuf,
     process::{Child, Command, Output, Stdio},
@@ -474,17 +475,13 @@ fn cli_environment_preservation_and_environment_only_updates() {
         .timeout(Duration::from_secs(20))
         .build()
         .unwrap();
-    let url = format!("{}/v1/database/{}", f.test.server_url, f.database);
-    let denied = client.get(format!("{url}/environment")).send().unwrap();
-    assert!(matches!(denied.status().as_u16(), 401 | 403));
+    let url = format!("{}/v1/database/{}/environment", f.test.server_url, f.database);
+    let denied = client.get(&url).send().unwrap();
+    assert_matches!(denied.status().as_u16(), 401 | 403);
     // This config and token were created by the fixture's isolated local login.
     let config: toml::Value = toml::from_str(&fs::read_to_string(&f.test.config_path).unwrap()).unwrap();
     let token = config["spacetimedb_token"].as_str().unwrap();
-    let metadata = client
-        .get(format!("{url}/environment"))
-        .bearer_auth(token)
-        .send()
-        .unwrap();
+    let metadata = client.get(&url).bearer_auth(token).send().unwrap();
     assert!(metadata.status().is_success());
     assert_eq!(metadata.headers()["cache-control"], "no-store");
     let metadata = metadata.text().unwrap();
@@ -494,19 +491,19 @@ fn cli_environment_preservation_and_environment_only_updates() {
         .as_array()
         .unwrap()
         .contains(&json!("SMOKE_REQUIRED")));
-    for (body, status) in [
+    for (body, query, status) in [
         (
-            json!({"environment":{"SMOKE_REQUIRED":"stale-replacement"},"expected_module_hash":"00".repeat(32)}),
+            json!({"SMOKE_REQUIRED":"stale-replacement"}),
+            &[("expected_module_hash", Hash::from_hex("00".repeat(32)).unwrap())][..],
             409,
         ),
-        (json!({"environment":{"SMOKE_REQUIRED":"missing-version"}}), 400),
-        (json!({"module":""}), 400),
+        (json!({"SMOKE_REQUIRED":"missing-version"}), &[], 400),
     ] {
         let response = client
             .put(&url)
+            .query(query)
             .bearer_auth(token)
-            .header("Content-Type", "application/vnd.spacetimedb.publish+json")
-            .body(body.to_string())
+            .json(&body)
             .send()
             .unwrap();
         assert_eq!(response.status().as_u16(), status);

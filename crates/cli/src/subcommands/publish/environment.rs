@@ -8,7 +8,7 @@ use crate::util::ResponseExt;
 use anyhow::Context;
 use headers::HeaderMapExt;
 use serde_json::Value;
-use spacetimedb_client_api_messages::name::PublishResult;
+use spacetimedb_client_api_messages::name::EnvironmentPublishError;
 use spacetimedb_client_api_messages::publish::SpacetimeEnvironmentRemove;
 use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentSchema};
 
@@ -139,17 +139,15 @@ pub(super) async fn publish_only(
             .typed_insert(SpacetimeEnvironmentRemove(options.remove.clone()));
     }
     let res = client.execute(request).await?;
-    let response: PublishResult = res.json_or_error().await?;
+    let response: Result<(), EnvironmentPublishError> = res.json_or_error().await?;
     match response {
-        PublishResult::Success { database_identity, .. } => {
-            println!("Updated environment for database {database_identity}");
+        Ok(()) => {
+            println!("Successfully updated environment");
             Ok(())
         }
-        PublishResult::PermissionDenied { .. } => {
-            anyhow::bail!("Permission denied publishing environment values")
-        }
-        PublishResult::MissingRequiredEnvironment { keys } => {
+        Err(EnvironmentPublishError::MissingRequiredEnvironment { keys }) => {
             anyhow::bail!("Missing required environment variable(s) {keys:?}")
         }
+        Err(EnvironmentPublishError::VersionConflict(e)) => anyhow::bail!(e),
     }
 }
