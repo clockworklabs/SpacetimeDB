@@ -55,7 +55,7 @@ use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -2996,15 +2996,15 @@ impl ModuleHost {
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
-        let mut view_ids = HashSet::new();
-        view_collector.collect_views(&mut view_ids);
-        for view_id in view_ids {
+        let mut view_calls = HashSet::new();
+        view_collector.collect_views(&mut view_calls);
+        for ViewCall { view_id, args } in view_calls {
             let st_view_row = tx.lookup_st_view(view_id)?;
             let view_name: NamespacedIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let args = ViewInstanceArgs::for_schema(is_anonymous, caller, ProductValue::default());
+            let args = ViewInstanceArgs::for_schema(is_anonymous, caller, args);
             let view_call = ViewCallInfo::from_args(view_id, &args);
             let sender = args.sender();
             let is_materialized = tx.is_view_materialized(&view_call)?;

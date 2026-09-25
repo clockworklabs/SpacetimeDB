@@ -35,11 +35,11 @@ use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId, ViewCallInfo, V
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::ExecutionParams;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
-use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
 use spacetimedb_schema::def::RawModuleDefVersion;
@@ -2180,14 +2180,11 @@ impl ModuleSubscriptions {
         view_collector: &impl CollectViews,
         sender: Identity,
     ) -> Result<(), DBError> {
-        let mut view_ids = HashSet::new();
-        view_collector.collect_views(&mut view_ids);
-        for view_id in view_ids {
+        let mut view_calls = HashSet::new();
+        view_collector.collect_views(&mut view_calls);
+        for ViewCall { view_id, args } in view_calls {
             let is_anonymous = tx.lookup_st_view(view_id)?.is_anonymous;
-            let view_call = ViewCallInfo::from_args(
-                view_id,
-                &ViewInstanceArgs::for_schema(is_anonymous, sender, ProductValue::default()),
-            );
+            let view_call = ViewCallInfo::from_args(view_id, &ViewInstanceArgs::for_schema(is_anonymous, sender, args));
             tx.unsubscribe_view(view_call, sender)?;
         }
         Ok(())

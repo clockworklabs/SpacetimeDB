@@ -3,11 +3,11 @@ use derive_more::From;
 use either::Either;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
-    expr::{AggType, CollectViews},
+    expr::{AggType, CollectViews, ViewCall},
     StatementSource,
 };
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema, VIEW_ARG_HASH_COL};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
@@ -88,7 +88,7 @@ impl DerefMut for ProjectPlan {
 }
 
 impl CollectViews for ProjectPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.collect_views(views),
         }
@@ -298,16 +298,24 @@ pub enum PhysicalPlan {
 }
 
 impl CollectViews for PhysicalPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.visit(&mut |plan| {
-            let view_info = match plan {
-                Self::TableScan(scan, _) => &scan.schema.view_info,
-                Self::IxScan(scan, _) => &scan.schema.view_info,
-                Self::IxJoin(join, _) => &join.rhs.view_info,
+            let (view_info, is_scan) = match plan {
+                Self::TableScan(scan, _) => (&scan.schema.view_info, true),
+                Self::IxScan(scan, _) => (&scan.schema.view_info, false),
+                Self::IxJoin(join, _) => (&join.rhs.view_info, false),
                 _ => return,
             };
             if let Some(info) = view_info {
-                views.insert(info.view_id);
+                // An optimized scan has lost the call's args, so never fill in empty args for them.
+                assert!(
+                    is_scan || info.params.elements.is_empty(),
+                    "parameterized view calls must be collected before optimization",
+                );
+                views.insert(ViewCall {
+                    view_id: info.view_id,
+                    args: ProductValue::default(),
+                });
             }
         });
     }

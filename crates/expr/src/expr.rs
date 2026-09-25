@@ -1,23 +1,32 @@
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
+use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
 use std::sync::Arc;
 
+/// One call of a view: the view and the arguments it was called with.
+///
+/// `args` is empty for a view without parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ViewCall {
+    pub view_id: ViewId,
+    pub args: ProductValue,
+}
+
 pub trait CollectViews {
-    fn collect_views(&self, views: &mut HashSet<ViewId>);
+    fn collect_views(&self, views: &mut HashSet<ViewCall>);
 }
 
 impl<T: CollectViews> CollectViews for Arc<T> {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.as_ref().collect_views(views);
     }
 }
 
 impl<T: CollectViews> CollectViews for Vec<T> {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         for item in self {
             item.collect_views(views);
         }
@@ -45,7 +54,7 @@ pub enum ProjectName {
 }
 
 impl CollectViews for ProjectName {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         match self {
             Self::None(expr) | Self::Some(expr, _) => expr.collect_views(views),
         }
@@ -174,7 +183,7 @@ pub enum AggType {
 }
 
 impl CollectViews for ProjectList {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         match self {
             Self::Limit(proj, _) => {
                 proj.collect_views(views);
@@ -262,12 +271,15 @@ pub struct Relvar {
 }
 
 impl CollectViews for RelExpr {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.visit(&mut |expr| {
             if let Self::RelVar(Relvar { schema, .. }) = expr
                 && let Some(info) = &schema.view_info
             {
-                views.insert(info.view_id);
+                views.insert(ViewCall {
+                    view_id: info.view_id,
+                    args: ProductValue::default(),
+                });
             }
         });
     }
