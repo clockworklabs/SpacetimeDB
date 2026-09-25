@@ -80,7 +80,10 @@ function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeT
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
   const handshakes = [...capture.handshakes.values()].filter(item => item.url === socket.url);
   const path = `/v1/database/${target.mod}/subscribe`;
-  const direct = url.origin === new URL(target.uri).origin && url.pathname === path;
+  const targetUrl = new URL(target.uri);
+  const direct = url.pathname === path && url.protocol === targetUrl.protocol && url.port === targetUrl.port
+    && (url.hostname === targetUrl.hostname
+      || url.hostname === 'localhost' && targetUrl.hostname === '127.0.0.1');
   const appProxy = allowAppProxy && url.origin === new URL(capture.page.url()).origin
     && (url.pathname === path || url.pathname === `/db${path}`);
   return !socket.closed && !socket.invalid && socket.identified
