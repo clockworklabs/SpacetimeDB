@@ -122,7 +122,7 @@ internal static class RootRlsTests
                 .SubscriptionBuilder()
                 .OnApplied(_ => applied++)
                 .OnError((_, e) => error = e)
-                .Subscribe(new[] { "SELECT * FROM \"MyAuth\".protected_row" });
+                .Subscribe(new[] { "SELECT * FROM \"auth_data\".protected_row" });
             Wait(() => applied == 2, "initial subscriptions");
             Require(first.Db.MyAuth.ProtectedRow.Iter().Single().Id == 1, "First initial RLS rows");
             Require(

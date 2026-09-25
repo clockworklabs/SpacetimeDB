@@ -106,14 +106,17 @@ The namespace tests are integration tests, plus focused generator diagnostics:
   checks mount restrictions, generated-name diagnostics, and dependency discovery.
 - `cargo test -p spacetimedb-testing --test standalone_integration_test namespace_csharp`:
   independent dependency publication, root export selection, and cross-namespace
-  helper/HTTP calls.
+  helper/HTTP calls, and runtime name conversion compared with host validation.
 - `cargo test -p spacetimedb-testing --test environment namespace_csharp_environment_security`:
-  root/public environment access and denial of namespaced host calls.
+  root/public environment access, denial of namespaced host calls, and default
+  namespace case conversion when `Name` is omitted.
 - `cargo test -p spacetimedb-codegen --test codegen`: codegen snapshots and a
-  generated C# client for a TypeScript submodule.
+  generated C# client for a TypeScript submodule, including distinct accessor
+  and canonical names.
 - The [namespace client regression](sdks/csharp/examples~/regression-tests/namespaces/README.md)
   runs against the real .NET 10 module and covers tables, queries, subscriptions,
-  callbacks, scheduling, transactions, and root-defined RLS. The existing
+  callbacks, scheduling, transactions, and root-defined RLS with
+  `Accessor = "MyAuth", Name = "auth_data"`. The existing
   `sdks/csharp/tools~/run-regression-tests.sh 8 10` harness includes it in the
   .NET 10 module pass while retaining .NET 8 regressions.
 

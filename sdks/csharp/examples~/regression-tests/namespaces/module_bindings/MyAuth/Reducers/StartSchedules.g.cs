@@ -47,7 +47,7 @@ namespace SpacetimeDB.Types.@MyAuth
         [DataContract]
         public sealed partial class StartSchedules : global::SpacetimeDB.Types.Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "MyAuth.start_schedules";
+            string IReducerArgs.ReducerName => "auth_data.start_schedules";
         }
     }
 }

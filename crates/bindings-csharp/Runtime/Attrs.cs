@@ -252,8 +252,14 @@ namespace SpacetimeDB
     {
         public System.Type Marker { get; } = marker;
 
-        /// <summary>The C# member name and database namespace used for the mounted module.</summary>
+        /// <summary>The C# member name used for the mounted module.</summary>
         public string Accessor { get; set; } = "";
+
+        /// <summary>
+        /// The database namespace. When omitted, the host applies the parent module's
+        /// case conversion policy to Accessor.
+        /// </summary>
+        public string? Name { get; set; }
     }
 #endif
 }
