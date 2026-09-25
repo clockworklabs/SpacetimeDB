@@ -413,9 +413,6 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get Submodules() {
     return __t.array(RawSubmoduleV10);
   },
-  get Environment() {
-    return __t.array(EnvironmentDeclaration);
-  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 

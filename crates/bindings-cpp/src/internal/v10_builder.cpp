@@ -1,4 +1,3 @@
-#include "spacetimedb/environment.h"
 #include "spacetimedb/internal/v10_builder.h"
 #include "spacetimedb/internal/autogen/AlgebraicType.g.h"
 #include "spacetimedb/internal/autogen/ProductType.g.h"
@@ -316,10 +315,6 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
         v10_module.sections.push_back(std::move(section_rls));
     }
 
-    validate_environment_declarations();
-    RawModuleDefV10Section section_environment;
-    section_environment.set<15>(environment_declarations());
-    v10_module.sections.push_back(std::move(section_environment));
     return v10_module;
 }
 

@@ -1,5 +1,3 @@
-pub mod environment;
-
 pub mod persistence {
     pub use spacetimedb_engine::persistence::*;
 }

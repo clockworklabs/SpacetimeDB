@@ -11,7 +11,6 @@ endif()
 add_executable(bindings_cpp_unit_tests
     main.cpp
     http_unit_tests.cpp
-    environment_unit_tests.cpp
 )
 
 target_include_directories(bindings_cpp_unit_tests PRIVATE

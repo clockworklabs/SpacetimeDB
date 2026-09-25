@@ -56,7 +56,6 @@ public:
     // In C++, we explicitly expose references where possible and provide
     // accessors for fields exposed as methods on ReducerContext.
     DatabaseContext& db;
-    const Environment& env;
     const Timestamp& timestamp;
     const std::optional<ConnectionId>& connection_id;
     
@@ -64,7 +63,6 @@ public:
     explicit TxContext(ReducerContext& ctx) 
         : ctx_(ctx), 
           db(ctx.db),
-          env(ctx.env),
           timestamp(ctx.timestamp),
           connection_id(ctx.connection_id) {}
     

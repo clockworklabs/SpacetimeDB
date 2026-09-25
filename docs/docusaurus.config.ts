@@ -3,7 +3,6 @@ import type * as Preset from '@docusaurus/preset-classic';
 import rehypeShiki, { RehypeShikiOptions } from '@shikijs/rehype';
 import bash from 'shiki/langs/bash.mjs';
 import c from 'shiki/langs/c.mjs';
-import cmake from 'shiki/langs/cmake.mjs';
 import csharp from 'shiki/langs/csharp.mjs';
 import fsharp from 'shiki/langs/fsharp.mjs';
 import json from 'shiki/langs/json.mjs';
@@ -160,7 +159,6 @@ const config: Config = {
                   toml,
                   python,
                   c,
-                  cmake,
                   cpp,
                   protobuf,
                   fsharp,

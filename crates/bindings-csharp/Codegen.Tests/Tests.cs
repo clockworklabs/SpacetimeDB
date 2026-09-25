@@ -88,13 +88,9 @@ public static class GeneratorSnapshotTests
             params IIncrementalGenerator[] generators
         ) =>
             SampleCompilation.AddSyntaxTrees(
-                (await Task.WhenAll(generators.Select(RunAndCheckGenerator)))
-                    .SelectMany(output => output)
-                    .Concat(
-                        generators.Any(generator => generator is SpacetimeDB.Codegen.Module)
-                            ? RunGeneratorAndGetResult(new EnvironmentGenerator()).GeneratedTrees
-                            : []
-                    )
+                (await Task.WhenAll(generators.Select(RunAndCheckGenerator))).SelectMany(output =>
+                    output
+                )
             );
     }
 
@@ -337,7 +333,6 @@ public static class GeneratorSnapshotTests
             [
                 new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
                 new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
-                new EnvironmentGenerator().AsSourceGenerator(),
             ],
             driverOptions: new(
                 disabledOutputs: IncrementalGeneratorOutputKind.None,

@@ -4,7 +4,6 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
-mod schema_extract;
 pub mod spacetime_config;
 mod subcommands;
 mod tasks;
@@ -23,7 +22,6 @@ pub use tasks::build;
 pub fn get_subcommands() -> Vec<Command> {
     vec![
         publish::cli(),
-        env::cli(),
         delete::cli(),
         logs::cli(),
         call::cli(),
@@ -59,7 +57,6 @@ pub async fn exec_subcommand(
         "describe" => describe::exec(config, args).await,
         "dev" => dev::exec(config, args).await,
         "publish" => publish::exec(config, args).await,
-        "env" => env::exec(config, args).await,
         "delete" => delete::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
