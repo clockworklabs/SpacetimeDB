@@ -1,5 +1,3 @@
-#![cfg_attr(not(feature = "metrics"), allow(dead_code))]
-
 use super::{
     committed_state::CommittedState, mut_tx::MutTxId, state_view::StateView, time::Instant, tx::TxId, tx_state::TxState,
 };
@@ -754,6 +752,7 @@ impl MutTxDatastore for Locking {
 
 /// Various measurements, needed for metrics, of the work performed by a transaction.
 #[must_use = "TxMetrics should be reported"]
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 pub struct TxMetrics {
     /// The transaction metrics for a particular table.
     /// The value `None` for a [`TableId`] means that it was deleted.
@@ -766,6 +765,7 @@ pub struct TxMetrics {
     exec_metrics: ExecutionMetrics,
 }
 
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 struct TableStats {
     /// The number of rows in the table after this transaction.
     ///

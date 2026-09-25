@@ -1,5 +1,3 @@
-#![cfg_attr(not(feature = "metrics"), allow(dead_code, unused_imports, unused_variables))]
-
 use super::{
     datastore::Result,
     delete_table::DeleteTable,
@@ -9,6 +7,8 @@ use super::{
 };
 #[cfg(feature = "metrics")]
 use crate::db_metrics::DB_METRICS;
+#[cfg(feature = "metrics")]
+use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
 use crate::traits::TxOffset;
 use crate::{
     error::TableError,
@@ -20,11 +20,10 @@ use crate::{
     },
     system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
-        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
-        ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX,
-        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
-        ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_IDX,
+        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_INDEX_ID, ST_INDEX_IDX,
+        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
+        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+        ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
 };
@@ -278,6 +277,9 @@ impl CommittedState {
     /// Extremely delicate function to bootstrap the system tables.
     /// Don't update this unless you know what you're doing.
     pub(super) fn bootstrap_system_tables(&mut self, database_identity: Identity) -> Result<()> {
+        #[cfg(not(feature = "metrics"))]
+        let _ = database_identity;
+
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         #[cfg(feature = "metrics")]
@@ -998,6 +1000,7 @@ impl CommittedState {
     }
 
     /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
+    #[cfg(feature = "durability")]
     pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
         (
             self.tables
