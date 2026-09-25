@@ -6,9 +6,6 @@ import { ActionApplicationFailure, ActionInconclusive, actionImplementation } fr
 import { finding, isFinding, renderFinding, type Finding } from './action-findings.js';
 import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, orderOperationDifferences, type OrderOperation, cancellationDifferences, orderCancellationDifferences,
   purchaseDifferences, orderPurchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
-import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
-import { getSavedMongoDbCheckoutState } from '../stacks/backends/saved-mongodb-checkout.js';
-import { getSavedSpacetimeCheckoutState } from '../stacks/backends/saved-spacetime-checkout.js';
 import type { NamedActionsCapability } from './named-action-runtime.js';
 import type { CheckoutState } from '../stacks/checkout-state.js';
 import type {
@@ -961,10 +958,11 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
         storage: input.storage ? resolveOrderDataStorage(input.storage, contractIds) : undefined };
       if (savedReader) {
         if (input.storage) throw new Error('saved schema mapping cannot replace the declared order data interface');
-        if (backend === 'spacetime') return getSavedSpacetimeCheckoutState({ ...selection, reader: savedReader, spacetime: spacetime ?? undefined });
-        if (!databaseLease) throw new Error('saved order reader requires an authenticated backend lease');
-        const read = backend === 'postgres' ? getSavedPostgresCheckoutState : getSavedMongoDbCheckoutState;
-        return read({ ...selection, reader: savedReader, lease: databaseLease });
+        const read = adapter.databaseRead.getSavedCheckoutState;
+        if (!read) return inconclusive('unsupported-backend', { backend: adapter.id });
+        if (adapter.grading.databaseLease && !databaseLease) throw new Error('saved order reader requires an authenticated backend lease');
+        return read({ ...selection, reader: savedReader,
+          spacetime: spacetime ?? undefined, lease: databaseLease! });
       }
       const handleError = (error: unknown): never => {
         if (errorShape(error).orderDataInterface === true) {

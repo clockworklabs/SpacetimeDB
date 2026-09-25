@@ -18,4 +18,8 @@ Expose the `admin_change_price` reducer.
 Use `api:admin_change_price` with `{ itemId, price }`.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Use the `admin_change_price` PostgreSQL function with `{ itemId, price }`.
+<!-- /interface -->
+
 Use the same action as the visible price control.

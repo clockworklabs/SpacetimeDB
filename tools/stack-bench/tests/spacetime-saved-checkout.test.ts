@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
-import { getSavedSpacetimeCheckoutState } from '../src/stacks/backends/saved-spacetime-checkout.js';
+import { getSavedSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-saved-checkout.js';
 import { orderCheckoutDifferences } from '../src/stacks/checkout-state.js';
 
 function fixture() {

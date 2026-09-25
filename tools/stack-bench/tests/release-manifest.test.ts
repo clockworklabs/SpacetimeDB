@@ -8,6 +8,7 @@ import { sha256 } from '../src/evidence/provenance.js';
 import { RELEASE_MANIFEST_SCHEMA_VERSION, validateReleaseManifest,
   verifyReleaseBundle } from '../src/releases/release-manifest.js';
 import type { ReleaseFileRole, ReleaseManifest } from '../src/releases/release-manifest.js';
+import { stackReleaseImages } from '../src/stacks/stack-identities.js';
 
 const roles = ['controller', 'build-sandbox', 'postgres', 'mongodb', 'npm-cache'] as const;
 
@@ -177,5 +178,24 @@ test('qualified verification requires the signed disk manifest and an external m
       assert.ok(failed.cryptographicVerification && 'checks' in failed.cryptographicVerification);
       assert.equal(failed.cryptographicVerification.checks[0]!.detail, 'bad bundle');
     } finally { rmSync(trustedKeyPath, { force: true }); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('stacks with pinned platform images add their release roles and no others', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-release-roles-'));
+  try {
+    const withRole = (role: string) => {
+      const manifest = fixture(root);
+      const digest = '9'.repeat(64);
+      manifest.images.push({ id: `stack-bench-${role}`, role, reference: `registry.example/${role}@sha256:${digest}`,
+        digest, platform: 'linux/amd64', sbomPath: `sbom/${role}.spdx.json` });
+      manifest.files.push({ path: `sbom/${role}.spdx.json`, role: 'sbom', sha256: 'f'.repeat(64), bytes: 1 });
+      return manifest;
+    };
+    for (const role of ['convex', ...stackReleaseImages().map(image => image.role)]) {
+      assert.equal(validateReleaseManifest(withRole(role)).images.at(-1)!.role, role);
+    }
+    assert(stackReleaseImages().some(image => image.role === 'supabase-gateway'));
+    assert.throws(() => validateReleaseManifest(withRole('supabase-studio')), /role/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

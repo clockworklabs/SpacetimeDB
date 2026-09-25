@@ -653,9 +653,11 @@ export function parallelMutationResourceLockKeys(args: ReferenceQualificationArg
   if (args.backend === 'spacetime') {
     keys.push(...slots.map((_, workerIndex) =>
       `listener:http://127.0.0.1:${Number(args.spacetimePort) + workerIndex}`));
-  } else if (args.backend === 'convex') {
-    keys.push(...slots.map(runIndex =>
-      `listener:${campaignSlotEnvironment(env, 'convex', runIndex).STACK_BENCH_CONVEX_URI}`));
+  } else if (args.backend) {
+    const backend = args.backend;
+    const variable = STACK_ADAPTER_REGISTRY.get(backend).orchestrator.serverUriVariable;
+    if (variable) keys.push(...slots.map(runIndex =>
+      `listener:${campaignSlotEnvironment(env, backend, runIndex)[variable]}`));
   }
   return keys.sort();
 }

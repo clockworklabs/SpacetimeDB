@@ -30,6 +30,7 @@ import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
 import type { StackRunPorts } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
+import { stackApplicationInterface } from '../src/stacks/stack-identities.js';
 import { attemptDatabaseUrl } from '../src/stacks/hosted-database-identity.js';
 import { requireLeasedDatabase, requireLeasedSpacetime }
   from '../src/stacks/backend-reset-guard.js';
@@ -432,11 +433,11 @@ export function ensureDatabase(backend: string, runIndex: number, dbPort: number
   if (adapter.id === 'spacetime') {
     return adapter.database.prepare({ ...input, lease: requireLeasedSpacetime(lease) });
   }
-  if (adapter.id === 'convex') {
+  if (!('prepare' in adapter.database)) {
+    // A platform lifecycle owns its database; start.sh deploys the application to it.
     if (!lease.resources.serverUri || !lease.resources.container?.owned) {
-      throw new Error('Convex application setup requires its active owned deployment');
+      throw new Error(`${backend} application setup requires its active owned deployment`);
     }
-    // The lifecycle owns the native deployment; start.sh deploys its functions.
     return;
   }
   return adapter.database.prepare({ name });
@@ -459,7 +460,8 @@ export function readBackendGuidanceDocument(
       || document.path.includes('\\')
       || !/^[a-f0-9]{64}$/.test(document.sha256)
       || !Number.isSafeInteger(document.bytes) || document.bytes < 0
-      || !['http', 'reducer', 'convex'].includes(document.applicationInterface)) {
+      || typeof document.applicationInterface !== 'string'
+      || !/^[a-z][a-z0-9-]*$/.test(document.applicationInterface)) {
       throw new Error('campaign guidance document identity is invalid');
     }
   }
@@ -599,8 +601,8 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   const applicationInterface = args.guidanceDocument?.applicationInterface
     ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
       ?.documents[args.backend]?.applicationInterface;
-  if (applicationInterface !== 'http' && applicationInterface !== 'reducer' && applicationInterface !== 'convex') {
-    throw new Error(`stack ${args.backend} has no application interface`);
+  if (applicationInterface !== stackApplicationInterface(args.backend)) {
+    throw new Error(`stack ${args.backend} guidance does not select its application interface`);
   }
   const common = [
     `Build the app in ${CODING_CONTAINER_APP_ROOT}.`,

@@ -5,6 +5,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.js';
 import { sha256 } from '../evidence/provenance.js';
 import { validateCredentialAliases } from '../composition/credential-aliases.js';
+import { stackApplicationInterface } from '../stacks/stack-identities.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
@@ -46,7 +47,7 @@ export interface ResolvedGuidanceDocument {
   path: string;
   sha256: string;
   bytes: number;
-  applicationInterface: 'http' | 'reducer' | 'convex';
+  applicationInterface: string;
 }
 export interface ResolvedSkills { ids: string[]; sha256: string; bytes: number }
 export interface ResolvedGuidanceProfile {
@@ -225,8 +226,9 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     const path = contained(stackBenchRoot, rel, `${reference}.documents.${stack}`);
     const bytes = Buffer.from(normalizePromptText(readFileSync(path, 'utf8')), 'utf8');
     const applicationInterface = profile.applicationInterfaces[stack];
-    if (applicationInterface !== 'http' && applicationInterface !== 'reducer' && applicationInterface !== 'convex') {
-      fail(`${reference}.applicationInterfaces.${stack}`, 'must be http, reducer or convex');
+    const expectedInterface = stackApplicationInterface(stack);
+    if (applicationInterface !== expectedInterface) {
+      fail(`${reference}.applicationInterfaces.${stack}`, `must be ${expectedInterface}`);
     }
     documents[stack] = { path: relative(stackBenchRoot, path).split(sep).join('/'),
       sha256: sha256(bytes), bytes: bytes.length, applicationInterface };

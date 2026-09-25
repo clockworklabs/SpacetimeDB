@@ -1,6 +1,5 @@
 import { applyCredentialAliases } from './credential-aliases.js';
-type StackApplicationInterface = 'http' | 'reducer' | 'convex';
-const INTERFACE_SECTION = /<!-- interface:(http|reducer|convex) -->([\s\S]*?)<!-- \/interface -->/g;
+const INTERFACE_SECTION = /<!-- interface:([a-z][a-z0-9-]*) -->([\s\S]*?)<!-- \/interface -->/g;
 const INTERNAL_LANGUAGE = /\b(?:stack\s*bench|benchmark|harness|grader|graded|grading|scored|scoring|tests?|testing|evaluation|criterion|testids?|external client|run configuration)\b|data-testid/i;
 
 export function assertAgentVisibleText(text: string): string {
@@ -11,7 +10,7 @@ export function assertAgentVisibleText(text: string): string {
   return text;
 }
 
-function selectedInterfaceText(value: unknown, selected: StackApplicationInterface | null): string {
+function selectedInterfaceText(value: unknown, selected: string | null): string {
   const source = String(value ?? '');
   let sections = 0;
   const output = source.replace(INTERFACE_SECTION, (_section, kind, content: string) => {
@@ -32,7 +31,7 @@ function selectedInterfaceText(value: unknown, selected: StackApplicationInterfa
 export function agentVisibleContractText(
   value: unknown,
   credentialAliases: Readonly<Record<string, string>> = {},
-  applicationInterface: StackApplicationInterface | null = null,
+  applicationInterface: string | null = null,
 ): string {
   const text = applyCredentialAliases(
     selectedInterfaceText(value, applicationInterface), credentialAliases);
@@ -48,4 +47,15 @@ export function contractInterfaceNames(contractText: unknown): string[] {
     .map((match) => match[1])
     .filter((id): id is string => id !== undefined);
   return [...new Set(ids)].sort();
+}
+
+// Recipe identity hashes the interface-neutral text; each stack's qualification
+// hashes its own blocks. A new interface block therefore changes only its stack.
+export function interfaceNeutralText(value: unknown): string {
+  return String(value ?? '').replace(INTERFACE_SECTION, '').replace(/\n{3,}/g, '\n\n');
+}
+
+export function interfaceBlocksText(value: unknown, selected: string): string {
+  return [...String(value ?? '').matchAll(INTERFACE_SECTION)]
+    .filter(match => match[1] === selected).map(match => match[2]).join('\n');
 }

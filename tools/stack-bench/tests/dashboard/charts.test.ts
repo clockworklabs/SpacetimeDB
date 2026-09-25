@@ -209,3 +209,11 @@ test('distribution omits excluded measurements but identifies both exclusion sta
   assert.match(html, /Rep 2 · Excluded<\/button>/);
   assert.match(html, /Rep 3 · Excluded<\/button>/);
 });
+
+test('Supabase has its own label and a series color distinct from SpacetimeDB', () => {
+  const sheet = { key: 'test', repetitions: 1, stacks: ['spacetime', 'supabase'].map(stack => ({ stack,
+    attempts: [{ id: stack, repetition: 1, executionStartedAt: '2026-09-08T00:00:00Z', excluded: null }] })) } as CampaignSheet;
+  const html = progressChart(sheet, null, 'completion', 'grid', new Set(), 'checks');
+  assert.match(html, /data-chart-stack="supabase"[^>]*>.*?stroke="#1f9d6a"[^>]*\/><\/svg>Supabase<\/button>/);
+  assert.match(html, /data-chart-stack="spacetime"[^>]*>.*?stroke="#4cf490"[^>]*\/><\/svg>SpacetimeDB<\/button>/);
+});

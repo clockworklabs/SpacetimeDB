@@ -6,35 +6,41 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 import { deployMongoDbReference, deployPostgresReference, deploySpacetimeReference }
   from '../src/stacks/stack-reference-operations.js';
-import type { HostedReferenceHelpers, SpacetimeReferenceHelpers }
+import type { ReferenceDeployInput, ReferenceHelpers }
   from '../src/stacks/stack-reference-operations.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
 
+const unused = () => { throw new Error('not used by this deployment'); };
+const helpersWith = (overrides: Partial<ReferenceHelpers>): ReferenceHelpers => ({
+  phase() {}, docker() {}, startDetached() {}, async waitFor() {}, containerLogs() { return ''; },
+  runSync: unused, dbName: unused, moduleName: unused, loadTrack: unused, ...overrides,
+});
+// Tests give only the lease fields each deployment reads.
+const leaseOf = (resources: object, extra: object = {}) =>
+  ({ resources, ...extra }) as unknown as ReferenceDeployInput['lease'];
+
 test('PostgreSQL reference starts its schema through the normal startup path', async () => {
-  const dockerCalls: Array<Parameters<HostedReferenceHelpers['docker']>> = [];
-  const starts: Array<Parameters<HostedReferenceHelpers['startDetached']>> = [];
+  const dockerCalls: Array<Parameters<ReferenceHelpers['docker']>> = [];
+  const starts: Array<Parameters<ReferenceHelpers['startDetached']>> = [];
   const commands: Array<readonly string[]> = [];
-  const helpers: HostedReferenceHelpers = {
+  const helpers = helpersWith({
     dbName() { return 'app_ecom_run0'; },
     runSync(_label, _command, args) {
       commands.push(args);
       return args[0] === 'inspect' ? 'container-id\n' : '';
     },
     docker(...args) { dockerCalls.push(args); },
-    phase() {},
     startDetached(...args) { starts.push(args); },
-    async waitFor() {},
-    containerLogs() { return ''; },
-  };
+  });
   await deployPostgresReference({
-    args: { backend: 'postgres', runIndex: 0 },
+    args: { backend: 'postgres', track: 'ecommerce', runIndex: 0 },
     metadata: { installDirectories: [], server: { directory: 'server' },
       client: { directory: 'client' } },
-    lease: { resources: { database: 'app_ecom_run0',
-      container: { name: 'postgres', id: 'container-id' } } },
+    lease: leaseOf({ database: 'app_ecom_run0',
+      container: { name: 'postgres', id: 'container-id' } }),
     track: { slug: 'ecommerce', restartProbe: '/api/items' }, container: 'build-0',
-    ports: { dbPort: 6532, vite: 6573 }, buildNetworkMode: 'host', helpers,
+    ports: { dbPort: 6532, vite: 6573, express: null }, buildNetworkMode: 'host', helpers,
   });
 
   assert(commands.some(args => args.includes('dropdb') && args.at(-1) === 'app_ecom_run0'));
@@ -55,31 +61,27 @@ test('PostgreSQL reference starts its schema through the normal startup path', a
 });
 
 test('hosted reference credentials stay in process environment', async () => {
-  const starts: Array<Parameters<HostedReferenceHelpers['startDetached']>> = [];
+  const starts: Array<Parameters<ReferenceHelpers['startDetached']>> = [];
   const commands: Array<readonly string[]> = [];
   const ownershipToken = 'reference-mongodb-authority';
-  const helpers: HostedReferenceHelpers = {
+  const helpers = helpersWith({
     dbName() { return 'app_ecom_run0'; },
     runSync(_label, _command, args) {
       commands.push(args);
       return args[0] === 'inspect' ? 'container-id\n' : '';
     },
-    docker() {},
-    phase() {},
     startDetached(...args) { starts.push(args); },
-    async waitFor() {},
-    containerLogs() { return ''; },
-  };
+  });
   await deployMongoDbReference({
-    args: { backend: 'mongodb', runIndex: 0 },
+    args: { backend: 'mongodb', track: 'ecommerce', runIndex: 0 },
     metadata: { installDirectories: [], server: { directory: 'server' },
       client: { directory: 'client' } },
-    lease: { ownershipToken, resources: { database: 'app_ecom_run0',
+    lease: leaseOf({ database: 'app_ecom_run0',
       container: { name: 'mongodb', id: 'container-id' },
       network: { name: 'attempt', id: 'a'.repeat(64), namespaceContainerId: 'b'.repeat(64),
-        hostAddresses: [], services: [], firewallSha256: null, firewallInstalledAt: null } } },
+        hostAddresses: [], services: [], firewallSha256: null, firewallInstalledAt: null } }, { ownershipToken }),
     track: { slug: 'ecommerce', restartProbe: '' }, container: 'build-0',
-    ports: { dbPort: 6537, vite: 6723 },
+    ports: { dbPort: 6537, vite: 6723, express: null },
     buildNetworkMode: 'host', helpers,
   });
   const applicationStart = starts[0];
@@ -101,19 +103,17 @@ test('hosted reference credentials stay in process environment', async () => {
 });
 
 test('Spacetime reference client uses its assigned Vite port', async () => {
-  const starts: Array<Parameters<SpacetimeReferenceHelpers['startDetached']>> = [];
-  const waits: Array<Parameters<SpacetimeReferenceHelpers['waitFor']>> = [];
-  const helpers: SpacetimeReferenceHelpers = {
-    docker() {},
+  const starts: Array<Parameters<ReferenceHelpers['startDetached']>> = [];
+  const waits: Array<Parameters<ReferenceHelpers['waitFor']>> = [];
+  const helpers = helpersWith({
     loadTrack() { return loadTrack('ecommerce'); },
     moduleName() { return 'ecommerce_42'; },
     startDetached(...args) { starts.push(args); },
     async waitFor(...args) { waits.push(args); },
-    containerLogs() { return ''; },
-  };
+  });
 
   await deploySpacetimeReference({
-    args: { track: 'ecommerce', runIndex: 42 },
+    args: { backend: 'spacetime', track: 'ecommerce', runIndex: 42 },
     metadata: {
       kind: 'spacetime',
       installDirectories: [],
@@ -121,12 +121,13 @@ test('Spacetime reference client uses its assigned Vite port', async () => {
       bindingsDirectory: 'client/src/module_bindings',
       client: { directory: 'client' },
     },
-    lease: { resources: {
+    lease: leaseOf({
       module: 'ecommerce_42',
       serverUri: 'ws://host.docker.internal:3315',
-    } },
+    }),
+    track: { slug: 'ecommerce', restartProbe: '' },
     container: 'build-42',
-    ports: { vite: 6475 },
+    ports: { vite: 6475, express: null, dbPort: null },
     buildNetworkMode: 'bridge',
     helpers,
   });

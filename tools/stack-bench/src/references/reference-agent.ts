@@ -15,9 +15,6 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerWorkspaceHandoffCommands }
   from '../runtime/coding-container-policy.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { requireLeasedDatabase, requireLeasedSpacetime } from '../stacks/backend-reset-guard.js';
-import type { HostedReferenceMetadata, SpacetimeReferenceMetadata, ConvexReferenceMetadata }
-  from '../stacks/stack-reference-operations.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   REFERENCE_METADATA_FILE, referenceMetadataIssues, validateReferenceRegistry }
@@ -283,31 +280,9 @@ async function main(): Promise<void> {
   const helpers = { dbName, loadTrack, moduleName, runSync, docker, startDetached,
     waitFor, containerLogs, phase };
   await deployReferenceAndRestoreSource(() => controlAppServer({ backend: args.backend,
-    app: args.app, port: ports.vite, probe: track.restartProbe }, 'stop'), () => {
-    if (adapter.id === 'convex') {
-      return adapter.reference.deploy({ args, metadata: metadata as ConvexReferenceMetadata,
-        lease, container: containerName, ports, helpers });
-    }
-    if (adapter.id === 'postgres' || adapter.id === 'mongodb') {
-      return adapter.reference.deploy({
-        args, metadata: metadata as HostedReferenceMetadata,
-        lease: requireLeasedDatabase(lease), track,
-        container: containerName, ports, buildNetworkMode, helpers,
-      });
-    }
-    if (adapter.id === 'spacetime') {
-      const target = requireLeasedSpacetime(lease);
-      return adapter.reference.deploy({
-        args, metadata: metadata as SpacetimeReferenceMetadata,
-        lease: { resources: {
-          ...target.resources,
-          buildContainer: lease.resources.buildContainer,
-        } },
-        container: containerName, ports, buildNetworkMode, helpers,
-      });
-    }
-    throw new Error('unsupported reference adapter');
-  }, () => {
+    app: args.app, port: ports.vite, probe: track.restartProbe }, 'stop'), () => adapter.reference.deploy({
+    args, metadata, lease, track, container: containerName, ports, buildNetworkMode, helpers,
+  }), () => {
     restoreReferenceSourceIdentity(source.fixture, args.app);
     for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
       runSync('sharing reference workspace', 'docker', ['exec', containerName, ...command],

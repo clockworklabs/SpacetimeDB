@@ -6,6 +6,9 @@ import test from 'node:test';
 import { ORDER_DATA_COLUMNS, readOrderDataSnapshot } from '../src/stacks/order-data.js';
 import { orderCheckoutDifferences, orderPurchaseDifferences, orderCancellationDifferences, checkoutCrashDifferences } from '../src/stacks/checkout-state.js';
 import { getPostgresCheckoutState } from '../src/stacks/backends/postgres-operations.js';
+import { getSupabaseCheckoutState } from '../src/stacks/backends/supabase-operations.js';
+import { supabaseAdapter } from '../src/stacks/backends/supabase-adapter.js';
+import { supabaseExec, supabaseLease } from './helpers/supabase-lease.js';
 import { getMongoDbCheckoutState } from '../src/stacks/backends/mongodb-operations.js';
 import { getSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-operations.js';
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
@@ -295,6 +298,38 @@ test('order data preserves infrastructure failures instead of blaming the app', 
   }, { capabilities: { 'database-read': capability } });
   assert.notEqual(result.status, 'passed');
   assert.notEqual(result.status, 'failed');
+});
+
+test('Supabase order data reads the PostgreSQL order interface in public and classifies it identically', () => {
+  const platform = supabaseLease();
+  const lease = supabaseAdapter.grading.databaseLease(platform);
+  const postgres = { resources: { container: { id: 'owned', name: 'owned' }, database: 'app' } };
+  for (const storage of [fullStorage, { kind: 'order-data' as const, cart: false, warehouses: false }]) {
+    const raw = data();
+    raw.order_header.push({ id: '9007199254740993', account_id: '1', total: '19.99', refunded: '0', status: 'pending' });
+    raw.order_line.push({ id: '5', order_id: '9007199254740993', item_id: '2', quantity: 1, unit_price: '19.99' });
+    const sql: string[] = [];
+    const supabase = getSupabaseCheckoutState({ account: 'buyer', item: 'Keyboard', app: '/not-a-reference', storage, lease,
+      exec: supabaseExec(platform, input => { sql.push(input); return JSON.stringify(raw); }) });
+    const expected = getPostgresCheckoutState({ account: 'buyer', item: 'Keyboard', app: '/not-a-reference', storage,
+      lease: postgres, exec: (_command, args, options) => {
+        if (args[0] === 'inspect') return 'owned';
+        sql.push(options.input ?? '');
+        return JSON.stringify(raw);
+      } });
+    assert.equal(sql[0], sql[1]);
+    assert.deepEqual(supabase, expected);
+    assert.equal(supabase.state.orders[0]!.id, '9007199254740993');
+  }
+  const missing = Object.assign(new Error('psql failed'), { stderr: 'ERROR:  relation "public.order_line" does not exist' });
+  assert.throws(() => getSupabaseCheckoutState({ account: 'buyer', item: 'Keyboard', storage: fullStorage, lease,
+    exec: supabaseExec(platform, () => { throw missing; }) }), (error: unknown) => error instanceof Error
+    && 'orderDataInterface' in error);
+  const refused = new Error('connection refused');
+  assert.throws(() => getSupabaseCheckoutState({ account: 'buyer', item: 'Keyboard', storage: fullStorage, lease,
+    exec: supabaseExec(platform, () => { throw refused; }) }), (error: unknown) => error === refused);
+  assert.throws(() => getSupabaseCheckoutState({ account: 'buyer', item: 'Keyboard', lease,
+    exec: supabaseExec(platform, () => '{}') }), /declared order data interface/);
 });
 
 test('MongoDB order data reads a not-yet-created collection as empty and keeps real read failures', () => {

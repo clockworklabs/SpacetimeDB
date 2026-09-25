@@ -22,3 +22,8 @@ Render `data-entity-id` as the decimal case identifier without precision loss.
 Use `api:reply_support` with `{ ticketId, body }`. Render `data-entity-id` as
 the native string case identifier.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `reply_support` PostgreSQL function with `{ ticketId, body }`. Render `data-entity-id`
+as the case identifier accepted by `ticketId`, without precision loss.
+<!-- /interface -->

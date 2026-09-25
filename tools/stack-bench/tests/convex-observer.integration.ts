@@ -7,7 +7,8 @@ import test from 'node:test';
 import { createBackendLease, claimBackendResources, backendResourceLockKeys, resourceLockScope, readBackendLease }
   from '../src/runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
-import { activateConvex, controlConvex, CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
+import { activateConvex, controlConvex } from '../src/stacks/backends/convex-lifecycle.js';
+import { CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-identity.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { readConvexTables } from '../src/stacks/backends/convex-operations.js';
 

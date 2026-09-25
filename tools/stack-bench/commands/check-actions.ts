@@ -5,7 +5,6 @@ import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { probeConvexNamedAction } from '../src/stacks/backends/convex-operations.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
 interface CheckActionsArgs {
@@ -43,9 +42,14 @@ const args = parseArgs(process.argv);
 const backend = args.backend;
 if (!backend) throw new Error('--backend is required');
 
+const adapter = STACK_ADAPTER_REGISTRY.get(backend);
+// A stack may check account actions through the browser, or probe its native
+// function metadata instead of issuing requests.
+const named = adapter.namedAction;
+
 // Use non-writing probes declared by the selected track.
 const track = args.track ? loadTrack(args.track) : null;
-const browserAccounts = backend === 'convex' ? ['signUp', 'signIn'] : [];
+const browserAccounts = named.browserAccounts ?? [];
 const ACTIONS = (track?.actions ?? []).filter(action => !browserAccounts.includes(action.id));
 if (browserAccounts.length && !args.quiet) console.log('Account interfaces are checked through browser sign-up/sign-in, not password mutations.');
 if (!ACTIONS.length) {
@@ -63,18 +67,18 @@ if (!ACTIONS.length) {
 // SpacetimeDB control targets come from the authenticated lease. Client config
 // is app-controlled input and may use environment expressions rather than
 // literals; it is neither authoritative nor safe for harness operations.
-const adapter = STACK_ADAPTER_REGISTRY.get(backend);
 const spacetime = adapter.grading.context({ requireBuildContainer: false });
 
 async function probe(action: NamedAction): Promise<Omit<ActionResult, 'id'>> {
   try {
-    if (backend === 'convex') return probeConvexNamedAction(action);
+    if (named.probe) return await named.probe(action);
     const request = adapter.namedAction.request(
       { action, input: { args: action.args }, spacetime, url: args.url });
     if (!request?.url) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
+    // Headers a platform requires identify the project, not a caller.
     const r = await fetch(request.url, {
       method: request.method ?? 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...('headers' in request ? request.headers : {}) },
       body: request.body,
     });
     const rejectedByApplication = 'applicationRejectionStatuses' in request

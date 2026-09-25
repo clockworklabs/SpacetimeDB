@@ -29,3 +29,7 @@ For Convex, each `id` in this interface is the native document `_id`. Store rela
 identifiers as references to those same `_id` values. Keep the table and field names
 above; no additional `id` column or copy of the application data is needed.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+For Supabase, the names above are tables or views in the `public` schema.
+<!-- /interface -->

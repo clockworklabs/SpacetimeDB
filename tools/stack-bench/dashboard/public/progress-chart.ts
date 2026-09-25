@@ -62,7 +62,8 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     + '</div></div>';
   const valueLabel = (value: number, upper = false, decimals = 1) => metric === 'cost'
     ? `${upper ? '≤' : ''}$${value.toFixed(2)}` : `${value.toFixed(decimals)}%`;
-  const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' };
+  const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791',
+    supabase: '#1f9d6a' };
   const color = (stack: string) => brandColors[stack]
     ?? `hsl(${Array.from(stack).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 360, 0)},65%,65%)`;
   const marker = (repetition: number, x: number, y: number, title = '') => {

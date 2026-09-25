@@ -18,4 +18,8 @@ Return a whole bundle with `return_bundle(orderId: u64)`.
 Return a whole bundle with `api:return_bundle` and `{ orderId }`.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Return a whole bundle with the `return_bundle` PostgreSQL function and `{ orderId }`.
+<!-- /interface -->
+
 Use the same application action as the visible control.

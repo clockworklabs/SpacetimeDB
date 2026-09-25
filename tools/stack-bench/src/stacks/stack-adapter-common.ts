@@ -1,19 +1,18 @@
-import type { StackLifecycle, StackLifecycleInput,
+import type { SavedCheckoutRead, StackAdapterOptions, StackLifecycle, StackLifecycleInput,
   StackPortBases } from './stack-adapter-contract.js';
 import { controlHostedAppServer } from './hosted-lifecycle.js';
 import { attemptDatabaseUrl } from './hosted-database-identity.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
-import { stackPorts, type StackPortId } from './stack-ports.js';
+import { stackPorts } from './stack-ports.js';
 
-export function defineStackAdapter<const I extends StackPortId, const T extends object>(id: I, lifecycle: StackLifecycle,
-  operations: T, { version }: { version: string }) {
-  return {
-    id,
-    version,
-    lifecycle,
-    ports: stackPorts(id),
-    ...operations,
-  };
+// Every adapter carries the contract's optional members, declared or not.
+type StackAdapter<I extends string, T> = { id: I; version: string; lifecycle: StackLifecycle;
+  ports: ReturnType<typeof stackPorts> } & T & StackAdapterOptions
+  & (T extends { databaseRead: object } ? { databaseRead: SavedCheckoutRead } : unknown);
+
+export function defineStackAdapter<const I extends string, const T extends object>(id: I, lifecycle: StackLifecycle,
+  operations: T & StackAdapterOptions & { databaseRead?: SavedCheckoutRead }, { version }: { version: string }) {
+  return { id, version, lifecycle, ports: stackPorts(id), ...operations } as StackAdapter<I, T>;
 }
 
 interface DatabaseEnvironmentAdapter {

@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { installAuthWebSocketCapture, patchAuthRequest, withAuthRequestPatch } from '../src/actions/auth-request-patch.js';
+import { createBackendLease } from '../src/runtime/backend-lease.js';
+import { supabaseAuthRequestPatch } from '../src/stacks/backends/supabase-operations.js';
 import { ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 import { installResponseLoss } from '../grader/response-loss.js';
 
@@ -300,5 +303,61 @@ test('a SpacetimeDB signup patch places authority by the module schema and never
   } finally {
     await browser.close();
     server.close();
+  }
+});
+
+
+test('a platform password endpoint patch reaches the cross-origin request only through the stack hook', async () => {
+  const received: { path: string; body: unknown; apikey?: string }[] = [];
+  const gateway = createServer(async (req, res) => {
+    const cors = { 'Access-Control-Allow-Origin': String(req.headers.origin ?? '*'),
+      'Access-Control-Allow-Headers': 'apikey, authorization, content-type', 'Access-Control-Allow-Methods': 'POST' };
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors).end(); return; }
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    received.push({ path: req.url!, body: JSON.parse(raw), apikey: req.headers.apikey as string });
+    res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"access_token":"token"}');
+  }).listen(0, '127.0.0.1');
+  const app = createServer((_req, res) => res.writeHead(200, { 'Content-Type': 'text/html' }).end('<body>shop</body>'))
+    .listen(0, '127.0.0.1');
+  await Promise.all([once(gateway, 'listening'), once(app, 'listening')]);
+  const origin = (server: typeof app) => `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const lease = createBackendLease({ runId: 'auth-patch', backend: 'supabase', track: 'ecommerce', runIndex: 0,
+    serverUri: origin(gateway), database: 'postgres' });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(); await page.goto(origin(app));
+    // The application derives both credentials; neither typed value appears in the request.
+    const email = `${Buffer.from('claimant').toString('hex')}@accounts.invalid`;
+    const digest = createHash('sha256').update('secret').digest('hex');
+    const signUp = () => page.evaluate(async ({ url, email, digest }) => (await fetch(`${url}/auth/v1/signup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json;charset=UTF-8', apikey: 'anon' },
+      body: JSON.stringify({ email, password: digest, data: { username: 'claimant' } }) })).status,
+    { url: origin(gateway), email, digest });
+    const result = await withAuthRequestPatch(page, 'claimant', 'secret', { fields: { role: 'admin' } }, signUp,
+      supabaseAuthRequestPatch(lease));
+    assert.equal(result.requestPatch.shape, 'supabase-auth');
+    assert.equal(result.requestPatch.status, 200);
+    assert.deepEqual(received.at(-1), { path: '/auth/v1/signup', apikey: 'anon',
+      body: { email, password: digest, role: 'admin', data: { username: 'claimant', role: 'admin' } } });
+    assert(!JSON.stringify(result).includes(digest));
+    // Without the stack hook the request holds neither typed credential, so nothing is proven or changed.
+    await assert.rejects(withAuthRequestPatch(page, 'claimant', 'secret', { fields: { role: 'admin' } }, signUp),
+      ActionInconclusive);
+    assert.deepEqual(received.at(-1)!.body, { email, password: digest, data: { username: 'claimant' } });
+    // An invalid change is refused before any hook sees the request.
+    await assert.rejects(withAuthRequestPatch(page, 'claimant', 'secret', {}, signUp, supabaseAuthRequestPatch(lease)),
+      ActionInconclusive);
+    assert.equal(received.length, 2);
+    // A query-like password reaches password sign-in in place of the application's derived value.
+    const signIn = () => page.evaluate(async ({ url, email, digest }) => (await fetch(`${url}/auth/v1/token?grant_type=password`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: 'anon' },
+      body: JSON.stringify({ email, password: digest }) })).status, { url: origin(gateway), email, digest });
+    await withAuthRequestPatch(page, 'kim', 'not-kims-password', { password: "' OR '1'='1" }, signIn,
+      supabaseAuthRequestPatch(lease));
+    assert.deepEqual(received.at(-1), { path: '/auth/v1/token?grant_type=password', apikey: 'anon',
+      body: { email, password: "' OR '1'='1" } });
+  } finally {
+    await browser.close();
+    gateway.close(); app.close();
   }
 });

@@ -20,6 +20,7 @@ const release = {
     { stableKey: 'check.b', executionId: 'suite', source: 'scenarios/b.json',
       featureId: '1', criterionId: 'b', points: 2 },
   ],
+  task: { contracts: [] as Array<{ path: string }> },
 };
 const references: Record<TestStack, { backend: TestStack; id: string; sourceSha256: string }> = {
   mongodb: { backend: 'mongodb', id: 'mongo-reference', sourceSha256: digest('b') },
@@ -294,6 +295,80 @@ test('unmapped executable imports and tampered identities fail closed', () => {
     write(root, 'src/stacks/stack-adapters.ts',
       "import './backends/unowned-reset.js';\n");
     write(root, 'src/stacks/backends/unowned-reset.ts', 'unowned\n');
-    assert.throws(() => scoped(root, 'reference', 'mongodb'), /unmapped stack-owned module/);
+    assert.throws(() => scoped(root, 'reference', 'mongodb'), /names no registered stack/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('registering another stack changes no existing stack scope', () => {
+  const root = fixture();
+  const contracted = { ...release, task: { contracts: [{ path: 'contracts/cart.md' }] } };
+  const cart = (http: string, convex = '') => write(root, 'tracks/ecommerce/contracts/cart.md',
+    `Add items.\n\n<!-- interface:http -->\n${http}\n<!-- /interface -->\n`
+    + (convex ? `\n<!-- interface:convex -->\n${convex}\n<!-- /interface -->\n` : ''));
+  const all = () => ({
+    postgres: scoped(root, 'reference', 'postgres', contracted),
+    mongodb: scoped(root, 'mutation', 'mongodb', contracted),
+    null: scoped(root, 'null', null, contracted),
+  });
+  const registry = (convex: boolean) => write(root, 'src/stacks/stack-adapters.ts', [
+    "import { mongodbAdapter } from './backends/mongodb-adapter.js';",
+    ...(convex ? ["import { convexAdapter } from './backends/convex-adapter.js';"] : []),
+    "import { postgresAdapter } from './backends/postgres-adapter.js';",
+    'const adapters = [',
+    ...(convex ? ['  convexAdapter,'] : []),
+    '  mongodbAdapter,',
+    '  postgresAdapter,',
+    '];',
+    '',
+  ].join('\n'));
+  try {
+    registry(false);
+    cart('Use POST /api/cart.');
+    const before = all();
+    registry(true);
+    write(root, 'src/stacks/backends/convex-adapter.ts', 'convex adapter\n');
+    write(root, 'src/stacks/backends/convex/platform.sql', 'convex asset\n');
+    cart('Use POST /api/cart.', 'Use api:add_to_cart.');
+    assert.deepEqual(all(), before);
+
+    cart('Use PUT /api/cart.', 'Use api:add_to_cart.');
+    const afterHttp = all();
+    assert.notEqual(afterHttp.postgres.sha256, before.postgres.sha256);
+    assert.notEqual(afterHttp.mongodb.sha256, before.mongodb.sha256);
+    assert.deepEqual(afterHttp.null, before.null);
+
+    write(root, 'src/stacks/stack-adapters.ts', [
+      "import { convexAdapter } from './backends/convex-adapter.js';",
+      "import './backends/postgres-adapter.js';",
+      'const fallback = convexAdapter.version;',
+      '',
+    ].join('\n'));
+    assert.throws(() => scoped(root, 'reference', 'postgres', contracted),
+      /uses another stack outside a registration/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a stack scope includes its runtime asset directory', () => {
+  const root = fixture();
+  try {
+    write(root, 'src/stacks/backends/postgres/reset.sql', 'reset v1\n');
+    const postgres = scoped(root, 'reference', 'postgres');
+    const mongodb = scoped(root, 'reference', 'mongodb');
+    write(root, 'src/stacks/backends/postgres/reset.sql', 'reset v2\n');
+    assert.notEqual(scoped(root, 'reference', 'postgres').sha256, postgres.sha256);
+    assert.deepEqual(scoped(root, 'reference', 'mongodb'), mongodb);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a stack module that imports another stack module fails closed', () => {
+  const root = fixture();
+  try {
+    write(root, 'src/stacks/backends/postgres-operations.ts', "import './mongodb-operations.js';\n");
+    assert.throws(() => scoped(root, 'reference', 'postgres'), /imports a module owned by mongodb/);
+    write(root, 'src/stacks/postgres-sql.ts', 'shared sql\n');
+    write(root, 'src/stacks/backends/postgres-operations.ts', "import '../postgres-sql.js';\n");
+    const postgres = scoped(root, 'reference', 'postgres');
+    write(root, 'src/stacks/postgres-sql.ts', 'changed shared sql\n');
+    assert.notEqual(scoped(root, 'reference', 'postgres').sha256, postgres.sha256);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -62,6 +62,9 @@ test('scheduled-restock identifiers match each native interface and stay opaque 
   const convex = agentVisibleContractText(text, {}, 'convex');
   assert.match(convex, /native `_id` string for `data-entity-id` and `restockId`/);
   assert.doesNotMatch(convex, /decimal|u64/);
+  const supabase = agentVisibleContractText(text, {}, 'supabase');
+  assert.match(supabase, /identifier accepted by `restockId` for the restock's `data-entity-id`/);
+  assert.doesNotMatch(supabase, /decimal|u64|native `_id`|api:/);
   for (const kind of ['http', 'reducer'] as const) {
     const rendered = agentVisibleContractText(text, {}, kind);
     assert.match(rendered, /`data-entity-id` as a decimal number/);

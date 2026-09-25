@@ -27,4 +27,9 @@ Use `api:assign_staff_role` with `{ accountId, role }`. Render `data-account-id`
 the native string account identifier.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Use the `assign_staff_role` PostgreSQL function with `{ accountId, role }`. Render
+`data-account-id` as the account identifier accepted by `accountId`, without precision loss.
+<!-- /interface -->
+
 `staff-role-select` offers the roles `staff`, `inventory`, and `admin` as its option values.

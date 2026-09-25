@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
-import { getSavedMongoDbCheckoutState } from '../src/stacks/backends/saved-mongodb-checkout.js';
-import { getSavedPostgresCheckoutState } from '../src/stacks/backends/saved-postgres-checkout.js';
+import { getSavedMongoDbCheckoutState } from '../src/stacks/backends/mongodb-saved-checkout.js';
+import { getSavedPostgresCheckoutState } from '../src/stacks/backends/postgres-saved-checkout.js';
 
 const READERS = { postgres: getSavedPostgresCheckoutState, mongodb: getSavedMongoDbCheckoutState } as const;
 

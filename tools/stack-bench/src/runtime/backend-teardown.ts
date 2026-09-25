@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readBackendLease, releaseResourceLocks, updateBackendLease } from './backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { ATTEMPT_CREATION_LABEL, attemptDocker } from './docker-network.js';
-import type { BackendCreationKind } from './backend-lease.js';
+import type { BackendCreationKind, BackendLease, BackendLeaseContainer } from './backend-lease.js';
 import type { TextCommandExecutor } from './command-executor.js';
 import { CODING_CONTAINER_AGENT, codingContainerWorkspaceHandoffCommands } from './coding-container-policy.js';
 
@@ -81,11 +81,18 @@ const DOCKER: DockerTeardownOperations = {
   wait,
 };
 
+// A leased container by its resource name, or a platform service by its role.
+type LeasedContainerKey = 'buildContainer' | 'browserContainer' | 'brokerContainer' | 'smokeContainer' | 'container'
+  | { service: string };
+
+function leasedContainer(lease: BackendLease, key: LeasedContainerKey): BackendLeaseContainer | null | undefined {
+  return typeof key === 'string' ? lease.resources[key] : lease.resources.serviceContainers?.[key.service];
+}
+
 export function stopLeasedContainer(leasePath: string, leaseToken: string,
-  docker: DockerTeardownOperations = DOCKER,
-  key: 'buildContainer' | 'browserContainer' | 'brokerContainer' | 'smokeContainer' | 'container' = 'buildContainer'): boolean {
+  docker: DockerTeardownOperations = DOCKER, key: LeasedContainerKey = 'buildContainer'): boolean {
   const lease = readBackendLease(leasePath, { token: leaseToken });
-  const container = lease.resources[key];
+  const container = leasedContainer(lease, key);
   if (!container) return true;
   if (container.owned !== true) return true;
   let actual = null;
@@ -136,23 +143,28 @@ export function stopLeasedContainer(leasePath: string, leaseToken: string,
   }
   updateBackendLease(leasePath,
     { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
-      next.resources[key]!.running = false;
-      next.resources[key]!.removedAt ??= new Date().toISOString();
+      const removed = leasedContainer(next, key)!;
+      removed.running = false;
+      removed.removedAt ??= new Date().toISOString();
       return next;
     });
   return true;
 }
 
-function removeAttemptNetwork(leasePath: string, leaseToken: string): boolean {
+function removeAttemptNetwork(leasePath: string, leaseToken: string, docker: typeof attemptDocker): boolean {
   const lease = readBackendLease(leasePath, { token: leaseToken });
   // Creation authority covers death between Docker create and recording its ID.
-  const order: BackendCreationKind[] = ['broker', 'browser', 'smoke', 'build', 'firewall', 'backend', 'network'];
+  // Platform services leave the anchor's namespace before the anchor goes.
+  const services = Object.keys(lease.resources.creationIntents ?? {})
+    .filter((kind): kind is `service-${string}` => kind.startsWith('service-')).sort();
+  const order: BackendCreationKind[] = ['broker', 'browser', 'smoke', 'build', ...services,
+    'firewall', 'backend', 'network'];
   for (const kind of order) {
     const intent = lease.resources.creationIntents?.[kind];
     if (!intent) continue;
     let resource;
     try {
-      resource = JSON.parse(attemptDocker(kind === 'network'
+      resource = JSON.parse(docker(kind === 'network'
         ? ['network', 'inspect', intent.name] : ['container', 'inspect', intent.name]))[0];
     } catch (error) {
       if (dockerMissing(error) || (kind === 'network' && dockerNetworkMissing(error))) continue;
@@ -163,9 +175,9 @@ function removeAttemptNetwork(leasePath: string, leaseToken: string): boolean {
     if (label !== intent.creationToken) throw new Error(`refusing cleanup of ${kind}: creation authority changed`);
     if (kind === 'network') {
       const cache = lease.resources.network?.cacheContainerId;
-      if (cache && resource.Containers?.[cache]) attemptDocker(['network', 'disconnect', resource.Id, cache]);
-      attemptDocker(['network', 'rm', resource.Id]);
-    } else attemptDocker(['rm', '-f', '--volumes', resource.Id]);
+      if (cache && resource.Containers?.[cache]) docker(['network', 'disconnect', resource.Id, cache]);
+      docker(['network', 'rm', resource.Id]);
+    } else docker(['rm', '-f', '--volumes', resource.Id]);
   }
   return true;
 }
@@ -173,22 +185,28 @@ function removeAttemptNetwork(leasePath: string, leaseToken: string): boolean {
 export function releaseBackendLease(
   leasePath: string,
   leaseToken: string,
-  { retainBackend = false, hostTeardown }: {
+  { retainBackend = false, hostTeardown, docker = DOCKER, attempt = attemptDocker }: {
     retainBackend?: boolean;
     hostTeardown?: ReturnType<typeof STACK_ADAPTER_REGISTRY.get>['teardown']['host'];
+    docker?: DockerTeardownOperations;
+    attempt?: typeof attemptDocker;
   } = {},
 ): boolean {
   let lease = readBackendLease(leasePath, { token: leaseToken });
   if (lease.state === 'released') return true;
   let released = true;
   for (const key of ['brokerContainer', 'browserContainer', 'smokeContainer', 'buildContainer'] as const) {
-    released = stopLeasedContainer(leasePath, leaseToken, DOCKER, key) && released;
+    released = stopLeasedContainer(leasePath, leaseToken, docker, key) && released;
   }
   if (lease.resources.network && !retainBackend && released) {
-    released = stopLeasedContainer(leasePath, leaseToken, DOCKER, 'container') && released;
-    if (released) released = removeAttemptNetwork(leasePath, leaseToken);
+    // Platform services join the anchor's namespace, so they go first.
+    for (const role of Object.keys(lease.resources.serviceContainers ?? {}).sort()) {
+      released = stopLeasedContainer(leasePath, leaseToken, docker, { service: role }) && released;
+    }
+    if (released) released = stopLeasedContainer(leasePath, leaseToken, docker, 'container') && released;
+    if (released) released = removeAttemptNetwork(leasePath, leaseToken, attempt);
   } else if (!retainBackend && released && lease.resources.creationIntents) {
-    released = removeAttemptNetwork(leasePath, leaseToken);
+    released = removeAttemptNetwork(leasePath, leaseToken, attempt);
   }
   released = (hostTeardown ?? STACK_ADAPTER_REGISTRY.get(lease.backend).teardown.host)({
       leasePath, leaseToken, lease, retainHost: retainBackend,

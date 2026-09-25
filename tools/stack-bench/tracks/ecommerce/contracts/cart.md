@@ -29,5 +29,9 @@ Use the `update_cart_quantity` reducer with the item identifier and quantity.
 Use `api:add_to_cart` with `{ itemId }` and `api:update_cart_quantity` with `{ itemId, quantity }`.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Use the `add_to_cart` PostgreSQL function with `{ itemId }` and `update_cart_quantity` with `{ itemId, quantity }`.
+<!-- /interface -->
+
 Use `checkout-submit` to check out. Use `orders-toggle` to open order history and `order-item`
 for each order created by checkout.

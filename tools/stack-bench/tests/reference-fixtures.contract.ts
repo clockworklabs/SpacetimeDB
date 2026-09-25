@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { hashDirectory } from '../src/evidence/provenance.js';
 import { loadReferenceRegistry, inspectImportedReference, selectReferenceFixture,
-  prepareReferenceFixtureSource, referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
+  prepareReferenceFixtureSource, referenceLayout, referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
   from '../src/references/reference-fixtures.js';
 import { resolveReferenceSelection } from '../src/references/reference-selection.js';
 
@@ -13,7 +13,7 @@ test('the reference registry binds its current fixtures and provenance', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.deepEqual(registry.fixtures.map(fixture => fixture.backend).sort(), ['convex', 'mongodb', 'postgres', 'spacetime']);
+  assert.deepEqual(registry.fixtures.map(fixture => fixture.backend).sort(), ['convex', 'mongodb', 'postgres', 'spacetime', 'supabase']);
   const escaped = structuredClone(registry);
   const escapedFixture = escaped.fixtures[0];
   assert(escapedFixture, 'the registry must contain a fixture');
@@ -33,6 +33,23 @@ test('reference validation contains malformed input and unsafe execution paths',
   assert(referenceMetadataIssues({ schemaVersion: 1, kind: 'node-api',
     installDirectories: ['server'], server: { directory: 'server' },
     client: { directory: 'client' } }).some(issue => issue.includes('must be listed')));
+});
+
+test('reference kinds and backends come from the adapters that deploy references', () => {
+  const client = { schemaVersion: 1, installDirectories: ['.', 'client'], client: { directory: 'client' } };
+  assert.deepEqual(referenceMetadataIssues({ ...client, kind: 'convex' }), []);
+  assert.deepEqual(referenceMetadataIssues({ ...client, kind: 'supabase' }), []);
+  assert(referenceMetadataIssues({ ...client, kind: 'node-api' })
+    .includes('reference.json server.directory is unsafe or missing'));
+  assert(referenceMetadataIssues({ ...client, kind: 'stub' }).includes('reference.json kind is invalid'));
+  assert.deepEqual(referenceLayout('supabase').buildSteps({ ...client, kind: 'supabase' }),
+    [{ directory: 'client', command: 'npm', args: ['run', 'build'] }]);
+  const registry = loadReferenceRegistry();
+  const stub = structuredClone(registry);
+  const stubFixture = stub.fixtures[0];
+  assert(stubFixture, 'the registry must contain a fixture');
+  stubFixture.backend = 'stub';
+  assert(validateReferenceRegistry(stub).issues.includes(`${stubFixture.id}: invalid backend`));
 });
 
 test('a recipe-bound full fixture can serve only its declared progression action levels', () => {

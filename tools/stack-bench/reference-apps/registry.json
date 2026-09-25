@@ -122,6 +122,30 @@
       "mutationManifests": [
         "grader/mutations/convex-ecommerce.json"
       ]
+    },
+    {
+      "id": "ecommerce-reference-supabase",
+      "backend": "supabase",
+      "track": "ecommerce",
+      "level": 3,
+      "actionLevels": [
+        1,
+        2,
+        3
+      ],
+      "recipes": [
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/supabase",
+      "origin": {
+        "kind": "authored",
+        "note": "Native Supabase ecommerce reference through dependency depth 3; draft until matching qualification passes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/supabase",
+        "sourceSha256": "7fac6736a8b8a64d285c2cc77a52e3a76ea1a7c9ff6d6353544eb4e72fd61a5e"
+      },
+      "mutationManifests": []
     }
   ]
 }

@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { GRADING_CAPABILITY_IDS } from '../src/actions/action-contract.js';
 import { describeStackTestabilityProblems,
-  resolveStackTestability } from '../src/campaigns/stack-testability.js';
+  resolveStackTestability, type TestabilityStack } from '../src/campaigns/stack-testability.js';
 import type { CompiledRecipePlan } from '../src/composition/composition-compiler.js';
 import type { CompiledStep } from '../src/composition/definition-compiler.js';
 import type { TrackAction } from '../src/composition/tracks.js';
@@ -45,7 +45,7 @@ const stub = { id: 'stub', grading: { transport: 'http' as const,
 const trackActions = [boundAction] as unknown as TrackAction[];
 const keys = (...ids: string[]) => ids.map(id => `pack.feature.${id}`);
 
-const resolve = (checkKeys: string[], stacks = [http, reducer, stub], setup?: CompiledStep[]) =>
+const resolve = (checkKeys: string[], stacks: TestabilityStack[] = [http, reducer, stub], setup?: CompiledStep[]) =>
   describeStackTestabilityProblems(resolveStackTestability({
     plan: plan(setup), checkKeys, trackActions, stacks }));
 
@@ -84,4 +84,18 @@ test('branches and feature setup count, unselected criteria do not', () => {
   ]);
   assert.deepEqual(resolve(keys('browser'), [reducer]), []);
   assert.throws(() => resolve(keys('missing')), /selected check pack\.feature\.missing is not in the recipe/);
+});
+
+test('a stack declares the named-action binding its transport name does not imply', () => {
+  const platform = { id: 'supabase', grading: { transport: 'http', capabilities: GRADING_CAPABILITY_IDS,
+    namedActionBinding: 'reducer' as const } };
+  assert.deepEqual(resolve(keys('replay', 'raced', 'namedReplay', 'trackCall'), [platform]), []);
+  assert.deepEqual(resolve(keys('routeOnly'), [platform]), [
+    'supabase cannot measure pack.feature.routeOnly: replayAs application action ship declares no reducer for supabase',
+  ]);
+  const undeclared = { id: 'native', grading: { transport: 'supabase' as const, capabilities: GRADING_CAPABILITY_IDS } };
+  assert.deepEqual(resolve(keys('replay', 'routeOnly'), [undeclared]), [
+    'native cannot measure pack.feature.replay: replayAs re-issues a captured HTTP write, '
+    + 'which native grading cannot replay; give the step a named action',
+  ]);
 });

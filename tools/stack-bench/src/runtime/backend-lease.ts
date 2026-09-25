@@ -62,7 +62,9 @@ export interface BackendLeaseNetwork {
   firewallInstalledAt: string | null;
 }
 
-export type BackendCreationKind = 'network' | 'backend' | 'build' | 'browser' | 'broker' | 'firewall' | 'smoke';
+// Platform services that join the attempt namespace are created as `service-<role>`.
+export type BackendCreationKind = 'network' | 'backend' | 'build' | 'browser' | 'broker' | 'firewall' | 'smoke'
+  | `service-${string}`;
 export type BackendCreationIntent = { name: string; creationToken: string };
 
 export interface BackendLeaseResource {
@@ -75,6 +77,8 @@ export interface BackendLeaseResource {
   browserContainer?: BackendLeaseContainer;
   brokerContainer?: BackendLeaseContainer;
   smokeContainer?: BackendLeaseContainer;
+  // Platform services by role, each joined to the anchor's namespace.
+  serviceContainers?: Record<string, BackendLeaseContainer>;
   network?: BackendLeaseNetwork;
   creationIntents?: Partial<Record<BackendCreationKind, BackendCreationIntent>>;
   locks: BackendResourceLock[];
@@ -141,6 +145,8 @@ interface CreateBackendLeaseInput {
   dataDir?: string | null;
   container?: Pick<BackendLeaseContainer, 'name' | 'id'> | null;
 }
+
+const SERVICE_ROLE = /^[a-z][a-z0-9]{0,31}$/;
 
 function fail(message: string): never {
   throw new Error(`invalid backend lease: ${message}`);
@@ -312,8 +318,15 @@ export function validateBackendLease(
   if (resources.lockIntent !== undefined && !Array.isArray(resources.lockIntent)) {
     fail('lockIntent must be an array');
   }
-  for (const key of ['browserContainer', 'brokerContainer', 'smokeContainer']) {
-    const container = resources[key];
+  if (resources.serviceContainers !== undefined && (!isRecord(resources.serviceContainers)
+    || Object.keys(resources.serviceContainers).some(role => !SERVICE_ROLE.test(role)))) {
+    fail('serviceContainers must map service roles to containers');
+  }
+  const services: [string, unknown][] = Object.entries(isRecord(resources.serviceContainers) ? resources.serviceContainers : {})
+    .map(([role, value]) => [`serviceContainers.${role}`, value]);
+  const sidecars: [string, unknown][] = [...['browserContainer', 'brokerContainer', 'smokeContainer']
+    .map((key): [string, unknown] => [key, resources[key]]), ...services];
+  for (const [key, container] of sidecars) {
     if (container === undefined) continue;
     if (!isRecord(container) || container.owned !== true
       || typeof container.name !== 'string' || !/^[a-z0-9][a-z0-9_.-]{0,127}$/.test(container.name)
@@ -326,7 +339,8 @@ export function validateBackendLease(
   if (resources.creationIntents !== undefined) {
     if (!isRecord(resources.creationIntents)) fail('creationIntents must be an object');
     for (const [kind, intent] of Object.entries(resources.creationIntents)) {
-      if (!['network', 'backend', 'build', 'browser', 'broker', 'firewall', 'smoke'].includes(kind)
+      if (!(['network', 'backend', 'build', 'browser', 'broker', 'firewall', 'smoke'].includes(kind)
+        || (kind.startsWith('service-') && SERVICE_ROLE.test(kind.slice('service-'.length))))
         || !isRecord(intent) || Object.keys(intent).some(key => !['name', 'creationToken'].includes(key))
         || typeof intent.name !== 'string' || !/^[a-z0-9][a-z0-9_.-]{0,127}$/.test(intent.name)
         || typeof intent.creationToken !== 'string' || !/^[a-f0-9]{32,64}$/.test(intent.creationToken)) {
@@ -357,8 +371,7 @@ export function validateBackendLease(
       if (!isRecord(resources.container) || resources.container.id !== network.namespaceContainerId) {
         fail('network namespace must belong to the leased backend container');
       }
-      for (const key of ['buildContainer', 'browserContainer', 'brokerContainer', 'smokeContainer']) {
-        const container = resources[key];
+      for (const [key, container] of [['buildContainer', resources.buildContainer], ...sidecars]) {
         if (isRecord(container) && container.networkMode !== `container:${network.namespaceContainerId}`) {
           fail(`${key} is outside the leased network namespace`);
         }

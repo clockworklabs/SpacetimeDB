@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { hashFiles, sha256 } from '../evidence/provenance.js';
-import { stackAdapterVersion } from '../stacks/stack-identities.js';
+import { STACK_IDS, stackAdapterVersion, stackApplicationInterface } from '../stacks/stack-identities.js';
+import { interfaceBlocksText } from './agent-visible-contract.js';
 import { formatZodError } from '../zod-error.js';
 
 export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 3;
@@ -25,6 +26,7 @@ interface QualificationRelease {
   contentSha256: string;
   track: string;
   checkCatalog: QualificationCheck[];
+  task?: { contracts: Array<{ path: string }> };
 }
 
 interface QualificationReference {
@@ -108,31 +110,15 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
     'scripts/build-spacetime-codec.mjs',
   ],
 });
-const STACK_OWNED_MODULES = new Map<string, string>([
-  ['src/stacks/backends/convex-adapter.ts', 'convex'],
-  ['src/stacks/backends/convex-browser-session.ts', 'convex'],
-  ['src/stacks/backends/convex-identity.ts', 'convex'],
-  ['src/stacks/backends/convex-lifecycle.ts', 'convex'],
-  ['src/stacks/backends/convex-operations.ts', 'convex'],
-  ['src/stacks/backends/convex-protocol.ts', 'convex'],
-  ['src/stacks/backends/mongodb-adapter.ts', 'mongodb'],
-  ['src/stacks/backends/mongodb-identity.ts', 'mongodb'],
-  ['src/stacks/backends/mongodb-operations.ts', 'mongodb'],
-  ['src/stacks/backends/postgres-adapter.ts', 'postgres'],
-  ['src/stacks/backends/postgres-identity.ts', 'postgres'],
-  ['src/stacks/backends/postgres-operations.ts', 'postgres'],
-  ['src/stacks/backends/saved-mongodb-checkout.ts', 'mongodb'],
-  ['src/stacks/backends/saved-postgres-checkout.ts', 'postgres'],
-  ['src/stacks/backends/saved-spacetime-checkout.ts', 'spacetime'],
-  ['src/stacks/backends/spacetime-adapter.ts', 'spacetime'],
-  ['src/stacks/backends/spacetime-browser-session.ts', 'spacetime'],
-  ['src/stacks/backends/spacetime-identity.ts', 'spacetime'],
-  ['src/stacks/backends/spacetime-operations.ts', 'spacetime'],
-  ['src/stacks/backends/stub-adapter.ts', 'stub'],
-  ['src/stacks/backends/stub-identity.ts', 'stub'],
-]);
+// A file under this root belongs to the stack named before the first '-' of its
+// name, or of its top directory for files a stack reads at runtime. Another stack's
+// files never enter a scope, so adding a stack changes no other stack's scope.
 const STACK_OWNED_ROOT = 'src/stacks/backends/';
 const BACKEND_ONLY_MODULES = new Set(['src/stacks/stack-adapters.ts']);
+// Registries hold one registration per stack. A scope hashes their shared lines and
+// its own stack's registrations only.
+const REGISTRY_MODULES = new Set(['src/stacks/stack-adapters.ts', 'src/stacks/stack-identities.ts']);
+const REGISTRATION = /^\s*(?:\[\s*'[a-z0-9]+',\s*)?(?:\{[^{}]*\}|[A-Za-z_$][\w$]*)\s*\]?,$/;
 const RUNTIME_INPUTS = Object.freeze([
   'package.json',
   'package-lock.json',
@@ -203,9 +189,50 @@ function localImports(path: string, root: string): string[] {
 function moduleOwner(relativePath: string): string | null {
   if (BACKEND_ONLY_MODULES.has(relativePath)) return '*';
   if (!relativePath.startsWith(STACK_OWNED_ROOT)) return null;
-  const owner = STACK_OWNED_MODULES.get(relativePath);
-  if (!owner) fail(`unmapped stack-owned module ${relativePath}`);
+  const owner = /^([a-z0-9]+)(?:-|\/)/.exec(relativePath.slice(STACK_OWNED_ROOT.length))?.[1];
+  if (!owner || !STACK_IDS.includes(owner)) fail(`stack-owned module ${relativePath} names no registered stack`);
   return owner;
+}
+
+// A stack's runtime assets: every file under src/stacks/backends/<stack>/.
+function stackAssets(root: string, stack: string): string[] {
+  const directory = resolve(root, STACK_OWNED_ROOT, stack);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name));
+}
+
+// Drops other stacks' registrations. Any other line that uses another stack's
+// symbols is refused, so logic cannot hide behind a registration.
+function registryProjection(path: string, root: string, stack: string | null): string {
+  const owners = new Map<string, string>();
+  const kept: string[] = [];
+  const relativePath = relative(root, path).replaceAll('\\', '/');
+  for (const line of readFileSync(path, 'utf8').replaceAll('\r\n', '\n').split('\n')) {
+    const imported = /^import[ ](?:\{([^}]+)\} from )?'(\.\/backends\/[^']+)';$/.exec(line);
+    if (imported) {
+      const owner = moduleOwner(relative(root, resolveLocalImport(path, imported[2]!, root)).replaceAll('\\', '/'))!;
+      for (const name of (imported[1] ?? '').split(',').map(part => part.trim()).filter(Boolean)) owners.set(name, owner);
+      if (owner === stack) kept.push(line);
+      continue;
+    }
+    const words = new Set(line.match(/[A-Za-z_$][\w$]*/g) ?? []);
+    const foreign = new Set([...owners].filter(([name]) => words.has(name)).map(([, owner]) => owner));
+    if (foreign.size === 0 || (foreign.size === 1 && foreign.has(stack ?? ''))) { kept.push(line); continue; }
+    if (foreign.size > 1 || !REGISTRATION.test(line)) fail(`${relativePath} uses another stack outside a registration: ${line.trim()}`);
+  }
+  return kept.join('\n');
+}
+
+// The contract text only this stack sees: its interface blocks in the recipe's contracts.
+function stackInterfaceText(root: string, release: QualificationRelease, stack: string): string {
+  if (!release.task?.contracts) fail('stack evidence requires the recipe contract fragments');
+  const selected = stackApplicationInterface(stack);
+  return [...new Set(release.task.contracts.map(fragment => fragment.path))].sort().map(path => {
+    const file = resolve(root, 'tracks', release.track, path);
+    if (!existsSync(file)) fail(`mapped contract does not exist: tracks/${release.track}/${path}`);
+    return `${path}\n${interfaceBlocksText(readFileSync(file, 'utf8').replaceAll('\r\n', '\n'), selected)}`;
+  }).join('\n');
 }
 
 function moduleGraph(root: string, entrypoints: readonly string[], {
@@ -222,7 +249,18 @@ function moduleGraph(root: string, entrypoints: readonly string[], {
     const owner = moduleOwner(relativePath);
     if (owner && (stack === null || (owner !== '*' && owner !== stack))) continue;
     files.add(path);
-    pending.push(...localImports(path, root));
+    const imports = localImports(path, root);
+    // A stack's modules may not reach into another stack's: that module would be
+    // pruned from this scope, so a change to it could not invalidate this stack.
+    if (owner && owner !== '*') {
+      for (const imported of imports) {
+        const importedOwner = moduleOwner(relative(root, imported).replaceAll('\\', '/'));
+        if (importedOwner && importedOwner !== '*' && importedOwner !== owner) {
+          fail(`${relativePath} imports a module owned by ${importedOwner}; move shared code outside ${STACK_OWNED_ROOT}`);
+        }
+      }
+    }
+    pending.push(...imports);
     pending.push(...(CHILD_ENTRYPOINTS[relativePath] ?? []).map(child => resolve(root, child)));
   }
   return [...files];
@@ -273,7 +311,9 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
     if (kind === 'reference' && mutation !== null) fail('reference evidence cannot declare a mutation');
   }
 
-  const files = moduleGraph(root, KIND_ENTRYPOINTS[kind], { stack });
+  const files = moduleGraph(root, [...KIND_ENTRYPOINTS[kind],
+    ...(stack === null ? [] : stackAssets(root, stack).map(path => relative(root, path)))], { stack });
+  const registries = files.filter(path => REGISTRY_MODULES.has(relative(root, path).replaceAll('\\', '/')));
   for (const input of RUNTIME_INPUTS) {
     const path = resolve(root, input);
     if (!existsSync(path)) fail(`mapped runtime input does not exist: ${input}`);
@@ -282,7 +322,13 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
   const trackWalk = resolve(root, 'tracks', release.track, 'walk.ts');
   if (!existsSync(trackWalk)) fail(`mapped track walk does not exist: tracks/${release.track}/walk.ts`);
   files.push(trackWalk);
-  const executable = hashFiles(files, { base: root, lineEndings: 'lf' });
+  const hashed = hashFiles(files.filter(path => !registries.includes(path)), { base: root, lineEndings: 'lf' });
+  const executable = stack === null && registries.length === 0 ? hashed : { sha256: sha256(canonicalDefinitionJson({
+    files: hashed.sha256,
+    registries: registries.map(path => ({ name: relative(root, path).replaceAll('\\', '/'),
+      sha256: sha256(registryProjection(path, root, stack)) })).sort((a, b) => a.name.localeCompare(b.name)),
+    ...(stack === null ? {} : { interface: sha256(stackInterfaceText(root, release, stack)) }),
+  })) };
   const adapter = stack === null ? null : { id: stack, version: stackAdapterVersion(stack) };
   const document: QualificationScopeDocument = {
     checksSha256: checkIdentity(release),

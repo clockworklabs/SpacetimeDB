@@ -4,6 +4,7 @@ import { referenceInstallSteps } from '../references/reference-install.js';
 import { POSTGRES_APPLICATION_IDENTITY, attemptDatabaseUrl } from './hosted-database-identity.js';
 import { resetMongoDb } from './backends/mongodb-operations.js';
 import { resetPostgres } from './backends/postgres-operations.js';
+import { requireLeasedDatabase, requireLeasedSpacetime } from './backend-reset-guard.js';
 import type { LeasedDatabase } from './backend-reset-guard.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI }
   from '../runtime/coding-container-policy.js';
@@ -17,7 +18,7 @@ import { convexApplicationEnvironment } from './backends/convex-operations.js';
 // What deploying a reference application needs from its caller. The reference
 // runner owns the container and the waiting; these operations own the shape of
 // each backend's deployment.
-export interface HostedReferenceHelpers {
+export interface ReferenceHelpers {
   phase: (message: string) => void;
   docker: (container: string, cwd: string, command: string,
     args: readonly string[], env?: Record<string, string>) => unknown;
@@ -30,20 +31,77 @@ export interface HostedReferenceHelpers {
   runSync: (purpose: string, file: string, args: readonly string[],
     options?: Record<string, unknown>) => string;
   dbName: (track: Pick<TrackDefinition, 'slug'>, runIndex: number) => string;
-}
-
-export interface SpacetimeReferenceHelpers {
-  docker: (container: string, cwd: string, command: string,
-    args: readonly string[], env?: Record<string, string>) => unknown;
-  startDetached: (container: string, cwd: string, name: string,
-    env: Record<string, string>,
-    options?: { script?: string; networkVisible?: boolean; port?: number }) => unknown;
-  waitFor: (url: string, timeoutMs: number, description: string,
-    logs: () => string) => Promise<void>;
-  containerLogs: (container: string, name: string) => string;
   moduleName: (track: TrackDefinition, runIndex: number) => string;
   loadTrack: (name: string) => Track;
 }
+
+// The one input every adapter's reference deployment receives. Each deployment
+// narrows the lease and the reference.json metadata it needs.
+export interface ReferenceDeployInput {
+  args: { backend: string; track: string; runIndex: number };
+  metadata: unknown;
+  lease: BackendLease;
+  track: Pick<Track, 'restartProbe' | 'slug'>;
+  container: string;
+  ports: StackRunPorts;
+  buildNetworkMode: string | undefined;
+  helpers: ReferenceHelpers;
+}
+
+export interface ReferenceBuildStep {
+  directory: string;
+  command: string;
+  args: readonly string[];
+}
+
+// The reference.json kind an adapter deploys, the metadata directories that kind
+// names beyond `client.directory` (listed ones must also be install directories),
+// and the model-free build checks that follow installation.
+export interface ReferenceLayout {
+  readonly kind: string;
+  readonly directories: readonly { readonly field: string; readonly installed: boolean }[];
+  buildSteps(metadata: Record<string, unknown>): ReferenceBuildStep[];
+}
+
+// The reference.json value at a dotted field path.
+export const metadataField = (metadata: Record<string, unknown>, field: string): unknown => field.split('.')
+  .reduce<unknown>((value, key) => value !== null && typeof value === 'object'
+    ? (value as Record<string, unknown>)[key] : undefined, metadata);
+const metadataPath = (metadata: Record<string, unknown>, field: string): string => String(metadataField(metadata, field));
+
+const clientBuild = (metadata: Record<string, unknown>): ReferenceBuildStep =>
+  ({ directory: metadataPath(metadata, 'client.directory'), command: 'npm', args: ['run', 'build'] });
+
+export const HOSTED_REFERENCE_LAYOUT: ReferenceLayout = {
+  kind: 'node-api',
+  directories: [{ field: 'server.directory', installed: true }],
+  buildSteps: metadata => [
+    { directory: metadataPath(metadata, 'server.directory'), command: 'npm', args: ['exec', 'tsc', '--', '--noEmit'] },
+    clientBuild(metadata),
+  ],
+};
+
+export const SPACETIME_REFERENCE_LAYOUT: ReferenceLayout = {
+  kind: 'spacetime',
+  directories: [{ field: 'moduleDirectory', installed: true }, { field: 'bindingsDirectory', installed: false }],
+  buildSteps: metadata => {
+    const module = metadataPath(metadata, 'moduleDirectory');
+    return [
+      { directory: module, command: CODING_CONTAINER_SPACETIME_CLI,
+        args: ['build', '--module-path', `${CODING_CONTAINER_APP_ROOT}/${module}`] },
+      { directory: module, command: CODING_CONTAINER_SPACETIME_CLI,
+        args: ['generate', '--lang', 'typescript', '--module-path', `${CODING_CONTAINER_APP_ROOT}/${module}`,
+          '--out-dir', `${CODING_CONTAINER_APP_ROOT}/${metadataPath(metadata, 'bindingsDirectory')}`, '--yes', '--no-config'] },
+      clientBuild(metadata),
+    ];
+  },
+};
+
+// A reference whose `start` script serves the client against the leased platform.
+export const startScriptLayout = (kind: string): ReferenceLayout =>
+  ({ kind, directories: [], buildSteps: metadata => [clientBuild(metadata)] });
+
+export const CONVEX_REFERENCE_LAYOUT = startScriptLayout('convex');
 
 export interface HostedReferenceMetadata {
   installDirectories: string[];
@@ -57,61 +115,52 @@ export interface SpacetimeReferenceMetadata extends ReferenceInstallMetadata {
   client: { directory: string };
 }
 
-export interface ConvexReferenceMetadata {
+interface StartScriptReferenceMetadata {
   installDirectories: string[];
   client: { directory: string };
 }
 
-export async function deployConvexReference({ metadata, lease, container, ports, helpers }: {
-  args: { backend: string; runIndex: number };
-  metadata: ConvexReferenceMetadata;
-  lease: BackendLease;
-  container: string;
-  ports: StackRunPorts;
-  helpers: HostedReferenceHelpers;
-}): Promise<void> {
-  const environment: Record<string, string> = { ...convexApplicationEnvironment(lease), VITE_PORT: String(ports.vite) };
+// The application's start script migrates, seeds and serves the client; the
+// platform services are already running in the leased namespace.
+export async function deployStartScriptReference({ metadata: rawMetadata, container, ports, helpers }: ReferenceDeployInput,
+  platformEnvironment: Record<string, string>, label: string): Promise<void> {
+  const metadata = rawMetadata as StartScriptReferenceMetadata;
+  const environment: Record<string, string> = { ...platformEnvironment, VITE_PORT: String(ports.vite) };
   for (const directory of metadata.installDirectories) {
     helpers.phase(`installing ${directory}`);
     helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${directory}`,
       'npm', ['ci', '--no-audit', '--no-fund']);
   }
-  helpers.phase('deploying Convex reference application');
+  helpers.phase(`deploying ${label} reference application`);
   helpers.startDetached(container, CODING_CONTAINER_APP_ROOT, 'reference-application', environment, { script: 'start' });
-  await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, 'Convex application',
+  await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, `${label} application`,
     () => helpers.containerLogs(container, 'reference-application'));
 }
 
-type HostedLease = LeasedDatabase;
+export const deployConvexReference = async (input: ReferenceDeployInput): Promise<void> =>
+  deployStartScriptReference(input, convexApplicationEnvironment(input.lease), 'Convex');
 
 interface SpacetimeLease {
   resources: { module: string; serverUri: string;
     buildContainer?: { networkMode?: string } | null };
 }
 
-export interface HostedReferenceDeployment {
+interface HostedReferenceDeployment {
   args: { backend: string; runIndex: number };
   metadata: HostedReferenceMetadata;
-  lease: HostedLease;
+  lease: LeasedDatabase;
   track: Pick<Track, 'restartProbe' | 'slug'>;
   container: string;
   ports: Pick<StackRunPorts, 'dbPort' | 'vite'>;
   buildNetworkMode: string | undefined;
-  helpers: HostedReferenceHelpers;
-}
-
-export interface SpacetimeReferenceDeployment {
-  args: { track: string; runIndex: number };
-  metadata: SpacetimeReferenceMetadata;
-  lease: SpacetimeLease;
-  container: string;
-  ports: Pick<StackRunPorts, 'vite'>;
-  buildNetworkMode: string | undefined;
-  helpers: SpacetimeReferenceHelpers;
+  helpers: ReferenceHelpers;
 }
 
 type HostedDatabase = { expected: string; containerId: string };
 
+function hostedDeployment(input: ReferenceDeployInput): HostedReferenceDeployment {
+  return { ...input, metadata: input.metadata as HostedReferenceMetadata, lease: requireLeasedDatabase(input.lease) };
+}
 
 function validateHostedDatabase({ args, lease, track, helpers }:
   HostedReferenceDeployment): HostedDatabase {
@@ -130,7 +179,7 @@ async function deployHostedReference(input: HostedReferenceDeployment, { databas
   prepare }: {
   databaseUrl: (target: Pick<HostedReferenceDeployment, 'ports' | 'lease' | 'buildNetworkMode'>) => string;
   extraEnv?: Record<string, string>;
-  prepare: (database: HostedDatabase, helpers: HostedReferenceHelpers) => void;
+  prepare: (database: HostedDatabase, helpers: ReferenceHelpers) => void;
 }): Promise<void> {
   const { args, metadata, lease, track, container, ports, buildNetworkMode, helpers } = input;
   helpers.phase('preparing database');
@@ -160,30 +209,37 @@ async function deployHostedReference(input: HostedReferenceDeployment, { databas
   helpers.phase('reference application ready');
 }
 
-export function deployPostgresReference(input: HostedReferenceDeployment): Promise<void> {
+export function deployPostgresReference(input: ReferenceDeployInput): Promise<void> {
   const { user, password } = POSTGRES_APPLICATION_IDENTITY;
-  return deployHostedReference(input, {
+  const hosted = hostedDeployment(input);
+  return deployHostedReference(hosted, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) => lease.resources.network
       ? attemptDatabaseUrl({ backend: 'postgres', database: lease.resources.database, ownershipToken: lease.ownershipToken ?? '' })
       : `postgresql://${user}:${password}@${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
-    prepare: (_database, helpers) => resetPostgres({ lease: input.lease,
+    prepare: (_database, helpers) => resetPostgres({ lease: hosted.lease,
       exec: (command, args, options) => helpers.runSync('resetting PostgreSQL reference database', command, args, { ...options }) }),
   });
 }
 
-export function deployMongoDbReference(input: HostedReferenceDeployment): Promise<void> {
-  return deployHostedReference(input, {
+export function deployMongoDbReference(input: ReferenceDeployInput): Promise<void> {
+  const hosted = hostedDeployment(input);
+  return deployHostedReference(hosted, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) => lease.resources.network
       ? attemptDatabaseUrl({ backend: 'mongodb', database: lease.resources.database, ownershipToken: lease.ownershipToken ?? '' })
       : `mongodb://${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}?replicaSet=rs0&directConnection=true`,
     extraEnv: { JWT_SECRET: 'stack-bench-reference-only-secret-2026' },
-    prepare: (_database, helpers) => resetMongoDb({ lease: input.lease,
+    prepare: (_database, helpers) => resetMongoDb({ lease: hosted.lease,
       exec: (command, args, options) => helpers.runSync('resetting MongoDB reference database', command, args, { ...options }) }),
   });
 }
 
-export async function deploySpacetimeReference({ args, metadata, lease, container, ports,
-  buildNetworkMode, helpers }: SpacetimeReferenceDeployment): Promise<void> {
+export async function deploySpacetimeReference({ args, metadata: rawMetadata, lease: backendLease, container, ports,
+  buildNetworkMode, helpers }: ReferenceDeployInput): Promise<void> {
+  const metadata = rawMetadata as SpacetimeReferenceMetadata;
+  const lease: SpacetimeLease = { resources: {
+    ...requireLeasedSpacetime(backendLease).resources,
+    buildContainer: backendLease.resources.buildContainer,
+  } };
   for (const step of referenceInstallSteps(metadata)) {
     helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${step.directory}`,
       step.command, step.args);

@@ -11,17 +11,20 @@ import { sha256 } from '../evidence/provenance.js';
 import { parseExactImageReference } from '../runtime/container-image.js';
 import { STACK_BENCH_RUNNER_PLATFORM } from '../runtime/runner-environment.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
+import { stackReleaseImages } from '../stacks/stack-identities.js';
 import { formatZodError } from '../zod-error.js';
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 2;
 export type ReleaseState = 'candidate' | 'qualified';
-export type ReleaseImageRole = 'controller' | 'build-sandbox' | 'postgres' | 'mongodb' | 'convex' | 'npm-cache';
+// Stacks with their own pinned platform images add their release roles.
+const RELEASE_IMAGE_ROLES = Object.freeze(['controller', 'build-sandbox', 'postgres', 'mongodb',
+  ...stackReleaseImages().map(image => image.role), 'npm-cache']) as readonly [string, ...string[]];
 export type ReleaseFileRole = 'compose' | 'dependency' | 'operator-guide' | 'public-key'
   | 'sbom' | 'secrets-template' | 'support-policy';
 
 export interface ReleaseImage {
   id: string;
-  role: ReleaseImageRole;
+  role: string;
   reference: string;
   digest: string;
   platform: typeof STACK_BENCH_RUNNER_PLATFORM;
@@ -95,7 +98,7 @@ const hashSchema = z.string().regex(HASH, 'must be a SHA-256');
 const idSchema = z.string().regex(ID, 'is invalid');
 const imageSchema = z.strictObject({
   id: idSchema,
-  role: z.enum(['controller', 'build-sandbox', 'postgres', 'mongodb', 'convex', 'npm-cache']),
+  role: z.enum(RELEASE_IMAGE_ROLES),
   reference: z.string(),
   digest: hashSchema,
   platform: z.literal(STACK_BENCH_RUNNER_PLATFORM),

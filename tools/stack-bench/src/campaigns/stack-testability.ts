@@ -83,6 +83,9 @@ export function resolveStackTestability(input: StackTestabilityInput): StackTest
     const steps = [...eachStep(stepsForCheck(input.plan, check))];
     for (const stack of input.stacks) {
       const provided = new Set<string>(stack.grading.capabilities);
+      const { transport } = stack.grading;
+      const binding = stack.grading.namedActionBinding
+        ?? (transport === 'reducer' ? 'reducer' : transport === 'http' ? 'path' : null);
       for (const step of steps) {
         const action = step.do;
         for (const capability of ACTION_REGISTRY.get(action).capabilities) {
@@ -90,7 +93,7 @@ export function resolveStackTestability(input: StackTestabilityInput): StackTest
           report({ stack: stack.id, check, action,
             reason: `needs the ${capability} capability, which ${stack.id} does not provide` });
         }
-        if (readsCapturedHttpWrite(step, stack.grading.transport) && stack.grading.transport !== 'http') {
+        if (readsCapturedHttpWrite(step, transport) && transport !== 'http') {
           report({ stack: stack.id, check, action,
             reason: `re-issues a captured HTTP write, which ${stack.id} grading cannot replay; give the step a named action` });
         }
@@ -102,11 +105,11 @@ export function resolveStackTestability(input: StackTestabilityInput): StackTest
           continue;
         }
         const id = named.id ?? step.action ?? '';
-        if (stack.grading.transport === 'reducer' && !named.reducer) {
+        if (binding === 'reducer' && !named.reducer) {
           report({ stack: stack.id, check, action,
             reason: `application action ${id} declares no reducer for ${stack.id}` });
         }
-        if (stack.grading.transport === 'http' && !named.path) {
+        if (binding === 'path' && !named.path) {
           report({ stack: stack.id, check, action,
             reason: `application action ${id} declares no route for ${stack.id}` });
         }

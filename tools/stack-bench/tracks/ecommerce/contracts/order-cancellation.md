@@ -19,3 +19,7 @@ Use the `cancel_order` reducer.
 <!-- interface:convex -->
 Use `api:cancel_order` with `{ orderId }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `cancel_order` PostgreSQL function with `{ orderId }`.
+<!-- /interface -->

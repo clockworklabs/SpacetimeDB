@@ -21,3 +21,7 @@ Expose `admin_transfer_stock` with arguments in this order: `itemId: u64`,
 <!-- interface:convex -->
 Use `api:admin_transfer_stock` with `{ itemId, fromWarehouseId, toWarehouseId, quantity }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `admin_transfer_stock` PostgreSQL function with `{ itemId, fromWarehouseId, toWarehouseId, quantity }`.
+<!-- /interface -->

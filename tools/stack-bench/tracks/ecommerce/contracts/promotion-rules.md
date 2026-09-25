@@ -24,5 +24,11 @@ Use `api:create_promotion` with `{ code, discountPercent, startMicros, endMicros
 Both time arguments are numeric microseconds since the Unix epoch.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Use the `create_promotion` PostgreSQL function with
+`{ code, discountPercent, startMicros, endMicros, usageLimit }`.
+Both time arguments are numeric microseconds since the Unix epoch.
+<!-- /interface -->
+
 On a listed rule, `promotion-start` and `promotion-end` show the dates as entered, in ISO
 `YYYY-MM-DD` form.

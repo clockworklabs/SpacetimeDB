@@ -1,13 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { currentEngineIdentity } from '../evidence/artifacts.js';
 import { sha256 } from '../evidence/provenance.js';
 import { RESTRICTED_PORTS } from '../composition/product-config.js';
+import { STACK_BENCH_ROOT } from '../package-root.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
-import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
-import { DEFAULT_CONVEX_SERVER_URI } from '../stacks/backends/convex-identity.js';
-import { CONVEX_BACKEND_IMAGE } from '../stacks/backends/convex-lifecycle.js';
+import { loopbackHttpUri } from '../runtime/backend-lease.js';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import { STACK_IDS, stackIdentity } from '../stacks/stack-identities.js';
 
 interface CampaignRuntimePlan {
   state: string;
@@ -59,9 +60,12 @@ export function verifyCampaignRuntime(plan: CampaignRuntimePlan,
     || build?.platform !== expected.platform) {
     throw new Error('release manifest images do not match the recorded test plan');
   }
-  if (plan.definition.stacks.some(stack => stack.id === 'convex')
-    && manifest.images.find(image => image.role === 'convex')?.reference !== CONVEX_BACKEND_IMAGE) {
-    throw new Error('release manifest must include the pinned Convex backend image for this test plan');
+  for (const stack of plan.definition.stacks.filter(stack => STACK_IDS.includes(stack.id))) {
+    for (const image of stackIdentity(stack.id).releaseImages ?? []) {
+      if (manifest.images.find(entry => entry.role === image.role)?.reference !== image.reference) {
+        throw new Error(`release manifest must include the pinned ${image.description} for this test plan`);
+      }
+    }
   }
   return structuredClone(expected);
 }
@@ -80,13 +84,16 @@ export function campaignExecutionEnvironment(plan: CampaignRuntimePlan,
   return executionEnv;
 }
 
+// A stack whose own server listens on a dedicated host port names the variable
+// that carries its URI; each run slot offsets the configured port.
 export function campaignSlotEnvironment(env: NodeJS.ProcessEnv, stack: string | null,
   runIndex: number): NodeJS.ProcessEnv {
   const executionEnv = { ...env };
-  if (stack !== 'spacetime' && stack !== 'convex') return executionEnv;
-  const key = stack === 'spacetime' ? 'STACK_BENCH_STDB_URI' : 'STACK_BENCH_CONVEX_URI';
-  const base = loopbackHttpUri(executionEnv[key]
-    ?? (stack === 'spacetime' ? DEFAULT_SPACETIME_SERVER_URI : DEFAULT_CONVEX_SERVER_URI));
+  if (stack === null || !STACK_ADAPTER_REGISTRY.ids.includes(stack)) return executionEnv;
+  const { config, serverUriVariable: key } = STACK_ADAPTER_REGISTRY.get(stack).orchestrator;
+  if (!key) return executionEnv;
+  const base = loopbackHttpUri(config({ root: STACK_BENCH_ROOT, env: executionEnv,
+    helpers: { exists: existsSync } }).lease.serverUri);
   const port = Number(base.port) + runIndex;
   if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535 || RESTRICTED_PORTS.has(port)) {
     throw new RangeError(`campaign run slot ${runIndex} cannot allocate a ${stack} host port`);

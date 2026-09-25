@@ -7,7 +7,8 @@ import { createBackendLease, publicBackendLease, readBackendLease, validateBacke
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 
 import { attemptNetworkRules, recordAttemptCreation, dockerHostGatewayArguments, dockerHostServiceAddress,
-  installAttemptFirewall, createAttemptNetwork, createAttemptContainer } from '../src/runtime/docker-network.js';
+  installAttemptFirewall, createAttemptNetwork, createAttemptContainer, createAttemptService,
+  startAttemptContainer } from '../src/runtime/docker-network.js';
 
 test('only the authenticated owned browser uses its private shared memory', () => {
   const root = mkdtempSync(join(tmpdir(), 'browser-shm-'));
@@ -259,4 +260,56 @@ test('a released lease cannot authorize new attempt resources', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a platform service joins the exact anchor namespace, capped, with its secrets outside the command line', () => {
+  const root = mkdtempSync(join(tmpdir(), 'attempt-service-'));
+  try {
+    const lease = createBackendLease({ backend: 'supabase', track: 'ecommerce', runIndex: 0,
+      runId: 'attempt-service', serverUri: 'http://127.0.0.1:13410', database: 'postgres' });
+    const anchor = 'a'.repeat(64), id = 'c'.repeat(64);
+    const path = join(root, 'lease.json');
+    writeBackendLease(path, lease);
+    assert.throws(() => createAttemptService(path, lease, 'auth', `sha256:${'d'.repeat(64)}`,
+      { args: [], command: [], limits: { cpuCount: 1, memoryBytes: 1, pids: 1 } }), /no backend namespace/);
+    lease.resources.container = { name: 'anchor', id: anchor, owned: true };
+    lease.resources.network = { name: 'attempt', id: 'b'.repeat(64), namespaceContainerId: anchor,
+      hostAddresses: ['172.20.0.1'], services: [], firewallSha256: null, firewallInstalledAt: null };
+    writeBackendLease(path, lease);
+    const calls: { args: string[]; environment?: Record<string, string> }[] = [];
+    const docker = (args: string[], _input?: string, environment?: Record<string, string>) => {
+      calls.push({ args, ...(environment ? { environment } : {}) });
+      if (args[0] === 'create') return id;
+      if (args[0] === 'start') throw Object.assign(new Error('Command failed: docker start'), { status: 1, signal: null,
+        stderr: 'password="private value"', stdout: '' });
+      return JSON.stringify({ Status: 'created', Error: 'OCI start failed', ExitCode: 128, OOMKilled: false });
+    };
+    const container = createAttemptService(path, lease, 'auth', `sha256:${'d'.repeat(64)}`, {
+      args: ['-e', 'GOTRUE_API_PORT=9999', '-e', 'GOTRUE_JWT_SECRET'], command: ['auth'],
+      limits: { cpuCount: 1, memoryBytes: 128 * 1024 ** 2, pids: 256 },
+      environment: { GOTRUE_JWT_SECRET: 'private-jwt-secret' }, docker,
+    });
+    const create = calls[0]!;
+    assert.equal(create.args[create.args.indexOf('--network') + 1], `container:${anchor}`);
+    for (const flag of ['--init', 'no-new-privileges:true']) assert(create.args.includes(flag));
+    assert.equal(create.args[create.args.indexOf('--cap-drop') + 1], 'ALL');
+    assert.equal(create.args[create.args.indexOf('--memory') + 1], String(128 * 1024 ** 2));
+    assert.equal(create.args[create.args.indexOf('--memory-swap') + 1], String(128 * 1024 ** 2));
+    assert.equal(create.args[create.args.indexOf('--pids-limit') + 1], '256');
+    assert.deepEqual(create.args.slice(-2), [`sha256:${'d'.repeat(64)}`, 'auth']);
+    assert(!create.args.join(' ').includes('private-jwt-secret'));
+    assert.deepEqual(create.environment, { GOTRUE_JWT_SECRET: 'private-jwt-secret' });
+    const recorded = readBackendLease(path);
+    assert.deepEqual(recorded.resources.serviceContainers?.auth, container);
+    assert.equal(container.networkMode, `container:${anchor}`);
+    assert.equal(create.args[create.args.indexOf('--name') + 1], recorded.resources.creationIntents?.['service-auth']?.name);
+    assert.throws(() => startAttemptContainer(container.id, 'auth service', docker), error => {
+      assert.match(String(error), /Docker could not start owned auth service container/);
+      assert.match(String(error), /OCI start failed/);
+      assert.doesNotMatch(String(error), /private value/);
+      return true;
+    });
+    assert.throws(() => createAttemptService(path, recorded, 'auth', `sha256:${'d'.repeat(64)}`,
+      { args: [], command: [], limits: { cpuCount: 1, memoryBytes: 1, pids: 1 }, docker }), /already has creation authority/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

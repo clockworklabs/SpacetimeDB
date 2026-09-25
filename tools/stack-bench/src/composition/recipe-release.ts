@@ -8,6 +8,7 @@ import { compileScenarioDefinition, compileTrackManifest } from './definition-co
 import { canonicalDefinitionJson, canonicalizeDefinition, readDefinitionJson }
   from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
+import { interfaceNeutralText } from './agent-visible-contract.js';
 import type {
   CompiledOwnedTaskFragment,
   CompiledRecipeSelectionCatalog,
@@ -401,10 +402,12 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
         id, owners, ...(ownerConditions === undefined ? {} : { ownerConditions }),
         ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text,
       })),
+      // Interface blocks belong to the stacks that use them; their qualification
+      // scopes hash them (qualification-scope.ts), so the shared meaning excludes them.
       contracts: documents.contracts.map(({ id, owners, ownerConditions,
         requiresFeatures, text }) => ({
         id, owners, ...(ownerConditions === undefined ? {} : { ownerConditions }),
-        ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text,
+        ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text: interfaceNeutralText(text),
       })),
     },
     checks: details.map(detail => ({

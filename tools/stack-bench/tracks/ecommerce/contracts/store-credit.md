@@ -19,3 +19,7 @@ Use `credit-checkout` in the cart. Each `order-item` shows `payment-credit-amoun
 <!-- interface:convex -->
 Use `api:grant_credit` with `{ accountId, amountMinor, reference }` and `api:checkout_credit` with `{}`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `grant_credit` PostgreSQL function with `{ accountId, amountMinor, reference }` and `checkout_credit` with `{}`.
+<!-- /interface -->

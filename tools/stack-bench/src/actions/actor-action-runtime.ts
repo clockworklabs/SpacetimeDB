@@ -1,4 +1,5 @@
 import type { RefusalKind, ResponseContract } from './named-action-runtime.js';
+import type { PlatformAuthPatch } from './auth-request-patch.js';
 import type { BrowserContext, Page } from 'playwright';
 import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import { finding, renderFinding } from './action-findings.js';
@@ -111,6 +112,8 @@ export interface Actor {
 }
 
 export interface BrowserCapability {
+  // The stack's own password endpoints, when its platform serves accounts.
+  readonly authRequestPatch?: PlatformAuthPatch | null;
   readonly defaultWithin: number;
   roomName(value: string): string;
   scopedUser(value: string): string;

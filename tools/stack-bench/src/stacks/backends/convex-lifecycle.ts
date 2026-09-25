@@ -13,7 +13,8 @@ import { leaseFromEnv } from '../../runtime/backend-lease.js';
 import { loadTrack, portsFor } from '../../composition/tracks.js';
 import type { StackLifecycleInput } from '../stack-adapter-contract.js';
 
-export const CONVEX_BACKEND_IMAGE = 'ghcr.io/get-convex/convex-backend@sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743';
+import { CONVEX_BACKEND_IMAGE } from './convex-identity.js';
+
 export const CONVEX_PROCESS_RECORD = `${CODING_CONTAINER_CONTROL_DIR}/restart-convex.pid`;
 
 interface ConvexLifecycleInput {

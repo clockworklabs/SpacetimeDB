@@ -38,3 +38,8 @@ Use `api:admin_restock` with `{ itemId, warehouseId, quantity }`.
 The singular native `item` and `warehouse` tables use Convex `_id` identifiers.
 The `stock.item_id` and `stock.warehouse_id` fields refer to those same identifiers.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `admin_restock` PostgreSQL function with `{ itemId, warehouseId, quantity }`.
+The `item`, `warehouse`, and `stock` tables are in the `public` schema.
+<!-- /interface -->

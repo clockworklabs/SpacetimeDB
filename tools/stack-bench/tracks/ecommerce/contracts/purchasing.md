@@ -25,3 +25,7 @@ Use the `buy_now` reducer with the item identifier.
 <!-- interface:convex -->
 Use the `api:buy_now` mutation with `{ itemId }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `buy_now` PostgreSQL function with `{ itemId }`.
+<!-- /interface -->

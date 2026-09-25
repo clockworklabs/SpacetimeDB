@@ -276,9 +276,8 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
     const { runIndices: selected, keys } = await selectRunResources({
       track, backends: plan.stacks.map(stack => stack.id), count: plan.summary.parallelism,
       serverUri: (runIndex, backend) => {
-        const slot = campaignSlotEnvironment(env, backend, runIndex);
-        return backend === 'spacetime' ? slot.STACK_BENCH_STDB_URI!
-          : backend === 'convex' ? slot.STACK_BENCH_CONVEX_URI! : null;
+        const variable = STACK_ADAPTER_REGISTRY.get(backend).orchestrator.serverUriVariable;
+        return variable ? campaignSlotEnvironment(env, backend, runIndex)[variable]! : null;
       },
       env, probePort, excludedRunIndices, signal,
     });

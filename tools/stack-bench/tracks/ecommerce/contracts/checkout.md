@@ -16,3 +16,7 @@ Use the `checkout` reducer.
 <!-- interface:convex -->
 Use the `api:checkout` mutation with `{}`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `checkout` PostgreSQL function with `{}`.
+<!-- /interface -->

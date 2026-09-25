@@ -1,16 +1,20 @@
+import { SPACETIME_RUNTIME } from './spacetime-runtime.js';
 import type { GradingCapabilityId } from '../../actions/action-contract.js';
+import type { BackendLease } from '../../runtime/backend-lease.js';
+import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 import { createSpacetimeGradingContext,
   spacetimeNamedActionRequest } from '../stack-grading-operations.js';
 import { activateSpacetime, controlSpacetime } from '../spacetime-lifecycle.js';
 import { noConnectionUrl, spacetimeBuildContainerPlan,
   spacetimeSetupMetadata } from '../stack-agent-operations.js';
-import { deploySpacetimeReference } from '../stack-reference-operations.js';
+import { deploySpacetimeReference, SPACETIME_REFERENCE_LAYOUT } from '../stack-reference-operations.js';
 import { spacetimeOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopSpacetimeHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { prepareSpacetimeDatabase, proveSpacetimeUse,
   resetSpacetime, setSpacetimeStock, getSpacetimeStock, getSpacetimeCheckoutState } from './spacetime-operations.js';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
+import { getSavedSpacetimeCheckoutState } from './spacetime-saved-checkout.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
 import { requireLeasedSpacetime } from '../backend-reset-guard.js';
 
@@ -49,10 +53,13 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   },
 }, {
   lease: stackLeaseOperations('spacetime'),
-  reset: { run: resetSpacetime, requiresReseed: true },
+  reset: { run: ({ lease, app, exec }: { lease: BackendLease; app: string; exec?: TextCommandExecutor }) =>
+    resetSpacetime({ lease: requireLeasedSpacetime(lease), app, exec }), requiresReseed: true },
   databaseWrite: { setStock: setSpacetimeStock },
-  databaseRead: { getStock: getSpacetimeStock, getCheckoutState: getSpacetimeCheckoutState },
-  database: { prepare: prepareSpacetimeDatabase, proveUse: proveSpacetimeUse },
+  databaseRead: { getStock: getSpacetimeStock, getCheckoutState: getSpacetimeCheckoutState,
+    getSavedCheckoutState: getSavedSpacetimeCheckoutState },
+  database: { prepare: prepareSpacetimeDatabase, proveUse: ({ lease, marker, exec }: { lease: BackendLease; marker: unknown;
+    exec?: TextCommandExecutor }) => proveSpacetimeUse({ lease: requireLeasedSpacetime(lease), marker, exec }) },
   grading: { context: createSpacetimeGradingContext,
     transport: 'reducer', capabilities: SPACETIME_GRADING_CAPABILITIES },
   namedAction: { request: spacetimeNamedActionRequest },
@@ -72,6 +79,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
     findDatabaseUrls: (_input: { text: string }) => [],
   },
   buildContainer: { plan: spacetimeBuildContainerPlan },
-  reference: { deploy: deploySpacetimeReference },
-  orchestrator: { config: spacetimeOrchestratorConfig },
+  reference: { layout: SPACETIME_REFERENCE_LAYOUT, deploy: deploySpacetimeReference },
+  orchestrator: { config: spacetimeOrchestratorConfig, serverUriVariable: 'STACK_BENCH_STDB_URI' },
+  runtime: SPACETIME_RUNTIME,
 }, { version: SPACETIME_ADAPTER_VERSION });

@@ -35,6 +35,8 @@ export interface NamedActionRequest {
   readonly responseContract?: ResponseContract;
   readonly applicationRejectionStatuses?: readonly number[];
   readonly body?: string | null;
+  // Headers the platform requires on every call. Caller credentials replace any of the same name.
+  readonly headers?: Readonly<Record<string, string>>;
   readonly method?: string;
   readonly url?: string | null;
 }
@@ -66,6 +68,8 @@ export interface ConcurrentCallResult {
 
 export interface NamedActionsCapability {
   readonly spacetime?: SpacetimeTarget | null;
+  // Endpoints outside the page origin that receive the application's own writes.
+  readonly applicationWriteEndpoints?: readonly string[];
   classifyResponse?(request: Omit<NamedActionRequest, 'body'>, response: {status: number; text: string}): NamedActionResponse;
   readonly lastCalls: {
     get(): ConcurrentCallResult | null;
@@ -146,7 +150,9 @@ export function bindBrowserRequest(actor: Actor, request: NamedActionRequest, cr
     if (!binding) inconclusive('replay-unavailable', { actor: actor.name,
       detail: 'the current Convex credential transport was not observed unambiguously' });
   }
-  return (headers = credentials) => {
+  return (given = credentials) => {
+    const headers = { ...Object.fromEntries(Object.entries(request.headers ?? {}).filter(([key]) =>
+      !Object.keys(given).some(name => name.toLowerCase() === key.toLowerCase()))), ...given };
     if (!binding?.argument) return { headers, body: request.body };
     const current = Object.entries(headers).find(([key]) => /^authorization$/i.test(key))?.[1].match(/^Bearer (.+)$/i)?.[1];
     if (!current) inconclusive('replay-unavailable', { actor: actor.name, detail: 'the bound Convex session is missing' });
@@ -261,6 +267,14 @@ export async function browserCredentials(actor: Actor, targetUrl: string, allowA
   return allowAnonymous || cookies.length || Object.keys(headers).some(key => AUTH_HEADER.test(key)) ? headers : null;
 }
 
+// URL prefixes outside the page origin where a stack's platform receives the
+// application's own writes, as its adapter declares them for the leased run.
+export function applicationWrites(backend: string, env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  if (!backend) return [];
+  const { writeEndpoints } = STACK_ADAPTER_REGISTRY.get(backend).grading;
+  return writeEndpoints ? writeEndpoints(leaseFromEnv(env, { backend, active: true }).lease) : [];
+}
+
 type NamedFetch = NamedActionsCapability['fetch'];
 const defaultFetch: NamedFetch = (url, options) => fetch(url, options);
 
@@ -273,6 +287,7 @@ export function createNamedActionsCapability({
   sleep,
   fetchImpl = defaultFetch,
   now = evidenceNowMs,
+  applicationWriteEndpoints = applicationWrites(backend),
 }: {
   readonly actions?: readonly NamedAction[];
   readonly backend: string;
@@ -285,6 +300,7 @@ export function createNamedActionsCapability({
   readonly sleep: NamedActionsCapability['sleep'];
   readonly fetchImpl?: NamedFetch;
   readonly now?: () => number;
+  readonly applicationWriteEndpoints?: readonly string[];
 }): NamedActionsCapability {
   const nativeOrigin = backend === 'convex'
     ? new URL(leaseFromEnv(process.env, { backend: 'convex', active: true }).lease.resources.serverUri!).origin : null;
@@ -301,6 +317,7 @@ export function createNamedActionsCapability({
       return classifyResponseContract({ ...request, ...(responseContract ? { responseContract } : {}) }, response);
     },
     spacetime,
+    applicationWriteEndpoints,
     resolve: (id: string) => (actions ?? []).find(action => action.id === id) ?? null,
     request(action: NamedAction, input: unknown) {
       return STACK_ADAPTER_REGISTRY.get(backend).namedAction.request(

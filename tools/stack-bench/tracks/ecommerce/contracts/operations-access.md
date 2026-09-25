@@ -33,3 +33,7 @@ Use the `ship_order` reducer.
 <!-- interface:convex -->
 Use `api:ship_order` with `{ orderId }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `ship_order` PostgreSQL function with `{ orderId }`.
+<!-- /interface -->

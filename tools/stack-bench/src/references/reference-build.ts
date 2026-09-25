@@ -16,14 +16,14 @@ import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { resolveContainerImage } from '../runtime/container-image.js';
 import type { ResolvedContainerImage } from '../runtime/container-image.js';
 import { runningContainerIdentity } from '../runtime/container-identity.js';
-import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI,
+import { CODING_CONTAINER_APP_ROOT,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack, portsFor } from '../composition/tracks.js';
 import { inspectImportedReference, loadReferenceRegistry,
-  prepareReferenceFixtureSource, REFERENCE_METADATA_FILE, referenceMetadataIssues,
+  prepareReferenceFixtureSource, REFERENCE_METADATA_FILE, referenceLayout, referenceMetadataIssues,
   validateReferenceRegistry } from './reference-fixtures.js';
 import { referenceInstallSteps } from './reference-install.js';
 
@@ -54,13 +54,7 @@ interface FixtureBuild {
 
 type ImageIdentity = ResolvedContainerImage;
 
-type ReferenceMetadataForBuild = ReferenceInstallMetadata & {
-  kind: string;
-  server: { directory: string };
-  client: { directory: string };
-  moduleDirectory: string;
-  bindingsDirectory: string;
-};
+type ReferenceMetadataForBuild = ReferenceInstallMetadata & { kind: string };
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
@@ -114,22 +108,9 @@ function buildCommands(metadata: ReferenceMetadataForBuild, container: string,
   for (const step of referenceInstallSteps(metadata)) {
     run(container, `${CODING_CONTAINER_APP_ROOT}/${step.directory}`, step.command, step.args, commands);
   }
-  if (metadata.kind === 'node-api' || metadata.kind === 'convex') {
-    if (metadata.kind === 'node-api') {
-    run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.server.directory}`,
-      'npm', ['exec', 'tsc', '--', '--noEmit'], commands);
-    }
-  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
-    'npm', ['run', 'build'], commands);
-    return;
+  for (const step of referenceLayout(metadata.kind).buildSteps(metadata)) {
+    run(container, `${CODING_CONTAINER_APP_ROOT}/${step.directory}`, step.command, step.args, commands);
   }
-  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`, CODING_CONTAINER_SPACETIME_CLI,
-    ['build', '--module-path', `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`], commands);
-  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`, CODING_CONTAINER_SPACETIME_CLI,
-    ['generate', '--lang', 'typescript', '--module-path', `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`,
-      '--out-dir', `${CODING_CONTAINER_APP_ROOT}/${metadata.bindingsDirectory}`, '--yes', '--no-config'], commands);
-  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
-    'npm', ['run', 'build'], commands);
 }
 
 async function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Promise<FixtureBuild> {

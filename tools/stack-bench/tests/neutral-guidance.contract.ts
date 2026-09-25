@@ -7,10 +7,10 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 const root = STACK_BENCH_ROOT;
 const files = Object.values(resolveGuidanceProfile('neutral',
-  ['mongodb', 'postgres', 'spacetime']).documents)
+  ['mongodb', 'postgres', 'spacetime', 'supabase']).documents)
   .map(document => resolve(root, document.path));
 const prescribedFiles = Object.values(resolveGuidanceProfile('prescribed',
-  ['mongodb', 'postgres', 'spacetime']).documents)
+  ['mongodb', 'postgres', 'spacetime', 'supabase']).documents)
   .map(document => resolve(root, document.path));
 const presentationAdvice = /brand|styling|theme|colour|color|app title/i;
 

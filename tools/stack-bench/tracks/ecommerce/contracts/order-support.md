@@ -18,3 +18,7 @@ link action must expose its input in `data-action-input` for the named
 <!-- interface:convex -->
 `linkSupportOrder` is the `api:link_support_order` mutation with `{ caseId, orderId }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+`linkSupportOrder` is the `link_support_order` PostgreSQL function with `{ caseId, orderId }`.
+<!-- /interface -->

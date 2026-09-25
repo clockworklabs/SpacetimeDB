@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -69,11 +69,14 @@ test('agent-visible contracts include only the selected stack section', () => {
   const source = [
     '<!-- interface:http -->HTTP contract<!-- /interface -->',
     '<!-- interface:reducer -->reducer contract<!-- /interface -->',
+    '<!-- interface:supabase -->supabase contract<!-- /interface -->',
   ].join('\n');
   assert.equal(agentVisibleContractText(source, {}, 'http').trim(), 'HTTP contract');
   assert.equal(agentVisibleContractText(source, {}, 'reducer').trim(), 'reducer contract');
+  assert.equal(agentVisibleContractText(source, {}, 'supabase').trim(), 'supabase contract');
   assert.throws(() => agentVisibleContractText(source), /requires a selected application interface/);
-  assert.throws(() => agentVisibleContractText('<!-- interface:other -->wrong<!-- /interface -->', {}, 'http'),
+  assert.equal(agentVisibleContractText('<!-- interface:other -->wrong<!-- /interface -->', {}, 'http'), '');
+  assert.throws(() => agentVisibleContractText('<!-- interface:HTTP -->wrong<!-- /interface -->', {}, 'http'),
     /invalid markers/);
   assert.throws(() => agentVisibleContractText('<!-- interface:http -->broken', {}, 'http'),
     /invalid markers/);
@@ -82,6 +85,18 @@ test('agent-visible contracts include only the selected stack section', () => {
     '<!-- interface:reducer -->nested<!-- /interface -->',
     '<!-- /interface -->',
   ].join('\n'), {}, 'http'), /invalid markers/);
+});
+
+test('every contract interface section belongs to an interface a guidance profile selects', () => {
+  const declared = new Set(readdirSync(join(ROOT, 'conditions', 'guidance'))
+    .flatMap(file => Object.values(JSON.parse(readFileSync(join(ROOT, 'conditions', 'guidance', file), 'utf8'))
+      .applicationInterfaces as Record<string, string>)));
+  const contracts = join(ROOT, 'tracks', 'ecommerce', 'contracts');
+  for (const file of readdirSync(contracts)) {
+    for (const [, id] of readFileSync(join(contracts, file), 'utf8').matchAll(/<!-- interface:([^ ]*) -->/g)) {
+      assert(declared.has(id!), `${file} has a section for undeclared interface ${id}`);
+    }
+  }
 });
 
 function printPrompt(app: string, request: unknown, extraArgs: readonly string[] = []): string {

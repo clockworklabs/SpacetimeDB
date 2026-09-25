@@ -3,7 +3,6 @@
 import { execFileSync } from 'node:child_process';
 import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.js';
-import { requireLeasedDatabase, requireLeasedSpacetime } from './backend-reset-guard.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 import { leasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 import { prepareSpacetimeDatabase } from './backends/spacetime-operations.js';
@@ -21,15 +20,8 @@ interface BackendResetRequest {
 export function resetBackend({ backend, app, exec }: BackendResetRequest): unknown {
   const { lease } = leaseFromEnv(process.env, { backend, active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-  const input = { app, ...(exec ? { exec } : {}) };
-  if (adapter.id === 'convex') return adapter.reset.run();
-  if (adapter.id === 'postgres' || adapter.id === 'mongodb') {
-    return adapter.reset.run({ ...input, lease: requireLeasedDatabase(lease) });
-  }
-  if (adapter.id === 'spacetime') {
-    return adapter.reset.run({ ...input, lease: requireLeasedSpacetime(lease) });
-  }
-  throw new Error(`stack adapter ${backend} does not support reset`);
+  if (!('run' in adapter.reset)) throw new Error(`stack adapter ${backend} does not support reset`);
+  return adapter.reset.run({ app, lease, ...(exec ? { exec } : {}) });
 }
 
 // Candidate rollback and isolated scenarios both start from a fresh database.

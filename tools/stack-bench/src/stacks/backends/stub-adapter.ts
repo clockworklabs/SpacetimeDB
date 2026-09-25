@@ -38,5 +38,5 @@ export const stubAdapter = defineStackAdapter('stub', {
     findDatabaseUrls: (_input: { text: string }) => [],
   },
   buildContainer: { plan: () => standardBuildContainerPlan() },
-  orchestrator: { config: standardOrchestratorConfig },
+  orchestrator: { config: standardOrchestratorConfig, serverUriVariable: null },
 }, { version: STUB_ADAPTER_VERSION });

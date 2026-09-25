@@ -1,19 +1,37 @@
-import { MONGODB_ADAPTER_VERSION } from './backends/mongodb-identity.js';
-import { POSTGRES_ADAPTER_VERSION } from './backends/postgres-identity.js';
-import { SPACETIME_ADAPTER_VERSION } from './backends/spacetime-identity.js';
-import { STUB_ADAPTER_VERSION } from './backends/stub-identity.js';
-import { CONVEX_ADAPTER_VERSION } from './backends/convex-identity.js';
+import type { StackIdentity, StackReleaseImage } from './stack-adapter-contract.js';
+import { MONGODB_IDENTITY } from './backends/mongodb-identity.js';
+import { POSTGRES_IDENTITY } from './backends/postgres-identity.js';
+import { SPACETIME_IDENTITY } from './backends/spacetime-identity.js';
+import { STUB_IDENTITY } from './backends/stub-identity.js';
+import { CONVEX_IDENTITY } from './backends/convex-identity.js';
+import { SUPABASE_IDENTITY } from './backends/supabase-identity.js';
 
-const VERSIONS = new Map<string, string>([
-  ['convex', CONVEX_ADAPTER_VERSION],
-  ['mongodb', MONGODB_ADAPTER_VERSION],
-  ['postgres', POSTGRES_ADAPTER_VERSION],
-  ['spacetime', SPACETIME_ADAPTER_VERSION],
-  ['stub', STUB_ADAPTER_VERSION],
+const IDENTITIES = new Map<string, StackIdentity>([
+  ['convex', CONVEX_IDENTITY],
+  ['mongodb', MONGODB_IDENTITY],
+  ['postgres', POSTGRES_IDENTITY],
+  ['spacetime', SPACETIME_IDENTITY],
+  ['stub', STUB_IDENTITY],
+  ['supabase', SUPABASE_IDENTITY],
 ]);
 
+export const STACK_IDS: readonly string[] = Object.freeze([...IDENTITIES.keys()]);
+
+export function stackIdentity(id: string): StackIdentity {
+  const found = IDENTITIES.get(id);
+  if (!found) throw new Error(`unknown stack adapter ${JSON.stringify(id)}`);
+  return found;
+}
+
 export function stackAdapterVersion(id: string): string {
-  const version = VERSIONS.get(id);
-  if (!version) throw new Error(`unknown stack adapter ${JSON.stringify(id)}`);
-  return version;
+  return stackIdentity(id).version;
+}
+
+export function stackApplicationInterface(id: string): string {
+  return stackIdentity(id).applicationInterface;
+}
+
+// Every stack's pinned release images, in registry order.
+export function stackReleaseImages(): StackReleaseImage[] {
+  return [...IDENTITIES.values()].flatMap(identity => identity.releaseImages ?? []);
 }

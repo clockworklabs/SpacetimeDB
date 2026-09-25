@@ -25,4 +25,8 @@ Saving a rule is the named `saveReorderRule` application action.
 `saveReorderRule` is the `api:save_reorder_rule` mutation with `{ itemId, threshold, quantity }`.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+`saveReorderRule` is the `save_reorder_rule` PostgreSQL function with `{ itemId, threshold, quantity }`.
+<!-- /interface -->
+
 Use `buy-now` inside an `item-card` to create stock changes that evaluate a reorder rule.

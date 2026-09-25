@@ -12,13 +12,15 @@
     "mongodb": "backends/mongodb.md",
     "postgres": "backends/postgres.md",
     "spacetime": "backends/spacetime.md",
-    "convex": "backends/convex.md"
+    "convex": "backends/convex.md",
+    "supabase": "backends/supabase.md"
   },
   "applicationInterfaces": {
     "mongodb": "http",
     "postgres": "http",
     "spacetime": "reducer",
-    "convex": "convex"
+    "convex": "convex",
+    "supabase": "supabase"
   },
   "skills": {
     "mongodb": [],
@@ -28,7 +30,8 @@
       "typescript-client",
       "cli"
     ],
-    "convex": []
+    "convex": [],
+    "supabase": []
   },
   "credentialAliases": {
     "stackbench-admin-2026": "store-admin-2026",

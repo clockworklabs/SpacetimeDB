@@ -52,7 +52,8 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   if (input.requestPatch) {
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
-      user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }));
+      user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
+      browser.authRequestPatch);
     await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
       .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
     return result;
@@ -99,7 +100,8 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   if (input.requestPatch) {
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
-      user, password, input.requestPatch, () => signIn({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }));
+      user, password, input.requestPatch, () => signIn({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
+      browser.authRequestPatch);
     await currentUser.or(actor.loc('auth-error')).filter({ visible: true }).first()
       .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
     return result;

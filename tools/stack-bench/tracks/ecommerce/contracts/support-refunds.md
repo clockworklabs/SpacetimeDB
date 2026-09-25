@@ -21,3 +21,7 @@ after its refund button is disabled or removed. Within an `order-item`, use
 <!-- interface:convex -->
 `supportRefund` is the `api:support_refund` mutation with `{ caseId }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+`supportRefund` is the `support_refund` PostgreSQL function with `{ caseId }`.
+<!-- /interface -->

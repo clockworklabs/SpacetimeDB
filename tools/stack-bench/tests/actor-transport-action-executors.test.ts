@@ -1766,3 +1766,31 @@ test('an accepted forged write is decided by its stored effect, not the status',
   assert.equal(checked.status, 'passed');
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
 });
+
+test('platform request headers reach single and concurrent calls under the caller bearer token', async () => {
+  const seen: UnknownRecord[] = [];
+  const actor = (token: string | null) => ({ name: token ?? 'guest', writes: [], context: { cookies: async () => [] },
+    page: { evaluate: async (callback: () => unknown) => runInNewContext(`(${callback.toString()})()`,
+      { localStorage: { length: 0 }, sessionStorage: { length: 0 }, window: { getSessionToken: () => token } }) } });
+  const provided = services(new Map([['a', actor('token-a')], ['b', actor('token-b')], ['guest', actor(null)]]), {
+    fetchImpl: async (_url, options) => { seen.push(record(options.headers)); return namedResponse(200, true); },
+  });
+  const named = record(provided.capabilities['named-actions']);
+  const platform = { ...named, request: () => ({ url: 'http://platform.test/rest/v1/rpc/checkout', method: 'POST',
+    body: '{}', headers: { apikey: 'project-key', Authorization: 'Bearer project-key' } }) };
+  const capabilities = { ...provided.capabilities, 'named-actions': platform };
+  const namedAction = { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] };
+  for (const step of [
+    { do: 'callAction', actor: 'a', action: 'checkout', namedAction, settleMs: 0 },
+    { do: 'callAction', actor: 'guest', action: 'checkout', namedAction, authentication: 'none', settleMs: 0 },
+    { do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout', settleMs: 0 },
+  ]) {
+    const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities });
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+  }
+  assert.deepEqual(seen.map(headers => [headers.apikey, headers.Authorization]), [
+    ['project-key', 'Bearer token-a'], ['project-key', 'Bearer project-key'],
+    ['project-key', 'Bearer token-a'], ['project-key', 'Bearer token-b'],
+  ]);
+  assert(seen.every(headers => Object.keys(headers).filter(key => /^authorization$/i.test(key)).length === 1));
+});

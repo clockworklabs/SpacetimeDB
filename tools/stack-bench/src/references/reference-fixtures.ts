@@ -6,6 +6,8 @@ import { basename, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashDirectory, type HashFilesResult } from '../evidence/provenance.js';
 import { hashAppSource, seedAppSource } from '../runtime/source-snapshot.js';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import { metadataField, type ReferenceLayout } from '../stacks/stack-reference-operations.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 
@@ -59,13 +61,27 @@ const errorMessage = (error: unknown): string =>
 
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
 export const REFERENCE_METADATA_FILE = 'reference.json';
-const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb', 'convex']);
-const FIXTURE_KINDS = new Set(['node-api', 'spacetime', 'convex']);
 const LOCAL_BUILD_DIRECTORIES = new Set(['node_modules', 'dist']);
 const FORBIDDEN_DIRECTORIES = new Set(['node_modules', 'dist', 'module_bindings', 'stack-bench']);
 const FORBIDDEN_FILES = [/^\.env(?:\..*)?$/i, /\.mutation-backup(?:\..*)?$/i];
 const WORKSTATION_PATHS = [/[A-Z]:[\\/](?:Users|Development)[\\/]/i];
 const TRUNCATION_MARKER = /…\d+\s+(?:tokens|chars)\s+truncated…/i;
+
+// Reference backends and layouts come from the adapters that deploy references.
+const referenceLayouts = (): { backend: string; layout: ReferenceLayout }[] =>
+  STACK_ADAPTER_REGISTRY.ids.flatMap(backend => {
+    const adapter = STACK_ADAPTER_REGISTRY.get(backend);
+    return 'reference' in adapter ? [{ backend, layout: adapter.reference.layout }] : [];
+  });
+
+const layoutOfKind = (kind: unknown): ReferenceLayout | undefined =>
+  referenceLayouts().find(entry => entry.layout.kind === kind)?.layout;
+
+export function referenceLayout(kind: string): ReferenceLayout {
+  const layout = layoutOfKind(kind);
+  if (!layout) throw new Error(`no stack deploys reference kind ${JSON.stringify(kind)}`);
+  return layout;
+}
 
 export function loadReferenceRegistry(path: string = REGISTRY): ReferenceRegistry {
   return JSON.parse(readFileSync(path, 'utf8')) as ReferenceRegistry;
@@ -96,6 +112,7 @@ export function validateReferenceRegistry(registry: unknown,
   if (fixtures.length === 0) {
     return { ok: false, issues: [...issues, 'fixtures must be a non-empty array'] };
   }
+  const references = referenceLayouts();
   const ids = new Set();
   const tuples = new Set();
   const referencedManifests = new Map();
@@ -108,7 +125,7 @@ export function validateReferenceRegistry(registry: unknown,
     const label = fixture.id ?? '<unnamed>';
     if (typeof fixture.id !== 'string' || !fixture.id || ids.has(fixture.id)) issues.push(`${label}: id is missing or duplicated`);
     ids.add(fixture.id);
-    if (!BACKENDS.has(fixture.backend)) issues.push(`${label}: invalid backend`);
+    if (!references.some(entry => entry.backend === fixture.backend)) issues.push(`${label}: invalid backend`);
     if (typeof fixture.track !== 'string' || !fixture.track) issues.push(`${label}: track is required`);
     if (!Number.isInteger(fixture.level) || fixture.level < 1) issues.push(`${label}: level must be a positive integer`);
     const recipes = fixture.recipes ?? [];
@@ -281,9 +298,8 @@ export function referenceMetadataIssues(metadata: unknown): string[] {
   if (!record(metadata)) return ['reference.json must contain an object'];
   const failures: string[] = [];
   if (metadata.schemaVersion !== 1) failures.push('reference.json schemaVersion must be 1');
-  if (typeof metadata.kind !== 'string' || !FIXTURE_KINDS.has(metadata.kind)) {
-    failures.push('reference.json kind is invalid');
-  }
+  const layout = layoutOfKind(metadata.kind);
+  if (!layout) failures.push('reference.json kind is invalid');
   const installDirectories = Array.isArray(metadata.installDirectories)
     ? metadata.installDirectories : [];
   const paths: Array<[string, unknown, boolean]> = [];
@@ -294,14 +310,8 @@ export function referenceMetadataIssues(metadata: unknown): string[] {
       failures.push('reference.json installDirectories must be unique');
     }
   }
-  const client = record(metadata.client) ? metadata.client : null;
-  paths.push(['client.directory', client?.directory, true]);
-  if (metadata.kind === 'node-api') {
-    const server = record(metadata.server) ? metadata.server : null;
-    paths.push(['server.directory', server?.directory, true]);
-  } else if (metadata.kind === 'spacetime') {
-    paths.push(['moduleDirectory', metadata.moduleDirectory, true],
-      ['bindingsDirectory', metadata.bindingsDirectory, false]);
+  for (const { field, installed } of [{ field: 'client.directory', installed: true }, ...layout?.directories ?? []]) {
+    paths.push([field, metadataField(metadata, field), installed]);
   }
   for (const [label, path, mustInstall] of paths) {
     if (!isSafeRelativePath(path)) failures.push(`reference.json ${label} is unsafe or missing`);

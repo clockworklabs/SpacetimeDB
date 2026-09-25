@@ -42,7 +42,6 @@ import {
   createDatabaseReadCapability,
   createLifecycleCapability,
 } from '../src/actions/runtime-action-executors.js';
-import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import type { LeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import { createMongoDbOrderDataReader } from '../src/stacks/backends/mongodb-operations.js';
 import { createConvexOrderDataReader } from '../src/stacks/backends/convex-operations.js';
@@ -56,6 +55,8 @@ import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
+import type { PlatformAuthPatch } from '../src/actions/auth-request-patch.js';
+import { applicationWrites } from '../src/actions/named-action-runtime.js';
 import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
 import { startNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
 import { recordConvexSession, recordConvexMutationResult } from '../src/stacks/backends/convex-browser-session.js';
@@ -129,6 +130,8 @@ type GradeRunContext = {
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
   mongoOrderReader?: ReturnType<typeof createMongoDbOrderDataReader>;
   convexOrderReader?: ReturnType<typeof createConvexOrderDataReader>;
+  authRequestPatch?: PlatformAuthPatch | null;
+  applicationWriteEndpoints?: readonly string[];
   actionCancellation?: { reason: string | null };
   runId: string;
   roomName: (base: string) => string;
@@ -303,7 +306,9 @@ export class Actor {
   networkInterruption?: NetworkInterruption;
 
   constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false,
-    readonly replaySpacetime = false, readonly spacetimeBackend = false) {
+    readonly replaySpacetime = false, readonly spacetimeBackend = false,
+    // A stack's platform endpoints that receive the application's writes, whatever they are named.
+    readonly writeEndpoints: readonly string[] = []) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -353,7 +358,7 @@ export class Actor {
     page.on('request', req => {
       if (req.method() === 'GET' || req.method() === 'OPTIONS') return;
       const url = req.url();
-      if (!WRITE_URL_RE.test(url)) return;
+      if (!WRITE_URL_RE.test(url) && !this.writeEndpoints.some(endpoint => url.startsWith(endpoint))) return;
       let body: JsonRecord | null = null;
       try {
         const candidate: unknown = JSON.parse(req.postData() ?? '');
@@ -473,6 +478,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   const actorAccess = Object.freeze({ get: (name: string) => actors.get(name) });
   const runtimeValues = Object.freeze({
     applicationUrl: ctx.url,
+    authRequestPatch: ctx.authRequestPatch ?? null,
     defaultWithin,
     expand: (value: unknown) => expand(value, ctx),
     hyphenatedScopedUser: (name: string) => `${name}-${ctx.scope}`,
@@ -506,7 +512,8 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const fresh = await context.newPage();
         entry.page = fresh;
         fresh.setDefaultTimeout(defaultWithin);
-        const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication, actor.replaySpacetime);
+        const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication, actor.replaySpacetime,
+          actor.spacetimeBackend, actor.writeEndpoints);
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -567,6 +574,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       set: value => { ctx.lastCalls = value; },
     }),
     sleep: abortableSleep,
+    applicationWriteEndpoints: ctx.applicationWriteEndpoints,
   });
   const concurrency = Object.freeze({
     defaultWithin,
@@ -906,7 +914,8 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       if (networkInterruption) await runBrowserInfrastructureOperation('network interruption attach', () =>
         networkInterruption.attach(context, page));
       page.setDefaultTimeout(SETUP_WITHIN);
-      const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name), args.backend === 'spacetime');
+      const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name), args.backend === 'spacetime',
+        ctx.applicationWriteEndpoints);
       actor.networkInterruption = networkInterruption;
       await actor.ready;
       actor.annotate = Boolean(args.media);
@@ -1055,9 +1064,16 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
 // Main
 
 export function gradeDatabaseLease(backend?: string, env: NodeJS.ProcessEnv = process.env): LeasedDatabase | null {
-  if ((backend !== 'mongodb' && backend !== 'postgres')
-    || !(env.STACK_BENCH_LEASE || env.STACK_BENCH_LEASE_TOKEN)) return null;
-  return requireLeasedDatabase(leaseFromEnv(env, { backend, active: true }).lease);
+  if (!backend || !(env.STACK_BENCH_LEASE || env.STACK_BENCH_LEASE_TOKEN)) return null;
+  // A stack whose observers read and write a leased database container declares how.
+  const { databaseLease } = STACK_ADAPTER_REGISTRY.get(backend).grading;
+  return databaseLease ? databaseLease(leaseFromEnv(env, { backend, active: true }).lease) : null;
+}
+
+// A platform that serves accounts itself supplies how its own password requests are changed.
+function platformAuthPatch(backend: string): PlatformAuthPatch | null {
+  const { authRequestPatch } = STACK_ADAPTER_REGISTRY.get(backend).grading;
+  return authRequestPatch ? authRequestPatch(leaseFromEnv(process.env, { backend, active: true }).lease) : null;
 }
 
 async function main(): Promise<void> {
@@ -1132,7 +1148,8 @@ async function main(): Promise<void> {
   const ctx: GradeRunContext = { actionCancellation: { reason: null }, runId, roomName: (base: string) => `${base}-${runId}`,
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
-    databaseLease,
+    databaseLease, authRequestPatch: args.backend ? platformAuthPatch(args.backend) : null,
+    applicationWriteEndpoints: args.backend ? applicationWrites(args.backend) : [],
     nullControl: args.nullControl,
     contractIds: selectedTask?.task.contractIds,
     appDir: args.app, savedReader: args.savedDiagnostic?.reader };

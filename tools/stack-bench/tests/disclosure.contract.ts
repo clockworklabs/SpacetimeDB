@@ -32,7 +32,7 @@ function* eachStep(steps: readonly CompiledStep[]): Generator<CompiledStep> {
 // adversarial inputs, wire types, status semantics and parameter order need review.
 // Track actions describe executor requirements; their existence is NOT disclosure.
 function missingNames(steps: readonly CompiledStep[], delivered: string,
-  applicationInterface: 'http' | 'reducer' | 'convex', track: Track): string[] {
+  applicationInterface: string, track: Track): string[] {
   const missing = new Set<string>();
   const needs = (kind: string, name: string | undefined): void => {
     if (name && !delivered.includes(name)) missing.add(`${kind} ${name}`);
@@ -49,6 +49,7 @@ function missingNames(steps: readonly CompiledStep[], delivered: string,
     if (action) {
       if (applicationInterface === 'reducer') needs('reducer', action.reducer);
       else if (applicationInterface === 'convex') needs('mutation', action.reducer ? `api:${action.reducer}` : undefined);
+      else if (applicationInterface === 'supabase') needs('function', action.reducer ? `\`${action.reducer}\`` : undefined);
       else if (action.path && !placeholder(delivered).includes(placeholder(action.path))) {
         missing.add(`route ${action.path}`);
       }
@@ -83,7 +84,7 @@ test('scored interface names are disclosed by their issued dependency step on ea
   }
   const byKey = new Map(binding.plan.checks.map(check =>
     [check.stableKey, steps.get(`${check.packId}|${check.checkGroupId}|${check.criterionId}`)]));
-  const stacks = [...new Set([...campaign.definition.stacks.map(stack => stack.id), 'convex'])];
+  const stacks = [...new Set([...campaign.definition.stacks.map(stack => stack.id), 'convex', 'supabase'])];
   const guidance = resolveGuidanceProfile('neutral', stacks);
   const missing: string[] = [];
   const checked = new Set<string>();
@@ -148,7 +149,7 @@ test('later disclosure cannot satisfy an earlier check; only issued contracts ca
   const retained = resolveProgressionRecipeAction(binding, state,
     priorProgressionContractIds(state, bindings, binding));
   assert('agent' in second && 'agent' in retained);
-  for (const applicationInterface of ['http', 'reducer'] as const) {
+  for (const applicationInterface of ['http', 'reducer', 'supabase'] as const) {
     const text = (source: string): string => agentVisibleContractText(source,
       guidance.credentialAliases, applicationInterface);
     const firstText = text(first.agent.task.contractText);

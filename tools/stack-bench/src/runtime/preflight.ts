@@ -24,7 +24,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainer, isDatabaseContainerBackend, DATABASE_IMAGES } from '../stacks/database-containers.js';
-import { CONVEX_BACKEND_IMAGE } from '../stacks/backends/convex-lifecycle.js';
+import { stackIdentity } from '../stacks/stack-identities.js';
 import { leaseFromEnv } from './backend-lease.js';
 import { validateSupervisorState } from './recovery.js';
 import { requireAttemptNetwork } from './docker-network.js';
@@ -579,13 +579,16 @@ export function runPreflight(
   }
 
   const composeText = exists(COMPOSE) ? String(dependencies.readCompose?.() ?? readFileSync(COMPOSE, 'utf8')) : '';
-  if (request.backends.includes('convex')) {
-    try {
-      const id = parseImageId(run('docker', ['image', 'inspect', '--format', '{{.Id}}', CONVEX_BACKEND_IMAGE]));
-      add('image.convex', 'pass', `Owned Convex backend image ${id} is available`);
-    } catch {
-      add('image.convex', 'fail', 'Pinned Convex backend image is unavailable',
-        `Run appliance setup again, or docker pull --platform linux/amd64 ${CONVEX_BACKEND_IMAGE}.`);
+  // Stacks that run their own pinned platform images in each attempt.
+  for (const backend of request.backends.filter(id => STACK_ADAPTER_REGISTRY.ids.includes(id))) {
+    for (const image of stackIdentity(backend).releaseImages ?? []) {
+      try {
+        const id = parseImageId(run('docker', ['image', 'inspect', '--format', '{{.Id}}', image.reference]));
+        add(`image.${image.role}`, 'pass', `Owned ${image.description} ${id} is available`);
+      } catch {
+        add(`image.${image.role}`, 'fail', `Pinned ${image.description} is unavailable`,
+          `Run appliance setup again, or docker pull --platform linux/amd64 ${image.reference}.`);
+      }
     }
   }
   for (const backend of (track ? request.backends : []).filter(isDatabaseContainerBackend)) {
@@ -673,7 +676,8 @@ export function runPreflight(
     }
   }
 
-  for (const backend of request.backends.filter(id => id === 'spacetime' || id === 'convex')) {
+  for (const backend of request.backends.filter(id => STACK_ADAPTER_REGISTRY.ids.includes(id)
+    && STACK_ADAPTER_REGISTRY.get(id).orchestrator.serverUriVariable)) {
     try {
       const runtime = STACK_ADAPTER_REGISTRY.get(backend).orchestrator.config(
         { root: ROOT, env, helpers: { exists } });

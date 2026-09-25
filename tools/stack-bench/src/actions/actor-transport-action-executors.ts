@@ -125,8 +125,9 @@ async function repeatFormWrite({ input, capabilities, signal }:
     // The adapter recognizes Convex HTTP mutations only at the leased endpoint.
     const contract = write ? classifyNamedActionResponse(named, write, { status: 0, text: '' }).responseContract : null;
     if (write && isDeepStrictEqual(write, control)
-      && (contract === 'convex-mutation'
-        || contract === 'http' && new URL(write.url).origin === new URL(actor.page.url()).origin)) {
+      && (contract === 'convex-mutation' || contract === 'http'
+        && (new URL(write.url).origin === new URL(actor.page.url()).origin
+          || (named.applicationWriteEndpoints ?? []).some(endpoint => write.url.startsWith(endpoint))))) {
       request = { url: write.url, method: write.method, responseContract: contract,
         body: JSON.stringify(write.body) };
       headers = write.headers;

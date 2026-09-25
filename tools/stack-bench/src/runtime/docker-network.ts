@@ -11,10 +11,13 @@ import { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 export { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 
-export function attemptDocker(args: string[], input?: string): string {
+// `environment` supplies values for `-e NAME` arguments, so they never enter the command line.
+export function attemptDocker(args: string[], input?: string, environment?: Record<string, string>): string {
   return execFileSync('docker', args, { encoding: 'utf8', stdio: 'pipe', input,
-    timeout: 30_000, windowsHide: true }).trim();
+    timeout: 30_000, windowsHide: true, ...(environment ? { env: { ...process.env, ...environment } } : {}) }).trim();
 }
+
+interface ContainerLimits { cpuCount: number; memoryBytes: number; pids: number }
 
 export function attemptControllerImage(): string {
   const image = process.env.STACK_BENCH_CONTROLLER_IMAGE_ID;
@@ -141,26 +144,7 @@ export function createAttemptNetwork(leasePath: string, lease: BackendLease,
   });
 }
 
-export function createAttemptContainer(leasePath: string, lease: BackendLease, kind: 'backend' | 'browser',
-  image: string, networkMode: string, args: string[], docker: typeof attemptDocker = attemptDocker): BackendLeaseContainer {
-  const limits = kind === 'browser' ? BROWSER_CONTAINER_RESOURCE_LIMITS : SIDECAR_CONTAINER_RESOURCE_LIMITS;
-  const intent = recordAttemptCreation(leasePath, lease, kind);
-  const id = docker(['create', '--name', intent.name,
-    '--label', `${ATTEMPT_CREATION_LABEL}=${intent.creationToken}`,
-    '--network', networkMode, '--init', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
-    '--cpus', String(limits.cpuCount),
-    '--memory', String(limits.memoryBytes),
-    '--memory-swap', String(limits.memoryBytes),
-    '--pids-limit', String(limits.pids),
-    ...args, '--entrypoint', '/bin/sh', image, '-c', 'exec sleep infinity']);
-  const container: BackendLeaseContainer = { name: intent.name, id, image, owned: true, networkMode };
-  updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
-    if (kind === 'backend') {
-      next.resources.container = container;
-      next.resources.network!.namespaceContainerId = id;
-    } else next.resources.browserContainer = container;
-    return next;
-  });
+export function startAttemptContainer(id: string, label: string, docker: typeof attemptDocker = attemptDocker): void {
   try { docker(['start', id]); }
   catch (error) {
     const failure = error as { message?: unknown; status?: unknown; signal?: unknown;
@@ -177,8 +161,38 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
       state, status: failure?.status, signal: failure?.signal, message: redactCredentials(failure?.message ?? error),
       stderr: redactCredentials(failure?.stderr), stdout: redactCredentials(failure?.stdout),
     });
-    throw new Error(`Docker could not start owned ${kind} container ${id}\n${detail.slice(0, 8192)}`);
+    throw new Error(`Docker could not start owned ${label} container ${id}\n${detail.slice(0, 8192)}`);
   }
+}
+
+// `docker create` for an owned attempt container: recorded, unprivileged and capped.
+function hardenedCreateArgs(intent: { name: string; creationToken: string }, networkMode: string,
+  limits: ContainerLimits): string[] {
+  return ['create', '--name', intent.name,
+    '--label', `${ATTEMPT_CREATION_LABEL}=${intent.creationToken}`,
+    '--network', networkMode, '--init', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
+    '--cpus', String(limits.cpuCount),
+    '--memory', String(limits.memoryBytes),
+    '--memory-swap', String(limits.memoryBytes),
+    '--pids-limit', String(limits.pids)];
+}
+
+export function createAttemptContainer(leasePath: string, lease: BackendLease, kind: 'backend' | 'browser',
+  image: string, networkMode: string, args: string[], docker: typeof attemptDocker = attemptDocker,
+  limits: ContainerLimits = kind === 'browser' ? BROWSER_CONTAINER_RESOURCE_LIMITS : SIDECAR_CONTAINER_RESOURCE_LIMITS,
+): BackendLeaseContainer {
+  const intent = recordAttemptCreation(leasePath, lease, kind);
+  const id = docker([...hardenedCreateArgs(intent, networkMode, limits),
+    ...args, '--entrypoint', '/bin/sh', image, '-c', 'exec sleep infinity']);
+  const container: BackendLeaseContainer = { name: intent.name, id, image, owned: true, networkMode };
+  updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
+    if (kind === 'backend') {
+      next.resources.container = container;
+      next.resources.network!.namespaceContainerId = id;
+    } else next.resources.browserContainer = container;
+    return next;
+  });
+  startAttemptContainer(id, kind, docker);
   if (kind === 'backend') {
     // Every container that joins this namespace shares the anchor's address on the
     // attempt network; a coding agent probing its own application there is not
@@ -197,6 +211,27 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
       return next;
     });
   }
+  return container;
+}
+
+// A platform service joins the anchor's namespace. It is created stopped, so its
+// configuration can be copied in before it is started.
+export function createAttemptService(leasePath: string, lease: BackendLease, role: string, image: string,
+  { args, command, limits, environment, docker = attemptDocker }: {
+    args: string[]; command: string[]; limits: ContainerLimits;
+    environment?: Record<string, string>; docker?: typeof attemptDocker;
+  }): BackendLeaseContainer {
+  const namespace = lease.resources.network?.namespaceContainerId;
+  if (!namespace || lease.resources.container?.id !== namespace) throw new Error('attempt has no backend namespace');
+  const networkMode = `container:${namespace}`;
+  const intent = recordAttemptCreation(leasePath, lease, `service-${role}`);
+  const id = docker([...hardenedCreateArgs(intent, networkMode, limits), ...args, image, ...command],
+    undefined, environment);
+  const container: BackendLeaseContainer = { name: intent.name, id, image, owned: true, networkMode };
+  updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
+    (next.resources.serviceContainers ??= {})[role] = container;
+    return next;
+  });
   return container;
 }
 

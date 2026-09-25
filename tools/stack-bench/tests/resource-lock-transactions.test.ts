@@ -7,6 +7,9 @@ import { createBackendLease, runnerCapacity, claimBackendResources,
   claimBackendResourcesWhenAvailable, releaseResourceLocks } from '../src/runtime/backend-lease.js';
 import { hostResourceWaitReason, resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
 import { ATTEMPT_CONTAINER_LIMIT_TOTALS, ATTEMPT_STARTUP_MEMORY_BYTES } from '../src/composition/product-config.js';
+import { SUPABASE_IDENTITY } from '../src/stacks/backends/supabase-identity.js';
+
+const SUPABASE_STARTUP_MEMORY_BYTES = SUPABASE_IDENTITY.startupMemoryBytes!;
 
 test('dynamic startup reservation counts the memory envelope once per worker across backends', () => {
   const root = mkdtempSync(join(tmpdir(), 'host-capacity-'));
@@ -31,6 +34,29 @@ test('dynamic startup reservation counts the memory envelope once per worker acr
         assert.equal(count, 1); assert.equal(memory, memoryBytes); return null;
       }, start + 60_002);
     resourceLockTransaction({ ...request, operation: 'release' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a stack that declares a larger startup reservation holds it for its slot', () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-capacity-'));
+  const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
+  const next = createBackendLease({ runId: 'next', backend: 'stub', track: 'loop', runIndex: 1 });
+  const start = Date.now();
+  try {
+    assert(SUPABASE_STARTUP_MEMORY_BYTES > ATTEMPT_STARTUP_MEMORY_BYTES);
+    const locks = resourceLockTransaction({ root, lease: first, keys: ['slot:loop:postgres:run0', 'slot:loop:supabase:run0'],
+      operation: 'acquire', capacity: null }, (count, memory) => {
+      assert.equal(count, 1); assert.equal(memory, SUPABASE_STARTUP_MEMORY_BYTES); return null;
+    }, start);
+    const recorded = Object.fromEntries(locks.map(lock => [lock.key,
+      JSON.parse(readFileSync(lock.path, 'utf8')).startupMemoryBytes]));
+    assert.deepEqual(recorded, { 'slot:loop:postgres:run0': ATTEMPT_STARTUP_MEMORY_BYTES,
+      'slot:loop:supabase:run0': SUPABASE_STARTUP_MEMORY_BYTES });
+    resourceLockTransaction({ root, lease: next, keys: ['slot:loop:convex:run1', 'port:5001'],
+      operation: 'acquire', capacity: null }, (count, memory) => {
+      assert.equal(count, 2); assert.equal(memory, SUPABASE_STARTUP_MEMORY_BYTES + ATTEMPT_STARTUP_MEMORY_BYTES);
+      return null;
+    }, start + 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

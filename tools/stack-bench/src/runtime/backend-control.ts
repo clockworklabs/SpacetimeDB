@@ -1,22 +1,18 @@
 import { leaseFromEnv } from './backend-lease.js';
 import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { controlHostedAppServer, startAttemptDatabaseProcess }
-  from '../stacks/hosted-lifecycle.js';
+import { controlHostedAppServer } from '../stacks/hosted-lifecycle.js';
 import type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 import type { TextCommandExecutor } from './command-executor.js';
-import { prepareProcessCrash } from '../stacks/process-crash.js';
+import { prepareProcessCrash, stackDatabaseRuntime } from '../stacks/process-crash.js';
 import type { CrashTarget, ProcessCrashReceipt } from '../stacks/process-crash.js';
-import { attemptDocker, requireAttemptNetwork } from './docker-network.js';
+import { requireAttemptNetwork } from './docker-network.js';
 import { Worker } from 'node:worker_threads';
 import { answers, waitFor } from '../stacks/lifecycle-readiness.js';
-import { attemptDatabaseIdentity } from '../stacks/hosted-database-identity.js';
 import type { BackendLease } from './backend-lease.js';
 import { assertLeasedContainer, requireLeasedDatabase } from '../stacks/backend-reset-guard.js';
 import { execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { recoverConvex } from '../stacks/backends/convex-lifecycle.js';
-import { loadTrack, portsFor } from '../composition/tracks.js';
 
 export type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 
@@ -55,30 +51,9 @@ export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: 
   const container = assertLeasedContainer(database.resources.container, exec, 5000, 'crash database drain');
   const receipt: DatabaseDrainReceipt = { backend: lease.backend, database: database.resources.database,
     startedAtMs: Date.now(), completedAtMs: Date.now(), settled: false, samples: [] };
-  const identity = attemptDatabaseIdentity(lease.ownershipToken);
-  let command: string[];
-  if (lease.backend === 'postgres') {
-    command = ['psql', '-U', identity.user, '-d', database.resources.database, '-v', 'ON_ERROR_STOP=1', '-At', '-c',
-      "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND backend_type='client backend' AND pid<>pg_backend_pid()"];
-  } else if (lease.backend === 'mongodb') {
-    // A single pooled connection lets us exclude precisely this observer, not
-    // app transactions that no longer have a live connection.
-    command = ['mongosh', `mongodb://127.0.0.1/${encodeURIComponent(database.resources.database)}?maxPoolSize=1&directConnection=true`,
-      '--username', identity.user, '--password', identity.password, '--authenticationDatabase', database.resources.database,
-      '--quiet', '--eval', `
-        const self = db.hello().connectionId;
-        if (!Number.isSafeInteger(Number(self)) || Number(self) <= 0) throw new Error('missing observer connection');
-        const admin = db.getSiblingDB('admin');
-        const work = admin.aggregate([
-          {$currentOp:{allUsers:false,idleConnections:true,idleSessions:true}},
-          {$match:{connectionId:{$ne:self}}}
-        ]).toArray();
-        // The killed app cannot resume its idle transactions. End them now instead
-        // of waiting up to 90 seconds for MongoDB's 60-second transaction sweep.
-        const idle = work.filter(op => op.type === 'idleSession' && op.lsid).map(op => ({ id: op.lsid.id }));
-        if (idle.length && admin.runCommand({ killSessions: idle }).ok !== 1) throw new Error('could not end orphaned sessions');
-        print(work.length);`];
-  } else throw new Error('database drain requires a separate hosted application');
+  const drainCommand = stackDatabaseRuntime(lease.backend)?.drainCommand;
+  if (!drainCommand) throw new Error('database drain requires a separate hosted application');
+  const command = drainCommand(lease, database.resources.database);
   try {
     while (Date.now() < deadlineMs) {
       signal.throwIfAborted();
@@ -129,22 +104,10 @@ export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: Cras
     return drain!;
   }
   if (target !== 'database') throw new Error('unsupported recovery target');
-  if (lease.backend === 'convex') {
-    recoverConvex({ leasePath: path, leaseToken: lease.ownershipToken,
-      ports: portsFor(loadTrack(lease.track), 'convex', lease.runIndex), signal });
-  } else startAttemptDatabaseProcess(lease);
-  await waitFor(async () => {
-    if (lease.backend === 'spacetime') return answers(`${lease.resources.serverUri}/v1/ping`, { requireSuccess: true });
-    if (lease.backend === 'convex') return answers(`${lease.resources.serverUri}/version`, { requireSuccess: true });
-    try {
-      const id = lease.resources.container!.id;
-      if (lease.backend === 'postgres') attemptDocker(['exec', id, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']);
-      else attemptDocker(['exec', id, 'mongosh', '--quiet', '--username', 'admin', '--password',
-        attemptDatabaseIdentity(lease.ownershipToken).adminPassword, '--authenticationDatabase', 'admin',
-        '--eval', 'if (!db.hello().isWritablePrimary) quit(1)']);
-      return true;
-    } catch { return false; }
-  }, 30_000, 'crashed database to become ready', signal);
+  const runtime = stackDatabaseRuntime(lease.backend);
+  if (!runtime) throw new Error('unsupported process crash boundary');
+  runtime.recoverDatabase({ leasePath: path, lease, signal });
+  await waitFor(() => runtime.databaseReady(lease), 30_000, 'crashed database to become ready', signal);
   try {
     await waitFor(() => answers(`http://127.0.0.1:${spec.port}${spec.probe}`, { requireSuccess: true }),
       10_000, 'application to answer after database recovery', signal);
@@ -162,7 +125,7 @@ export async function prepareRuntimeCrash(spec: RuntimeControlSpec, target: Cras
   const prepared = await prepareProcessCrash(lease, target);
   return {
     ...prepared,
-    combinedBoundary: lease.backend === 'spacetime' || lease.backend === 'convex',
+    combinedBoundary: stackDatabaseRuntime(lease.backend)?.combinedBoundary ?? false,
     spacetime: lease.backend === 'spacetime'
       ? { uri: lease.resources.serverUri!, mod: lease.resources.module! } : null,
     async recover(signal) {

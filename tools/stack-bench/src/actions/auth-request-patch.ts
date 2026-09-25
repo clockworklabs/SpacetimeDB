@@ -10,6 +10,14 @@ export interface AuthRequestPatch {
   readonly password?: unknown;
 }
 
+// A platform's own password endpoints, supplied by its stack adapter. The
+// application may encode the typed credentials in any way there, so the endpoint,
+// not a credential value, identifies the request. The patch reaching it is valid.
+// Returns the changed body, null when the endpoint's body holds no credential, or
+// undefined when the request is not one of those endpoints.
+export type PlatformAuthPatch = (url: string, body: unknown, patch: AuthRequestPatch)
+  => { body: string; shape: string } | null | undefined;
+
 type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string;
   transport?: 'convex-websocket' | 'spacetime-websocket';
   absentParameters?: string[] };
@@ -85,11 +93,7 @@ export type CallParameter = { readonly name: string; readonly fields?: readonly 
 // hide it leaves the location unknown.
 export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch,
   parameters?: readonly CallParameter[]) {
-  const fields = patch.fields ?? {};
-  if (Object.keys(patch).some(key => key !== 'fields' && key !== 'password') || Array.isArray(fields)
-    || typeof fields !== 'object' || !Object.keys(fields).length && !Object.hasOwn(patch, 'password')) {
-    throw new Error('Expected an authentication request change');
-  }
+  const fields = requestedChange(patch);
   const copy = structuredClone(body);
   const matches: { container: Record<string, unknown> | unknown[]; passwordKey: string }[] = [];
   const visit = (value: unknown): void => {
@@ -143,6 +147,15 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
   }
   return { body: JSON.stringify(copy), shape: Array.isArray(container) ? 'positional' : 'object',
     ...(absentParameters.length ? { absentParameters } : {}) };
+}
+
+function requestedChange(patch: AuthRequestPatch): Readonly<Record<string, unknown>> {
+  const fields = patch.fields ?? {};
+  if (Object.keys(patch).some(key => key !== 'fields' && key !== 'password') || Array.isArray(fields)
+    || typeof fields !== 'object' || !Object.keys(fields).length && !Object.hasOwn(patch, 'password')) {
+    throw new Error('Expected an authentication request change');
+  }
+  return fields;
 }
 
 const SCALARS = new Set(['Bool', 'I8', 'U8', 'I16', 'U16', 'I32', 'U32', 'I64', 'U64', 'I128', 'U128',
@@ -212,7 +225,8 @@ async function callParameters(request: Request): Promise<CallParameter[] | undef
 }
 
 export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unroute'>,
-  username: string, password: string, patch: AuthRequestPatch, submit: () => Promise<T>) {
+  username: string, password: string, patch: AuthRequestPatch, submit: () => Promise<T>,
+  platformPatch?: PlatformAuthPatch | null) {
   let matches = 0, error = false;
   const pending: Promise<void>[] = [];
   let receipt: PatchReceipt | undefined;
@@ -250,8 +264,11 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     let changed: ReturnType<typeof patchAuthRequest>;
     const parameters = Array.isArray(body) && Object.keys(patch.fields ?? {}).length
       ? await callParameters(request) : undefined;
-    try { changed = patchAuthRequest(body, username, password, patch, parameters); }
-    catch { error = true; return route.abort(); }
+    try {
+      requestedChange(patch);
+      const platform = platformPatch?.(request.url(), body, patch);
+      changed = platform === undefined ? patchAuthRequest(body, username, password, patch, parameters) : platform;
+    } catch { error = true; return route.abort(); }
     if (!changed) return route.fallback();
     const contentType = request.headers()['content-type']?.split(';')[0]?.trim();
     if (request.method() !== 'POST' || !contentType || !/^application\/(?:[\w.-]+\+)?json$/i.test(contentType)

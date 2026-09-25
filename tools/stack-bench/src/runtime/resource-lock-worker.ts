@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { cpus, loadavg } from 'node:os';
 import { processIdentity } from './platform.js';
 import { ATTEMPT_STARTUP_MEMORY_BYTES } from '../composition/product-config.js';
+import { stackIdentity } from '../stacks/stack-identities.js';
 import type { BackendLease, BackendResourceLock } from './backend-lease.js';
 
 export interface ResourceLockTransaction {
@@ -24,6 +25,12 @@ const object = (value: unknown): value is Record<string, unknown> =>
 function slotIdentity(key: unknown, owner: unknown): string | null {
   const slot = typeof key === 'string' ? /^slot:([^:]+):[^:]+:run(\d+)$/.exec(key) : null;
   return slot ? `${owner}:${slot[1]}:${slot[2]}` : null;
+}
+
+// A stack can declare its own startup reservation; a slot key names its stack.
+function startupMemoryBytes(key: string): number {
+  const stack = /^slot:[^:]+:([^:]+):run\d+$/.exec(key)?.[1];
+  return (stack ? stackIdentity(stack).startupMemoryBytes : undefined) ?? ATTEMPT_STARTUP_MEMORY_BYTES;
 }
 
 function addSlot(slots: Set<string>, key: unknown, owner: unknown): void {
@@ -165,7 +172,7 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
       if (now - Date.parse(record.acquiredAt) < 60_000) reserve(record.key, record.ownershipMarkerSha256,
         memoryBytes);
     }
-    for (const key of keys) reserve(key, hash(lease.ownershipToken), ATTEMPT_STARTUP_MEMORY_BYTES);
+    for (const key of keys) reserve(key, hash(lease.ownershipToken), startupMemoryBytes(key));
     const reason = readPressure(starting.size, [...starting.values()].reduce((sum, value) => sum + value, 0));
     if (reason) throw new Error(reason);
   }
@@ -183,7 +190,7 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
             runId: lease.runId, ownerPid: lease.ownerPid,
             ownerStartMarker: processIdentity(lease.ownerPid)?.startMarker ?? null,
             ownershipMarkerSha256: hash(lease.ownershipToken), acquiredAt,
-            startupMemoryBytes: ATTEMPT_STARTUP_MEMORY_BYTES })}\n`);
+            startupMemoryBytes: startupMemoryBytes(lock.key) })}\n`);
           fsyncSync(fd);
         } finally { closeSync(fd); }
         try { linkSync(temporary, lock.path); }

@@ -4,8 +4,7 @@ import type { BackendLease } from '../runtime/backend-lease.js';
 import { CODING_CONTAINER_AGENT } from '../runtime/coding-container-policy.js';
 import { evidenceNowMs } from '../evidence/evidence-timing.js';
 import { requireAttemptNetwork } from '../runtime/docker-network.js';
-import { SPACETIME_PROCESS_RECORD } from './hosted-lifecycle.js';
-import { CONVEX_PROCESS_RECORD } from './backends/convex-lifecycle.js';
+import { STACK_ADAPTER_REGISTRY } from './stack-adapters.js';
 
 const execute = promisify(execFile);
 type Docker = (args: readonly string[]) => Promise<string>;
@@ -14,6 +13,29 @@ const docker: Docker = async args => (await execute('docker', [...args], {
 })).stdout;
 
 export type CrashTarget = 'application' | 'database';
+
+// How a stack's database process is crashed, restarted and observed. Each stack
+// declares this in its own module; its adapter carries it as `runtime`.
+export interface StackDatabaseRuntime {
+  // The application runs inside the database process: one fault boundary.
+  readonly combinedBoundary: boolean;
+  // The container user that owns the database processes and may signal them.
+  readonly databaseUser: string;
+  // The recorded database process group, or null to crash that user's processes.
+  readonly processRecord: string | null;
+  // Starts the crashed database again on its existing data.
+  recoverDatabase(input: { leasePath: string; lease: BackendLease; signal: AbortSignal }): void;
+  databaseReady(lease: BackendLease): Promise<boolean>;
+  // Counts database work a crashed application left behind, as a command run in
+  // the leased database container. Absent when the stacks share one boundary.
+  drainCommand?(lease: BackendLease, database: string): string[];
+}
+
+export function stackDatabaseRuntime(backend: string): StackDatabaseRuntime | null {
+  if (!STACK_ADAPTER_REGISTRY.ids.includes(backend)) return null;
+  return STACK_ADAPTER_REGISTRY.get(backend).runtime ?? null;
+}
+
 export interface ProcessCrashReceipt {
   backend: string;
   target: CrashTarget;
@@ -77,9 +99,9 @@ echo 'writers remained after SIGKILL' >&2; exit 4`;
 }
 
 export async function prepareProcessCrash(lease: BackendLease, target: CrashTarget) {
-  if (!['postgres', 'mongodb', 'spacetime', 'convex'].includes(lease.backend)
-    || !['application', 'database'].includes(target)) throw new Error('unsupported process crash boundary');
-  if (['spacetime', 'convex'].includes(lease.backend) && target === 'application') {
+  const runtime = stackDatabaseRuntime(lease.backend);
+  if (!runtime || !['application', 'database'].includes(target)) throw new Error('unsupported process crash boundary');
+  if (runtime.combinedBoundary && target === 'application') {
     throw new Error(`${lease.backend} application and database share one boundary; use database`);
   }
   requireAttemptNetwork(lease);
@@ -92,7 +114,7 @@ export async function prepareProcessCrash(lease: BackendLease, target: CrashTarg
     throw new Error('process crash requires the live leased container with a private PID namespace');
   }
   const user = target === 'application' ? `${CODING_CONTAINER_AGENT.uid}:${CODING_CONTAINER_AGENT.gid}`
-    : lease.backend === 'postgres' ? 'postgres' : lease.backend === 'mongodb' ? 'mongodb' : '0:0';
+    : runtime.databaseUser;
   // Start Docker exec before dispatch. Its shell waits for one stdin line, so
   // Docker startup latency is outside the request/fault window. EOF disarms it.
   let arm!: () => void, failArm!: (error: Error) => void;
@@ -100,8 +122,7 @@ export async function prepareProcessCrash(lease: BackendLease, target: CrashTarg
   let child!: ReturnType<typeof execFile>;
   const completed = new Promise<string>((resolve, reject) => {
     child = execFile('docker', ['exec', '-i', '--user', user, container.id, 'sh', '-c',
-      processCrashScript(lease.backend === 'spacetime' ? SPACETIME_PROCESS_RECORD
-        : lease.backend === 'convex' ? CONVEX_PROCESS_RECORD : null)],
+      processCrashScript(target === 'database' ? runtime.processRecord : null)],
     { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       failArm(new Error('fault process exited before it was armed'));
       if (error) reject(Object.assign(error, { stdout })); else resolve(stdout);

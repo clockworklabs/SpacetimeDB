@@ -144,8 +144,8 @@ function customCondition({ guidance = {}, repair = {} } = {}) {
   writeJson(join(catalogRoot, 'guidance.json'), { schemaVersion: 1, kind: 'backend-guidance-profile',
     id: 'neutral', mode: 'neutral',
     material: { accessFacts: true, apiReference: true, designAdvice: false },
-    documents: { fake: 'backend.md' }, applicationInterfaces: { fake: 'http' },
-    skills: { fake: [] }, ...guidance });
+    documents: { postgres: 'backend.md' }, applicationInterfaces: { postgres: 'http' },
+    skills: { postgres: [] }, ...guidance });
   writeJson(join(catalogRoot, 'repair.json'), { schemaVersion: 1, kind: 'repair-policy',
     id: 'scored', scoredEvidence: true,
     observedEvidence: false, scenarioValues: 'failed-observations', ...repair });
@@ -153,22 +153,29 @@ function customCondition({ guidance = {}, repair = {} } = {}) {
   return { root, catalogPath: join(catalogRoot, 'catalog.json'), ref };
 }
 
-test('guidance records selected design advice and requires each stack document', () => {
+test('guidance records selected design advice and requires each stack document and interface', () => {
   const advice = customCondition({ guidance: {
     material: { accessFacts: true, apiReference: true, designAdvice: true },
   } });
   try {
-    assert.equal(resolveStudyConditions([advice.ref], ['fake'], {
+    assert.equal(resolveStudyConditions([advice.ref], ['postgres'], {
       stackBenchRoot: advice.root, catalogPath: advice.catalogPath, requested,
     })[0]!.guidance.material.designAdvice, true);
   } finally { rmSync(advice.root, { recursive: true, force: true }); }
 
   const missing = customCondition();
   try {
-    assert.throws(() => resolveStudyConditions([missing.ref], ['other'], {
+    assert.throws(() => resolveStudyConditions([missing.ref], ['mongodb'], {
       stackBenchRoot: missing.root, catalogPath: missing.catalogPath, requested,
-    }), /documents.other.*required/);
+    }), /documents.mongodb.*required/);
   } finally { rmSync(missing.root, { recursive: true, force: true }); }
+
+  const mismatched = customCondition({ guidance: { applicationInterfaces: { postgres: 'reducer' } } });
+  try {
+    assert.throws(() => resolveStudyConditions([mismatched.ref], ['postgres'], {
+      stackBenchRoot: mismatched.root, catalogPath: mismatched.catalogPath, requested,
+    }), /applicationInterfaces.postgres.*must be http/);
+  } finally { rmSync(mismatched.root, { recursive: true, force: true }); }
 });
 
 test('observed-only evidence can never enter repairs and scored evidence remains available', () => {
@@ -177,7 +184,7 @@ test('observed-only evidence can never enter repairs and scored evidence remains
     { repair: { scenarioValues: 'withheld' } }]) {
     const fixture = customCondition(overrides);
     try {
-      assert.throws(() => resolveStudyConditions([fixture.ref], ['fake'], {
+      assert.throws(() => resolveStudyConditions([fixture.ref], ['postgres'], {
         stackBenchRoot: fixture.root, catalogPath: fixture.catalogPath, requested,
       }), /observedEvidence|scoredEvidence|scenarioValues/);
     } finally { rmSync(fixture.root, { recursive: true, force: true }); }

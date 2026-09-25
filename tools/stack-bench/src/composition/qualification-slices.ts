@@ -5,6 +5,7 @@ import { buildRecipeQualificationDocuments } from './recipe-release.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
+import { interfaceNeutralText } from './agent-visible-contract.js';
 import type { RecipeCheck, RecipeRelease } from './recipe-release.js';
 
 const object = z.record(z.string(), z.unknown());
@@ -78,13 +79,23 @@ export function validateQualificationDocuments(value: unknown): QualificationDoc
   return { release, meaning, execution };
 }
 
+// Interface blocks belong to their stacks' scopes (qualification-scope.ts), and a
+// saved document may predate interface-neutral meaning; compare the shared text only.
+function interfaceNeutralMeaning(meaning: Record<string, unknown>): Record<string, unknown> {
+  const parsed = z.object({ contracts: z.array(object) }).loose().safeParse(meaning.task);
+  if (!parsed.success) return meaning;
+  const task = parsed.data;
+  return { ...meaning, task: { ...task,
+    contracts: task.contracts.map(contract => ({ ...contract, text: interfaceNeutralText(contract.text) })) } };
+}
+
 /** Conservative reuse boundary: a complete scenario, including all its setup.
  * Changes to shared runtime, fixture, prompt or execution order
  * invalidate reuse. Scenarios are reset separately by run-suite. */
 export function unchangedQualificationChecks(source: QualificationDocuments,
   current: QualificationDocuments): Set<string> {
-  const { checks: _oldChecks, ...oldMeaning } = source.meaning;
-  const { checks: _newChecks, ...newMeaning } = current.meaning;
+  const { checks: _oldChecks, ...oldMeaning } = interfaceNeutralMeaning(source.meaning);
+  const { checks: _newChecks, ...newMeaning } = interfaceNeutralMeaning(current.meaning);
   const { execution: oldExecutions, packs: oldPacks, ...oldShared } = source.execution;
   const { execution: newExecutions, packs: newPacks, ...newShared } = current.execution;
   // `actions` is the union inferred from the pack's scenarios. Actual steps

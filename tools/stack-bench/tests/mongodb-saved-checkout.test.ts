@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
-import { getSavedMongoDbCheckoutState } from '../src/stacks/backends/saved-mongodb-checkout.js';
+import { getSavedMongoDbCheckoutState } from '../src/stacks/backends/mongodb-saved-checkout.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
 import type { BackendLeaseNetwork } from '../src/runtime/backend-lease.js';
 

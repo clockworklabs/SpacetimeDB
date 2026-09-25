@@ -22,3 +22,7 @@ Use the `submit_review` reducer with the item identifier, rating, and comment.
 <!-- interface:convex -->
 Use `api:submit_review` with `{ itemId, rating, comment }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `submit_review` PostgreSQL function with `{ itemId, rating, comment }`.
+<!-- /interface -->

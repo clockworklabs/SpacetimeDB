@@ -26,5 +26,9 @@ Save a bundle with `save_bundle(name: string, price: number, componentsJson: str
 Save a bundle with `api:save_bundle` and `{ name, price, componentsJson }`.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Save a bundle with the `save_bundle` PostgreSQL function and `{ name, price, componentsJson }`.
+<!-- /interface -->
+
 Each component uses an existing product's exact name. `componentsJson` contains the
 component array as a JSON string.

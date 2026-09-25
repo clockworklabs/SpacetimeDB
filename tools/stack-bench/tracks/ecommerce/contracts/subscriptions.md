@@ -20,3 +20,8 @@ The loaded `subscriptions-panel` has `aria-busy="false"`. Each `subscription-row
 Use `api:pause_subscription`, `api:resume_subscription`, and `api:cancel_subscription`,
 each with `{ subscriptionId }`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `pause_subscription`, `resume_subscription`, and `cancel_subscription` database
+functions, each with `{ subscriptionId }`.
+<!-- /interface -->

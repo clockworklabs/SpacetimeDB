@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { prepareStateVolume, writeStateSecret } from '../appliance/state-volume.js';
 import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
+import { stackReleaseImages } from '../src/stacks/stack-identities.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 
@@ -94,7 +95,9 @@ test('setup installs an image-bound paid demo and preserves an existing plan', (
 });
 
 test('setup pulls each absent pinned native backend image before state initialization', () => {
-  const missing = new Set(Object.values(DATABASE_IMAGES));
+  const pinned = [...Object.values(DATABASE_IMAGES), ...stackReleaseImages().map(image => image.reference)];
+  assert(pinned.some(reference => reference.startsWith('supabase/postgres@sha256:')));
+  const missing = new Set(pinned);
   const pulls: string[][] = [];
   prepareStateVolume({}, args => {
     if (args[0] === 'version') return 'linux';
@@ -110,7 +113,7 @@ test('setup pulls each absent pinned native backend image before state initializ
     if (args[0] === 'run') assert.equal(missing.size, 0);
     return '';
   });
-  assert.deepEqual(pulls, Object.values(DATABASE_IMAGES).map(reference => ['pull', '--platform', 'linux/amd64', reference]));
+  assert.deepEqual(pulls, pinned.map(reference => ['pull', '--platform', 'linux/amd64', reference]));
 });
 
 test('a failed native image pull stops setup before it initializes shared state', () => {

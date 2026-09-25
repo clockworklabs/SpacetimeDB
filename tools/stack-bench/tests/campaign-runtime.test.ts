@@ -8,7 +8,9 @@ import { campaignExecutionEnvironment, campaignSlotEnvironment }
   from '../src/campaigns/campaign-runtime.js';
 import { currentEngineIdentity } from '../src/evidence/artifacts.js';
 import { sha256 } from '../src/evidence/provenance.js';
-import { CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
+import { CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-identity.js';
+import { SUPABASE_IMAGES } from '../src/stacks/backends/supabase-identity.js';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
 function frozenRuntime(root: string) {
   const digests = {
@@ -140,4 +142,37 @@ test('a Convex release-backed campaign requires the actual backend pin and its S
     image.reference = `ghcr.io/get-convex/convex-backend@sha256:${image.digest}`;
     assert.throws(check, /pinned Convex backend image/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a Supabase release-backed campaign requires every pinned platform image', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-supabase-release-'));
+  try {
+    const { path, manifest, runtime } = frozenRuntime(root);
+    const plan = { state: 'frozen', identities: { engine: currentEngineIdentity() },
+      definition: { stacks: [{ id: 'supabase' }], runtime } };
+    const env = { STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage, STACK_BENCH_RELEASE_MANIFEST: path };
+    const check = () => {
+      const content = `${JSON.stringify(manifest)}\n`;
+      writeFileSync(path, content);
+      plan.definition.runtime.releaseManifestSha256 = sha256(content);
+      return campaignExecutionEnvironment(plan, env);
+    };
+    for (const [role, reference] of Object.entries(SUPABASE_IMAGES)) {
+      assert.throws(check, new RegExp(`pinned Supabase ${role} image`));
+      const image = { id: `stack-bench-supabase-${role}`, role: `supabase-${role}`, reference,
+        digest: reference.split('@sha256:')[1]!, platform: 'linux/amd64', sbomPath: `sbom/supabase-${role}.spdx.json` };
+      manifest.images.push(image);
+      manifest.files.push({ path: image.sbomPath, role: 'sbom', sha256: 'f'.repeat(64), bytes: 1 });
+    }
+    assert.equal(check().STACK_BENCH_IMAGE, runtime.buildImage);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('parallel Supabase slots receive distinct gateway ports', {
+  skip: !STACK_ADAPTER_REGISTRY.ids.includes('supabase') && 'the Supabase adapter is not registered yet',
+}, () => {
+  assert.equal(campaignSlotEnvironment({}, 'supabase', 0).STACK_BENCH_SUPABASE_URI, 'http://127.0.0.1:13410');
+  assert.equal(campaignSlotEnvironment({}, 'supabase', 7).STACK_BENCH_SUPABASE_URI, 'http://127.0.0.1:13417');
+  assert.equal(campaignSlotEnvironment({ STACK_BENCH_SUPABASE_URI: 'http://127.0.0.1:14000' }, 'supabase', 3)
+    .STACK_BENCH_SUPABASE_URI, 'http://127.0.0.1:14003');
 });

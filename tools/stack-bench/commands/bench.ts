@@ -842,7 +842,7 @@ export function inspectGradeSource(directory: string,
     || run.backendLease.runIndex < 0 || !run.runtime?.buildImage) {
     throw new Error('saved run lacks its agent, runtime image, or run index');
   }
-  const serverUri = ['spacetime', 'convex'].includes(run.backend)
+  const serverUri = STACK_ADAPTER_REGISTRY.get(run.backend).orchestrator.serverUriVariable
     ? loopbackHttpUri(run.backendLease.resources?.serverUri).origin : null;
   const checkpoint = level.checkpoint;
   const condition = run.condition as BenchArguments['condition'];
@@ -979,9 +979,8 @@ async function main() {
       throw new Error('regrade build image differs from the original run');
     }
     process.env.STACK_BENCH_IMAGE = parent.payload.runtime.buildImage;
-    if (regrade.serverUri) {
-      process.env[parent.payload.backend === 'convex' ? 'STACK_BENCH_CONVEX_URI' : 'STACK_BENCH_STDB_URI'] = regrade.serverUri;
-    }
+    const serverUriVariable = STACK_ADAPTER_REGISTRY.get(parent.payload.backend).orchestrator.serverUriVariable;
+    if (regrade.serverUri && serverUriVariable) process.env[serverUriVariable] = regrade.serverUri;
   }
   let repairGrant = null;
   if (args.repairFrom) {
@@ -1406,7 +1405,7 @@ async function main() {
     performPreflight();
     stackAdapter.lifecycle.activate({
       leasePath, leaseToken: initialLease.ownershipToken, lease: initialLease,
-      ports: assignedPorts,
+      ports: assignedPorts, app: appDir,
       ...stackRuntime.lifecycle,
     });
     performPreflight(true);

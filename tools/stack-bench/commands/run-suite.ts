@@ -32,7 +32,6 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { requireLeasedDatabase, requireLeasedSpacetime } from '../src/stacks/backend-reset-guard.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
@@ -253,7 +252,8 @@ export async function runGraderChild(argv: string[], output: string, suiteId: st
 
 function gradeLeaseInput(backend: string, env: NodeJS.ProcessEnv): { path: string;
   expected: BackendLeaseExpectation } | null {
-  if (!['mongodb', 'postgres', 'spacetime', 'convex'].includes(backend)) return null;
+  // A stack that can prove the application used its database grades against its run lease.
+  if (!('proveUse' in STACK_ADAPTER_REGISTRY.get(backend).database)) return null;
   const path = String(env.STACK_BENCH_LEASE ?? '').trim();
   const token = String(env.STACK_BENCH_LEASE_TOKEN ?? '').trim();
   if (!path && !token) return null;
@@ -560,17 +560,7 @@ export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend
     return { ok: null, verified: false,
       reason: 'the application action did not produce a database marker' };
   }
-  if (args.backend === 'spacetime') {
-    return STACK_ADAPTER_REGISTRY.get('spacetime').database.proveUse(
-      { lease: requireLeasedSpacetime(args.databaseLease), marker });
-  }
-  if (args.backend === 'convex') {
-    return STACK_ADAPTER_REGISTRY.get('convex').database.proveUse({ lease: args.databaseLease, marker });
-  }
-  const lease = requireLeasedDatabase(args.databaseLease);
-  return args.backend === 'mongodb'
-    ? STACK_ADAPTER_REGISTRY.get('mongodb').database.proveUse({ lease, marker })
-    : STACK_ADAPTER_REGISTRY.get('postgres').database.proveUse({ lease, marker });
+  return adapter.database.proveUse({ lease: args.databaseLease, marker });
 }
 
 function isGradePayload(value: GradePayload | LintPayload | null | undefined): value is GradePayload {

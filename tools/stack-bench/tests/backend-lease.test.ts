@@ -21,6 +21,7 @@ import {
   writeBackendLease,
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
+import { ATTEMPT_CREATION_LABEL } from '../src/runtime/container-identity.js';
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) =>
@@ -407,5 +408,98 @@ test('a supervised child waiting for host capacity does not spend its timeout', 
     assert.equal(result.timedOut, false);
     assert.equal(result.ok, true);
     assert(result.pausedMs! >= 3900, String(result.pausedMs));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+function platformLease(root: string) {
+  const anchor = 'a'.repeat(64);
+  const lease = createBackendLease({ runId: 'supabase-services', backend: 'supabase', track: 'ecommerce', runIndex: 0,
+    serverUri: 'http://127.0.0.1:13410', database: 'postgres' });
+  lease.state = 'active';
+  lease.resources.container = { name: 'sb-anchor-backend', id: anchor, image: `sha256:${'d'.repeat(64)}`,
+    owned: true, networkMode: 'b'.repeat(64) };
+  lease.resources.network = { name: 'sb-anchor-network', id: 'b'.repeat(64), namespaceContainerId: anchor,
+    hostAddresses: ['172.20.0.1'], services: [], firewallSha256: null, firewallInstalledAt: null };
+  const service = (role: string, digit: string) => ({ name: `sb-anchor-service-${role}`, id: digit.repeat(64),
+    image: `sha256:${'e'.repeat(64)}`, owned: true, networkMode: `container:${anchor}` });
+  lease.resources.serviceContainers = { gateway: service('gateway', '1'), auth: service('auth', '2') };
+  lease.resources.browserContainer = { ...service('browser', '3'), name: 'sb-anchor-browser' };
+  const intent = (name: string, digit: string) => ({ name, creationToken: digit.repeat(32) });
+  lease.resources.creationIntents = { network: intent('sb-anchor-network', '4'), backend: intent('sb-anchor-backend', '5'),
+    'service-auth': intent('sb-anchor-service-auth', '6'), 'service-gateway': intent('sb-anchor-service-gateway', '7'),
+    'service-realtime': intent('sb-anchor-service-realtime', '8'), browser: intent('sb-anchor-browser', '9') };
+  const path = join(root, 'lease.json');
+  writeBackendLease(path, lease);
+  return { path, lease, anchor };
+}
+
+test('platform service containers are owned, exact, and inside the anchor namespace', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-services-'));
+  try {
+    const { path, lease, anchor } = platformLease(root);
+    assert.equal(readBackendLease(path).resources.serviceContainers?.auth?.networkMode, `container:${anchor}`);
+    assert.equal(publicBackendLease(lease).resources.serviceContainers?.gateway?.name, 'sb-anchor-service-gateway');
+    const invalid = (change: (next: typeof lease) => void, message: RegExp) => {
+      const next = structuredClone(lease);
+      change(next);
+      assert.throws(() => writeBackendLease(join(root, 'invalid.json'), next), message);
+    };
+    invalid(next => { next.resources.serviceContainers!.auth!.networkMode = `container:${'c'.repeat(64)}`; },
+      /serviceContainers.auth is outside the leased network namespace/);
+    invalid(next => { next.resources.serviceContainers!.auth!.owned = false; }, /serviceContainers.auth must identify an owned/);
+    invalid(next => { next.resources.serviceContainers!.auth!.image = 'supabase/gotrue:latest'; }, /must identify an owned/);
+    invalid(next => { next.resources.serviceContainers = { 'Auth-1': next.resources.serviceContainers!.auth! }; },
+      /map service roles/);
+    invalid(next => { (next.resources.creationIntents as Record<string, unknown>)['service-'] = { name: 'x', creationToken: '1'.repeat(32) }; },
+      /creation intent is invalid/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('teardown removes platform services before their namespace anchor, including unrecorded creations', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-services-'));
+  try {
+    const { path, lease, anchor } = platformLease(root);
+    const removed: string[] = [];
+    const present = new Set([...Object.values(lease.resources.serviceContainers!).map(container => container.id),
+      lease.resources.browserContainer!.id, anchor]);
+    const names = new Map([...Object.values(lease.resources.serviceContainers!), lease.resources.browserContainer!,
+      lease.resources.container!].map(container => [container.name, container.id]));
+    const unrecorded = 'f'.repeat(64);
+    const attempt: string[][] = [];
+    assert.equal(releaseBackendLease(path, lease.ownershipToken, {
+      hostTeardown: () => true,
+      docker: {
+        inspect: name => {
+          const id = names.get(name);
+          if (!id || !present.has(id)) throw new Error(`No such object: ${name}`);
+          return id;
+        },
+        handoffWorkspace: () => assert.fail('no build container'),
+        remove: id => { removed.push(id); present.delete(id); },
+        wait: () => undefined,
+      },
+      attempt: args => {
+        attempt.push(args);
+        const name = args.at(-1)!;
+        if (args[0] === 'network' && args[1] === 'inspect') {
+          return JSON.stringify([{ Id: lease.resources.network!.id, Labels: { [ATTEMPT_CREATION_LABEL]: '4'.repeat(32) }, Containers: {} }]);
+        }
+        if (args[0] === 'container' && name === 'sb-anchor-service-realtime') {
+          return JSON.stringify([{ Id: unrecorded, Config: { Labels: { [ATTEMPT_CREATION_LABEL]: '8'.repeat(32) } } }]);
+        }
+        if (args[0] === 'container') throw new Error(`No such container: ${name}`);
+        return '';
+      },
+    }), true);
+    assert.deepEqual(removed, [lease.resources.browserContainer!.id, lease.resources.serviceContainers!.auth!.id,
+      lease.resources.serviceContainers!.gateway!.id, anchor]);
+    const order = attempt.filter(args => args[0] === 'container').map(args => args.at(-1));
+    assert.deepEqual(order, ['sb-anchor-browser', 'sb-anchor-service-auth', 'sb-anchor-service-gateway',
+      'sb-anchor-service-realtime', 'sb-anchor-backend']);
+    assert.deepEqual(attempt.filter(args => args[0] === 'rm'), [['rm', '-f', '--volumes', unrecorded]]);
+    assert.deepEqual(attempt.at(-1), ['network', 'rm', lease.resources.network!.id]);
+    const released = readBackendLease(path);
+    assert.equal(released.state, 'released');
+    assert(Object.values(released.resources.serviceContainers!).every(container => container.removedAt && !container.running));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

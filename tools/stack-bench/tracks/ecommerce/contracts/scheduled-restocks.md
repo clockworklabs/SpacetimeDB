@@ -28,3 +28,9 @@ Use `api:schedule_restock` with `{ item, warehouse, quantity, delaySeconds }` an
 `api:cancel_scheduled_restock` with `{ restockId }`. The item and warehouse arguments are names.
 Use the scheduled-restock document's native `_id` string for `data-entity-id` and `restockId`.
 <!-- /interface -->
+
+<!-- interface:supabase -->
+Use the `schedule_restock` PostgreSQL function with `{ item, warehouse, quantity, delaySeconds }`
+and `cancel_scheduled_restock` with `{ restockId }`. The item and warehouse arguments are names.
+Use the identifier accepted by `restockId` for the restock's `data-entity-id`.
+<!-- /interface -->

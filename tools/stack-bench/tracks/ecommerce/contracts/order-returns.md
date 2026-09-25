@@ -19,5 +19,9 @@ identifiers accepted by the return action.
 `returnItem` is the `api:return_order_item` mutation with `{ orderId, itemId }`.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+`returnItem` is the `return_order_item` PostgreSQL function with `{ orderId, itemId }`.
+<!-- /interface -->
+
 The existing `orders-toggle`, `order-item`, `item-stock`, `admin-revenue`, and `catalog-link`
 interfaces expose the order, stock, and accounting results.

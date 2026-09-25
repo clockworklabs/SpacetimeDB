@@ -18,7 +18,7 @@ import { readAgentSkillDocuments } from '../src/agents/agent-materials.js';
 test('production framing is one sentence and never changes restoration prompts', () => {
   const sentence = 'Build a production-quality application suitable for real users, not a prototype or demo.';
   const track = loadTrack('ecommerce');
-  for (const backend of ['mongodb', 'postgres', 'spacetime', 'convex']) for (const level of [1, 2, 3, 4, 5, 6])
+  for (const backend of ['mongodb', 'postgres', 'spacetime', 'convex', 'supabase']) for (const level of [1, 2, 3, 4, 5, 6])
     for (const mode of ['build', 'upgrade', 'fix', 'resume']) {
     const argv = ['node', 'agent', '--mode', mode, '--backend', backend, '--level', String(level), '--app', '/app', '--guidance', 'neutral'];
     const enabled = parseAgentArgs(argv), disabled = parseAgentArgs([...argv, '--no-production-quality']);
@@ -31,7 +31,7 @@ test('production framing is one sentence and never changes restoration prompts',
 });
 
 const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.js');
-const STACKS = ['mongodb', 'postgres', 'spacetime', 'convex'] as const;
+const STACKS = ['mongodb', 'postgres', 'spacetime', 'convex', 'supabase'] as const;
 const EVALUATION_LANGUAGE =
   /\b(?:benchmark|harness|grader|graded|grading|scored|scoring|tests?|testing|evaluation|criterion|testids?)\b|stackbench|Stack Bench|external client|run configuration/i;
 const UNSTATED_QUALITY_LANGUAGE = [
@@ -51,7 +51,7 @@ test('SDK skills and dev guidance vary independently without changing product re
   for (const profile of profiles) {
     for (const key of ['mode', 'material', 'documents', 'credentialAliases'] as const)
       assert.deepEqual(profile[key], standard[key]);
-    for (const stack of ['mongodb', 'postgres', 'convex']) assert.deepEqual(profile.skills[stack], standard.skills[stack]);
+    for (const stack of ['mongodb', 'postgres', 'convex', 'supabase']) assert.deepEqual(profile.skills[stack], standard.skills[stack]);
   }
   assert.deepEqual(profiles.map(p => p.skills.spacetime!.ids), [
     ['typescript-server', 'typescript-client', 'cli'], [],
@@ -193,7 +193,7 @@ test('neutral dependency prompts include only selected product and stack contrac
         assert.doesNotMatch(prompt, /in the same session or a new one/);
       }
       // Retain process-boundary coverage for all stacks and all three modes.
-      if ((level === 1 && (stack === 'mongodb' || stack === 'convex')) || (level === 2 && stack === 'postgres')
+      if ((level === 1 && (stack === 'mongodb' || stack === 'convex')) || (level === 2 && (stack === 'postgres' || stack === 'supabase'))
         || (level === 3 && stack === 'spacetime')) {
         assert.equal(renderPrompt({ level, stack, task: selected.agent.request, guidance,
           repair: level === 3, cli: true }), level === 3 ? repair : prompt);
@@ -203,7 +203,7 @@ test('neutral dependency prompts include only selected product and stack contrac
       assert.doesNotMatch(repairInterface, EVALUATION_LANGUAGE);
       assert.doesNotMatch(repairInterface, stack === 'spacetime'
         ? /\b(?:GET|POST|PATCH|DELETE|PUT) \// : /\breducer(?:s)?\b/i);
-      if (stack === 'convex') {
+      if (stack === 'convex' || stack === 'supabase') {
         assert.doesNotMatch(repairInterface, /\b(?:GET|POST|PATCH|DELETE|PUT) \//);
         assert.doesNotMatch(prompt, /<CONVEX|<EXPRESS_PORT>|<VITE_PORT>/);
       }
@@ -245,7 +245,8 @@ test('neutral dependency prompts include only selected product and stack contrac
       } else {
         // Account-only L1 permits hosted login; later product operations have their stack's native interface.
         if (level >= 2 && level <= 3) assert.match(applicationRequest, stack === 'convex'
-          ? /api:[a-z_]+/ : /\b(?:GET|POST|PATCH|DELETE) \//);
+          ? /api:[a-z_]+/ : stack === 'supabase' ? /`[a-z_]+` PostgreSQL function/
+            : /\b(?:GET|POST|PATCH|DELETE) \//);
         assert.doesNotMatch(applicationRequest, /\breducer(?:s)?\b/i);
         if (level === 1) {
           assert.match(applicationRequest, /application's real authentication path/);

@@ -25,4 +25,13 @@ or input errors with `ConvexError`; successful calls use the normal Convex retur
 Do not add HTTP routes merely to wrap these mutations.
 <!-- /interface -->
 
+<!-- interface:supabase -->
+Expose each named application operation below as a PostgreSQL function in the `public`
+schema, called through the data API at `$SUPABASE_URL/rest/v1/rpc/<name>`. Use the same
+functions from the visible controls. Name the parameters exactly as the JSON arguments
+shown below. Raise expected access errors with SQLSTATE `42501`, and input errors or
+business refusals with SQLSTATE `P0001` or `22023`; successful calls return the function's
+normal result. Do not add Edge Functions or HTTP routes merely to wrap these functions.
+<!-- /interface -->
+
 Human-readable status text is case-insensitive. Machine identifiers and protocol values keep their specified spelling.

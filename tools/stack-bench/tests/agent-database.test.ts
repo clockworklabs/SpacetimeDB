@@ -85,6 +85,19 @@ test('Spacetime cleanup ignores absence but rejects authorization and transport 
   });
 });
 
+test('Convex and Supabase setup requires the owned platform and prepares no database', () => {
+  const lease = createBackendLease({ runId: 'agent-platform-run0-test', backend: 'convex',
+    track: track.name, runIndex: 0, serverUri: 'http://127.0.0.1:13410' });
+  const exec = () => { throw new Error('platform setup must not run database commands'); };
+  for (const backend of ['convex', 'supabase']) {
+    lease.resources.container = null;
+    assert.throws(() => ensureDatabase(backend, 0, null, track, true, { exec, lease }),
+      new RegExp(`${backend} application setup requires its active owned deployment`));
+    lease.resources.container = { name: `stack-bench-${backend}`, id: 'a'.repeat(64), owned: true };
+    assert.equal(ensureDatabase(backend, 0, null, track, true, { exec, lease }), undefined);
+  }
+});
+
 test('exit 137 is reported as a kill without guessing that it was OOM', () => {
   const failed = codingSessionFailure({ status: 1,
     stdout: Buffer.from('provider stdout detail'),

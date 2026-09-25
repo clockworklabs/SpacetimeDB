@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
-import { CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
+import { stackReleaseImages } from '../src/stacks/stack-identities.js';
 
 export const STATE_VOLUME = 'stack-bench-state';
 type Docker = (args: readonly string[]) => string;
@@ -21,7 +21,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     ?? 'stack-bench-controller:local', inspect).id;
   const build = resolveContainerImage(env.STACK_BENCH_BUILD_IMAGE
     ?? 'stack-bench-build:local', inspect).id;
-  for (const reference of [...Object.values(DATABASE_IMAGES), CONVEX_BACKEND_IMAGE]) {
+  for (const reference of [...Object.values(DATABASE_IMAGES), ...stackReleaseImages().map(image => image.reference)]) {
     try { resolveContainerImage(reference, inspect); }
     catch {
       run(['pull', '--platform', 'linux/amd64', reference]);
