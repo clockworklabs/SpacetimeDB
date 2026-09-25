@@ -32,7 +32,10 @@ pub fn get(state: &impl StateView, key: &str) -> Result<Option<String>, Environm
     state
         .iter_by_col_eq(ST_ENV_ID, StEnvFields::Key, &AlgebraicValue::String(key.into()))?
         .next()
-        .map(|row| Ok(StEnvRow::try_from(row)?.value))
+        .map(|row| {
+            let row = row.and_then(StEnvRow::try_from)?;
+            Ok(row.value)
+        })
         .transpose()
 }
 
@@ -40,7 +43,7 @@ pub fn snapshot(state: &impl StateView) -> Result<BTreeMap<String, String>, Envi
     state
         .iter(ST_ENV_ID)?
         .map(|row| {
-            let row = StEnvRow::try_from(row)?;
+            let row = StEnvRow::try_from(row?)?;
             Ok((row.key, row.value))
         })
         .collect()
@@ -81,7 +84,8 @@ fn delete(db: &RelationalDB, tx: &mut MutTx, key: &str) -> Result<bool, Environm
     let pointer = tx
         .iter_by_col_eq(ST_ENV_ID, StEnvFields::Key, &AlgebraicValue::String(key.into()))?
         .next()
-        .map(|row| row.pointer());
+        .map(|row| row.map(|row| row.pointer()))
+        .transpose()?;
     if let Some(pointer) = pointer {
         db.delete(tx, ST_ENV_ID, [pointer]);
         return Ok(true);

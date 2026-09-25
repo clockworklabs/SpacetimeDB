@@ -3,7 +3,10 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
+use spacetimedb::{
+    db::relational_db::{tests_utils::TestDB, RelationalDB},
+    error::DatastoreError,
+};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::{bsatn, AlgebraicValue};
@@ -120,8 +123,8 @@ impl BenchDatabase for SpacetimeRaw {
                 .db
                 .iter_mut(tx, *table_id)?
                 .take(row_count as usize)
-                .map(|row| row.to_product_value())
-                .collect::<Vec<_>>();
+                .map(|row| row.map(|r| r.to_product_value()))
+                .collect::<Result<Vec<_>, DatastoreError>>()?;
 
             assert_eq!(rows.len(), row_count as usize, "not enough rows found for update_bulk!");
             let mut scratch = Vec::new();
@@ -133,7 +136,7 @@ impl BenchDatabase for SpacetimeRaw {
                     .db
                     .iter_by_col_eq_mut(tx, *table_id, 0, &row.elements[0])?
                     .next()
-                    .expect("failed to find row during update!")
+                    .expect("failed to find row during update!")?
                     .pointer();
 
                 assert_eq!(
@@ -160,7 +163,7 @@ impl BenchDatabase for SpacetimeRaw {
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(Workload::Internal, |tx| {
             for row in self.db.iter_mut(tx, *table_id)? {
-                black_box(row);
+                black_box(row?);
             }
             Ok(())
         })
@@ -174,7 +177,7 @@ impl BenchDatabase for SpacetimeRaw {
     ) -> ResultBench<()> {
         self.db.with_auto_commit(Workload::Internal, |tx| {
             for row in self.db.iter_by_col_eq_mut(tx, *table_id, col_id, &value)? {
-                black_box(row);
+                black_box(row?);
             }
             Ok(())
         })

@@ -2155,6 +2155,47 @@ pub(crate) mod tests {
         insert_u64(page, val);
     }
 
+    fn assert_page_summaries_match(page: &Page, capacity: &PageCapacity, fixed_row_size: Size) {
+        let canonical_capacity = page.capacity(fixed_row_size);
+        assert_eq!(capacity.num_rows, canonical_capacity.num_rows);
+        assert_eq!(capacity.gap_size, canonical_capacity.gap_size);
+        assert_eq!(capacity.free_fixed_slots, canonical_capacity.free_fixed_slots);
+        assert_eq!(capacity.available_granules, canonical_capacity.available_granules);
+
+        let metadata = page.metadata(fixed_row_size);
+        assert_eq!(metadata.num_rows as usize, page.num_rows());
+        assert_eq!(
+            metadata.bytes_used_by_rows as usize,
+            page.bytes_used_by_rows(fixed_row_size)
+        );
+        assert_eq!(metadata.has_free_fixed_slot, page.header.fixed.next_free.has());
+        assert_eq!(
+            Size(metadata.gap_bytes),
+            gap_remaining_size(page.header.var.first, page.header.fixed.last)
+        );
+        assert_eq!(metadata.available_granules as usize, page.available_var_len_granules());
+
+        for required_granules in 0..=page.available_var_len_granules() + 1 {
+            let expected = page.has_space_for_row(fixed_row_size, required_granules);
+            assert_eq!(metadata.has_space_for_row(fixed_row_size, required_granules), expected);
+            assert_eq!(capacity.has_space_for_row(fixed_row_size, required_granules), expected);
+        }
+    }
+
+    #[test]
+    fn page_summaries_match_page_after_reservations() {
+        let fixed_row_size = u64_row_size();
+        let mut page = Page::new(fixed_row_size);
+        let mut capacity = page.capacity(fixed_row_size);
+
+        assert_page_summaries_match(&page, &capacity, fixed_row_size);
+        for val in 0..64 {
+            capacity.reserve_row(fixed_row_size, 0);
+            insert_u64(&mut page, val);
+            assert_page_summaries_match(&page, &capacity, fixed_row_size);
+        }
+    }
+
     fn read_u64(page: &Page, offset: PageOffset) -> u64 {
         let row = page.get_row_data(offset, u64_row_size());
         u64::from_le_bytes(row.try_into().unwrap())
@@ -2321,6 +2362,35 @@ pub(crate) mod tests {
         let fixed_len_data = [0u8; STR_ROW_SIZE.len()];
         unsafe { page.insert_row(&fixed_len_data, &[data], str_var_len_visitor(), &mut NullBlobStore) }
             .expect("Failed to insert row")
+    }
+
+    #[test]
+    fn page_summaries_match_page_with_var_len_freelist() {
+        let mut page = Page::new(STR_ROW_SIZE);
+        let mut capacity = page.capacity(STR_ROW_SIZE);
+        let one_granule = [0xa5; 1];
+        let one_granule_count = Page::total_granules_required_for_objects(&[one_granule]);
+        let mut offsets = Vec::new();
+
+        for _ in 0..32 {
+            capacity.reserve_row(STR_ROW_SIZE, one_granule_count);
+            offsets.push(insert_str(&mut page, &one_granule));
+            assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
+        }
+
+        for offset in offsets.into_iter().step_by(2) {
+            capacity.release_row(one_granule_count);
+            unsafe { page.delete_row(offset, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
+            assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
+        }
+
+        let two_granules = [0x5a; VarLenGranule::DATA_SIZE + 1];
+        let two_granule_count = Page::total_granules_required_for_objects(&[two_granules]);
+        for _ in 0..16 {
+            capacity.reserve_row(STR_ROW_SIZE, two_granule_count);
+            insert_str(&mut page, &two_granules);
+            assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
+        }
     }
 
     fn read_str_ref(page: &Page, offset: PageOffset) -> VarLenRef {

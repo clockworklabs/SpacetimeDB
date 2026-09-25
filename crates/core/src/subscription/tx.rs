@@ -3,13 +3,16 @@ use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_datastore::{
-    locking_tx_datastore::{state_view::StateView, TxId},
+    locking_tx_datastore::{
+        state_view::{ErrInto, StateView, TableScanIter},
+        TxId,
+    },
     traits::TxData,
 };
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableScanIter};
+use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter};
 use std::{
     collections::BTreeMap,
     ops::{Deref, RangeBounds},
@@ -117,17 +120,17 @@ impl<'a> From<&'a TxId> for DeltaTx<'a> {
 
 impl Datastore for DeltaTx<'_> {
     type TableIter<'a>
-        = TableScanIter<'a>
+        = ErrInto<TableScanIter<'a>, anyhow::Error>
     where
         Self: 'a;
 
     type RangeIndexIter<'a>
-        = IndexScanRangeIter<'a>
+        = ErrInto<IndexScanRangeIter<'a>, anyhow::Error>
     where
         Self: 'a;
 
     type PointIndexIter<'a>
-        = IndexScanPointIter<'a>
+        = ErrInto<IndexScanPointIter<'a>, anyhow::Error>
     where
         Self: 'a;
 

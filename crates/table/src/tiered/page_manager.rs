@@ -202,17 +202,6 @@ impl PageSlotHandle {
     }
 }
 
-impl MemoryUsage for PageSlotHandle {
-    fn heap_usage(&self) -> usize {
-        let maybe_resident = {
-            let slot = self.slot.lock().unwrap();
-            slot.page().cloned()
-        };
-        let refcounts = mem::size_of::<usize>() * 2;
-        refcounts + mem::size_of::<Mutex<PageSlot>>() + maybe_resident.as_ref().map_or(0, MemoryUsage::heap_usage)
-    }
-}
-
 #[cfg(test)]
 impl PageSlotHandle {
     pub unsafe fn reconstruct_bytes_used_by_rows(
@@ -226,6 +215,17 @@ impl PageSlotHandle {
 
     pub fn reconstruct_num_rows(&self) -> usize {
         self.slot.lock().unwrap().reconstruct_num_rows()
+    }
+}
+
+impl MemoryUsage for PageSlotHandle {
+    fn heap_usage(&self) -> usize {
+        let maybe_resident = {
+            let slot = self.slot.lock().unwrap();
+            slot.page().cloned()
+        };
+        let refcounts = mem::size_of::<usize>() * 2;
+        refcounts + mem::size_of::<Mutex<PageSlot>>() + maybe_resident.as_ref().map_or(0, MemoryUsage::heap_usage)
     }
 }
 

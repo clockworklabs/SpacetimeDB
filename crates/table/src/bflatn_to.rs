@@ -2,12 +2,15 @@
 //! and [`write_row_to_page(page, blob_store, visitor, ty, val)`]
 //! which write `val: ProductValue` typed at `ty` to `page` and `pages` respectively.
 
+use crate::{
+    indexes::PageIndex,
+    tiered::{PageError, PageSet, ReservedPage},
+};
+
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
     page::{GranuleOffsetIter, Page, VarView},
-    page_pool::PagePool,
-    pages::Pages,
     table::BlobNumBytes,
     util::range_move,
     var_len::{VarLenGranule, VarLenMembers, VarLenRef},
@@ -24,7 +27,7 @@ use spacetimedb_sats::{
 };
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
     Decode(#[from] DecodeError),
@@ -33,7 +36,7 @@ pub enum Error {
     #[error(transparent)]
     PageError(#[from] super::page::Error),
     #[error(transparent)]
-    PagesError(#[from] super::pages::Error),
+    PagesError(#[from] PageError),
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -48,8 +51,7 @@ pub enum Error {
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages_bsatn(
-    pool: &PagePool,
-    pages: &mut Pages,
+    pages: &mut PageSet,
     visitor: &impl VarLenMembers,
     blob_store: &mut dyn BlobStore,
     ty: &RowTypeLayout,
@@ -57,7 +59,7 @@ pub unsafe fn write_row_to_pages_bsatn(
     squashed_offset: SquashedOffset,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
-    unsafe { write_row_to_pages(pool, pages, visitor, blob_store, ty, &val, squashed_offset) }
+    unsafe { write_row_to_pages(pages, None, visitor, blob_store, ty, &val, squashed_offset) }
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -72,8 +74,8 @@ pub unsafe fn write_row_to_pages_bsatn(
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages(
-    pool: &PagePool,
-    pages: &mut Pages,
+    pages: &mut PageSet,
+    reservation: Option<(PageIndex, ReservedPage)>,
     visitor: &impl VarLenMembers,
     blob_store: &mut dyn BlobStore,
     ty: &RowTypeLayout,
@@ -88,7 +90,7 @@ pub unsafe fn write_row_to_pages(
         required_var_len_granules_for_row(val)
     };
 
-    match pages.with_page_to_insert_row(pool, ty.size(), num_granules, |page| {
+    match pages.with_page_to_insert_row(ty.size(), num_granules, reservation, |page| {
         // SAFETY:
         // - Caller promised that `pages` is suitable for storing instances of `ty`
         //   so `page` is also suitable.
@@ -515,7 +517,7 @@ impl BflatnSerializedRowBuffer<'_> {
 }
 
 /// Counts the number of [`VarLenGranule`] allocations required to store `val` in a page.
-fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
+pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
     fn traverse_av(val: &AlgebraicValue, count: &mut usize) {
         match val {
             AlgebraicValue::Product(val) => traverse_product(val, count),
