@@ -409,7 +409,7 @@ fn validate_submodules(
         let namespace = match resolve_namespace_ident(&source, case_policy, explicit_names) {
             Ok(namespace) => namespace,
             Err(e) => {
-                errors.extend(e.into_iter());
+                errors.extend(e);
                 continue;
             }
         };
@@ -459,7 +459,7 @@ fn validate_submodules(
                     def.accessor_path = NamespacePath::root().child(accessor);
                     map.insert(namespace, def);
                 }
-                Err(e) => errors.extend(e.into_iter()),
+                Err(e) => errors.extend(e),
             }
         }
     }
