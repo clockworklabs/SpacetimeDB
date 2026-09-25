@@ -104,6 +104,9 @@ pub enum PublishResult {
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
     PermissionDenied { name: DatabaseName },
+
+    /// A required environment variable was missing.
+    MissingRequiredEnvironment { keys: Vec<String> },
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default)]

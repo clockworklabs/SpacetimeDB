@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 pub enum EnvironmentError {
     #[error(transparent)]
     Validation(#[from] EnvironmentValidationError),
-    #[error(transparent)]
+    #[error("couldn't validate schema")]
     Schema(#[from] EnvironmentSchemaError),
     #[error(transparent)]
     Datastore(#[from] DatastoreError),

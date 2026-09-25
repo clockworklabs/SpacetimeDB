@@ -754,11 +754,7 @@ async fn execute_publish_configs<'a>(
             .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
 
         let res = client.execute(request).await?;
-        anyhow::ensure!(res.status().is_success(), "Publish failed with HTTP {}", res.status());
-        let response: PublishResult = res
-            .json()
-            .await
-            .map_err(|_| anyhow::anyhow!("Invalid publish response"))?;
+        let response: PublishResult = res.json_or_error().await?;
         match response {
             PublishResult::Success {
                 domain,
@@ -796,6 +792,9 @@ async fn execute_publish_configs<'a>(
                     We suggest you push to either a domain owned by you, or a new domain like:\n\
                     \tspacetime publish {suggested_tld}\n",
                 ));
+            }
+            PublishResult::MissingRequiredEnvironment { keys } => {
+                anyhow::bail!("Missing required environment variable(s) {keys:?}")
             }
         }
     }

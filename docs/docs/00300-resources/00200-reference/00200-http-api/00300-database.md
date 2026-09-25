@@ -114,7 +114,7 @@ Both publish endpoints accept `Content-Type: application/vnd.spacetimedb.publish
 
 `module` uses standard padded Base64. `environment` supplies string overrides for declared or undeclared names. Unspecified stored values survive by default. The server validates the resulting environment against the module's declarations and installs both in one transaction: all required values must exist and all present declared values must satisfy their constraints. An empty or omitted map preserves stored values, including when publishing unchanged module bytes.
 
-A missing required value returns HTTP 400 with `Content-Type: application/json` and `{"error":"missing_required_environment","key":"API_KEY"}` identifying the missing key. Clients can prompt for that value and retry the publish. Other validation and module failures do not use this error code.
+A missing required value returns HTTP 400 with `Content-Type: application/json` and `{"MissingRequiredEnvironment":{"key":"API_KEY"}}` identifying the missing key. Clients can prompt for that value and retry the publish. Other validation and module failures do not use this error code.
 
 Optional fields `environment_remove` (an array of keys) and `environment_replace` (a boolean, default `false`) request explicit deletion or complete replacement. A key cannot be both supplied and removed. Replacement uses only the supplied map, deleting every unspecified declared and undeclared key, and rejects any nonempty removal list. Invalid updates leave the database unchanged.
 

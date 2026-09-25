@@ -12,7 +12,7 @@ pub const MAX_ENV_UNION_ENTRIES: usize = 256;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvironmentValidationError {
     InvalidKey,
-    InvalidValue,
+    ValueTooLarge,
     TooManyVariables,
 }
 
@@ -20,7 +20,7 @@ impl std::fmt::Display for EnvironmentValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::InvalidKey => "invalid POSIX environment variable name (maximum 256 bytes)",
-            Self::InvalidValue => "invalid environment value (maximum 8192 bytes)",
+            Self::ValueTooLarge => "environment value too large (maximum 8192 bytes)",
             Self::TooManyVariables => "environment store exceeds 256 variables",
         })
     }
@@ -42,8 +42,8 @@ pub fn validate_key(key: &str) -> Result<(), EnvironmentValidationError> {
 
 /// NUL is representable in the database. Container launch separately rejects it.
 pub fn validate_value(value: &str) -> Result<(), EnvironmentValidationError> {
-    if value.len() > MAX_ENV_VALUE_BYTES || value.contains('\0') {
-        return Err(EnvironmentValidationError::InvalidValue);
+    if value.len() > MAX_ENV_VALUE_BYTES {
+        return Err(EnvironmentValidationError::ValueTooLarge);
     }
     Ok(())
 }
@@ -138,50 +138,40 @@ pub struct EnvironmentSchema {
     declarations: std::collections::BTreeMap<String, EnvironmentDeclaration>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum EnvironmentSchemaErrorKind {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EnvironmentSchemaError {
     InvalidName,
     TooManyDeclarations,
     TooManyValues,
-    ConflictingUpdate,
-    DuplicateDeclaration,
-    EmptyUnion,
-    TooManyUnionEntries,
-    SchemaTooLarge,
-    LiteralTooLarge,
-    Undeclared,
-    MissingRequired,
-    ValueTooLarge,
-    ConstraintMismatch,
-}
-
-/// Errors identify a key and rule, and never contain a supplied or allowed value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnvironmentSchemaError {
-    pub key: Option<String>,
-    pub kind: EnvironmentSchemaErrorKind,
+    ConflictingUpdate { key: String },
+    DuplicateDeclaration { key: String },
+    EmptyUnion { key: String },
+    TooManyUnionEntries { key: String },
+    SchemaTooLarge { key: String },
+    LiteralTooLarge { key: String },
+    MissingRequired { key: String },
+    ValueTooLarge { key: String },
+    ConstraintMismatch { key: String },
 }
 
 impl std::fmt::Display for EnvironmentSchemaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(key) = &self.key {
-            write!(f, "environment key {key:?}: ")?;
-        }
-        f.write_str(match self.kind {
-            EnvironmentSchemaErrorKind::InvalidName => "invalid name",
-            EnvironmentSchemaErrorKind::TooManyDeclarations => "too many declarations",
-            EnvironmentSchemaErrorKind::TooManyValues => "too many stored values",
-            EnvironmentSchemaErrorKind::ConflictingUpdate => "conflicting environment update operations",
-            EnvironmentSchemaErrorKind::DuplicateDeclaration => "duplicate declaration",
-            EnvironmentSchemaErrorKind::EmptyUnion => "string union must not be empty",
-            EnvironmentSchemaErrorKind::TooManyUnionEntries => "string union has too many entries",
-            EnvironmentSchemaErrorKind::SchemaTooLarge => "declaration schema exceeds size limit",
-            EnvironmentSchemaErrorKind::LiteralTooLarge => "declared literal exceeds value size limit",
-            EnvironmentSchemaErrorKind::Undeclared => "key is not declared",
-            EnvironmentSchemaErrorKind::MissingRequired => "required value is missing",
-            EnvironmentSchemaErrorKind::ValueTooLarge => "value exceeds size limit",
-            EnvironmentSchemaErrorKind::ConstraintMismatch => "value does not satisfy its declared string constraint",
-        })
+        let (key, msg) = match self {
+            Self::InvalidName => return f.write_str("invalid name"),
+            Self::TooManyDeclarations => return f.write_str("too many declarations"),
+            Self::TooManyValues => return f.write_str("too many stored values"),
+            Self::ConflictingUpdate { key } => (key, "conflicting environment update operations"),
+            Self::DuplicateDeclaration { key } => (key, "duplicate declaration"),
+            Self::EmptyUnion { key } => (key, "string union must not be empty"),
+            Self::TooManyUnionEntries { key } => (key, "string union has too many entries"),
+            Self::SchemaTooLarge { key } => (key, "declaration schema exceeds size limit"),
+            Self::LiteralTooLarge { key } => (key, "declared literal exceeds value size limit"),
+            Self::MissingRequired { key } => (key, "required value is missing"),
+            Self::ValueTooLarge { key } => (key, "value exceeds size limit"),
+            Self::ConstraintMismatch { key } => (key, "value does not satisfy its declared string constraint"),
+        };
+
+        write!(f, "environment key {key:?}: {msg}")
     }
 }
 
@@ -195,46 +185,36 @@ impl EnvironmentSchema {
     }
 
     fn validate_metadata(declarations: &[EnvironmentDeclaration]) -> Result<(), EnvironmentSchemaError> {
-        use EnvironmentSchemaErrorKind as Kind;
         if declarations.len() > MAX_ENV_VARS {
-            return Err(EnvironmentSchemaError {
-                key: None,
-                kind: Kind::TooManyDeclarations,
-            });
+            return Err(EnvironmentSchemaError::TooManyDeclarations);
         }
         let mut bytes = 0usize;
         for declaration in declarations {
             // Never retain or format unvalidated key bytes in diagnostics.
-            validate_key(&declaration.name).map_err(|_| EnvironmentSchemaError {
-                key: None,
-                kind: Kind::InvalidName,
-            })?;
-            let error = |kind| EnvironmentSchemaError {
-                key: Some(declaration.name.clone()),
-                kind,
-            };
+            validate_key(&declaration.name).map_err(|_| EnvironmentSchemaError::InvalidName)?;
+            let key = &declaration.name;
             bytes += declaration.name.len();
             if bytes > MAX_ENV_SCHEMA_BYTES {
-                return Err(error(Kind::SchemaTooLarge));
+                return Err(EnvironmentSchemaError::SchemaTooLarge { key: key.clone() });
             }
             let literals = match &declaration.ty {
                 EnvVarType::String => &[][..],
                 EnvVarType::StringLiteral(value) => std::slice::from_ref(value),
                 EnvVarType::Union(values) => {
                     if values.is_empty() {
-                        return Err(error(Kind::EmptyUnion));
+                        return Err(EnvironmentSchemaError::EmptyUnion { key: key.clone() });
                     }
                     if values.len() > MAX_ENV_UNION_ENTRIES {
-                        return Err(error(Kind::TooManyUnionEntries));
+                        return Err(EnvironmentSchemaError::TooManyUnionEntries { key: key.clone() });
                     }
                     values.as_slice()
                 }
             };
             for value in literals {
-                validate_value(value).map_err(|_| error(Kind::LiteralTooLarge))?;
+                validate_value(value).map_err(|_| EnvironmentSchemaError::LiteralTooLarge { key: key.clone() })?;
                 bytes += value.len();
                 if bytes > MAX_ENV_SCHEMA_BYTES {
-                    return Err(error(Kind::SchemaTooLarge));
+                    return Err(EnvironmentSchemaError::SchemaTooLarge { key: key.clone() });
                 }
             }
         }
@@ -253,10 +233,7 @@ impl EnvironmentSchema {
                 values.dedup();
             }
             if schema.declarations.contains_key(&declaration.name) {
-                return Err(EnvironmentSchemaError {
-                    key: Some(declaration.name),
-                    kind: EnvironmentSchemaErrorKind::DuplicateDeclaration,
-                });
+                return Err(EnvironmentSchemaError::DuplicateDeclaration { key: declaration.name });
             }
             schema.declarations.insert(declaration.name.clone(), declaration);
         }
@@ -294,23 +271,12 @@ impl EnvironmentSchema {
     /// Validate supplied values without requiring every required key in this input.
     /// Undeclared values are stored strings but are not readable by module code.
     pub fn validate_supplied_values(&self, values: &EnvironmentMap) -> Result<(), EnvironmentSchemaError> {
-        use EnvironmentSchemaErrorKind as Kind;
         if values.len() > MAX_ENV_VARS {
-            return Err(EnvironmentSchemaError {
-                key: None,
-                kind: Kind::TooManyValues,
-            });
+            return Err(EnvironmentSchemaError::TooManyValues);
         }
         for (name, value) in values {
-            validate_key(name).map_err(|_| EnvironmentSchemaError {
-                key: None,
-                kind: Kind::InvalidName,
-            })?;
-            let error = |kind| EnvironmentSchemaError {
-                key: Some(name.clone()),
-                kind,
-            };
-            validate_value(value).map_err(|_| error(Kind::ValueTooLarge))?;
+            validate_key(name).map_err(|_| EnvironmentSchemaError::InvalidName)?;
+            validate_value(value).map_err(|_| EnvironmentSchemaError::ValueTooLarge { key: name.clone() })?;
             let Some(declaration) = self.get(name) else { continue };
             let matches = match &declaration.ty {
                 EnvVarType::String => true,
@@ -318,7 +284,7 @@ impl EnvironmentSchema {
                 EnvVarType::Union(allowed) => allowed.binary_search(value).is_ok(),
             };
             if !matches {
-                return Err(error(Kind::ConstraintMismatch));
+                return Err(EnvironmentSchemaError::ConstraintMismatch { key: name.clone() });
             }
         }
         Ok(())
@@ -327,9 +293,8 @@ impl EnvironmentSchema {
     fn validate_required(&self, values: &EnvironmentMap) -> Result<(), EnvironmentSchemaError> {
         for declaration in self.declarations() {
             if !declaration.optional && !values.contains_key(&declaration.name) {
-                return Err(EnvironmentSchemaError {
-                    key: Some(declaration.name.clone()),
-                    kind: EnvironmentSchemaErrorKind::MissingRequired,
+                return Err(EnvironmentSchemaError::MissingRequired {
+                    key: declaration.name.clone(),
                 });
             }
         }
@@ -367,26 +332,16 @@ impl From<EnvironmentMap> for EnvironmentUpdate {
 impl EnvironmentUpdate {
     /// Validate operations before any mutation. Diagnostics never include values.
     pub fn validate(&self) -> Result<(), EnvironmentSchemaError> {
-        use EnvironmentSchemaErrorKind as Kind;
         EnvironmentSchema::default().validate_supplied_values(&self.values)?;
         if let EnvironmentRemove::Keys(remove) = &self.remove {
             if remove.len() > MAX_ENV_VARS {
-                return Err(EnvironmentSchemaError {
-                    key: None,
-                    kind: Kind::TooManyValues,
-                });
+                return Err(EnvironmentSchemaError::TooManyValues);
             }
             let mut seen = std::collections::BTreeSet::new();
             for key in remove {
-                validate_key(key).map_err(|_| EnvironmentSchemaError {
-                    key: None,
-                    kind: Kind::InvalidName,
-                })?;
+                validate_key(key).map_err(|_| EnvironmentSchemaError::InvalidName)?;
                 if self.values.contains_key(key) || !seen.insert(key) {
-                    return Err(EnvironmentSchemaError {
-                        key: Some(key.clone()),
-                        kind: Kind::ConflictingUpdate,
-                    });
+                    return Err(EnvironmentSchemaError::ConflictingUpdate { key: key.clone() });
                 }
             }
         }
@@ -417,6 +372,7 @@ impl EnvironmentUpdate {
 #[cfg(test)]
 mod schema_tests {
     use super::*;
+    use std::assert_matches;
     use std::collections::BTreeMap;
 
     fn declaration(name: &str, ty: EnvVarType, optional: bool) -> EnvironmentDeclaration {
@@ -444,18 +400,18 @@ mod schema_tests {
         values.insert("OPTIONAL".into(), "".into());
         schema.validate_values(&values).unwrap();
         values.insert("MODE".into(), "False".into());
-        assert_eq!(
-            schema.validate_values(&values).unwrap_err().kind,
-            EnvironmentSchemaErrorKind::ConstraintMismatch
+        assert_matches!(
+            schema.validate_values(&values).unwrap_err(),
+            EnvironmentSchemaError::ConstraintMismatch { .. }
         );
         values.remove("MODE");
-        assert_eq!(
-            schema.validate_values(&values).unwrap_err().kind,
-            EnvironmentSchemaErrorKind::MissingRequired
+        assert_matches!(
+            schema.validate_values(&values).unwrap_err(),
+            EnvironmentSchemaError::MissingRequired { .. }
         );
         values.insert("UNDECLARED".into(), "secret-marker".into());
         let error = schema.validate_values(&values).unwrap_err();
-        assert_eq!(error.kind, EnvironmentSchemaErrorKind::MissingRequired);
+        assert_matches!(error, EnvironmentSchemaError::MissingRequired { .. });
         assert!(!format!("{error:?}: {error}").contains("secret-marker"));
     }
 
@@ -477,9 +433,9 @@ mod schema_tests {
         }
         .resulting_values(&old)
         .unwrap();
-        assert_eq!(
-            schema.validate_values(&removed).unwrap_err().kind,
-            EnvironmentSchemaErrorKind::MissingRequired
+        assert_matches!(
+            schema.validate_values(&removed).unwrap_err(),
+            EnvironmentSchemaError::MissingRequired { .. }
         );
         let replace = EnvironmentUpdate {
             remove: EnvironmentRemove::All,
@@ -495,9 +451,9 @@ mod schema_tests {
             false,
         )])
         .unwrap();
-        assert_eq!(
-            newly_declared.validate_values(&old).unwrap_err().kind,
-            EnvironmentSchemaErrorKind::ConstraintMismatch
+        assert_matches!(
+            newly_declared.validate_values(&old).unwrap_err(),
+            EnvironmentSchemaError::ConstraintMismatch { .. }
         );
         let corrected = EnvironmentUpdate::from(BTreeMap::from([("UNUSED".into(), "other".into())]))
             .resulting_values(&old)
@@ -509,12 +465,11 @@ mod schema_tests {
     #[test]
     fn mutation_conflicts_and_resulting_store_limit_are_rejected() {
         let stored = (0..MAX_ENV_VARS).map(|i| (format!("KEY{i}"), String::new())).collect();
-        assert_eq!(
+        assert_matches!(
             EnvironmentUpdate::from(BTreeMap::from([("EXTRA".into(), String::new())]))
                 .resulting_values(&stored)
-                .unwrap_err()
-                .kind,
-            EnvironmentSchemaErrorKind::TooManyValues
+                .unwrap_err(),
+            EnvironmentSchemaError::TooManyValues
         );
         for update in [
             EnvironmentUpdate {
@@ -527,7 +482,7 @@ mod schema_tests {
             },
         ] {
             let error = update.validate().unwrap_err();
-            assert_eq!(error.kind, EnvironmentSchemaErrorKind::ConflictingUpdate);
+            assert_matches!(error, EnvironmentSchemaError::ConflictingUpdate { .. });
             assert!(!error.to_string().contains("secret-marker"));
         }
     }
@@ -535,35 +490,34 @@ mod schema_tests {
     #[test]
     fn declaration_limits_count_absent_optionals_and_reject_invalid_metadata() {
         let optional = declaration("A", EnvVarType::String, true);
-        assert_eq!(
-            EnvironmentSchema::new(vec![optional.clone(), optional])
-                .unwrap_err()
-                .kind,
-            EnvironmentSchemaErrorKind::DuplicateDeclaration
+        assert_matches!(
+            EnvironmentSchema::new(vec![optional.clone(), optional]).unwrap_err(),
+            EnvironmentSchemaError::DuplicateDeclaration { .. }
         );
-        assert_eq!(
+        assert_matches!(
             EnvironmentSchema::new(
                 (0..=MAX_ENV_VARS)
                     .map(|i| declaration(&format!("K{i}"), EnvVarType::String, true))
                     .collect()
             )
-            .unwrap_err()
-            .kind,
-            EnvironmentSchemaErrorKind::TooManyDeclarations
+            .unwrap_err(),
+            EnvironmentSchemaError::TooManyDeclarations
         );
         for (name, constraint, expected) in [
-            ("A-B", EnvVarType::String, EnvironmentSchemaErrorKind::InvalidName),
-            ("A", EnvVarType::Union(vec![]), EnvironmentSchemaErrorKind::EmptyUnion),
+            ("A-B", EnvVarType::String, EnvironmentSchemaError::InvalidName),
+            (
+                "A",
+                EnvVarType::Union(vec![]),
+                EnvironmentSchemaError::EmptyUnion { key: "A".into() },
+            ),
             (
                 "A",
                 EnvVarType::StringLiteral("x".repeat(MAX_ENV_VALUE_BYTES + 1)),
-                EnvironmentSchemaErrorKind::LiteralTooLarge,
+                EnvironmentSchemaError::LiteralTooLarge { key: "A".into() },
             ),
         ] {
             assert_eq!(
-                EnvironmentSchema::new(vec![declaration(name, constraint, true)])
-                    .unwrap_err()
-                    .kind,
+                EnvironmentSchema::new(vec![declaration(name, constraint, true)]).unwrap_err(),
                 expected
             );
         }
@@ -577,7 +531,6 @@ mod schema_tests {
     fn raw_metadata_is_bounded_before_copying_or_formatting_untrusted_keys() {
         let invalid = format!("private-marker\n{}", "x".repeat(100_000));
         let error = EnvironmentSchema::new(vec![declaration(&invalid, EnvVarType::String, true)]).unwrap_err();
-        assert_eq!(error.key, None);
         assert!(!format!("{error:?}: {error}").contains("private-marker"));
         let error = EnvironmentSchema::new(vec![declaration(
             "A",
@@ -585,13 +538,13 @@ mod schema_tests {
             true,
         )])
         .unwrap_err();
-        assert_eq!(error.kind, EnvironmentSchemaErrorKind::TooManyUnionEntries);
+        assert_matches!(error, EnvironmentSchemaError::TooManyUnionEntries { .. });
         let error = EnvironmentSchema::new(vec![declaration(
             "A",
             EnvVarType::Union(vec!["x".repeat(MAX_ENV_VALUE_BYTES); MAX_ENV_UNION_ENTRIES]),
             true,
         )])
         .unwrap_err();
-        assert_eq!(error.kind, EnvironmentSchemaErrorKind::SchemaTooLarge);
+        assert_matches!(error, EnvironmentSchemaError::SchemaTooLarge { .. });
     }
 }

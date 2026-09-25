@@ -580,37 +580,24 @@ impl From<Database> for DatabaseResponse {
     }
 }
 
-fn environment_validation_error(error: &anyhow::Error) -> Option<axum::response::ErrorResponse> {
-    use spacetimedb::db::environment::EnvironmentError;
+fn environment_validation_error(mut error: &anyhow::Error) -> Option<axum::response::ErrorResponse> {
+    // TODO(noa): clean up these errors my g-d this is bad
     use spacetimedb::host::module_host::InitDatabaseError;
-    use spacetimedb_lib::environment::{validate_key, EnvironmentSchemaError, EnvironmentSchemaErrorKind};
-    if let Some(InitDatabaseError::Other(error)) = error.downcast_ref::<InitDatabaseError>() {
-        return environment_validation_error(error);
+    use spacetimedb_lib::environment::EnvironmentSchemaError;
+    while let Some(InitDatabaseError::Other(e)) = error.downcast_ref::<InitDatabaseError>() {
+        error = e;
     }
-    let error =
-        error
-            .downcast_ref::<EnvironmentSchemaError>()
-            .or_else(|| match error.downcast_ref::<EnvironmentError>() {
-                Some(EnvironmentError::Schema(error)) => Some(error),
-                _ => None,
-            })?;
+    let error = error.chain().find_map(|x| x.downcast_ref())?;
     // Only typed host validation can ask the caller for a secret. Never infer
     // missing keys from module failures or arbitrary diagnostic text.
-    if error.kind == EnvironmentSchemaErrorKind::MissingRequired
-        && let Some(key) = error.key.as_deref().filter(|key| validate_key(key).is_ok())
-    {
-        return Some(
-            (
-                StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({
-                    "error": "missing_required_environment",
-                    "key": key,
-                })),
-            )
-                .into(),
-        );
-    }
-    Some((StatusCode::BAD_REQUEST, error.to_string()).into())
+    let res = if let EnvironmentSchemaError::MissingRequired { key } = error {
+        // TODO(noa): in the future, return multiple missing keys at once
+        let result = PublishResult::MissingRequiredEnvironment { keys: vec![key.into()] };
+        (StatusCode::BAD_REQUEST, axum::Json(result)).into()
+    } else {
+        (StatusCode::BAD_REQUEST, error.to_string()).into()
+    };
+    Some(res)
 }
 
 fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
@@ -1882,11 +1869,8 @@ mod tests {
 
     #[tokio::test]
     async fn publish_environment_error_identifies_only_typed_missing_required_keys() {
-        use spacetimedb_lib::environment::{EnvironmentSchemaError, EnvironmentSchemaErrorKind};
-        let missing = || EnvironmentSchemaError {
-            key: Some("API_KEY".into()),
-            kind: EnvironmentSchemaErrorKind::MissingRequired,
-        };
+        use spacetimedb_lib::environment::EnvironmentSchemaError;
+        let missing = || EnvironmentSchemaError::MissingRequired { key: "API_KEY".into() };
         for response in [
             publish_error(anyhow::Error::new(missing()).context("publication failed")),
             publish_migration_error(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
@@ -1910,20 +1894,15 @@ mod tests {
             assert_eq!(
                 serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
                 serde_json::json!({
-                    "error": "missing_required_environment", "key": "API_KEY",
+                    "MissingRequiredEnvironment": { "key": "API_KEY" }
                 })
             );
         }
         for error in [
             anyhow::anyhow!("environment key API_KEY: required value is missing"),
-            EnvironmentSchemaError {
-                key: Some("API_KEY".into()),
-                kind: EnvironmentSchemaErrorKind::ConstraintMismatch,
-            }
-            .into(),
-            EnvironmentSchemaError {
-                key: Some("INVALID-KEY".into()),
-                kind: EnvironmentSchemaErrorKind::MissingRequired,
+            EnvironmentSchemaError::ConstraintMismatch { key: "API_KEY".into() }.into(),
+            EnvironmentSchemaError::MissingRequired {
+                key: "INVALID-KEY".into(),
             }
             .into(),
         ] {

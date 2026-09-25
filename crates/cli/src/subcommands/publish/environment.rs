@@ -3,9 +3,11 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 
 pub(super) use crate::schema_extract::{inspect, read_program};
+use crate::util::ResponseExt;
 use anyhow::Context;
 use headers::HeaderMapExt;
 use serde_json::Value;
+use spacetimedb_client_api_messages::name::PublishResult;
 use spacetimedb_client_api_messages::publish::SpacetimeEnvironmentRemove;
 use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentSchema};
 
@@ -114,12 +116,10 @@ pub(super) async fn publish_only(
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
     let response = add_auth_header_opt(client.get(&url), &auth).send().await?;
-    anyhow::ensure!(
-        response.status().is_success(),
-        "Cannot read environment schema: HTTP {}",
-        response.status()
-    );
-    let metadata: EnvironmentMetadata = response.json().await.context("Invalid environment metadata")?;
+    let metadata: EnvironmentMetadata = response
+        .json_or_error()
+        .await
+        .context("failed to fetch environment schema")?;
     let schema = EnvironmentSchema::new(metadata.declarations)?;
     let resolved = resolve(&schema, input, |key| std::env::var_os(key))?;
     options.validate_values(&resolved.values)?;
@@ -137,23 +137,18 @@ pub(super) async fn publish_only(
             .headers_mut()
             .typed_insert(SpacetimeEnvironmentRemove(options.remove.clone()));
     }
-    let response = client.execute(request).await?;
-    anyhow::ensure!(
-        response.status().is_success(),
-        "Environment publish failed with HTTP {}",
-        response.status()
-    );
-    match response
-        .json::<spacetimedb_client_api_messages::name::PublishResult>()
-        .await
-        .map_err(|_| anyhow::anyhow!("Invalid publish response"))?
-    {
-        spacetimedb_client_api_messages::name::PublishResult::Success { database_identity, .. } => {
+    let res = client.execute(request).await?;
+    let response: PublishResult = res.json_or_error().await?;
+    match response {
+        PublishResult::Success { database_identity, .. } => {
             println!("Updated environment for database {database_identity}");
             Ok(())
         }
-        spacetimedb_client_api_messages::name::PublishResult::PermissionDenied { .. } => {
+        PublishResult::PermissionDenied { .. } => {
             anyhow::bail!("Permission denied publishing environment values")
+        }
+        PublishResult::MissingRequiredEnvironment { keys } => {
+            anyhow::bail!("Missing required environment variable(s) {keys:?}")
         }
     }
 }
