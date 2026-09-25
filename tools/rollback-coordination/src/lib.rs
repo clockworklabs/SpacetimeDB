@@ -108,12 +108,16 @@ pub fn rollback_point_for_repo(
     allowed_reference_repos: &[&Path],
     target_release: &Release,
     ignore_incompatible_tags: bool,
+    additional_pull_requests: &[u64],
     extra_constraints: &[Release],
 ) -> Result<Release> {
     let base = previous_release(current_repo, target_release, ignore_incompatible_tags)?;
     tracing::info!(%base, %target_release, "Computing rollback point");
     let previous_point = read_rollback_point_at(current_repo, &base)?;
-    let pull_requests = pull_requests_in_range(current_repo, &base.to_string(), "HEAD")?;
+    let mut pull_requests = pull_requests_in_range(current_repo, &base.to_string(), "HEAD")?;
+    pull_requests.extend_from_slice(additional_pull_requests);
+    pull_requests.sort_unstable();
+    pull_requests.dedup();
     let point = earliest_rollback_point(
         github,
         current_repo,
@@ -478,7 +482,16 @@ mod tests {
         };
         let target = Release::from_tag("v2.8.2").unwrap().unwrap();
         assert_eq!(
-            rollback_point_for_repo(&github, repository.path(), &[repository.path()], &target, false, &[]).unwrap(),
+            rollback_point_for_repo(
+                &github,
+                repository.path(),
+                &[repository.path()],
+                &target,
+                false,
+                &[],
+                &[]
+            )
+            .unwrap(),
             Release::from_tag("v2.8.1").unwrap().unwrap()
         );
     }

@@ -49,4 +49,7 @@ jobs:
           --allowed-reference-repo .
           --pr-number "${{ github.event.pull_request.number }}"
       - name: Check rollback file
-        run: cargo ci other-workflows rollback-file --check
+        run: >-
+          cargo ci other-workflows rollback-file
+          --check
+          --pr-number "${{ github.event.pull_request.number }}"

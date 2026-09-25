@@ -13,6 +13,9 @@ struct Args {
     repo: PathBuf,
     #[arg(long)]
     check: bool,
+    /// Include the current PR, whose number is not yet present in its commit subjects.
+    #[arg(long)]
+    pr_number: Option<u64>,
 }
 
 fn target_release(repo: &Path) -> Result<Release> {
@@ -37,7 +40,8 @@ fn main() -> Result<()> {
         .init();
     let args = Args::parse();
     let target = target_release(&args.repo)?;
-    let point = rollback_point_for_repo(&Gh, &args.repo, &[&args.repo], &target, false, &[])?;
+    let pull_requests = args.pr_number.into_iter().collect::<Vec<_>>();
+    let point = rollback_point_for_repo(&Gh, &args.repo, &[&args.repo], &target, false, &pull_requests, &[])?;
     write_or_check_rollback_point(&args.repo, &point, args.check)?;
     println!("Earliest allowed rollback point: {point}");
     Ok(())
