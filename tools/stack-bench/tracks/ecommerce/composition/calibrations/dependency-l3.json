@@ -1641,7 +1641,7 @@
       "id": "ecommerce.dependency-l3-calibration",
       "contentSha256": "63aaee2df48f7f6e8a0caaf5c04981a99a3be63aa9c6c99d05b5fc04be3f031c"
     },
-    "rationale": "The retained reconnect review covers the prior runtime change. The current review limits executable reuse to unchanged checks and requires current positive, defect, and null evidence for credential replay and cross-origin delivery.",
+    "rationale": "The retained reviews cover reconnect, authentication, and model selection. The current review limits executable reuse to reference and defect behavior unchanged by stock-view error classification and Docker smoke failure diagnostics.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
@@ -1654,6 +1654,10 @@
       {
         "path": "qualification-evidence/ecommerce-l3-model-selection-20260925/reuse-review.json",
         "sha256": "35bd9c773773771a88765de396d6011e83d026da18cf9dd599451cf9be2d613d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-stock-view-20260925/reuse-review.json",
+        "sha256": "1b001bf2d26382cda924677486826b5e0e6d35c89f38044b6871906bae52f654"
       }
     ],
     "scopes": [
@@ -1661,49 +1665,49 @@
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "f8abafe1c007cdb5d896e965507befa5507d3c291c8e84dc45ed6479549b797c"
+        "toExecutableSha256": "6437a638ab4a044ef13c083098a18d21d26bbdb8b618f92462d7fd6fcd712744"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "f8abafe1c007cdb5d896e965507befa5507d3c291c8e84dc45ed6479549b797c"
+        "toExecutableSha256": "6437a638ab4a044ef13c083098a18d21d26bbdb8b618f92462d7fd6fcd712744"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "e48fbc8152ea78975af64b9baf059879375f39fecaec2f5a3d272062a5ad14c2"
+        "toExecutableSha256": "8a356886d4a0773954f0c25d9b37141ddb37d9a82c9eb5a117e8949af28780a0"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "e48fbc8152ea78975af64b9baf059879375f39fecaec2f5a3d272062a5ad14c2"
+        "toExecutableSha256": "8a356886d4a0773954f0c25d9b37141ddb37d9a82c9eb5a117e8949af28780a0"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "ac151a404adbfd7d454a79aba2acfee965ea34376855cc14c2815634617b0a4a"
+        "toExecutableSha256": "dd325fc7ab570f887080286fc4fa0ec213e8b5452b27b4273361ade225f65434"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "ac151a404adbfd7d454a79aba2acfee965ea34376855cc14c2815634617b0a4a"
+        "toExecutableSha256": "dd325fc7ab570f887080286fc4fa0ec213e8b5452b27b4273361ade225f65434"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "6d0280c7505add0a926a5a28b6c57b3f9216e2608ad2bd53f1cdabcdf7ef82ab"
+        "toExecutableSha256": "8dab59db9a54bee847ef2328ff083d36fdc23247f289c9389368c05aa6b06e7e"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "6d0280c7505add0a926a5a28b6c57b3f9216e2608ad2bd53f1cdabcdf7ef82ab"
+        "toExecutableSha256": "8dab59db9a54bee847ef2328ff083d36fdc23247f289c9389368c05aa6b06e7e"
       },
       {
         "kind": "null",
@@ -1714,49 +1718,49 @@
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
-        "toExecutableSha256": "f8abafe1c007cdb5d896e965507befa5507d3c291c8e84dc45ed6479549b797c"
+        "toExecutableSha256": "6437a638ab4a044ef13c083098a18d21d26bbdb8b618f92462d7fd6fcd712744"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
-        "toExecutableSha256": "f8abafe1c007cdb5d896e965507befa5507d3c291c8e84dc45ed6479549b797c"
+        "toExecutableSha256": "6437a638ab4a044ef13c083098a18d21d26bbdb8b618f92462d7fd6fcd712744"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
-        "toExecutableSha256": "e48fbc8152ea78975af64b9baf059879375f39fecaec2f5a3d272062a5ad14c2"
+        "toExecutableSha256": "8a356886d4a0773954f0c25d9b37141ddb37d9a82c9eb5a117e8949af28780a0"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
-        "toExecutableSha256": "e48fbc8152ea78975af64b9baf059879375f39fecaec2f5a3d272062a5ad14c2"
+        "toExecutableSha256": "8a356886d4a0773954f0c25d9b37141ddb37d9a82c9eb5a117e8949af28780a0"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
-        "toExecutableSha256": "ac151a404adbfd7d454a79aba2acfee965ea34376855cc14c2815634617b0a4a"
+        "toExecutableSha256": "dd325fc7ab570f887080286fc4fa0ec213e8b5452b27b4273361ade225f65434"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
-        "toExecutableSha256": "ac151a404adbfd7d454a79aba2acfee965ea34376855cc14c2815634617b0a4a"
+        "toExecutableSha256": "dd325fc7ab570f887080286fc4fa0ec213e8b5452b27b4273361ade225f65434"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
-        "toExecutableSha256": "6d0280c7505add0a926a5a28b6c57b3f9216e2608ad2bd53f1cdabcdf7ef82ab"
+        "toExecutableSha256": "8dab59db9a54bee847ef2328ff083d36fdc23247f289c9389368c05aa6b06e7e"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
-        "toExecutableSha256": "6d0280c7505add0a926a5a28b6c57b3f9216e2608ad2bd53f1cdabcdf7ef82ab"
+        "toExecutableSha256": "8dab59db9a54bee847ef2328ff083d36fdc23247f289c9389368c05aa6b06e7e"
       },
       {
         "kind": "null",
@@ -1767,49 +1771,49 @@
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50",
-        "toExecutableSha256": "f8abafe1c007cdb5d896e965507befa5507d3c291c8e84dc45ed6479549b797c"
+        "toExecutableSha256": "6437a638ab4a044ef13c083098a18d21d26bbdb8b618f92462d7fd6fcd712744"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50",
-        "toExecutableSha256": "f8abafe1c007cdb5d896e965507befa5507d3c291c8e84dc45ed6479549b797c"
+        "toExecutableSha256": "6437a638ab4a044ef13c083098a18d21d26bbdb8b618f92462d7fd6fcd712744"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a",
-        "toExecutableSha256": "e48fbc8152ea78975af64b9baf059879375f39fecaec2f5a3d272062a5ad14c2"
+        "toExecutableSha256": "8a356886d4a0773954f0c25d9b37141ddb37d9a82c9eb5a117e8949af28780a0"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a",
-        "toExecutableSha256": "e48fbc8152ea78975af64b9baf059879375f39fecaec2f5a3d272062a5ad14c2"
+        "toExecutableSha256": "8a356886d4a0773954f0c25d9b37141ddb37d9a82c9eb5a117e8949af28780a0"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba",
-        "toExecutableSha256": "ac151a404adbfd7d454a79aba2acfee965ea34376855cc14c2815634617b0a4a"
+        "toExecutableSha256": "dd325fc7ab570f887080286fc4fa0ec213e8b5452b27b4273361ade225f65434"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba",
-        "toExecutableSha256": "ac151a404adbfd7d454a79aba2acfee965ea34376855cc14c2815634617b0a4a"
+        "toExecutableSha256": "dd325fc7ab570f887080286fc4fa0ec213e8b5452b27b4273361ade225f65434"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc",
-        "toExecutableSha256": "6d0280c7505add0a926a5a28b6c57b3f9216e2608ad2bd53f1cdabcdf7ef82ab"
+        "toExecutableSha256": "8dab59db9a54bee847ef2328ff083d36fdc23247f289c9389368c05aa6b06e7e"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc",
-        "toExecutableSha256": "6d0280c7505add0a926a5a28b6c57b3f9216e2608ad2bd53f1cdabcdf7ef82ab"
+        "toExecutableSha256": "8dab59db9a54bee847ef2328ff083d36fdc23247f289c9389368c05aa6b06e7e"
       }
     ]
   }
