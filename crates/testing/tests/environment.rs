@@ -83,14 +83,15 @@ const TYPESCRIPT_SCOPE: SubmoduleScopeCases = SubmoduleScopeCases {
 };
 
 const CSHARP_SCOPE: SubmoduleScopeCases = SubmoduleScopeCases {
-    reducer: "MyAuth.expect_environment",
-    procedures: &["MyAuth.read_environment", "MyAuth.read_environment_in_tx"],
+    // The fixture omits Name: the root's default policy converts MyAuth to my_auth.
+    reducer: "my_auth.expect_environment",
+    procedures: &["my_auth.read_environment", "my_auth.read_environment_in_tx"],
     // C# covers both view context types. The raw-SQL bypass cases above remain TS-only.
     views: &[
-        ("MyAuth.environment_value", "\"MyAuth\".environment_value"),
+        ("my_auth.environment_value", "my_auth.environment_value"),
         (
-            "MyAuth.anonymous_environment_value",
-            "\"MyAuth\".anonymous_environment_value",
+            "my_auth.anonymous_environment_value",
+            "my_auth.anonymous_environment_value",
         ),
     ],
     root_http_routes: &["/root-environment", "/auth-environment"],

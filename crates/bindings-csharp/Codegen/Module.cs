@@ -1820,10 +1820,10 @@ record ReducerDeclaration
                 $$"""
                 private static class {{cacheName}}
                 {
-                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(
+                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveFunctionName({{SymbolDisplay.FormatLiteral(
                     declaringAssembly,
                     true
-                )}}, {{functionName}});
+                )}}, nameof({{Identifier}}), {{(string.IsNullOrEmpty(CanonicalName) ? "null" : SymbolDisplay.FormatLiteral(CanonicalName!, true))}});
                     // Prevent eager initialization before the root installs namespace placements.
                     static {{cacheName}}() { }
                 }
@@ -2067,10 +2067,10 @@ record ProcedureDeclaration
                 $$"""
                 private static class {{cacheName}}
                 {
-                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(
+                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveFunctionName({{SymbolDisplay.FormatLiteral(
                     declaringAssembly,
                     true
-                )}}, {{functionName}});
+                )}}, nameof({{Identifier}}), {{(string.IsNullOrEmpty(CanonicalName) ? "null" : SymbolDisplay.FormatLiteral(CanonicalName!, true))}});
                     // Prevent eager initialization before the root installs namespace placements.
                     static {{cacheName}}() { }
                 }
@@ -3068,15 +3068,19 @@ public class Module : IIncrementalGenerator
                 var consumerReadOnlyAccessors = ConsumerAccessors("ReadOnlyTables");
                 var consumerQueryAccessors = ConsumerAccessors("Queries");
 
+                var declaredCasePolicy =
+                    settings.Array.Length == 1 ? settings.Array[0].CaseConversionPolicy : null;
+                var rootCasePolicy = declaredCasePolicy ?? "SnakeCase";
+
                 var compositionRegistration = new List<string>
                 {
                     "global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry("
                         + SymbolDisplay.FormatLiteral(identity, true)
-                        + ", new global::System.Collections.Generic.KeyValuePair<string, string>[] {"
+                        + $", global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{"
                         + string.Join(
                             ",",
                             mountByIdentity.Values.Select(m =>
-                                $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)})"
+                                $"({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)}, {(m.Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, global::SpacetimeDB.CaseConversionPolicy.{assemblies.Array.Single(a => a.Identity == m.AssemblyIdentity).CaseConversionPolicy ?? "SnakeCase"})"
                             )
                         )
                         + "}));",
@@ -3096,7 +3100,7 @@ public class Module : IIncrementalGenerator
                         $"{assembly.DescriptorTypeName}.Register(child{i}, global::SpacetimeDB.Internal.Module.RootBuilder);"
                     );
                     compositionRegistration.Add(
-                        $"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Accessor, true)}, child{i});"
+                        $"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Accessor, true)}, {(mountByIdentity[assembly.Identity].Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, child{i});"
                     );
                 }
 
@@ -3118,11 +3122,8 @@ public class Module : IIncrementalGenerator
                     );
                 }
 
-                var declaredCasePolicy =
-                    settings.Array.Length == 1 ? settings.Array[0].CaseConversionPolicy : null;
                 // A shared typespace also has one naming policy. Unspecified dependency
                 // settings inherit the root policy, whose host default is SnakeCase.
-                var rootCasePolicy = declaredCasePolicy ?? "SnakeCase";
                 foreach (var assembly in publicScopeAssemblies)
                 {
                     if (

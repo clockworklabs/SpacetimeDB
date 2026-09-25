@@ -176,6 +176,75 @@ fn namespace_csharp_cross_namespace_calls() {
 
 #[test]
 #[serial]
+fn namespace_csharp_canonical_name_resolution() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_schema::def::ModuleDef;
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            // Derive expected names with the actual host validator, not a second test-side converter.
+            for accessor in ["MyHTTP2Auth", "public", ""] {
+                for root_none in [false, true] {
+                    for child_none in [false, true] {
+                        for (source, explicit) in [
+                            ("HTTP2ReducerTick", None),
+                            ("__my__XMLParser99", None),
+                            ("already_snake_case", None),
+                            ("SourceName", Some("ExplicitNAME")),
+                        ] {
+                            let mut root = RawModuleDefV10Builder::new();
+                            root.set_case_conversion_policy(if root_none {
+                                CaseConversionPolicy::None
+                            } else {
+                                CaseConversionPolicy::SnakeCase
+                            });
+                            let mut child = RawModuleDefV10Builder::new();
+                            child.set_case_conversion_policy(if child_none {
+                                CaseConversionPolicy::None
+                            } else {
+                                CaseConversionPolicy::SnakeCase
+                            });
+                            let named = !accessor.is_empty() && accessor != "public";
+                            let target = if named { &mut child } else { &mut root };
+                            target.add_reducer(source, spacetimedb_lib::ProductType::unit());
+                            if let Some(name) = explicit {
+                                let mut names = ExplicitNames::default();
+                                names.insert_function(source, name);
+                                target.add_explicit_names(names);
+                            }
+                            if named {
+                                root.add_submodule(accessor, child.finish());
+                            }
+                            let schema: ModuleDef = root.finish().try_into().unwrap();
+                            let expected = schema.all_reducers_with_prefix()[0].2.name.to_string();
+                            let args = serde_json::json!([
+                                accessor,
+                                null,
+                                source,
+                                explicit.map(|name| serde_json::json!({"some": name})),
+                                root_none,
+                                child_none
+                            ])
+                            .to_string();
+                            assert_eq!(
+                                module
+                                    .call_procedure_with_args("resolve_schedule_name", &args)
+                                    .await
+                                    .unwrap(),
+                                AlgebraicValue::String(expected.into()),
+                                "{args}"
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    );
+}
+
+#[test]
+#[serial]
 fn test_calling_a_reducer_typescript() {
     test_calling_a_reducer_in_module("module-test-ts");
 }

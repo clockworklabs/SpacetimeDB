@@ -96,8 +96,13 @@ internal static class Program
         {
             Wait(() => connected, "connect");
             Require(
-                conn.Db.MyAuth.User.RemoteTableName == "MyAuth.auth_users",
+                conn.Db.MyAuth.User.RemoteTableName == "auth_data.auth_users",
                 "Explicit table wire name"
+            );
+            Require(
+                new QueryBuilder().From.MyAuth.User().ToSql()
+                    == "SELECT * FROM \"auth_data\".\"auth_users\"",
+                "Accessor query must use the canonical namespace and table name"
             );
             Require(
                 conn.Db.@class.User.RemoteTableName == "class.user",
@@ -295,7 +300,7 @@ internal static class Program
             conn.SubscriptionBuilder()
                 .OnApplied(_ => throw new Exception("A non-owner subscribed to private child data"))
                 .OnError((_, _) => privateDenied = true)
-                .Subscribe(new[] { "SELECT * FROM \"MyAuth\".secret" });
+                .Subscribe(new[] { "SELECT * FROM \"auth_data\".secret" });
             Wait(() => privateDenied, "private child subscription rejection");
 
             var failed = false;

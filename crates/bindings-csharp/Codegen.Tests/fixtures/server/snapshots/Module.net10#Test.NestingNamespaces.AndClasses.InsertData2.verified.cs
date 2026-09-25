@@ -8,10 +8,12 @@ namespace Test.NestingNamespaces
     {
         private static class __ScheduleInsertData2Name
         {
-            internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
-                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(InsertData2)
-            );
+            internal static readonly string Name =
+                global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    nameof(InsertData2),
+                    null
+                );
 
             // Prevent eager initialization before the root installs namespace placements.
             static __ScheduleInsertData2Name() { }
