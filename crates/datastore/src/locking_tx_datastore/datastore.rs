@@ -1844,6 +1844,43 @@ pub(crate) mod tests {
         assert_eq!(**s1, s2);
     }
 
+    /// A view's params must be the same whether its schema was built from the module def
+    /// or reloaded from `st_view_param`.
+    #[test]
+    fn test_view_params_consistent_with_st_view_param() -> ResultTest<()> {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+        use spacetimedb_sats::ProductType;
+        use spacetimedb_schema::def::ModuleDef;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        let row = builder.add_algebraic_type(
+            [],
+            "row",
+            AlgebraicType::Product(ProductType::from_iter([("x", AlgebraicType::U8)])),
+            true,
+        );
+        let params = ProductType::from_iter([("id", AlgebraicType::U32)]);
+        builder.add_view(
+            "v",
+            0,
+            true,
+            true,
+            params.clone(),
+            AlgebraicType::array(AlgebraicType::Ref(row)),
+        );
+        let module_def: ModuleDef = builder.finish().try_into()?;
+        let view_def = module_def.view("v").expect("view should exist");
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let (_, table_id) = tx.create_view(&module_def, view_def)?;
+
+        verify_schemas_consistent(&mut tx, table_id);
+        let schema = tx.get_schema(table_id).expect("should exist");
+        assert_eq!(schema.view_info.as_ref().expect("should be a view").params, params);
+        Ok(())
+    }
+
     #[test]
     fn test_schema_for_table_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
