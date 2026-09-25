@@ -181,10 +181,11 @@ jobs:
     # Fortunately, we can run on standard GitHub Actions infra because we don't care
     # about other stuff running on the machine!
     # runs-on: benchmarks-runner
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
-      image: rust:1.93.0
+      # !rust-toolchain-sync
+      image: rust:1.96.1
       options: --privileged
     # disable until we fix the benchmarks
     if: false

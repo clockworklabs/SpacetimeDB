@@ -8,6 +8,25 @@ pub enum ClearMode {
     Never,      // parses as "never"
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format {
+    Text,
+    Json,
+}
+
+impl clap::ValueEnum for Format {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Text, Self::Json]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
+            Self::Json => Some(clap::builder::PossibleValue::new("json")),
+        }
+    }
+}
+
 pub fn server() -> Arg {
     Arg::new("server")
         .long("server")
@@ -28,6 +47,15 @@ pub fn yes() -> Arg {
         .short('y')
         .action(SetTrue)
         .help("Run non-interactively wherever possible. This will answer \"yes\" to almost all prompts, but will sometimes answer \"no\" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).")
+}
+
+/// The `--format` arg, parsed as a [`Format`]. Callers supply their own `.help(...)`.
+pub fn format() -> Arg {
+    Arg::new("format")
+        .long("format")
+        .default_value("text")
+        .required(false)
+        .value_parser(value_parser!(Format))
 }
 
 pub fn confirmed() -> Arg {

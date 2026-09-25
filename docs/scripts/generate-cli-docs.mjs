@@ -81,7 +81,8 @@ async function main() {
 
   // Post-process: escape angle-bracket placeholders outside backtick spans for MDX
   const raw = await fs.readFile(outFile, 'utf8');
-  await fs.writeFile(outFile, escapeAngleBracketsOutsideBackticks(raw), 'utf8');
+  const escaped = escapeAngleBracketsOutsideBackticks(raw);
+  await fs.writeFile(outFile, `${escaped.trimEnd()}\n`, 'utf8');
 }
 
 main().catch(err => {

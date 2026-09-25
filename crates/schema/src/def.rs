@@ -18,6 +18,7 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
+use std::sync::LazyLock;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -44,6 +45,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
+use spacetimedb_lib::environment::EnvironmentSchema;
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
@@ -110,12 +112,15 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ModuleDef {
-    /// The namespace path this module is mounted under, empty for the root.
+    /// The canonical namespace path this module is mounted under, empty for the root.
     ///
     /// Maintained by [`ModuleDef::apply_namespace`] alongside the `namespace` of every def,
     /// and used to resolve namespace-qualified keys relative to whichever module they are
     /// looked up in.
     path: NamespacePath,
+
+    /// The accessor namespace path this module is mounted under, empty for the root.
+    accessor_path: NamespacePath,
 
     /// The tables of the module definition.
     tables: IdentifierMap<TableDef>,
@@ -177,8 +182,11 @@ pub struct ModuleDef {
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
 
-    /// Submodules, keyed by the namespace they are registered under.
+    /// Submodules, keyed by the canonical namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
+
+    /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
+    environment: Option<EnvironmentSchema>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -190,14 +198,43 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
+    /// The validated root environment schema. Legacy modules have an empty schema.
+    pub fn environment(&self) -> &EnvironmentSchema {
+        static EMPTY: LazyLock<EnvironmentSchema> = LazyLock::new(EnvironmentSchema::default);
+        match &self.environment {
+            Some(schema) => schema,
+            None => &EMPTY,
+        }
+    }
+
+    /// Whether the raw module explicitly required environment support.
+    pub fn environment_declared(&self) -> bool {
+        self.environment.is_some()
+    }
+
     /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
     }
 
-    /// The submodules of the module definition.
+    /// The submodules of the module definition, keyed by canonical namespace.
     pub fn submodules(&self) -> &IndexMap<Identifier, ModuleDef> {
         &self.submodules
+    }
+
+    /// The canonical namespace path this module is mounted under, empty for the root.
+    pub fn path(&self) -> &NamespacePath {
+        &self.path
+    }
+
+    /// The accessor namespace path this module is mounted under, empty for the root.
+    pub fn accessor_path(&self) -> &NamespacePath {
+        &self.accessor_path
+    }
+
+    /// The accessor name this module is mounted under in its parent, `None` for the root.
+    pub fn mount_accessor_name(&self) -> Option<&Identifier> {
+        self.accessor_path.segments().last()
     }
 
     /// The tables of the module definition.
@@ -276,8 +313,9 @@ impl ModuleDef {
     /// A def's [`ModuleDefLookup`] key is `(namespace, name)`, and a def cannot otherwise
     /// know which namespace it is mounted under: submodules are validated in isolation, so
     /// this runs once the module tree is assembled.
-    fn apply_namespace(&mut self, path: &NamespacePath) {
+    fn apply_namespace(&mut self, path: &NamespacePath, accessor_path: &NamespacePath) {
         self.path = path.clone();
+        self.accessor_path = accessor_path.clone();
         for table in self.tables.values_mut() {
             table.namespace = path.clone();
             for index in table.indexes.values_mut() {
@@ -300,13 +338,23 @@ impl ModuleDef {
             reducer.name = ReducerName::new(path.join(reducer.name.local().clone()));
         }
         for (namespace, submodule) in &mut self.submodules {
-            submodule.apply_namespace(&path.child(namespace.clone()));
+            let accessor = submodule
+                .mount_accessor_name()
+                .cloned()
+                .unwrap_or_else(|| namespace.clone());
+            submodule.apply_namespace(&path.child(namespace.clone()), &accessor_path.child(accessor));
         }
     }
 
     /// Debug-only check that every def's recorded namespace matches its module.
     #[cfg(debug_assertions)]
     fn assert_namespaces_applied(&self, path: &NamespacePath) {
+        debug_assert_eq!(&self.path, path, "module path stale");
+        debug_assert_eq!(
+            self.accessor_path.segments().len(),
+            path.segments().len(),
+            "accessor path depth mismatch"
+        );
         for table in self.tables.values() {
             debug_assert_eq!(&table.namespace, path, "table namespace stale");
             for index in table.indexes.values() {
@@ -458,11 +506,13 @@ impl ModuleDef {
         let mut warnings = Vec::new();
         for (namespace, submodule_def) in self.submodules() {
             if !submodule_def.http_routes().is_empty() {
+                // Module code narrows contexts by accessor name, not by canonical namespace.
+                let accessor = submodule_def.mount_accessor_name().unwrap_or(namespace);
                 warnings.push(format!(
                     "The submodule under namespace '{namespace}' registers HTTP routes via a router. \
                      Route registrations in submodules are ignored. Only the root module's routes \
                      are served. Define routes in the root module and call the submodule's HTTP handler \
-                     functions via `ctx.as.{namespace}`."
+                     functions via `ctx.as.{accessor}`."
                 ));
             }
             warnings.extend(submodule_def.collect_warnings());
@@ -823,15 +873,27 @@ impl ModuleDef {
 
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
+        self.get_procedure_by_id_with_module(id).map(|(_, def, _)| def)
+    }
+
+    /// Resolve a flattened wire ID to its host-qualified name, definition and
+    /// owning module. Procedure definitions store local names and type refs.
+    pub fn get_procedure_by_id_with_module(
+        &self,
+        id: ProcedureId,
+    ) -> Option<(NamespacedIdentifier, &ProcedureDef, &ModuleDef)> {
         let idx = id.idx();
         if idx < self.procedures.len() {
-            return self.procedures.get_index(idx).map(|(_, def)| def);
+            return self
+                .procedures
+                .get_index(idx)
+                .map(|(_, def)| (self.path.join(def.name.clone()), def, self));
         }
         let mut offset = self.procedures.len();
         for submodule in self.submodules.values() {
             let count = submodule.procedure_count();
             if idx < offset + count {
-                return submodule.get_procedure_by_id(ProcedureId::from(idx - offset));
+                return submodule.get_procedure_by_id_with_module(ProcedureId::from(idx - offset));
             }
             offset += count;
         }
@@ -986,6 +1048,8 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_routes: _,
             raw_module_def_version: _,
             submodules: _,
+            accessor_path: _,
+            environment: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1046,9 +1110,14 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_routes,
             raw_module_def_version: _,
             submodules,
+            accessor_path: _,
+            environment,
         } = val;
 
         let mut sections = Vec::new();
+        if let Some(environment) = environment {
+            sections.push(RawModuleDefV10Section::Environment(environment.into_declarations()));
+        }
         let mut explicit_names = ExplicitNames::default();
 
         sections.push(RawModuleDefV10Section::Typespace(typespace));
@@ -1139,14 +1208,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         if !http_routes.is_empty() {
-            let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
-                .into_iter()
-                .map(|route| RawHttpRouteDefV10 {
-                    handler_function: route.handler_name.into(),
-                    method: route.method,
-                    path: RawIdentifier::new(route.path.as_ref()),
-                })
-                .collect();
+            let raw_http_routes: Vec<RawHttpRouteDefV10> =
+                http_routes.into_iter().map(RawHttpRouteDefV10::from).collect();
             sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
         }
 
@@ -1202,19 +1265,23 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
         }
 
-        // Always emit ExplicitNames so canonical names survive the round-trip.
-        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
-
         let submodules: Vec<_> = submodules
             .into_iter()
-            .map(|(namespace, module)| RawSubmoduleV10 {
-                namespace: namespace.to_string(),
-                module: module.into(),
+            .map(|(namespace, module)| {
+                let accessor = module.mount_accessor_name().unwrap_or(&namespace).to_string();
+                explicit_names.insert_namespace(accessor.clone(), namespace);
+                RawSubmoduleV10 {
+                    namespace: accessor,
+                    module: module.into(),
+                }
             })
             .collect();
         if !submodules.is_empty() {
             sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
+
+        // Always emit ExplicitNames so canonical names survive the round-trip.
+        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
         RawModuleDefV10 { sections }
     }
@@ -1428,6 +1495,15 @@ impl From<ViewDef> for TableDef {
 }
 
 /// A sequence definition for a database table column.
+///
+/// Previous versions of this definition exposed options `start`, `min_value`, `max_value` and `increment`.
+/// SpacetimeDB never exercised these options in any useful way,
+/// and supporting them caused considerable implementation burden,
+/// so we chose to remove them.
+/// All sequences start at some arbitrary nonnegative value near zero,
+/// have the range of the non-negative `i128`s,
+/// and increment by 1.
+/// Raw defs still have these values, but we reject any def that uses values other than the defaults.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
     /// The name of the sequence. Must be unique within the containing `ModuleDef`.
@@ -1444,22 +1520,11 @@ pub struct SequenceDef {
     /// The column must have integral type.
     /// This must be the unique `RawSequenceDef` for this column.
     pub column: ColId,
+}
 
-    /// The value to start assigning to this column.
-    /// Will be incremented by 1 for each new row.
-    /// If not present, an arbitrary start point may be selected.
-    pub start: Option<i128>,
-
-    /// The minimum allowed value in this column.
-    /// If not present, no minimum.
-    pub min_value: Option<i128>,
-
-    /// The maximum allowed value in this column.
-    /// If not present, no maximum.
-    pub max_value: Option<i128>,
-
-    /// The increment to use when updating the sequence.
-    pub increment: i128,
+impl SequenceDef {
+    /// All sequences increment by 1.
+    pub const INCREMENT: i128 = 1;
 }
 
 impl From<SequenceDef> for RawSequenceDefV9 {
@@ -1467,10 +1532,10 @@ impl From<SequenceDef> for RawSequenceDefV9 {
         RawSequenceDefV9 {
             name: Some(val.name),
             column: val.column,
-            start: val.start,
-            min_value: val.min_value,
-            max_value: val.max_value,
-            increment: val.increment,
+            start: None,
+            min_value: None,
+            max_value: None,
+            increment: SequenceDef::INCREMENT,
         }
     }
 }
@@ -1480,10 +1545,10 @@ impl From<SequenceDef> for RawSequenceDefV10 {
         RawSequenceDefV10 {
             source_name: Some(val.name),
             column: val.column,
-            start: val.start,
-            min_value: val.min_value,
-            max_value: val.max_value,
-            increment: val.increment,
+            start: None,
+            min_value: None,
+            max_value: None,
+            increment: SequenceDef::INCREMENT,
         }
     }
 }
@@ -2421,6 +2486,16 @@ pub struct HttpRouteDef {
     pub handler_name: Identifier,
     pub method: spacetimedb_lib::db::raw_def::v10::MethodOrAny,
     pub path: Box<str>,
+}
+
+impl From<HttpRouteDef> for RawHttpRouteDefV10 {
+    fn from(val: HttpRouteDef) -> Self {
+        RawHttpRouteDefV10 {
+            handler_function: val.handler_name.into(),
+            method: val.method,
+            path: RawIdentifier::new(val.path.as_ref()),
+        }
+    }
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {

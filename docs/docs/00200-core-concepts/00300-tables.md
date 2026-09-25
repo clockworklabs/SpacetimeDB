@@ -36,7 +36,7 @@ The central principle of data-oriented design holds that **the purpose of any pr
 - **Flexible queries** through relational operations
 - **Real-time synchronization** through subscriptions
 
-For further discussion of this philosophy, see [The Zen of SpacetimeDB](../00100-intro/00100-getting-started/00250-zen-of-spacetimedb.md).
+For further discussion of this philosophy, see [The Zen of Spacetime](../00100-intro/00100-getting-started/00250-zen-of-spacetimedb.md).
 
 ### Physical and Logical Independence
 
@@ -224,15 +224,15 @@ The accessor is the key passed to `schema({...})`, verbatim. By convention the k
 
 ```typescript
 // Table definition
-const player_scores = table(
+const playerScores = table(
   { name: 'player_scores', public: true },
   { /* columns */ }
 );
 
-const spacetimedb = schema({ player_scores });
+const spacetimedb = schema({ playerScores });
 
 // Accessor is the schema key, verbatim
-ctx.db.player_scores.insert({ /* ... */ });
+ctx.db.playerScores.insert({ /* ... */ });
 ```
 
 | Schema Key | Accessor |

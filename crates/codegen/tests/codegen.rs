@@ -61,28 +61,65 @@ fn test_typescript_table_handles_are_camel_case() {
     ));
 }
 
-/// A submodule reducer's wire name must be qualified exactly once.
+/// A submodule reducer's wire name must be qualified exactly once, with the canonical
+/// namespace, while everything client code touches uses the accessor namespace.
 ///
+/// `module-test-ts` mounts its library as `myLib`, which canonicalizes to `my_lib`.
 /// `ReducerDef::name` is fully qualified, so any code that also prepends the namespace
-/// path would emit `lib.lib.libInsert`. Nothing in the snapshot fixtures mounts a
+/// path would emit `my_lib.my_lib.lib_insert`. Nothing in the snapshot fixtures mounts a
 /// submodule, so this checks the TypeScript output of one that does.
 #[test]
-fn submodule_reducer_wire_name_is_qualified_once() {
+fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
     let module = CompiledModule::compile("module-test-ts", CompilationMode::Debug).extract_schema_blocking();
-    let code = generate(&module, &TypeScript, &CodegenOptions::default())
-        .into_iter()
-        .map(|f| f.code)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let files = generate(&module, &TypeScript, &CodegenOptions::default());
+    let filenames: Vec<_> = files.iter().map(|f| f.filename.clone()).collect();
+    let code = files.into_iter().map(|f| f.code).collect::<Vec<_>>().join("\n");
 
+    // Wire names are canonical: snake_case namespace, singly qualified.
     let reducer_lines: Vec<_> = code.lines().filter(|l| l.contains("__reducerSchema(")).collect();
     assert!(
-        code.contains(r#"__reducerSchema("lib.lib_insert""#),
-        "expected a singly-qualified wire name for the submodule reducer; got:\n{}",
+        code.contains(r#"__reducerSchema("my_lib.lib_insert""#),
+        "expected a singly-qualified canonical wire name for the submodule reducer; got:\n{}",
         reducer_lines.join("\n")
     );
     assert!(
-        !code.contains("lib.lib."),
-        "namespace was applied twice somewhere in the generated bindings"
+        !code.contains("my_lib.my_lib.") && !code.contains("myLib.my_lib") && !code.contains("my_lib.myLib"),
+        "namespace was applied twice or mixed forms somewhere in the generated bindings"
+    );
+    assert!(
+        code.contains(r#""my_lib.libData": __table({"#),
+        "submodule tables must be keyed by their canonical wire name"
+    );
+    assert!(
+        !code.contains(r#"__reducerSchema("myLib."#) && !code.contains(r#""myLib.libData""#),
+        "the accessor namespace must not leak into wire names"
+    );
+
+    // Client-facing names follow the accessor namespace.
+    assert!(
+        code.contains("myLib: {"),
+        "generated `tables`/`reducers` trees must be keyed by the accessor namespace"
+    );
+    assert!(
+        !code.contains("my_lib: {"),
+        "the canonical namespace must not be used as an accessor key"
+    );
+    // The schema entry registers the reducer under an explicit accessor key, the accessor
+    // path plus the camelCase accessor name, and the tree entry looks it up by that same key.
+    assert!(
+        code.contains(r#", "myLib.libInsert"),"#),
+        "submodule reducer schema should pass its accessor key explicitly"
+    );
+    assert!(
+        code.contains(r#"libInsert: __reducerAccessors["myLib.libInsert"]"#),
+        "namespace tree entries must use the SDK's accessor-map key for the canonical wire name"
+    );
+    assert!(
+        code.contains("MyLib_LibData"),
+        "generated row type names must use the accessor namespace"
+    );
+    assert!(
+        filenames.iter().any(|f| f.starts_with("myLib/")) && !filenames.iter().any(|f| f.starts_with("my_lib/")),
+        "generated files must live under the accessor namespace directory; got {filenames:?}"
     );
 }
