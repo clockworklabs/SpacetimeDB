@@ -283,11 +283,11 @@
       "id": "ecommerce.dependency-l3-calibration",
       "contentSha256": "63aaee2df48f7f6e8a0caaf5c04981a99a3be63aa9c6c99d05b5fc04be3f031c"
     },
-    "rationale": "Only admission and the scope hash changed: the first-minute startup memory reservation is 2.5 GiB instead of the 9.25 GiB sum of container caps, based on measured attempt peaks of 1.9 GiB in the first minute and 3.1 GiB overall; the qualification scope hashes text with Git line endings. No grading, action, scenario, adapter or check code changed; admission decides when an attempt starts, not how it is graded.",
+    "rationale": "Only admission, the backend memory cap and the scope hash changed: the first-minute startup memory reservation is 2.5 GiB instead of the 9.25 GiB sum of container caps, based on measured attempt peaks of 1.9 GiB in the first minute and 3.1 GiB overall; the qualification scope hashes text with Git line endings. The backend sidecar memory cap is 2 GiB instead of 1 GiB, because the database peaked at 922 MiB. No grading, action, scenario, adapter or check code changed; admission decides when an attempt starts, not how it is graded.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-l3-3213109f5/reuse-review.json",
-        "sha256": "1ff8e45b9eb6fc4c8d45e71a859f3058a9145736f44955cb279cbbe9374730a6"
+        "sha256": "b8421c974983f3728d915d489803cfa84f6c7132d5c8be89c712da10fe576b85"
       }
     ],
     "scopes": [
@@ -295,54 +295,54 @@
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "7c26408fbcc0d4bb106dfe0a01b756dcb761e37096dca10f62a7aaa2acc3a058"
+        "toExecutableSha256": "92eca8cf3742a6c8268753858c16f9e5abdd1018a920cb065d1de1959f735b82"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "7c26408fbcc0d4bb106dfe0a01b756dcb761e37096dca10f62a7aaa2acc3a058"
+        "toExecutableSha256": "92eca8cf3742a6c8268753858c16f9e5abdd1018a920cb065d1de1959f735b82"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "b5451d7806f3b8810a72b5a9ca38be0dd15ed7776b4ddbf678cfa285e7109a4a"
+        "toExecutableSha256": "70dc047344c439e9409cdd88c13dccc60561a50c3f8b1236f6cdf2e61197f0ed"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "b5451d7806f3b8810a72b5a9ca38be0dd15ed7776b4ddbf678cfa285e7109a4a"
+        "toExecutableSha256": "70dc047344c439e9409cdd88c13dccc60561a50c3f8b1236f6cdf2e61197f0ed"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "f4aac956bd69b09a16e00fd21c2efde2848603a4b857c027c25db7fef6b9f74c"
+        "toExecutableSha256": "9502f4c2665f0a1643508dc2797c4158efec5549f9f98e50ceb2eb4a222e62db"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "f4aac956bd69b09a16e00fd21c2efde2848603a4b857c027c25db7fef6b9f74c"
+        "toExecutableSha256": "9502f4c2665f0a1643508dc2797c4158efec5549f9f98e50ceb2eb4a222e62db"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "c0a033fe2ff7781a11e4f665c372116971564f4329d979e11a8e201c467d7858"
+        "toExecutableSha256": "0d5290cf2610b0a36e9520c2ccd02d10c77f5e6c00c3b9b028e9bd455027d29c"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "c0a033fe2ff7781a11e4f665c372116971564f4329d979e11a8e201c467d7858"
+        "toExecutableSha256": "0d5290cf2610b0a36e9520c2ccd02d10c77f5e6c00c3b9b028e9bd455027d29c"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
-        "toExecutableSha256": "28d3b9aa62cabbab4f0745be1ffc7c353ea6446d459b6c49557f7e20b1ce0269"
+        "toExecutableSha256": "46ffecb10599f362e7303f23220d743d2ca0a14f80c212e3869e82c06e3c44bf"
       }
     ]
   },

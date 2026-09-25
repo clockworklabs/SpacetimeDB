@@ -225,7 +225,7 @@ test('appliance pool caps warn without replacing the single-worker startup basel
     assert.equal(requiredCheck(report, 'docker.memory').status, 'pass');
     assert.match(requiredCheck(report, 'docker.memory').summary, /total memory allocation/);
     assert.equal(requiredCheck(report, 'docker.capacity').status, 'warn');
-    assert.match(requiredCheck(report, 'docker.capacity').summary, /9-worker.*36 CPUs.*83\.3 GiB/);
+    assert.match(requiredCheck(report, 'docker.capacity').summary, /9-worker.*36 CPUs.*92\.3 GiB/);
     assert.equal(requiredCheck(report, 'storage.results').status, 'pass');
 
     allocation = { NCPU: 3, MemTotal: 7 * 1024 ** 3 };

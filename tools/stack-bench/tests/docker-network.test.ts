@@ -234,7 +234,7 @@ for (const kind of ['backend', 'browser'] as const) {
         return '';
       });
       const command = commands.find(args => args[0] === 'create')!;
-      const memory = String((kind === 'browser' ? 4 : 1) * 1024 ** 3);
+      const memory = String((kind === 'browser' ? 4 : 2) * 1024 ** 3);
       assert.equal(command[command.indexOf('--memory') + 1], memory);
       assert.equal(command[command.indexOf('--memory-swap') + 1], memory);
       assert.equal(command[command.indexOf('--cpus') + 1], '1');

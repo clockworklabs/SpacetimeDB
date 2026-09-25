@@ -17,7 +17,9 @@ export const BUILD_CONTAINER_RESOURCE_LIMITS = Object.freeze({
   pids: 512,
 });
 
-export const SIDECAR_CONTAINER_RESOURCE_LIMITS = Object.freeze({ cpuCount: 1, memoryBytes: 1024 ** 3, pids: 256 });
+// The backend sidecar holds the stack's database. It peaked at 922 MiB during the
+// 2026-09-24 L3 qualification runs, too close to the former 1 GiB cap.
+export const SIDECAR_CONTAINER_RESOURCE_LIMITS = Object.freeze({ cpuCount: 1, memoryBytes: 2 * 1024 ** 3, pids: 256 });
 // Chromium shares these limits across actors and video encoders. Docker counts
 // threads as PIDs; the seven-actor purchase probe exceeds the database's 256 cap.
 // The staff-role reference probe hit the former 2 GiB cap and lost renderer processes.

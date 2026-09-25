@@ -378,9 +378,9 @@ attempts finish, and exit 2 with the remaining attempts pending. The pressure
 check is an admission snapshot, not a reservation against future spikes. Set a
 positive integer instead for a fixed host quota measured for your workload.
 
-Each worker has a 2-CPU/4-GiB coding container, a 1-CPU/1-GiB backend, a
-1-CPU/2-GiB browser, and a broker capped at 256 MiB when needed. Thus nine
-workers have known caps totaling 36 CPUs and 65.25 GiB RAM. Broker CPU,
+Each worker has a 2-CPU/4-GiB coding container, a 1-CPU/2-GiB backend, a
+1-CPU/4-GiB browser, and a broker capped at 256 MiB when needed. Thus nine
+workers have known caps totaling 36 CPUs and 92.25 GiB RAM. Broker CPU,
 controller processes, the package cache, and Docker need additional resources.
 
 The shared package cache has caps of 1 CPU, 2 GiB RAM, and 128 processes. Allow
