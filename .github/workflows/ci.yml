@@ -1607,7 +1607,7 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Docusaurus build
+      - name: Docusaurus build and docs link check
         run: cargo ci docs
 
       - name: Upload timing reports

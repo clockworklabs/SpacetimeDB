@@ -6,4 +6,6 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+duct.workspace = true
+regex.workspace = true
 ci-common = { path = "../../common" }
