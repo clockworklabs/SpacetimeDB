@@ -13,7 +13,7 @@ import { compiledEntrypoint } from '../package-root.js';
 export interface NetworkInterruption {
   // Context options that route the actor's traffic, loopback included, through the proxy.
   readonly proxy: NonNullable<BrowserContextOptions['proxy']>;
-  attach(context: BrowserContext): void;
+  attach(context: BrowserContext, page: Page): Promise<void>;
   interrupt(): Promise<{ closed: number; open: string[] }>;
   restore(): Promise<void>;
   dispose(): Promise<void>;
@@ -60,49 +60,86 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
     child.stdin.write(`${JSON.stringify({ id, cmd, ...extra })}\n`);
   });
   const dispose = async () => {
-    await command('dispose').catch(() => {});
+    let acknowledgement: unknown;
+    try { await command('dispose'); }
+    catch (error) { acknowledgement = error; }
     stopped = true;
     child.stdin.end();
-    // Closing the pipe ends the remote helper; wait for it, and never let the local client outlive it.
     const exited = () => child.exitCode !== null || child.signalCode !== null;
+    const waitForExit = () => new Promise<boolean>(resolve => {
+      const timer = setTimeout(() => { child.off('exit', onExit); resolve(false); }, COMMAND_TIMEOUT_MS);
+      const onExit = () => { clearTimeout(timer); resolve(true); };
+      child.once('exit', onExit);
+      if (exited()) { child.off('exit', onExit); clearTimeout(timer); resolve(true); }
+    });
     if (!exited()) {
-      await Promise.race([new Promise(resolve => child.once('exit', resolve)),
-        new Promise(resolve => setTimeout(resolve, COMMAND_TIMEOUT_MS))]);
+      const confirmed = await waitForExit();
+      if (!confirmed) {
+        child.kill();
+        const localExit = await waitForExit();
+        throw new Error(`network interruption proxy exit was not confirmed; remote cleanup is unknown${localExit ? '' : ' and local client exit is unknown'}`,
+          { cause: acknowledgement });
+      }
     }
-    if (!exited()) child.kill();
+    if (child.exitCode !== 0) {
+      throw new Error(`network interruption proxy cleanup was not confirmed (exit ${child.exitCode ?? child.signalCode})`,
+        { cause: acknowledgement });
+    }
   };
   const username = 'stack-bench', password = randomBytes(24).toString('hex');
   let port: number | undefined;
   try { ({ port } = await command('config', { user: username, pass: password })); }
-  catch (error) { await dispose(); throw error; }
+  catch (error) {
+    try { await dispose(); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'network interruption setup and cleanup failed'); }
+    throw error;
+  }
 
   const sockets = new Set<WebSocket>();
   const openedDuringCut = new WeakSet<WebSocket>();
   let cutting = false;
+  let trackingFailure: unknown;
   const inFlight = new Set<Request>();
+  const attachedContexts = new WeakSet<BrowserContext>();
+  const trackedPages = new WeakMap<Page, Promise<void>>();
+  const track = (context: BrowserContext, page: Page): Promise<void> => {
+    const existing = trackedPages.get(page);
+    if (existing) return existing;
+    const pageSockets = new Set<WebSocket>();
+    // A replaced document's sockets end without a close event from Playwright.
+    const forget = () => { for (const socket of pageSockets) sockets.delete(socket); pageSockets.clear(); };
+    page.on('websocket', socket => {
+      sockets.add(socket);
+      if (cutting) openedDuringCut.add(socket);
+      pageSockets.add(socket);
+      socket.on('close', () => { sockets.delete(socket); pageSockets.delete(socket); });
+    });
+    const ready = context.newCDPSession(page).then(async session => {
+      session.on('Page.frameNavigated', (event: { frame: { parentId?: string } }) => {
+        if (!event.frame.parentId) forget();
+      });
+      page.on('close', () => { forget(); void session.detach().catch(() => {}); });
+      try { await session.send('Page.enable'); }
+      catch (error) { await session.detach().catch(() => {}); throw error; }
+    });
+    trackedPages.set(page, ready);
+    return ready;
+  };
   return {
     // `<-loopback>` removes Chromium's implicit loopback bypass, so local apps go through it too.
     proxy: { server: `http://127.0.0.1:${port}`, bypass: '<-loopback>', username, password },
-    attach(context) {
-      const track = (page: Page) => {
-        const document = new Set<WebSocket>();
-        // A navigated-away or closed document's sockets end without a close event.
-        const forget = () => { for (const socket of document) sockets.delete(socket); document.clear(); };
-        page.on('websocket', socket => {
-          sockets.add(socket);
-          if (cutting) openedDuringCut.add(socket);
-          document.add(socket);
-          socket.on('close', () => { sockets.delete(socket); document.delete(socket); });
-        });
-        page.on('framenavigated', frame => { if (frame === page.mainFrame()) forget(); });
-        page.on('close', forget);
-      };
-      context.on('page', track);
-      context.on('request', request => inFlight.add(request));
-      context.on('requestfinished', request => inFlight.delete(request));
-      context.on('requestfailed', request => inFlight.delete(request));
+    async attach(context, page) {
+      if (!attachedContexts.has(context)) {
+        attachedContexts.add(context);
+        context.on('page', opened => { void track(context, opened).catch(error => { trackingFailure = error; }); });
+        context.on('request', request => inFlight.add(request));
+        context.on('requestfinished', request => inFlight.delete(request));
+        context.on('requestfailed', request => inFlight.delete(request));
+      }
+      await track(context, page);
     },
     async interrupt() {
+      if (trackingFailure) throw trackingFailure;
       cutting = true;
       const { closed = [], tooling = [] } = await command('cut');
       // Every application connection must be seen to end by the browser or by the proxy.

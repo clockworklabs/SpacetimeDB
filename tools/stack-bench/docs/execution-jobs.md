@@ -114,8 +114,13 @@ same job. Claims do not expire: a worker that loses contact may still have paid 
 in flight. A killed worker therefore leaves a retained claim for investigation rather than
 an automatic duplicate. Use campaign status, stop, and authenticated reconciliation to
 resolve owned resources. Failed jobs are not automatically retried by `job work`.
-`job resume` continues an interrupted dependency campaign with the job's saved
-credentials and capacity policy. Dashboard Resume uses it for job campaigns.
+`job resume` continues a failed dependency campaign with scheduled work, using the
+job's saved credentials and capacity policy. It can also continue an interrupted
+claim after its worker is proven dead, campaign reconciliation proves cleanup,
+and the controller lock is released. Claims without verifiable owner identity
+need operator investigation. Each resume creates a new exclusive job claim. Status and cancellation
+follow that claim, while earlier results remain on disk. A completed or cancelled
+job cannot be resumed. Dashboard Resume uses this command for job campaigns.
 Reconciliation proves cleanup; it does not restore a live database or agent session.
 See [interruption and recovery](../appliance/RECOVERY.md) before releasing retained work.
 

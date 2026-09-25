@@ -23,27 +23,41 @@ const endToEnd = (headers: IncomingHttpHeaders) =>
 // A Vite reload socket carries the token its own client module embeds.
 function viteToken(authority: string, token: string): Promise<boolean> {
   return new Promise(done => {
-    const request = httpGet(`http://${authority}/@vite/client`, { timeout: 5000 }, response => {
+    let settled = false;
+    const finish = (valid: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      request.destroy();
+      done(valid);
+    };
+    const request = httpGet(`http://${authority}/@vite/client`, response => {
       let body = '';
       response.setEncoding('utf8');
-      response.on('data', chunk => { if (body.length < 2_000_000) body += chunk; });
-      response.on('end', () => done(response.statusCode === 200 && body.includes(`const wsToken = ${JSON.stringify(token)}`)));
+      response.on('data', chunk => {
+        body += chunk;
+        if (body.length > 2_000_000) finish(false);
+      });
+      response.on('end', () => finish(response.statusCode === 200 && body.includes(`const wsToken = ${JSON.stringify(token)}`)));
     });
-    request.on('error', () => done(false));
-    request.on('timeout', () => { request.destroy(); done(false); });
+    const timer = setTimeout(() => finish(false), 5000);
+    request.on('error', () => finish(false));
   });
 }
 
 export function startNetworkProxy(reply: (value: object) => void, exit: (code: number) => void) {
   let server: Server | undefined, expected = '', cut = false, port = 0;
   const owned = new Map<Socket, string | null>(); // socket -> the Vite token it carries, if tooling
+  const pending = new Map<Socket, Promise<void>>();
   // Where each browser-side connection goes, as host:port plus path (never the query).
   const targets = new Map<Socket, string>();
   const own = (socket: Socket, target?: string) => {
-    owned.set(socket, null);
     if (target) targets.set(socket, target);
-    socket.on('close', () => owned.delete(socket));
-    socket.on('error', () => {});
+    if (!owned.has(socket)) {
+      owned.set(socket, null);
+      socket.on('close', () => { owned.delete(socket); targets.delete(socket); pending.delete(socket); });
+      socket.on('error', () => {});
+    }
   };
   const shutdown = (code: number) => {
     for (const socket of owned.keys()) socket.destroy();
@@ -97,20 +111,31 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
       upstream.on('error', () => client.destroy());
       upstream.on('connect', () => {
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        // A plaintext ws:// upgrade shows its path; only the dev server's own token is tooling.
-        const first = async (chunk: Buffer) => {
-          const line = chunk.toString('latin1', 0, Math.min(chunk.length, 4096)).split('\r\n')[0] ?? '';
+        // Inspect a copy. Forwarding cannot wait for the asynchronous Vite check.
+        let prefix = '', inspecting = true;
+        const inspect = (chunk: Buffer) => {
+          if (!inspecting) return;
+          prefix += chunk.toString('latin1', 0, Math.min(chunk.length, 4096 - prefix.length));
+          const end = prefix.indexOf('\r\n');
+          if (end < 0 && prefix.length < 4096) return;
+          inspecting = false;
+          const line = end < 0 ? '' : prefix.slice(0, end);
           const path = /^GET (\S+) HTTP\/1\.1$/.exec(line)?.[1];
           if (path?.startsWith('/')) targets.set(client, `${req.url}${path.split('?')[0]}`);
           const token = path?.startsWith('/') ? new URL(path, 'http://tunnel').searchParams.get('token') : null;
-          if (token && await viteToken(req.url!, token)) { owned.set(client, token); owned.set(upstream, token); }
-          if (client.destroyed || upstream.destroyed) return;
-          upstream.write(chunk);
-          client.pipe(upstream);
-          upstream.pipe(client);
+          if (token) {
+            const lookup = viteToken(req.url!, token).then(tooling => {
+              if (tooling && !client.destroyed && !upstream.destroyed) {
+                owned.set(client, token); owned.set(upstream, token);
+              }
+            }).finally(() => { pending.delete(client); pending.delete(upstream); });
+            pending.set(client, lookup); pending.set(upstream, lookup);
+          }
         };
-        if (head.length) void first(head);
-        else client.once('data', chunk => { void first(chunk); });
+        client.on('data', inspect);
+        if (head.length) { inspect(head); upstream.write(head); }
+        client.pipe(upstream);
+        upstream.pipe(client);
       });
     });
     server.listen(0, '127.0.0.1', () => { port = (server!.address() as { port: number }).port; ready(port); });
@@ -130,8 +155,20 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
       // Refuse first, then close, so nothing races through the cut.
       cut = true;
       const tooling = new Set<string>(), closed: string[] = [];
+      const awaiting = [...pending.keys()];
+      for (const socket of awaiting) socket.pause();
       for (const [socket, token] of owned) {
+        if (pending.has(socket)) continue;
         if (token) { tooling.add(token); continue; }
+        socket.destroy();
+        const target = targets.get(socket);
+        if (target) closed.push(target);
+      }
+      await Promise.all(new Set(awaiting.map(socket => pending.get(socket)).filter(p => p !== undefined)));
+      for (const socket of awaiting) {
+        if (socket.destroyed) continue;
+        const token = owned.get(socket);
+        if (token) { tooling.add(token); socket.resume(); continue; }
         socket.destroy();
         const target = targets.get(socket);
         if (target) closed.push(target);

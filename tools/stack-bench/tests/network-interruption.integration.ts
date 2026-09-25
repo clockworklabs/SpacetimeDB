@@ -14,12 +14,16 @@ import { startNetworkInterruption } from '../src/actions/network-interruption.js
 import type { NetworkInterruption } from '../src/actions/network-interruption.js';
 
 // A fixture app server: its own page, WebSocket upgrades, and a live value it can push.
-async function fixture(page: string, http: (req: IncomingMessage, res: ServerResponse, value: () => string) => boolean = () => false) {
+async function fixture(page: string, http: (req: IncomingMessage, res: ServerResponse, value: () => string) => boolean = () => false,
+  wire?: (chunk: Buffer) => void, viteDelayMs = 0) {
   let value = '1';
   const sockets = new Set<Socket>(), streams = new Set<() => void>(), waiters = new Set<() => void>();
   const server = createServer((req, res) => {
     const path = new URL(req.url!, 'http://fixture').pathname;
-    if (path === '/@vite/client') { res.writeHead(200, { 'Content-Type': 'text/javascript' }).end('const wsToken = "dev";'); return; }
+    if (path === '/@vite/client') {
+      setTimeout(() => res.writeHead(200, { 'Content-Type': 'text/javascript' }).end('const wsToken = "dev";'), viteDelayMs);
+      return;
+    }
     if (path === '/events' || path === '/stream') {
       res.writeHead(200, { 'Content-Type': path === '/events' ? 'text/event-stream' : 'text/plain' });
       const send = () => res.write(path === '/events' ? `retry: 300\ndata: ${value}\n\n` : `${value}\n`);
@@ -40,6 +44,13 @@ async function fixture(page: string, http: (req: IncomingMessage, res: ServerRes
     socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => {});
   });
+  if (wire) server.on('connection', socket => {
+    let application = false;
+    socket.on('data', chunk => {
+      if (chunk.toString('latin1').startsWith('GET /sock')) application = true;
+      if (application) wire(chunk);
+    });
+  });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const frame = (text: string) => Buffer.concat([Buffer.from([0x81, text.length]), Buffer.from(text)]);
@@ -55,8 +66,8 @@ async function fixture(page: string, http: (req: IncomingMessage, res: ServerRes
 async function interruptibleActor(browser: Browser, url: string, route = true) {
   const networkInterruption = await startNetworkInterruption();
   const context = await browser.newContext(route ? { proxy: networkInterruption.proxy } : {});
-  networkInterruption.attach(context);
   const page = await context.newPage();
+  await networkInterruption.attach(context, page);
   await page.goto(url);
   await page.waitForTimeout(500);
   const actor = { page, networkInterruption, loc: () => { throw new Error('unused'); } };
@@ -68,6 +79,41 @@ async function interruptibleActor(browser: Browser, url: string, route = true) {
 }
 
 const windowValue = (page: Page, key: string) => page.evaluate(name => Reflect.get(window, name), key);
+
+test('split WebSocket request bytes pass through while the Vite token is checked', async () => {
+  let received = '';
+  const app = await fixture('', undefined, chunk => { received += chunk.toString('latin1'); }, 300);
+  const interruption = await startNetworkInterruption();
+  try {
+    const authority = new URL(app.url).host;
+    const credentials = Buffer.from(`${interruption.proxy.username}:${interruption.proxy.password}`).toString('base64');
+    const first = 'GET /socket?token=dev HTTP/1.1\r\n';
+    const rest = `Host: ${authority}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nX-Split-Probe: must-arrive\r\n\r\n`;
+    for (const chunks of [[first.slice(0, 9), first.slice(9), rest], [first, rest]]) {
+      received = '';
+      const client = connect(Number(new URL(interruption.proxy.server).port), '127.0.0.1');
+      try {
+        await once(client, 'connect');
+        const connected = once(client, 'data');
+        client.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\nProxy-Authorization: Basic ${credentials}\r\n\r\n`);
+        await connected;
+        for (const chunk of chunks) {
+          client.write(chunk);
+          await new Promise(resolve => setTimeout(resolve, 75));
+        }
+        await new Promise(resolve => setTimeout(resolve, 300));
+        assert.equal(received, first + rest);
+        await interruption.interrupt();
+        await new Promise(resolve => setTimeout(resolve, 50));
+        assert.equal(client.destroyed, false, 'the split Vite token must keep its tooling socket open');
+        await interruption.restore();
+      } finally { client.destroy(); }
+    }
+  } finally {
+    await interruption.dispose();
+    app.close();
+  }
+});
 
 test('going offline closes open sockets, never delivers held updates, and keeps the dev reload socket', async () => {
   const app = await fixture(`<script>
@@ -177,6 +223,8 @@ test('a root/token app socket is cut, and an unproven cut is unmeasured', async 
     // A context whose traffic does not pass through the proxy keeps its socket: unmeasured.
     const bypassed = await interruptibleActor(browser, app.url, false);
     interruptions.push(bypassed.networkInterruption);
+    assert.equal(await bypassed.page.evaluate(() => fetch('/ping').then(response => response.ok)), true,
+      'another actor keeps network access');
     assert.equal((await bypassed.setOffline(true, 0)).status, 'inconclusive');
 
     // An actor opened without an interruption cannot prove one.
@@ -186,6 +234,28 @@ test('a root/token app socket is cut, and an unproven cut is unmeasured', async 
     assert.equal(plain.status, 'inconclusive');
   } finally {
     for (const interruption of interruptions) await interruption.dispose();
+    await browser.close();
+    app.close();
+  }
+});
+
+test('same-document navigation keeps a live socket tracked until the document is replaced', async () => {
+  const app = await fixture(`<script>window.ws = new WebSocket('ws://' + location.host + '/socket');</script>`);
+  const browser = await chromium.launch({ headless: true });
+  let interruption: NetworkInterruption | undefined;
+  try {
+    const actor = await interruptibleActor(browser, app.url, false);
+    interruption = actor.networkInterruption;
+    await actor.page.waitForFunction(() => (window as unknown as { ws: WebSocket }).ws.readyState === WebSocket.OPEN);
+    await actor.page.evaluate(() => { history.pushState({}, '', '/next'); location.hash = 'later'; });
+    const during = await interruption.interrupt();
+    assert.equal(during.open.length, 1, 'the live socket remains visible after same-document navigation');
+    await interruption.restore();
+    await actor.page.goto('data:text/html,replaced');
+    const replaced = await interruption.interrupt();
+    assert.deepEqual(replaced.open, [], 'the replaced document does not leave a stale socket');
+  } finally {
+    await interruption?.dispose();
     await browser.close();
     app.close();
   }

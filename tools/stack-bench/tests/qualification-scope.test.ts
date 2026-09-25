@@ -80,6 +80,7 @@ function fixture(): string {
     'commands/bench.ts',
     'commands/null-control.ts', 'src/references/reference-live.ts',
     'src/references/reference-agent.ts', 'container/run-build.ts', 'grader/grade.ts',
+    'container/browser-network-proxy.ts', 'src/actions/network-interruption.ts',
     'grader/mutation-test.ts', 'linter/lint.ts', 'package.json', 'package-lock.json',
     'docker-compose.yaml', 'appliance/Controller.Dockerfile', 'appliance/docker-compose.yaml',
     'tracks/ecommerce/walk.ts', 'src/evidence/provenance.ts',
@@ -87,7 +88,8 @@ function fixture(): string {
   write(root, 'src/references/reference-live.ts',
     "import '../evidence/provenance.js';\n");
   write(root, 'commands/bench.ts', "import '../src/stacks/stack-adapters.js';\n");
-  write(root, 'grader/grade.ts', "import '../src/stacks/stack-adapters.js';\n");
+  write(root, 'grader/grade.ts',
+    "import '../src/stacks/stack-adapters.js';\nimport '../src/actions/network-interruption.js';\n");
   write(root, 'src/stacks/stack-adapters.ts', [
     "import './backends/mongodb-adapter.js';",
     "import './backends/mongodb-identity.js';",
@@ -226,6 +228,25 @@ test('shared grading changes invalidate every affected scope while mutation-only
     assert.notEqual(scoped(root, 'reference', 'postgres').sha256,
       beforeAdapterPostgres.sha256);
     assert.deepEqual(scoped(root, 'null'), beforeAdapterNull);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the spawned browser proxy changes every executable scope and is required', () => {
+  const root = fixture();
+  const helper = 'container/browser-network-proxy.ts';
+  try {
+    const before = (['reference', 'mutation', 'null'] as const)
+      .map(kind => scoped(root, kind, kind === 'null' ? null : 'mongodb'));
+    write(root, helper, 'changed browser proxy\n');
+    for (const [index, kind] of (['reference', 'mutation', 'null'] as const).entries()) {
+      assert.notEqual(scoped(root, kind, kind === 'null' ? null : 'mongodb').executableSha256,
+        before[index]!.executableSha256);
+    }
+    rmSync(join(root, helper));
+    for (const kind of ['reference', 'mutation', 'null'] as const) {
+      assert.throws(() => scoped(root, kind, kind === 'null' ? null : 'mongodb'),
+        /mapped input does not exist: container\/browser-network-proxy\.ts/);
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

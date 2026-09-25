@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { cancelExecutionJob, listExecutionJobs, readExecutionJob, submitExecutionJob,
   workExecutionJob } from '../src/campaigns/execution-jobs.js';
+import { controllerInstance } from '../src/campaigns/campaign-lock.js';
 import type { executeCampaign, inspectCampaign } from '../src/campaigns/campaign-runner.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { jobCommand, resumeExecutionJob, runJobCli } from '../commands/job-cli.js';
-import { DEPENDENCY_CAMPAIGN } from './fixtures/dashboard-fixture.js';
 
 test('job submission, exclusive workers, cancellation and retained failures use durable records', async () => {
   const root = mkdtempSync(join(tmpdir(), 'execution-jobs-'));
@@ -122,11 +124,14 @@ test('job resume continues the campaign with the job saved accounts and capacity
   const root = mkdtempSync(join(tmpdir(), 'execution-job-resume-'));
   try {
     mkdirSync(join(root, 'plans'));
-    copyFileSync(DEPENDENCY_CAMPAIGN, join(root, 'plans/reference.json'));
-    const credentials = { adapters: { 'reference-fixture': 'team-a' } };
+    copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/dependency-model-free-campaign.json'), join(root, 'plans/reference.json'));
+    const credentials = { adapters: { deterministic: 'team-a' } };
     const job = submitExecutionJob(root, { key: 'resume-job', planFile: 'reference.json', credentials });
+    await assert.rejects(resumeExecutionJob(root, job.id), /failed or reconciled interrupted job/);
     const planFile = join(root, 'jobs', job.id, 'plan.json');
     const directory = join(root, 'campaigns', `job-${job.id}`);
+    const failed = (async () => { throw new Error('interrupted'); }) as typeof executeCampaign;
+    assert.equal((await workExecutionJob(root, job.id, 'worker-a', { execute: failed })).status, 'failed');
     let status = 'completed';
     const inspect = ((path: string) => {
       assert.equal(path, directory);
@@ -134,6 +139,8 @@ test('job resume continues the campaign with the job saved accounts and capacity
         state: { status, attempts: [{ executions: [{}] }] } };
     }) as unknown as typeof inspectCampaign;
     let calls = 0;
+    let finish!: () => void;
+    const running = new Promise<void>(resolve => { finish = resolve; });
     const execute = (async (path, output, options) => {
       calls++;
       assert.equal(path, planFile);
@@ -141,15 +148,140 @@ test('job resume continues the campaign with the job saved accounts and capacity
       assert.equal(options?.mode, 'model-free-trial');
       assert.equal(options?.capacityPolicy, 'wait');
       assert.deepEqual(options?.executionCredentials, credentials);
-      return { status: 'completed', summary: { completed: 1 } };
+      await running;
+      return { status: 'completed', summary: { completed: 1, pending: 0, running: 0, invalid: 0 } };
     }) as typeof executeCampaign;
     await assert.rejects(resumeExecutionJob(root, job.id, { execute, inspect }), /scheduled work/);
     assert.equal(calls, 0);
     status = 'prepared';
-    assert.deepEqual(await resumeExecutionJob(root, job.id, { execute, inspect }),
-      { status: 'completed', campaignDirectory: directory, campaign: { completed: 1 } });
+    const resumed = resumeExecutionJob(root, job.id, { execute, inspect });
+    try {
+      assert.equal(readExecutionJob(root, job.id).status, 'running');
+      await assert.rejects(resumeExecutionJob(root, job.id, { execute, inspect }), /live worker/);
+    } finally { finish(); }
+    assert.equal((await resumed).status, 'completed');
+    assert.equal(readExecutionJob(root, job.id).status, 'completed');
+    assert.match(readFileSync(join(root, 'jobs', job.id, 'result.json'), 'utf8'), /interrupted/,
+      'prior failure evidence is retained');
     assert.equal(calls, 1);
+    await assert.rejects(resumeExecutionJob(root, job.id, { execute, inspect }), /failed or reconciled interrupted job/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('cancel reaches a resumed job and preserves its prior failure', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-resume-cancel-'));
+  try {
+    mkdirSync(join(root, 'plans'));
+    copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/dependency-model-free-campaign.json'), join(root, 'plans/reference.json'));
+    const job = submitExecutionJob(root, { key: 'resume-cancel', planFile: 'reference.json' });
+    const failed = (async () => { throw new Error('first failure'); }) as typeof executeCampaign;
+    await workExecutionJob(root, job.id, 'worker-a', { execute: failed });
+    const inspect = (() => ({ plan: { contentSha256: job.planSha256,
+      definition: { mode: { id: 'dependency' } } },
+    state: { status: 'prepared', attempts: [{ executions: [{}] }] } })) as unknown as typeof inspectCampaign;
+    let abortSignal: AbortSignal | null | undefined;
+    const execute = (async (_path, _output, options) => {
+      abortSignal = options?.signal;
+      await new Promise<void>(resolve => abortSignal!.addEventListener('abort', () => resolve(), { once: true }));
+      return { status: 'prepared', summary: { completed: 0, pending: 1, running: 0, invalid: 0 } };
+    }) as typeof executeCampaign;
+    const active = resumeExecutionJob(root, job.id, { execute, inspect });
+    assert.equal(readExecutionJob(root, job.id).status, 'running');
+    cancelExecutionJob(root, job.id);
+    assert.equal(readExecutionJob(root, job.id).cancellationRequested, true);
+    assert.equal((await active).status, 'cancelled');
+    assert.equal(abortSignal?.aborted, true);
+    assert.match(readFileSync(join(root, 'jobs', job.id, 'result.json'), 'utf8'), /first failure/);
+    await assert.rejects(resumeExecutionJob(root, job.id, { execute, inspect }), /failed or reconciled interrupted job/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an interrupted resume keeps its claim until its owner is proven dead', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-resume-owner-'));
+  try {
+    mkdirSync(join(root, 'plans'));
+    copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/dependency-model-free-campaign.json'), join(root, 'plans/reference.json'));
+    const job = submitExecutionJob(root, { key: 'resume-owner', planFile: 'reference.json' });
+    const base = join(root, 'jobs', job.id);
+    const owner = { hostId: 'worker-a', token: 'a'.repeat(64), startedAt: new Date().toISOString(),
+      ownerPid: process.pid, ownerInstance: controllerInstance() };
+    writeFileSync(join(base, 'claim.json'), JSON.stringify(owner));
+    const inspect = (() => ({ plan: { contentSha256: job.planSha256,
+      definition: { mode: { id: 'dependency' } } },
+    state: { status: 'prepared', attempts: [{ executions: [{}] }] } })) as unknown as typeof inspectCampaign;
+    const execute = (async () => ({ status: 'completed', summary: { completed: 1,
+      pending: 0, running: 0, invalid: 0 } })) as unknown as typeof executeCampaign;
+    await assert.rejects(resumeExecutionJob(root, job.id, { execute, inspect }), /live worker/);
+    assert.equal(readExecutionJob(root, job.id).status, 'running');
+    writeFileSync(join(base, 'claim.json'), JSON.stringify({ ...owner, ownerPid: 2147483647 }));
+    assert.equal((await resumeExecutionJob(root, job.id, { execute, inspect })).status, 'completed');
+
+    const repeated = submitExecutionJob(root, { key: 'resume-owner-repeated', planFile: 'reference.json' });
+    const failed = (async () => { throw new Error('prior failure'); }) as typeof executeCampaign;
+    await workExecutionJob(root, repeated.id, 'worker-a', { execute: failed });
+    const repeatedBase = join(root, 'jobs', repeated.id);
+    mkdirSync(join(repeatedBase, 'resume-000001'));
+    writeFileSync(join(repeatedBase, 'resume-000001', 'claim.json'),
+      JSON.stringify({ ...owner, ownerPid: 2147483647 }));
+    const repeatedInspect = (() => ({ plan: { contentSha256: repeated.planSha256,
+      definition: { mode: { id: 'dependency' } } },
+    state: { status: 'prepared', attempts: [{ executions: [{}] }] } })) as unknown as typeof inspectCampaign;
+    assert.equal((await resumeExecutionJob(root, repeated.id,
+      { execute, inspect: repeatedInspect })).status, 'completed');
+    assert.match(readFileSync(join(repeatedBase, 'result.json'), 'utf8'), /prior failure/);
+    assert.equal(readdirSync(repeatedBase).includes('resume-000002'), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('separate processes cannot both execute one resume claim', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-resume-race-'));
+  const children: ReturnType<typeof spawn>[] = [];
+  try {
+    mkdirSync(join(root, 'plans'));
+    copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/dependency-model-free-campaign.json'), join(root, 'plans/reference.json'));
+    const job = submitExecutionJob(root, { key: 'resume-race', planFile: 'reference.json' });
+    const failed = (async () => { throw new Error('interrupted'); }) as typeof executeCampaign;
+    await workExecutionJob(root, job.id, 'worker-a', { execute: failed });
+    const marker = join(root, 'executing');
+    const release = join(root, 'release');
+    const moduleUrl = new URL('../src/campaigns/execution-jobs.js', import.meta.url).href;
+    const script = `import { existsSync, writeFileSync } from 'node:fs';
+import { setTimeout } from 'node:timers/promises';
+import { resumeOwnedExecutionJob } from ${JSON.stringify(moduleUrl)};
+await resumeOwnedExecutionJob(process.argv[1], process.argv[2], { execute: async () => {
+  writeFileSync(process.argv[3] + '.' + process.pid, 'entered');
+  while (!existsSync(process.argv[4])) await setTimeout(20);
+  return { summary: { completed: 1, pending: 0, running: 0, invalid: 0 } };
+} });`;
+    const launch = () => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', script,
+        root, job.id, marker, release], { stdio: ['ignore', 'ignore', 'pipe'] });
+      children.push(child);
+      let error = '';
+      child.stderr.on('data', chunk => { error += String(chunk); });
+      return { child, done: new Promise<number | null>(resolve => child.on('exit', code => resolve(code))),
+        error: () => error };
+    };
+    const first = launch();
+    const second = launch();
+    const deadline = Date.now() + 30_000;
+    const entries = () => readdirSync(root).filter(name => name.startsWith('executing.'));
+    while (!entries().length || (first.child.exitCode === null && second.child.exitCode === null)) {
+      assert(entries().length <= 1, 'both processes entered execution');
+      assert(Date.now() < deadline, `${first.error()} ${second.error()}`);
+      await delay(20);
+    }
+    assert.equal(entries().length, 1, 'only one process entered execution');
+    writeFileSync(release, 'go');
+    const firstCode = await first.done;
+    const secondCode = await second.done;
+    assert(firstCode === 0 || secondCode === 0, `${first.error()} ${second.error()}`);
+    assert.equal(entries().length, 1, 'loser never entered execution');
+    assert.equal(readExecutionJob(root, job.id).status, 'completed');
+  } finally {
+    for (const child of children) if (child.exitCode === null) child.kill();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('job CLI rejects options its command does not use and resolves results like the dashboard', async () => {

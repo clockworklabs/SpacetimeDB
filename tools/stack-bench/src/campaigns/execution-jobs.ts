@@ -4,13 +4,14 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { executionCredentialsSchema, validateExecutionCredentialTargets } from '../agents/credential-profiles.js';
 import { compileCampaignFile } from './campaign-compiler.js';
-import { writeCampaignRecord } from './campaign-lock.js';
+import { campaignLockIsActive, controllerInstance, ownerAlive, writeCampaignRecord } from './campaign-lock.js';
 import { executeCampaign } from './campaign-runner.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { sha256 } from '../evidence/provenance.js';
 
 const name = z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,127}$/);
+const instanceName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const submissionSchema = z.strictObject({
   key: name, planFile: z.string().min(1),
@@ -23,7 +24,8 @@ const jobSchema = z.strictObject({
   credentials: executionCredentialsSchema,
   hostId: name.optional(), capacityPolicy: z.enum(['wait', 'fail']),
 });
-const claimSchema = z.strictObject({ hostId: name, token: digest, startedAt: z.iso.datetime() });
+const claimSchema = z.strictObject({ hostId: name, token: digest, startedAt: z.iso.datetime(),
+  ownerPid: z.number().int().positive().optional(), ownerInstance: instanceName.optional() });
 const resultSchema = z.strictObject({
   status: z.enum(['completed', 'failed', 'cancelled']), completedAt: z.iso.datetime(),
   hostId: name, token: digest, error: z.string().optional(),
@@ -34,6 +36,16 @@ const errorCode = (error: unknown) => error instanceof Error && 'code' in error 
 const rootFor = (results: string) => join(resolve(results), 'jobs');
 const directoryFor = (results: string, id: string) => join(rootFor(results), digest.parse(id));
 const read = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
+const resumeName = (number: number) => `resume-${String(number).padStart(6, '0')}`;
+
+function latestRun(directory: string): { directory: string; number: number } {
+  const numbers = readdirSync(directory).flatMap(entry => {
+    const match = /^resume-(\d{6})$/.exec(entry);
+    return match && existsSync(join(directory, entry, 'claim.json')) ? [Number(match[1])] : [];
+  });
+  const number = Math.max(0, ...numbers);
+  return { directory: number ? join(directory, resumeName(number)) : directory, number };
+}
 
 function containedPlan(results: string, path: string): string {
   const root = realpathSync(join(resolve(results), 'plans'));
@@ -92,7 +104,8 @@ export function readExecutionJob(results: string, id: string) {
   const directory = directoryFor(results, id);
   const job = jobSchema.parse(read(join(directory, 'job.json')));
   if (job.id !== id || sha256(job.key) !== id) throw new Error('job identity does not match its directory');
-  const claimPath = join(directory, 'claim.json'), resultPath = join(directory, 'result.json');
+  const run = latestRun(directory);
+  const claimPath = join(run.directory, 'claim.json'), resultPath = join(run.directory, 'result.json');
   // Results are published after their immutable claim. Read in that order so a
   // worker completing during this read cannot produce a result without its claim.
   const result = existsSync(resultPath) ? resultSchema.parse(read(resultPath)) : null;
@@ -100,8 +113,8 @@ export function readExecutionJob(results: string, id: string) {
   if (result && (!claim || result.token !== claim.token || result.hostId !== claim.hostId)) {
     throw new Error('job result does not belong to its worker claim');
   }
-  const cancelled = existsSync(join(directory, 'cancel.json'));
-  const waitPath = join(directory, 'capacity.json');
+  const cancelled = existsSync(join(run.directory, 'cancel.json'));
+  const waitPath = join(run.directory, 'capacity.json');
   const capacityWait = existsSync(waitPath) ? z.object({ reason: z.string().nullable(), at: z.iso.datetime() }).parse(read(waitPath)) : null;
   return { job, status: result?.status ?? (claim ? 'running' : cancelled ? 'cancelled' : 'queued'),
     hostId: claim?.hostId ?? job.hostId ?? null, startedAt: claim?.startedAt ?? null,
@@ -130,7 +143,8 @@ export function listExecutionJobs(results: string, { after = '', limit = 50 } = 
 
 export function cancelExecutionJob(results: string, id: string): void {
   if (['completed', 'failed', 'cancelled'].includes(readExecutionJob(results, id).status)) return;
-  try { writeCampaignRecord(join(directoryFor(results, id), 'cancel.json'), { at: new Date().toISOString() }); }
+  const directory = directoryFor(results, id);
+  try { writeCampaignRecord(join(latestRun(directory).directory, 'cancel.json'), { at: new Date().toISOString() }); }
   catch (error) { if (errorCode(error) !== 'EEXIST') throw error; }
 }
 
@@ -146,9 +160,50 @@ export async function workExecutionJob(results: string, id: string, hostId: stri
   const planFile = join(directory, 'plan.json');
   const plan = compileCampaignFile(planFile);
   if (plan.contentSha256 !== current.job.planSha256) throw new Error('job plan identity changed');
-  const claim = { hostId, token: sha256(randomUUID()), startedAt: new Date().toISOString() };
+  const claim = { hostId, token: sha256(randomUUID()), startedAt: new Date().toISOString(),
+    ownerPid: process.pid, ownerInstance: controllerInstance(env) };
   try { writeCampaignRecord(join(directory, 'claim.json'), claim); }
   catch (error) { if (errorCode(error) !== 'EEXIST') throw error; return readExecutionJob(results, id); }
+  return executeOwnedJob(results, id, directory, claim, planFile, plan, current, { env, signal, execute });
+}
+
+/** A failed campaign can continue under a new immutable claim; earlier results remain evidence. */
+export async function resumeOwnedExecutionJob(results: string, id: string,
+  { env = process.env, signal, execute = executeCampaign }:
+  { env?: NodeJS.ProcessEnv; signal?: AbortSignal; execute?: typeof executeCampaign } = {}) {
+  const directory = directoryFor(results, id);
+  const predecessor = latestRun(directory);
+  const current = readExecutionJob(results, id);
+  if (current.status !== 'failed' && current.status !== 'running') {
+    throw new Error('resume requires a failed or reconciled interrupted job');
+  }
+  const planFile = join(directory, 'plan.json');
+  const plan = compileCampaignFile(planFile);
+  if (plan.contentSha256 !== current.job.planSha256) throw new Error('job plan identity changed');
+  if (current.status === 'running') {
+    const priorClaim = claimSchema.parse(read(join(predecessor.directory, 'claim.json')));
+    if (!priorClaim.ownerPid || !priorClaim.ownerInstance) {
+      throw new Error('job claim has no verifiable owner identity; inspect its worker and campaign manually');
+    }
+    if (ownerAlive({ ownerPid: priorClaim.ownerPid, ownerInstance: priorClaim.ownerInstance }, controllerInstance(env))
+      || campaignLockIsActive(current.campaignDirectory, plan)) {
+      throw new Error('job campaign is still controlled by a live worker');
+    }
+  }
+  if (latestRun(directory).number !== predecessor.number) return readExecutionJob(results, id);
+  const next = join(directory, resumeName(predecessor.number + 1));
+  const claim = { hostId: current.hostId!, token: sha256(randomUUID()), startedAt: new Date().toISOString(),
+    ownerPid: process.pid, ownerInstance: controllerInstance(env) };
+  try { writeCampaignRecord(join(next, 'claim.json'), claim); }
+  catch (error) { if (errorCode(error) !== 'EEXIST') throw error; return readExecutionJob(results, id); }
+  return executeOwnedJob(results, id, next, claim, planFile, plan, current, { env, signal, execute });
+}
+
+async function executeOwnedJob(results: string, id: string, directory: string,
+  claim: z.infer<typeof claimSchema>, planFile: string, plan: ReturnType<typeof compileCampaignFile>,
+  current: ReturnType<typeof readExecutionJob>,
+  { env, signal, execute }: { env: NodeJS.ProcessEnv; signal?: AbortSignal; execute: typeof executeCampaign }) {
+  const hostId = claim.hostId;
   // Claims never expire: a disconnected worker may still be making paid calls.
   const controller = new AbortController();
   const cancel = () => {

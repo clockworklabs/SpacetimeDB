@@ -487,6 +487,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     clients: Object.freeze({
       async open(actor: Actor, settleMs: number, signal: AbortSignal) {
         const fresh = await actor.context.newPage();
+        if (actor.networkInterruption) await actor.networkInterruption.attach(actor.context, fresh);
         fresh.setDefaultTimeout(defaultWithin);
         await actor.attach(fresh);
         await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }), fresh);
@@ -827,7 +828,11 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     try { await closeOrderReaders(ctx); }
     catch (error) { restoreFailures.push({ actor: null, stage: 'database-reader-close', reason: keepReason(errorMessage(error)) }); }
     // Interruption proxies run where the browser runs; close them even after cancellation closed the browser.
-    await Promise.all(interruptions.splice(0).map(interruption => interruption.dispose()));
+    await Promise.all(interruptions.splice(0).map(async interruption => {
+      try { await interruption.dispose(); }
+      catch (error) { restoreFailures.push({ actor: null, stage: 'network-interruption-close',
+        reason: keepReason(errorMessage(error)) }); }
+    }));
     for (const actor of actors.values()) {
       for (const message of actor.consoleErrors) {
         result.consoleErrors.push(`[${actor.name}] ${sanitiseConsoleError(message)}`);
@@ -891,7 +896,6 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
           ...(networkInterruption ? { proxy: networkInterruption.proxy } : {}),
         }));
       contexts.push({ context, name, page: null });
-      networkInterruption?.attach(context);
       if (args.trace) {
         await runBrowserInfrastructureOperation('trace start', () =>
           context.tracing.start({ screenshots: true, snapshots: true }));
@@ -899,6 +903,8 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       }
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;
+      if (networkInterruption) await runBrowserInfrastructureOperation('network interruption attach', () =>
+        networkInterruption.attach(context, page));
       page.setDefaultTimeout(SETUP_WITHIN);
       const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name));
       actor.networkInterruption = networkInterruption;

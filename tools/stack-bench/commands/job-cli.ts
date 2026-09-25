@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { cancelExecutionJob, listExecutionJobs, readExecutionJob,
-  submitExecutionJob, workExecutionJob } from '../src/campaigns/execution-jobs.js';
+  resumeOwnedExecutionJob, submitExecutionJob, workExecutionJob } from '../src/campaigns/execution-jobs.js';
 import { runExecutionWorker } from '../src/campaigns/execution-worker.js';
 import { prepareRun, runSetupCatalog, submitPreparedRun } from '../src/campaigns/run-setup.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
@@ -29,15 +29,15 @@ export async function resumeExecutionJob(results: string, id: string,
   { env = process.env, signal, execute = executeCampaign, inspect = inspectCampaign }:
   { env?: NodeJS.ProcessEnv; signal?: AbortSignal; execute?: typeof executeCampaign;
     inspect?: typeof inspectCampaign } = {}) {
-  const { job, campaignDirectory } = readExecutionJob(results, id);
+  const current = readExecutionJob(results, id);
+  if (current.status !== 'failed' && current.status !== 'running') {
+    throw new Error('resume requires a failed or reconciled interrupted job');
+  }
+  const { job, campaignDirectory } = current;
   const planFile = join(resolve(results), 'jobs', job.id, 'plan.json');
   const plan = compileCampaignFile(planFile);
   validateResumeCampaignState(plan, inspect(campaignDirectory));
-  const state = await execute(planFile, campaignDirectory, {
-    mode: plan.state === 'draft' ? 'model-free-trial' : 'frozen',
-    env, signal, executionCredentials: job.credentials, capacityPolicy: job.capacityPolicy,
-  });
-  return { status: state.status, campaignDirectory, campaign: state.summary };
+  return resumeOwnedExecutionJob(results, id, { env, signal, execute });
 }
 
 export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = process.env) {

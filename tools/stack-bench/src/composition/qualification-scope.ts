@@ -101,6 +101,7 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
     'linter/lint.ts',
   ],
   'grader/mutation-test.ts': ['grader/grade.ts'],
+  'src/actions/network-interruption.ts': ['container/browser-network-proxy.ts'],
   'src/stacks/backends/spacetime-browser-session.ts': [
     'dist/src/stacks/spacetime-wire-codec.js',
     'src/stacks/spacetime-wire-codec.entry.mjs',
