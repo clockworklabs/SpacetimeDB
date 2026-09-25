@@ -4,6 +4,7 @@ import { dockerHostGatewayArguments, dockerHostServiceAddress, ATTEMPT_CREATION_
 import { updateBackendLease } from './backend-lease.js';
 import type { BackendLease } from './backend-lease.js';
 import { SIDECAR_CONTAINER_RESOURCE_LIMITS } from '../composition/product-config.js';
+import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 
 export interface ContainerSmokeResult {
   platform: string;
@@ -86,7 +87,26 @@ export function runContainerSmoke({ command, imageId, resultsDir, destinations, 
           owned: true, networkMode };
         return next;
       });
-      output = command('docker', ['start', '--attach', id]);
+      try { output = command('docker', ['start', '--attach', id]); }
+      catch (error) {
+        const failure = error as { message?: unknown; status?: unknown; signal?: unknown;
+          stderr?: unknown; stdout?: unknown };
+        let state: unknown;
+        try {
+          const inspected = JSON.parse(command('docker', ['inspect', '--format', '{{json .State}}', id]));
+          state = { status: inspected.Status, error: inspected.Error,
+            exitCode: inspected.ExitCode, oomKilled: inspected.OOMKilled };
+        } catch (inspectionError) {
+          state = { inspectionError: String(inspectionError) };
+        }
+        const tail = (value: unknown): string => redactCredentials(value).slice(-2048);
+        const stderr = tail(failure.stderr);
+        const stdout = tail(failure.stdout);
+        throw new Error(`Docker smoke container start failed: ${redactCredentials(JSON.stringify({
+          state, status: failure.status, signal: failure.signal, stderr, stdout,
+          ...(!stderr && !stdout ? { message: tail(failure.message) } : {}),
+        }))}`, { cause: error });
+      }
     } else output = command('docker', args);
   } finally {
     if (id && leaseContext) {

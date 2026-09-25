@@ -49,6 +49,7 @@ test('a stock write that finds no table, column, or row is the application missi
     'relation "stock" does not exist',
     'no such column: quantity',
     'field item_id not found',
+    'Error: `stock` is a view; DML on views is not supported',
   ]) assert.ok(describesMissingStockInterface(detail), detail);
   for (const detail of [
     'connection refused', 'ETIMEDOUT', 'HTTP status server error (500 Internal Server Error)',
@@ -59,6 +60,7 @@ test('a stock write that finds no table, column, or row is the application missi
     'OCI runtime exec failed: executable file not found in $PATH',
     'FATAL: role "appuser" does not exist',
     'FATAL: database "bench" does not exist',
+    'Error: `catalog` is a view; DML on views is not supported',
   ]) assert.equal(describesMissingStockInterface(detail), false, detail);
 
   const exec = (_command: string, args: readonly string[]): string => {

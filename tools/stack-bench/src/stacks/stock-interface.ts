@@ -20,5 +20,6 @@ const INTERFACE_ABSENT = /no such (?:table|column|field)|marked private|\b(?:tab
 
 export function describesMissingStockInterface(detail: string): boolean {
   return INTERFACE_ABSENT.test(detail)
+    || /^Error: `stock` is a view; DML on views is not supported\r?$/m.test(detail)
     || /^Error: `(id|name|price|item_id|warehouse_id|quantity)` is not in scope\r?$/m.test(detail);
 }
