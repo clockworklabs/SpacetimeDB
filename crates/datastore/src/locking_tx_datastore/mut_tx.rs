@@ -144,12 +144,6 @@ impl ViewInstanceArgs {
             Self::Anonymous { args } | Self::Sender { args, .. } => args,
         }
     }
-
-    pub fn into_args(self) -> ProductValue {
-        match self {
-            Self::Anonymous { args } | Self::Sender { args, .. } => args,
-        }
-    }
 }
 
 impl MemoryUsage for ViewInstanceArgs {

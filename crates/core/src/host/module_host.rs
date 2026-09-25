@@ -2996,7 +2996,6 @@ impl ModuleHost {
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
-        use FunctionArgs::*;
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
@@ -3010,8 +3009,16 @@ impl ModuleHost {
             let sender = args.sender();
             let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
-                let (res, trapped) =
-                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
+                let (res, trapped) = Self::call_view(
+                    instance,
+                    tx,
+                    &view_name,
+                    view_id,
+                    table_id,
+                    FunctionArgs::from_view_args(args.args()),
+                    caller,
+                    sender,
+                )?;
                 tx = res.tx;
                 if trapped {
                     return Ok((tx, true));
@@ -3069,8 +3076,8 @@ impl ModuleHost {
                     break;
                 }
             };
-            let sender = match tx.view_instance_args(&view_call) {
-                Some(args) => args.sender(),
+            let instance_args = match tx.view_instance_args(&view_call) {
+                Some(args) => args,
                 None => {
                     outcome = ViewOutcome::Failed(format!(
                         "failed to look up materialized view args for view {}",
@@ -3087,7 +3094,9 @@ impl ModuleHost {
                 global_fn_ptr,
                 owning_def,
             } = resolved;
-            let args = match FunctionArgs::Nullary.into_tuple_for_def(owning_def, view_def) {
+            let sender = instance_args.sender();
+            let args = match FunctionArgs::from_view_args(instance_args.args()).into_tuple_for_def(owning_def, view_def)
+            {
                 Ok(args) => args,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));

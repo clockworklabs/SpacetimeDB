@@ -763,7 +763,7 @@ fn refresh_views(
             let view_def = resolved.view_def;
             let view_name = &resolved.view_name;
             let fn_ptr = resolved.global_fn_ptr;
-            let sender = tx
+            let instance_args = tx
                 .as_ref()
                 .expect("procedure tx missing while looking up refreshed view args")
                 .view_instance_args(&view_call)
@@ -773,12 +773,21 @@ fn refresh_views(
                         view_call.view_id
                     ))
                     .throw(scope)
-                })?
-                .sender();
+                })?;
+            let sender = instance_args.sender();
+            let args = crate::host::FunctionArgs::from_view_args(instance_args.args())
+                .into_tuple_for_def(resolved.owning_def, view_def)
+                .map_err(|err| {
+                    TypeError(format!(
+                        "failed to build args for refreshed view `{}`: {err}",
+                        view_def.name
+                    ))
+                    .throw(scope)
+                })?;
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
             let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr, sender)
+                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr, sender, args)
             });
             tx = Some(next_tx);
             let return_data = call_result?;
@@ -856,6 +865,7 @@ fn refresh_views(
 /// This helper is used by [`refresh_views`] while a procedure transaction is being committed.
 /// It temporarily sets the active function type to the target view for dependency tracking,
 /// invokes the applicable JS hook, restores the previous function type, and returns [`ViewReturnData`].
+#[allow(clippy::too_many_arguments)]
 fn call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
@@ -864,13 +874,13 @@ fn call_view(
     table_id: TableId,
     fn_ptr: ViewFnPtr,
     sender: Option<Identity>,
+    args: crate::host::ArgsTuple,
 ) -> SysCallResult<ViewReturnData> {
     let (prev_func_name, prev_func_type) = get_env(scope)?
         .instance_env
         .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
 
     let result = {
-        let args = crate::host::ArgsTuple::nullary();
         match sender {
             Some(sender) => call_call_view(
                 scope,
