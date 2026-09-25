@@ -38,6 +38,21 @@ fn main() -> Result<()> {
     .run()?;
     cmd!(
         "cargo",
+        "clippy",
+        "-p",
+        "spacetimedb-datastore",
+        "--no-default-features",
+        "--features",
+        "portable",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--",
+        "-D",
+        "warnings",
+    )
+    .run()?;
+    cmd!(
+        "cargo",
         "check",
         "-p",
         "spacetimedb-portable-datastore",
