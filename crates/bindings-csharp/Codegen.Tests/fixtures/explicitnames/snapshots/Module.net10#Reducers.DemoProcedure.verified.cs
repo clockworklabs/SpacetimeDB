@@ -6,10 +6,12 @@ partial class Reducers
 {
     private static class __ScheduleDemoProcedureName
     {
-        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
-            "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            "canonical_procedure"
-        );
+        internal static readonly string Name =
+            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                nameof(DemoProcedure),
+                "canonical_procedure"
+            );
 
         // Prevent eager initialization before the root installs namespace placements.
         static __ScheduleDemoProcedureName() { }

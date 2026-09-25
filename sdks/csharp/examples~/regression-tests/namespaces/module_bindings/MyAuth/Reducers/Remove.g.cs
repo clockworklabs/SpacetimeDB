@@ -60,7 +60,7 @@ namespace SpacetimeDB.Types.@MyAuth
             {
             }
 
-            string IReducerArgs.ReducerName => "MyAuth.remove";
+            string IReducerArgs.ReducerName => "auth_data.remove";
         }
     }
 }

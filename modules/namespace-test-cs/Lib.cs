@@ -1,6 +1,6 @@
 using SpacetimeDB;
 
-[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth")]
+[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
 [assembly: Namespace(typeof(AuditLib.Marker), Accessor = "class")]
 
 namespace NamespaceRoot;
@@ -20,6 +20,34 @@ public partial struct AuthSummary
 
 public static partial class Functions
 {
+    // Compare the runtime resolver with host validation, including naming policies
+    // that differ from this fixture's own policy, without publishing extra modules.
+    [Procedure]
+    public static string ResolveScheduleName(
+        ProcedureContext ctx,
+        string accessor,
+        string? namespaceName,
+        string sourceName,
+        string? functionName,
+        bool rootNone,
+        bool childNone
+    ) =>
+        new SpacetimeDB.Internal.NamespaceRegistry(
+            "root",
+            rootNone ? CaseConversionPolicy.None : CaseConversionPolicy.SnakeCase,
+            accessor.Length == 0
+                ? []
+                :
+                [
+                    (
+                        "dependency",
+                        accessor,
+                        namespaceName,
+                        childNone ? CaseConversionPolicy.None : CaseConversionPolicy.SnakeCase
+                    ),
+                ]
+        ).ResolveFunction(accessor.Length == 0 ? "root" : "dependency", sourceName, functionName);
+
     [Reducer]
     public static void AddAuthUser(ReducerContext ctx, uint id)
     {
@@ -41,7 +69,7 @@ public static partial class Functions
 #pragma warning disable STDB_UNSTABLE
     [ClientVisibilityFilter]
     public static readonly Filter ProtectedRows = new Filter.Sql(
-        "SELECT * FROM \"MyAuth\".protected_row WHERE owner = :sender"
+        "SELECT * FROM auth_data.protected_row WHERE owner = :sender"
     );
 #pragma warning restore STDB_UNSTABLE
 

@@ -6,10 +6,12 @@ partial struct MultiTableRow
 {
     private static class __ScheduleInsertMultiDataName
     {
-        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
-            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            nameof(InsertMultiData)
-        );
+        internal static readonly string Name =
+            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                nameof(InsertMultiData),
+                null
+            );
 
         // Prevent eager initialization before the root installs namespace placements.
         static __ScheduleInsertMultiDataName() { }

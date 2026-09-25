@@ -3827,7 +3827,8 @@ static class ModuleRegistration
         global::SpacetimeDB.Internal.Module.InstallNamespaces(
             new global::SpacetimeDB.Internal.NamespaceRegistry(
                 "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                new global::System.Collections.Generic.KeyValuePair<string, string>[] { }
+                global::SpacetimeDB.CaseConversionPolicy.SnakeCase,
+                new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] { }
             )
         );
         global::SpacetimeDB.Generated.server_D513E4815F57969C.AssemblyDescriptor.Register(

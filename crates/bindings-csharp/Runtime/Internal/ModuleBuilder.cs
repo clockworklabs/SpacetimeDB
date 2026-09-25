@@ -73,8 +73,14 @@ public sealed class ModuleBuilder
 
     internal void RegisterSubmodule(RawSubmoduleV10 submodule) => submoduleDefs.Add(submodule);
 
-    public void RegisterSubmodule(string name, ModuleBuilder child) =>
-        RegisterSubmodule(new RawSubmoduleV10(name, child.BuildModuleDefinition()));
+    public void RegisterSubmodule(string accessor, string? name, ModuleBuilder child)
+    {
+        RegisterSubmodule(new RawSubmoduleV10(accessor, child.BuildModuleDefinition()));
+        if (name is not null)
+        {
+            explicitNames.Add(new ExplicitNameEntry.Namespace(new NameMapping(accessor, name)));
+        }
+    }
 
     // Receives types to store the reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
     internal AlgebraicType.Ref RegisterType<T>(

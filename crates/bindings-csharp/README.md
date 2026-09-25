@@ -34,7 +34,7 @@ Descriptor-bearing dependencies, including transitive dependencies, register
 automatically once in `public` unless the root assigns a namespace:
 
 ```csharp
-[assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth")]
+[assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
 ```
 
 The marker can be any accessible type declared in the dependency assembly.
@@ -48,6 +48,14 @@ AuthLib helpers continue to use `ctx.Db.User` and `ctx.From.User()`, regardless
 of the namespace selected by the root. Ordinary helper calls share the caller's
 context and transaction; a namespace is not a security boundary between helpers.
 
+`Accessor` controls the C# member name; `Name` controls the database namespace.
+For this example, raw SQL uses `auth_data.auth_users`, while generated clients
+use `conn.Db.MyAuth.User` and `q.From.MyAuth.User()`. Generated client queries and
+network calls use the canonical database names automatically.
+When `Name` is omitted, the host applies the root module's case-conversion policy
+to the accessor: with the default `SnakeCase` policy, `MyAuth` becomes `my_auth`.
+An explicit `Name` is used as supplied, without case conversion.
+
 #### Restrictions and limitations
 
 - Only the consuming root chooses namespace placement. A dependency that itself
@@ -59,16 +67,18 @@ context and transaction; a namespace is not a security boundary between helpers.
 - Dependencies in `public` inherit the root's case-conversion policy (`SnakeCase`
   by default). An explicitly different policy is a compilation error. Mount the
   dependency in a named namespace to keep its independent naming policy.
-- `Accessor` is currently both the C# accessor and database namespace. There is
-  no separate SQL-level `Name`. It must be a valid C# and database identifier,
-  at most 63 UTF-8 bytes. Names are checked for case-insensitive duplicates;
+- `Accessor` must be a valid C# and database identifier; optional `Name` must be
+  a valid database identifier. Both are limited to 63 UTF-8 bytes.
+  Accessors are checked for case-insensitive duplicates; the host validates
+  canonical namespace collisions.
   `st`, `spacetimedb`, and names starting with `pg_` are reserved.
   Keywords use their plain spelling in the attribute and `@` in C# expressions.
+  The `public` scope cannot be renamed or targeted through a different accessor.
 - Named namespaces cannot declare lifecycle reducers, nonempty environment
   schemas, or RLS filters. The generator rejects these when composing the root.
   They remain valid when the dependency is published alone or registered in
   `public`, subject to ordinary host validation (including lifecycle uniqueness).
-- Define RLS in the root, using qualified table names, as in
+- Define RLS in the root, using canonical qualified table names, as in
   [the integration fixture](../../modules/namespace-test-cs/Lib.cs).
   Library-defined RLS in a named namespace is unsupported; it must not be relied
   on to protect data.
