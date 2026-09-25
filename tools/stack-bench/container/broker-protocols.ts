@@ -5,6 +5,13 @@ import { firstUnpricedReason } from './credential-broker-accounting.js';
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
+// Account Responses does not promise max_output_tokens. Reserve the documented
+// maximum for each known model; an unknown bound must fail before a paid request.
+// https://developers.openai.com/api/docs/models/gpt-6-sol
+const VERIFIED_ACCOUNT_OUTPUT_LIMITS: Readonly<Record<string, number>> = {
+  'gpt-5.3-codex': 128_000, 'gpt-5.4': 128_000, 'gpt-5.4-2026-03-05': 128_000,
+  'gpt-5.6-sol': 128_000, 'gpt-6-astra': 128_000, 'gpt-6-sol': 128_000,
+};
 type JsonRecord = Record<string, unknown>;
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -292,12 +299,11 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
   }
   const account = config.mode === 'subscription-token';
   if (account && !config.accountId) fail('OpenAI account identity is required');
-  // Account Responses does not promise max_output_tokens. Use a documented model
-  // bound, never assume an unknown model shares it. API requests enforce the cap.
-  const accountOutputLimits: Record<string, number> = { 'gpt-5.3-codex': 128_000, 'gpt-5.4': 128_000, 'gpt-5.4-2026-03-05': 128_000,
-    'gpt-5.6-sol': 128_000, 'gpt-6-astra': 128_000 };
+  // API requests enforce their configured cap; account requests reserve the
+  // verified model maximum because the account endpoint may ignore that cap.
   const outputLimit = account
-    ? Object.hasOwn(accountOutputLimits, config.model) ? accountOutputLimits[config.model] : undefined
+    ? Object.hasOwn(VERIFIED_ACCOUNT_OUTPUT_LIMITS, config.model)
+      ? VERIFIED_ACCOUNT_OUTPUT_LIMITS[config.model] : undefined
     : config.maxOutputTokens;
   if (!outputLimit) fail('OpenAI account model has no verified output-token bound');
   return {

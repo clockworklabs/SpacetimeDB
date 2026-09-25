@@ -1003,7 +1003,7 @@ test('credential broker forces termination and records typed shutdown errors', a
 
 
 test('OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars', async () => {
-  for (const model of ['gpt-5.6-sol', 'gpt-6-astra']) {
+  for (const model of ['gpt-5.6-sol', 'gpt-6-sol', 'gpt-6-astra']) {
     assert.doesNotThrow(() => createCredentialBroker({ provider: 'openai', mode: 'subscription-token',
       accountId: 'account', model, maxOutputTokens: 4096,
       credential: 'provider-secret-value-1234567890', sessionToken: 'session-token-value-1234567890' }));
@@ -1237,14 +1237,16 @@ test('OpenAI inline screenshots retain input and reserve bounded vision tokens',
 });
 
 test('output reservations honor API caps without assuming account endpoints enforce them', () => {
-  for (const mode of ['api-key', 'subscription-token'] as const) {
-    const protocol = brokerProtocol({ provider: 'openai', mode, model: 'gpt-6-astra',
-      accountId: 'test', maxOutputTokens: 4096 } as BrokerConfig);
-    const payload = protocol.parseRequest(Buffer.from(JSON.stringify({ model: 'gpt-6-astra',
-      input: 'hello', max_output_tokens: 1024, reasoning: { effort: 'medium' } })), '/v1/responses');
-    assert.equal(protocol.outputLimit(payload), mode === 'api-key' ? 1024 : 128_000);
-    assert.deepEqual(payload.reasoning, { effort: 'medium' });
-    assert.equal(payload.model, 'gpt-6-astra');
+  for (const model of ['gpt-6-astra', 'gpt-6-sol']) {
+    for (const mode of ['api-key', 'subscription-token'] as const) {
+      const protocol = brokerProtocol({ provider: 'openai', mode, model,
+        accountId: 'test', maxOutputTokens: 4096 } as BrokerConfig);
+      const payload = protocol.parseRequest(Buffer.from(JSON.stringify({ model,
+        input: 'hello', max_output_tokens: 1024, reasoning: { effort: 'medium' } })), '/v1/responses');
+      assert.equal(protocol.outputLimit(payload), mode === 'api-key' ? 1024 : 128_000);
+      assert.deepEqual(payload.reasoning, { effort: 'medium' });
+      assert.equal(payload.model, model);
+    }
   }
 });
 
