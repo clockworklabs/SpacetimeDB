@@ -967,7 +967,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    OptionalHeader(environment): OptionalHeader<SpacetimeEnvironment>,
+    TypedHeader(SpacetimeEnvironment(environment)): TypedHeader<SpacetimeEnvironment>,
     program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let database_identity = database.database_identity;
@@ -992,7 +992,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
             num_replicas,
             host_type: Some(host_type),
         },
-        environment.unwrap_or_default().0,
+        environment,
     )
     .await
     .map_err(publish_error)?;
@@ -1066,8 +1066,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         organization,
         update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
-    OptionalHeader(environment): OptionalHeader<SpacetimeEnvironment>,
-    OptionalHeader(environment_remove): OptionalHeader<SpacetimeEnvironmentRemove>,
+    TypedHeader(SpacetimeEnvironment(environment)): TypedHeader<SpacetimeEnvironment>,
+    TypedHeader(SpacetimeEnvironmentRemove(environment_remove)): TypedHeader<SpacetimeEnvironmentRemove>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
@@ -1078,11 +1078,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         let name_or_identity = name_or_identity
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
-        if environment_remove.is_some() {
-            return Err(bad_request(
-                "cannot specify spacetime-environment-remove with clear".into(),
-            ));
-        }
         let database_identity = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)?;
         if let Ok(identity) = database_identity {
             let database = ctx.get_database_by_identity(&identity).await.map_err(log_and_500)?;
@@ -1104,7 +1099,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    OptionalHeader(environment),
+                    TypedHeader(SpacetimeEnvironment(environment)),
                     program_bytes,
                 )
                 .await;
@@ -1112,7 +1107,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         }
     }
 
-    if name_or_identity.is_none() {
+    if name_or_identity.is_none() && environment_remove != EnvironmentRemove::No {
         return Err(bad_request(
             "cannot specify spacetime-environment-remove without an existing database".into(),
         ));
@@ -1188,8 +1183,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             },
             schema_migration_policy,
             EnvironmentUpdate {
-                values: environment.unwrap_or_default().0,
-                remove: environment_remove.unwrap_or_default().0,
+                values: environment,
+                remove: environment_remove,
             },
         )
         .await
@@ -1894,17 +1889,13 @@ mod tests {
             assert_eq!(
                 serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
                 serde_json::json!({
-                    "MissingRequiredEnvironment": { "key": "API_KEY" }
+                    "MissingRequiredEnvironment": { "keys": ["API_KEY"] }
                 })
             );
         }
         for error in [
             anyhow::anyhow!("environment key API_KEY: required value is missing"),
             EnvironmentSchemaError::ConstraintMismatch { key: "API_KEY".into() }.into(),
-            EnvironmentSchemaError::MissingRequired {
-                key: "INVALID-KEY".into(),
-            }
-            .into(),
         ] {
             let response = Err::<(), _>(publish_migration_error(error)).into_response();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);

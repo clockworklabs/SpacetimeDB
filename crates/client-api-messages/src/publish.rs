@@ -92,7 +92,11 @@ impl headers::Header for SpacetimeEnvironmentRemove {
                 entries.push(tok.into());
             }
         }
-        Ok(Self(EnvironmentRemove::Keys(entries)))
+        if entries.is_empty() {
+            Ok(Self(EnvironmentRemove::No))
+        } else {
+            Ok(Self(EnvironmentRemove::Keys(entries)))
+        }
     }
 
     fn encode<E: Extend<http::HeaderValue>>(&self, values: &mut E) {

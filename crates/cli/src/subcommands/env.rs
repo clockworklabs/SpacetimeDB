@@ -7,7 +7,7 @@ use super::{
     db_arg_resolution::{load_config_db_targets, resolve_database_arg},
     sql,
 };
-use crate::{api::ClientApi, common_args, util::ResponseExt, Config};
+use crate::{api::ClientApi, common_args, Config};
 
 pub fn cli() -> Command {
     let target = |command: Command| {
@@ -97,10 +97,7 @@ async fn fetch(request: reqwest::RequestBuilder, query: Query) -> anyhow::Result
         .body(query.sql()?)
         .send()
         .await?;
-    let response = response
-        .error_msg_for_status()
-        .await
-        .context("failed to fetch environment")?;
+    let response = response.error_for_status().context("failed to fetch environment")?;
     // TODO(noa): what are we doing here. what. why are we manually buffering. help me
     let mut body = Vec::new();
     let limit = MAX_ENV_VARS * (MAX_ENV_KEY_BYTES + MAX_ENV_VALUE_BYTES) * 6 + 64 * 1024;
