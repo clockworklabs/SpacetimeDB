@@ -44,9 +44,11 @@ export function retainedRunCost(input: unknown, runtimeRoot = process.env.STACK_
         remaining.splice(index, 1);
       }
     }
-    const recorded: CostEvidence = {
-      status: ledgers.some(ledger => ledger.estimatedBillableRequests > 0) ? 'upper-bound' : 'exact', costUsd: total,
-    };
+    const estimated = ledgers.some(ledger => ledger.estimatedBillableRequests > 0);
+    // Unpriced requests leave spend unknown; without estimates the total is a lower bound.
+    const recorded: CostEvidence = ledgers.some(ledger => ledger.unpricedBillableRequests > 0)
+      ? { status: 'unknown', costUsd: null, ...(estimated ? {} : { lowerBoundUsd: total }) }
+      : { status: estimated ? 'upper-bound' : 'exact', costUsd: total };
     return { recorded, cost: ledgers.every(ledger => ledger.complete) ? recorded : { status: 'unknown', costUsd: null } };
   } catch { return null; }
 }

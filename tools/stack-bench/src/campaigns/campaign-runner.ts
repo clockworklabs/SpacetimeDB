@@ -309,6 +309,11 @@ export function remainingAttemptCostBudget(
     if (!ledger.complete) {
       throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
     }
+    // The priced part is only a lower bound, so the cap cannot promise any remaining budget.
+    if (!ledger.priced) {
+      throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend includes unpriced requests `
+        + `(at least $${ledger.reportedCostUsd}); raise or remove the attempt cost cap to continue`);
+    }
     spent += ledger.reportedCostUsd;
   }
   const remaining = Number((cap - spent).toFixed(6));

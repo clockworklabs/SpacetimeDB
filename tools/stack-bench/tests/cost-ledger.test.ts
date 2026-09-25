@@ -6,9 +6,11 @@ import { retainedRunCost } from '../src/evidence/retained-run-cost.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { durableCostLedger, runCostEvidence } from '../src/evidence/cost-proof.js';
+import { durableCostLedger, runCostEvidence, sumCostEvidence } from '../src/evidence/cost-proof.js';
 import { recordedExecutionSpend } from '../src/evidence/run-checkpoints.js';
-import { executionSpend } from '../src/campaigns/campaign-report.js';
+import { executionSpend, formatCostEvidence } from '../src/campaigns/campaign-report.js';
+import { validateAgentCostReceipt } from '../src/agents/agent-result-contract.js';
+import { noUnpriced } from '../container/credential-broker-accounting.js';
 import { spend } from '../dashboard/public/format.js';
 import type { CostRun } from '../src/evidence/cost-proof.js';
 
@@ -39,6 +41,62 @@ test('cost ledger stays complete and marks itself inexact when a receipt charged
   assert.equal(ledger.complete, true);
   assert.equal(ledger.exact, false);
   assert.deepEqual(ledger.rows.map(row => row.exact), [false]);
+});
+
+const brokerReceipt = (schemaVersion: 3 | 4, costUsd: number, { estimated = 0, unpriced = 0 } = {}) => ({
+  schemaVersion, source: 'credential-broker', model: 'claude-sonnet-5', maxBudgetUsd: 50, costUsd,
+  cliCostUsd: costUsd, calculatedCostUsd: costUsd, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+  pricingRates: { input: 2, output: 10, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2 },
+  exact: estimated === 0 && unpriced === 0, estimatedRequests: estimated,
+  estimatedByReason: { 'no-usage': estimated, 'response-aborted': 0, 'upstream-error': 0 },
+  ...(schemaVersion === 4 ? { unpricedRequests: unpriced,
+    unpricedByReason: { ...noUnpriced(), 'server-tool': unpriced } } : {}),
+  complete: true, reconciled: true, error: null });
+const brokerRun = (...receipts: Array<ReturnType<typeof brokerReceipt>>): CostRun => {
+  const total = Number(receipts.reduce((sum, item) => sum + item.costUsd, 0).toFixed(6));
+  return { totals: { costUsd: total, costComplete: true }, levels: [{ level: 1, buildSessions: receipts.map(item => ({
+    costUsd: item.costUsd, costComplete: true, costReceipts: [{ invocation: 1, receipt: item }] })) }] };
+};
+
+test('schema 3 receipts keep their exact and upper-bound meaning', () => {
+  for (const receipt of [brokerReceipt(3, 2), brokerReceipt(3, 2, { estimated: 1 })]) {
+    validateAgentCostReceipt(receipt, 'claude-sonnet-5', 'receipt');
+    const ledger = durableCostLedger(brokerRun(receipt));
+    assert.equal(ledger.complete, true);
+    assert.equal(ledger.priced, true);
+  }
+  assert.deepEqual(runCostEvidence(brokerRun(brokerReceipt(3, 2))), { status: 'exact', costUsd: 2 });
+  assert.deepEqual(runCostEvidence(brokerRun(brokerReceipt(3, 2, { estimated: 1 }))), { status: 'upper-bound', costUsd: 2 });
+  assert.throws(() => validateAgentCostReceipt({ ...brokerReceipt(3, 2), unpricedRequests: 0 }, 'claude-sonnet-5', 'receipt'));
+});
+
+test('unpriced receipts make spend unknown with the priced part as a lower bound', () => {
+  const unpriced = brokerReceipt(4, 2, { unpriced: 1 });
+  validateAgentCostReceipt(unpriced, 'claude-sonnet-5', 'receipt');
+  assert.throws(() => validateAgentCostReceipt({ ...unpriced, exact: true }, 'claude-sonnet-5', 'receipt'), /unpriced/);
+  assert.throws(() => validateAgentCostReceipt({ ...unpriced, unpricedRequests: 2 }, 'claude-sonnet-5', 'receipt'), /unpriced/);
+  const ledger = durableCostLedger(brokerRun(unpriced, brokerReceipt(4, 1)));
+  assert.equal(ledger.complete, true, 'unpriced spend is still reconciled accounting');
+  assert.equal(ledger.priced, false);
+  assert.equal(ledger.exact, false);
+  assert.deepEqual(ledger.rows.map(row => row.priced), [false, true]);
+  const cost = runCostEvidence(brokerRun(unpriced, brokerReceipt(4, 1)));
+  assert.deepEqual(cost, { status: 'unknown', costUsd: null, lowerBoundUsd: 3 });
+  assert.equal(formatCostEvidence(cost), '≥ $3');
+  assert.match(spend({ ...cost, knownCostUsd: 3 }), /≥\$3\.00/);
+  // A ceiling mixed into the priced figure makes it neither bound.
+  assert.deepEqual(runCostEvidence(brokerRun(unpriced, brokerReceipt(4, 1, { estimated: 1 }))),
+    { status: 'unknown', costUsd: null });
+  assert.deepEqual(runCostEvidence(brokerRun(brokerReceipt(4, 2, { estimated: 1, unpriced: 1 }))),
+    { status: 'unknown', costUsd: null });
+  assert.deepEqual(sumCostEvidence([cost, { status: 'exact', costUsd: 1 }]),
+    { status: 'unknown', costUsd: null, lowerBoundUsd: 4 });
+  assert.deepEqual(sumCostEvidence([cost, { status: 'upper-bound', costUsd: 1 }]), { status: 'unknown', costUsd: null });
+  const total = executionSpend([{ cost }, { cost: { status: 'exact', costUsd: 1 } }]);
+  assert.equal(total.status, 'unknown');
+  assert.equal(total.lowerBoundUsd, 4);
+  assert.equal(total.knownCostUsd, 4);
+  assert.equal(total.unknownExecutions, 1);
 });
 
 test('cost ledger rejects incomplete receipt proof', () => {
@@ -151,6 +209,9 @@ test('retained broker accounting is bound to the run lease and keeps interrupted
     assert.equal(partial?.cost.status, 'unknown');
     assert.equal(partial?.recorded.costUsd, 12);
     assert.equal(retainedRunCost({ ...run, id: '../retained' }, root), null);
+    writeFileSync(file, JSON.stringify({ ...ledger, schemaVersion: 5, unpricedBillableRequests: 1,
+      unpricedByReason: { ...noUnpriced(), 'server-tool': 1 } }));
+    assert.deepEqual(retainedRunCost(run, root)?.cost, { status: 'unknown', costUsd: null, lowerBoundUsd: 12 });
     assert.equal(retainedRunCost({ ...run, backendLease: { ownership: { markerSha256: 'wrong' } } }, root), null);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -6,7 +6,8 @@ import { sessionCostEvidence, sumCostEvidence, type CostEvidence, type CostLevel
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 export const costEvidenceSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('unknown'), costUsd: z.null() }),
+  z.strictObject({ status: z.literal('unknown'), costUsd: z.null(),
+    lowerBoundUsd: z.number().finite().nonnegative().optional() }),
   z.strictObject({ status: z.enum(['exact', 'upper-bound']), costUsd: z.number().finite().nonnegative() }),
 ]);
 export const completionSchema = z.strictObject({

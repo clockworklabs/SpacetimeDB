@@ -1,7 +1,8 @@
 import type { IncomingMessage, OutgoingHttpHeaders } from 'node:http';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { createParser } from 'eventsource-parser';
-import type { BrokerConfig } from './credential-broker-accounting.js';
+import { firstUnpricedReason } from './credential-broker-accounting.js';
+import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 type JsonRecord = Record<string, unknown>;
@@ -37,19 +38,35 @@ function parseProviderRequest(body: Buffer, path: string, config: BrokerConfig):
       || payload.max_tokens > config.maxOutputTokens)) {
     fail(`max_tokens must be from 1 through ${config.maxOutputTokens}`);
   }
-  // Token-only receipts cannot price server tools, MCP connectors, containers,
-  // or fast-mode speed. Client tools carry no type or 'custom'.
-  if (path === '/v1/messages'
-    && ((payload.tools !== undefined && (!Array.isArray(payload.tools)
-      || payload.tools.some(tool => !isRecord(tool)
-        || (tool.type !== undefined && tool.type !== 'custom'))))
-      || payload.mcp_servers !== undefined || payload.container !== undefined
-      || (payload.speed !== undefined && payload.speed !== 'standard')
-      || (payload.service_tier !== undefined && payload.service_tier !== 'auto'
-        && payload.service_tier !== 'standard_only'))) {
-    fail('request requires unsupported pricing or server-side state');
-  }
   return payload;
+}
+
+const declared = (value: unknown): boolean =>
+  value !== undefined && value !== null && !(Array.isArray(value) && value.length === 0);
+
+// Token rates cannot price MCP connectors, containers, or a non-standard speed,
+// and the response cannot prove they added no charge. Server tools are priced
+// only when the response reports no use. Client tools carry no type or 'custom'.
+function anthropicRequestPricing(payload: JsonRecord): RequestPricing {
+  const serverTools = payload.tools !== undefined && (!Array.isArray(payload.tools)
+    || payload.tools.some(tool => !isRecord(tool) || (tool.type !== undefined && tool.type !== 'custom')));
+  const unpriced = firstUnpricedReason(
+    payload.speed !== undefined && payload.speed !== 'standard' ? 'speed' : null,
+    declared(payload.mcp_servers) ? 'mcp' : null,
+    declared(payload.container) ? 'container' : null);
+  return { unpriced, unlessUnused: serverTools ? 'server-tool' : null, bounded: !serverTools && unpriced === null };
+}
+
+// Server tools run inside the provider and return these content blocks.
+const serverBlock = (value: unknown): boolean => isRecord(value) && typeof value.type === 'string'
+  && (value.type === 'server_tool_use' || value.type === 'mcp_tool_use' || value.type.endsWith('_tool_result'));
+
+function anthropicResponseUnpriced(usages: JsonRecord[], serverBlocks: boolean): UnpricedReason | null {
+  const serverToolUse = serverBlocks || usages.some(usage => isRecord(usage.server_tool_use)
+    && Object.values(usage.server_tool_use).some(count => typeof count === 'number' && count > 0));
+  const serviceTier = usages.some(usage => usage.service_tier !== undefined && usage.service_tier !== null
+    && usage.service_tier !== 'standard');
+  return firstUnpricedReason(serverToolUse ? 'server-tool' : null, serviceTier ? 'service-tier' : null);
 }
 
 function decodedResponseBody(body: Buffer, contentEncoding: string | string[] | undefined): Buffer {
@@ -69,10 +86,15 @@ function decodedResponseBody(body: Buffer, contentEncoding: string | string[] | 
 
 function responseUsage(body: Buffer, contentEncoding: string | string[] | undefined = undefined): JsonRecord | null {
   const values: JsonRecord[] = [];
+  let serverBlocks = false;
   const add = (value: unknown): void => {
     if (!isRecord(value)) return;
     if (isRecord(value.usage)) values.push(value.usage);
     if (isRecord(value.message) && isRecord(value.message.usage)) values.push(value.message.usage);
+    for (const blocks of [value.content, isRecord(value.message) ? value.message.content : undefined]) {
+      if (Array.isArray(blocks) && blocks.some(serverBlock)) serverBlocks = true;
+    }
+    if (serverBlock(value.content_block)) serverBlocks = true;
   };
   let text: string;
   try { text = decodedResponseBody(body, contentEncoding).toString('utf8'); }
@@ -119,9 +141,20 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
       ephemeral_5m_input_tokens: cacheWrite5m + cacheWrite1h > 0 ? cacheWrite5m : flatCacheWrite,
       ephemeral_1h_input_tokens: cacheWrite1h,
     },
+    unpriced_reason: anthropicResponseUnpriced(values, serverBlocks),
   };
 }
 
+
+// How far the broker's token rates and reservation cover a forwarded request.
+export interface RequestPricing {
+  // A declared feature whose charge the rates cannot price.
+  unpriced: UnpricedReason | null;
+  // A declared feature that is priced only when the response reports no use.
+  unlessUnused: UnpricedReason | null;
+  // False when server-side input or tools can exceed the request's reservation.
+  bounded: boolean;
+}
 
 interface BrokerProtocol {
   hostname: string;
@@ -130,6 +163,7 @@ interface BrokerProtocol {
   billable(path: string): boolean;
   headers(request: IncomingMessage): OutgoingHttpHeaders;
   parseRequest(body: Buffer, path: string): JsonRecord;
+  requestPricing(payload: JsonRecord): RequestPricing;
   inputTokenAdjustment?(payload: JsonRecord): number;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
@@ -195,21 +229,48 @@ function hasUnpricedInput(value: unknown): boolean {
   return Object.values(value).some(hasUnpricedInput);
 }
 
-// Only inline images have bounded input here. Provider receipts price actual tokens.
+function images(value: unknown): JsonRecord[] {
+  if (Array.isArray(value)) return value.flatMap(images);
+  if (!isRecord(value)) return [];
+  if (value.type === 'input_image') return [value];
+  return Object.values(value).flatMap(images);
+}
+
+// Only inline images on these models have a verified token bound.
+function boundedImageUrl(image: JsonRecord, model: string): string | null {
+  return ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-2026-03-05'].includes(model)
+    && typeof image.image_url === 'string'
+    && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(image.image_url)
+    && image.file_id === undefined ? image.image_url : null;
+}
+
+// Provider receipts price actual tokens; this only bounds the reservation.
 export function imageTokenAdjustment(value: unknown, model: string): number {
-  if (Array.isArray(value)) return value.reduce((sum, item) => sum + imageTokenAdjustment(item, model), 0);
-  if (!isRecord(value)) return 0;
-  if (value.type === 'input_image') {
-    if (!['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-2026-03-05'].includes(model)
-      || typeof value.image_url !== 'string'
-      || !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.image_url)
-      || value.file_id !== undefined) fail('image input requires inline data and a verified token bound');
+  return images(value).reduce((sum, image) => {
+    const url = boundedImageUrl(image, model);
     // OpenAI vision: 30,000 patches maximum x 1.2 tokens, plus rounding.
     // https://developers.openai.com/api/docs/guides/images-vision
     // Replace base64 text bytes rather than charging for both representations.
-    return 36_001 - Buffer.byteLength(value.image_url, 'utf8');
-  }
-  return Object.values(value).reduce<number>((sum, item) => sum + imageTokenAdjustment(item, model), 0);
+    return url === null ? sum : sum + 36_001 - Buffer.byteLength(url, 'utf8');
+  }, 0);
+}
+
+// Responses usage covers tokens only. A requested tier, hosted tools, files,
+// unbounded images, non-text output, and stored context can add charges or
+// input that the broker neither prices nor reserves.
+function responsesRequestFeature(payload: JsonRecord, model: string): UnpricedReason | null {
+  return firstUnpricedReason(
+    payload.service_tier !== undefined && payload.service_tier !== 'default' && payload.service_tier !== 'auto'
+      ? 'service-tier' : null,
+    payload.tools !== undefined && (!Array.isArray(payload.tools)
+      || payload.tools.some(tool => !isRecord(tool) || !['function', 'custom'].includes(String(tool.type))))
+      ? 'hosted-tool' : null,
+    hasUnpricedInput(payload.input) || images(payload.input).some(image => boundedImageUrl(image, model) === null)
+      ? 'unpriced-input' : null,
+    payload.image_config !== undefined || payload.audio !== undefined
+      || (payload.modalities !== undefined && (!Array.isArray(payload.modalities)
+        || payload.modalities.some(modality => modality !== 'text'))) ? 'unpriced-output' : null,
+    payload.prompt || payload.previous_response_id || payload.conversation ? 'stored-context' : null);
 }
 
 export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
@@ -220,6 +281,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     billable: path => path === '/v1/messages',
     headers: request => upstreamHeaders(request, config),
     parseRequest: (body, path) => parseProviderRequest(body, path, config),
+    requestPricing: anthropicRequestPricing,
     outputLimit: payload => payload.max_tokens as number,
     responseUsage,
   };
@@ -256,19 +318,6 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     parseRequest: body => {
       const payload = JSON.parse(body.toString('utf8'));
       if (!isRecord(payload) || payload.model !== config.model) fail('request model does not match');
-      imageTokenAdjustment(payload.input, config.model);
-      // Token-only receipts cannot price hosted tools or hidden server-side input.
-      if (payload.prompt || payload.previous_response_id || payload.conversation || hasUnpricedInput(payload.input)
-        || payload.image_config !== undefined || payload.audio !== undefined
-        || (payload.modalities !== undefined && (!Array.isArray(payload.modalities)
-          || payload.modalities.some(modality => modality !== 'text')))
-        || (payload.truncation !== undefined && payload.truncation !== 'disabled')
-        || payload.background === true
-        || (payload.service_tier !== undefined && payload.service_tier !== 'default' && payload.service_tier !== 'auto')
-        || (payload.tools !== undefined && (!Array.isArray(payload.tools)
-          || payload.tools.some(tool => !isRecord(tool) || !['function', 'custom'].includes(String(tool.type)))))) {
-        fail('request requires unsupported pricing or server-side state');
-      }
       if (router && ['provider', 'models', 'route', 'plugins', 'transforms', 'preset', 'user', 'session_id', 'trace', 'debug'].some(key => key in payload)) {
         fail('OpenRouter routing and transforms are owned by the broker');
       }
@@ -277,7 +326,8 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
         || (requested as number) > outputLimit)) fail('invalid max_output_tokens');
       if (!account) {
         payload.max_output_tokens = requested ?? outputLimit;
-        payload.service_tier = 'default';
+        // An explicitly requested tier is forwarded and recorded as unpriced.
+        if (payload.service_tier === undefined || payload.service_tier === 'auto') payload.service_tier = 'default';
       }
       if (router) {
         const rates = config.pricingRates!;
@@ -289,6 +339,11 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
         payload.store = false;
       }
       return payload;
+    },
+    // OpenRouter's reported cost includes every feature; only the reservation is affected.
+    requestPricing: payload => {
+      const feature = responsesRequestFeature(payload, config.model);
+      return { unpriced: router ? null : feature, unlessUnused: null, bounded: feature === null };
     },
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,

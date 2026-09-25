@@ -8,7 +8,7 @@ import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import { validatePricingRates as validateSharedPricingRates } from '../src/evidence/pricing-authority.js';
 import { formatZodError } from '../src/zod-error.js';
 
-export const BROKER_LEDGER_SCHEMA_VERSION = 4;
+export const BROKER_LEDGER_SCHEMA_VERSION = 5;
 // Why a billable request was charged its cost ceiling instead of priced from
 // the provider's usage: a 2xx response without complete usage (an aborted or
 // errored stream, an oversized body), a response that broke off, or an
@@ -17,6 +17,19 @@ export const ESTIMATE_REASONS = ['no-usage', 'response-aborted', 'upstream-error
 export type EstimateReason = typeof ESTIMATE_REASONS[number];
 export type EstimateCounts = Record<EstimateReason, number>;
 export const noEstimates = (): EstimateCounts => ({ 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 });
+// Why a forwarded request may cost more than the broker's token rates price:
+// a server tool the response reports using, a non-standard service tier or
+// speed, an MCP connector or container, a hosted tool, input or output the
+// rates do not cover, or server-side stored context. The priced figure is then
+// a lower bound. Each request counts under its first reason in this order.
+export const UNPRICED_REASONS = ['server-tool', 'service-tier', 'speed', 'mcp', 'container',
+  'hosted-tool', 'unpriced-input', 'unpriced-output', 'stored-context'] as const;
+export type UnpricedReason = typeof UNPRICED_REASONS[number];
+export type UnpricedCounts = Record<UnpricedReason, number>;
+export const noUnpriced = (): UnpricedCounts => Object.fromEntries(
+  UNPRICED_REASONS.map(reason => [reason, 0])) as UnpricedCounts;
+export const firstUnpricedReason = (...reasons: Array<UnpricedReason | null | undefined>): UnpricedReason | null =>
+  UNPRICED_REASONS.find(reason => reasons.includes(reason)) ?? null;
 export const MAX_BROKER_OUTPUT_TOKENS = 128_000;
 export const CLAUDE_USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'] as const;
 const COST_TOLERANCE_USD = 0.0001;
@@ -59,6 +72,8 @@ export type BrokerLedger = {
   completedBillableRequests: number;
   estimatedBillableRequests: number;
   estimatedByReason: EstimateCounts;
+  unpricedBillableRequests: number;
+  unpricedByReason: UnpricedCounts;
   spentUsd: number;
   reservedUsd: number;
   usage: ClaudeUsage;
@@ -68,15 +83,16 @@ export type BrokerLedger = {
 
 // `costUsd` is what the broker charged: exact provider usage priced at the
 // receipt's rates, plus the cost ceiling of every estimated request. With
-// `exact` false it is an upper bound and `calculatedCostUsd`, priced from the
-// exact usage alone, a lower bound.
+// estimated requests it is an upper bound and `calculatedCostUsd`, priced from
+// the exact usage alone, a lower bound. With unpriced requests the provider may
+// have charged more than `costUsd`, so the session's spend is unknown.
 export interface CredentialBrokerReceipt {
   costSource?: 'provider-reported';
   provider?: 'openrouter';
   providerRoute?: string;
   providerReportedCostUsd?: number;
   upstreamProviders?: string[];
-  schemaVersion: 3;
+  schemaVersion: 4;
   source: 'credential-broker';
   model: string;
   maxBudgetUsd: number;
@@ -88,6 +104,8 @@ export interface CredentialBrokerReceipt {
   exact: boolean;
   estimatedRequests: number;
   estimatedByReason: EstimateCounts;
+  unpricedRequests: number;
+  unpricedByReason: UnpricedCounts;
   complete: boolean;
   reconciled: boolean;
   error: string | null;
@@ -155,7 +173,8 @@ const brokerLedgerSchema = z.strictObject({
       requestCeilingUsd: nonNegativeFinite,
     }).optional(),
   }).nullable().optional(),
-  schemaVersion: z.literal(BROKER_LEDGER_SCHEMA_VERSION),
+  // Version 4 ledgers predate unpriced requests; the broker then refused them.
+  schemaVersion: z.union([z.literal(4), z.literal(BROKER_LEDGER_SCHEMA_VERSION)]),
   model: z.string().min(1),
   maxBudgetUsd: positiveFinite.nullable(),
   acceptedRequests: nonNegativeSafeInteger,
@@ -167,6 +186,9 @@ const brokerLedgerSchema = z.strictObject({
     'response-aborted': nonNegativeSafeInteger,
     'upstream-error': nonNegativeSafeInteger,
   }),
+  unpricedBillableRequests: nonNegativeSafeInteger.optional(),
+  unpricedByReason: z.strictObject(Object.fromEntries(UNPRICED_REASONS.map(reason =>
+    [reason, nonNegativeSafeInteger])) as Record<UnpricedReason, typeof nonNegativeSafeInteger>).optional(),
   spentUsd: nonNegativeFinite,
   reservedUsd: nonNegativeFinite,
   usage: usageSchema,
@@ -240,7 +262,15 @@ function validateLedger(value: unknown,
   { model = null, maxBudgetUsd = undefined }: { model?: string | null; maxBudgetUsd?: number | null } = {}): BrokerLedger {
   const parsed = brokerLedgerSchema.safeParse(value);
   if (!parsed.success) fail(formatZodError(parsed.error, 'spend ledger'));
-  const ledger = parsed.data;
+  const { unpricedBillableRequests, unpricedByReason, ...fields } = parsed.data;
+  if (fields.schemaVersion === BROKER_LEDGER_SCHEMA_VERSION
+    ? unpricedBillableRequests === undefined || unpricedByReason === undefined
+    : (unpricedBillableRequests ?? 0) !== 0
+      || UNPRICED_REASONS.some(reason => (unpricedByReason?.[reason] ?? 0) !== 0)) {
+    fail('spend ledger unpriced request counts are invalid');
+  }
+  const ledger: BrokerLedger = { ...fields, unpricedBillableRequests: unpricedBillableRequests ?? 0,
+    unpricedByReason: unpricedByReason ?? noUnpriced() };
   if (model !== null && ledger.model !== model) fail('spend ledger model does not match');
   if (maxBudgetUsd !== undefined && ledger.maxBudgetUsd !== maxBudgetUsd) {
     fail('spend ledger budget does not match');
@@ -253,6 +283,11 @@ function validateLedger(value: unknown,
   }
   const reasons = ESTIMATE_REASONS.reduce((sum, reason) => sum + ledger.estimatedByReason[reason], 0);
   if (reasons !== ledger.estimatedBillableRequests) fail('spend ledger estimate reasons do not add up');
+  if (ledger.unpricedBillableRequests > ledger.completedBillableRequests) {
+    fail('spend ledger unpriced request count is invalid');
+  }
+  const unpriced = UNPRICED_REASONS.reduce((sum, reason) => sum + ledger.unpricedByReason[reason], 0);
+  if (unpriced !== ledger.unpricedBillableRequests) fail('spend ledger unpriced reasons do not add up');
   const complete = ledger.reservedUsd === 0
     && ledger.completedBillableRequests === ledger.billableRequests;
   if (ledger.complete !== complete) fail('spend ledger completion state is invalid');
@@ -266,6 +301,7 @@ function validateLedger(value: unknown,
 export function writeCredentialBrokerLedger(path: string | undefined, value: unknown): void {
   if (!path) return;
   const ledger = validateLedger(value);
+  if (ledger.schemaVersion !== BROKER_LEDGER_SCHEMA_VERSION) fail('spend ledger schema version is not current');
   const temporary = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(ledger)}\n`, { flag: 'wx', mode: 0o600 });
   try { renameSync(temporary, path); }
@@ -297,25 +333,30 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   catch (error) { issue = errorMessage(error); }
   if (!issue && verifiedLedger?.complete !== true) issue = 'credential broker spend ledger is incomplete';
   const estimatedRequests = verifiedLedger?.estimatedBillableRequests ?? 0;
-  const exact = verifiedLedger !== null && estimatedRequests === 0;
+  const unpricedRequests = verifiedLedger?.unpricedBillableRequests ?? 0;
+  // Token totals are exact without estimates; unpriced charges come on top.
+  const tokensExact = verifiedLedger !== null && estimatedRequests === 0;
+  const exact = tokensExact && unpricedRequests === 0;
   try { verifiedRates = validatePricingRates(pricingRates); }
   catch (error) { if (!issue) issue = errorMessage(error); }
   try { cliUsage = normalizeClaudeUsage(isRecord(cliResult) ? cliResult.usage : undefined); }
   catch (error) { if (!issue) issue = errorMessage(error); }
   if (verifiedLedger) usage = structuredClone(verifiedLedger.usage);
-  if (!issue && exact && cliUsage && usage && !brokerCoversCliUsage(usage, cliUsage)) {
+  if (!issue && tokensExact && cliUsage && usage && !brokerCoversCliUsage(usage, cliUsage)) {
     issue = 'credential broker usage is lower than CLI usage totals';
   }
   if (!issue && provider === 'openrouter' && verifiedLedger?.provider !== 'openrouter') issue = 'OpenRouter spend ledger lacks provenance';
   if (!issue && verifiedLedger?.providerIntegrityError) issue = verifiedLedger.providerIntegrityError;
   try { if (provider !== 'openrouter' && verifiedRates && usage) calculatedCostUsd = priceNormalizedClaudeUsage(usage, verifiedRates); }
   catch (error) { if (!issue) issue = errorMessage(error); }
+  // Server-side input of an unpriced request can exceed its reservation, so
+  // its priced spend is never clipped to the budget.
   const brokerCost = verifiedLedger
-    ? provider === 'openrouter' ? verifiedLedger.spentUsd + verifiedLedger.reservedUsd
+    ? provider === 'openrouter' || unpricedRequests > 0 ? verifiedLedger.spentUsd + verifiedLedger.reservedUsd
       : Math.min(receiptBudget, verifiedLedger.spentUsd + verifiedLedger.reservedUsd) : receiptBudget;
   // Estimated requests contribute ceilings, not observed tokens. Require those
   // ceilings to cover every usage component seen by either recorder.
-  if (!issue && provider !== 'openrouter' && !exact && verifiedRates && usage && cliUsage) {
+  if (!issue && provider !== 'openrouter' && !tokensExact && verifiedRates && usage && cliUsage) {
     const observedUsage = { ...usage };
     for (const field of CLAUDE_USAGE_FIELDS) {
       observedUsage[field] = Math.max(usage[field], cliUsage[field]);
@@ -331,8 +372,9 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   }
   // Exact spend must price back to the broker's figure. Estimated requests
   // add their ceilings on top of the priced usage, so the priced usage can
-  // only fall below the broker's figure, never above it.
-  if (!issue && calculatedCostUsd !== null && exact && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
+  // only fall below the broker's figure, never above it. A CLI cost above the
+  // broker's figure is kept as `cliCostUsd`; it can include unpriced fees.
+  if (!issue && calculatedCostUsd !== null && tokensExact && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
     issue = `usage-priced spend $${calculatedCostUsd.toFixed(6)} does not match credential broker spend $${brokerCost.toFixed(6)}`;
   }
   if (!issue && provider === 'openrouter' && brokerCost > receiptBudget + toleranceUsd) {
@@ -342,7 +384,7 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     ...(provider === 'openrouter' ? { costSource: 'provider-reported' as const, provider,
       providerRoute: verifiedLedger?.providerRoute, providerReportedCostUsd: verifiedLedger?.providerReportedCostUsd,
       upstreamProviders: verifiedLedger?.upstreamProviders } : {}),
-    schemaVersion: 3,
+    schemaVersion: 4,
     source: 'credential-broker',
     model,
     maxBudgetUsd: receiptBudget,
@@ -354,6 +396,8 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     exact,
     estimatedRequests,
     estimatedByReason: verifiedLedger ? structuredClone(verifiedLedger.estimatedByReason) : noEstimates(),
+    unpricedRequests,
+    unpricedByReason: verifiedLedger ? structuredClone(verifiedLedger.unpricedByReason) : noUnpriced(),
     complete: verifiedLedger?.complete === true,
     reconciled: issue === null,
     error: issue,

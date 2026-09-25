@@ -14,17 +14,20 @@ import { gzipSync } from 'node:zlib';
 
 import { brokerProtocol, imageTokenAdjustment } from '../container/broker-protocols.js';
 import { createCredentialBroker, heartbeatStale } from '../container/credential-broker.js';
-import { readCredentialBrokerLedger, reconcileCredentialBrokerReceipt, writeCredentialBrokerLedger }
+import { noUnpriced, readCredentialBrokerLedger, reconcileCredentialBrokerReceipt, writeCredentialBrokerLedger }
   from '../container/credential-broker-accounting.js';
-import type { BrokerConfig, BrokerLedger, BrokerMode }
+import type { BrokerConfig, BrokerLedger, BrokerMode, UnpricedReason }
   from '../container/credential-broker-accounting.js';
 import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
   from '../container/credential-broker-process.js';
 import type { CredentialBrokerHandle } from '../container/credential-broker-process.js';
 import type { BrokerStats } from '../container/credential-broker.js';
 import { compiledEntrypoint } from '../src/package-root.js';
+import { validateAgentCostReceipt } from '../src/agents/agent-result-contract.js';
+import { durableCostLedger, runCostEvidence } from '../src/evidence/cost-proof.js';
 
 const NO_ESTIMATES = { 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 };
+const NO_UNPRICED = noUnpriced();
 const PRICING_RATES = {
   input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3,
 };
@@ -164,30 +167,72 @@ test('credential broker rejects unauthorized and unsupported requests before ups
   });
 });
 
-test('Anthropic broker rejects server-side tools and tiers that token receipts cannot price', async () => {
-  await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
-    const headers = { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' };
-    const request = { model: 'test-model', max_tokens: 1,
-      messages: [{ role: 'user', content: 'hello' }] };
-    for (const override of [
-      { tools: [{ type: 'web_search_20250305', name: 'web_search' }] },
-      { mcp_servers: [{ type: 'url', url: 'https://mcp.example', name: 'remote' }] },
-      { container: 'container-id' },
-      { speed: 'fast' },
-      { service_tier: 'priority' },
-    ]) {
-      assert.deepEqual(await send(brokerPort, { headers,
-        body: JSON.stringify({ ...request, ...override }) }),
-      { status: 400, body: 'invalid provider request' });
-    }
-    assert.equal(seen.length, 0);
-    const clientTools = { ...request, service_tier: 'auto', tools: [
-      { name: 'Bash', description: 'Run a command', input_schema: { type: 'object' } },
-      { type: 'custom', name: 'Edit', input_schema: { type: 'object' } },
-    ] };
-    assert.equal((await send(brokerPort, { headers, body: JSON.stringify(clientTools) })).status, 200);
-    assert.equal(seen.length, 1);
-  });
+test('Anthropic broker forwards server-side features and marks spend it cannot price', async () => {
+  const request = { model: 'test-model', max_tokens: 1, messages: [{ role: 'user', content: 'hello' }] };
+  const webSearch = { tools: [{ type: 'web_search_20250305', name: 'web_search' }] };
+  const usage = (extra: Record<string, unknown> = {}) => JSON.stringify({ usage: { ...ONE_REQUEST_USAGE, ...extra } });
+  const cases: Array<{ override: Record<string, unknown>; upstreamBody: string; reason: UnpricedReason | null;
+    estimated?: boolean }> = [
+    { override: webSearch, upstreamBody: usage({ server_tool_use: { web_search_requests: 2 } }), reason: 'server-tool' },
+    { override: webSearch, upstreamBody: usage({ server_tool_use: { web_search_requests: 0 } }), reason: null },
+    { override: webSearch, upstreamBody: usage(), reason: null },
+    { override: webSearch, upstreamBody: JSON.stringify({ content: [{ type: 'server_tool_use', name: 'web_search' }],
+      usage: ONE_REQUEST_USAGE }), reason: 'server-tool' },
+    { override: { tools: [{ type: 'web_fetch_20250910', name: 'web_fetch' }] },
+      upstreamBody: usage({ server_tool_use: { web_fetch_requests: 1 } }), reason: 'server-tool' },
+    { override: webSearch, upstreamBody: '{"ok":true}', reason: 'server-tool', estimated: true },
+    { override: { mcp_servers: [{ type: 'url', url: 'https://mcp.example', name: 'remote' }] },
+      upstreamBody: usage(), reason: 'mcp' },
+    { override: { container: 'container-id' }, upstreamBody: usage(), reason: 'container' },
+    { override: { speed: 'fast' }, upstreamBody: usage(), reason: 'speed' },
+    { override: { service_tier: 'priority' }, upstreamBody: usage({ service_tier: 'priority' }), reason: 'service-tier' },
+    { override: { service_tier: 'auto' }, upstreamBody: usage({ service_tier: 'standard' }), reason: null },
+    { override: { tools: [{ name: 'Bash', description: 'Run a command', input_schema: { type: 'object' } },
+      { type: 'custom', name: 'Edit', input_schema: { type: 'object' } }] }, upstreamBody: usage(), reason: null },
+  ];
+  for (const { override, upstreamBody, reason, estimated = false } of cases) {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-unpriced-'));
+    const ledgerPath = join(root, 'ledger.json');
+    try {
+      await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
+        const body = JSON.stringify({ ...request, ...override });
+        assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}`,
+          'content-type': 'application/json' }, body })).status, 200, body);
+        assert.equal(seen.length, 1);
+        assert.deepEqual(JSON.parse(seen[0]!.body), { ...request, ...override });
+        const ledger = readCredentialBrokerLedger(ledgerPath, { model: 'test-model', maxBudgetUsd: 1 });
+        assert.equal(ledger.complete, true);
+        assert.equal(ledger.unpricedBillableRequests, reason ? 1 : 0, body);
+        assert.deepEqual(ledger.unpricedByReason, reason ? { ...NO_UNPRICED, [reason]: 1 } : NO_UNPRICED);
+        assert.equal(ledger.estimatedBillableRequests, estimated ? 1 : 0);
+        // The CLI can report server-tool fees above the broker's priced figure.
+        const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+          cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0218,
+            usage: estimated ? ZERO_RAW_USAGE : ONE_REQUEST_USAGE },
+          model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+        assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
+        const { receipt } = reconciled;
+        assert.equal(receipt.reconciled, true);
+        assert.equal(receipt.schemaVersion, 4);
+        assert.equal(receipt.exact, reason === null && !estimated);
+        assert.equal(receipt.unpricedRequests, reason ? 1 : 0);
+        assert.deepEqual(receipt.unpricedByReason, ledger.unpricedByReason);
+        assert.equal(receipt.costUsd, ledger.spentUsd);
+        assert.equal(receipt.cliCostUsd, 0.0218);
+        assert.equal(reconciled.result.terminal_reason, undefined);
+        validateAgentCostReceipt(receipt, 'test-model', 'receipt');
+        const run = { totals: { costUsd: receipt.costUsd, costComplete: true }, levels: [{ level: 1,
+          buildSessions: [{ costUsd: receipt.costUsd, costComplete: true, costReceipts: [{ invocation: 1, receipt }] }] }] };
+        const cost = durableCostLedger(run);
+        assert.equal(cost.complete, true);
+        assert.equal(cost.priced, reason === null);
+        assert.deepEqual(runCostEvidence(run), reason === null
+          ? { status: estimated ? 'upper-bound' : 'exact', costUsd: receipt.costUsd }
+          : estimated ? { status: 'unknown', costUsd: null }
+            : { status: 'unknown', costUsd: null, lowerBoundUsd: receipt.costUsd });
+      }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES, upstreamBody });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('credential broker rejects an unauthorized request before its body completes', async () => {
@@ -534,9 +579,10 @@ test('streamed provider usage produces a reconciled campaign-priced receipt', as
 });
 
 test('campaign pricing is authoritative when CLI pricing differs', () => {
-  const ledger = { schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
     estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 0.0036, reservedUsd: 0,
     usage: { input: 200, output: 200, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true,
@@ -553,10 +599,39 @@ test('campaign pricing is authoritative when CLI pricing differs', () => {
   assert.equal(reconciled.receipt.error, null);
 });
 
+test('spend ledgers count unpriced requests consistently and still read version 4', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-ledger-versions-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, 'ledger.json');
+  const ledger = { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 1, unpricedByReason: { ...NO_UNPRICED, mcp: 1 },
+    spentUsd: 0.0018, reservedUsd: 0, usage: { ...ZERO_USAGE, input: 100, output: 100 },
+    complete: true, updatedAt: new Date().toISOString() };
+  writeCredentialBrokerLedger(path, ledger);
+  assert.deepEqual(readCredentialBrokerLedger(path), ledger);
+  assert.throws(() => writeCredentialBrokerLedger(path, { ...ledger, unpricedByReason: NO_UNPRICED }), /do not add up/);
+  assert.throws(() => writeCredentialBrokerLedger(path, { ...ledger, unpricedBillableRequests: 2,
+    unpricedByReason: { ...NO_UNPRICED, mcp: 2 } }), /unpriced request count/);
+  const { unpricedBillableRequests: _count, unpricedByReason: _reasons, ...fields } = ledger;
+  assert.throws(() => writeCredentialBrokerLedger(path, fields), /unpriced request counts/);
+  const previous = { ...fields, schemaVersion: 4 };
+  assert.throws(() => writeCredentialBrokerLedger(path, previous), /not current/);
+  writeFileSync(path, JSON.stringify(previous));
+  const read = readCredentialBrokerLedger(path);
+  assert.equal(read.unpricedBillableRequests, 0);
+  assert.deepEqual(read.unpricedByReason, NO_UNPRICED);
+  assert.throws(() => readCredentialBrokerLedger(path.replace('ledger', 'missing')));
+  writeFileSync(path, JSON.stringify(ledger).replace('"schemaVersion":5', '"schemaVersion":4'));
+  assert.throws(() => readCredentialBrokerLedger(path), /unpriced request counts/);
+});
+
 test('broker retains cache write classes that the CLI summary combines', () => {
-  const ledger = { schemaVersion: 4, model: 'claude-sonnet-5', maxBudgetUsd: 50,
+  const ledger = { schemaVersion: 5, model: 'claude-sonnet-5', maxBudgetUsd: 50,
     acceptedRequests: 66, billableRequests: 66, completedBillableRequests: 66,
     estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 1.686071, reservedUsd: 0,
     usage: { input: 124, output: 48559, cacheRead: 5100226,
       cacheWrite5m: 66627, cacheWrite1h: 3405 },
@@ -585,9 +660,10 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
   assert.equal(missing.result.stack_bench_cost_receipt.complete, false);
 
   const incomplete = reconcileCredentialBrokerReceipt({ ledger: {
-    schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+    schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
     estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 0.1, reservedUsd: 0.4, usage: ZERO_USAGE, complete: false,
     updatedAt: new Date().toISOString(),
   }, cliResult: { type: 'result', is_error: false, total_cost_usd: 0.1 },
@@ -599,9 +675,10 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
 
 test('receipt reconciliation accepts provider usage that includes CLI-omitted calls', () => {
   const cases = [{
-    ledger: { schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+    ledger: { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
       acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
       estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+      unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
       spentUsd: 0.00201, reservedUsd: 0,
       usage: { input: 120, output: 110, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
       complete: true,
@@ -616,9 +693,10 @@ test('receipt reconciliation accepts provider usage that includes CLI-omitted ca
     },
   }, {
     // Real paid-session totals.
-    ledger: { schemaVersion: 4, model: 'claude-sonnet-5', maxBudgetUsd: 50,
+    ledger: { schemaVersion: 5, model: 'claude-sonnet-5', maxBudgetUsd: 50,
       acceptedRequests: 97, billableRequests: 97, completedBillableRequests: 97,
       estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+      unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
       spentUsd: 2.665346, reservedUsd: 0,
       usage: { input: 2647, output: 77041, cacheRead: 8026721,
         cacheWrite5m: 113719, cacheWrite1h: 0 },
@@ -643,9 +721,10 @@ test('receipt reconciliation accepts provider usage that includes CLI-omitted ca
 });
 
 test('receipt reconciliation rejects provider usage below the CLI lower bound', () => {
-  const ledger = { schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
     estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 0.0018, reservedUsd: 0,
     usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true, updatedAt: new Date().toISOString() };
@@ -658,9 +737,10 @@ test('receipt reconciliation rejects provider usage below the CLI lower bound', 
 });
 
 test('estimated receipts cover both recorders without making missing usage exact', () => {
-  const ledger = { schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
     estimatedBillableRequests: 1, estimatedByReason: { ...NO_ESTIMATES, 'no-usage': 1 },
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 0.01, reservedUsd: 0,
     usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true, updatedAt: new Date().toISOString() };
@@ -683,9 +763,10 @@ test('estimated receipts cover both recorders without making missing usage exact
 });
 
 test('receipt reconciliation rejects spend that cannot be reproduced from broker usage', () => {
-  const ledger = { schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
     estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 0.002, reservedUsd: 0,
     usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true, updatedAt: new Date().toISOString() };
@@ -849,9 +930,10 @@ test('credential broker shutdown retains settled spend even if its caller later 
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeFileSync(join(root, 'config.json'), 'private-credential');
   writeFileSync(join(root, 'ready.json'), 'private-session');
-  const incomplete = { schemaVersion: 4, model: 'test-model', maxBudgetUsd: 1,
+  const incomplete = { schemaVersion: 5, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
     estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
+    unpricedBillableRequests: 0, unpricedByReason: NO_UNPRICED,
     spentUsd: 0, reservedUsd: 0.4, usage: ZERO_USAGE, complete: false,
     updatedAt: new Date().toISOString() };
   const complete = { ...incomplete, completedBillableRequests: 1,
@@ -945,11 +1027,7 @@ test('OpenAI broker isolates credentials, bounds requests and reconciles cached 
       assert.equal(seen[0]!.headers['chatgpt-account-id'], undefined);
       assert.equal(seen[0]!.headers['openai-project'], undefined);
       assert.equal(JSON.parse(seen[0]!.body).max_output_tokens, 4096);
-      assert.equal((await send(brokerPort, { ...request,
-        body: JSON.stringify({ model: 'test-model', tools: [{ type: 'web_search' }] }) })).status, 400);
-      assert.equal((await send(brokerPort, { ...request,
-        body: JSON.stringify({ model: 'test-model', input: [{ type: 'item_reference', id: 'hidden-input' }] }) })).status, 400);
-      assert.equal(seen.length, 1);
+      assert.equal(JSON.parse(seen[0]!.body).service_tier, 'default');
       const ledger = readCredentialBrokerLedger(ledgerPath);
       assert.deepEqual(ledger.usage, { input: 20, output: 10, cacheRead: 80, cacheWrite5m: 0, cacheWrite1h: 0 });
       const reconciled = reconcileCredentialBrokerReceipt({ ledger, provider: 'openai',
@@ -958,6 +1036,41 @@ test('OpenAI broker isolates credentials, bounds requests and reconciles cached 
       assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
       assert.equal(reconciled.receipt.cliCostUsd, null);
       assert.equal(reconciled.receipt.costUsd, 0.000189);
+      assert.equal(reconciled.receipt.exact, true);
+      // Features whose charges or input the token rates do not cover are forwarded and marked.
+      const unpriced: Array<[Record<string, unknown>, UnpricedReason]> = [
+        [{ tools: [{ type: 'web_search' }] }, 'hosted-tool'],
+        [{ input: [{ type: 'item_reference', id: 'hidden-input' }] }, 'unpriced-input'],
+        [{ input: [{ type: 'input_file', file_id: 'file-1' }] }, 'unpriced-input'],
+        [{ input: [{ type: 'input_image', image_url: 'https://example.com/image.png' }] }, 'unpriced-input'],
+        [{ audio: { voice: 'alloy' } }, 'unpriced-output'],
+        [{ prompt: { id: 'stored-prompt' } }, 'stored-context'],
+        [{ previous_response_id: 'resp_1' }, 'stored-context'],
+        [{ conversation: 'conv_1' }, 'stored-context'],
+        [{ service_tier: 'priority' }, 'service-tier'],
+      ];
+      for (const [override] of unpriced) {
+        assert.equal((await send(brokerPort, { ...request,
+          body: JSON.stringify({ model: 'test-model', ...override }) })).status, 200, JSON.stringify(override));
+      }
+      for (const override of [{ truncation: 'auto' }, { background: true }]) {
+        assert.equal((await send(brokerPort, { ...request,
+          body: JSON.stringify({ model: 'test-model', input: 'hello', ...override }) })).status, 200);
+      }
+      assert.equal(seen.length, unpriced.length + 3);
+      assert.equal(JSON.parse(seen.at(-3)!.body).service_tier, 'priority');
+      const marked = readCredentialBrokerLedger(ledgerPath);
+      const expected = noUnpriced();
+      for (const [, reason] of unpriced) expected[reason] += 1;
+      assert.equal(marked.unpricedBillableRequests, unpriced.length);
+      assert.deepEqual(marked.unpricedByReason, expected);
+      const receipt = reconcileCredentialBrokerReceipt({ ledger: marked, provider: 'openai',
+        cliResult: { usage: { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 80, cache_creation_input_tokens: 0 } },
+        model: 'test-model', maxBudgetUsd: 10, pricingRates: rates });
+      assert.equal(receipt.ok, true, receipt.receipt.error ?? undefined);
+      assert.equal(receipt.receipt.exact, false);
+      assert.equal(receipt.receipt.unpricedRequests, unpriced.length);
+      assert.equal(receipt.receipt.costUsd, 0.002268);
     }, { provider: 'openai', ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
       upstreamBody: `event: response.completed\ndata: ${JSON.stringify({ type: 'response.completed', response: { usage } })}\n\n` });
     await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen, stats }) => {
@@ -1022,7 +1135,7 @@ test('OpenRouter broker freezes routing and records reported cost, not reservati
         store: false, stream: true, include: ['reasoning.encrypted_content'],
         prompt_cache_key: 'native-session', client_metadata: {} }) };
       for (const override of [{ provider: { allow_fallbacks: true } }, { models: ['other/model'] },
-        { plugins: [{ id: 'web' }] }, { transforms: ['middle-out'] }, { preset: 'spoofed' }, { modalities: ['image'] }, { truncation: 'auto' }]) {
+        { plugins: [{ id: 'web' }] }, { transforms: ['middle-out'] }, { preset: 'spoofed' }]) {
         assert.equal((await send(brokerPort, { ...request, body: JSON.stringify({ model, ...override }) })).status, 400);
       }
       assert.equal((await send(brokerPort, request)).status, 200);
@@ -1051,8 +1164,30 @@ test('OpenRouter broker freezes routing and records reported cost, not reservati
       assert.equal(reconciled.receipt.calculatedCostUsd, null);
       assert.equal(reconciled.receipt.costUsd, 0.001);
       assert.equal(reconciled.receipt.exact, true);
+      // Reported cost includes hosted features, so they stay priced.
+      for (const override of [{ tools: [{ type: 'web_search' }] }, { previous_response_id: 'resp_1' },
+        { modalities: ['image'] }, { truncation: 'auto' }]) {
+        assert.equal((await send(brokerPort, { ...request, body: JSON.stringify({ model, input, ...override }) })).status, 200);
+      }
+      const hosted = readCredentialBrokerLedger(ledgerPath);
+      assert.equal(hosted.unpricedBillableRequests, 0);
+      assert.equal(hosted.spentUsd, 0.005);
+      const hostedReceipt = reconcileCredentialBrokerReceipt({ ledger: hosted, provider: 'openrouter',
+        cliResult: { usage: ZERO_RAW_USAGE }, model, maxBudgetUsd: 10, pricingRates: rates });
+      assert.equal(hostedReceipt.ok, true, hostedReceipt.receipt.error ?? undefined);
+      assert.equal(hostedReceipt.receipt.exact, true);
     }, { provider: 'openrouter', providerRoute: 'openai', model, ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
       upstreamBody: `data: ${JSON.stringify({ type: 'response.completed', response })}\n\n` });
+    // A hosted tool's reported fee can exceed a token reservation without failing routing integrity.
+    await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
+      const request = { path: '/v1/responses', headers: { authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ model, input: 'hello', tools: [{ type: 'web_search' }] }) };
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal(seen.length, 2);
+      assert.equal(readCredentialBrokerLedger(ledgerPath).providerIntegrityError, undefined);
+    }, { provider: 'openrouter', providerRoute: 'openai', model, ledgerPath, pricingRates: rates, maxBudgetUsd: 50,
+      upstreamBody: JSON.stringify({ ...response, usage: { ...response.usage, cost: 11 } }) });
     for (const changed of [ { usage: { ...response.usage, cost: undefined } },
       { openrouter_metadata: { ...response.openrouter_metadata, is_byok: true } },
       { openrouter_metadata: { ...response.openrouter_metadata, attempt: 2 } },
@@ -1089,9 +1224,16 @@ test('OpenAI inline screenshots retain input and reserve bounded vision tokens',
     const body = JSON.stringify({ model, input: [large] });
     assert.ok(Buffer.byteLength(body) + imageTokenAdjustment([large], model) < 37_000,
       'a large screenshot must not reserve its base64 bytes as text tokens');
-    assert.throws(() => protocol.parseRequest(Buffer.from(JSON.stringify({ model,
-      input: [{ ...image, image_url: 'https://example.com/image.png' }] })), '/v1/responses'), /inline data/);
+    assert.deepEqual(protocol.requestPricing(request), { unpriced: null, unlessUnused: null, bounded: true });
+    const remote = protocol.parseRequest(Buffer.from(JSON.stringify({ model,
+      input: [{ ...image, image_url: 'https://example.com/image.png' }] })), '/v1/responses');
+    assert.equal(protocol.inputTokenAdjustment!(remote), 0);
+    assert.deepEqual(protocol.requestPricing(remote), { unpriced: 'unpriced-input', unlessUnused: null, bounded: false });
   }
+  const unverified = brokerProtocol({ provider: 'openai', mode: 'subscription-token',
+    model: 'gpt-5.3-codex', accountId: 'test' } as BrokerConfig);
+  const inline = unverified.parseRequest(Buffer.from(JSON.stringify({ model: 'gpt-5.3-codex', input: [image] })), '/v1/responses');
+  assert.equal(unverified.requestPricing(inline).unpriced, 'unpriced-input');
 });
 
 test('output reservations honor API caps without assuming account endpoints enforce them', () => {

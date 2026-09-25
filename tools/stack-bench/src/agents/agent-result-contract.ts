@@ -1,6 +1,7 @@
 import { pricingRatesEqual, validatePricingAuthority }
   from '../evidence/pricing-authority.js';
-import type { CredentialBrokerReceipt } from '../../container/credential-broker-accounting.js';
+import { UNPRICED_REASONS } from '../../container/credential-broker-accounting.js';
+import type { CredentialBrokerReceipt, UnpricedReason } from '../../container/credential-broker-accounting.js';
 import { formatZodError } from '../zod-error.js';
 import type { AgentMode, AgentRequest } from './agent-adapter-contract.js';
 import { z } from 'zod';
@@ -9,7 +10,9 @@ export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
 
 type UnknownRecord = Record<string, unknown>;
 
-export type AgentCostReceipt = CredentialBrokerReceipt;
+// Version 3 receipts predate unpriced requests; the broker then refused them.
+export type AgentCostReceipt = CredentialBrokerReceipt
+  | (Omit<CredentialBrokerReceipt, 'schemaVersion' | 'unpricedRequests' | 'unpricedByReason'> & { schemaVersion: 3 });
 
 export interface AgentCostReceiptEntry {
   invocation: number;
@@ -111,7 +114,7 @@ const receiptSchema = z.strictObject({
   providerRoute: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/).optional(),
   providerReportedCostUsd: nonNegativeNumber.optional(),
   upstreamProviders: z.array(z.string().min(1)).optional(),
-  schemaVersion: z.literal(3),
+  schemaVersion: z.union([z.literal(3), z.literal(4)]),
   source: z.literal('credential-broker'),
   model: z.string().min(1),
   maxBudgetUsd: z.number().finite().positive(),
@@ -127,6 +130,9 @@ const receiptSchema = z.strictObject({
     'response-aborted': nonNegativeInteger,
     'upstream-error': nonNegativeInteger,
   }),
+  unpricedRequests: nonNegativeInteger.optional(),
+  unpricedByReason: z.strictObject(Object.fromEntries(UNPRICED_REASONS.map(reason =>
+    [reason, nonNegativeInteger])) as Record<UnpricedReason, typeof nonNegativeInteger>).optional(),
   complete: z.boolean(),
   reconciled: z.boolean(),
   error: z.string().min(1).nullable(),
@@ -195,9 +201,16 @@ const resultSchema = z.strictObject({
 export function validateAgentCostReceipt(value: unknown, model: string, at: string): AgentCostReceipt {
   const parsed = receiptSchema.safeParse(value);
   if (!parsed.success) throw new Error(`${at} is invalid: ${formatZodError(parsed.error, at)}`);
-  const receipt = parsed.data;
+  const receipt = parsed.data as AgentCostReceipt;
   if (receipt.model !== model || receipt.reconciled !== (receipt.error === null)) {
     throw new Error(`${at} is invalid`);
+  }
+  const { unpricedRequests, unpricedByReason } = parsed.data;
+  if (receipt.schemaVersion === 4 ? unpricedRequests === undefined || unpricedByReason === undefined
+    || UNPRICED_REASONS.reduce((sum, reason) => sum + unpricedByReason[reason], 0) !== unpricedRequests
+    || (unpricedRequests > 0 && receipt.exact)
+    : unpricedRequests !== undefined || unpricedByReason !== undefined) {
+    throw new Error(`${at} has inconsistent unpriced request counts`);
   }
   const reported = receipt.costSource === 'provider-reported';
   if (reported ? receipt.provider !== 'openrouter' || receipt.calculatedCostUsd !== null

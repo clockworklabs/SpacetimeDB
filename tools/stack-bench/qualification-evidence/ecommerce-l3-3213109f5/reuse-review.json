@@ -42,59 +42,63 @@
       "kind": "reference",
       "stack": "convex",
       "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-      "toExecutableSha256": "92eca8cf3742a6c8268753858c16f9e5abdd1018a920cb065d1de1959f735b82"
+      "toExecutableSha256": "b310b0eff5eea718770af2f1963675b716fbf6a8f2c65e5517d1f4d66b01eac8"
     },
     {
       "kind": "mutation",
       "stack": "convex",
       "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-      "toExecutableSha256": "92eca8cf3742a6c8268753858c16f9e5abdd1018a920cb065d1de1959f735b82"
+      "toExecutableSha256": "b310b0eff5eea718770af2f1963675b716fbf6a8f2c65e5517d1f4d66b01eac8"
     },
     {
       "kind": "reference",
       "stack": "mongodb",
       "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-      "toExecutableSha256": "70dc047344c439e9409cdd88c13dccc60561a50c3f8b1236f6cdf2e61197f0ed"
+      "toExecutableSha256": "387e4fedc9c94b23d005b6bb036975ef76221c0df6bb1497b3511c71d77b6fe6"
     },
     {
       "kind": "mutation",
       "stack": "mongodb",
       "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-      "toExecutableSha256": "70dc047344c439e9409cdd88c13dccc60561a50c3f8b1236f6cdf2e61197f0ed"
+      "toExecutableSha256": "387e4fedc9c94b23d005b6bb036975ef76221c0df6bb1497b3511c71d77b6fe6"
     },
     {
       "kind": "reference",
       "stack": "postgres",
       "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-      "toExecutableSha256": "9502f4c2665f0a1643508dc2797c4158efec5549f9f98e50ceb2eb4a222e62db"
+      "toExecutableSha256": "2dd613e6ec3d95eac7eceea555c85b35d3e977eba194a6520dc54fef59854807"
     },
     {
       "kind": "mutation",
       "stack": "postgres",
       "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-      "toExecutableSha256": "9502f4c2665f0a1643508dc2797c4158efec5549f9f98e50ceb2eb4a222e62db"
+      "toExecutableSha256": "2dd613e6ec3d95eac7eceea555c85b35d3e977eba194a6520dc54fef59854807"
     },
     {
       "kind": "reference",
       "stack": "spacetime",
       "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-      "toExecutableSha256": "0d5290cf2610b0a36e9520c2ccd02d10c77f5e6c00c3b9b028e9bd455027d29c"
+      "toExecutableSha256": "6e2c57f54c8279db0ae912c796eeba5db5d57dd20cdf207d1bf41cddfbbbab9a"
     },
     {
       "kind": "mutation",
       "stack": "spacetime",
       "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-      "toExecutableSha256": "0d5290cf2610b0a36e9520c2ccd02d10c77f5e6c00c3b9b028e9bd455027d29c"
+      "toExecutableSha256": "6e2c57f54c8279db0ae912c796eeba5db5d57dd20cdf207d1bf41cddfbbbab9a"
     },
     {
       "kind": "null",
       "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
-      "toExecutableSha256": "46ffecb10599f362e7303f23220d743d2ca0a14f80c212e3869e82c06e3c44bf"
+      "toExecutableSha256": "7e2a0fc6ecf1e3bfc79ca8034cbc7a83c8e4c235b60d813f6f189bf6202c87eb"
     }
   ],
   "backendMemoryCap": {
     "change": "The backend sidecar memory cap is 2 GiB instead of 1 GiB.",
     "reason": "The backend holds the stack database; it peaked at 922 MiB of the former 1 GiB cap during the qualification runs, so a spike could kill a correct database.",
     "gradingImpact": "A higher cap only removes an environment failure; it cannot make an incorrect application pass."
+  },
+  "unpricedProviderRequests": {
+    "change": "The credential broker forwards requests it cannot fully price instead of refusing them, and marks those sessions as unpriced so reports show their spend as unknown with the priced part as a lower bound; an attempt cost cap then refuses automatic retries.",
+    "gradingImpact": "None. Only provider request forwarding and cost accounting changed; the reference and mutation qualification runs use the model-free reference agent, which sends no provider requests."
   }
 }

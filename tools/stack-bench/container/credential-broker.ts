@@ -15,10 +15,10 @@ import { brokerProtocol } from './broker-protocols.js';
 
 import { normalizeClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
-import { BROKER_LEDGER_SCHEMA_VERSION, CLAUDE_USAGE_FIELDS, noEstimates, priceNormalizedClaudeUsage,
-  validateBrokerConfig,
+import { BROKER_LEDGER_SCHEMA_VERSION, CLAUDE_USAGE_FIELDS, firstUnpricedReason, noEstimates, noUnpriced,
+  priceNormalizedClaudeUsage, validateBrokerConfig,
   writeCredentialBrokerLedger } from './credential-broker-accounting.js';
-import type { BrokerConfig, EstimateReason, PricingRates }
+import type { BrokerConfig, EstimateReason, PricingRates, UnpricedReason }
   from './credential-broker-accounting.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -96,6 +96,8 @@ export function createCredentialBroker(configInput: unknown, {
   let completedBillableRequests = 0;
   let estimatedBillableRequests = 0;
   const estimatedByReason = noEstimates();
+  let unpricedBillableRequests = 0;
+  const unpricedByReason = noUnpriced();
   let spentUsd = 0;
   let providerReportedCostUsd = 0;
   let providerIntegrityError: string | undefined;
@@ -115,6 +117,8 @@ export function createCredentialBroker(configInput: unknown, {
     completedBillableRequests,
     estimatedBillableRequests,
     estimatedByReason,
+    unpricedBillableRequests,
+    unpricedByReason,
     spentUsd: Number(spentUsd.toFixed(6)),
     reservedUsd: Number(reservedUsd.toFixed(6)),
     usage: usageTotals,
@@ -188,6 +192,8 @@ export function createCredentialBroker(configInput: unknown, {
         return;
       }
       const billable = protocol.billable(path) && config.maxBudgetUsd != null;
+      // Requests are never refused for pricing; the cap covers priced spend.
+      const pricing = protocol.requestPricing(payload);
       const costCeiling = billable
         ? reserveUsd(requestCostCeiling(received + (protocol.inputTokenAdjustment?.(payload) ?? 0), protocol.outputLimit(payload),
           config.pricingRates as PricingRates)) : 0;
@@ -208,12 +214,19 @@ export function createCredentialBroker(configInput: unknown, {
       reservedUsd = roundUsd(reservedUsd + costCeiling);
       recordLedger();
       let billableSettled = !billable;
-      const settleBillable = ({ usage = null, estimated = null, reportedCost = null }:
-        { usage?: ClaudeUsage | null; estimated?: EstimateReason | null; reportedCost?: number | null } = {}): void => {
+      // Without response usage, a declared feature cannot be shown unused.
+      const unprovenPricing = firstUnpricedReason(pricing.unpriced, pricing.unlessUnused);
+      const settleBillable = ({ usage = null, estimated = null, reportedCost = null, unpriced = null }:
+        { usage?: ClaudeUsage | null; estimated?: EstimateReason | null; reportedCost?: number | null;
+          unpriced?: UnpricedReason | null } = {}): void => {
         if (billableSettled) return;
         billableSettled = true;
         reservedUsd = roundUsd(reservedUsd - costCeiling);
         completedBillableRequests += 1;
+        if (unpriced) {
+          unpricedBillableRequests += 1;
+          unpricedByReason[unpriced] += 1;
+        }
         if (estimated) {
           estimatedBillableRequests += 1;
           estimatedByReason[estimated] += 1;
@@ -222,7 +235,7 @@ export function createCredentialBroker(configInput: unknown, {
           spentUsd = roundUsd(spentUsd + (reportedCost ?? priceNormalizedClaudeUsage(usage, config.pricingRates as PricingRates)));
           if (reportedCost !== null) {
             providerReportedCostUsd = roundUsd(providerReportedCostUsd + reportedCost);
-            if (reportedCost > costCeiling + 0.000001) {
+            if (pricing.bounded && reportedCost > costCeiling + 0.000001) {
               providerIntegrityError = 'OpenRouter reported cost exceeds the request reservation';
             }
           }
@@ -269,16 +282,17 @@ export function createCredentialBroker(configInput: unknown, {
             if (!usage) {
               if (config.provider === 'openrouter') providerIntegrityError = 'OpenRouter response lacks verified cost and routing metadata';
               recordFailure(requestOrdinal, { category: 'transport', status, code: 'incomplete-response' });
-              settleBillable({ estimated: 'no-usage' });
+              settleBillable({ estimated: 'no-usage', unpriced: unprovenPricing });
             }
             else try {
               if (typeof usage.upstream_provider === 'string') upstreamProviders.add(usage.upstream_provider);
               settleBillable({ usage: normalizeClaudeUsage(usage),
-                reportedCost: typeof usage.provider_reported_cost_usd === 'number' ? usage.provider_reported_cost_usd : null });
+                reportedCost: typeof usage.provider_reported_cost_usd === 'number' ? usage.provider_reported_cost_usd : null,
+                unpriced: firstUnpricedReason(pricing.unpriced, usage.unpriced_reason as UnpricedReason | null) });
             }
             catch {
               recordFailure(requestOrdinal, { category: 'transport', status, code: 'invalid-usage' });
-              settleBillable({ estimated: 'no-usage' });
+              settleBillable({ estimated: 'no-usage', unpriced: unprovenPricing });
             }
           } else {
             settleBillable();
@@ -286,7 +300,7 @@ export function createCredentialBroker(configInput: unknown, {
         });
         const settleAbortedResponse = () => {
           recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
-          settleBillable({ estimated: 'response-aborted' });
+          settleBillable({ estimated: 'response-aborted', unpriced: unprovenPricing });
           if (responseOpen()) response.destroy();
         };
         upstreamResponse.once('aborted', settleAbortedResponse);
@@ -294,7 +308,7 @@ export function createCredentialBroker(configInput: unknown, {
       });
       upstreamRequest.on('error', () => {
         recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
-        settleBillable({ estimated: 'upstream-error' });
+        settleBillable({ estimated: 'upstream-error', unpriced: unprovenPricing });
         writeHead(502, { 'content-type': 'text/plain' });
         endResponse('upstream request failed');
       });

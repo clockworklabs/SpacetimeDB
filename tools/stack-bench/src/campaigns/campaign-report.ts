@@ -187,7 +187,7 @@ interface CampaignReportExecution {
 }
 
 export type CampaignSpend = CostEvidence & {
-  /** Sum of available exact amounts and upper bounds; must not be assumed to be a lower bound. */
+  /** Sum of available exact amounts, upper bounds, and priced lower bounds; must not be assumed to be a lower bound. */
   knownCostUsd: number;
   unknownExecutions: number;
   boundedExecutions: number;
@@ -278,7 +278,7 @@ function formatUsd(value: unknown): string {
 }
 
 export function formatCostEvidence(cost: CostEvidence): string {
-  return cost.status === 'unknown' ? 'Unknown'
+  return cost.status === 'unknown' ? cost.lowerBoundUsd === undefined ? 'Unknown' : `≥ ${formatUsd(cost.lowerBoundUsd)}`
     : `${cost.status === 'upper-bound' ? '≤ ' : ''}${formatUsd(cost.costUsd)}`;
 }
 
@@ -642,7 +642,8 @@ export function executionSpend(executions: Array<{ cost: CostEvidence; recorded?
   const unknownExecutions = executions.filter(execution => execution.cost.status === 'unknown').length;
   const boundedExecutions = executions.filter(execution => execution.cost.status === 'upper-bound').length;
   const knownCostUsd = Number(executions.reduce((total, execution) =>
-    total + (execution.cost.costUsd ?? execution.knownCostUsd ?? execution.recorded?.costUsd ?? 0), 0).toFixed(6));
+    total + (execution.cost.costUsd ?? execution.cost.lowerBoundUsd ?? execution.knownCostUsd
+      ?? execution.recorded?.costUsd ?? execution.recorded?.lowerBoundUsd ?? 0), 0).toFixed(6));
   return { ...sumCostEvidence(executions.map(execution => execution.cost)), knownCostUsd,
     unknownExecutions, boundedExecutions };
 }
@@ -1073,7 +1074,8 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
       'UI visibility does not establish server authorization, and a missing stock number does not establish overselling. Use the direct-call and stored-state evidence for those claims.',
       'A spread is reported only from three or more completed attempts; below that, only the centre and the range.',
       'Usage in USD comes from retained receipts at the recorded API rates. Upper bounds remain marked; unknown spend is not zero. These are API-equivalent costs, not invoices.',
-      'knownCostUsd sums available exact amounts and upper bounds. With bounded or unknown executions, it is not exact spend and must not be assumed to be a lower bound.',
+      'Spend that includes requests the broker could not price is unknown, shown with its priced part as a lower bound.',
+      'knownCostUsd sums available exact amounts, upper bounds, and priced lower bounds. With bounded or unknown executions, it is not exact spend and must not be assumed to be a lower bound.',
       'Group costs are not allocated when one coding session covers several groups. No token spend is attributed by guessing.',
       'Comparison durations are active time: wall duration minus recorded provider waits and operator pauses. Raw execution timestamps remain available.',
       'First-build score sums first-build points across depths. Earlier repairs and feedback remain in later builds; this is not fully unaided performance.',

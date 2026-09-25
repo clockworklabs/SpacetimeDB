@@ -107,6 +107,15 @@ part of the environment file. The Docker socket is not needed by `set-secret`.
 After pasting the token and pressing Enter, close stdin with Ctrl+D in a POSIX
 terminal, or Ctrl+Z followed by Enter in Windows PowerShell.
 
+The credential broker forwards every request that passes its model, output-token
+and size checks. Receipts price token usage at the plan's frozen rates. Server
+tool use, a non-standard service tier or speed, MCP servers and containers can
+add charges those rates do not cover. Receipts count these requests as unpriced,
+and reports show the session's spend as unknown, with the priced amount as a
+lower bound. The cost limit applies to priced spend. Under an attempt cost cap,
+a retry or continuation does not start after unpriced spend, because the cap can
+no longer promise any remaining budget; raise or remove the cap to continue.
+
 Run the remaining commands from `tools/stack-bench`. Compose uses the state
 volume's results directory as its working directory, so `plans/...` and
 `campaigns/...` refer to durable state inside Docker.
@@ -133,9 +142,10 @@ expiry during a request stops that request as a provider failure. Log in again
 and replace the stored file before another attempt.
 OpenAI receipts use observed tokens and the plan's frozen rates. They are a
 comparison cost, not an account-plan invoice. Use rates that cover the selected
-model and context range. The initial broker supports text and local function
-or custom tools. It rejects hosted tools, images, remote files, stored prompts,
-and server-side conversation references because these need other cost bounds.
+model and context range. Hosted tools, a requested service tier, files, images
+without a verified token bound, non-text output, stored prompts and server-side
+conversation references are forwarded. Their charges or input fall outside those
+rates, so receipts count them as unpriced and reports show that spend as unknown.
 
 Rebuild the build image to include the pinned Codex CLI before using this adapter.
 The local mock check verified the CLI request and usage stream, not live account
@@ -181,7 +191,8 @@ Set the output token limit within the selected model endpoint's documented cap
 and the broker's 128,000-token safety cap. This is a per-request bound.
 Declare token price ceilings and a cost limit in the campaign. The broker sets
 routing price limits, rejects request fees, and records reported `usage.cost`.
-These receipts are OpenRouter charges, not costs inferred from token counts.
+These receipts are OpenRouter charges, not costs inferred from token counts, so
+hosted features stay priced.
 Missing cost evidence cannot produce an exact receipt. API key billing is the
 supported mode; account subscriptions and BYOK are not supported.
 Rebuild the coding and controller images before use. Mock tests do not prove

@@ -52,7 +52,7 @@ export function money(value: number | null | undefined): string {
 export function spend(value: CostEvidence & { knownCostUsd?: number }, pending = false, liveSpend?: number): string {
   return (liveSpend !== undefined
     ? `<span title="Live estimate from reported response usage; final receipts replace this value">~${money(liveSpend)}</span>`
-    : value.status === 'unknown' ? value.knownCostUsd
+    : value.status === 'unknown' ? value.lowerBoundUsd !== undefined ? `≥${money(value.lowerBoundUsd)}` : value.knownCostUsd
       ? `<span title="Recorded spend; final accounting is incomplete">${money(value.knownCostUsd)} recorded</span>` : 'Unknown'
     : `${value.status === 'upper-bound' ? '≤' : ''}${money(value.costUsd)}`)
     + (pending ? ' <span class="spend-pending dot a" role="img" aria-label="Cost still updating" title="Cost still updating"></span>' : '');

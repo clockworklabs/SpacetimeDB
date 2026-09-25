@@ -240,6 +240,18 @@ test('campaign retry budget subtracts every prior execution cost', () => {
     const campaign = { definition: { budgets: { maxCostUsdPerAttempt: 10 } } };
     const claim = { attempt: { id: 'one' }, priorOutputs: ['attempts/one/execution-1'] };
     assert.equal(remainingAttemptCostBudget(campaign, claim, root), 6.75);
+    // A priced part is only a lower bound, so no remaining budget is promised.
+    writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: 'prior-run',
+      payload: { totals: { costUsd: 3.25, costComplete: true },
+        levels: [{ level: 1, buildSessions: [{ costUsd: 3.25, costComplete: true,
+          costReceipts: [{ invocation: 1, receipt: { ...receipt, exact: false, estimatedRequests: 0,
+            unpricedRequests: 1 } }] }] }] } });
+    assert.throws(() => remainingAttemptCostBudget(campaign, claim, root),
+      /unpriced requests \(at least \$3\.25\)/);
+    writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: 'prior-run',
+      payload: { totals: { costUsd: 3.25, costComplete: true },
+        levels: [{ level: 1, buildSessions: [{ costUsd: 3.25, costComplete: true,
+          costReceipts: [{ invocation: 1, receipt }] }] }] } });
 
     const artifact = readArtifact<{ totals: { costUsd: number; costComplete: boolean } }>(
       join(output, 'run.json'));

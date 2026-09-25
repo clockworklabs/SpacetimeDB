@@ -5,6 +5,8 @@ export interface CostReceiptEntry {
     error?: unknown;
     costUsd?: number;
     exact?: boolean;
+    estimatedRequests?: number;
+    unpricedRequests?: number;
   };
   [key: string]: unknown;
 }
@@ -49,13 +51,17 @@ export interface CostLedgerRow {
   differenceUsd: number;
   complete: boolean;
   // False when a receipt charged a request its cost ceiling instead of exact
-  // provider usage; the row's cost is then an upper bound.
+  // provider usage, or included an unpriced request.
   exact: boolean;
+  // False when a receipt includes a request whose charge the broker's rates do
+  // not price; the row's cost is then unknown, with the priced part a lower bound.
+  priced: boolean;
 }
 
 export interface CostLedger {
   complete: boolean;
   exact: boolean;
+  priced: boolean;
   differenceUsd: number;
   receiptCostUsd: number;
   reportedCostUsd: number;
@@ -64,8 +70,9 @@ export interface CostLedger {
   pricing: unknown;
 }
 
-export type CostEvidence = { status: 'unknown'; costUsd: null }
-  | { status: 'exact' | 'upper-bound'; costUsd: number };
+// `lowerBoundUsd` is the priced part of spend that includes unpriced requests.
+export type CostEvidence = { status: 'unknown'; costUsd: null; lowerBoundUsd?: number }
+  | { status: 'exact' | 'upper-bound'; costUsd: number; lowerBoundUsd?: never };
 
 export function sessionCostEvidence(sessions: readonly CostSession[]): CostEvidence {
   if (sessions.some(session => typeof session.costUsd !== 'number'
@@ -77,7 +84,12 @@ export function sessionCostEvidence(sessions: readonly CostSession[]): CostEvide
 }
 
 export function sumCostEvidence(costs: readonly CostEvidence[]): CostEvidence {
-  if (costs.some(item => item.status === 'unknown')) return { status: 'unknown', costUsd: null };
+  if (costs.some(item => item.status === 'unknown')) {
+    return costs.every(item => item.status === 'exact' || item.lowerBoundUsd !== undefined)
+      ? { status: 'unknown', costUsd: null,
+        lowerBoundUsd: roundUsd(costs.reduce((sum, item) => sum + (item.costUsd ?? item.lowerBoundUsd!), 0)) }
+      : { status: 'unknown', costUsd: null };
+  }
   return { status: costs.some(item => item.status === 'upper-bound') ? 'upper-bound' : 'exact',
     costUsd: roundUsd(costs.reduce((sum, item) => sum + item.costUsd!, 0)) };
 }
@@ -94,6 +106,13 @@ export function runCostEvidence(input: unknown, scope: 'run' | 'execution' = 'ru
       || (latest?.status === 'exact' && typeof executionTotal === 'number'
         && latest.costUsd > executionTotal + 0.0001)) return { status: 'unknown', costUsd: null };
     if (!ledger.complete) return { status: 'unknown', costUsd: null };
+    // Unpriced spend is at least its priced part unless a ceiling is mixed in.
+    if (!ledger.priced) {
+      return ledger.rows.every(row => row.receipts.every(entry => entry.receipt?.exact === true
+        || entry.receipt?.estimatedRequests === 0))
+        ? { status: 'unknown', costUsd: null, lowerBoundUsd: ledger.reportedCostUsd }
+        : { status: 'unknown', costUsd: null };
+    }
     return { status: ledger.exact ? 'exact' : 'upper-bound', costUsd: ledger.reportedCostUsd };
   } catch {
     // Incomplete or malformed run artifacts do not establish a spend total.
@@ -166,6 +185,8 @@ export function durableCostLedger(run: CostRun, scope: 'run' | 'execution' = 'ru
       differenceUsd,
       complete: row.costComplete && receiptsComplete && Math.abs(differenceUsd) <= 0.0001,
       exact: row.receipts.every(entry => entry?.receipt?.exact === true),
+      // Receipts before schema version 4 have no unpriced requests.
+      priced: row.receipts.every(entry => (entry?.receipt?.unpricedRequests ?? 0) === 0),
     };
   });
   const reportedCostUsd = roundUsd(cost(scope === 'execution' && run.progressionResume
@@ -183,6 +204,7 @@ export function durableCostLedger(run: CostRun, scope: 'run' | 'execution' = 'ru
       ? run.totals?.currentExecutionCostComplete === true : run.totals?.costComplete === true) && rows.every(row => row.complete)
       && Math.abs(differenceUsd) <= 0.0001,
     exact: rows.every(row => row.exact),
+    priced: rows.every(row => row.priced),
     rows,
   };
 }
