@@ -319,6 +319,25 @@ describe('server test-utils real wasm runtime', () => {
     expect(test.db.item.count()).toBe(0n);
   });
 
+  it('resolves case-converted module names through the wasm datastore', () => {
+    const { spacetime, moduleExports, addAuditEntry } =
+      makeCaseConversionModule();
+    const test = createModuleTestHarness(spacetime, moduleExports);
+
+    test.withReducerTx(TestAuth.internal(), ctx => {
+      addAuditEntry(ctx, { eventId: 1, displayName: 'Signed In' });
+    });
+
+    expect(test.db.auditEntries.eventId.find(1)).toEqual({
+      eventId: 1,
+      displayName: 'Signed In',
+    });
+    expect(test.db.auditEntries.displayName.find('Signed In')).toEqual({
+      eventId: 1,
+      displayName: 'Signed In',
+    });
+  });
+
   it('supports table clear operations', () => {
     const { spacetime, moduleExports } = makeTableHandleModule();
     const test = createModuleTestHarness(spacetime, moduleExports);
@@ -426,6 +445,29 @@ function makeTableHandleModule() {
   const spacetime = schema({ item });
 
   return { spacetime, moduleExports: {} };
+}
+
+function makeCaseConversionModule() {
+  const auditEntries = table(
+    { public: true },
+    {
+      eventId: t.u32().primaryKey(),
+      displayName: t.string().unique(),
+    }
+  );
+  const spacetime = schema({ auditEntries });
+  const addAuditEntry = spacetime.reducer(
+    { eventId: t.u32(), displayName: t.string() },
+    (ctx, row) => {
+      ctx.db.auditEntries.insert(row);
+    }
+  );
+
+  return {
+    spacetime,
+    moduleExports: { addAuditEntry },
+    addAuditEntry,
+  };
 }
 
 function makeQueryModule() {
