@@ -1051,6 +1051,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-rollback-file"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "rollback-coordination",
+ "toml 0.8.23",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ci-run-spacetime"
 version = "0.1.0"
 dependencies = [

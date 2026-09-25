@@ -82,16 +82,24 @@ jobs:
   build-cargo-release:
     needs: validate-release-invoker
     runs-on: spacetimedb-linux
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUST_LOG: rollback_coordination=info
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Rollback coordination needs the release tags and the commits between them.
+          fetch-depth: 0
           submodules: recursive
 
       - name: Set up Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Check rollback file
+        run: cargo ci other-workflows rollback-file --check
 
       - name: Install cargo-release
         run: |

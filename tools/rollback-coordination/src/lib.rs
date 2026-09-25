@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use duct::cmd;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub mod gh;
@@ -9,6 +10,8 @@ mod release;
 
 pub use gh::{Gh, Github};
 pub use release::Release;
+
+pub const ROLLBACK_POINT_FILE: &str = "earliest-allowed-rollback-point";
 
 #[derive(Clone, Debug)]
 struct Repository {
@@ -36,6 +39,116 @@ pub fn load_releases(repo_path: &Path, ignore_incompatible_tags: bool) -> Result
         }
     }
     Ok(releases.into_iter().rev().collect())
+}
+
+fn release_is_ancestor(repo_path: &Path, release: &Release) -> Result<bool> {
+    let status = cmd!("git", "merge-base", "--is-ancestor", release.to_string(), "HEAD")
+        .dir(repo_path)
+        .unchecked()
+        .run()
+        .with_context(|| format!("failed to inspect release history in {}", repo_path.display()))?;
+    Ok(status.status.success())
+}
+
+fn release_is_head(repo_path: &Path, release: &Release) -> Result<bool> {
+    let release_commit = cmd!("git", "rev-parse", format!("{}^{{commit}}", release))
+        .dir(repo_path)
+        .read()
+        .with_context(|| format!("failed to resolve {release} in {}", repo_path.display()))?;
+    let head = cmd!("git", "rev-parse", "HEAD")
+        .dir(repo_path)
+        .read()
+        .with_context(|| format!("failed to resolve HEAD in {}", repo_path.display()))?;
+    Ok(release_commit == head)
+}
+
+/// Returns the release from which rollback state and new PRs should be read.
+///
+/// A release tag at `HEAD` is the release being validated, so it is excluded.
+/// On later commits, that same tag becomes the base for the next release.
+pub fn previous_release(repo_path: &Path, target_release: &Release, ignore_incompatible_tags: bool) -> Result<Release> {
+    for release in load_releases(repo_path, ignore_incompatible_tags)? {
+        if &release <= target_release
+            && release_is_ancestor(repo_path, &release)?
+            && !release_is_head(repo_path, &release)?
+        {
+            return Ok(release);
+        }
+    }
+    Err(anyhow!(
+        "{} has no compatible release tag before {target_release}",
+        repo_path.display()
+    ))
+}
+
+pub fn read_rollback_point_at(repo_path: &Path, release: &Release) -> Result<Option<Release>> {
+    let spec = format!("{release}:{ROLLBACK_POINT_FILE}");
+    let output = cmd!("git", "show", &spec)
+        .dir(repo_path)
+        .stdout_capture()
+        .stderr_capture()
+        .unchecked()
+        .run()?;
+    if !output.status.success() {
+        tracing::info!(%release, "Release does not contain a rollback-point file");
+        return Ok(None);
+    }
+    let contents = String::from_utf8(output.stdout).context("rollback-point file is not UTF-8")?;
+    Release::from_tag(contents.trim())
+        .with_context(|| format!("{spec} contains an invalid release tag"))?
+        .with_context(|| format!("{spec} does not contain a compatible release tag"))
+        .map(Some)
+}
+
+/// Computes the rollback point for `HEAD` without trusting the checked-out
+/// rollback-point file, which is a generated output of this computation.
+pub fn rollback_point_for_repo(
+    github: &impl Github,
+    current_repo: &Path,
+    allowed_reference_repos: &[&Path],
+    target_release: &Release,
+    ignore_incompatible_tags: bool,
+    extra_constraints: &[Release],
+) -> Result<Release> {
+    let base = previous_release(current_repo, target_release, ignore_incompatible_tags)?;
+    tracing::info!(%base, %target_release, "Computing rollback point");
+    let previous_point = read_rollback_point_at(current_repo, &base)?;
+    let pull_requests = pull_requests_in_range(current_repo, &base.to_string(), "HEAD")?;
+    let point = earliest_rollback_point(
+        github,
+        current_repo,
+        allowed_reference_repos,
+        None,
+        ignore_incompatible_tags,
+        &pull_requests,
+    )?;
+    let minor = Release::from_tag(&format!("v{}.{}.0", target_release.major(), target_release.minor()))?
+        .expect("a canonical minor release is compatible");
+    Ok([Some(minor), previous_point, point]
+        .into_iter()
+        .flatten()
+        .chain(extra_constraints.iter().cloned())
+        .max()
+        .expect("the minor release always supplies a rollback point"))
+}
+
+pub fn write_or_check_rollback_point(repo_path: &Path, expected: &Release, check: bool) -> Result<()> {
+    let path = repo_path.join(ROLLBACK_POINT_FILE);
+    if check {
+        let contents = fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+        let actual = Release::from_tag(contents.trim())
+            .with_context(|| format!("{} contains an invalid release tag", path.display()))?
+            .with_context(|| format!("{} does not contain a compatible release tag", path.display()))?;
+        if actual != *expected {
+            return Err(anyhow!(
+                "{} contains {actual}, but the expected rollback point is {expected}; regenerate the rollback-point file",
+                path.display()
+            ));
+        }
+    } else {
+        fs::write(&path, format!("{expected}\n")).with_context(|| format!("failed to write {}", path.display()))?;
+    }
+    Ok(())
 }
 
 // Loads repos found a specific paths, and returns a mapping from repo name to repo
@@ -317,6 +430,66 @@ mod tests {
 
         let pull_requests = pull_requests_in_range(repository.path(), "v2.7.0", "HEAD").unwrap();
         assert_eq!(pull_requests, vec![42]);
+    }
+
+    #[test]
+    fn exact_head_release_uses_its_predecessor_as_the_base() {
+        let repository = repository(&["v2.7.0"]);
+        commit(repository.path(), "release", "Release commit");
+        git(repository.path(), &["tag", "v2.8.0"]);
+        let target = Release::from_tag("v2.8.0").unwrap().unwrap();
+        assert_eq!(
+            previous_release(repository.path(), &target, false).unwrap(),
+            Release::from_tag("v2.7.0").unwrap().unwrap()
+        );
+
+        commit(repository.path(), "next", "Post-release commit");
+        assert_eq!(previous_release(repository.path(), &target, false).unwrap(), target);
+    }
+
+    #[test]
+    fn reads_the_rollback_point_from_a_release_tag() {
+        let repository = repository(&["v2.7.0"]);
+        fs::write(repository.path().join(ROLLBACK_POINT_FILE), "v2.7.0\n").unwrap();
+        git(repository.path(), &["add", ROLLBACK_POINT_FILE]);
+        git(repository.path(), &["commit", "-qm", "Add rollback point"]);
+        git(repository.path(), &["tag", "v2.8.0"]);
+        let release = Release::from_tag("v2.8.0").unwrap().unwrap();
+        assert_eq!(
+            read_rollback_point_at(repository.path(), &release).unwrap(),
+            Some(Release::from_tag("v2.7.0").unwrap().unwrap())
+        );
+    }
+
+    #[test]
+    fn computes_from_the_tagged_floor_without_trusting_the_worktree_file() {
+        let repository = repository(&["v2.8.0"]);
+        fs::write(repository.path().join(ROLLBACK_POINT_FILE), "v2.8.1\n").unwrap();
+        git(repository.path(), &["add", ROLLBACK_POINT_FILE]);
+        git(repository.path(), &["commit", "-qm", "Record rollback point"]);
+        git(repository.path(), &["tag", "v2.8.1"]);
+        fs::write(repository.path().join(ROLLBACK_POINT_FILE), "v2.8.0\n").unwrap();
+        git(repository.path(), &["add", ROLLBACK_POINT_FILE]);
+        git(repository.path(), &["commit", "-qm", "Stale worktree value"]);
+        let path = repository.path().canonicalize().unwrap();
+        let github = FakeGithub {
+            names: HashMap::from([(path, "o/r".into())]),
+            responses: HashMap::new(),
+        };
+        let target = Release::from_tag("v2.8.2").unwrap().unwrap();
+        assert_eq!(
+            rollback_point_for_repo(&github, repository.path(), &[repository.path()], &target, false, &[]).unwrap(),
+            Release::from_tag("v2.8.1").unwrap().unwrap()
+        );
+    }
+
+    #[test]
+    fn check_rejects_a_stale_rollback_point() {
+        let repository = repository(&["v2.7.0"]);
+        fs::write(repository.path().join(ROLLBACK_POINT_FILE), "v2.7.0\n").unwrap();
+        let expected = Release::from_tag("v2.8.0").unwrap().unwrap();
+        let error = write_or_check_rollback_point(repository.path(), &expected, true).unwrap_err();
+        assert!(error.to_string().contains("expected rollback point is v2.8.0"));
     }
 
     #[test]
