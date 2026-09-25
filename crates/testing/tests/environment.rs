@@ -130,8 +130,7 @@ async fn check_submodule_scope(
             .await;
         let error = result
             .result
-            .err()
-            .expect("submodule procedure read the root environment");
+            .expect_err("submodule procedure read the root environment");
         assert!(
             !format!("{error:#}").contains(cases.secret_marker),
             "procedure error exposed environment data"
