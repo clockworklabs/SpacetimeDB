@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 #[error("memory limit exceeded")]
 pub struct BudgetExceeded {
     pub requested_bytes: u64,
@@ -14,7 +14,7 @@ pub enum ConfigError {
     InvalidBudgetOrder(ByteBudgetConfig),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ByteBudget {
     state: Arc<Mutex<ByteBudgetState>>,
     config: ByteBudgetConfig,
@@ -28,6 +28,14 @@ pub struct ByteBudgetConfig {
 }
 
 impl ByteBudgetConfig {
+    pub fn unlimited() -> Self {
+        Self {
+            low_water_bytes: u64::MAX,
+            soft_limit_bytes: u64::MAX,
+            hard_limit_bytes: u64::MAX,
+        }
+    }
+
     fn validate_then<T>(self, f: impl FnOnce(Self) -> T) -> Result<T, ConfigError> {
         if self.low_water_bytes <= self.soft_limit_bytes && self.soft_limit_bytes <= self.hard_limit_bytes {
             Ok(f(self))

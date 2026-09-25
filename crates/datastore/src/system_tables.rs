@@ -1572,14 +1572,14 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
-pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DatastoreError> {
+pub fn read_identity_from_col(row: &RowRef<'_>, col: impl StFields) -> Result<Identity, DatastoreError> {
     Ok(Identity::from_u256(row.read_col(col.col_id())?))
 }
 
 /// Read a [`Hash`] directly from the column `col` in `row`.
 ///
 /// The [`Hash`] is assumed to be stored as a flat byte array.
-pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DatastoreError> {
+pub fn read_hash_from_col(row: &RowRef<'_>, col: impl StFields) -> Result<Hash, DatastoreError> {
     Ok(Hash::from_u256(row.read_col(col.col_id())?))
 }
 

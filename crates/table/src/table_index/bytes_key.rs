@@ -244,7 +244,7 @@ impl<const N: usize> BytesKey<N> {
     /// The method panics otherwise.
     ///
     /// SAFETY: Any `col` in `cols` is in-bounds of `row_ref`'s layout.
-    pub(super) unsafe fn from_row_ref(cols: &ColList, row_ref: RowRef<'_>) -> Self {
+    pub(super) unsafe fn from_row_ref(cols: &ColList, row_ref: &RowRef<'_>) -> Self {
         Self::via_serializer(|ser| {
             unsafe { row_ref.serialize_columns_unchecked(cols, ser) }
                 .expect("should've serialized a `row_ref` to BSATN successfully");
@@ -417,7 +417,7 @@ impl<const N: usize> RangeCompatBytesKey<N> {
     /// The method panics otherwise.
     ///
     /// SAFETY: Any `col` in `cols` is in-bounds of `row_ref`'s layout.
-    pub(super) unsafe fn from_row_ref(cols: &ColList, row_ref: RowRef<'_>, ty: &AlgebraicType) -> Self {
+    pub(super) unsafe fn from_row_ref(cols: &ColList, row_ref: &RowRef<'_>, ty: &AlgebraicType) -> Self {
         // SAFETY: same as caller requirements.
         let key = unsafe { BytesKey::from_row_ref(cols, row_ref) };
         Self::from_bytes_key(key, ty)

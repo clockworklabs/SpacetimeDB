@@ -3100,7 +3100,14 @@ impl ModuleHost {
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
         let mut num_views_evaluated = 0;
-        for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
+        let views_for_refresh = match tx.views_for_refresh() {
+            Ok(views) => views.cloned().collect::<Vec<_>>(),
+            Err(error) => {
+                outcome = ViewOutcome::Failed(format!("failed to find views for refresh: {error}"));
+                Vec::new()
+            }
+        };
+        for view_call in views_for_refresh {
             let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
                 Ok(resolved) => resolved,
                 Err(err) => {

@@ -15,7 +15,7 @@ use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
-    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView, TableScanIter,
 };
 use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
@@ -61,8 +61,9 @@ use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::table::{RowRef, TableScanIter};
+use spacetimedb_table::table::RowRef;
 use spacetimedb_table::table_index::IndexKey;
+use spacetimedb_table::tiered::PageError;
 use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
@@ -610,6 +611,16 @@ impl RelationalDB {
                 | SnapshotError::Deserialize { .. }
                 | SnapshotError::BadMagic { .. }
                 | SnapshotError::BadVersion { .. } => false,
+
+                SnapshotError::Page(inner) => match inner {
+                    PageError::MemoryLimitExceeded(_) | PageError::Io(_) => true,
+
+                    PageError::TooManyPages
+                    | PageError::Page(_)
+                    | PageError::MissingPage(_)
+                    | PageError::MissingObject(_)
+                    | PageError::Deserialize(_) => false,
+                },
             }
         }
 
@@ -892,19 +903,19 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
+    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Result<(Arc<TxData>, TxMetrics, Tx), DBError> {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         let (tx_data, tx_metrics, tx, datastore_memory_bytes) =
             self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
                 self.request_durability(reducer_context, tx_data);
-            });
+            })?;
 
         self.maybe_do_snapshot(&tx_data);
         self.observe_datastore_memory(datastore_memory_bytes);
 
-        (tx_data, tx_metrics, tx)
+        Ok((tx_data, tx_metrics, tx))
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -1574,7 +1585,14 @@ impl RelationalDB {
         tx: &'a MutTx,
         index_id: IndexId,
         point: &'p [u8],
-    ) -> Result<(TableId, IndexKey<'p>, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
+    ) -> Result<
+        (
+            TableId,
+            IndexKey<'p>,
+            impl Iterator<Item = Result<RowRef<'a>, DatastoreError>> + use<'a>,
+        ),
+        DBError,
+    > {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 
@@ -1682,7 +1700,7 @@ impl RelationalDB {
             .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
         {
-            return Ok(Some(StVarRow::try_from(row_ref)?.value));
+            return Ok(Some(StVarRow::try_from(row_ref?)?.value));
         }
         Ok(None)
     }
@@ -1719,8 +1737,8 @@ impl RelationalDB {
     ) -> Result<(), DBError> {
         let rows_to_delete = self
             .iter_by_col_eq_mut(tx, table_id, VIEW_ARG_HASH_COL, &arg_hash)?
-            .map(|res| res.pointer())
-            .collect::<Vec<_>>();
+            .map(|res| res.map(|r| r.pointer()))
+            .collect::<Result<Vec<_>, DatastoreError>>()?;
         self.delete(tx, table_id, rows_to_delete);
 
         self.write_view_rows(tx, table_id, rows, &arg_hash)?;
@@ -2622,7 +2640,7 @@ mod tests {
         stdb.iter_by_col_eq(&tx, table_id, VIEW_ARG_HASH_COL, &arg_hash)
             .unwrap()
             .map(|row| {
-                let pv = row.to_product_value();
+                let pv = row.unwrap().to_product_value();
                 ProductValue {
                     elements: pv.elements.iter().skip(1).cloned().collect(),
                 }
@@ -2637,7 +2655,7 @@ mod tests {
         stdb.iter_by_col_eq(&tx, table_id, VIEW_ARG_HASH_COL, &arg_hash)
             .unwrap()
             .map(|row| {
-                let pv = row.to_product_value();
+                let pv = row.unwrap().to_product_value();
                 ProductValue {
                     elements: pv.elements.iter().skip(1).cloned().collect(),
                 }
@@ -2969,8 +2987,8 @@ mod tests {
         Ok(())
     }
 
-    fn read_first_col<T: ReadColumn>(row: RowRef<'_>) -> T {
-        row.read_col(0).unwrap()
+    fn read_first_col<T: ReadColumn>(row: Result<RowRef<'_>, DatastoreError>) -> T {
+        row.unwrap().read_col(0).unwrap()
     }
 
     fn collect_sorted<T: ReadColumn + Ord>(stdb: &RelationalDB, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {
@@ -3336,21 +3354,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&tx, ST_INDEX_ID)?
-            .map(|x| StIndexRow::try_from(x).unwrap())
+            .map(|x| StIndexRow::try_from(x.unwrap()).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes: {:#?}", indexes);
 
         let sequences = stdb
             .iter_mut(&tx, ST_SEQUENCE_ID)?
-            .map(|x| StSequenceRow::try_from(x).unwrap())
+            .map(|x| StSequenceRow::try_from(x.unwrap()).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
         let constraints = stdb
             .iter_mut(&tx, ST_CONSTRAINT_ID)?
-            .map(|x| StConstraintRow::try_from(x).unwrap())
+            .map(|x| StConstraintRow::try_from(x.unwrap()).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 3, "Wrong number of constraints");
@@ -3359,21 +3377,21 @@ mod tests {
 
         let indexes = stdb
             .iter_mut(&tx, ST_INDEX_ID)?
-            .map(|x| StIndexRow::try_from(x).unwrap())
+            .map(|x| StIndexRow::try_from(x.unwrap()).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
             .iter_mut(&tx, ST_SEQUENCE_ID)?
-            .map(|x| StSequenceRow::try_from(x).unwrap())
+            .map(|x| StSequenceRow::try_from(x.unwrap()).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
         let constraints = stdb
             .iter_mut(&tx, ST_CONSTRAINT_ID)?
-            .map(|x| StConstraintRow::try_from(x).unwrap())
+            .map(|x| StConstraintRow::try_from(x.unwrap()).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 0, "Wrong number of constraints DROP");
@@ -3395,7 +3413,7 @@ mod tests {
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
         for row in stdb.iter_mut(&tx, ST_TABLE_ID)? {
-            let table = StTableRow::try_from(row)?;
+            let table = StTableRow::try_from(row?)?;
             if table.table_id == table_id {
                 n += 1;
             }
@@ -3437,7 +3455,7 @@ mod tests {
             panic!("expected non-empty iterator");
         };
 
-        assert_eq!(row.to_product_value(), product![0u64, 1u64, 2u64]);
+        assert_eq!(row?.to_product_value(), product![0u64, 1u64, 2u64]);
 
         // iter should only return a single row, so this count should now be 0.
         assert_eq!(iter.count(), 0);
@@ -3485,7 +3503,7 @@ mod tests {
             &stdb
                 .iter_mut(&delete_insert_tx, table_id)
                 .expect("iter delete_insert_tx failed")
-                .map(|row_ref| row_ref.to_product_value())
+                .map(|row_ref| row_ref.unwrap().to_product_value())
                 .collect::<Vec<_>>(),
             &[product!(AlgebraicValue::I32(0))],
         );
@@ -3780,7 +3798,7 @@ mod tests {
         let present_rows: Vec<StClientRow> = stdb
             .iter(&read_tx, ST_CLIENT_ID)
             .unwrap()
-            .map(|row_ref| row_ref.try_into().unwrap())
+            .map(|row_ref| row_ref.unwrap().try_into().unwrap())
             .collect();
         assert_eq!(present_rows.len(), 1);
         assert_eq!(present_rows[0], row_1);
