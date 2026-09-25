@@ -69,7 +69,7 @@ namespace SpacetimeDB.Types.@MyAuth
             {
             }
 
-            string IProcedureArgs.ProcedureName => "MyAuth.read_score";
+            string IProcedureArgs.ProcedureName => "auth_data.read_score";
         }
 
     }

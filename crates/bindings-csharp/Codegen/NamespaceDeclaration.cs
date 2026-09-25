@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using static Utils;
 
-internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor)
+internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string? Name)
 {
     public string AccessorIdentifier => EscapeIdentifier(Accessor);
 
@@ -96,6 +96,9 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor)
                 attribute.NamedArguments.FirstOrDefault(static a => a.Key == "Accessor").Value.Value
                     as string
                 ?? "";
+            var name =
+                attribute.NamedArguments.FirstOrDefault(static a => a.Key == "Name").Value.Value
+                as string;
             // Keywords are stored unescaped and escaped only when rendering C#.
             if (
                 accessor.Length == 0
@@ -115,40 +118,22 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor)
                 );
             }
 
-            // The accessor is also the database namespace, so both sets of rules apply.
-            // The host remains authoritative for full Unicode identifier validation.
-            if (
-                accessor.Length == 0
-                || !(char.IsLetter(accessor[0]) || accessor[0] == '_')
-                || accessor.Any(static c => !(char.IsLetterOrDigit(c) || c == '_'))
-                || !accessor.IsNormalized(NormalizationForm.FormC)
-            )
+            ValidateDatabaseIdentifier(diag, attribute, ref valid, accessor, "Accessor");
+            if (name is not null)
             {
-                ReportError(
-                    diag,
-                    attribute,
-                    ref valid,
-                    "Accessor must also be a nonempty database identifier: letters, digits or underscores, starting with a letter or underscore."
-                );
-            }
-
-            if (Encoding.UTF8.GetByteCount(accessor) > 63)
-            {
-                ReportError(
-                    diag,
-                    attribute,
-                    ref valid,
-                    "Namespace names cannot exceed 63 UTF-8 bytes (the current host limit)."
-                );
-            }
-
-            if (
-                accessor.Equals("st", StringComparison.OrdinalIgnoreCase)
-                || accessor.Equals("spacetimedb", StringComparison.OrdinalIgnoreCase)
-                || accessor.StartsWith("pg_", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                ReportError(diag, attribute, ref valid, $"Namespace '{accessor}' is reserved.");
+                ValidateDatabaseIdentifier(diag, attribute, ref valid, name, "Name");
+                if (
+                    accessor.Equals("public", StringComparison.OrdinalIgnoreCase)
+                    != name.Equals("public", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    ReportError(
+                        diag,
+                        attribute,
+                        ref valid,
+                        "The public scope cannot be renamed or targeted by a different accessor."
+                    );
+                }
             }
 
             CheckDuplicate(
@@ -193,10 +178,51 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor)
 
             if (valid)
             {
-                result.Add(new NamespaceDeclaration(identity, accessor));
+                result.Add(new NamespaceDeclaration(identity, accessor, name));
             }
         }
         return new EquatableArray<NamespaceDeclaration>(result.ToImmutable());
+    }
+
+    private static void ValidateDatabaseIdentifier(
+        DiagReporter diag,
+        AttributeData attribute,
+        ref bool valid,
+        string value,
+        string property
+    )
+    {
+        if (
+            value.Length == 0
+            || !(char.IsLetter(value[0]) || value[0] == '_')
+            || value.Any(static c => !(char.IsLetterOrDigit(c) || c == '_'))
+            || !value.IsNormalized(NormalizationForm.FormC)
+        )
+        {
+            ReportError(
+                diag,
+                attribute,
+                ref valid,
+                $"{property} must be a nonempty database identifier: letters, digits or underscores, starting with a letter or underscore."
+            );
+        }
+        if (Encoding.UTF8.GetByteCount(value) > 63)
+        {
+            ReportError(
+                diag,
+                attribute,
+                ref valid,
+                $"{property} cannot exceed 63 UTF-8 bytes (the current host limit)."
+            );
+        }
+        if (
+            value.Equals("st", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("spacetimedb", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("pg_", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            ReportError(diag, attribute, ref valid, $"Namespace {property} '{value}' is reserved.");
+        }
     }
 
     private static void ReportError(

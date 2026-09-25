@@ -319,8 +319,12 @@ public static class GeneratorSnapshotTests
         }
         var auth = Dependency("Auth");
         var audit = Dependency("Audit");
-        string Mount(string marker = "Auth.Marker", string accessor = "MyAuth") =>
-            $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"{accessor}\")]\n";
+        string Mount(
+            string marker = "Auth.Marker",
+            string accessor = "MyAuth",
+            string? name = null
+        ) =>
+            $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"{accessor}\"{(name is null ? "" : ", Name = " + SymbolDisplay.FormatLiteral(name, true))})]\n";
         GeneratorDriver Run(string source) =>
             CSharpGeneratorDriver
                 .Create(
@@ -352,6 +356,14 @@ public static class GeneratorSnapshotTests
             ];
         Assert.Empty(Run(Mount(accessor: new string('a', 63))).GetRunResult().Diagnostics);
         Assert.Empty(Run(Mount(accessor: "public")).GetRunResult().Diagnostics);
+        Assert.Empty(Run(Mount(name: new string('a', 63))).GetRunResult().Diagnostics);
+        Assert.Empty(Run(Mount(accessor: "PUBLIC", name: "public")).GetRunResult().Diagnostics);
+        Assert.Empty(Run(Mount(name: "class")).GetRunResult().Diagnostics);
+        Reject(Mount(name: new string('a', 64)), "63 UTF-8 bytes");
+        Reject(Mount(name: ""), "Name must be a nonempty database identifier");
+        Reject(Mount(name: "st"), "reserved");
+        Reject(Mount(accessor: "public", name: "auth_data"), "public scope");
+        Reject(Mount(name: "PUBLIC"), "public scope");
         Reject(Mount(accessor: new string('a', 64)), "63 UTF-8 bytes");
         foreach (var name in new[] { "", "auth.data", "a-b", "1auth", " auth" })
             Reject(Mount(accessor: name), "database identifier");
@@ -388,7 +400,14 @@ public static class GeneratorSnapshotTests
         );
 
         var original = Run(Mount());
-        foreach (var source in new[] { Mount(accessor: "Other"), Mount(accessor: "class") })
+        foreach (
+            var source in new[]
+            {
+                Mount(accessor: "Other"),
+                Mount(accessor: "class"),
+                Mount(name: "auth_data"),
+            }
+        )
         {
             var changed = original.RunGenerators(Create("Consumer", source, auth, audit));
             Assert.Empty(changed.GetRunResult().Diagnostics);

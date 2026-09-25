@@ -56,7 +56,7 @@ namespace SpacetimeDB
     }
 #endif
 
-    public static class Handlers { }
+    internal static class Handlers { }
 
 #if !NET10_0_OR_GREATER
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
@@ -842,7 +842,8 @@ static class ModuleRegistration
         global::SpacetimeDB.Internal.Module.InstallNamespaces(
             new global::SpacetimeDB.Internal.NamespaceRegistry(
                 "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                new global::System.Collections.Generic.KeyValuePair<string, string>[] { }
+                global::SpacetimeDB.CaseConversionPolicy.SnakeCase,
+                new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] { }
             )
         );
         global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.AssemblyDescriptor.Register(

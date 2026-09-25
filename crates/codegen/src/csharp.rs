@@ -506,84 +506,82 @@ pub struct Csharp<'opts> {
 
 impl Lang for Csharp<'_> {
     fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
-        self.scope(NamespacePath::root())
+        self.scope(module)
             .generate_table_file_from_schema(module, table, schema)
     }
 
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        self.scope(NamespacePath::root()).generate_type_files(module, typ)
+        self.scope(module).generate_type_files(module, typ)
     }
 
     fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
-        self.scope(NamespacePath::root()).generate_reducer_file(module, reducer)
+        self.scope(module).generate_reducer_file(module, reducer)
     }
 
     fn generate_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
-        self.scope(NamespacePath::root())
-            .generate_procedure_file(module, procedure)
+        self.scope(module).generate_procedure_file(module, procedure)
     }
 
-    fn generate_submodule_table_file(&self, module: &ModuleDef, path: &NamespacePath, table: &TableDef) -> OutputFile {
-        scoped_file(path, self.scope(path.clone()).generate_table_file(module, table))
-    }
-
-    fn generate_submodule_view_file(&self, module: &ModuleDef, path: &NamespacePath, view: &ViewDef) -> OutputFile {
-        scoped_file(path, self.scope(path.clone()).generate_view_file(module, view))
-    }
-
-    fn generate_submodule_reducer_file(
-        &self,
-        module: &ModuleDef,
-        path: &NamespacePath,
-        reducer: &ReducerDef,
-    ) -> OutputFile {
-        scoped_file(path, self.scope(path.clone()).generate_reducer_file(module, reducer))
-    }
-
-    fn generate_submodule_procedure_file(
-        &self,
-        module: &ModuleDef,
-        path: &NamespacePath,
-        procedure: &ProcedureDef,
-    ) -> OutputFile {
+    fn generate_submodule_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
         scoped_file(
-            path,
-            self.scope(path.clone()).generate_procedure_file(module, procedure),
+            module.accessor_path(),
+            self.scope(module).generate_table_file(module, table),
+        )
+    }
+
+    fn generate_submodule_view_file(&self, module: &ModuleDef, view: &ViewDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_view_file(module, view),
+        )
+    }
+
+    fn generate_submodule_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_reducer_file(module, reducer),
+        )
+    }
+
+    fn generate_submodule_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_procedure_file(module, procedure),
         )
     }
 
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
-        let mut files = self.scope(NamespacePath::root()).generate_global_files(module, options);
-        self.child_files(module, &NamespacePath::root(), &mut files);
+        let mut files = self.scope(module).generate_global_files(module, options);
+        self.child_files(module, &mut files);
         files
     }
 }
 
 impl Csharp<'_> {
-    fn scope(&self, path: NamespacePath) -> CsharpScope<'_> {
-        let namespace = clr_namespace(self.namespace, &path);
+    fn scope(&self, module: &ModuleDef) -> CsharpScope<'_> {
+        let namespace = clr_namespace(self.namespace, module.accessor_path());
         CsharpScope {
             namespace,
             root_namespace: self.namespace,
-            path,
+            path: module.path().clone(),
         }
     }
 
-    fn child_files(&self, module: &ModuleDef, path: &NamespacePath, files: &mut Vec<OutputFile>) {
-        for (name, child) in module.submodules() {
-            let path = path.child(name.clone());
-            let scope = self.scope(path.clone());
+    fn child_files(&self, module: &ModuleDef, files: &mut Vec<OutputFile>) {
+        for child in module.submodules().values() {
+            let path = child.accessor_path();
+            let scope = self.scope(child);
             // Child typespaces are independent, including types used only by functions.
             for typ in child.types() {
                 files.extend(
                     scope
                         .generate_type_files(child, typ)
                         .into_iter()
-                        .map(|file| scoped_file(&path, file)),
+                        .map(|file| scoped_file(path, file)),
                 );
             }
-            files.push(scoped_file(&path, scope.child_globals(child)));
-            self.child_files(child, &path, files);
+            files.push(scoped_file(path, scope.child_globals(child)));
+            self.child_files(child, files);
         }
     }
 }
@@ -591,6 +589,7 @@ impl Csharp<'_> {
 struct CsharpScope<'a> {
     namespace: String,
     root_namespace: &'a str,
+    // Canonical database path, never a C# member or CLR namespace path.
     path: NamespacePath,
 }
 
@@ -633,8 +632,9 @@ impl CsharpScope<'_> {
     }
 
     fn child_members(&self, output: &mut CodeIndenter<String>, module: &ModuleDef, container: &str) {
-        for name in module.submodules().keys() {
-            let namespace = clr_namespace(self.root_namespace, &self.path.child(name.clone()));
+        for child in module.submodules().values() {
+            let name = child.mount_accessor_name().unwrap();
+            let namespace = clr_namespace(self.root_namespace, child.accessor_path());
             if container == "From" {
                 writeln!(output, "public global::{namespace}.From @{name} {{ get; }} = new();");
             } else {
@@ -653,7 +653,8 @@ impl CsharpScope<'_> {
             } else {
                 writeln!(output, "internal {container}({conn} conn) : base(conn)");
                 indented_block(output, |output| {
-                    for name in module.submodules().keys() {
+                    for child in module.submodules().values() {
+                        let name = child.mount_accessor_name().unwrap();
                         writeln!(output, "@{name} = new(conn);");
                         if container == "RemoteReducers" {
                             writeln!(output, "@{name}.InternalOnUnhandledReducerError += (ctx, error) => InternalOnUnhandledReducerError?.Invoke(ctx, error);");
@@ -720,7 +721,8 @@ impl CsharpScope<'_> {
                         accessor.deref().to_case(Case::Pascal)
                     );
                 }
-                for name in module.submodules().keys() {
+                for child in module.submodules().values() {
+                    let name = child.mount_accessor_name().unwrap();
                     writeln!(output, "@{name} = new(conn, register);");
                 }
             });
@@ -1325,7 +1327,8 @@ impl Lang for CsharpScope<'_> {
                         accessor_name.deref().to_case(Case::Pascal)
                     );
                 }
-                for name in module.submodules().keys() {
+                for child in module.submodules().values() {
+                    let name = child.mount_accessor_name().unwrap();
                     writeln!(output, "@{name} = new(conn, AddTable);");
                 }
             });
@@ -1348,17 +1351,17 @@ impl Lang for CsharpScope<'_> {
                 child_tables.sort_by(|(a_path, _, a), (b_path, _, b)| {
                     (a_path, &a.accessor_name).cmp(&(b_path, &b.accessor_name))
                 });
-                for (path, _, table) in child_tables.into_iter().filter(|(path, _, table)| {
+                for (_, owner, table) in child_tables.into_iter().filter(|(path, _, table)| {
                     !path.is_empty() && table.table_access == spacetimedb_lib::db::raw_def::v9::TableAccess::Public
                 }) {
                     writeln!(
                         output,
                         "new QueryBuilder().From.{}{}().ToSql(),",
-                        member_path(&path),
+                        member_path(owner.accessor_path()),
                         table.accessor_name.deref().to_case(Case::Pascal)
                     );
                 }
-                for (path, _, view) in module
+                for (_, owner, view) in module
                     .all_views_with_prefix()
                     .into_iter()
                     .filter(|(path, _, _)| !path.is_empty())
@@ -1366,7 +1369,7 @@ impl Lang for CsharpScope<'_> {
                     writeln!(
                         output,
                         "new QueryBuilder().From.{}{}().ToSql(),",
-                        member_path(&path),
+                        member_path(owner.accessor_path()),
                         view.accessor_name.deref().to_case(Case::Pascal)
                     );
                 }
@@ -1520,13 +1523,13 @@ impl Lang for CsharpScope<'_> {
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
                         );
                     }
-                    for (path, _, reducer) in module
+                    for (_, owner, reducer) in module
                         .all_reducers_with_prefix()
                         .into_iter()
                         .filter(|(path, _, reducer)| !path.is_empty() && !reducer.visibility.is_private())
                     {
-                        let namespace = clr_namespace(self.root_namespace, &path);
-                        let member = member_path(&path);
+                        let namespace = clr_namespace(self.root_namespace, owner.accessor_path());
+                        let member = member_path(owner.accessor_path());
                         let name = reducer.accessor_name.deref().to_case(Case::Pascal);
                         writeln!(output, "global::{namespace}.Reducer.{name} args => Reducers.{member}Invoke{name}(eventContext, args),");
                     }

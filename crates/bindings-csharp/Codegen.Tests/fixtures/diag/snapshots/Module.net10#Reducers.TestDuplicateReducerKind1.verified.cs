@@ -6,10 +6,12 @@ partial class Reducers
 {
     private static class __ScheduleTestDuplicateReducerKind1Name
     {
-        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            nameof(TestDuplicateReducerKind1)
-        );
+        internal static readonly string Name =
+            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                nameof(TestDuplicateReducerKind1),
+                null
+            );
 
         // Prevent eager initialization before the root installs namespace placements.
         static __ScheduleTestDuplicateReducerKind1Name() { }

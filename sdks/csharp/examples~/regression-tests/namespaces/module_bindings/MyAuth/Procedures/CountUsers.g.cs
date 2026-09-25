@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types.@MyAuth
         [DataContract]
         public sealed partial class CountUsersArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "MyAuth.count_users";
+            string IProcedureArgs.ProcedureName => "auth_data.count_users";
         }
 
     }

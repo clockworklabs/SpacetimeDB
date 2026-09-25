@@ -50,16 +50,18 @@ The most important generated types are `RemoteTables` -- also known as the **cli
 
 ### Namespace bindings
 
-Suppose a dependency is mounted in the database namespace `MyAuth`, using
-`Accessor = "MyAuth"`. Generated C# clients expose its tables through
+Suppose a dependency is mounted with `Accessor = "MyAuth", Name = "auth_data"`.
+Generated C# clients expose its tables through
 `conn.Db.MyAuth`, reducers through `conn.Reducers.MyAuth`, procedures through
 `conn.Procedures.MyAuth`, and query factories through `q.From.MyAuth`.
-The mount accessor is also the database namespace; its spelling is preserved.
+Generated SQL and network messages use the database namespace `auth_data`.
+The C# accessor remains `MyAuth`. When `Name` is omitted, the host derives the
+database namespace from the accessor using the root module's case policy.
 
 The `--namespace` option of `spacetime generate` controls where generated C#
 classes are declared; it does not name or rename database namespaces. With
 `--namespace Game.Bindings`, a root `User` row becomes `Game.Bindings.User`,
-while a `User` row in the `MyAuth` database namespace becomes
+while a `User` row in that dependency becomes
 `Game.Bindings.MyAuth.User`. Their table handles remain `conn.Db.User` and
 `conn.Db.MyAuth.User`, respectively.
 

@@ -2,8 +2,10 @@
 
 Runs generated clients against the .NET 10 module in `modules/namespace-test-cs`.
 The .NET 8 run verifies backward compatibility;
-the .NET 10 run verifies the newer client runtime. Both retain C# 9 to enforce the
-generated-code language baseline. It uses `Accessor` as the namespace name throughout.
+the .NET 10 run verifies the newer client runtime.
+Both retain C# 9 to enforce the generated-code language baseline.
+The Auth dependency uses `Accessor = "MyAuth"` and `Name = "auth_data"`:
+C# expressions use `MyAuth`, while generated SQL and wire names use `auth_data`.
 
 The existing `sdks/csharp/tools~/run-regression-tests.sh 10` harness generates the
 bindings and runs this client on both frameworks, clearing and republishing the
@@ -30,7 +32,8 @@ Coverage:
 
 - Root and two mounted libraries with different row types named `User`, plus a
   dependency automatically registered in `public`, without a namespace declaration.
-- Explicit table names and a C# keyword namespace accessor.
+- Distinct namespace accessor and canonical name, explicit table names, and a C#
+  keyword namespace accessor.
 - Typed subscriptions, filtered queries, both semijoin directions, and overlapping
   subscriptions without duplicate rows or premature cache removal.
 - Cross-library helper writes and callbacks observing the complete transaction.
