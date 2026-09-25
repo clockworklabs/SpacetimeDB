@@ -1410,7 +1410,7 @@ jobs:
           # Create temp global.json to target .NET 8 SDK for workload install
           echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
           dotnet workload install wasi-experimental
-          rm global.json
+          git restore -- global.json
 
       - name: Override NuGet packages
         run: |
