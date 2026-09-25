@@ -1,6 +1,7 @@
 import { homedir, tmpdir } from 'node:os';
 import { credentialReady } from '../runtime/preflight.js';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
+import { validatePricingRates } from '../evidence/pricing-authority.js';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { z } from 'zod';
@@ -15,11 +16,18 @@ import { resolveGuidanceProfile } from './condition-compiler.js';
 import { SAFE_RESULT_NAME } from '../runtime/operational-paths.js';
 
 const name = z.string().regex(SAFE_RESULT_NAME);
+const rates = z.strictObject({ input: z.number().finite().nonnegative(), output: z.number().finite().nonnegative(),
+  cacheWrite5m: z.number().finite().nonnegative(), cacheWrite1h: z.number().finite().nonnegative(),
+  cacheRead: z.number().finite().nonnegative() });
 const requestSchema = z.strictObject({
   key: name, workload: name, workloadSha256: z.string().regex(/^[a-f0-9]{64}$/), level: z.number().int().positive(),
   stacks: z.array(z.string()).min(1),
   agents: z.array(z.strictObject({ index: z.number().int().nonnegative(),
-    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']) })).min(1),
+    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']),
+    model: z.string().min(1).max(128).optional(), pricing: rates.optional(),
+    pricingSource: z.url().optional(), pricingCapturedAt: z.iso.datetime().optional(),
+    maxOutputTokens: z.number().int().positive().optional(), outputLimitSource: z.url().optional(),
+    providerRoute: z.string().optional() })).min(1),
   conditions: z.array(z.string()).min(1),
   repetitions: z.number().int().positive(), parallelism: z.number().int().positive(),
   repairs: z.number().int().nonnegative(), timeoutMinutes: z.number().int().positive(),
@@ -93,7 +101,7 @@ function writeOnce(path: string, value: unknown): void {
 /** Shared by the CLI and dashboard. Preparing never starts a worker or calls a model. */
 export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessEnv = process.env) {
   const request = requestSchema.parse(input);
-  unique(request.stacks, 'Stacks'); unique(request.agents.map(a => a.index), 'Models');
+  unique(request.stacks, 'Stacks'); unique(request.agents.map(a => `${a.index}:${a.model ?? ''}`), 'Models');
   unique(request.conditions, 'Guidance');
   const matches = presets(results).entries.filter(entry => entry.definition.id === request.workload);
   if (matches.length !== 1) throw new Error('Workload is unavailable. Reload setup.');
@@ -116,10 +124,38 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
   d.levels = d.levels.filter(level => level <= request.level);
   if (d.selection.levels) d.selection.levels = d.selection.levels.filter(level => d.levels.includes(level.level));
   d.stacks = select(d.stacks, request.stacks, stack => stack.id).map(stack => ({ ...stack, repetitions: request.repetitions }));
-  d.agents = request.agents.map(({ index, effort }) => {
+  d.agents = request.agents.map(({ index, effort, model, pricing, pricingSource, pricingCapturedAt,
+    maxOutputTokens, outputLimitSource, providerRoute }) => {
     const agent = d.agents[index];
     if (!agent) throw new Error('Model is not in this workload');
-    return { ...agent, effort };
+    if (!model || model === agent.model) {
+      if (pricing || pricingSource || pricingCapturedAt || maxOutputTokens || outputLimitSource || providerRoute) {
+        throw new Error('Custom model facts require a different model');
+      }
+      return { ...agent, effort };
+    }
+    if (!pricing || !pricingSource || !pricingCapturedAt) {
+      throw new Error(`${model}: pricing rates, source, and capture time are required`);
+    }
+    if (maxOutputTokens !== undefined && !outputLimitSource) {
+      throw new Error(`${model}: output-token limit source is required`);
+    }
+    const provider = AGENT_ADAPTER_REGISTRY.get(agent.adapter).provider;
+    if (provider !== 'openrouter' && (pricing.input <= 0 || pricing.output <= 0)) {
+      throw new Error(`${model}: input and output pricing must be positive`);
+    }
+    if (provider === 'openai' && maxOutputTokens === undefined) {
+      throw new Error(`${model}: an output-token limit and source are required for Codex`);
+    }
+    if (provider === 'openrouter' && (maxOutputTokens === undefined || !providerRoute)) {
+      throw new Error(`${model}: OpenRouter needs a provider route and output-token limit`);
+    }
+    if (Object.hasOwn(d.pricing.models, model)) throw new Error(`${model}: model pricing is already in this workload`);
+    d.pricing.models[model] = validatePricingRates(pricing);
+    d.pricing.source += ` | ${model}: ${pricingSource} (captured ${pricingCapturedAt})`
+      + (outputLimitSource ? `; output limit: ${outputLimitSource}` : '');
+    return { ...agent, model, effort,
+      ...(maxOutputTokens ? { maxOutputTokens } : {}), ...(providerRoute ? { providerRoute } : {}) };
   });
   d.conditions = select(d.conditions, request.conditions, condition => condition.id);
   for (const condition of d.conditions) {

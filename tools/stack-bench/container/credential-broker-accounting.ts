@@ -53,6 +53,7 @@ export type BrokerConfig = {
   ledgerPath?: string;
   model: string;
   maxOutputTokens: number;
+  explicitOutputLimit?: boolean;
   maxBudgetUsd?: number | null;
   pricingRates?: PricingRates;
 };
@@ -142,6 +143,7 @@ const brokerConfigSchema = z.strictObject({
   ledgerPath: z.string().min(1).optional(),
   model: z.string().min(1),
   maxOutputTokens: z.number().int().min(1).max(MAX_BROKER_OUTPUT_TOKENS),
+  explicitOutputLimit: z.boolean().optional(),
   maxBudgetUsd: positiveFinite.nullable().optional(),
   pricingRates: z.unknown().optional(),
 }).superRefine((value, context) => {

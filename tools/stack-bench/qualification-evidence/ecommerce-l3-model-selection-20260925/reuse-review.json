@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "sourceCommit": "6cf4bb43acddf35e4a5dda02765cdaf68133503e",
+  "target": "2026-09-25 model-selection candidate",
+  "priorReview": "qualification-evidence/ecommerce-l3-auth-20260925/reuse-review.json",
+  "changedBehavior": {
+    "runSetup": "New run can freeze an operator-selected model, its pricing source and rates, and its output-token bound. The selected account can list model IDs without starting a coding session.",
+    "broker": "An OpenAI account model absent from the legacy bound map can run only when the reviewed plan supplies an explicit documented output-token limit. Existing mapped OpenAI model bounds and the OpenRouter request path are unchanged."
+  },
+  "reuseBoundary": "Reference and mutation evidence uses the reference-fixture agent. It calls run-build with --prepare-only, which returns before credential broker startup and model invocation. The changed dashboard and run-setup modules are outside the qualification executable graph. The null executable hash is unchanged. Recipe, checks, reference sources, mutations, and grader inputs are unchanged. Reuse is limited to the already accepted model-free reference, mutation, and null evidence after exact identity validation; it does not qualify a new paid-model execution path.",
+  "validation": [
+    "The New run browser E2E check discovered the selected account's models and prepared a frozen review with zero model calls or submitted jobs.",
+    "Focused broker checks kept unknown OpenAI account models rejected without an explicit limit and admitted them with one.",
+    "The calibration validator must accept each unchanged evidence population against the new executable mapping before deployment."
+  ]
+}

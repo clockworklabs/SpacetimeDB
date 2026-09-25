@@ -303,7 +303,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
   // verified model maximum because the account endpoint may ignore that cap.
   const outputLimit = account
     ? Object.hasOwn(VERIFIED_ACCOUNT_OUTPUT_LIMITS, config.model)
-      ? VERIFIED_ACCOUNT_OUTPUT_LIMITS[config.model] : undefined
+      ? VERIFIED_ACCOUNT_OUTPUT_LIMITS[config.model] : config.explicitOutputLimit ? config.maxOutputTokens : undefined
     : config.maxOutputTokens;
   if (!outputLimit) fail('OpenAI account model has no verified output-token bound');
   return {

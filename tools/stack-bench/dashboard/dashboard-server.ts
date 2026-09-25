@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { prepareRun, runSetupCatalog, submitPreparedRun } from '../src/campaigns/run-setup.js';
+import { discoverModels } from '../src/agents/model-discovery.js';
 
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
@@ -320,6 +321,17 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       if (request.method === 'GET' && url.pathname === '/api/run-setup') {
         return json(response, 200, runSetupCatalog(resultsRoot));
+      }
+      if (request.method === 'GET' && url.pathname === '/api/run-setup/models') {
+        if (!allowLaunch) return json(response, 503, { error: 'Model discovery requires the appliance.' });
+        if (!sameSecret(request.headers['x-stack-bench-token'], token)) {
+          return json(response, 403, { error: 'The model request is not authorized.' });
+        }
+        try {
+          const adapter = url.searchParams.get('adapter') ?? '';
+          const profile = url.searchParams.get('profile') ?? undefined;
+          return json(response, 200, await discoverModels(adapter, profile));
+        } catch (error) { return json(response, 400, { error: errorMessage(error) }); }
       }
       if (request.method === 'POST' && ['/api/runs/prepare', '/api/runs'].includes(url.pathname)) {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls require the appliance.' });

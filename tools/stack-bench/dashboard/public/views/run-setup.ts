@@ -27,10 +27,28 @@ export function selectGuidance(conditions: RunSetupCatalog['workloads'][number][
 
 export function readRunForm(form: HTMLFormElement, catalog: RunSetupCatalog): RunSetupRequest {
   const data = new FormData(form);
+  const workload = catalog.workloads.find(w => w.id === data.get('workload'))!;
+  const custom = [...new Set(workload.agents.map(a => a.adapter))].flatMap(adapter => {
+    const index = workload.agents.findIndex(a => a.adapter === adapter);
+    const model = String(data.get(`custom-model-${index}`) ?? '').trim();
+    if (!model) return [];
+    const rate = (field: string) => {
+      const value = String(data.get(`custom-${index}-${field}`) ?? '').trim();
+      return value ? Number(value) : Number.NaN;
+    };
+    return [{ index, effort: String(data.get(`custom-effort-${index}`)) as RunSetupRequest['agents'][number]['effort'],
+      model, pricing: { input: rate('input'), output: rate('output'),
+        cacheWrite5m: rate('cacheWrite5m'), cacheWrite1h: rate('cacheWrite1h'), cacheRead: rate('cacheRead') },
+      pricingSource: String(data.get(`custom-${index}-pricingSource`) ?? '').trim(),
+      pricingCapturedAt: `${String(data.get(`custom-${index}-pricingCapturedAt`))}T00:00:00.000Z`,
+      ...(data.get(`custom-${index}-maxOutputTokens`) ? { maxOutputTokens: rate('maxOutputTokens'),
+        outputLimitSource: String(data.get(`custom-${index}-outputLimitSource`) ?? '').trim() } : {}),
+      ...(data.get(`custom-${index}-providerRoute`) ? { providerRoute: String(data.get(`custom-${index}-providerRoute`)).trim() } : {}) }];
+  });
   return { key: String(data.get('key')), workload: String(data.get('workload')), workloadSha256: String(data.get('workloadSha256')),
     level: Number(data.get('level')), stacks: data.getAll('stack').map(String),
-    agents: data.getAll('agent').map(index => ({ index: Number(index),
-      effort: String(data.get(`effort-${index}`)) as RunSetupRequest['agents'][number]['effort'] })),
+    agents: [...data.getAll('agent').map(index => ({ index: Number(index),
+      effort: String(data.get(`effort-${index}`)) as RunSetupRequest['agents'][number]['effort'] })), ...custom],
     conditions: data.has('sdkSkills') ? selectGuidance(catalog.workloads.find(w => w.id === data.get('workload'))!.conditions,
       String(data.get('sdkSkills')), String(data.get('devWorkflow'))) : data.getAll('condition').map(String), repetitions: Number(data.get('repetitions')),
     productionQuality: data.has('productionQuality'),
@@ -65,12 +83,39 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
       .map(([id, text]) => option(id!, text!, id === value)).join('')}</select>`);
   };
   const model = (index: number) => w.agents[index]!;
+  const customModel = (adapter: string) => request.agents.find(a => a.model
+    && w.agents[a.index]?.adapter === adapter);
+  const customRow = (adapter: string) => {
+    const index = w.agents.findIndex(a => a.adapter === adapter);
+    const value = customModel(adapter);
+    const fields = { pricingSource: value?.pricingSource, maxOutputTokens: value?.maxOutputTokens,
+      outputLimitSource: value?.outputLimitSource, providerRoute: value?.providerRoute };
+    const input = (key: keyof typeof fields, label: string, type = 'text') => field(label,
+      `<input name="custom-${index}-${key}" type="${type}" value="${esc(String(fields[key] ?? ''))}">`);
+    const rate = (key: keyof NonNullable<NonNullable<typeof value>['pricing']>, label: string) => field(label,
+      `<input name="custom-${index}-${key}" type="number" min="0" step="any" value="${Number.isFinite(value?.pricing?.[key]) ? value!.pricing![key] : ''}">`);
+    return `<details${value ? ' open' : ''}><summary>Add ${esc(adapter)} model</summary>`
+      + `<p><button class="btn" type="button" data-model-discovery="${esc(adapter)}">Find provider models</button> `
+      + `<span data-model-discovery-status="${esc(adapter)}"></span></p><div class="setup-fields">`
+      + field('Model ID', `<input name="custom-model-${index}" list="models-${esc(adapter)}" value="${esc(value?.model ?? '')}" autocomplete="off">`
+        + `<datalist id="models-${esc(adapter)}"></datalist>`)
+      + field('Reasoning', `<select name="custom-effort-${index}">${['low', 'medium', 'high', 'xhigh', 'max'].map(e => option(e, e, e === (value?.effort ?? 'medium'))).join('')}</select>`)
+      + rate('input', 'Input / million tokens (USD)') + rate('output', 'Output / million tokens (USD)')
+      + rate('cacheWrite5m', '5-minute cache write') + rate('cacheWrite1h', '1-hour cache write')
+      + rate('cacheRead', 'Cache read') + input('pricingSource', 'Pricing source (URL)', 'url')
+      + field('Pricing checked on', `<input name="custom-${index}-pricingCapturedAt" type="date" value="${esc(value?.pricingCapturedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10))}">`)
+      + (adapter === 'codex' || adapter === 'openrouter'
+        ? input('maxOutputTokens', adapter === 'codex' ? 'Documented model maximum output tokens' : 'Maximum output tokens', 'number')
+          + input('outputLimitSource', 'Output limit source (URL)', 'url') : '')
+      + (adapter === 'openrouter' ? input('providerRoute', 'Provider route') : '')
+      + '</div></details>';
+  };
   if (review) {
     const rows = [
       ['Workload', `${w.title} · L${request.level}`],
       ['Work delivery', delivery],
       ['Stacks', request.stacks.map(stackLabel).join(', ')],
-      ['Models', request.agents.map(a => `${modelLabel(model(a.index).model)} (${a.effort})`).join(', ')],
+      ['Models', request.agents.map(a => `${modelLabel(a.model ?? model(a.index).model)} (${a.effort})`).join(', ')],
       ['Guidance', request.conditions.map(id => guidanceLabel(w.conditions.find(c => c.id === id)!.guidance)).join(', ')],
       ['Production-quality app', request.productionQuality ? 'Requested' : 'Not requested'],
       ['Runs', `${review.attempts} attempts · ${request.repetitions} per combination · ${review.parallelism} concurrent`],
@@ -97,8 +142,9 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + '</div><fieldset><legend>Stacks</legend><div class="setup-choices">'
     + w.stacks.map(id => `<label><input type="checkbox" name="stack" value="${esc(id)}"${request.stacks.includes(id) ? ' checked' : ''}>${esc(stackLabel(id))}</label>`).join('')
     + '</div></fieldset><fieldset><legend>Models and reasoning</legend>'
-    + w.agents.map((agent, index) => `<div class="setup-model"><label><input type="checkbox" name="agent" value="${index}"${request.agents.some(a => a.index === index) ? ' checked' : ''}>${esc(modelLabel(agent.model))}</label>`
-      + `<select name="effort-${index}" aria-label="Reasoning for ${esc(agent.model)}">${['low', 'medium', 'high', 'xhigh', 'max'].map(e => option(e, e, e === (request.agents.find(a => a.index === index)?.effort ?? agent.effort ?? 'medium'))).join('')}</select></div>`).join('')
+    + w.agents.map((agent, index) => `<div class="setup-model"><label><input type="checkbox" name="agent" value="${index}"${request.agents.some(a => a.index === index && !a.model) ? ' checked' : ''}>${esc(modelLabel(agent.model))}</label>`
+      + `<select name="effort-${index}" aria-label="Reasoning for ${esc(agent.model)}">${['low', 'medium', 'high', 'xhigh', 'max'].map(e => option(e, e, e === (request.agents.find(a => a.index === index && !a.model)?.effort ?? agent.effort ?? 'medium'))).join('')}</select></div>`).join('')
+    + [...new Set(w.agents.filter(a => a.provider).map(a => a.adapter))].map(customRow).join('')
     + '</fieldset><fieldset><legend>App requirement</legend>'
     + `<label><input type="checkbox" name="productionQuality"${request.productionQuality ? ' checked' : ''}>Production-quality app</label>`
     + '<p>Build a production-quality application suitable for real users, not a prototype or demo.</p>'

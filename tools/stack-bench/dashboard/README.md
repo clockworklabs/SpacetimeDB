@@ -184,9 +184,15 @@ It does not edit grades or source.
 
 Appliance setup installs workload presets under `results/run-presets/`. Each preset
 uses the existing campaign manifest format. It supplies the supported levels,
-stacks, priced models, guidance conditions, and pinned runtime. Operators can add
-approved models and conditions there. Setup does not replace existing presets;
-update their runtime pins when deploying a new release. Invalid presets report their
+stacks, initial priced models, guidance conditions, and pinned runtime. New run can
+also use a model that is not in the preset. Select its adapter, enter its exact model
+ID, pricing rates, source URL, and capture date. Codex models also need the provider's
+documented maximum output tokens and source; OpenRouter models need an output limit
+and fixed provider route. The reviewed plan freezes these facts. The provider model
+picker reads the selected account's model list without making a model call. That
+list does not prove the coding adapter or selected OpenRouter route supports the model.
+Setup does not replace existing presets; update their runtime pins when deploying
+a new release. Invalid presets report their
 errors. Model prices are recorded values; the dashboard does not guess prices.
 
 Both interfaces use `src/campaigns/run-setup.ts` and the existing execution jobs:
@@ -198,7 +204,8 @@ node dist/commands/job-cli.js start review.json --results /path/to/results --hos
 ```
 
 `options` returns each workload's choices and defaults. `prepare` takes `key`,
-`workload`, `workloadSha256` (from options), `level`, `stacks`, `agents` (`index` and `effort`), `conditions`,
+`workload`, `workloadSha256` (from options), `level`, `stacks`, `agents` (`index` and `effort`,
+plus optional custom model and declared price/output facts), `conditions`,
 `repetitions`, `parallelism`, `repairs`, `timeoutMinutes`, `maxCostUsd`,
 `pauseAfterDepth` (null for none), `productionQuality` (default true), and `credentials`
 (empty for appliance defaults).
@@ -208,7 +215,8 @@ new review. It starts the same worker as the dashboard. It prints the job ID to 
 waits for the campaign, and prints the final job status as one JSON document. No model
 or reasoning level is substituted.
 
-HTTP clients use `GET /api/run-setup`, `POST /api/runs/prepare`, and `POST /api/runs`.
+HTTP clients use `GET /api/run-setup`, `GET /api/run-setup/models?adapter=...&profile=...`,
+`POST /api/runs/prepare`, and `POST /api/runs`.
 Writes require the same origin and browser token as other controls.
 Named credential profiles expose only their labels, provider, version, and account
 mode. Secret paths and values remain on the server.

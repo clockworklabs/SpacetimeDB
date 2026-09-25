@@ -1012,6 +1012,10 @@ test('OpenAI broker isolates credentials, bounds requests and reconciles cached 
     accountId: 'account', model: 'constructor', maxOutputTokens: 4096,
     credential: 'provider-secret-value-1234567890', sessionToken: 'session-token-value-1234567890' }),
   /no verified output-token bound/);
+  assert.doesNotThrow(() => createCredentialBroker({ provider: 'openai', mode: 'subscription-token',
+    accountId: 'account', model: 'new-account-model', maxOutputTokens: 4096,
+    explicitOutputLimit: true, credential: 'provider-secret-value-1234567890',
+    sessionToken: 'session-token-value-1234567890' }));
   const root = mkdtempSync(join(tmpdir(), 'openai-broker-'));
   const ledgerPath = join(root, 'ledger.json');
   const rates = { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite5m: 0, cacheWrite1h: 0 };

@@ -158,9 +158,11 @@ The account-mode broker has verified output-token bounds for `gpt-5.3-codex`,
 [`gpt-6-sol`](https://developers.openai.com/api/docs/models/gpt-6-sol).
 This does not establish that the signed-in account can access each model.
 The broker reserves each request against the documented 128,000-token output
-bound. Unknown account models fail before a provider request. API mode uses an
-explicit `max_output_tokens` limit. Both modes still require explicit campaign
-pricing. See the [GPT-5.3-Codex model limits](https://developers.openai.com/api/docs/models/gpt-5.3-codex)
+bound for these models. Other account models require an explicit documented
+model maximum in the frozen campaign; a missing bound fails before a provider
+request. API mode uses an explicit `max_output_tokens` limit. Both modes require
+explicit campaign pricing. The New run form can read the selected account's model
+list, but it does not infer price or output limits from that list. See the [GPT-5.3-Codex model limits](https://developers.openai.com/api/docs/models/gpt-5.3-codex)
 and [GPT-5.4 model limits](https://developers.openai.com/api/docs/models/gpt-5.4).
 
 ### OpenRouter credentials and routing

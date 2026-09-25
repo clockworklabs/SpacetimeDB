@@ -9,6 +9,7 @@ import { prepareRun, runSetupCatalog, submitPreparedRun } from '../../src/campai
 import { createDashboardServer, type LaunchInput } from '../../dashboard/dashboard-server.js';
 import { initialRun, runSetupPage, selectGuidance } from '../../dashboard/public/views/run-setup.js';
 import { writePlanFixtures } from '../fixtures/dashboard-fixture.js';
+import { STACK_BENCH_ROOT } from '../../src/package-root.js';
 
 // One invariant: only the exact reviewed configuration can dispatch, and retries
 // dispatch it once. No fixture invokes a controller, database, or model.
@@ -154,5 +155,63 @@ test('automatic accounts are explicit in the review and ambiguous accounts requi
   assert.throws(() => prepareRun(root, { ...request, key: 'rejected-review' }, env), /Choose an account for codex/);
   assert.deepEqual(readdirSync(join(root, 'plans')), saved, 'a rejected review must not save a plan');
   assert.equal(prepareRun(root, review.request, env).reviewId, review.reviewId);
+  assert.equal(existsSync(join(root, 'jobs')), false);
+});
+
+test('a new provider model freezes its declared rates and output bound before dispatch', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-new-model-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'run-presets'));
+  const preset = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'), 'utf8'));
+  preset.state = 'frozen';
+  preset.budgets.maxCostUsdPerAttempt = 12;
+  preset.runtime.controllerImage = `sha256:${'a'.repeat(64)}`;
+  preset.runtime.buildImage = `sha256:${'b'.repeat(64)}`;
+  preset.agents = [{ adapter: 'codex', adapterVersion: '1.0.0', model: 'gpt-6-astra', effort: 'medium' },
+    { adapter: 'claude-code', adapterVersion: '1.17.2', model: 'claude-sonnet-5', effort: 'medium' },
+    { adapter: 'openrouter', adapterVersion: '1.0.0', model: 'openai/gpt-5.3-codex',
+      effort: 'medium', providerRoute: 'openai', maxOutputTokens: 8192 }];
+  preset.pricing.models['gpt-6-astra'] = preset.pricing.models.deterministic;
+  preset.pricing.models['claude-sonnet-5'] = preset.pricing.models.deterministic;
+  preset.pricing.models['openai/gpt-5.3-codex'] = preset.pricing.models.deterministic;
+  writeFileSync(join(root, 'run-presets', 'models.json'), JSON.stringify(preset));
+  const secretFile = join(root, 'synthetic-secret');
+  writeFileSync(secretFile, 'SYNTHETIC_ONLY');
+  const registry = join(root, 'profiles.json');
+  writeFileSync(registry, JSON.stringify({ openai: { provider: 'openai', mode: 'api-key', version: '1', secretFile },
+    anthropic: { provider: 'anthropic', mode: 'api-key', version: '1', secretFile },
+    openrouter: { provider: 'openrouter', mode: 'api-key', version: '1', secretFile } }));
+  const env = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry };
+  const catalog = runSetupCatalog(root, env);
+  const modelIndex = (adapter: string) => catalog.workloads[0]!.agents.findIndex(a => a.adapter === adapter);
+  const request = { ...initialRun(catalog)!, key: 'new-model', level: 1,
+    stacks: ['postgres'], maxCostUsd: 12, agents: [{ index: modelIndex('codex'), effort: 'medium' as const,
+      model: 'gpt-6-sol', maxOutputTokens: 128_000,
+      outputLimitSource: 'https://example.test/model-limit',
+      pricing: { input: 1, output: 5, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+      pricingSource: 'https://example.test/pricing', pricingCapturedAt: '2026-09-25T00:00:00.000Z' }] };
+  const review = prepareRun(root, request, env);
+  const saved = JSON.parse(readFileSync(review.planFile, 'utf8'));
+  assert.equal(saved.agents[0].model, 'gpt-6-sol');
+  assert.equal(saved.agents[0].maxOutputTokens, 128_000);
+  assert.equal(saved.pricing.models['gpt-6-sol'].output, 5);
+  assert.match(saved.pricing.source, /https:\/\/example.test\/pricing/);
+  for (const [adapter, model, extra] of [
+    ['claude-code', 'claude-opus-5-5', {}],
+    ['openrouter', 'openai/gpt-5.4', { providerRoute: 'openai', maxOutputTokens: 8192,
+      outputLimitSource: 'https://example.test/router-limit' }],
+  ] as const) {
+    const other = prepareRun(root, { ...request, key: `new-model-${adapter}`, agents: [{ index: modelIndex(adapter), effort: 'medium',
+      model, pricing: { input: 1, output: 5, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+      pricingSource: 'https://example.test/pricing', pricingCapturedAt: '2026-09-25T00:00:00.000Z',
+      ...extra }] }, env);
+    const definition = JSON.parse(readFileSync(other.planFile, 'utf8'));
+    assert.equal(definition.agents[0].model, model);
+  }
+  assert.throws(() => prepareRun(root, { ...request, key: 'missing-price',
+    agents: [{ index: 0, effort: 'medium', model: 'gpt-6-sol' }] }, env), /pricing/i);
+  assert.throws(() => submitPreparedRun(root, { request: { ...request,
+    agents: [{ ...request.agents[0]!, pricing: { ...request.agents[0]!.pricing, output: 6 } }] },
+    reviewId: review.reviewId }, env), /Setup changed/);
   assert.equal(existsSync(join(root, 'jobs')), false);
 });

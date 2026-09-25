@@ -774,3 +774,29 @@ document.addEventListener('click', event => {
     state.setupReview = null; state.form.error = ''; render();
   }
 });
+
+document.addEventListener('click', event => {
+  const button = event.target instanceof Element
+    ? event.target.closest<HTMLButtonElement>('[data-model-discovery]') : null;
+  const form = button?.closest<HTMLFormElement>('form[data-run="setup-review"]');
+  if (!button || !form) return;
+  const adapter = button.dataset.modelDiscovery!;
+  const profile = form.querySelector<HTMLSelectElement>(`select[name="credential-${adapter}"]`)?.value;
+  const status = form.querySelector<HTMLElement>(`[data-model-discovery-status="${adapter}"]`);
+  const list = form.querySelector<HTMLDataListElement>(`#models-${adapter}`);
+  if (!status || !list) return;
+  button.disabled = true;
+  status.textContent = 'Loading…';
+  const query = new URLSearchParams({ adapter, ...(profile ? { profile } : {}) });
+  void fetch(`/api/run-setup/models?${query}`, { headers: { 'x-stack-bench-token': state.csrfToken },
+    signal: AbortSignal.timeout(30_000) })
+    .then(async response => {
+      const result = await response.json() as { models?: Array<{ id: string }>; error?: string };
+      if (!response.ok || !result.models) throw new Error(result.error ?? 'Model list is unavailable');
+      list.replaceChildren(...result.models.map(model => {
+        const option = document.createElement('option'); option.value = model.id; return option;
+      }));
+      status.textContent = `${result.models.length} models listed. Select one, then record its pricing.`;
+    }).catch(error => { status.textContent = error instanceof Error ? error.message : 'Model list is unavailable'; })
+    .finally(() => { button.disabled = false; });
+});

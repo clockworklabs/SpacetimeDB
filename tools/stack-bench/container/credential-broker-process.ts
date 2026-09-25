@@ -150,7 +150,7 @@ function appendDiagnosticStderr(state: BrokerProcessState, chunk: string, secret
 }
 
 export async function startCredentialBroker(selectedAuth: ContainerAuth, { networkMode, deadlineMs,
-  model, providerRoute, maxOutputTokens = MAX_BROKER_OUTPUT_TOKENS, maxBudgetUsd = null, pricingRates = null,
+  model, providerRoute, maxOutputTokens, maxBudgetUsd = null, pricingRates = null,
   env = process.env, docker }: { networkMode: string; deadlineMs: number; model: string;
   maxOutputTokens?: number; maxBudgetUsd?: number | null; pricingRates?: PricingRates | null;
   providerRoute?: string;
@@ -187,7 +187,8 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       mode: selectedAuth.mode, credential, sessionToken, readyPath,
       ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
-      model, maxOutputTokens, maxBudgetUsd, pricingRates });
+      model, maxOutputTokens: maxOutputTokens ?? MAX_BROKER_OUTPUT_TOKENS,
+      ...(maxOutputTokens !== undefined ? { explicitOutputLimit: true } : {}), maxBudgetUsd, pricingRates });
     writeFileSync(configPath, `${JSON.stringify(config)}\n`, { flag: 'wx', mode: 0o600 });
     if (docker) {
       const network = `container:${docker.networkContainerId}`;
