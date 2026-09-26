@@ -604,9 +604,19 @@ public static partial class Module
         return TextResponse(418, "teapot");
     }
 
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse TxAuth(HandlerContext ctx, HttpRequest request)
+    {
+        var auth = ctx.WithTx((HandlerTxContext tx) =>
+            $"internal={tx.SenderAuth.IsInternal} jwt={tx.SenderAuth.HasJwt}"
+        );
+        return TextResponse(200, auth);
+    }
+
     [SpacetimeDB.HttpRouter]
     public static Router Router() =>
         SpacetimeDB.Router.New()
+            .Get("/tx-auth", Handlers.TxAuth)
             .Get("/get", Handlers.GetSimple)
             .Post("/post", Handlers.PostInsert)
             .Get("/count", Handlers.GetCount)
@@ -1177,6 +1187,12 @@ fn csharp_http_routes_end_to_end() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-basic", CS_MODULE_CODE);
     assert_http_routes_end_to_end(&test.server_url, &identity);
+
+    // Handler transactions are external callers, even with the handler's zero sender.
+    let resp =
+        reqwest::blocking::get(format!("{}/tx-auth", route_base(&test.server_url, &identity))).expect("tx-auth failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("tx-auth body"), "internal=False jwt=False");
 }
 
 #[test]

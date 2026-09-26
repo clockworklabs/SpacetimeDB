@@ -15,7 +15,8 @@ public sealed class AuthCtx
         _jwtLazy = new Lazy<JwtClaims?>(() => jwtFactory?.Invoke());
     }
 
-    internal static AuthCtx Anonymous() => new(isInternal: false, jwtFactory: () => null);
+    internal static readonly AuthCtx Anonymous =
+        new(isInternal: false, jwtFactory: static () => null);
 
     /// <summary>
     /// Create an AuthCtx for an internal call, with no JWT.

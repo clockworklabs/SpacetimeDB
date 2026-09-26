@@ -52,7 +52,6 @@
   <ItemGroup>
     <UpToDateCheckInput Include="bindings.c" />
     <UpToDateCheckInput Include="driver.h" />
-    <InternalsVisibleTo Include="Runtime.Tests" />
   </ItemGroup>
 
 </Project>
