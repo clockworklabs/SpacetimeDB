@@ -1,31 +1,13 @@
-use spacetimedb_smoketests::{require_local_server, require_pnpm, ModuleLanguage, Smoketest};
+use spacetimedb_smoketests::{require_local_server, Smoketest};
 
 const WASM_HOST_TYPE: &str = "0";
 const JS_HOST_TYPE: &str = "1";
-
-const TS_MODULE_BASIC: &str = r#"import { schema, t, table } from "spacetimedb/server";
-
-const person = table(
-    { name: "person", public: true },
-    {
-        id: t.u64().primaryKey().autoInc(),
-        name: t.string()
-    }
-);
-const spacetimedb = schema({ person });
-export default spacetimedb;
-
-export const add = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
-  ctx.db.person.insert({ id: 0n, name });
-});
-"#;
 
 /// Tests that updating a module and also changing the host type works.
 ///
 /// Note that this test restarts the server.
 #[test]
 fn test_update_with_different_host_type() {
-    require_pnpm!();
     require_local_server!();
 
     const PERSON_A: &str = "Person A";
@@ -41,11 +23,8 @@ fn test_update_with_different_host_type() {
     add_person(&test, PERSON_A, "initial");
 
     // Publish a TS module.
-    test.publish()
-        .name(&database_identity)
-        .source(ModuleLanguage::TypeScript, "modules-basic-ts", TS_MODULE_BASIC)
-        .run()
-        .unwrap();
+    test.use_precompiled_module("modules-basic-ts");
+    test.publish().name(&database_identity).run().unwrap();
     add_person(&test, PERSON_B, "post module update");
 
     // Restart and assert that the data is still there.
@@ -53,6 +32,7 @@ fn test_update_with_different_host_type() {
     assert_has_rows(&test, &[PERSON_A, PERSON_B], "post restart");
 
     // Change back to original module and assert that the data is still there.
+    test.use_precompiled_module("modules-basic");
     test.publish().current_database().unwrap().run().unwrap();
     add_person(&test, PERSON_C, "post revert");
 
@@ -99,16 +79,12 @@ fn assert_has_rows(test: &Smoketest, names: &[&str], context: &str) {
 /// This test restarts the server.
 #[test]
 fn test_repair_host_type() {
-    require_pnpm!();
     require_local_server!();
 
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    test.publish()
-        .name("basic-ts-change-host-type")
-        .source(ModuleLanguage::TypeScript, "modules-basic-ts", TS_MODULE_BASIC)
-        .run()
-        .unwrap();
+    test.use_precompiled_module("modules-basic-ts");
+    test.publish().name("basic-ts-change-host-type").run().unwrap();
     assert_host_type(&test, JS_HOST_TYPE);
     // Set the program kind to the wrong value.
     test.sql_confirmed(&format!("update st_module set program_kind={WASM_HOST_TYPE}"))

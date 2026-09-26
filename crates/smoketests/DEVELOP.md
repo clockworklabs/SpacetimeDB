@@ -10,7 +10,8 @@ cargo smoketest
 
 This command:
 1. Builds `spacetimedb-cli` and `spacetimedb-standalone` binaries
-2. Runs all smoketests in parallel using nextest (or cargo test if nextest isn't installed)
+2. Builds the Rust, TypeScript, C#, and C++ fixtures in `crates/smoketests/modules/`
+3. Runs all smoketests in parallel using nextest (or cargo test if nextest isn't installed)
 
 To run specific tests:
 ```bash
@@ -49,8 +50,8 @@ you MUST rebuild before running tests:
 # Option 1: Use cargo smoketest (always rebuilds first)
 cargo smoketest
 
-# Option 2: Manually rebuild, then run tests directly
-cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
+# Option 2: Prepare binaries and fixtures, then run tests directly
+cargo smoketest prepare
 cargo nextest run -p spacetimedb-smoketests
 ```
 
@@ -60,7 +61,7 @@ or, worse, tests that pass when they shouldn't.
 
 To check which binary you're testing against:
 ```bash
-ls -la target/debug/spacetimedb-cli*  # Check modification time
+ls -la target/release/spacetimedb-cli*  # Check modification time
 ```
 
 ### Why This Design?
@@ -74,45 +75,59 @@ Pre-building avoids this entirely.
 Standard `cargo test` also works, but you must rebuild first:
 
 ```bash
-cargo build -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
+cargo smoketest prepare
 cargo test -p spacetimedb-smoketests
 ```
 
 ## Test Performance
 
-Each test takes ~15-20s due to:
-- **WASM compilation** (~12s): Each test compiles a fresh Rust module to WASM
-- **Server spawn** (~2s): Each test starts its own SpacetimeDB server
-- **Module publish** (~2s): Server processes and initializes the WASM module
+Fixtures are compiled once during preparation and reused across tests. Ordinary
+tests start a server and publish the selected WASM or JavaScript artifact without
+invoking a compiler. Tests of build diagnostics explicitly compile temporary modules.
+
+Preparation needs pnpm for TypeScript, .NET 10 for C#, and Emscripten for C++.
+Local runs skip languages whose toolchains are unavailable; selecting one of their
+fixtures then fails with a preparation hint. Use `cargo smoketest --dotnet=false`
+to disable C# preparation and tests. CI archive preparation requires every enabled
+toolchain. Non-Rust artifacts go in `target/smoketest-precompiled` (or under
+`CARGO_TARGET_DIR`) and must travel with the Rust WASM files in the support archive.
+The archive also preserves disabled C# support.
 
 When running tests in parallel, resource contention increases individual test times but reduces overall runtime.
 
 ## Writing Tests
 
-See existing tests for patterns. Key points:
+Add a fixture crate under `crates/smoketests/modules/`, following an existing
+crate's `Cargo.toml` and `src/lib.rs`, and list it in that workspace's members.
+The package name `smoketest-module-example` makes it available as `example`:
 
 ```rust
 use spacetimedb_smoketests::Smoketest;
 
-const MODULE_CODE: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(accessor = example, public)]
-pub struct Example { value: u64 }
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, value: u64) {
-    ctx.db.example().insert(Example { value });
-}
-"#;
-
 #[test]
 fn test_example() {
     let test = Smoketest::builder()
-        .module_code(MODULE_CODE)
+        .precompiled_module("example")
         .build();
 
     test.call("add", &["42"]).unwrap();
     test.assert_sql("SELECT * FROM example", "value\n-----\n42");
 }
 ```
+
+Place the table and `add` reducer in the fixture's `src/lib.rs`. Use
+`test.use_precompiled_module("example-updated")` to switch fixtures for migration
+tests. If no module is selected, publishing uses the precompiled `noop` fixture.
+`autopublish(false)` leaves the database unpublished and does not need that fixture
+until a publish is requested.
+
+For TypeScript, C#, or C++, add the source under the corresponding language
+directory in `crates/smoketests/modules/` and register it in `src/prepare.rs`.
+Use the same named selection interface shown above. Tutorial fixtures read the
+current documentation during preparation, so changes to the examples are tested.
+
+For tests that expect Rust build failures, use `build_rust_module(source, extra_deps)`
+and assert the specific diagnostic in its raw output. This helper runs
+`spacetime build` without starting a server. Keep ordinary test modules in the
+fixture workspace. The `http-handlers-tutorial` fixture shows how a build script
+can compile examples directly from current documentation during warmup.

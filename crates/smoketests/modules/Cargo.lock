@@ -720,6 +720,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-column-defaults-initial"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-column-defaults-updated"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-confirmed-reads"
 version = "0.1.0"
 dependencies = [
@@ -809,6 +823,13 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-http-egress"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-handlers-tutorial"
 version = "0.1.0"
 dependencies = [
  "spacetimedb",

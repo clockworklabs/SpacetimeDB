@@ -14,7 +14,7 @@ members = [
 
     # Views tests
     "views-basic",
-    # "views-broken-namespace" - intentionally broken, uses runtime compilation
+    # "views-broken-namespace" is exercised by an explicit build-failure test
     "views-broken-return-type",
     "views-sql",
     "views-auto-migrate",
@@ -47,6 +47,10 @@ members = [
     "call-empty",
     "call-many",
 
+    # Column defaults
+    "column-defaults-initial",
+    "column-defaults-updated",
+
     # Auto-migration tests
     "auto-migration-simple",
     "auto-migration-incompatible",
@@ -63,6 +67,7 @@ members = [
     "auto-migration-drop-event-table-after",
 
     # HTTP tests
+    "http-handlers-tutorial",
     "http-egress",
     "http-routes",
     "http-routes-example",
