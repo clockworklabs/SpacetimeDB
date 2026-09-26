@@ -1,4 +1,11 @@
-import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
+import {
+  DbConnectionImpl,
+  resolveReconnectPolicy,
+  type AutomaticReconnectOptions,
+  type ConnectionEvent,
+  type ReconnectPolicy,
+  type TokenProvider,
+} from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type {
   DbConnectionConfig,
@@ -27,6 +34,9 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #compression: 'gzip' | 'brotli' | 'none' = 'gzip';
   #lightMode: boolean = false;
   #confirmedReads?: boolean;
+  #automaticReconnect: boolean = false;
+  #reconnectPolicy?: ReconnectPolicy;
+  #tokenProvider?: TokenProvider;
   #createWSFn: WebSocketFactory;
 
   /**
@@ -146,6 +156,32 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   }
 
   /**
+   * Reconnect after an established connection drops, preserving handles and callbacks.
+   * Retries use exponential backoff from `minDelayMs` (default 1 s) up to
+   * `maxDelayMs` (default 30 s) until disconnect() or a terminal failure.
+   * Values below the 500 ms and 1 s floors are raised with a warning, so
+   * that retrying clients cannot overwhelm the database.
+   * Initial connection failures are not retried. Lifecycle callbacks report
+   * the next attempt and delay, or undefined when no retry is scheduled.
+   */
+  withAutomaticReconnect(options?: AutomaticReconnectOptions): this {
+    this.#automaticReconnect = true;
+    if (options) {
+      this.#reconnectPolicy = resolveReconnectPolicy(options);
+    }
+    return this;
+  }
+
+  /**
+   * Refresh the retained token before reconnecting when it is near expiry or
+   * rejected. The provider must return a token for the same identity.
+   */
+  withTokenProvider(provider: TokenProvider): this {
+    this.#tokenProvider = provider;
+    return this;
+  }
+
+  /**
    * Register a callback to be invoked upon authentication with the database.
    *
    * @param identity A unique identifier for a client connected to a database.
@@ -190,11 +226,19 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    *   console.log("Error connecting to SpacetimeDB:", error);
    * });
    * ```
+   *
+   * With {@link DbConnectionBuilder.withAutomaticReconnect} enabled, this
+   * callback also reports each failed reconnect attempt:
+   * `nextReconnectAttempt` is the number of the upcoming attempt and
+   * `nextReconnectDelayMs` the wait before it. Both are `undefined` when the
+   * SDK will not retry, as for a failed initial connection.
    */
   onConnectError(
     callback: (
       ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
-      error: Error
+      error: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
     ) => void
   ): this {
     this.#emitter.on('connectError', callback);
@@ -225,13 +269,22 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    * This is a concession to ergonomics; there's no clean place to return a `CallbackId` from this method
    * or from `build`.
    *
+   * With {@link DbConnectionBuilder.withAutomaticReconnect} enabled, this
+   * callback also reports connections lost mid-session, and the SDK keeps
+   * reconnecting afterwards: `nextReconnectAttempt` is the number of the
+   * upcoming attempt and `nextReconnectDelayMs` the wait before it. Both are
+   * `undefined` when the SDK will not retry, which is always the case without
+   * automatic reconnection.
+   *
    * @param {function(error?: Error): void} callback - The callback to invoke upon disconnection.
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
     callback: (
       ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
-      error?: Error | undefined
+      error?: Error | undefined,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
     ) => void
   ): this {
     this.#emitter.on('disconnect', callback);
@@ -285,6 +338,9 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
       confirmedReads: this.#confirmedReads,
       createWSFn: this.#createWSFn,
       remoteModule: this.remoteModule,
+      automaticReconnect: this.#automaticReconnect,
+      reconnectPolicy: this.#reconnectPolicy,
+      tokenProvider: this.#tokenProvider,
     });
   }
 }

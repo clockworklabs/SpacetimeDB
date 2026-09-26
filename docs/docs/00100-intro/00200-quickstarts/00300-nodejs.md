@@ -134,35 +134,32 @@ spacetime sql "SELECT * FROM person"
 
   <Step title="Understand the client code">
     <StepText>
-      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage.
+      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage. Enable `withAutomaticReconnect()` to recover after connection loss. Register subscriptions and row callbacks once, outside `onConnect`, which fires again on reconnect.
     </StepText>
     <StepCode>
 ```typescript
 import { DbConnection } from './module_bindings/index.js';
 
-DbConnection.builder()
+const conn = DbConnection.builder()
   .withUri(HOST)
   .withDatabaseName(DB_NAME)
-  .withToken(loadToken())  // Load saved token from file
-  .onConnect((conn, identity, token) => {
+  .withToken(loadToken())
+  .withAutomaticReconnect()
+  .onConnect((_conn, identity, token) => {
     console.log('Connected! Identity:', identity.toHexString());
-    saveToken(token);  // Save token for future connections
-
-    // Subscribe to all tables
-    conn.subscriptionBuilder()
-      .onApplied((ctx) => {
-        // Show current people
-        const people = [...ctx.db.person.iter()];
-        console.log('Current people:', people.length);
-      })
-      .subscribeToAllTables();
-
-    // Listen for table changes
-    conn.db.person.onInsert((ctx, person) => {
-      console.log(`[Added] ${person.name}`);
-    });
+    saveToken(token);
   })
   .build();
+
+conn.subscriptionBuilder()
+  .onApplied(ctx => {
+    console.log('Current people:', [...ctx.db.person.iter()].length);
+  })
+  .subscribeToAllTables();
+
+conn.db.person.onInsert((_ctx, person) => {
+  console.log(`[Added] ${person.name}`);
+});
 ````
 
     </StepCode>

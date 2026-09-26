@@ -25,6 +25,16 @@
  * Result: Single WebSocket survives ✓
  * ```
  *
+ * ## Reconnection:
+ *
+ * The manager forces {@link DbConnectionBuilder.withAutomaticReconnect} on
+ * every builder it builds from, so a connection lost mid-session reconnects
+ * *inside* the `DbConnection`: the object, its table handles and its callbacks
+ * all survive, and the manager merely mirrors the lifecycle events into its
+ * state snapshots. The manager itself rebuilds a connection only when the SDK
+ * reports it will not retry (a failed initial connection, or another terminal
+ * failure), preserving the frameworks' historical keep-trying behavior.
+ *
  * @module connection_manager
  */
 import type {
@@ -50,9 +60,13 @@ export const CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS = 1000;
 export const CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS = 30_000;
 
 /**
- * Computes the reconnect delay for the given attempt (0-based) using
+ * Computes the rebuild delay for the given attempt (0-based) using
  * exponential backoff: the base delay doubles with each consecutive failed
  * attempt, capped at the maximum delay.
+ *
+ * This paces only the manager's own rebuild loop for failures the SDK will
+ * not retry; reconnects after a mid-session drop are paced by the SDK's own
+ * policy (see `computeReconnectDelayMs` in `db_connection_impl`).
  */
 export function connectionManagerReconnectDelayMs(attempt: number): number {
   return Math.min(
@@ -71,8 +85,18 @@ type ManagedConnection = {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   onConnect?: (conn: DbConnectionImpl<any>) => void;
-  onDisconnect?: (ctx: ErrorContextInterface<any>, error?: Error) => void;
-  onConnectError?: (ctx: ErrorContextInterface<any>, error: Error) => void;
+  onDisconnect?: (
+    ctx: ErrorContextInterface<any>,
+    error?: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number
+  ) => void;
+  onConnectError?: (
+    ctx: ErrorContextInterface<any>,
+    error: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number
+  ) => void;
 };
 
 function defaultState(): ConnectionState {
@@ -91,98 +115,6 @@ function defaultState(): ConnectionState {
  */
 class ConnectionManagerImpl {
   #connections = new Map<string, ManagedConnection>();
-
-  constructor() {
-    // Auto-reconnect otherwise relies entirely on the browser firing
-    // `onclose` plus a `setTimeout` backoff. Both are unreliable across a
-    // backgrounded/frozen tab: the close event may never be delivered (the
-    // socket dies while the event loop is suspended), and background timers
-    // are heavily throttled or paused, so a scheduled reconnect can stall
-    // indefinitely and never resume when the window is refocused.
-    //
-    // These listeners make the manager proactively re-check liveness when the
-    // page comes back to the foreground / the network returns, bringing any
-    // stalled reconnect forward and rebuilding sockets that died silently.
-    if (
-      typeof document !== 'undefined' &&
-      typeof document.addEventListener === 'function'
-    ) {
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          this.#handleResume();
-        }
-      });
-    }
-    if (
-      typeof window !== 'undefined' &&
-      typeof window.addEventListener === 'function'
-    ) {
-      window.addEventListener('focus', this.#handleResume);
-      window.addEventListener('online', this.#handleResume);
-      // `pageshow` fires on bfcache restores, where `visibilitychange` may not.
-      window.addEventListener('pageshow', this.#handleResume);
-    }
-  }
-
-  /**
-   * Called when the page is likely resuming from a background/frozen state:
-   * the tab became visible, the window regained focus, the network came back,
-   * or a bfcache page was restored. For each retained connection this brings a
-   * stalled reconnect forward immediately (resetting backoff) and rebuilds any
-   * socket that died silently while we were hidden.
-   */
-  #handleResume = (): void => {
-    for (const managed of this.#connections.values()) {
-      if (managed.refCount <= 0 || managed.pendingRelease) {
-        continue;
-      }
-
-      // A reconnect was scheduled but its timer is stuck behind background
-      // timer throttling / page freezing. Fire it now and reset backoff so we
-      // reconnect promptly instead of waiting out a (capped 30s, possibly
-      // paused) delay.
-      if (managed.reconnectTimer && !managed.connection) {
-        clearTimeout(managed.reconnectTimer);
-        managed.reconnectTimer = null;
-        managed.reconnectAttempt = 0;
-        if (managed.builder) {
-          this.#buildManagedConnection(managed, managed.builder);
-        }
-        continue;
-      }
-
-      // We believe we're connected, but the socket may have died silently.
-      this.#reviveIfZombie(managed);
-    }
-  };
-
-  /**
-   * If `managed` holds a connection whose socket has entered CLOSING/CLOSED
-   * without a clean `onclose` (see {@link DbConnectionImpl.isSocketClosed}),
-   * for example because it was torn down while the tab was frozen, tear it down
-   * and build a fresh one immediately, resetting backoff.
-   */
-  #reviveIfZombie(managed: ManagedConnection): void {
-    const connection = managed.connection;
-    if (
-      !connection ||
-      connection.isDisconnectRequested ||
-      !connection.isSocketClosed
-    ) {
-      return;
-    }
-
-    this.#detachCallbacks(managed, connection);
-    managed.connection = undefined;
-    // Close the dead socket in case it is only CLOSING; callbacks are already
-    // detached, so this won't trigger a duplicate reconnect.
-    connection.disconnect();
-    this.#updateState(managed, { isActive: false });
-    managed.reconnectAttempt = 0;
-    if (managed.builder) {
-      this.#buildManagedConnection(managed, managed.builder);
-    }
-  }
 
   /** Generates a unique key for a connection based on URI and module name. */
   static getKey(uri: string, moduleName: string): string {
@@ -246,7 +178,12 @@ class ConnectionManagerImpl {
       });
     };
 
-    managed.onDisconnect = (ctx, error) => {
+    // With automatic reconnection forced on, a non-undefined
+    // `nextReconnectAttempt` means the SDK is retrying inside the same
+    // connection object: mirror the event into state and leave the connection
+    // alone. Only when the SDK reports it will not retry does the manager
+    // rebuild a replacement (see #scheduleRebuild).
+    managed.onDisconnect = (ctx, error, nextReconnectAttempt) => {
       if (ctx !== managed.connection) {
         return;
       }
@@ -254,10 +191,12 @@ class ConnectionManagerImpl {
         isActive: false,
         connectionError: error ?? undefined,
       });
-      this.#scheduleReconnect(managed);
+      if (nextReconnectAttempt === undefined) {
+        this.#scheduleRebuild(managed);
+      }
     };
 
-    managed.onConnectError = (ctx, error) => {
+    managed.onConnectError = (ctx, error, nextReconnectAttempt) => {
       if (ctx !== managed.connection) {
         return;
       }
@@ -265,7 +204,9 @@ class ConnectionManagerImpl {
         isActive: false,
         connectionError: error,
       });
-      this.#scheduleReconnect(managed);
+      if (nextReconnectAttempt === undefined) {
+        this.#scheduleRebuild(managed);
+      }
     };
   }
 
@@ -284,44 +225,24 @@ class ConnectionManagerImpl {
     connection: DbConnectionImpl<any>
   ): void {
     if (managed.onConnect) {
-      connection.removeOnConnect(managed.onConnect as any);
+      connection.removeOnConnect(managed.onConnect);
     }
     if (managed.onDisconnect) {
-      connection.removeOnDisconnect(managed.onDisconnect as any);
+      connection.removeOnDisconnect(managed.onDisconnect);
     }
     if (managed.onConnectError) {
-      connection.removeOnConnectError(managed.onConnectError as any);
+      connection.removeOnConnectError(managed.onConnectError);
     }
   }
 
-  /**
-   * Builds a connection for `managed` from `builder`, adopting it as the
-   * entry's retained builder.
-   *
-   * `resumeSession` (the default) re-applies the session's current token to the
-   * builder first. This matters because the builder is a *long-lived template*:
-   * the application hands it over once, and every automatic rebuild — scheduled
-   * reconnect, resume-from-background, zombie-socket revival — reuses that same
-   * object. Its token, though, is a snapshot taken when the application built
-   * it, typically read out of storage at module load, before any session
-   * existed. Rebuilding from it verbatim would reconnect *anonymously* for any
-   * user whose token was issued during this page's lifetime, and the server
-   * would answer by minting a brand-new identity: a silent account switch, with
-   * no error raised on either side, curable only by a page reload.
-   *
-   * `state.token` is the token of the most recent connection (set below at
-   * build time, and again by `onConnect` when the server issues one), so
-   * re-applying it keeps every automatic rebuild on the same principal.
-   *
-   * Pass `resumeSession: false` when the caller is deliberately changing
-   * identity — see {@link rebuild} — so the builder's own token wins.
-   */
+  /** Reuse the latest session token when rebuilding from the retained builder. */
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
     builder: DbConnectionBuilder<T>,
     { resumeSession = true }: { resumeSession?: boolean } = {}
   ): T {
     managed.builder = builder;
+    builder.withAutomaticReconnect();
     if (resumeSession && managed.state.token) {
       builder.withToken(managed.state.token);
     }
@@ -340,7 +261,8 @@ class ConnectionManagerImpl {
     return connection as T;
   }
 
-  #scheduleReconnect(managed: ManagedConnection): void {
+  /** Preserve framework retries for failures the core connection will not retry. */
+  #scheduleRebuild(managed: ManagedConnection): void {
     if (
       managed.refCount <= 0 ||
       managed.pendingRelease ||
@@ -425,8 +347,8 @@ class ConnectionManagerImpl {
    * …) re-bind to the new connection automatically.
    *
    * The old connection's callbacks are detached before it is closed, so its
-   * disconnect event never leaks into pool state, and any pending auto-reconnect
-   * is cancelled (the caller is driving the reconnect explicitly). Returns the
+   * disconnect event never leaks into pool state, and any pending rebuild is
+   * cancelled (the caller is driving the replacement explicitly). Returns the
    * newly-built connection, or `null` if the key has no retained entry.
    *
    * @param key - Unique identifier for the connection (use getKey to generate)
@@ -442,8 +364,8 @@ class ConnectionManagerImpl {
     }
 
     // The caller is taking over the connection lifecycle explicitly; cancel a
-    // deferred release or a pending auto-reconnect so neither races the fresh
-    // connection, and reset the backoff so the next unexpected drop starts over.
+    // deferred release or a pending rebuild so neither races the fresh
+    // connection, and reset the backoff so the next terminal failure starts over.
     if (managed.pendingRelease) {
       clearTimeout(managed.pendingRelease);
       managed.pendingRelease = null;
