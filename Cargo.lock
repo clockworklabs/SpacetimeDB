@@ -8160,6 +8160,7 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-schema",
  "spacetimedb-testing",
+ "tempfile",
 ]
 
 [[package]]

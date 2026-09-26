@@ -361,4 +361,80 @@ internal static class ErrorDescriptor
                 $"View '{ctx.method.Identifier}' declares primary key '{ctx.primaryKey}', but its type '{ctx.type}' is not supported for view primary keys.",
             ctx => ctx.primaryKeySyntax
         );
+
+    public static readonly ErrorDescriptor<(
+        ISymbol symbol,
+        string message
+    )> InvalidEnvironmentDeclaration =
+        new(group, "Invalid environment declaration", ctx => $"{ctx.message}", ctx => ctx.symbol);
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attribute,
+        string message
+    )> InvalidNamespace =
+        new(group, "Invalid namespace mount", ctx => $"{ctx.message}", ctx => ctx.attribute);
+
+    public static readonly ErrorDescriptor<(
+        string accessor,
+        string first,
+        string second
+    )> NamespaceAccessorCollision =
+        new(
+            group,
+            "Conflicting module accessors",
+            ctx =>
+                $"Accessor '{ctx.accessor}' is contributed by both '{ctx.first}' and '{ctx.second}'. Mount the conflicting dependency with a distinct accessor.",
+            _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<string> DependencyNamespaceMounts =
+        new(
+            group,
+            "Dependency declares namespace mounts",
+            identity =>
+                $"Dependency '{identity}' declares namespace mounts. Only the consuming root may choose dependency placement; move those declarations to the root.",
+            _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<(
+        string assembly,
+        string name,
+        string declarations
+    )> MountedRootOnlyDeclarations =
+        new(
+            group,
+            "Root-only declarations in mounted dependency",
+            ctx =>
+                $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares {ctx.declarations}. These declarations are only supported in the root scope. Move them to the root, or omit the namespace declaration so the dependency registers automatically in public. Root-defined RLS may target namespace-qualified tables.",
+            _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<(
+        Location location,
+        string scope,
+        string name,
+        string first,
+        string second
+    )> GeneratedNameCollision =
+        new(
+            group,
+            "Conflicting generated C# names",
+            ctx =>
+                $"Generated C# name '{ctx.scope}.{ctx.name}' is used by both {ctx.first} and {ctx.second}. Choose distinct accessors or member names.",
+            ctx => ctx.location
+        );
+
+    public static readonly ErrorDescriptor<(
+        string root,
+        string rootPolicy,
+        string dependency,
+        string dependencyPolicy
+    )> ConflictingCaseConversionPolicies =
+        new(
+            group,
+            "Conflicting case conversion policies",
+            ctx =>
+                $"Root assembly '{ctx.root}' uses case conversion policy '{ctx.rootPolicy}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the shared public scope. Use the same policy, remove the dependency's setting to inherit the root policy, or mount the dependency in a distinct namespace.",
+            _ => Location.None
+        );
 }

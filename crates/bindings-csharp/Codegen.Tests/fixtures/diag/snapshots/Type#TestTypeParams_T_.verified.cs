@@ -47,7 +47,7 @@ partial struct TestTypeParams<T>
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Field", FieldRW.GetAlgebraicType(registrar))
+                        new("Field", FieldRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

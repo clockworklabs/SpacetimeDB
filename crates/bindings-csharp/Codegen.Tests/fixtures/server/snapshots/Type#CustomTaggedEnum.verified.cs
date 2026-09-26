@@ -49,10 +49,9 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
                 1 => new StringVariant(StringVariantRW.Read(reader)),
                 2 => new NullableIntVariant(NullableIntVariantRW.Read(reader)),
                 3 => new NullableStringVariant(NullableStringVariantRW.Read(reader)),
-                _
-                    => throw new System.InvalidOperationException(
-                        "Invalid tag value, this state should be unreachable."
-                    )
+                _ => throw new System.InvalidOperationException(
+                    "Invalid tag value, this state should be unreachable."
+                ),
             };
         }
 
@@ -91,7 +90,7 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
                     new(
                         "NullableStringVariant",
                         NullableStringVariantRW.GetAlgebraicType(registrar)
-                    )
+                    ),
                 }
             ));
 

@@ -176,6 +176,9 @@ namespace SpacetimeDB
         public abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
 
+        /// <summary>The SQL identifier, separate from the wire/cache key.</summary>
+        protected virtual SqlTableName RemoteSqlTableName => new(RemoteTableName);
+
         /// <summary>
         /// Whether this table is an event table.
         /// Event tables don't persist rows in the client cache — they only fire insert callbacks.
@@ -417,7 +420,7 @@ namespace SpacetimeDB
         public IEnumerable<Row> Iter() => Entries.Values;
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
+            conn.RemoteQuery<Row>($"SELECT {RemoteSqlTableName}.* FROM {RemoteSqlTableName} {query}");
 
         void InvokeInsert(IEventContext context, IStructuralReadWrite row)
         {
@@ -451,7 +454,11 @@ namespace SpacetimeDB
         {
             // Fully qualified to avoid clash with UnityEngine.Debug
             System.Diagnostics.Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
-            if (IsEventTable) return; // Event tables have no deletes.
+            if (IsEventTable)
+            {
+                return; // Event tables have no deletes.
+            }
+
             var delta = (ParsedTableUpdate)parsedTableUpdate;
             foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {

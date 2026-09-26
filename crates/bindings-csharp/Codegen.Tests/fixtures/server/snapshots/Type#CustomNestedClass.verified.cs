@@ -96,7 +96,7 @@ partial class CustomNestedClass
                         new(
                             "NestedNullableCustomRecord",
                             NestedNullableCustomRecordRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );
