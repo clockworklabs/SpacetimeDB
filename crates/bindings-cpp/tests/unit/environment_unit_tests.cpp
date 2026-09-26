@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include "spacetimedb.h"
 #include "spacetimedb/environment.h"
 #include "spacetimedb/bsatn/reader.h"
 #include <algorithm>
@@ -15,6 +16,12 @@ extern "C" Status env_get(const uint8_t* key, uint32_t key_len, BytesSource* out
     payload_offset = 0;
     const std::string name(reinterpret_cast<const char*>(key), key_len);
     *out = BytesSource{name == "MISSING" ? 0u : 1u};
+    return Status{0};
+}
+
+extern "C" Status get_jwt(const uint8_t*, BytesSource* out) {
+    payload_offset = 0;
+    *out = BytesSource{payload.empty() ? 0u : 1u};
     return Status{0};
 }
 
@@ -47,4 +54,20 @@ TEST_CASE(optional_reader_matches_canonical_bsatn_tags_and_preserves_following_b
     ASSERT_EQ(std::string{}, bsatn::deserialize<std::optional<std::string>>(reader).value());
     ASSERT_EQ(std::string("a\0b", 3), bsatn::deserialize<std::optional<std::string>>(reader).value());
     ASSERT_EQ(uint8_t{42}, reader.read_u8());
+}
+
+TEST_CASE(jwt_source_reads_all_chunks_including_final_exhausted_bytes) {
+    payload = "{\"padding\":\"" + std::string(8192, 'x') + "\",\"sub\":\"last\"}";
+    auto ctx = AuthCtx::from_connection_id(ConnectionId(5), Identity{});
+    ASSERT_TRUE(ctx.has_jwt());
+    ASSERT_EQ(std::string("last"), ctx.get_jwt()->subject());
+    ASSERT_EQ(payload.size(), payload_offset);
+}
+
+TEST_CASE(jwt_source_keeps_final_bytes_from_a_single_read) {
+    payload = R"({"sub":"short"})";
+    auto ctx = AuthCtx::from_connection_id(ConnectionId(5), Identity{});
+    ASSERT_TRUE(ctx.has_jwt());
+    ASSERT_EQ(std::string("short"), ctx.get_jwt()->subject());
+    ASSERT_EQ(payload.size(), payload_offset);
 }
