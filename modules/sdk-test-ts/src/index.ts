@@ -112,13 +112,17 @@ function tbl<const Accessor extends string, Row extends RowObj>(
   ops: {
     insert?: string;
     delete?: string;
+    delete_all?: string;
     insert_or_panic?: string;
     update_by?: [string, keyof Row];
     update_non_pk_by?: [string, keyof Row];
     delete_by?: [string, keyof Row];
   },
   row: Row
-): TableWithReducers<Accessor, ReturnType<typeof table<Row, { name: Accessor }>>> {
+): TableWithReducers<
+  Accessor,
+  ReturnType<typeof table<Row, { name: Accessor }>>
+> {
   const t = table({ public: true }, row);
   return {
     table: t,
@@ -131,6 +135,11 @@ function tbl<const Accessor extends string, Row extends RowObj>(
       }
       if (ops.delete) {
         exports[ops.delete] = spacetimedb.reducer(row, (ctx, args) => {
+          (ctx.db[accessor] as any).delete({ ...args });
+        });
+      }
+      if (ops.delete_all) {
+        exports[ops.delete_all] = spacetimedb.reducer(row, (ctx, args) => {
           (ctx.db[accessor] as any).delete({ ...args });
         });
       }
@@ -168,34 +177,94 @@ function tbl<const Accessor extends string, Row extends RowObj>(
 
 // Tables holding a single value.
 const singleValTables = {
-  oneU8: tbl('oneU8', { insert: 'insert_one_u8' }, { n: t.u8() }),
-  oneU16: tbl('oneU16', { insert: 'insert_one_u16' }, { n: t.u16() }),
-  oneU32: tbl('oneU32', { insert: 'insert_one_u32' }, { n: t.u32() }),
-  oneU64: tbl('oneU64', { insert: 'insert_one_u64' }, { n: t.u64() }),
-  oneU128: tbl('oneU128', { insert: 'insert_one_u128' }, { n: t.u128() }),
-  oneU256: tbl('oneU256', { insert: 'insert_one_u256' }, { n: t.u256() }),
+  oneU8: tbl(
+    'oneU8',
+    { insert: 'insert_one_u8', delete_all: 'delete_all_one_u8' },
+    { n: t.u8() }
+  ),
+  oneU16: tbl(
+    'oneU16',
+    { insert: 'insert_one_u16', delete_all: 'delete_all_one_u16' },
+    { n: t.u16() }
+  ),
+  oneU32: tbl(
+    'oneU32',
+    { insert: 'insert_one_u32', delete_all: 'delete_all_one_u32' },
+    { n: t.u32() }
+  ),
+  oneU64: tbl(
+    'oneU64',
+    { insert: 'insert_one_u64', delete_all: 'delete_all_one_u64' },
+    { n: t.u64() }
+  ),
+  oneU128: tbl(
+    'oneU128',
+    { insert: 'insert_one_u128', delete_all: 'delete_all_one_u128' },
+    { n: t.u128() }
+  ),
+  oneU256: tbl(
+    'oneU256',
+    { insert: 'insert_one_u256', delete_all: 'delete_all_one_u256' },
+    { n: t.u256() }
+  ),
 
-  oneI8: tbl('oneI8', { insert: 'insert_one_i8' }, { n: t.i8() }),
-  oneI16: tbl('oneI16', { insert: 'insert_one_i16' }, { n: t.i16() }),
-  oneI32: tbl('oneI32', { insert: 'insert_one_i32' }, { n: t.i32() }),
-  oneI64: tbl('oneI64', { insert: 'insert_one_i64' }, { n: t.i64() }),
-  oneI128: tbl('oneI128', { insert: 'insert_one_i128' }, { n: t.i128() }),
-  oneI256: tbl('oneI256', { insert: 'insert_one_i256' }, { n: t.i256() }),
+  oneI8: tbl(
+    'oneI8',
+    { insert: 'insert_one_i8', delete_all: 'delete_all_one_i8' },
+    { n: t.i8() }
+  ),
+  oneI16: tbl(
+    'oneI16',
+    { insert: 'insert_one_i16', delete_all: 'delete_all_one_i16' },
+    { n: t.i16() }
+  ),
+  oneI32: tbl(
+    'oneI32',
+    { insert: 'insert_one_i32', delete_all: 'delete_all_one_i32' },
+    { n: t.i32() }
+  ),
+  oneI64: tbl(
+    'oneI64',
+    { insert: 'insert_one_i64', delete_all: 'delete_all_one_i64' },
+    { n: t.i64() }
+  ),
+  oneI128: tbl(
+    'oneI128',
+    { insert: 'insert_one_i128', delete_all: 'delete_all_one_i128' },
+    { n: t.i128() }
+  ),
+  oneI256: tbl(
+    'oneI256',
+    { insert: 'insert_one_i256', delete_all: 'delete_all_one_i256' },
+    { n: t.i256() }
+  ),
 
-  oneBool: tbl('oneBool', { insert: 'insert_one_bool' }, { b: t.bool() }),
+  oneBool: tbl(
+    'oneBool',
+    { insert: 'insert_one_bool', delete_all: 'delete_all_one_bool' },
+    { b: t.bool() }
+  ),
 
-  oneF32: tbl('oneF32', { insert: 'insert_one_f32' }, { f: t.f32() }),
-  oneF64: tbl('oneF64', { insert: 'insert_one_f64' }, { f: t.f64() }),
+  oneF32: tbl(
+    'oneF32',
+    { insert: 'insert_one_f32', delete_all: 'delete_all_one_f32' },
+    { f: t.f32() }
+  ),
+  oneF64: tbl(
+    'oneF64',
+    { insert: 'insert_one_f64', delete_all: 'delete_all_one_f64' },
+    { f: t.f64() }
+  ),
 
   oneString: tbl(
     'oneString',
-    { insert: 'insert_one_string' },
+    { insert: 'insert_one_string', delete_all: 'delete_all_one_string' },
     { s: t.string() }
   ),
 
   oneIdentity: tbl(
     'oneIdentity',
-    { insert: 'insert_one_identity' },
+    { insert: 'insert_one_identity', delete_all: 'delete_all_one_identity' },
     { i: t.identity() }
   ),
   oneConnectionId: tbl(
@@ -204,129 +273,159 @@ const singleValTables = {
     { a: t.connectionId() }
   ),
 
-  oneUuid: tbl('oneUuid', { insert: 'insert_one_uuid' }, { u: t.uuid() }),
+  oneUuid: tbl(
+    'oneUuid',
+    { insert: 'insert_one_uuid', delete_all: 'delete_all_one_uuid' },
+    { u: t.uuid() }
+  ),
 
   oneTimestamp: tbl(
     'oneTimestamp',
-    { insert: 'insert_one_timestamp' },
+    { insert: 'insert_one_timestamp', delete_all: 'delete_all_one_timestamp' },
     { t: t.timestamp() }
   ),
 
   oneSimpleEnum: tbl(
     'oneSimpleEnum',
-    { insert: 'insert_one_simple_enum' },
+    {
+      insert: 'insert_one_simple_enum',
+      delete_all: 'delete_all_one_simple_enum',
+    },
     { e: SimpleEnum }
   ),
   oneEnumWithPayload: tbl(
     'oneEnumWithPayload',
-    { insert: 'insert_one_enum_with_payload' },
+    {
+      insert: 'insert_one_enum_with_payload',
+      delete_all: 'delete_all_one_enum_with_payload',
+    },
     { e: EnumWithPayload }
   ),
 
   oneUnitStruct: tbl(
     'oneUnitStruct',
-    { insert: 'insert_one_unit_struct' },
+    {
+      insert: 'insert_one_unit_struct',
+      delete_all: 'delete_all_one_unit_struct',
+    },
     { s: UnitStruct }
   ),
   oneByteStruct: tbl(
     'oneByteStruct',
-    { insert: 'insert_one_byte_struct' },
+    {
+      insert: 'insert_one_byte_struct',
+      delete_all: 'delete_all_one_byte_struct',
+    },
     { s: ByteStruct }
   ),
   oneEveryPrimitiveStruct: tbl(
     'oneEveryPrimitiveStruct',
-    { insert: 'insert_one_every_primitive_struct' },
+    {
+      insert: 'insert_one_every_primitive_struct',
+      delete_all: 'delete_all_one_every_primitive_struct',
+    },
     { s: EveryPrimitiveStruct }
   ),
   oneEveryVecStruct: tbl(
     'oneEveryVecStruct',
-    { insert: 'insert_one_every_vec_struct' },
+    {
+      insert: 'insert_one_every_vec_struct',
+      delete_all: 'delete_all_one_every_vec_struct',
+    },
     { s: EveryVecStruct }
   ),
 } as const;
 
 // Tables holding a Vec of various types.
 const vecTables = {
-  vecU8: tbl('vecU8', { insert: 'insert_vec_u8' }, { n: t.array(t.u8()) }),
+  vecU8: tbl(
+    'vecU8',
+    { insert: 'insert_vec_u8', delete_all: 'delete_all_vec_u8' },
+    { n: t.array(t.u8()) }
+  ),
   vecU16: tbl(
     'vecU16',
-    { insert: 'insert_vec_u16' },
+    { insert: 'insert_vec_u16', delete_all: 'delete_all_vec_u16' },
     { n: t.array(t.u16()) }
   ),
   vecU32: tbl(
     'vecU32',
-    { insert: 'insert_vec_u32' },
+    { insert: 'insert_vec_u32', delete_all: 'delete_all_vec_u32' },
     { n: t.array(t.u32()) }
   ),
   vecU64: tbl(
     'vecU64',
-    { insert: 'insert_vec_u64' },
+    { insert: 'insert_vec_u64', delete_all: 'delete_all_vec_u64' },
     { n: t.array(t.u64()) }
   ),
   vecU128: tbl(
     'vecU128',
-    { insert: 'insert_vec_u128' },
+    { insert: 'insert_vec_u128', delete_all: 'delete_all_vec_u128' },
     { n: t.array(t.u128()) }
   ),
   vecU256: tbl(
     'vecU256',
-    { insert: 'insert_vec_u256' },
+    { insert: 'insert_vec_u256', delete_all: 'delete_all_vec_u256' },
     { n: t.array(t.u256()) }
   ),
 
-  vecI8: tbl('vecI8', { insert: 'insert_vec_i8' }, { n: t.array(t.i8()) }),
+  vecI8: tbl(
+    'vecI8',
+    { insert: 'insert_vec_i8', delete_all: 'delete_all_vec_i8' },
+    { n: t.array(t.i8()) }
+  ),
   vecI16: tbl(
     'vecI16',
-    { insert: 'insert_vec_i16' },
+    { insert: 'insert_vec_i16', delete_all: 'delete_all_vec_i16' },
     { n: t.array(t.i16()) }
   ),
   vecI32: tbl(
     'vecI32',
-    { insert: 'insert_vec_i32' },
+    { insert: 'insert_vec_i32', delete_all: 'delete_all_vec_i32' },
     { n: t.array(t.i32()) }
   ),
   vecI64: tbl(
     'vecI64',
-    { insert: 'insert_vec_i64' },
+    { insert: 'insert_vec_i64', delete_all: 'delete_all_vec_i64' },
     { n: t.array(t.i64()) }
   ),
   vecI128: tbl(
     'vecI128',
-    { insert: 'insert_vec_i128' },
+    { insert: 'insert_vec_i128', delete_all: 'delete_all_vec_i128' },
     { n: t.array(t.i128()) }
   ),
   vecI256: tbl(
     'vecI256',
-    { insert: 'insert_vec_i256' },
+    { insert: 'insert_vec_i256', delete_all: 'delete_all_vec_i256' },
     { n: t.array(t.i256()) }
   ),
 
   vecBool: tbl(
     'vecBool',
-    { insert: 'insert_vec_bool' },
+    { insert: 'insert_vec_bool', delete_all: 'delete_all_vec_bool' },
     { b: t.array(t.bool()) }
   ),
 
   vecF32: tbl(
     'vecF32',
-    { insert: 'insert_vec_f32' },
+    { insert: 'insert_vec_f32', delete_all: 'delete_all_vec_f32' },
     { f: t.array(t.f32()) }
   ),
   vecF64: tbl(
     'vecF64',
-    { insert: 'insert_vec_f64' },
+    { insert: 'insert_vec_f64', delete_all: 'delete_all_vec_f64' },
     { f: t.array(t.f64()) }
   ),
 
   vecString: tbl(
     'vecString',
-    { insert: 'insert_vec_string' },
+    { insert: 'insert_vec_string', delete_all: 'delete_all_vec_string' },
     { s: t.array(t.string()) }
   ),
 
   vecIdentity: tbl(
     'vecIdentity',
-    { insert: 'insert_vec_identity' },
+    { insert: 'insert_vec_identity', delete_all: 'delete_all_vec_identity' },
     { i: t.array(t.identity()) }
   ),
   vecConnectionId: tbl(
@@ -337,45 +436,63 @@ const vecTables = {
 
   vecTimestamp: tbl(
     'vecTimestamp',
-    { insert: 'insert_vec_timestamp' },
+    { insert: 'insert_vec_timestamp', delete_all: 'delete_all_vec_timestamp' },
     { t: t.array(t.timestamp()) }
   ),
 
   vecUuid: tbl(
     'vecUuid',
-    { insert: 'insert_vec_uuid' },
+    { insert: 'insert_vec_uuid', delete_all: 'delete_all_vec_uuid' },
     { u: t.array(t.uuid()) }
   ),
 
   vecSimpleEnum: tbl(
     'vecSimpleEnum',
-    { insert: 'insert_vec_simple_enum' },
+    {
+      insert: 'insert_vec_simple_enum',
+      delete_all: 'delete_all_vec_simple_enum',
+    },
     { e: t.array(SimpleEnum) }
   ),
   vecEnumWithPayload: tbl(
     'vecEnumWithPayload',
-    { insert: 'insert_vec_enum_with_payload' },
+    {
+      insert: 'insert_vec_enum_with_payload',
+      delete_all: 'delete_all_vec_enum_with_payload',
+    },
     { e: t.array(EnumWithPayload) }
   ),
 
   vecUnitStruct: tbl(
     'vecUnitStruct',
-    { insert: 'insert_vec_unit_struct' },
+    {
+      insert: 'insert_vec_unit_struct',
+      delete_all: 'delete_all_vec_unit_struct',
+    },
     { s: t.array(UnitStruct) }
   ),
   vecByteStruct: tbl(
     'vecByteStruct',
-    { insert: 'insert_vec_byte_struct' },
+    {
+      insert: 'insert_vec_byte_struct',
+      delete_all: 'delete_all_vec_byte_struct',
+    },
     { s: t.array(ByteStruct) }
   ),
   vecEveryPrimitiveStruct: tbl(
     'vecEveryPrimitiveStruct',
-    { insert: 'insert_vec_every_primitive_struct' },
+    {
+      insert: 'insert_vec_every_primitive_struct',
+      delete_all: 'delete_all_vec_every_primitive_struct',
+    },
     { s: t.array(EveryPrimitiveStruct) }
   ),
   vecEveryVecStruct: tbl(
     'vecEveryVecStruct',
-    { insert: 'insert_vec_every_vec_struct' },
+    {
+      insert: 'insert_vec_every_vec_struct',
+      delete_all: 'delete_all_vec_every_vec_struct',
+    },
     { s: t.array(EveryVecStruct) }
   ),
 } as const;
@@ -384,37 +501,49 @@ const vecTables = {
 const optionTables = {
   optionI32: tbl(
     'optionI32',
-    { insert: 'insert_option_i32' },
+    { insert: 'insert_option_i32', delete_all: 'delete_all_option_i32' },
     { n: t.option(t.i32()) }
   ),
   optionString: tbl(
     'optionString',
-    { insert: 'insert_option_string' },
+    { insert: 'insert_option_string', delete_all: 'delete_all_option_string' },
     { s: t.option(t.string()) }
   ),
   optionIdentity: tbl(
     'optionIdentity',
-    { insert: 'insert_option_identity' },
+    {
+      insert: 'insert_option_identity',
+      delete_all: 'delete_all_option_identity',
+    },
     { i: t.option(t.identity()) }
   ),
   optionUuid: tbl(
     'optionUuid',
-    { insert: 'insert_option_uuid' },
+    { insert: 'insert_option_uuid', delete_all: 'delete_all_option_uuid' },
     { u: t.option(t.uuid()) }
   ),
   optionSimpleEnum: tbl(
     'optionSimpleEnum',
-    { insert: 'insert_option_simple_enum' },
+    {
+      insert: 'insert_option_simple_enum',
+      delete_all: 'delete_all_option_simple_enum',
+    },
     { e: t.option(SimpleEnum) }
   ),
   optionEveryPrimitiveStruct: tbl(
     'optionEveryPrimitiveStruct',
-    { insert: 'insert_option_every_primitive_struct' },
+    {
+      insert: 'insert_option_every_primitive_struct',
+      delete_all: 'delete_all_option_every_primitive_struct',
+    },
     { s: t.option(EveryPrimitiveStruct) }
   ),
   optionVecOptionI32: tbl(
     'optionVecOptionI32',
-    { insert: 'insert_option_vec_option_i32' },
+    {
+      insert: 'insert_option_vec_option_i32',
+      delete_all: 'delete_all_option_vec_option_i32',
+    },
     { v: t.option(t.array(t.option(t.i32()))) }
   ),
 } as const;
@@ -460,6 +589,8 @@ const uniqueTables = {
     'uniqueU8',
     {
       insert_or_panic: 'insert_unique_u8',
+
+      delete_all: 'delete_all_unique_u8',
       update_non_pk_by: ['update_unique_u8', 'n'],
       delete_by: ['delete_unique_u8', 'n'],
     },
@@ -470,6 +601,8 @@ const uniqueTables = {
     'uniqueU16',
     {
       insert_or_panic: 'insert_unique_u16',
+
+      delete_all: 'delete_all_unique_u16',
       update_non_pk_by: ['update_unique_u16', 'n'],
       delete_by: ['delete_unique_u16', 'n'],
     },
@@ -480,6 +613,8 @@ const uniqueTables = {
     'uniqueU32',
     {
       insert_or_panic: 'insert_unique_u32',
+
+      delete_all: 'delete_all_unique_u32',
       update_non_pk_by: ['update_unique_u32', 'n'],
       delete_by: ['delete_unique_u32', 'n'],
     },
@@ -490,6 +625,8 @@ const uniqueTables = {
     'uniqueU64',
     {
       insert_or_panic: 'insert_unique_u64',
+
+      delete_all: 'delete_all_unique_u64',
       update_non_pk_by: ['update_unique_u64', 'n'],
       delete_by: ['delete_unique_u64', 'n'],
     },
@@ -500,6 +637,8 @@ const uniqueTables = {
     'uniqueU128',
     {
       insert_or_panic: 'insert_unique_u128',
+
+      delete_all: 'delete_all_unique_u128',
       update_non_pk_by: ['update_unique_u128', 'n'],
       delete_by: ['delete_unique_u128', 'n'],
     },
@@ -510,6 +649,8 @@ const uniqueTables = {
     'uniqueU256',
     {
       insert_or_panic: 'insert_unique_u256',
+
+      delete_all: 'delete_all_unique_u256',
       update_non_pk_by: ['update_unique_u256', 'n'],
       delete_by: ['delete_unique_u256', 'n'],
     },
@@ -520,6 +661,8 @@ const uniqueTables = {
     'uniqueI8',
     {
       insert_or_panic: 'insert_unique_i8',
+
+      delete_all: 'delete_all_unique_i8',
       update_non_pk_by: ['update_unique_i8', 'n'],
       delete_by: ['delete_unique_i8', 'n'],
     },
@@ -530,6 +673,8 @@ const uniqueTables = {
     'uniqueI16',
     {
       insert_or_panic: 'insert_unique_i16',
+
+      delete_all: 'delete_all_unique_i16',
       update_non_pk_by: ['update_unique_i16', 'n'],
       delete_by: ['delete_unique_i16', 'n'],
     },
@@ -540,6 +685,8 @@ const uniqueTables = {
     'uniqueI32',
     {
       insert_or_panic: 'insert_unique_i32',
+
+      delete_all: 'delete_all_unique_i32',
       update_non_pk_by: ['update_unique_i32', 'n'],
       delete_by: ['delete_unique_i32', 'n'],
     },
@@ -550,6 +697,8 @@ const uniqueTables = {
     'uniqueI64',
     {
       insert_or_panic: 'insert_unique_i64',
+
+      delete_all: 'delete_all_unique_i64',
       update_non_pk_by: ['update_unique_i64', 'n'],
       delete_by: ['delete_unique_i64', 'n'],
     },
@@ -560,6 +709,8 @@ const uniqueTables = {
     'uniqueI128',
     {
       insert_or_panic: 'insert_unique_i128',
+
+      delete_all: 'delete_all_unique_i128',
       update_non_pk_by: ['update_unique_i128', 'n'],
       delete_by: ['delete_unique_i128', 'n'],
     },
@@ -570,6 +721,8 @@ const uniqueTables = {
     'uniqueI256',
     {
       insert_or_panic: 'insert_unique_i256',
+
+      delete_all: 'delete_all_unique_i256',
       update_non_pk_by: ['update_unique_i256', 'n'],
       delete_by: ['delete_unique_i256', 'n'],
     },
@@ -580,6 +733,8 @@ const uniqueTables = {
     'uniqueBool',
     {
       insert_or_panic: 'insert_unique_bool',
+
+      delete_all: 'delete_all_unique_bool',
       update_non_pk_by: ['update_unique_bool', 'b'],
       delete_by: ['delete_unique_bool', 'b'],
     },
@@ -590,6 +745,8 @@ const uniqueTables = {
     'uniqueString',
     {
       insert_or_panic: 'insert_unique_string',
+
+      delete_all: 'delete_all_unique_string',
       update_non_pk_by: ['update_unique_string', 's'],
       delete_by: ['delete_unique_string', 's'],
     },
@@ -600,6 +757,8 @@ const uniqueTables = {
     'uniqueIdentity',
     {
       insert_or_panic: 'insert_unique_identity',
+
+      delete_all: 'delete_all_unique_identity',
       update_non_pk_by: ['update_unique_identity', 'i'],
       delete_by: ['delete_unique_identity', 'i'],
     },
@@ -610,6 +769,8 @@ const uniqueTables = {
     'uniqueConnectionId',
     {
       insert_or_panic: 'insert_unique_connection_id',
+
+      delete_all: 'delete_all_unique_connection_id',
       update_non_pk_by: ['update_unique_connection_id', 'a'],
       delete_by: ['delete_unique_connection_id', 'a'],
     },
@@ -620,10 +781,203 @@ const uniqueTables = {
     'uniqueUuid',
     {
       insert_or_panic: 'insert_unique_uuid',
+
+      delete_all: 'delete_all_unique_uuid',
       update_non_pk_by: ['update_unique_uuid', 'u'],
       delete_by: ['delete_unique_uuid', 'u'],
     },
     { u: t.uuid().unique(), data: t.i32() }
+  ),
+} as const;
+
+// Tables mapping a unique Option<T> for some T to a boring i32 payload.
+const uniqueOptionTables = {
+  uniqueOptionU8: tbl(
+    'uniqueOptionU8',
+    {
+      insert_or_panic: 'insert_unique_option_u8',
+
+      delete_all: 'delete_all_unique_option_u8',
+      update_non_pk_by: ['update_unique_option_u8', 'n'],
+      delete_by: ['delete_unique_option_u8', 'n'],
+    },
+    { n: t.option(t.u8()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU16: tbl(
+    'uniqueOptionU16',
+    {
+      insert_or_panic: 'insert_unique_option_u16',
+
+      delete_all: 'delete_all_unique_option_u16',
+      update_non_pk_by: ['update_unique_option_u16', 'n'],
+      delete_by: ['delete_unique_option_u16', 'n'],
+    },
+    { n: t.option(t.u16()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU32: tbl(
+    'uniqueOptionU32',
+    {
+      insert_or_panic: 'insert_unique_option_u32',
+
+      delete_all: 'delete_all_unique_option_u32',
+      update_non_pk_by: ['update_unique_option_u32', 'n'],
+      delete_by: ['delete_unique_option_u32', 'n'],
+    },
+    { n: t.option(t.u32()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU64: tbl(
+    'uniqueOptionU64',
+    {
+      insert_or_panic: 'insert_unique_option_u64',
+
+      delete_all: 'delete_all_unique_option_u64',
+      update_non_pk_by: ['update_unique_option_u64', 'n'],
+      delete_by: ['delete_unique_option_u64', 'n'],
+    },
+    { n: t.option(t.u64()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU128: tbl(
+    'uniqueOptionU128',
+    {
+      insert_or_panic: 'insert_unique_option_u128',
+
+      delete_all: 'delete_all_unique_option_u128',
+      update_non_pk_by: ['update_unique_option_u128', 'n'],
+      delete_by: ['delete_unique_option_u128', 'n'],
+    },
+    { n: t.option(t.u128()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU256: tbl(
+    'uniqueOptionU256',
+    {
+      insert_or_panic: 'insert_unique_option_u256',
+
+      delete_all: 'delete_all_unique_option_u256',
+      update_non_pk_by: ['update_unique_option_u256', 'n'],
+      delete_by: ['delete_unique_option_u256', 'n'],
+    },
+    { n: t.option(t.u256()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI8: tbl(
+    'uniqueOptionI8',
+    {
+      insert_or_panic: 'insert_unique_option_i8',
+
+      delete_all: 'delete_all_unique_option_i8',
+      update_non_pk_by: ['update_unique_option_i8', 'n'],
+      delete_by: ['delete_unique_option_i8', 'n'],
+    },
+    { n: t.option(t.i8()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI16: tbl(
+    'uniqueOptionI16',
+    {
+      insert_or_panic: 'insert_unique_option_i16',
+
+      delete_all: 'delete_all_unique_option_i16',
+      update_non_pk_by: ['update_unique_option_i16', 'n'],
+      delete_by: ['delete_unique_option_i16', 'n'],
+    },
+    { n: t.option(t.i16()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI32: tbl(
+    'uniqueOptionI32',
+    {
+      insert_or_panic: 'insert_unique_option_i32',
+
+      delete_all: 'delete_all_unique_option_i32',
+      update_non_pk_by: ['update_unique_option_i32', 'n'],
+      delete_by: ['delete_unique_option_i32', 'n'],
+    },
+    { n: t.option(t.i32()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI64: tbl(
+    'uniqueOptionI64',
+    {
+      insert_or_panic: 'insert_unique_option_i64',
+
+      delete_all: 'delete_all_unique_option_i64',
+      update_non_pk_by: ['update_unique_option_i64', 'n'],
+      delete_by: ['delete_unique_option_i64', 'n'],
+    },
+    { n: t.option(t.i64()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI128: tbl(
+    'uniqueOptionI128',
+    {
+      insert_or_panic: 'insert_unique_option_i128',
+
+      delete_all: 'delete_all_unique_option_i128',
+      update_non_pk_by: ['update_unique_option_i128', 'n'],
+      delete_by: ['delete_unique_option_i128', 'n'],
+    },
+    { n: t.option(t.i128()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI256: tbl(
+    'uniqueOptionI256',
+    {
+      insert_or_panic: 'insert_unique_option_i256',
+
+      delete_all: 'delete_all_unique_option_i256',
+      update_non_pk_by: ['update_unique_option_i256', 'n'],
+      delete_by: ['delete_unique_option_i256', 'n'],
+    },
+    { n: t.option(t.i256()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionBool: tbl(
+    'uniqueOptionBool',
+    {
+      insert_or_panic: 'insert_unique_option_bool',
+
+      delete_all: 'delete_all_unique_option_bool',
+      update_non_pk_by: ['update_unique_option_bool', 'b'],
+      delete_by: ['delete_unique_option_bool', 'b'],
+    },
+    { b: t.option(t.bool()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionString: tbl(
+    'uniqueOptionString',
+    {
+      insert_or_panic: 'insert_unique_option_string',
+
+      delete_all: 'delete_all_unique_option_string',
+      update_non_pk_by: ['update_unique_option_string', 's'],
+      delete_by: ['delete_unique_option_string', 's'],
+    },
+    { s: t.option(t.string()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionIdentity: tbl(
+    'uniqueOptionIdentity',
+    {
+      insert_or_panic: 'insert_unique_option_identity',
+
+      delete_all: 'delete_all_unique_option_identity',
+      update_non_pk_by: ['update_unique_option_identity', 'i'],
+      delete_by: ['delete_unique_option_identity', 'i'],
+    },
+    { i: t.option(t.identity()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionConnectionId: tbl(
+    'uniqueOptionConnectionId',
+    {
+      insert_or_panic: 'insert_unique_option_connection_id',
+
+      delete_all: 'delete_all_unique_option_connection_id',
+      update_non_pk_by: ['update_unique_option_connection_id', 'a'],
+      delete_by: ['delete_unique_option_connection_id', 'a'],
+    },
+    { a: t.option(t.connectionId()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionUuid: tbl(
+    'uniqueOptionUuid',
+    {
+      insert_or_panic: 'insert_unique_option_uuid',
+
+      delete_all: 'delete_all_unique_option_uuid',
+      update_non_pk_by: ['update_unique_option_uuid', 'u'],
+      delete_by: ['delete_unique_option_uuid', 'u'],
+    },
+    { u: t.option(t.uuid()).index('btree').unique(), data: t.i32() }
   ),
 } as const;
 
@@ -634,6 +988,8 @@ const pkTables = {
     'pkU8',
     {
       insert_or_panic: 'insert_pk_u8',
+
+      delete_all: 'delete_all_pk_u8',
       update_by: ['update_pk_u8', 'n'],
       delete_by: ['delete_pk_u8', 'n'],
     },
@@ -644,6 +1000,8 @@ const pkTables = {
     'pkU16',
     {
       insert_or_panic: 'insert_pk_u16',
+
+      delete_all: 'delete_all_pk_u16',
       update_by: ['update_pk_u16', 'n'],
       delete_by: ['delete_pk_u16', 'n'],
     },
@@ -654,6 +1012,8 @@ const pkTables = {
     'pkU32',
     {
       insert_or_panic: 'insert_pk_u32',
+
+      delete_all: 'delete_all_pk_u32',
       update_by: ['update_pk_u32', 'n'],
       delete_by: ['delete_pk_u32', 'n'],
     },
@@ -664,6 +1024,8 @@ const pkTables = {
     'pkU32Two',
     {
       insert_or_panic: 'insert_pk_u32_two',
+
+      delete_all: 'delete_all_pk_u32_two',
       update_by: ['update_pk_u32_two', 'n'],
       delete_by: ['delete_pk_u32_two', 'n'],
     },
@@ -674,6 +1036,8 @@ const pkTables = {
     'pkU64',
     {
       insert_or_panic: 'insert_pk_u64',
+
+      delete_all: 'delete_all_pk_u64',
       update_by: ['update_pk_u64', 'n'],
       delete_by: ['delete_pk_u64', 'n'],
     },
@@ -684,6 +1048,8 @@ const pkTables = {
     'pkU128',
     {
       insert_or_panic: 'insert_pk_u128',
+
+      delete_all: 'delete_all_pk_u128',
       update_by: ['update_pk_u128', 'n'],
       delete_by: ['delete_pk_u128', 'n'],
     },
@@ -694,6 +1060,8 @@ const pkTables = {
     'pkU256',
     {
       insert_or_panic: 'insert_pk_u256',
+
+      delete_all: 'delete_all_pk_u256',
       update_by: ['update_pk_u256', 'n'],
       delete_by: ['delete_pk_u256', 'n'],
     },
@@ -704,6 +1072,8 @@ const pkTables = {
     'pkI8',
     {
       insert_or_panic: 'insert_pk_i8',
+
+      delete_all: 'delete_all_pk_i8',
       update_by: ['update_pk_i8', 'n'],
       delete_by: ['delete_pk_i8', 'n'],
     },
@@ -714,6 +1084,8 @@ const pkTables = {
     'pkI16',
     {
       insert_or_panic: 'insert_pk_i16',
+
+      delete_all: 'delete_all_pk_i16',
       update_by: ['update_pk_i16', 'n'],
       delete_by: ['delete_pk_i16', 'n'],
     },
@@ -724,6 +1096,8 @@ const pkTables = {
     'pkI32',
     {
       insert_or_panic: 'insert_pk_i32',
+
+      delete_all: 'delete_all_pk_i32',
       update_by: ['update_pk_i32', 'n'],
       delete_by: ['delete_pk_i32', 'n'],
     },
@@ -734,6 +1108,8 @@ const pkTables = {
     'pkI64',
     {
       insert_or_panic: 'insert_pk_i64',
+
+      delete_all: 'delete_all_pk_i64',
       update_by: ['update_pk_i64', 'n'],
       delete_by: ['delete_pk_i64', 'n'],
     },
@@ -744,6 +1120,8 @@ const pkTables = {
     'pkI128',
     {
       insert_or_panic: 'insert_pk_i128',
+
+      delete_all: 'delete_all_pk_i128',
       update_by: ['update_pk_i128', 'n'],
       delete_by: ['delete_pk_i128', 'n'],
     },
@@ -754,6 +1132,8 @@ const pkTables = {
     'pkI256',
     {
       insert_or_panic: 'insert_pk_i256',
+
+      delete_all: 'delete_all_pk_i256',
       update_by: ['update_pk_i256', 'n'],
       delete_by: ['delete_pk_i256', 'n'],
     },
@@ -764,6 +1144,8 @@ const pkTables = {
     'pkBool',
     {
       insert_or_panic: 'insert_pk_bool',
+
+      delete_all: 'delete_all_pk_bool',
       update_by: ['update_pk_bool', 'b'],
       delete_by: ['delete_pk_bool', 'b'],
     },
@@ -774,6 +1156,8 @@ const pkTables = {
     'pkString',
     {
       insert_or_panic: 'insert_pk_string',
+
+      delete_all: 'delete_all_pk_string',
       update_by: ['update_pk_string', 's'],
       delete_by: ['delete_pk_string', 's'],
     },
@@ -784,6 +1168,8 @@ const pkTables = {
     'pkIdentity',
     {
       insert_or_panic: 'insert_pk_identity',
+
+      delete_all: 'delete_all_pk_identity',
       update_by: ['update_pk_identity', 'i'],
       delete_by: ['delete_pk_identity', 'i'],
     },
@@ -794,6 +1180,8 @@ const pkTables = {
     'pkConnectionId',
     {
       insert_or_panic: 'insert_pk_connection_id',
+
+      delete_all: 'delete_all_pk_connection_id',
       update_by: ['update_pk_connection_id', 'a'],
       delete_by: ['delete_pk_connection_id', 'a'],
     },
@@ -804,6 +1192,8 @@ const pkTables = {
     'pkUuid',
     {
       insert_or_panic: 'insert_pk_uuid',
+
+      delete_all: 'delete_all_pk_uuid',
       update_by: ['update_pk_uuid', 'u'],
       delete_by: ['delete_pk_uuid', 'u'],
     },
@@ -876,6 +1266,7 @@ const allTables = {
   ...optionTables,
   ...resultTables,
   ...uniqueTables,
+  ...uniqueOptionTables,
   ...pkTables,
   ...weirdTables,
 } as const;
