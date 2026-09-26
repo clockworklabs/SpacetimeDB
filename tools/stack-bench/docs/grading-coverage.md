@@ -115,7 +115,8 @@ repeated request bursts; it is not a capacity test.
 - **Staff roles (621b)** requests a different role through HTTP and reducer
   replay, then reloads the administrator view to verify no role changed. **621d**
   checks administrator-role removal with the same signed-in staff session before
-  and after. `admin` grants administrator access; `staff` and `inventory` do not.
+  and after, using role assignments on a different account. It does not require
+  self-role assignment. `admin` grants administrator access; `staff` and `inventory` do not.
   It does not establish subscription revocation or token logout.
 - **Login input (101a)** replaces the password in one captured JSON login request
   with query-like text. A protected purchase must be refused and stored stock

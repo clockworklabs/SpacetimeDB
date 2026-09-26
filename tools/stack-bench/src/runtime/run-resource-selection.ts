@@ -7,7 +7,7 @@ import { existingResourceLockKeys, loopbackHttpUri, resourceLockScope,
 
 // Docker Desktop publishes ports on the desktop host, which the Linux loopback
 // probe cannot see. Let Docker test the whole candidate before reserving it.
-function dockerCanPublish(ports: Set<number>, env: NodeJS.ProcessEnv): boolean {
+export function dockerCanPublish(ports: Set<number>, env: NodeJS.ProcessEnv): boolean {
   if (env.STACK_BENCH_APPLIANCE !== '1') return true;
   const image = env.STACK_BENCH_CONTROLLER_IMAGE_ID ?? env.STACK_BENCH_CONTROLLER_IMAGE;
   if (!isImageId(image) && !isExactImageReference(image)) {

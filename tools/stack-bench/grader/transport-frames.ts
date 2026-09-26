@@ -1,9 +1,17 @@
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import type { Page } from 'playwright';
+import type { Page, Response } from 'playwright';
 import { inconclusive } from '../src/actions/actor-action-runtime.js';
 
 const MAX_RECEIVED_BYTES = 8 * 1024 * 1024;
+
+function responseDiagnostic(response: Response, page: Page) {
+  const url = new URL(response.url());
+  return { origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
+    status: response.status(), contentType: response.headers()['content-type'] ?? '',
+    resourceType: response.request().resourceType(), pageClosed: page.isClosed(),
+    failure: response.request().failure()?.errorText ?? null };
+}
 
 function bodyReadErrorCategory(error: unknown): string {
   // Browser errors can include private URLs or payloads. Emit only fixed labels.
@@ -41,6 +49,7 @@ export class ReceivedTransport {
   private readonly incompleteCounts = { byteLimit: 0, bodyReadFailures: 0, unsupportedStreams: 0 };
   incomplete = false;
   pending = 0;
+  readonly pendingResponses = new Map<Response, { page: Page; startedAt: number }>();
 
   constructor(private readonly limit = MAX_RECEIVED_BYTES) {}
 
@@ -68,9 +77,16 @@ export class ReceivedTransport {
 
   contains(needle: string, requireComplete = true): boolean {
     if (this.chunks.some(chunk => chunk.includes(needle))) return true;
-    if (requireComplete && (this.incomplete || this.pending)) inconclusive('transport-incomplete', {
-      capture: { ...this.incompleteCounts, pendingBodies: this.pending, retainedBytes: this.bytes },
-    });
+    if (requireComplete && (this.incomplete || this.pending)) {
+      for (const [response, { page, startedAt }] of [...this.pendingResponses].slice(0, 8)) {
+        try { process.stderr.write(`transport body pending ${JSON.stringify({
+          ...responseDiagnostic(response, page), elapsedMs: Date.now() - startedAt,
+        })}\n`); } catch { /* Diagnostics must not change the verdict. */ }
+      }
+      inconclusive('transport-incomplete', {
+        capture: { ...this.incompleteCounts, pendingBodies: this.pending, retainedBytes: this.bytes },
+      });
+    }
     return false;
   }
 }
@@ -89,22 +105,20 @@ export async function captureResponses(page: Page, received: ReceivedTransport, 
       return;
     }
     received.pending++;
+    received.pendingResponses.set(response, { page, startedAt: Date.now() });
     try { received.record(await response.text()); }
     catch (error) {
       received.markIncomplete('bodyReadFailures');
       if (reportedBodyFailures++ < 8) {
         try {
-          const url = new URL(response.url());
           process.stderr.write(`transport body unavailable ${JSON.stringify({
-            origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
-            status: response.status(), contentType: type, resourceType: response.request().resourceType(),
-            pageClosed: page.isClosed(), failure: response.request().failure()?.errorText ?? null,
+            ...responseDiagnostic(response, page),
             error: bodyReadErrorCategory(error),
           })}\n`);
         } catch { /* Diagnostics must not turn incomplete capture into a process failure. */ }
       }
     }
-    finally { received.pending--; }
+    finally { received.pending--; received.pendingResponses.delete(response); }
   });
   const session = await page.context().newCDPSession(page);
   session.on('Network.eventSourceMessageReceived', event => received.record(event.data));

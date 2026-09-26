@@ -90,7 +90,7 @@ test('privacy actors retain font bodies across reloads without changing ordinary
 test('privacy verdict drains an in-flight body and keeps a stalled response inconclusive', async t => {
   let mode = 'clean';
   const server = createServer((req, res) => {
-    if (req.url === '/data') {
+    if (req.url === '/private-route?token=private-query') {
       const body = mode === 'leak' ? 'private-body-canary'
         : mode === 'captured' ? 'x'.repeat(8 * 1024 * 1024 - 32) : 'public';
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -98,7 +98,7 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
       if (mode !== 'stalled') setTimeout(() => res.end(`${body}"}`), 400);
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(`${mode === 'captured' ? 'private-body-canary' : ''}<span id="ready">waiting</span><script>fetch('/data').then(() => {
+      res.end(`${mode === 'captured' ? 'private-body-canary' : ''}<span id="ready">waiting</span><script>fetch('/private-route?token=private-query').then(() => {
         document.querySelector('#ready').textContent='headers received'; });</script>`);
     }
   }).listen(0, '127.0.0.1');
@@ -114,6 +114,8 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
   });
   for (mode of ['clean', 'leak', 'captured', 'stalled']) {
     await t.test(mode, async () => {
+      // A stalled body must identify its source without logging private paths or queries.
+      const stderr = t.mock.method(process.stderr, 'write');
       const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1, features: [{
         id: 1, name: 'response completion', actors: ['reader'], setup: [],
         criteria: [{ id: 'capture', desc: 'no private response body', points: 1, steps: [
@@ -128,6 +130,63 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
       evidence.push({ mode, result });
       assert.equal(result.criteria[0]!.evidence.status,
         mode === 'clean' ? 'passed' : mode === 'stalled' ? 'inconclusive' : 'failed', JSON.stringify(result));
+      assert.equal(browser.contexts().length, 0);
+      if (mode === 'stalled') {
+        const pending = stderr.mock.calls.map(call => String(call.arguments[0]))
+          .find(line => line.startsWith('transport body pending '));
+        assert(pending, 'The inconclusive result must identify the pending response');
+        assert(pending.includes('"resourceType":"fetch"'));
+        assert(!/private-route|private-query|private-body-canary/.test(pending));
+      }
+    });
+  }
+});
+
+// A harness reload must not cancel the response to the save it just clicked.
+// Cover a response already started, headers not yet received, leaks, and a stalled write.
+test('privacy reload preserves the response to the preceding write', async t => {
+  let leak = false, delayedHeaders = false, stalled = false;
+  const server = createServer((req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.url === '/api/profile') {
+      const start = () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write('{"value":"');
+        if (!stalled) setTimeout(() => res.end(`${leak ? 'private-save-canary' : 'public'}"}`), 300);
+      };
+      if (delayedHeaders) setTimeout(start, 150); else start();
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<button id="profile-save" onclick="fetch('/api/profile', {method:'PUT',body:'{}'}).then(r=>r.json())">Save</button>`);
+    }
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const evidence: unknown[] = [];
+  t.after(() => {
+    if (process.env.STACK_BENCH_CAPTURE_EVIDENCE) writeFileSync(`${process.env.STACK_BENCH_CAPTURE_EVIDENCE}.reload.json`,
+      JSON.stringify({ browser: browser.version(), evidence }, null, 2));
+  });
+  for (const mode of ['clean', 'leak', 'late-clean', 'late-leak', 'stalled']) {
+    await t.test(mode, async () => {
+      leak = mode.endsWith('leak'); delayedHeaders = mode.startsWith('late'); stalled = mode === 'stalled';
+      const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1, features: [{
+        id: 1, name: 'save then reload', actors: ['reader'], setup: [],
+        criteria: [{ id: 'capture', desc: 'the save response is captured before controlled reload', points: 1, steps: [
+          { do: 'click', actor: 'reader', testid: 'profile-save' },
+          { do: 'reload', actor: 'reader', settleMs: 0 },
+          { do: 'expectNotReceived', actor: 'reader', contains: 'private-save-canary', within: 50 },
+        ] }],
+      }] }).features[0]!;
+      const result = await gradeFeature(browser, feature,
+        { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
+        { runId: 'save-reload', roomName: name => name, url, actions: [], spacetime: null,
+          backend: 'postgres', nullControl: false, defaultWithin: 1000 });
+      evidence.push({ mode, result });
+      assert.equal(result.criteria[0]!.evidence.status, stalled ? 'inconclusive' : leak ? 'failed' : 'passed', JSON.stringify(result));
       assert.equal(browser.contexts().length, 0);
     });
   }

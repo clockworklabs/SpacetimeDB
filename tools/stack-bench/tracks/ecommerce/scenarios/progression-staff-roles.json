@@ -92,7 +92,7 @@
             {"do": "expect", "actor": "roleAdmin", "testid": "staff-role-select", "in": {"testid": "staff-role-account-staff"}, "value": "admin", "within": 10000},
             { "do": "reload", "actor": "promotedStaff", "settleMs": 0 },
             {"do": "signIn", "actor": "promotedStaff", "name": "staff", "password": "stackbench-staff-2026", "exact": true},
-            {"do": "replayAs", "actor": "promotedStaff", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "admin"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-staff", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
+            {"do": "replayAs", "actor": "promotedStaff", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "admin"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-admin", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
             {"do": "expectReplayCompleted", "actor": "promotedStaff", "requireAccepted": true},
             {"do": "replayAs", "actor": "roleAdmin", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "staff"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-staff", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
             {"do": "expectReplayCompleted", "actor": "roleAdmin", "requireAccepted": true},
@@ -100,12 +100,12 @@
             {"do": "ensureSignedIn", "actor": "roleAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user"},
             {"do": "click", "actor": "roleAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff", "ifAvailable": true},
             {"do": "expect", "actor": "roleAdmin", "testid": "staff-role-select", "in": {"testid": "staff-role-account-staff"}, "value": "staff", "within": 10000},
-            {"do": "replayAs", "actor": "promotedStaff", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "admin"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-staff", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
+            {"do": "replayAs", "actor": "promotedStaff", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "inventory"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-admin", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
             {"do": "expectReplayRejected", "actor": "promotedStaff"},
             {"do": "reload", "actor": "roleAdmin", "settleMs": 0},
             {"do": "ensureSignedIn", "actor": "roleAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user"},
             {"do": "click", "actor": "roleAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff", "ifAvailable": true},
-            {"do": "expect", "actor": "roleAdmin", "testid": "staff-role-select", "in": {"testid": "staff-role-account-staff"}, "value": "staff", "within": 10000}
+            {"do": "expect", "actor": "roleAdmin", "testid": "staff-role-select", "in": {"testid": "staff-role-account-admin"}, "value": "admin", "within": 10000}
           ]
         }
       ]

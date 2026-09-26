@@ -2,9 +2,11 @@
 // A valid mutation fails only its declared criterion against a passing baseline.
 import {
   copyFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   unlinkSync,
   writeFileSync,
@@ -281,9 +283,10 @@ async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | n
     ? sourceTimeout
     : mutationGradeTimeoutMs(deadlineMs, Date.now(), sourceTimeout);
   if (timeout === 0) throw new MutationBatchDeadlineError('mutation batch deadline reached');
+  const stderr = openSync(`${reportPath}.stderr.log`, 'wx');
   try {
     execFileSync(process.execPath, gradeArgs, {
-      stdio: "pipe",
+      stdio: ['pipe', 'pipe', stderr],
       encoding: "utf8",
       timeout,
     });
@@ -292,6 +295,8 @@ async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | n
       throw new MutationBatchDeadlineError('mutation grade reached the remaining batch deadline');
     }
     throw error;
+  } finally {
+    closeSync(stderr);
   }
   if (!existsSync(reportPath)) {
     throw new Error("grader completed without producing its report");

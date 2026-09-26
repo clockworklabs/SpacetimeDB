@@ -58,6 +58,7 @@ interface LocatorScope {
 
 interface BrowserActor {
   readonly page: Page;
+  prepareNavigation?(within: number, signal: AbortSignal): Promise<void>;
   loc(testid: string, options?: {
     readonly contains?: string;
     readonly scope?: { readonly testid: string; readonly contains?: string | RegExp };
@@ -338,6 +339,7 @@ async function reload({ input, capabilities, signal }:
   const browser = interaction(capabilities);
   // Returning from hosted login must preserve this page's sessionStorage as well as cookies.
   if (input.application && !browser.applicationUrl) throw new Error('Application return requires the trusted application URL');
+  await actor.prepareNavigation?.(browser.defaultWithin, signal);
   await runApplicationNavigation(() => input.application
     ? actor.page.goto(browser.applicationUrl!, { waitUntil: 'domcontentloaded', timeout: 20000 })
     : actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }), actor.page);

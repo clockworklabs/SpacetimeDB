@@ -281,7 +281,9 @@ function main(args: readonly string[]): number {
           }
           if (recipeScope !== undefined) {
             for (const id of referencedTestIds(step)) {
-              if (!recipeScope.contractText.includes(`\`${id}\``)) {
+              const declaredStaffRow = id.startsWith('staff-role-account-') && id.length > 'staff-role-account-'.length
+                && recipeScope.contractText.includes('`staff-role-account-`');
+              if (!recipeScope.contractText.includes(`\`${id}\``) && !declaredStaffRow) {
                 fail(at, `testid "${id}" is not in the selected recipe contracts`);
               }
             }

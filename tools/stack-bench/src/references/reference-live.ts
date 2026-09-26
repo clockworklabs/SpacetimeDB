@@ -24,8 +24,8 @@ import { qualificationScopeIdentity } from '../composition/qualification-scope.j
 import { writeQualificationSnapshot } from '../composition/qualification-slices.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import { isModularRecipeRelease } from '../composition/recipe-selection.js';
-import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.js';
-import { RUN_INDEX_CAP } from '../composition/tracks.js';
+import { isDeclaredLevel, listTracks, loadTrack, RUN_INDEX_CAP, portsFor } from '../composition/tracks.js';
+import { dockerCanPublish } from '../runtime/run-resource-selection.js';
 import { controllerRunner } from '../runtime/runner-environment.js';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.js';
@@ -664,12 +664,23 @@ export function parallelMutationResourceLockKeys(args: ReferenceQualificationArg
 
 export function preflightParallelMutationResources(args: ReferenceQualificationArgs,
   env: NodeJS.ProcessEnv = process.env): void {
+  const keys = parallelMutationResourceLockKeys(args, env);
   const occupied = existingResourceLockKeys({
     root: resourceLockScope(env).root,
-    keys: parallelMutationResourceLockKeys(args, env),
+    keys,
   });
   if (occupied.length) {
     throw new Error(`parallel mutation resources are already leased: ${occupied.join(', ')}`);
+  }
+  const track = loadTrack(args.track);
+  const ports = new Set(mutationWorkerSlots({ workerCount: args.mutationWorkers,
+    runIndex: args.runIndex, maxRunIndex: RUN_INDEX_CAP }).flatMap(runIndex => {
+    const assigned = portsFor(track, String(args.backend), runIndex);
+    return [assigned.vite, assigned.express].filter((port): port is number => port !== null);
+  }));
+  for (const key of keys) if (key.startsWith('listener:')) ports.add(Number(new URL(key.slice(9)).port));
+  if (!dockerCanPublish(ports, env)) {
+    throw new Error(`parallel mutation host ports are unavailable: ${[...ports].join(', ')}`);
   }
 }
 
@@ -1050,6 +1061,7 @@ async function main(): Promise<void> {
   } : null;
   const artifactIdentities: UnknownRecord = record(artifact.identities)
     ? artifact.identities : {};
+  if (args.mutationWorkers > 1) preflightParallelMutationResources(args);
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
     let companionCaptured = false;

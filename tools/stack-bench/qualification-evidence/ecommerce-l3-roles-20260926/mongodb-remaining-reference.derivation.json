@@ -1,0 +1,6 @@
+{
+  "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.json",
+  "sha256": "fdc9007f7ff040bf054b8c29199c4b65032504db268a02116c3a983d23ca4bba",
+  "method": "Existing referenceRunFromMutationBaseline auditor; original baseline reused, no new reference execution. Failed worker qualification remains unchanged.",
+  "outputSha256": "16287ef524d771d95733c19df3740ff1b660999986a7883d2555def02e98c6bf"
+}

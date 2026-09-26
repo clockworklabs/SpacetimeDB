@@ -1,0 +1,47 @@
+{
+  "cases": [
+    {
+      "name": "existing dynamic account prefix accepts admin row",
+      "expectedExit": 0,
+      "exit": 0,
+      "diagnostics": [],
+      "stderr": ""
+    },
+    {
+      "name": "undeclared hook is rejected",
+      "expectedExit": 1,
+      "exit": 1,
+      "diagnostics": [
+        "  F621 replayAs: testid \"undeclared-role-target\" is not in the selected recipe contracts",
+        "  F621 replayAs: testid \"undeclared-role-target\" is not in the selected recipe contracts",
+        "  F621 expect: testid \"undeclared-role-target\" is not in the selected recipe contracts",
+        "3 error(s); 0 warning(s)"
+      ],
+      "stderr": ""
+    },
+    {
+      "name": "dynamic ID without its prefix contract is rejected",
+      "expectedExit": 1,
+      "exit": 1,
+      "diagnostics": [
+        "  F621 replayAs: testid \"staff-role-account-admin\" is not in the selected recipe contracts",
+        "  F621 replayAs: testid \"staff-role-account-admin\" is not in the selected recipe contracts",
+        "  F621 expect: testid \"staff-role-account-admin\" is not in the selected recipe contracts",
+        "3 error(s); 0 warning(s)"
+      ],
+      "stderr": ""
+    }
+  ],
+  "restored": [
+    {
+      "path": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "sha256": "1e8d3425a9819ae93aa0205d7057af2034f54ed755fb402b7680bda55f35274e",
+      "matches": true
+    },
+    {
+      "path": "tracks/ecommerce/contracts/staff-roles.md",
+      "sha256": "0ffcce22a1dc78354445de73bfe8f23e7e0bdd59b10167dbf7c6b10058eeadd0",
+      "matches": true
+    }
+  ]
+}

@@ -31,7 +31,7 @@ function objectId(value: unknown): Types.ObjectId | null {
 
 function publicUser(user: any) {
   return { id: String(user._id), username: user.username, isAdmin: user.isAdmin,
-    isStaff: user.isStaff, roles: user.roles || [] };
+    isStaff: user.isStaff, roles: user.roles?.length ? user.roles : user.isAdmin ? ["admin"] : [] };
 }
 
 export function installProgressionRoutes(app: express.Express, io: SocketIOServer,
@@ -117,7 +117,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
       user ? Payment.find({ orderId: { $in: orderIds } }) : [],
       user ? Dismissal.find({ userId: user._id }) : [],
       user ? CartArchive.findOne({ userId: user._id }) : null,
-      user?.isAdmin ? User.find({ isStaff: true }).sort({ username: 1 }) : [],
+      user?.isAdmin ? User.find({ $or: [{ isStaff: true }, { isAdmin: true }] }).sort({ username: 1 }) : [],
       isStaff ? Order.find().sort({ createdAt: -1 })
         : user ? Order.find({ userId: user._id }).sort({ createdAt: -1 }) : [],
       isStaff ? Warehouse.find().sort({ name: 1 }) : [],

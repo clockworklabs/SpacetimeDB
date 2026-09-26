@@ -1,0 +1,978 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260926163233-31",
+  "attempt": {
+    "id": "reference-live-mongodb-20260926163233-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-26T16:32:33.501Z",
+    "completedAt": "2026-09-26T17:19:33.343Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "2b28ac4d498d096cb540e98ca7855a6a602777cef159d442c186f4b1e5d24783"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a0f52cdeb956117b2cc2b6c0e8e3689b69c9e86f8e9ce2674f803ab22b963a3d"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "ca46de68d9e8c7bca25676f57f0dffb0a135993609eea90f5528cea3d392acc4"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "2e041a7e7f9909b0db48329f4fa13d5fe02523be0d39f03e646d6229115201ed"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "ca46de68d9e8c7bca25676f57f0dffb0a135993609eea90f5528cea3d392acc4",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 39,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "32cb8d44035137e0acae7c11367a2b5577cda7d40cccae10304f94d0503112f2",
+      "executableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a",
+      "kind": "mutation",
+      "mutationSha256": "1012cb4ee87e158d02dcca94b3810d1fe882a26ecab1ab72b7312fc399c23eb1",
+      "recipe": {
+        "contentSha256": "a0f52cdeb956117b2cc2b6c0e8e3689b69c9e86f8e9ce2674f803ab22b963a3d",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "ca46de68d9e8c7bca25676f57f0dffb0a135993609eea90f5528cea3d392acc4"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "1ab6e0270eae84349668cfa1a3f3d9da09cee1dfc37664ab3cf2054275deec65"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "mongodb-remaining-final-2.runs/r1-workers",
+        "durationMs": 2819774,
+        "processError": "worker 3 failed before usable mutation evidence; worker 1: worker exited 1; worker 1: worker qualification did not pass; worker 1: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w1.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w1.runs/r1/mutation-control.json'; worker 1: worker mutation shard is missing; worker 1: worker mutation results are missing; worker 1: worker mutation control did not pass; worker 2: worker exited 1; worker 2: worker qualification did not pass; worker 2: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w2.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w2.runs/r1/mutation-control.json'; worker 2: worker mutation shard is missing; worker 2: worker mutation results are missing; worker 2: worker mutation control did not pass; worker 3: worker exited 1; worker 3: worker qualification did not pass; worker 3: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w3.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w3.runs/r1/mutation-control.json'; worker 3: worker mutation shard is missing; worker 3: worker mutation results are missing; worker 3: worker mutation control did not pass; worker 4: worker exited 1; worker 4: worker qualification did not pass; worker 4: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w4.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w4.runs/r1/mutation-control.json'; worker 4: worker mutation shard is missing; worker 4: worker mutation results are missing; worker 4: worker mutation control did not pass; worker 5: worker exited 1; worker 5: worker qualification did not pass; worker 5: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w5.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w5.runs/r1/mutation-control.json'; worker 5: worker mutation shard is missing; worker 5: worker mutation results are missing; worker 5: worker mutation control did not pass; worker 6: worker exited 1; worker 6: worker qualification did not pass; worker 6: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w6.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w6.runs/r1/mutation-control.json'; worker 6: worker mutation shard is missing; worker 6: worker mutation results are missing; worker 6: worker mutation control did not pass; mutation results are incomplete: 0/152",
+        "harnessSha256Before": "5a909804a7c06e6a49c73bb6dde37a8ccc39c038eb562ca532f2ab747237b192",
+        "harnessSha256After": "5a909804a7c06e6a49c73bb6dde37a8ccc39c038eb562ca532f2ab747237b192",
+        "ok": false,
+        "failures": [
+          "worker 3 failed before usable mutation evidence",
+          "worker 1: worker exited 1",
+          "worker 1: worker qualification did not pass",
+          "worker 1: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w1.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w1.runs/r1/mutation-control.json'",
+          "worker 1: worker mutation shard is missing",
+          "worker 1: worker mutation results are missing",
+          "worker 1: worker mutation control did not pass",
+          "worker 2: worker exited 1",
+          "worker 2: worker qualification did not pass",
+          "worker 2: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w2.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w2.runs/r1/mutation-control.json'",
+          "worker 2: worker mutation shard is missing",
+          "worker 2: worker mutation results are missing",
+          "worker 2: worker mutation control did not pass",
+          "worker 3: worker exited 1",
+          "worker 3: worker qualification did not pass",
+          "worker 3: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w3.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w3.runs/r1/mutation-control.json'",
+          "worker 3: worker mutation shard is missing",
+          "worker 3: worker mutation results are missing",
+          "worker 3: worker mutation control did not pass",
+          "worker 4: worker exited 1",
+          "worker 4: worker qualification did not pass",
+          "worker 4: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w4.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w4.runs/r1/mutation-control.json'",
+          "worker 4: worker mutation shard is missing",
+          "worker 4: worker mutation results are missing",
+          "worker 4: worker mutation control did not pass",
+          "worker 5: worker exited 1",
+          "worker 5: worker qualification did not pass",
+          "worker 5: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w5.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w5.runs/r1/mutation-control.json'",
+          "worker 5: worker mutation shard is missing",
+          "worker 5: worker mutation results are missing",
+          "worker 5: worker mutation control did not pass",
+          "worker 6: worker exited 1",
+          "worker 6: worker qualification did not pass",
+          "worker 6: worker mutation artifact is invalid: cannot read artifact /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w6.runs/r1/mutation-control.json: ENOENT: no such file or directory, open '/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/role-revocation-20260926/mongodb-remaining-final-2.runs/r1-workers/w6.runs/r1/mutation-control.json'",
+          "worker 6: worker mutation shard is missing",
+          "worker 6: worker mutation results are missing",
+          "worker 6: worker mutation control did not pass",
+          "mutation results are incomplete: 0/152"
+        ],
+        "runId": "reference-live-mongodb-20260926163233-31",
+        "score": "169/169",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 108,
+        "zeroPointCriteria": 0,
+        "fingerprint": "79249e18232c4b0098217cb0fd1f4623a324262a99c3a3e3ff6e692be83d1614",
+        "outcome": "harness_failure",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.accounts",
+              "checkCount": 4,
+              "setupRuntimeMs": 2426,
+              "criterionRuntimeMs": 32508,
+              "measuredRuntimeMs": 34934,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 52000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.cart",
+              "checkCount": 1,
+              "setupRuntimeMs": 1207,
+              "criterionRuntimeMs": 6141,
+              "measuredRuntimeMs": 7348,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 42000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "checkCount": 2,
+              "setupRuntimeMs": 1,
+              "criterionRuntimeMs": 2304,
+              "measuredRuntimeMs": 2305,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.catalog-items",
+              "checkCount": 1,
+              "setupRuntimeMs": 0,
+              "criterionRuntimeMs": 369,
+              "measuredRuntimeMs": 369,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.checkout",
+              "checkCount": 1,
+              "setupRuntimeMs": 1207,
+              "criterionRuntimeMs": 30201,
+              "measuredRuntimeMs": 31408,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 42000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.purchasing",
+              "checkCount": 1,
+              "setupRuntimeMs": 1200,
+              "criterionRuntimeMs": 1190,
+              "measuredRuntimeMs": 2390,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.reviews",
+              "checkCount": 1,
+              "setupRuntimeMs": 2832,
+              "criterionRuntimeMs": 509,
+              "measuredRuntimeMs": 3341,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 22000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 2,
+              "setupRuntimeMs": 4978,
+              "criterionRuntimeMs": 4560,
+              "measuredRuntimeMs": 9538,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.inventory-dashboard",
+              "checkCount": 1,
+              "setupRuntimeMs": 6025,
+              "criterionRuntimeMs": 46,
+              "measuredRuntimeMs": 6071,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.order-cancellation-features",
+              "checkCount": 2,
+              "setupRuntimeMs": 3102,
+              "criterionRuntimeMs": 16814,
+              "measuredRuntimeMs": 19916,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.recommendations",
+              "checkCount": 1,
+              "setupRuntimeMs": 1190,
+              "criterionRuntimeMs": 5632,
+              "measuredRuntimeMs": 6822,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.sales-dashboard",
+              "checkCount": 2,
+              "setupRuntimeMs": 3664,
+              "criterionRuntimeMs": 5493,
+              "measuredRuntimeMs": 9157,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.stock-transfers-features",
+              "checkCount": 1,
+              "setupRuntimeMs": 777,
+              "criterionRuntimeMs": 3505,
+              "measuredRuntimeMs": 4282,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.deferred-access-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 2165,
+              "criterionRuntimeMs": 4363,
+              "measuredRuntimeMs": 6528,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.deferred-integrity-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 24685,
+              "criterionRuntimeMs": 39950,
+              "measuredRuntimeMs": 64635,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 400000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.scheduled-restocks-features",
+              "checkCount": 3,
+              "setupRuntimeMs": 3918,
+              "criterionRuntimeMs": 70026,
+              "measuredRuntimeMs": 73944,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 150000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.server-time-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 30658,
+              "criterionRuntimeMs": 112088,
+              "measuredRuntimeMs": 142746,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 300000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.cancellation-accounting-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 2316,
+              "criterionRuntimeMs": 12397,
+              "measuredRuntimeMs": 14713,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.catalog-management",
+              "checkCount": 2,
+              "setupRuntimeMs": 3910,
+              "criterionRuntimeMs": 37,
+              "measuredRuntimeMs": 3947,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.customer-profile",
+              "checkCount": 1,
+              "setupRuntimeMs": 916,
+              "criterionRuntimeMs": 5104,
+              "measuredRuntimeMs": 6020,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.faceted-search",
+              "checkCount": 2,
+              "setupRuntimeMs": 44244,
+              "criterionRuntimeMs": 25878,
+              "measuredRuntimeMs": 70122,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 141000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.fulfilment-queue",
+              "checkCount": 2,
+              "setupRuntimeMs": 4479,
+              "criterionRuntimeMs": 27910,
+              "measuredRuntimeMs": 32389,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 76000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.inventory-conservation-specifications",
+              "checkCount": 4,
+              "setupRuntimeMs": 9677,
+              "criterionRuntimeMs": 90915,
+              "measuredRuntimeMs": 100592,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 338000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.managed-support",
+              "checkCount": 1,
+              "setupRuntimeMs": 2331,
+              "criterionRuntimeMs": 6457,
+              "measuredRuntimeMs": 8788,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 55000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.notification-preferences",
+              "checkCount": 1,
+              "setupRuntimeMs": 1310,
+              "criterionRuntimeMs": 5142,
+              "measuredRuntimeMs": 6452,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 40000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "checkCount": 3,
+              "setupRuntimeMs": 11877,
+              "criterionRuntimeMs": 49416,
+              "measuredRuntimeMs": 61293,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 138000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.promotion-rules",
+              "checkCount": 1,
+              "setupRuntimeMs": 1788,
+              "criterionRuntimeMs": 600,
+              "measuredRuntimeMs": 2388,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.review-access-specifications",
+              "checkCount": 2,
+              "setupRuntimeMs": 8634,
+              "criterionRuntimeMs": 10657,
+              "measuredRuntimeMs": 19291,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 82000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.staff-access",
+              "checkCount": 1,
+              "setupRuntimeMs": 0,
+              "criterionRuntimeMs": 2449,
+              "measuredRuntimeMs": 2449,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.stock-alerts",
+              "checkCount": 1,
+              "setupRuntimeMs": 27487,
+              "criterionRuntimeMs": 12656,
+              "measuredRuntimeMs": 40143,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-history",
+              "checkCount": 1,
+              "setupRuntimeMs": 2481,
+              "criterionRuntimeMs": 1211,
+              "measuredRuntimeMs": 3692,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 50000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-intake",
+              "checkCount": 1,
+              "setupRuntimeMs": 0,
+              "criterionRuntimeMs": 543,
+              "measuredRuntimeMs": 543,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-triage",
+              "checkCount": 3,
+              "setupRuntimeMs": 1221,
+              "criterionRuntimeMs": 10130,
+              "measuredRuntimeMs": 11351,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 20,
+              "setupRuntimeMs": 90093,
+              "criterionRuntimeMs": 321534,
+              "measuredRuntimeMs": 411627,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "checkCount": 6,
+              "setupRuntimeMs": 37964,
+              "criterionRuntimeMs": 83372,
+              "measuredRuntimeMs": 121336,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 270000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.external-data-sync",
+              "checkCount": 2,
+              "setupRuntimeMs": 791,
+              "criterionRuntimeMs": 11940,
+              "measuredRuntimeMs": 12731,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 105000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.live-state",
+              "checkCount": 10,
+              "setupRuntimeMs": 93543,
+              "criterionRuntimeMs": 10050,
+              "measuredRuntimeMs": 103593,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 184000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "checkCount": 1,
+              "setupRuntimeMs": 23000,
+              "criterionRuntimeMs": 5243,
+              "measuredRuntimeMs": 28243,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 9,
+              "setupRuntimeMs": 42074,
+              "criterionRuntimeMs": 65194,
+              "measuredRuntimeMs": 107268,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 7,
+              "setupRuntimeMs": 241892,
+              "criterionRuntimeMs": 203837,
+              "measuredRuntimeMs": 445729,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 0,
+          "total": 0
+        },
+        "baselineDurationMs": 2808004,
+        "baselineOutput": "mongodb-remaining-final-2.runs/r1",
+        "baselineHarnessSha256Before": "5a909804a7c06e6a49c73bb6dde37a8ccc39c038eb562ca532f2ab747237b192",
+        "baselineHarnessSha256After": "5a909804a7c06e6a49c73bb6dde37a8ccc39c038eb562ca532f2ab747237b192",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 60,
+            "artifact": "mongodb-remaining-final-2.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "shipping-counts-sale-twice",
+              "purchase-counts-never-affect-ranking",
+              "shared-cart-live-events-ignored",
+              "direct-purchase-total-ignores-store-price",
+              "purchased-review-ui-does-not-submit",
+              "cancel-does-not-restore-stock-fresh-client",
+              "customer-can-cancel-foreign-order-1-1",
+              "queue-warehouse-reports-west",
+              "staff-can-see-admin-navigation",
+              "completed-restock-is-replayed",
+              "catalog-variants-are-discarded",
+              "managed-support-live-refresh-keeps-stale-tickets",
+              "staff-signin-loses-staff-role",
+              "support-history-is-not-owner-scoped",
+              "concurrent-cart-add-does-not-increment",
+              "direct-review-access-is-not-checked",
+              "support-replies-present-at-open-are-hidden",
+              "support-history-leaks-to-signed-out-visitors",
+              "review-owner-trust-username",
+              "tampered-session-commits-then-refuses",
+              "opposing-transfer-ignored",
+              "mixed-history-ignored-write",
+              "checkout-replay-loses-prior-order",
+              "shipping-trusts-submitted-staff-role",
+              "signout-keeps-session",
+              "signup-accepts-admin-claim"
+            ],
+            "ok": false,
+            "logs": {
+              "stdout": "mongodb-remaining-final-2.runs/r1-workers/w1.stdout.log",
+              "stderr": "mongodb-remaining-final-2.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 61,
+            "artifact": "mongodb-remaining-final-2.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "signup-does-not-expose-created-account",
+              "signed-out-visitor-purchase-is-accepted",
+              "review-comment-is-not-persisted",
+              "backend-restart-discards-account-carts",
+              "external-stock-polling-disabled",
+              "cancel-restores-stock-but-keeps-pending-status",
+              "ship-acknowledges-without-changing-status",
+              "cart-repeat-does-not-increment",
+              "staff-can-use-direct-restock",
+              "scheduled-restock-countdown-is-fixed",
+              "profile-data-is-lost-on-server-restart",
+              "managed-support-allows-another-customer",
+              "customer-signin-gains-staff-role",
+              "support-intake-returns-no-reference",
+              "checkout-claim-is-not-atomic",
+              "support-history-rows-are-hidden",
+              "notification-toggle-frozen-at-open",
+              "checkout-crash-integrity",
+              "review-owner-deny-after-write",
+              "restock-trusts-submitted-admin-role",
+              "opposing-transfer-rejected",
+              "mixed-history-reject-valid-write",
+              "checkout-clears-cart-without-order",
+              "shipping-rejects-every-request",
+              "query-like-password-bypasses-signin",
+              "admin-boundary-rejects-all-signups"
+            ],
+            "ok": false,
+            "logs": {
+              "stdout": "mongodb-remaining-final-2.runs/r1-workers/w2.stdout.log",
+              "stderr": "mongodb-remaining-final-2.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 62,
+            "artifact": "mongodb-remaining-final-2.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "duplicate-signup-reports-success",
+              "espresso-stock-row-ignores-live-updates",
+              "repeat-review-uses-a-new-owner-key",
+              "reconnect-hydration-loses-account-state",
+              "reconnect-generation-ignores-current-catalog",
+              "cancelled-order-remains-in-revenue-feature",
+              "progression-customer-sees-fulfilment-content",
+              "checkout-leaves-cart-claimed",
+              "restock-adds-the-wrong-quantity",
+              "due-restock-does-not-change-stock",
+              "profile-read-is-not-owner-scoped",
+              "notification-preference-is-not-saved",
+              "stock-alert-delivery-is-suppressed",
+              "support-triage-discards-updates",
+              "last-unit-allows-negative-stock",
+              "authorized-restock-does-not-change-stock",
+              "queue-ignores-live-fulfilment-updates",
+              "checkout-crash-sibling-stock",
+              "review-owner-reject-all",
+              "direct-purchase-trusts-submitted-price",
+              "overlapping-cart-add-ignored",
+              "mixed-history-repeat-cancel",
+              "revenue-aggregation-truncates-order-population",
+              "cancel-trusts-submitted-owner",
+              "purchase-session-rejects-returning-login"
+            ],
+            "ok": false,
+            "logs": {
+              "stdout": "mongodb-remaining-final-2.runs/r1-workers/w3.stdout.log",
+              "stderr": "mongodb-remaining-final-2.runs/r1-workers/w3.stderr.log"
+            }
+          },
+          {
+            "index": 3,
+            "runIndex": 63,
+            "artifact": "mongodb-remaining-final-2.runs/r1-workers/w4.json",
+            "mutationIds": [
+              "signin-skips-password-verification",
+              "restock-race-records-wrong-order-total",
+              "live-review-average-uses-an-extra-divisor",
+              "order-history-is-not-owner-scoped",
+              "open-review-list-ignores-live-update",
+              "cancelled-order-remains-in-revenue-invariant",
+              "transfer-debits-source-without-crediting-existing-destination",
+              "catalog-initial-ranking-is-reversed",
+              "transfer-creates-stock-during-race",
+              "cancelled-restock-remains-pending",
+              "faceted-search-ignores-category",
+              "notification-preference-is-not-owner-scoped",
+              "stock-alert-repeats-while-in-stock",
+              "cart-add-uses-another-account-cart",
+              "purchase-read-write-loses-concurrent-stock",
+              "initial-dashboard-load-omits-low-stock",
+              "low-stock-boundary-excludes-ten-live",
+              "checkout-crash-durability",
+              "password-verification-truncates-utf8",
+              "order-cache-survives-account-switch",
+              "overlapping-cart-add-rejected",
+              "mixed-history-wrong-owner",
+              "catalog-truncates-created-population",
+              "cancel-rejects-every-request",
+              "rejected-query-login-creates-order"
+            ],
+            "ok": false,
+            "logs": {
+              "stdout": "mongodb-remaining-final-2.runs/r1-workers/w4.stdout.log",
+              "stderr": "mongodb-remaining-final-2.runs/r1-workers/w4.stderr.log"
+            }
+          },
+          {
+            "index": 4,
+            "runIndex": 64,
+            "artifact": "mongodb-remaining-final-2.runs/r1-workers/w5.json",
+            "mutationIds": [
+              "signout-keeps-current-account",
+              "purchase-order-uses-zero-price",
+              "warehouse-view-omits-one-location",
+              "revenue-aggregation-ignores-order-totals",
+              "cancel-does-not-restore-stock-feature",
+              "operator-authorization-allows-customer-transfer",
+              "recommendations-ignore-pending-purchases",
+              "catalog-search-requires-exact-name",
+              "customer-can-cancel-scheduled-restock",
+              "server-time-restock-never-completes",
+              "active-search-uses-purchase-ranking",
+              "promotion-save-drops-bounded-values",
+              "stock-alerts-are-not-owner-scoped",
+              "negative-cart-quantity-is-accepted",
+              "purchase-does-not-reduce-warehouse-stock",
+              "category-totals-skip-the-newest-order",
+              "live-admin-updates-keep-stale-category-totals",
+              "review-script-unsafe-render",
+              "password-verification-rejects-every-login",
+              "checkout-trusts-submitted-price",
+              "mixed-history-lost-transfer",
+              "checkout-empty-replay-creates-order",
+              "catalog-discards-product-writes",
+              "account-password-in-public-data",
+              "account-password-in-script"
+            ],
+            "ok": false,
+            "logs": {
+              "stdout": "mongodb-remaining-final-2.runs/r1-workers/w5.stdout.log",
+              "stderr": "mongodb-remaining-final-2.runs/r1-workers/w5.stderr.log"
+            }
+          },
+          {
+            "index": 5,
+            "runIndex": 65,
+            "artifact": "mongodb-remaining-final-2.runs/r1-workers/w6.json",
+            "mutationIds": [
+              "session-token-not-persisted",
+              "reload-hydrates-an-empty-cart",
+              "unauthenticated-purchase-defaults-to-admin",
+              "unpurchased-review-is-accepted",
+              "cancellation-accounting-loses-stock-restoration",
+              "customer-can-ship-order-direct-1-1",
+              "purchases-do-not-affect-best-sellers",
+              "catalog-price-is-offset",
+              "scheduled-restock-never-becomes-due-after-restart",
+              "catalog-product-name-is-not-published",
+              "pagination-repeats-first-page",
+              "customer-can-create-promotion",
+              "support-history-is-lost-on-server-restart",
+              "direct-purchase-is-attributed-to-another-account",
+              "restock-does-not-increase-stock",
+              "profile-summary-frozen-at-open",
+              "overdraw-transfer-is-accepted",
+              "review-script-reject-all",
+              "tampered-session-can-purchase",
+              "checkout-missing-sibling-line",
+              "mixed-history-wrong-price",
+              "checkout-rejects-every-request",
+              "catalog-rejects-all-product-writes",
+              "account-disclosure-rejects-login",
+              "account-password-in-style"
+            ],
+            "ok": false,
+            "logs": {
+              "stdout": "mongodb-remaining-final-2.runs/r1-workers/w6.stdout.log",
+              "stderr": "mongodb-remaining-final-2.runs/r1-workers/w6.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "5a909804a7c06e6a49c73bb6dde37a8ccc39c038eb562ca532f2ab747237b192",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.accounts.accounts.1a",
+      "ecommerce.feature.accounts.accounts.1b",
+      "ecommerce.feature.accounts.accounts.1c",
+      "ecommerce.feature.accounts.accounts.1d",
+      "ecommerce.feature.cart-checkout.cart.4a",
+      "ecommerce.feature.cart-checkout.cart.4d",
+      "ecommerce.feature.catalog.catalog-ranking.2b",
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.feature.catalog.catalog-values.2a",
+      "ecommerce.feature.purchasing.purchase-order.3c",
+      "ecommerce.feature.reviews.reviews.6a",
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.operational-views.5c",
+      "ecommerce.inventory-operations.operational-views.5d",
+      "ecommerce.inventory-operations.operational-views.5e",
+      "ecommerce.inventory-operations.operational-views.5f",
+      "ecommerce.inventory-operations.shipping-accounting.202e",
+      "ecommerce.inventory-operations.stock-conservation.202b",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.stock-conservation.202f",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.l3.deferred-integrity.exactly-once.311a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+      "ecommerce.l3.server-time.server-time.312a",
+      "ecommerce.operations-access.fulfilment-queue.1b",
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.catalog-management.catalog-management.622a",
+      "ecommerce.progression.catalog-management.catalog-management.622b",
+      "ecommerce.progression.customer-profile.customer-profile.620c",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.progression.managed-support.managed-support.613c",
+      "ecommerce.progression.notification-preferences.notification-preferences.630c",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+      "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+      "ecommerce.progression.staff-access.staff-access.601a",
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.progression.support-history.support-history.612c",
+      "ecommerce.progression.support-intake.support-intake.610a",
+      "ecommerce.progression.support-triage.support-assignment.611a",
+      "ecommerce.progression.support-triage.support-priority.611b",
+      "ecommerce.progression.support-triage.support-status.611c",
+      "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "ecommerce.returns-pricing.cancellation-and-return.3b",
+      "ecommerce.returns-pricing.refund-accounting.203a",
+      "ecommerce.spec.access-control.account-disclosure.110a",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.review-eligibility.108a",
+      "ecommerce.spec.access-control.review-eligibility.108b",
+      "ecommerce.spec.access-control.signed-out-purchase.3a",
+      "ecommerce.spec.access-control.staff-area-boundary.601b",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.access-control.support-history-logout.612d",
+      "ecommerce.spec.access-control.support-history-privacy.612b",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.external-data-sync.external-stock.901a",
+      "ecommerce.spec.external-data-sync.external-stock.901d",
+      "ecommerce.spec.live-state.fulfilment-queue.1a",
+      "ecommerce.spec.live-state.inventory-dashboard.5a",
+      "ecommerce.spec.live-state.managed-support.613a",
+      "ecommerce.spec.live-state.open-list.902a",
+      "ecommerce.spec.live-state.purchase-stock.3b",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.spec.live-state.rating.6c",
+      "ecommerce.spec.live-state.sales-dashboard.5b",
+      "ecommerce.spec.live-state.shared-cart.4c",
+      "ecommerce.spec.live-state.warehouse-stock.7c",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "ecommerce.spec.state-durability.cart-reload.4b",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+      "ecommerce.spec.state-durability.session-reload.1e",
+      "ecommerce.spec.state-durability.support-history-reload.612a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+      "ecommerce.spec.transactional-integrity.unique-review.6b"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": false
+  }
+}

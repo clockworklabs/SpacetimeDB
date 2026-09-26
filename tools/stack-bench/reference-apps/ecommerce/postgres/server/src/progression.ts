@@ -223,7 +223,7 @@ export async function buildProgressionState(account: ProgressionAccount | null) 
   const [profile, roles, promotions, preferences, notifications, completed, restocks, ledger,
     activity, reorders, expired, support, recommendations] = await Promise.all([
     account ? one(`SELECT profile_name, profile_address FROM account WHERE id = $1`, [account.id]) : null,
-    isStaff ? deps.pool.query(`SELECT id, username, staff_role FROM account WHERE is_staff = true ORDER BY username`) : { rows: [] },
+    isStaff ? deps.pool.query(`SELECT id, username, COALESCE(NULLIF(staff_role, ''), CASE WHEN is_admin THEN 'admin' ELSE 'staff' END) AS staff_role FROM account WHERE is_staff OR is_admin ORDER BY username`) : { rows: [] },
     isStaff ? deps.pool.query(`SELECT * FROM promotion ORDER BY created_at DESC`) : { rows: [] },
     account ? one(`SELECT notify_order, notify_stock FROM account WHERE id = $1`, [account.id]) : null,
     account ? deps.pool.query(`SELECT * FROM notification WHERE account_id = $1 ORDER BY created_at DESC`, [account.id]) : { rows: [] },
@@ -408,7 +408,7 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
     if (!["staff", "inventory", "admin"].includes(role)) { res.status(400).json({ error: "Invalid staff role" }); return; }
     const targetId = Number(req.params.id);
     const updated = await deps.pool.query(
-      `UPDATE account SET staff_role = $1, is_admin = ($1 = 'admin') WHERE id = $2 AND is_staff = true RETURNING username`,
+      `UPDATE account SET staff_role = $1, is_admin = ($1 = 'admin'), is_staff = true WHERE id = $2 AND (is_staff OR is_admin) RETURNING username`,
       [role, targetId],
     );
     if (updated.rowCount === 0) { res.status(404).json({ error: "staff account not found" }); return; }

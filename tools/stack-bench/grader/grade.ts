@@ -25,6 +25,7 @@ import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-rel
 import { resolveBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
+import { inconclusive } from '../src/actions/actor-action-runtime.js';
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
@@ -296,6 +297,7 @@ export class Actor {
   page!: Page;
   readonly consoleErrors: string[];
   private readonly transport = new ReceivedTransport();
+  private readonly pendingWrites = new Set<Promise<boolean>>();
   readonly ready: Promise<void>;
   get received(): readonly string[] { return this.transport.chunks; }
   get pendingReceived(): number { return this.transport.pending; }
@@ -359,6 +361,12 @@ export class Actor {
     });
     page.on('request', req => {
       if (req.method() === 'GET' || req.method() === 'OPTIONS') return;
+      const completed = req.response().then(async response =>
+        response !== null && await response.finished() === null && response.ok()).catch(() => false);
+      if (this.freshResponses) {
+        this.pendingWrites.add(completed);
+        void completed.finally(() => this.pendingWrites.delete(completed));
+      }
       const url = req.url();
       if (!WRITE_URL_RE.test(url) && !this.writeEndpoints.some(endpoint => url.startsWith(endpoint))) return;
       let body: JsonRecord | null = null;
@@ -372,9 +380,7 @@ export class Actor {
       // action is often a bare DELETE whose meaning is entirely in the URL.
       const write: ActorWrite = { url, method: req.method(), headers: req.headers(), body };
       // Only a fully received successful response can supply bulk setup replay.
-      void req.response().then(async response => {
-        if (response && await response.finished() === null) write.confirmed = response.ok();
-      }).catch(() => { write.confirmed = false; });
+      void completed.then(confirmed => { write.confirmed = confirmed; });
       this.writes.push(write);
       if (this.writes.length > 200) this.writes.shift();
       if (body && typeof body === 'object') {
@@ -398,6 +404,16 @@ export class Actor {
   }
   record(payload: string | Buffer): void {
     this.transport.record(payload);
+  }
+  async prepareNavigation(within: number, signal: AbortSignal): Promise<void> {
+    if (!this.freshResponses) return;
+    // An ordinary reload must not abort the response this privacy observer is recording.
+    // Fault actions navigate directly and deliberately do not use this wait.
+    const deadline = Date.now() + within;
+    while (this.pendingWrites.size || this.transport.pending) {
+      if (Date.now() >= deadline) inconclusive('transport-incomplete', {});
+      await abortableSleep(Math.min(25, deadline - Date.now()), signal);
+    }
   }
   wasSent(needle: string, requireComplete = true): boolean {
     return this.transport.contains(needle, requireComplete);
