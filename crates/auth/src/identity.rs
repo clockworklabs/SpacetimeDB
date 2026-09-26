@@ -48,6 +48,34 @@ pub struct SpacetimeIdentityClaims {
 
     #[serde(flatten)]
     pub extra: Option<HashMap<Box<str>, serde_json::Value>>,
+
+    /// Set only by the validator that verified the token with this cluster's own signing key.
+    /// Never deserialized from a token.
+    #[serde(skip)]
+    pub container: Option<ContainerClaim>,
+}
+
+/// The JWT claim naming the database container a cluster issued a token to.
+pub const CONTAINER_CLAIM: &str = "spacetimedb_container";
+
+/// A token issued by this cluster to the container of `database`, for one `generation`.
+/// Its holder authenticates as `database`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContainerClaim {
+    pub database: Identity,
+    pub generation: u64,
+}
+
+impl ContainerClaim {
+    /// Parse the container claim from a token's remaining claims, if present.
+    pub fn from_extra(extra: &Option<HashMap<Box<str>, serde_json::Value>>) -> anyhow::Result<Option<Self>> {
+        let Some(value) = extra.as_ref().and_then(|extra| extra.get(CONTAINER_CLAIM)) else {
+            return Ok(None);
+        };
+        serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|e| anyhow::anyhow!("invalid {CONTAINER_CLAIM} claim: {e}"))
+    }
 }
 
 fn deserialize_audience<'de, D>(deserializer: D) -> Result<Box<[Box<str>]>, D::Error>
@@ -136,6 +164,7 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
             iat: self.iat,
             exp: self.exp,
             extra: self.extra,
+            container: None,
         })
     }
 }
