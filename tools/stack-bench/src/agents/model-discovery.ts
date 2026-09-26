@@ -1,14 +1,13 @@
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { promisify } from 'node:util';
+import { resolveContainerAuth } from '../../container/container-auth.js';
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.js';
 import { listCredentialProfiles, resolveExecutionCredentials } from './credential-profiles.js';
 
-const exec = promisify(execFile);
 const codexList = `const fs=require('node:fs'),{spawn}=require('node:child_process');
 const home='/tmp/stack-bench-codex';fs.mkdirSync(home,{recursive:true,mode:0o700});
-fs.copyFileSync('/run/auth.json',home+'/auth.json');
-const child=spawn('codex',['app-server'],{env:{...process.env,CODEX_HOME:home},stdio:['pipe','pipe','ignore']});
+const token=fs.readFileSync(0,'utf8').trim();
+const child=spawn('codex',['app-server'],{env:{...process.env,CODEX_HOME:home,CODEX_ACCESS_TOKEN:token},stdio:['pipe','pipe','ignore']});
 const send=(id,method,params)=>child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\\n');
 let buffer='',done=false;const timer=setTimeout(()=>{child.kill();process.exit(2)},15000);
 child.stdout.on('data',chunk=>{buffer+=chunk;let end;
@@ -60,12 +59,18 @@ export async function discoverModels(adapter: string, profileId?: string,
     if (!authFile || !image || !/^sha256:[a-f0-9]{64}$/.test(image)) {
       throw new Error('Codex account discovery requires its auth file and the pinned build image');
     }
+    const token = resolveContainerAuth({ provider: 'openai',
+      env: { ...source, CODEX_AUTH_FILE: authFile } }).credential;
     try {
-      const { stdout } = await exec('docker', ['run', '--rm', '--network', 'bridge', '--read-only',
-        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--pids-limit', '64',
-        '--memory', '512m', '--tmpfs', '/tmp:mode=1777', '--mount',
-        `type=bind,src=${authFile},dst=/run/auth.json,readonly`, '--entrypoint', 'node', image,
-        '-e', codexList], { timeout: 25_000, maxBuffer: 1_000_000 });
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = execFile('docker', ['run', '--rm', '-i', '--network', 'bridge', '--read-only',
+          '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--pids-limit', '64',
+          '--memory', '512m', '--tmpfs', '/tmp:mode=1777', '--entrypoint', 'node', image,
+          '-e', codexList], { timeout: 25_000, maxBuffer: 1_000_000, windowsHide: true },
+        (error, output) => error ? reject(error) : resolve(output));
+        child.stdin?.on('error', () => {});
+        child.stdin?.end(token);
+      });
       data = JSON.parse(stdout);
     } catch { throw new Error('Codex could not list models for this account'); }
   } else {
