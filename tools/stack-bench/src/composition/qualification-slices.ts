@@ -93,9 +93,21 @@ function interfaceNeutralMeaning(meaning: Record<string, unknown>): Record<strin
  * Changes to shared runtime, fixture, prompt or execution order
  * invalidate reuse. Scenarios are reset separately by run-suite. */
 export function unchangedQualificationChecks(source: QualificationDocuments,
-  current: QualificationDocuments): Set<string> {
+  current: QualificationDocuments,
+  contractTextEquivalences: readonly { fromTaskSha256: string; toTaskSha256: string }[] = []): Set<string> {
   const { checks: _oldChecks, ...oldMeaning } = interfaceNeutralMeaning(source.meaning);
   const { checks: _newChecks, ...newMeaning } = interfaceNeutralMeaning(current.meaning);
+  // A reviewed wording change does not rebuild fixed reference apps. Only the
+  // contract text may differ; requirements and all fragment ownership stay fixed.
+  const withoutContractText = (value: unknown) => {
+    const task = object.parse(value);
+    return { ...task, contracts: records(task.contracts).map(({ text: _text, ...contract }) => contract) };
+  };
+  if (contractTextEquivalences.some(review => review.fromTaskSha256 === digest(source.meaning.task)
+    && review.toTaskSha256 === digest(current.meaning.task))
+    && equal(withoutContractText(oldMeaning.task), withoutContractText(newMeaning.task))) {
+    oldMeaning.task = newMeaning.task;
+  }
   const { execution: oldExecutions, packs: oldPacks, ...oldShared } = source.execution;
   const { execution: newExecutions, packs: newPacks, ...newShared } = current.execution;
   // `actions` is the union inferred from the pack's scenarios. Actual steps

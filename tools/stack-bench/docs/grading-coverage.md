@@ -78,8 +78,13 @@ repeated request bursts; it is not a capacity test.
   These privacy checks measure fresh HTTP responses; they do not establish HTTP
   cache isolation. Other actors retain normal caching. No domain or asset type
   is exempted from the existing capture rules.
-  At the end of the observation window, pending body reads get at most one second
-  to finish. Reads still pending after that limit remain inconclusive.
+  Before an ordinary reload, privacy actors wait for started HTTP reads and writes
+  within the existing navigation deadline. An unfinished long poll can therefore
+  make the check inconclusive. Native EventSource stays open and uses event capture.
+  Deliberate fault actions do not use this wait.
+  At the end of the observation window, started requests and pending body reads
+  get at most one second to finish. Requests still waiting for headers or bodies
+  remain inconclusive. A captured leak still fails even if another request is pending.
 - **Deferred work.** Checks anchor on the original time and use early and late
   observations. Missing an observation window is unmeasured, not an app failure.
   The probes do not change the host or client clock.

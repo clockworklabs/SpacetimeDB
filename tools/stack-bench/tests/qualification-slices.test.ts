@@ -11,6 +11,8 @@ import { calibrationQualificationIdentity, calibrationQualificationRelease, comp
   validateQualificationSlice } from '../src/composition/calibration-compiler.js';
 import type { CalibrationEvidence, CalibrationPlan } from '../src/composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
+import { sha256 } from '../src/evidence/provenance.js';
 
 const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce');
 const documents = validateQualificationDocuments(buildRecipeQualificationDocuments(
@@ -107,6 +109,63 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
     ...selected, stackBenchRoot: STACK_BENCH_ROOT, references: plan.references.entries,
     qualificationDocuments: savedDocuments };
   assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, context));
+  // Failure cases specified before implementation: contract wording alone may
+  // be reviewed, but wrong task hashes, absent or changed evidence, requirements,
+  // ownership, and changed scenario steps must never receive that exemption.
+  const revised = structuredClone(savedDocuments);
+  const task = revised.meaning.task as { contracts: Array<{ text: string; owners: string[] }>;
+    requirements: unknown[] };
+  task.contracts[0]!.text += '\nAn optional link can open the public catalog.\n';
+  const taskHash = (value: unknown) => sha256(canonicalDefinitionJson(value));
+  const reviewPath = join(temporary, 'contract-review.json');
+  writeFileSync(reviewPath, JSON.stringify({ rationale: 'Catalog navigation is optional; fixed reference source is unchanged.' }));
+  const reviewed = structuredClone(plan);
+  reviewed.qualificationReuse!.rationale = 'Review only changed catalog interface wording.';
+  reviewed.qualificationReuse!.evidence = [{ path: reviewPath, sha256: sha256(readFileSync(reviewPath)) }];
+  reviewed.qualificationReuse!.contractTextEquivalences = [{
+    fromTaskSha256: taskHash(savedDocuments.meaning.task), toTaskSha256: taskHash(revised.meaning.task),
+  }];
+  const reviewContext = { ...context, calibration: reviewed, qualificationDocuments: revised };
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...reviewContext, calibration: plan }), /changed check/);
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, reviewContext));
+  const observations: Array<{ case: string; outcome: string }> = [{ case: 'reviewed contract text', outcome: 'accepted' }];
+  for (const [name, change] of [
+    ['wrong source task', (p: CalibrationPlan) => { p.qualificationReuse!.contractTextEquivalences![0]!.fromTaskSha256 = 'f'.repeat(64); }],
+    ['wrong target task', (p: CalibrationPlan) => { p.qualificationReuse!.contractTextEquivalences![0]!.toTaskSha256 = 'f'.repeat(64); }],
+    ['no evidence', (p: CalibrationPlan) => { p.qualificationReuse!.evidence = []; }],
+    ['changed evidence', (p: CalibrationPlan) => { p.qualificationReuse!.evidence[0]!.sha256 = 'f'.repeat(64); }],
+    ['empty rationale', (p: CalibrationPlan) => { p.qualificationReuse!.rationale = ''; }],
+  ] as const) {
+    const bad = structuredClone(reviewed); change(bad);
+    assert.throws(() => validateQualificationSlice(artifact, entry, { ...reviewContext, calibration: bad }));
+    observations.push({ case: name, outcome: 'rejected' });
+  }
+  for (const change of [
+    (d: typeof revised) => { (d.meaning.task as typeof task).requirements = []; },
+    (d: typeof revised) => { (d.meaning.task as typeof task).contracts[0]!.owners = ['different-owner']; },
+  ]) {
+    const bad = structuredClone(revised); change(bad);
+    const exactHashes = structuredClone(reviewed);
+    exactHashes.qualificationReuse!.contractTextEquivalences![0]!.toTaskSha256 = taskHash(bad.meaning.task);
+    assert.throws(() => validateQualificationSlice(artifact, entry,
+      { ...reviewContext, calibration: exactHashes, qualificationDocuments: bad }), /changed check/);
+  }
+  const changedScenario = structuredClone(revised);
+  const catalogKey = 'ecommerce.feature.catalog.catalog-values.2a';
+  const catalog = changedScenario.release.checkCatalog.find(check => check.stableKey === catalogKey)!;
+  const execution = (changedScenario.execution.execution as Array<Record<string, unknown>>)
+    .find(item => item.id === catalog.executionId)!;
+  execution.checkGroups = [];
+  const unchanged = unchangedQualificationChecks(savedDocuments, changedScenario,
+    reviewed.qualificationReuse!.contractTextEquivalences);
+  assert(!unchanged.has(catalogKey), 'The review must not admit changed catalog scenario steps');
+  assert(unchanged.has(entry.slice!.checks[0]!), 'Unchanged independent checks remain reusable');
+  observations.push({ case: 'changed requirements, owners and scenario', outcome: 'rejected' });
+  if (process.env.STACK_BENCH_SLICE_EVIDENCE) writeFileSync(process.env.STACK_BENCH_SLICE_EVIDENCE,
+    JSON.stringify({ rerun: 'STACK_BENCH_SLICE_EVIDENCE=<file> node --test dist/tests/qualification-slices.test.js',
+      artifact: { path: entry.path, sha256: entry.sha256 }, snapshot: entry.slice!.snapshot,
+      review: reviewed.qualificationReuse!.contractTextEquivalences, observations }, null, 2));
   assert.equal(plan.qualification.stacks.length, 3);
   const expandedStacks = structuredClone(plan);
   expandedStacks.qualification.stacks.push('convex');

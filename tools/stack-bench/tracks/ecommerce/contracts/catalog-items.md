@@ -1,7 +1,11 @@
 # Catalog item application interface
 
+The public catalog may be on the first page or a separate page. If navigation is
+needed, expose `catalog-link` on the signed-out first page to open the catalog.
+
 | Element ID | Required element |
 | --- | --- |
+| `catalog-link` | Opens the public catalog; omit when the catalog is already visible. |
 | `item-list` | Contains the public catalog items. |
 | `item-card` | Shows one catalog item. |
 | `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |

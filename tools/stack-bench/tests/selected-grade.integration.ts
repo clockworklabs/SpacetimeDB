@@ -9,7 +9,7 @@ import { readGradeArtifactPayload } from '../src/evidence/artifacts.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { resolveRecipeSelection } from '../src/composition/recipe-selection.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { compiledEntrypoint } from '../src/package-root.js';
+import { compiledEntrypoint, STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const GRADER = compiledEntrypoint('grader', 'grade.js');
 
@@ -28,12 +28,12 @@ const actionIds = (actions: ReadonlyArray<{ evidence: unknown }>): string[] => a
   return entry.evidence.action.id;
 });
 
-function startBlankApp(html: string = '<!doctype html><html><body></body></html>') {
+function startBlankApp(html: string = '<!doctype html><html><body></body></html>', catalogHtml?: string) {
   const source = `
     import { createServer } from 'node:http';
     const server = createServer((request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      response.end(${JSON.stringify(html)});
+      response.end(request.url === '/catalog' ? ${JSON.stringify(catalogHtml ?? html)} : ${JSON.stringify(html)});
     });
     server.listen(0, '127.0.0.1', () => console.log(server.address().port));
     process.on('SIGTERM', () => server.close(() => process.exit(0)));
@@ -101,6 +101,53 @@ test('the live grader executes and reports exactly one selected stable check', a
     server.child.kill('SIGTERM');
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('catalog values are checked on the catalog page, including through navigation', async t => {
+  // Failure cases: a landing page must not hide a working catalog from the
+  // grader; navigation must not excuse a missing item, wrong price, or dead link.
+  const parent = join(STACK_BENCH_ROOT, 'results', 'diagnostics');
+  mkdirSync(parent, { recursive: true });
+  const root = mkdtempSync(join(parent, 'catalog-navigation-'));
+  t.diagnostic(`Evidence: ${root}; repeat: node --test --test-name-pattern="catalog values are checked" dist/tests/selected-grade.integration.js`);
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 1, { id: 'ecommerce.progression-catalog' });
+  const check = binding.release.checkCatalog.find(c => c.stableKey === 'ecommerce.feature.catalog.catalog-values.2a');
+  assert(check?.source);
+  const selection = resolveRecipeSelection(binding.release, { checkKeys: [check.stableKey] });
+  for (const fixture of [
+    { name: 'initial-catalog', linked: false, item: 'Air Purifier', price: 189, opens: true, expected: 'passed' },
+    { name: 'linked-catalog', linked: true, item: 'Air Purifier', price: 189, opens: true, expected: 'passed' },
+    { name: 'wrong-price', linked: true, item: 'Air Purifier', price: 1.89, opens: true, expected: 'failed' },
+    { name: 'missing-item', linked: true, item: 'Desk Lamp', price: 189, opens: true, expected: 'failed' },
+    { name: 'dead-link', linked: true, item: 'Air Purifier', price: 189, opens: false, expected: 'failed' },
+  ]) await t.test(fixture.name, async () => {
+    const app = join(root, fixture.name);
+    mkdirSync(app);
+    const catalog = `<!doctype html><section id="item-list"><article data-role="item-card">
+        <span data-role="item-name">${fixture.item}</span><span data-role="item-price">${fixture.price}</span>
+        <span data-role="item-stock">100</span></article></section>`;
+    const html = fixture.linked ? `<!doctype html><h1>Storefront</h1><a id="catalog-link" href="${fixture.opens ? '/catalog' : '#'}">Shop</a>` : catalog;
+    writeFileSync(join(app, 'index.html'), html);
+    writeFileSync(join(app, 'catalog.html'), catalog);
+    writeFileSync(join(app, 'expected.json'), JSON.stringify(fixture, null, 2));
+    const server = startBlankApp(html, catalog);
+    const out = join(app, 'grade.json');
+    try {
+      const port = await server.port;
+      const execution = await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1', '--track', 'ecommerce',
+        '--backend', 'postgres', '--app', app, '--spec', join(track.dir, check.source!), '--out', out,
+        '--recipe', binding.release.id, '--selected-check', check.stableKey,
+        '--expected-recipe-sha256', binding.release.contentSha256, '--selection-sha256', selection.sha256]);
+      writeFileSync(join(app, 'stdout.log'), execution.stdout);
+      writeFileSync(join(app, 'stderr.log'), execution.stderr);
+      const report = readGradeArtifactPayload(out);
+      assert.equal(first(first(report.features).criteria).evidence.status, fixture.expected);
+      assert.equal(report.max, 1);
+    } finally {
+      server.child.kill('SIGTERM');
+    }
+  });
 });
 
 test('setup can wait for app readiness without relaxing scored checks', async () => {

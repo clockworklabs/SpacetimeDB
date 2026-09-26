@@ -101,6 +101,7 @@ export interface CalibrationDefinition {
   qualificationReuse?: {
     sourceRecipe?: { id: string; contentSha256: string; executionSha256: string };
     sourceCalibration?: { id: string; contentSha256: string };
+    contractTextEquivalences?: Array<{ fromTaskSha256: string; toTaskSha256: string }>;
     rationale: string;
     evidence: Array<{ path: string; sha256: string }>;
     scopes: Array<{
@@ -240,7 +241,7 @@ const EQUIVALENCE_FIELDS = new Set([
   'fromExecutionSha256', 'toExecutionSha256', 'rationale', 'evidence',
 ]);
 const QUALIFICATION_REUSE_FIELDS = new Set([
-  'sourceRecipe', 'sourceCalibration', 'rationale', 'evidence', 'scopes',
+  'sourceRecipe', 'sourceCalibration', 'contractTextEquivalences', 'rationale', 'evidence', 'scopes',
 ]);
 const QUALIFICATION_REUSE_RECIPE_FIELDS = new Set([
   'id', 'contentSha256', 'executionSha256',
@@ -459,6 +460,21 @@ export function compileCalibrationDefinition(input: unknown,
       fail(at, 'source identities are required for unsliced evidence');
     }
     string(reuse.rationale, `${at}.rationale`);
+    if (reuse.contractTextEquivalences !== undefined) {
+      const reviews = array(reuse.contractTextEquivalences, `${at}.contractTextEquivalences`, { nonEmpty: true });
+      const pairs = new Set<string>();
+      reviews.forEach((review: unknown, index: number) => {
+        const reviewAt = `${at}.contractTextEquivalences[${index}]`;
+        strictObject(review, reviewAt, new Set(['fromTaskSha256', 'toTaskSha256']));
+        exactHash(review.fromTaskSha256, `${reviewAt}.fromTaskSha256`);
+        exactHash(review.toTaskSha256, `${reviewAt}.toTaskSha256`);
+        const pair = `${review.fromTaskSha256}:${review.toTaskSha256}`;
+        if (review.fromTaskSha256 === review.toTaskSha256 || pairs.has(pair)) {
+          fail(reviewAt, 'must compare unique, different task hashes');
+        }
+        pairs.add(pair);
+      });
+    }
     const reuseEvidence = array(reuse.evidence, `${at}.evidence`, { nonEmpty: true });
     reuseEvidence.forEach((entry: unknown, index: number) => {
       const evidenceAt = `${at}.evidence[${index}]`;
@@ -908,7 +924,13 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const trackRoot = resolve(stackBenchRoot, 'tracks', release.track);
   const current = context.qualificationDocuments ?? validateQualificationDocuments(buildRecipeQualificationDocuments(
     resolve(trackRoot, calibration.recipe.path), { trackRoot }));
-  const unchanged = unchangedQualificationChecks(source, current);
+  const reuse = calibration.qualificationReuse;
+  if (reuse?.contractTextEquivalences?.length) {
+    if (!reuse.rationale.trim() || !reuse.evidence.length) evidenceFailure(at,
+      'contract text equivalence requires a rationale and evidence');
+    verifyEvidence(reuse.evidence, stackBenchRoot, `${at}.contractTextEquivalences.evidence`);
+  }
+  const unchanged = unchangedQualificationChecks(source, current, reuse?.contractTextEquivalences);
   if (slice.checks.some(key => !unchanged.has(key))) evidenceFailure(at,
     'claims a changed check, setup, or shared dependency');
 

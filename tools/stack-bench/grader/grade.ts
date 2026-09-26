@@ -297,10 +297,10 @@ export class Actor {
   page!: Page;
   readonly consoleErrors: string[];
   private readonly transport = new ReceivedTransport();
-  private readonly pendingWrites = new Set<Promise<boolean>>();
+  private readonly pendingRequests = new Set<Promise<boolean>>();
   readonly ready: Promise<void>;
   get received(): readonly string[] { return this.transport.chunks; }
-  get pendingReceived(): number { return this.transport.pending; }
+  get pendingReceived(): number { return this.transport.pending + this.pendingRequests.size; }
   lastWrite: ActorWrite | null = null;
   lastWrites: Record<string, ActorWrite> = {};
   writes: ActorWrite[] = [];
@@ -360,13 +360,17 @@ export class Actor {
       });
     });
     page.on('request', req => {
-      if (req.method() === 'GET' || req.method() === 'OPTIONS') return;
+      const isWrite = req.method() !== 'GET' && req.method() !== 'OPTIONS';
+      // Native EventSource messages have their own continuous capture. Other
+      // privacy reads must finish before reload, even before headers arrive.
+      if (!isWrite && (!this.freshResponses || req.resourceType() === 'eventsource')) return;
       const completed = req.response().then(async response =>
         response !== null && await response.finished() === null && response.ok()).catch(() => false);
       if (this.freshResponses) {
-        this.pendingWrites.add(completed);
-        void completed.finally(() => this.pendingWrites.delete(completed));
+        this.pendingRequests.add(completed);
+        void completed.finally(() => this.pendingRequests.delete(completed));
       }
+      if (!isWrite) return;
       const url = req.url();
       if (!WRITE_URL_RE.test(url) && !this.writeEndpoints.some(endpoint => url.startsWith(endpoint))) return;
       let body: JsonRecord | null = null;
@@ -410,13 +414,17 @@ export class Actor {
     // An ordinary reload must not abort the response this privacy observer is recording.
     // Fault actions navigate directly and deliberately do not use this wait.
     const deadline = Date.now() + within;
-    while (this.pendingWrites.size || this.transport.pending) {
+    while (this.pendingRequests.size || this.transport.pending) {
       if (Date.now() >= deadline) inconclusive('transport-incomplete', {});
       await abortableSleep(Math.min(25, deadline - Date.now()), signal);
     }
   }
   wasSent(needle: string, requireComplete = true): boolean {
-    return this.transport.contains(needle, requireComplete);
+    const found = this.transport.contains(needle, requireComplete);
+    if (!found && requireComplete && this.pendingRequests.size) {
+      inconclusive('transport-incomplete', {});
+    }
+    return found;
   }
   loc(testid: string, { contains, scope }:
     { contains?: string; scope?: { testid: string; contains?: string } } = {}) {
