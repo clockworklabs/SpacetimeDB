@@ -56,3 +56,31 @@ test('resource selection aborts before probing on cancellation', async () => {
       probePort: () => { throw new Error('must not probe'); } }), { name: 'AbortError' });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('appliance admission skips ports Docker cannot publish and stops on other Docker errors', {
+  skip: process.platform !== 'linux' && 'uses a POSIX docker stub',
+}, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-selection-'));
+  const bin = mkdtempSync(join(tmpdir(), 'stack-bench-docker-'));
+  try {
+    const track = loadTrack('ecommerce');
+    const busy = portsFor(track, 'postgres', 0).vite;
+    // Docker Desktop reports host ports the Linux loopback probe cannot see.
+    writeFileSync(join(bin, 'docker'), [
+      '#!/bin/sh',
+      '[ -n "$DOCKER_STUB_ERROR" ] && { echo "$DOCKER_STUB_ERROR" >&2; exit 125; }',
+      `case " $* " in *"127.0.0.1:${busy}:${busy}"*) echo "port is already allocated" >&2; exit 125;; esac`,
+      'exit 0', '',
+    ].join('\n'), { mode: 0o755 });
+    const env = { STACK_BENCH_RESOURCE_LOCK_DIR: root, STACK_BENCH_APPLIANCE: '1',
+      STACK_BENCH_CONTROLLER_IMAGE_ID: `sha256:${'a'.repeat(64)}`, PATH: `${bin}:${process.env.PATH}` };
+    const input = { track, backends: ['postgres'], count: 1, serverUri: () => null,
+      probePort: () => ({ free: true }) };
+    assert.deepEqual((await selectRunResources({ ...input, env })).runIndices, [1]);
+    await assert.rejects(selectRunResources({ ...input, env: { ...env, DOCKER_STUB_ERROR: 'Unable to find image' } }),
+      /Command failed/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});

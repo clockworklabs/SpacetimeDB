@@ -19,7 +19,9 @@ test('real browser origin probes expose cookie writes despite opaque responses a
       || (protectOrigin && req.headers.origin !== `http://${req.headers.host}`)) {
       res.writeHead(403, { 'Content-Type': 'application/json' }).end('{"error":"refused"}'); return;
     }
-    writes++; res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+    // An application that blocks cross-origin reads with CORP still performs the write.
+    const policy = req.url === '/corp' ? { 'Cross-Origin-Resource-Policy': 'same-origin' } : {};
+    writes++; res.writeHead(200, { 'Content-Type': 'application/json', ...policy }).end('{"ok":true}');
   }).listen(0, '0.0.0.0');
   await once(server, 'listening');
   const port = (server.address() as { port: number }).port;
@@ -36,15 +38,18 @@ test('real browser origin probes expose cookie writes despite opaque responses a
     const unsafe = await crossOriginPost(context, { url }, 'same-site', signal);
     assert.equal(unsafe.cookieSent, true); assert.equal(unsafe.responseStatus, 200);
     assert.equal(unsafe.browserResponseType, 'opaque'); assert.equal(writes, 1);
+    const policyBlocked = await crossOriginPost(context, { url: url.replace('/buy', '/corp') }, 'same-site', signal);
+    assert.equal(policyBlocked.browserResponseType, 'blocked-by-policy');
+    assert.equal(policyBlocked.responseStatus, 200); assert.equal(writes, 2);
     const crossSite = await crossOriginPost(context, { url }, 'cross-site', signal);
-    assert.equal(crossSite.cookieSent, false); assert.equal(writes, 1);
+    assert.equal(crossSite.cookieSent, false); assert.equal(writes, 2);
     await assert.rejects(crossOriginPost(context, { url: url.replace('/buy', '/lost') }, 'same-site', signal),
       (error: unknown) => error instanceof ActionInconclusive
         && isFinding(error.details.finding) && error.details.finding.kind === 'replay-unavailable'
         && /complete browser request and response/.test(String(error.details.finding.fields.detail)));
     assert.equal(context.pages().length, 0);
     assert(observed.every(r => r.authorization === undefined));
-    assert(!JSON.stringify({ safe, unsafe, crossSite }).includes('private-session'));
+    assert(!JSON.stringify({ safe, unsafe, policyBlocked, crossSite }).includes('private-session'));
     await context.close();
   } finally {
     await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));

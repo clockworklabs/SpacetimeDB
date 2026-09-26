@@ -80,8 +80,13 @@ test('every current calibration binds stable authored identities', () => {
       contentSha256: release.contentSha256,
     }, name);
     assert.deepEqual(plan.qualification.stacks, expected.stacks, name);
-    // Only the dependency L3 calibration has retained qualification evidence.
-    assert.equal(plan.qualification.evidence.length, name === 'dependency-l3.json' ? 9 : 0, name);
+    // Only the dependency L3 calibration has retained qualification evidence. Targeted
+    // reruns add entries, but together they cover exactly each stack's reference and
+    // mutation scopes plus the null control.
+    assert.deepEqual([...new Set(plan.qualification.evidence.map(entry =>
+      `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`))].sort(),
+    name === 'dependency-l3.json' ? [...expected.stacks.flatMap(stack =>
+      [`mutation:${stack}:1`, `reference:${stack}:1`]), 'null::1'].sort() : [], name);
     assert.deepEqual(plan.references.entries.map(reference => reference.backend).sort(), expected.stacks, name);
     assert.deepEqual(plan.mutations.map(mutation => mutation.backend).sort(), expected.stacks, name);
     assert.match(plan.contentSha256, /^[a-f0-9]{64}$/);
