@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.bundle-returns",
+  "moduleType": "feature",
+  "title": "Bundle returns",
+  "description": "Bundle returns using existing products and orders.",
+  "requiresPacks": [
+    "ecommerce.feature.bundle-checkout",
+    "ecommerce.l3.order-returns-features"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-database-write"
+  ],
+  "evidence": [
+    "browser-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 120000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.bundle-returns",
+        "path": "prompts/modular/bundle-returns.md",
+        "order": 8006,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.interface.bundle-returns",
+        "path": "contracts/bundle-returns.md",
+        "order": 8106,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "bundle-returns",
+      "stableId": "bundle-returns",
+      "source": "scenarios/progression-bundle-returns.json",
+      "feature": 742,
+      "criteria": [
+        "742a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Account password disclosure",
+  "note": "Draft: create and sign in with a real password, then inspect data delivered to another account and a fresh signed-out page. This bounded sentinel checks plaintext disclosure in captured HTTP data/HTML/JavaScript/CSS (including error bodies), WebSocket and EventSource messages. It does not prove password hashing, absence of encoded secrets, logs, unfetched resources, or all endpoints. Missing/incomplete transport evidence is not a privacy pass.",
+  "features": [
+    {
+      "id": 110,
+      "name": "Account password disclosure",
+      "actors": [
+        "owner",
+        "returning",
+        "other",
+        "guest"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "private-password",
+          "password": "sb-private-pw-76dc492ea153"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "different-password"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "110a",
+          "category": "production",
+          "desc": "an account password is not delivered to another account or a signed-out visitor",
+          "points": 1,
+          "steps": [
+            {
+              "do": "signIn",
+              "actor": "returning",
+              "name": "private-password",
+              "password": "sb-private-pw-76dc492ea153",
+              "awaitSignedIn": false
+            },
+            {
+              "do": "expect",
+              "actor": "returning",
+              "testid": "current-user",
+              "contains": "private-password",
+              "within": 10000
+            },
+            {
+              "do": "reload",
+              "actor": "other",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "other",
+              "testid": "current-user",
+              "contains": "different-password"
+            },
+            {
+              "do": "reload",
+              "actor": "guest",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "guest",
+              "testid": "current-user",
+              "absent": true
+            },
+            {
+              "do": "expectNotReceived",
+              "actor": "other",
+              "contains": "sb-private-pw-76dc492ea153",
+              "within": 1000
+            },
+            {
+              "do": "expectNotReceived",
+              "actor": "guest",
+              "contains": "sb-private-pw-76dc492ea153",
+              "within": 1000
+            }
+          ],
+          "statedBy": "account credentials authorize their owner and are not public application data"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.search-ordering",
+  "title": "Search ordering after purchases",
+  "moduleType": "specification",
+  "description": "Purchase ranking does not override active search and filter ordering.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation"
+  ],
+  "evidence": [
+    "browser-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 60000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.spec.search-ordering",
+        "path": "prompts/modular/search-ordering-specification.md",
+        "order": 4010,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.faceted-search",
+          "ecommerce.feature.purchasing"
+        ]
+      }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    {
+      "id": "after-purchase",
+      "stableId": "search-ordering",
+      "source": "scenarios/progression-search-ordering.json",
+      "feature": 402,
+      "criteria": [
+        "402b"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.faceted-search",
+        "ecommerce.feature.purchasing"
+      ]
+    }
+  ]
+}

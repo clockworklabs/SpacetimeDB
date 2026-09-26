@@ -1,0 +1,183 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { completionLabel, spend } from '../../dashboard/public/format.js';
+import type { CampaignProgression, CampaignSheet, SheetAttempt } from '../../dashboard/dashboard-views.js';
+import { campaignPage, replayTimeline, selectedProgression } from '../../dashboard/public/views/campaign.js';
+import { attemptPage } from '../../dashboard/public/views/attempt.js';
+import { topbar } from '../../dashboard/public/views/plans.js';
+
+test('report links appear only for files present in the campaign', () => {
+  const input = { page: 'campaign' as const, key: 'example', canStart: false, resumable: false, error: '' };
+  assert.doesNotMatch(topbar(input), />report<|>export manifest</);
+  const reportFiles = ['report/report.html'];
+  assert.match(topbar({ ...input, reportFiles }), />report</);
+  assert.doesNotMatch(topbar({ ...input, reportFiles }), />export manifest</);
+  assert.match(topbar({ ...input, reportFiles: [...reportFiles, 'report/export-manifest.json'] }), />export manifest</);
+});
+
+test('invalid completion is not displayed as a low application score', () => {
+  const attempt = { status: 'invalid', excluded: 'unmeasured checks',
+    completion: { passed: 9, selected: 109, failed: 0, blocked: 0, unmeasured: 100, rate: 9 / 109 } };
+  assert.equal(completionLabel(attempt), 'Incomplete');
+  assert.equal(completionLabel({ ...attempt, status: 'running' }), '9 / 109');
+  assert.equal(completionLabel({ ...attempt, status: 'completed' }), 'Excluded');
+  assert.equal(completionLabel({ ...attempt, status: 'completed', excluded: null }), '9 / 109');
+  const features = { passed: 2, selected: 27 };
+  assert.equal(completionLabel(attempt, features), 'Incomplete');
+  assert.equal(completionLabel({ ...attempt, status: 'running' }, features), '2 / 27');
+  assert.equal(completionLabel({ ...attempt, status: 'completed' }, features), 'Excluded');
+});
+
+// Distinct aggregate and selected values catch accidental cross-repetition labels.
+test('campaign separates aggregate scores from selected evidence and explains pending tabs', () => {
+  const attempt: SheetAttempt = {
+    id: 'selected', repetition: 2, status: 'running', phase: 'building', stalling: false,
+    excluded: null, continued: false, logUpdatedAt: null, score: null, unaided: null,
+    repairs: { used: 2, budget: 10 }, timeSec: null, executionStartedAt: null,
+    executionCompletedAt: null, spendPending: true, spend: { status: 'unknown', costUsd: null },
+    completion: null, variant: 'neutral', climb: [],
+  };
+  const sheet: CampaignSheet = {
+    key: 'example', id: 'example', title: 'Example', status: 'running', mode: 'dependency',
+    levels: [1], repetitions: 2, provisional: true, mixedScope: false, executions: 1,
+    resumable: false, createdAt: '', updatedAt: '',
+    facts: { mode: 'dependency', workSelection: 'progressive', repairSelection: 'feature',
+      repairLimits: { perFeature: 5 }, agent: null, model: null,
+      guidance: 'neutral', productionQuality: false, recipes: [], timeLimitMinutes: 240, spendLimitUsd: 50,
+      controllerImage: null, buildImage: null, planSha256: 'example', grading: 'pending', gradingReasons: [] },
+    stacks: [{ stack: 'spacetime', costPerValidRun: 6, selectedAttemptId: attempt.id, score: 82, points: null,
+      unaided: null, continued: false, regressions: 0,
+      timeSec: null, spend: attempt.spend, spendPending: true, completionRate: null, n: 1,
+      attempts: [attempt], levels: null,
+      questlines: [{ id: 'catalog', title: 'Catalog', score: 20, nodes: [] }] }],
+  };
+  const page = campaignPage({ sheet, progression: null, view: 'grid', step: 0 });
+  const selected = page.slice(page.indexOf('<h3>Runs</h3>'));
+  assert.match(page, /82%/);
+  assert.match(selected, /20%/);
+  assert.match(selected, /2 \/ 10/);
+  assert.doesNotMatch(selected, /82%|9 \/ 10|Questline average/);
+  assert.match(page, /Valid runs/);
+  const metricsTable = page.split('<table class="sheet">')[1]!.split('</table>')[0]!;
+  assert.match(metricsTable, /\$6\.00/);
+  const noRepairSheet = { ...sheet, repetitions: 1, stacks: sheet.stacks.map(stack => ({
+    ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 },
+      featureCompletion: { passed: 20, selected: 27, rate: 20 / 27 },
+      completion: { passed: 98, selected: 111, failed: 13, blocked: 0, unmeasured: 0, rate: 98 / 111 } }],
+  })) };
+  const noRepairPage = campaignPage({ sheet: noRepairSheet, progression: null, view: 'grid', step: 0 });
+  assert.doesNotMatch(noRepairPage, /<th>Repairs<|Before repairs|<small>Rep 1/);
+  assert.match(noRepairPage, /Astra[^(]*\(medium\)/);
+  assert.match(noRepairPage, /Features passed/);
+  assert.match(noRepairPage, /Checks passed/);
+  assert.match(noRepairPage, /<td>20 \/ 27<\/td><td>98 \/ 111<\/td>/);
+  for (const tab of ['checks', 'screenshots', 'files', 'log'] as const) {
+    const detail = attemptPage({ sheet, attemptId: attempt.id, tab, checks: null, evidence: null, log: '' });
+    assert.match(detail, /Earlier fixes and feedback are retained/);
+    assert.match(detail, /No (check results|screenshots|files|log output)/);
+    assert.match(detail, /aria-current="page"/);
+    assert.match(detail, /popovertarget="help-checks-passed"/);
+  }
+  attempt.checkCategories = {
+    production: { selected: 2, passed: 1, failed: 1, blocked: 0, unmeasured: 0, rate: 0.5 },
+    feature: { selected: 0, passed: 0, failed: 0, blocked: 0, unmeasured: 0, rate: null },
+    interface: { selected: 0, passed: 0, failed: 0, blocked: 0, unmeasured: 0, rate: null },
+    unknown: { selected: 0, passed: 0, failed: 0, blocked: 0, unmeasured: 0, rate: null },
+  };
+  const categorized = attemptPage({ sheet, attemptId: attempt.id, tab: 'checks', evidence: null, log: '',
+    checks: { attemptId: attempt.id, stack: 'spacetime', grades: [], checks: [{ id: 'p', key: 'p', description: 'Durable', feature: 'Orders', points: 1,
+      category: 'production', outcome: 'pass', regressed: false, history: ['fail', 'not-run', 'pass'],
+      observations: [
+        { status: 'FAIL', summary: '<script>Two orders for one cart</script>', expected: '1 order', actual: '2 orders' },
+        { status: 'INCONCLUSIVE', summary: 'Reader timed out', expected: null, actual: null },
+        { status: 'PASS', summary: null, expected: null, actual: null },
+      ] }] } });
+  assert.match(categorized, /<td>Production<\/td>/);
+  assert.match(categorized, /1 \/ 2/);
+  assert.match(categorized, /Expected<\/div><pre>1 order/);
+  assert.match(categorized, /Observed<\/div><pre>2 orders/);
+  assert.match(categorized, /Grade 2 · INCONCLUSIVE/);
+  assert.match(categorized, /Grade 3 · PASS/);
+  assert.match(categorized, /No observation details were recorded/);
+  assert.match(categorized, /&lt;script&gt;Two orders/);
+  assert.doesNotMatch(categorized, /<script>|check-evidence[^>]* open/);
+  const missing = attemptPage({ sheet, attemptId: attempt.id, tab: 'checks', evidence: null, log: '',
+    checks: { attemptId: attempt.id, stack: 'spacetime', checks: [],
+      grades: [{ id: 'grading', level: null, round: 0, score: null, error: 'grade bundle is missing' }] } });
+  assert.match(missing, /grade bundle is missing/);
+  delete attempt.checkCategories;
+  const grantInput = { sheet, attemptId: attempt.id, tab: 'checks' as const,
+    checks: null, evidence: null, log: '', canControl: true };
+  const request = { campaignSha256: 'a'.repeat(64), attemptId: attempt.id,
+    executionId: 'execution-1', grantId: 'extension-1', minutes: 120, requestedAt: '2026-09-07T00:00:00.000Z' };
+  const budget = { originalMinutes: 240, effectiveMinutes: 240, consumedMs: 0, liveGrantSupported: true,
+    extensionCount: 0, grants: [{ request, disposition: 'pending' as const }] };
+  const pending = attemptPage({ ...grantInput, timeBudget: budget });
+  assert.match(pending, /disabled>Awaiting controller/);
+  assert.match(pending, /limit has not changed yet/);
+  const accepted = attemptPage({ ...grantInput, timeBudget: { ...budget,
+    effectiveMinutes: 360, extensionCount: 1,
+    grants: [{ request, disposition: 'accepted', effectiveMinutes: 360 }] } });
+  assert.match(accepted, /Time added. Limit: 6h 0m/);
+  assert.doesNotMatch(attemptPage({ ...grantInput, canControl: false }), /data-run="grant-time"/);
+  attempt.status = 'invalid';
+  assert.doesNotMatch(attemptPage(grantInput), /data-run="grant-time"/);
+  assert.match(attemptPage({ ...grantInput, timeBudget: { ...budget, grants: [],
+    continuation: { eligible: true } } }), /Add time and resume/);
+  assert.match(attemptPage({ ...grantInput, timeBudget: { ...budget, grants: [],
+    continuation: { eligible: false, reason: 'Coding session was interrupted.' } } }),
+  /Cannot resume: Coding session was interrupted/);
+  const transcriptHtml = attemptPage({ ...grantInput, tab: 'transcript', transcript: {
+    sessions: [{ id: 'one', label: 'Session 1' }], session: 'one', before: 100, skipped: 0,
+    messages: [{ id: 'm1', role: 'assistant', text: '<script>alert(1)</script>', tool: false },
+      { id: 'm2', role: 'Bash', text: 'echo hello', tool: true }],
+  } });
+  assert.match(transcriptHtml, /&lt;script&gt;/);
+  assert.doesNotMatch(transcriptHtml, /<script>|<details[^>]*open/);
+  assert.match(transcriptHtml, /data-transcript-before="100"/);
+  attempt.status = 'running';
+  const progression: CampaignProgression = {
+    key: sheet.key, depths: [1], questlines: [{ id: 'catalog', title: 'Catalog', nodes: ['item'] }],
+    nodes: [{ id: 'item', title: 'Item', questline: 'catalog', depth: 1, dependencies: [] }],
+    stacks: [],
+  };
+  sheet.stacks = ['spacetime', 'postgres', 'mongodb', 'custom-sql', 'custom-kv'].map(stack => ({
+    ...sheet.stacks[0]!, stack, selectedAttemptId: `${stack}-2`,
+  }));
+  progression.stacks = sheet.stacks.flatMap(stack => [1, 2, 3].map(repetition => ({
+    stack: stack.stack, attemptId: `${stack.stack}-${repetition}`, updatedAt: '',
+    steps: [{ sequence: 1, action: repetition === 2 ? 'build' as const : 'repair' as const,
+      targets: ['item'], statuses: [repetition === 2 ? 'passed' : 'failed'],
+      score: repetition === 2 ? 100 : 99, repairs: repetition === 2 ? 0 : 77 }],
+  })));
+  const detailSheet = { ...sheet, stacks: [{ ...sheet.stacks[0]!,
+    attempts: [{ ...attempt, id: 'spacetime-1' }] }] };
+  const detail = attemptPage({ sheet: detailSheet, progression, attemptId: 'spacetime-1',
+    tab: 'checks', checks: null, evidence: null, log: '' });
+  assert.equal((detail.match(/class="d f"/g) ?? []).length, 1);
+  assert.doesNotMatch(detail, /class="d p"/);
+  assert.match(detail, /Feature dependency graph/);
+  const selectedTracks = selectedProgression(progression, sheet);
+  const gridPage = campaignPage({ sheet, progression, view: 'grid', step: 0 });
+  const comparison = gridPage.split('<table class="sheet">')[1]!.split('</table>')[0]!;
+  assert.equal((comparison.split('</thead>')[0]!.match(/scope="col"/g) ?? []).length, 6);
+  assert.match(comparison, /custom-sql/);
+  assert.match(comparison, /custom-kv/);
+  assert.equal(selectedTracks.stacks.length, 5);
+  assert.ok(selectedTracks.stacks.every(track => track.attemptId.endsWith('-2')));
+  assert.equal(replayTimeline(selectedTracks).length, 5);
+  for (const view of ['graph', 'replay'] as const) {
+    const html = campaignPage({ sheet, progression, view, step: 99 });
+    assert.doesNotMatch(html, /class="d f"|99%|>77</);
+    assert.equal((html.match(/class="d p"/g) ?? []).length, 5);
+    if (view === 'replay') assert.match(html, /5 \/ 5/);
+  }
+
+});
+
+test('pending cost has an accessible activity dot without changing the amount', () => {
+  const unknown = { status: 'unknown' as const, costUsd: null };
+  assert.equal(spend(unknown), 'Unknown');
+  assert.match(spend(unknown, true), /Unknown.*aria-label="Cost still updating"/);
+  assert.doesNotMatch(spend(unknown, true), /so far|partial/);
+});

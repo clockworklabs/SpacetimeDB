@@ -1,0 +1,156 @@
+import { cpSync, existsSync, realpathSync, rmSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import type { ProgressionAttempt } from '../progression/progression-state.js';
+import type { GradeBundlePayload } from './benchmark-run.js';
+import { classifyBundle, ladderMayContinue } from './outcomes.js';
+import type { RunOutcome } from './outcomes.js';
+import {
+  compareCriterionEvidence,
+  type CriterionEvidenceComparison,
+  type EvidenceBundle,
+} from './scoring.js';
+
+export interface RepairProgress {
+  score: number | null;
+  fingerprint: string;
+  stalledRounds: number;
+}
+
+// The generated server owns /app even while the coding agent is stopped.
+// Private evidence must never be placed in that writable mount.
+export function privateGradingDirectory(appDir: string, out?: string | null): string {
+  const app = resolve(appDir);
+  const target = resolve(out || join(dirname(app), `${basename(app)}-grading`));
+  const physical = (path: string): string => {
+    if (existsSync(path)) return realpathSync(path);
+    return join(physical(dirname(path)), basename(path));
+  };
+  const contains = (parent: string, child: string): boolean => {
+    const rel = relative(parent, child);
+    return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
+  };
+  const appPath = physical(app);
+  const outputPath = physical(target);
+  if (contains(appPath, outputPath) || contains(outputPath, appPath)) {
+    throw new Error('private grading output must be outside the application tree');
+  }
+  return target;
+}
+
+export function clearPrivateGradingEvidence(appDir: string): void {
+  rmSync(privateGradingDirectory(appDir), { recursive: true, force: true });
+  // Remove legacy output on resumed workspaces. Never read it as evidence.
+  rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
+}
+
+export function restorePrivateGradingEvidence(appDir: string, snapshot: string): void {
+  if (!existsSync(snapshot)) throw new Error('repair grading snapshot does not exist');
+  clearPrivateGradingEvidence(appDir);
+  cpSync(snapshot, privateGradingDirectory(appDir), { recursive: true });
+}
+
+export function repairProgressState(previous: RepairProgress | null,
+  bundle: GradeBundlePayload | null): RepairProgress {
+  const outcome = classifyBundle(bundle);
+  const score = bundle?.totals?.score ?? null;
+  const fingerprint = canonicalDefinitionJson({
+    kind: outcome.kind,
+    phase: outcome.phase ?? null,
+    appFailures: [...(outcome.appFailures ?? [])].sort(),
+    inconclusive: [...(outcome.inconclusive ?? [])].sort(),
+    harnessFailures: [...(outcome.harnessFailures ?? [])].sort(),
+    contractFailures: (bundle?.suites?.lint?.results ?? [])
+      .filter(result => result.status === 'FAIL')
+      .map(result => ({ id: result.id, detail: result.detail ?? null })),
+  });
+  const stalledRounds = previous && score !== null && previous.score !== null
+    && score <= previous.score && fingerprint === previous.fingerprint
+    ? previous.stalledRounds + 1 : 0;
+  return { score, fingerprint, stalledRounds };
+}
+
+export function repairHistoryEntry(round: number, before: GradeBundlePayload | null,
+  after: GradeBundlePayload | null, result: string) {
+  const failureKeys = (bundle: GradeBundlePayload | null): string[] => {
+    const outcome = classifyBundle(bundle);
+    const contract = (bundle?.suites?.lint?.results ?? [])
+      .filter(item => item.status === 'FAIL').map(item => `testing-interface/${item.id}`);
+    return [...new Set([...(outcome.appFailures ?? []).filter(key => key !== 'contract-lint'),
+      ...contract])].sort();
+  };
+  return {
+    round,
+    beforeScore: before?.totals?.score ?? null,
+    beforeMax: before?.totals?.max ?? null,
+    afterScore: after?.totals?.score ?? null,
+    afterMax: after?.totals?.max ?? null,
+    result,
+    remainingFailures: failureKeys(after),
+  };
+}
+
+export function levelGradeIsUsable(bundleOutcome: RunOutcome,
+  progressionAttempt: Pick<ProgressionAttempt, 'outcome'> | null = null): boolean {
+  if (progressionAttempt) return progressionAttempt.outcome === 'conclusive';
+  return ladderMayContinue(bundleOutcome);
+}
+
+const APPLICATION_SETUP_PHASES = new Set([
+  'database-provenance', 'application-layout', 'application-restart', 'application-readiness',
+]);
+
+interface RepairEvidenceBundle extends EvidenceBundle {
+  outcome?: { kind?: string; phase?: string } | null;
+  selection?: { checks?: Array<{ stableKey?: string }> } | null;
+}
+
+export interface RepairEvidenceDecision {
+  action: 'keep-setup-repair' | 'rollback-no-comparison' | 'rollback-regression' | 'keep';
+  shared: CriterionEvidenceComparison;
+}
+
+function selectedRepairChecks(bundle: RepairEvidenceBundle | null | undefined) {
+  const selected = bundle?.selection?.checks;
+  return Array.isArray(selected)
+    ? new Set(selected.flatMap(check => typeof check.stableKey === 'string'
+      ? [check.stableKey] : [])) : null;
+}
+
+export function repairEvidenceDecision(
+  beforeBundle: RepairEvidenceBundle | null | undefined,
+  afterBundle: RepairEvidenceBundle | null | undefined,
+): RepairEvidenceDecision {
+  const shared = compareCriterionEvidence(beforeBundle, afterBundle,
+    { previousStableKeys: selectedRepairChecks(afterBundle) });
+  const startedFromApplicationSetup = beforeBundle?.outcome?.kind === 'app_failure'
+    && typeof beforeBundle.outcome.phase === 'string'
+    && APPLICATION_SETUP_PHASES.has(beforeBundle.outcome.phase);
+  if (shared.count === 0 && shared.lostEvidence.length === 0
+    && shared.definitionChanges.length === 0) {
+    return {
+      action: startedFromApplicationSetup ? 'keep-setup-repair' : 'rollback-no-comparison',
+      shared,
+    };
+  }
+  const evidenceRegressed = shared.lostEvidence.length > 0
+    || shared.definitionChanges.length > 0
+    || shared.regressions.length > 0;
+  return {
+    action: evidenceRegressed || shared.after < shared.before ? 'rollback-regression' : 'keep',
+    shared,
+  };
+}
+
+export function repairRegressionDecision(
+  acceptedBundle: RepairEvidenceBundle | null | undefined,
+  repairedBundle: RepairEvidenceBundle | null | undefined,
+): RepairEvidenceDecision {
+  const shared = compareCriterionEvidence(acceptedBundle, repairedBundle,
+    { onlyPreviousPasses: true, previousStableKeys: selectedRepairChecks(repairedBundle) });
+  const regressed = shared.lostEvidence.length > 0
+    || shared.definitionChanges.length > 0
+    || shared.regressions.length > 0;
+  return { action: regressed ? 'rollback-regression' : 'keep', shared };
+}

@@ -1,0 +1,214 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+
+function scenario(name: string) {
+  const source = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'scenarios', name);
+  return compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+}
+
+test('stored-stock validation does not delay live transfer observations', () => {
+  const steps = scenario('02-transfer-totals.json').features[0]!.criteria[0]!.steps;
+  const transfer = steps.findIndex(step => step.do === 'click' && step.testid === 'transfer-submit');
+  const observations = steps.slice(transfer + 1);
+  const live = observations.findLastIndex(step => step.do === 'expectNumber' && step.testid === 'warehouse-total');
+  const stored = observations.findIndex(step => step.do === 'dbExpectStock');
+  assert(transfer >= 0 && live >= 0 && stored > live);
+  assert(!observations.slice(0, live + 1).some(step => ['reload', 'wait'].includes(step.do)));
+});
+
+test('session-survival criteria observe the signed-in user without restoring the session', () => {
+  // These IDs explicitly claim session survival. Do not infer that claim from wording
+  // or apply this rule to independent data-retention checks that permit re-authentication.
+  for (const [name, id] of [
+    ['01-account-reload.json', '1e'], ['01-features.json', '1e'],
+    ['01-invariants.json', '105a'],
+  ] as const) {
+    const criterion = scenario(name).features.flatMap(feature => feature.criteria)
+      .find(criterion => criterion.id === id);
+    assert(criterion, `${name}: ${id} must exist`);
+    const reload = criterion.steps.findIndex(step => step.do === 'reload');
+    assert(reload >= 0, `${name}: ${id} must reload`);
+    const after = criterion.steps.slice(reload + 1);
+    const observation = after.findIndex(step => step.do === 'expect' && step.testid === 'current-user');
+    assert(observation >= 0, `${name}: ${id} must observe the session`);
+    assert.equal(after.slice(0, observation).some(step =>
+      ['signIn', 'signUp', 'ensureSignedIn'].includes(step.do)), false, `${name}: ${id} must not restore it`);
+  }
+});
+
+test('support privacy confirms persisted owner writes without requiring live refresh', () => {
+  const privacy = scenario('progression-managed-support-privacy.json').features[0]!.criteria[0]!;
+  const tail = privacy.steps.slice(privacy.steps.findIndex(step => step.do === 'expectReplayRejected'));
+  assert.equal(tail[0]!.do, 'expectReplayRejected');
+  assert.equal(tail[6]!.do, 'expectElementCount');
+  assert.equal(tail[6]!.equals, 1, 'an unauthorized replay must not add a second reply');
+  const live = scenario('progression-managed-support-shared.json').features[0]!.criteria
+    .find(criterion => criterion.id === '613a')!;
+  const write = live.steps.findIndex(step => step.do === 'click' && step.testid === 'support-reply-submit');
+  assert(write >= 0);
+  assert.equal(live.steps.slice(write).some(step => step.do === 'reload'), false);
+  assert.equal(live.steps.filter(step => step.do === 'expect'
+    && step.testid === 'support-reply-item').length, 2, 'both open clients must still receive live replies');
+});
+
+test('the direct conservation race and queue warehouse label are observed on fresh pages', () => {
+  for (const name of ['02-queue-warehouse.json', '02-self-contained.json']) {
+    const check = scenario(name).features.flatMap(feature => feature.criteria)
+      .find(criterion => criterion.id === '1b')!;
+    const observation = check.steps.findIndex(step => step.do === 'expect' && step.testid === 'queue-item');
+    const before = check.steps.slice(0, observation);
+    const reload = before.findLastIndex(step => step.do === 'reload' && step.actor === 'staff');
+    assert(reload >= 0, `${name}: staff reloads before reading the queue`);
+    assert.equal(before[reload + 1]!.do, 'ensureSignedIn');
+    assert.deepEqual(before[reload + 2], { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
+  }
+  const race = scenario('02-server-actions.json').features.flatMap(feature => feature.criteria)
+    .find(criterion => criterion.id === '202d')!;
+  for (const actor of ['admin', 'customer']) {
+    const observation = race.steps.findIndex(step => step.do === 'expectNumber' && step.actor === actor);
+    const before = race.steps.slice(0, observation);
+    const reload = before.findLastIndex(step => step.do === 'reload' && step.actor === actor);
+    assert(reload >= 0, `${actor} reloads before reading the conserved total`);
+    assert.equal(before[reload + 1]!.do, 'ensureSignedIn');
+    assert(before.slice(reload).every(step => step.actor === actor),
+      `${actor}'s fresh page is not interleaved with the other actor`);
+  }
+  assert(race.steps.some(step => step.do === 'dbExpectStock' && step.warehouse === 'East'
+    && step.atLeast === 34 && step.atMost === 35));
+  assert(race.steps.some(step => step.do === 'dbExpectStock' && step.warehouse === 'West'
+    && step.atLeast === 64 && step.atMost === 65));
+  assert(race.steps.some(step => step.do === 'dbExpectStock'
+    && step.relativeTo === 'direct-race-stock-before' && step.plus === -1));
+  assert(race.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+});
+
+test('transfer race preserves app-owned stock aggregates and uses one database baseline', () => {
+  const feature = scenario('02-server-actions.json').features.find(feature => feature.id === 202)!;
+  const steps = [...feature.setup, ...feature.criteria[0]!.steps];
+  assert(!steps.some(step => step.do === 'dbSetStock'), 'fixture SQL must not bypass aggregate maintenance');
+  assert(!steps.some(step => step.do === 'recordNumber'), 'UI state must not determine the stock oracle');
+  const baseline = steps.findIndex(step => step.do === 'dbRecordStock');
+  const race = steps.findIndex(step => step.do === 'race');
+  assert(baseline >= 0 && baseline < race);
+  const observations = steps.slice(race + 1).filter(step =>
+    step.do === 'expectNumber' || (step.do === 'dbExpectStock' && !step.warehouse));
+  assert.equal(observations.length, 3);
+  // Both legal purchase locations and both serial execution orders conserve 99.
+  for (const purchaseWarehouse of ['East', 'West']) {
+    for (const order of [['transfer', 'buy'], ['buy', 'transfer']]) {
+      const stock = { East: 60, West: 40 };
+      let materializedTotal = 100;
+      for (const action of order) {
+        if (action === 'transfer') { stock.East -= 25; stock.West += 25; }
+        else if (purchaseWarehouse === 'East') stock.East--; else stock.West--;
+        materializedTotal = stock.East + stock.West;
+      }
+      for (const step of observations) {
+        assert.equal(step.relativeTo, steps[baseline]!.as);
+        assert.equal(materializedTotal, 100 + Number(step.plus));
+        assert.notEqual(materializedTotal + 1, 100 + Number(step.plus), 'a lost sale must fail');
+      }
+      for (const step of steps.slice(race + 1).filter(step => step.do === 'dbExpectStock' && step.warehouse && step.atLeast !== undefined)) {
+        const value = stock[step.warehouse as keyof typeof stock];
+        assert(value >= Number(step.atLeast) && value <= Number(step.atMost));
+      }
+    }
+  }
+});
+
+test('opposing transfers require both valid calls and exact directional stock deltas', () => {
+  const check = scenario('02-server-actions.json').features.find(feature => feature.id === 202)!.criteria[0]!;
+  assert.equal(check.points, 2);
+  const pairs = check.steps.flatMap((step, index) => step.do === 'callConcurrently' ? [index] : []);
+  assert.equal(pairs.length, 3);
+  for (const [pair, index] of pairs.entries()) {
+    assert.deepEqual(check.steps.slice(index - 2, index).map(step => [step.do, step.warehouse]),
+      [['dbRecordStock', 'East'], ['dbRecordStock', 'West']]);
+    assert.deepEqual(check.steps[index + 1], { do: 'expectCallOutcomes', accepted: 2 });
+    assert.deepEqual(check.steps.slice(index + 2, index + 4).map(step => [step.do, step.warehouse, step.plus]),
+      [['dbExpectStock', 'East', [-3, 5, -5][pair]], ['dbExpectStock', 'West', [3, -5, 5][pair]]]);
+  }
+  // Checkout overlap verifies both completed writes before comparing serial outcomes.
+  const overlap = scenario('progression-cart-checkout.json').features[0]!.criteria.find(check => check.id === '4d')!;
+  assert.equal(overlap.points, 2);
+  const index = overlap.steps.findIndex(step => step.alongsideAdd === 'Coffee Grinder');
+  assert(index > 1);
+  assert.deepEqual(overlap.steps[index - 1], { do: 'expectCallOutcomes', accepted: 2 });
+  assert.equal(overlap.steps[index - 2]!.do, 'callConcurrently');
+  assert.deepEqual(overlap.steps.filter(step => step.do === 'dbRecordCheckout' && String(step.as).startsWith('overlap-'))
+    .map(step => step.storage), Array(2).fill({ kind: 'order-data', cart: true, warehouses: 'if-requested' }));
+});
+
+test('L2 direct authorization refusals follow accepted routes and fresh observations', () => {
+  for (const [file, ids] of [['02-server-actions.json', ['201c']], ['02-self-contained.json', ['1e']],
+    ['02-strengthened.json', ['201a', '201b']]] as const) {
+    for (const id of ids) {
+      const check = scenario(file).features.flatMap(feature => feature.criteria).find(criterion => criterion.id === id)!;
+      const refusal = check.steps.findIndex(step => step.do === 'expectActionOutcome' && step.outcome === 'refused');
+      assert(refusal > 0);
+      const proof = check.steps[refusal]!.routeProvenBy;
+      assert(check.steps.slice(0, refusal).some(step => step.do === 'expectActionOutcome'
+        && step.actor === proof && step.outcome === 'accepted'));
+      assert(check.steps.slice(refusal + 1).some(step => step.do === 'reload'));
+    }
+  }
+  // A refused warehouse write must leave the stock unchanged.
+  const warehouse = scenario('01-admin-write-staff.json').features.flatMap(feature => feature.criteria)
+    .find(criterion => criterion.id === '103b')!;
+  const replay = warehouse.steps.findIndex(step => step.do === 'callAction' && step.actor === 'staff');
+  assert(replay >= 0);
+  assert(warehouse.steps.slice(replay + 1).some(step => step.do === 'expectActionOutcome'
+    && step.actor === 'staff' && step.outcome === 'refused'));
+  assert(warehouse.steps.slice(replay + 1).some(step => step.do === 'expectNumber' && step.plus === 0));
+});
+
+test('cancellation conservation proves the sale before its reversal', () => {
+  const core = scenario('02-order-cancellation-core.json').features[0]!.criteria[0]!;
+  const cancelCore = core.steps.findIndex(step => step.testid === 'cancel-order');
+  for (const [control, change] of [['item-stock', -1], ['admin-revenue', 64]] as const) {
+    assert(core.steps.slice(0, cancelCore).some(step => step.do === 'expectNumber'
+      && step.testid === control && step.plus === change));
+  }
+  for (const [file, ids] of [['02-features.json', ['3a']], ['02-self-contained.json', ['202b', '202c']]] as const) {
+    for (const id of ids) {
+      const check = scenario(file).features.flatMap(feature => feature.criteria).find(criterion => criterion.id === id)!;
+      const cancel = check.steps.findIndex(step => step.do === 'click' && step.testid === 'cancel-order');
+      assert(check.steps.slice(0, cancel).some(step => step.do === 'dbExpectStock' && step.plus === -1));
+      assert(check.steps.slice(0, cancel).some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+      assert(check.steps.slice(cancel + 1).some(step => step.do === 'dbExpectStock' && step.plus === 0));
+      if (file === '02-self-contained.json') for (const warehouse of ['East', 'West']) {
+        const recorded = check.steps.slice(0, cancel).find(step => step.do === 'dbRecordStock' && step.warehouse === warehouse);
+        assert(recorded);
+        assert(check.steps.slice(cancel + 1).some(step => step.do === 'dbExpectStock'
+          && step.warehouse === warehouse && step.relativeTo === recorded.as && step.plus === 0));
+      }
+    }
+  }
+});
+
+test('shipping races retain the live cancellation observer and one scoring owner', () => {
+  const feature = scenario('02-cancellation-queue.json').features[0]!;
+  assert.equal(feature.criteria.length, 1);
+  const check = feature.criteria[0]!;
+  assert.equal(check.id, '3d');
+  assert.equal(check.points, 1);
+  const cancelled = check.steps.findIndex(step => step.do === 'click' && step.testid === 'cancel-order');
+  const live = check.steps[cancelled + 1]!;
+  assert.equal(live.do, 'waitUntilAbsent');
+  assert.equal(live.testid, 'queue-item');
+  const races = check.steps.flatMap((step, index) => step.do === 'callConcurrently' && step.action === 'cancel' ? [index] : []);
+  assert.equal(races.length, 3);
+  for (const index of races) {
+    assert.equal(check.steps[index + 1]!.do, 'expectCallOutcomes');
+    assert.equal(check.steps[index + 2]!.do, 'dbExpectCancellation');
+    assert.equal(check.steps[index + 2]!.shipping, 'competes');
+    assert(check.steps.slice(0, index).some(step => step.do === 'dbExpectPurchases'));
+  }
+  assert(check.steps.filter(step => step.do === 'dbRecordCheckout').every(step =>
+    (step.storage as { kind: string; cart: boolean; warehouses: boolean }).kind === 'order-data'
+    && (step.storage as { cart: boolean }).cart === false));
+});

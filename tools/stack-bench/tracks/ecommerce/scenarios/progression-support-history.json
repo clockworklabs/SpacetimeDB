@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Customer support history",
+  "note": "Draft: updated observations require matching reference and defect-control qualification.",
+  "features": [
+    {
+      "id": 612,
+      "name": "Customer support history",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "support-owner" },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "owner@example.com" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Owner ticket {user:ticketmarker}" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private account issue." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+        { "do": "signUp", "actor": "other", "name": "support-other" }
+      ],
+      "criteria": [
+        {
+          "id": "612c",
+          "category": "feature",
+          "desc": "the customer can view their support ticket history",
+          "points": 1,
+          "statedBy": "Signed-in customers can see their support ticket history.",
+          "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link", "unlessVisible": "support-ticket" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket {user:ticketmarker}" }
+          ]
+        },
+        {
+          "id": "612a",
+          "category": "production",
+          "desc": "support history survives reload and backend restart in a fresh browser",
+          "points": 2,
+          "statedBy": "A customer's support history persists.",
+          "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 3000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket {user:ticketmarker}" },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "owner" },
+            { "do": "signIn", "actor": "owner-fresh", "name": "support-owner" },
+            { "do": "click", "actor": "owner-fresh", "testid": "support-link" },
+            { "do": "expect", "actor": "owner-fresh", "testid": "support-ticket", "contains": "Owner ticket {user:ticketmarker}" }
+          ]
+        },
+        {
+          "id": "612b",
+          "category": "production",
+          "desc": "another customer neither sees nor receives the private ticket",
+          "points": 2,
+          "statedBy": "Customers cannot see another customer's support tickets.",
+          "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "fill", "actor": "owner", "testid": "support-email", "text": "owner@example.com" },
+            { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Private ticket {user:privateticketmarker}" },
+            { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private account issue." },
+            { "do": "click", "actor": "owner", "testid": "support-submit" },
+            { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}" },
+            { "do": "expectReceived", "actor": "owner", "contains": "Private ticket {user:privateticketmarker}", "within": 10000 },
+            { "do": "reload", "actor": "other", "settleMs": 0 },
+            { "do": "ensureSignedIn", "actor": "other", "name": "support-other", "readyTestid": "current-user" },
+            { "do": "click", "actor": "other", "testid": "support-link" },
+            { "do": "fill", "actor": "other", "testid": "support-email", "text": "other@example.com" },
+            { "do": "fill", "actor": "other", "testid": "support-subject", "text": "Other ticket" },
+            { "do": "fill", "actor": "other", "testid": "support-message", "text": "Separate account issue." },
+            { "do": "click", "actor": "other", "testid": "support-submit" },
+            { "do": "expect", "actor": "other", "testid": "support-reference", "nonEmpty": true },
+            { "do": "reload", "actor": "other", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "other", "name": "support-other", "readyTestid": "current-user" },
+            { "do": "click", "actor": "other", "testid": "support-link" },
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Other ticket", "within": 10000 },
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}", "absent": true },
+            { "do": "expectNotReceived", "actor": "other", "contains": "Private ticket {user:privateticketmarker}" }
+          ]
+        },
+        {
+          "id": "612d",
+          "category": "production",
+          "desc": "after logout the same browser storage no longer grants access to private support history",
+          "points": 2,
+          "statedBy": "Signed-out visitors cannot access private support tickets.",
+          "steps": [
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"support-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"support-link"},
+            {"do":"fill","actor":"owner","testid":"support-email","text":"owner@example.com"},
+            {"do":"fill","actor":"owner","testid":"support-subject","text":"Logout ticket {user:logoutticketmarker}"},
+            {"do":"fill","actor":"owner","testid":"support-message","text":"Private account issue."},
+            {"do":"click","actor":"owner","testid":"support-submit"},
+            {"do":"expect","actor":"owner","testid":"support-reference","nonEmpty":true},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"support-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"support-link","unlessVisible":"support-ticket"},
+            {"do":"expect","actor":"owner","testid":"support-ticket","contains":"Logout ticket {user:logoutticketmarker}"},
+            {"do":"expectReceived","actor":"owner","contains":"Logout ticket {user:logoutticketmarker}","within":10000},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"support-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"current-user","unlessVisible":"signout"},
+            {"do":"click","actor":"owner","testid":"signout"},
+            {"do":"waitUntilAbsent","actor":"owner","testid":"current-user","within":6000},
+            {"do":"freshClient","actor":"owner","preserveStorage":true},
+            {"do":"expect","actor":"owner-fresh","testid":"current-user","absent":true},
+            {"do":"click","actor":"owner-fresh","testid":"support-link"},
+            {"do":"expect","actor":"owner-fresh","testid":"support-email"},
+            {"do":"expect","actor":"owner-fresh","testid":"support-ticket","contains":"Logout ticket {user:logoutticketmarker}","absent":true},
+            {"do":"expectNotReceived","actor":"owner-fresh","contains":"Logout ticket {user:logoutticketmarker}"}
+          ]
+        }
+      ]
+    }
+  ]
+}

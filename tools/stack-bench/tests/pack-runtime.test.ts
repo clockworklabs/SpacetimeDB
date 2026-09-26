@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import { aggregatePackRuntime, exceededPackBudgets, measureGradePackRuntime,
+  PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
+
+const evidence = (durationMs: number) => createCheckEvidence({ status: 'passed', code: 'completed',
+  phase: 'assertion', startedAtMs: 100, completedAtMs: 100 + durationMs });
+const setupEvidence = (durationMs: number) => createCheckEvidence({ status: 'passed', code: 'completed',
+  phase: 'setup', startedAtMs: 10, completedAtMs: 10 + durationMs });
+
+function report() {
+  return {
+    total: 3,
+    max: 3,
+    selection: { checks: [
+      { stableKey: 'pack-a/check-1', packId: 'pack-a' },
+      { stableKey: 'pack-b/check-1', packId: 'pack-b' },
+      { stableKey: 'pack-a/check-2', packId: 'pack-a' },
+    ] },
+    features: [{ id: 1, name: 'feature', score: 3, max: 3, consoleErrors: [],
+      setupEvidence: setupEvidence(5), criteria: [
+      { id: 'check-1', desc: 'check 1', points: 1,
+        stableKey: 'pack-a/check-1', evidence: evidence(30) },
+      { id: 'check-2', desc: 'check 2', points: 1,
+        stableKey: 'pack-b/check-1', evidence: evidence(10) },
+      { id: 'check-3', desc: 'check 3', points: 1,
+        stableKey: 'pack-a/check-2', evidence: evidence(20) },
+    ] }],
+  };
+}
+
+function requireFirst<T>(items: readonly T[]): T {
+  const item = items[0];
+  assert.ok(item);
+  return item;
+}
+
+test('grade timing is attributed by permanent check key and pack id', () => {
+  assert.deepEqual(measureGradePackRuntime(report()), {
+    schemaVersion: 1,
+    metric: PACK_RUNTIME_METRIC,
+    packs: [
+      { id: 'pack-a', checkCount: 2, setupRuntimeMs: 5, criterionRuntimeMs: 50,
+        measuredRuntimeMs: 55 },
+      { id: 'pack-b', checkCount: 1, setupRuntimeMs: 5, criterionRuntimeMs: 10,
+        measuredRuntimeMs: 15 },
+    ],
+  });
+});
+
+test('pack timing refuses missing, repeated, and out-of-scope evidence', () => {
+  const missing = report();
+  requireFirst(missing.features).criteria.pop();
+  assert.throws(() => measureGradePackRuntime(missing), /missing pack-a\/check-2/);
+  const repeated = report();
+  const repeatedCriteria = requireFirst(repeated.features).criteria;
+  repeatedCriteria.push(requireFirst(repeatedCriteria));
+  assert.throws(() => measureGradePackRuntime(repeated), /repeats stable key/);
+  const unknown = report();
+  requireFirst(requireFirst(unknown.features).criteria).stableKey = 'other/check';
+  assert.throws(() => measureGradePackRuntime(unknown), /unknown stable key/);
+});
+
+test('suite timing accumulates across suites and enforces only declared bounds', () => {
+  const first = { packRuntime: measureGradePackRuntime(report()) };
+  const secondReport = report();
+  const secondCriteria = requireFirst(secondReport.features).criteria;
+  requireFirst(secondCriteria).evidence = evidence(11);
+  const secondCriterion = secondCriteria[1];
+  assert.ok(secondCriterion);
+  secondCriterion.evidence = evidence(9);
+  const thirdCriterion = secondCriteria[2];
+  assert.ok(thirdCriterion);
+  thirdCriterion.evidence = evidence(10);
+  const runtime = aggregatePackRuntime([first, { packRuntime: measureGradePackRuntime(secondReport) }], [
+    { id: 'pack-a', budget: { status: 'bounded', maxRuntimeMs: 80 } },
+    { id: 'pack-b', budget: { status: 'unmeasured' } },
+  ]);
+  assert.deepEqual(runtime.packs, [
+    { id: 'pack-a', checkCount: 4, setupRuntimeMs: 10, criterionRuntimeMs: 71,
+      measuredRuntimeMs: 81, budget: { status: 'bounded', maxRuntimeMs: 80 }, exceeded: true },
+    { id: 'pack-b', checkCount: 2, setupRuntimeMs: 10, criterionRuntimeMs: 19, measuredRuntimeMs: 29,
+      budget: { status: 'unmeasured' }, exceeded: null },
+  ]);
+  assert.deepEqual(exceededPackBudgets(runtime).map(pack => pack.id), ['pack-a']);
+});
+
+test('suite timing rejects inconsistent measurements', () => {
+  const packRuntime = measureGradePackRuntime(report());
+  const first = packRuntime.packs[0];
+  assert(first);
+  first.measuredRuntimeMs += 1;
+  assert.throws(() => aggregatePackRuntime([{ packRuntime }], [
+    { id: 'pack-a', budget: { status: 'unmeasured' } },
+    { id: 'pack-b', budget: { status: 'unmeasured' } },
+  ]), /must equal setupRuntimeMs \+ criterionRuntimeMs/);
+});

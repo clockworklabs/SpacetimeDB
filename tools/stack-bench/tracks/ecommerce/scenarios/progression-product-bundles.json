@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 4,
+  "name": "Product bundles",
+  "features": [
+    {
+      "id": 740,
+      "name": "Bundle definitions",
+      "actors": [
+        "admin",
+        "visitor"
+      ],
+      "setup": [
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"bundles-link","unlessVisible":"bundle-name-input"}
+      ],
+      "criteria": [
+        {
+          "id": "740a",
+          "category": "feature",
+          "desc": "a saved bundle shows the exact price and component quantities after reopening the application",
+          "points": 2,
+          "steps": [
+            {"do":"fill","actor":"admin","testid":"bundle-name-input","text":"Office bundle"},
+            {"do":"fill","actor":"admin","testid":"bundle-price-input","text":"75.00"},
+            {"do":"fill","actor":"admin","testid":"bundle-components-input","text":"[{\"item\":\"Keyboard\",\"quantity\":2},{\"item\":\"Desk Lamp\",\"quantity\":1}]"},
+            {"do":"click","actor":"admin","testid":"bundle-save"},
+            {"do":"expect","actor":"admin","testid":"bundle-card","within":10000,"contains":"Office bundle"},
+            {"do":"reload","actor":"visitor","settleMs":1000},
+            {"do":"click","actor":"visitor","testid":"bundles-link","unlessVisible":"bundle-card"},
+            {"do":"expectNumber","actor":"visitor","testid":"bundle-price","equals":75,"within":10000,"in":{"testid":"bundle-card","contains":"Office bundle"}},
+            {"do":"expectElementCount","actor":"visitor","testid":"bundle-component","in":{"testid":"bundle-card","contains":"Office bundle"},"equals":2},
+            {"do":"expect","actor":"visitor","testid":"bundle-component","contains":"Keyboard","in":{"testid":"bundle-card","contains":"Office bundle"},"attribute":"data-quantity","value":"2","within":10000},
+            {"do":"expect","actor":"visitor","testid":"bundle-component","contains":"Desk Lamp","in":{"testid":"bundle-card","contains":"Office bundle"},"attribute":"data-quantity","value":"1","within":10000}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 743,
+      "name": "Bundle management authorization",
+      "actors": [
+        "admin",
+        "customer"
+      ],
+      "setup": [
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"bundles-link","unlessVisible":"bundle-name-input"},
+        {"do":"signUp","actor":"customer","name":"bundle-management"},
+        {"do":"fill","actor":"admin","testid":"bundle-name-input","text":"Protected bundle"},
+        {"do":"fill","actor":"admin","testid":"bundle-price-input","text":"75.00"},
+        {"do":"fill","actor":"admin","testid":"bundle-components-input","text":"[{\"item\":\"Keyboard\",\"quantity\":2},{\"item\":\"Desk Lamp\",\"quantity\":1}]"},
+        {"do":"click","actor":"admin","testid":"bundle-save"},
+        {"do":"expect","actor":"admin","testid":"bundle-card","within":10000,"contains":"Protected bundle"}
+      ],
+      "criteria": [
+        {
+          "id": "743a",
+          "category": "production",
+          "desc": "a customer cannot replace a staff-created bundle through the application write",
+          "points": 3,
+          "steps": [
+            {"do":"fill","actor":"admin","testid":"bundle-price-input","text":"1.00"},
+            {"do":"callAction","actor":"customer","from":"admin","input":{"testid":"bundle-save","attribute":"data-bundle-save-input"},"action":"saveBundle","namedAction":{"id":"saveBundle","path":"/api/bundles","reducer":"save_bundle","args":["Protected bundle",1,"[{\"item\":\"Keyboard\",\"quantity\":1}]"],"params":[{"name":"name","in":"body"},{"name":"price","in":"body"},{"name":"componentsJson","in":"body"}]},"settleMs":1000},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"application-refused"},
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"click","actor":"admin","testid":"bundles-link","unlessVisible":"bundle-card"},
+            {"do":"expectNumber","actor":"admin","testid":"bundle-price","equals":75,"within":10000,"in":{"testid":"bundle-card","contains":"Protected bundle"}},
+            {"do":"expect","actor":"admin","testid":"bundle-component","contains":"Keyboard","in":{"testid":"bundle-card","contains":"Protected bundle"},"attribute":"data-quantity","value":"2","within":10000}
+          ]
+        }
+      ]
+    }
+  ]
+}

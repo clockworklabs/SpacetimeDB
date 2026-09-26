@@ -1,0 +1,57 @@
+transport body unavailable {"origin":"http://127.0.0.1:35197","pathSha256":"15b6f7aa2137c0ccb870e676491120a662f743be5e9d1d5a3defea9312e9a822","status":200,"contentType":"text/html","resourceType":"font","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35197","pathSha256":"15b6f7aa2137c0ccb870e676491120a662f743be5e9d1d5a3defea9312e9a822","status":200,"contentType":"text/html","resourceType":"font","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+▶ privacy actors retain font bodies across reloads without changing ordinary HTTP caching
+  ✔ ordinary, leak=false (199.461234ms)
+  ✔ initial, leak=false (285.284735ms)
+  ✔ initial, leak=true (247.300464ms)
+  ✔ replacement, leak=false (295.357667ms)
+  ✔ replacement, leak=true (315.020978ms)
+  ✔ fresh, leak=false (325.383618ms)
+  ✔ fresh, leak=true (294.334622ms)
+  ✔ race, leak=false (232.206531ms)
+  ✔ race, leak=true (232.336234ms)
+✔ privacy actors retain font bodies across reloads without changing ordinary HTTP caching (2540.773501ms)
+▶ privacy verdict drains an in-flight body and keeps a stalled response inconclusive
+  ✔ clean (480.920562ms)
+  ✔ leak (523.318437ms)
+transport body unavailable {"origin":"http://127.0.0.1:44527","pathSha256":"bd47413b5c03dfc6e4b5b8143fe205eae10ecaf0c28b426be98d74cff48c7453","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+  ✔ captured (118.909607ms)
+transport body unavailable {"origin":"http://127.0.0.1:44527","pathSha256":"bd47413b5c03dfc6e4b5b8143fe205eae10ecaf0c28b426be98d74cff48c7453","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+  ✔ stalled (1145.661979ms)
+✔ privacy verdict drains an in-flight body and keeps a stalled response inconclusive (2347.773761ms)
+✔ HTML and live SSE leaks are captured; an unsupported stream cannot pass (241.643233ms)
+▶ HTTP privacy capture survives immediate app reload; disabled durability loses evidence
+  ✔ json, durable=true (352.664762ms)
+  ✔ empty, durable=true (309.849176ms)
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"2dd78ea1dde499dfa640de7f80b4e97ea7d5ecd524696428ff7de6bb648ba930","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+  ✔ json, durable=false (323.205587ms)
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+transport body unavailable {"origin":"http://127.0.0.1:35611","pathSha256":"c5961ebc0c6e2e76ed27db9d0ff06581850bb955a64c22a95cb702a7f0daf728","status":204,"contentType":"application/json","resourceType":"fetch","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+  ✔ empty, durable=false (341.870509ms)
+✔ HTTP privacy capture survives immediate app reload; disabled durability loses evidence (1398.415572ms)
+✔ compressed SpacetimeDB frames decode to their message text and other frames keep their bytes (2.667258ms)
+✔ transport absence cannot pass after truncation, eviction, or an unreadable body (5.068428ms)
+✔ capture failures identify body reads, declared body caps, and unsupported streams without payloads (3.177405ms)
+✔ privacy capture includes public script, style and error bodies (1.240411ms)
+✔ body failure diagnostics use bounded categories without error text or URL secrets (2.926899ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5345.744457

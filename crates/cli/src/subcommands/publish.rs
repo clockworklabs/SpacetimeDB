@@ -547,7 +547,7 @@ pub async fn exec_with_options(
 }
 
 pub async fn exec_from_entry(
-    mut config: Config,
+    config: &mut Config,
     entry: HashMap<String, serde_json::Value>,
     config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
@@ -563,7 +563,7 @@ pub async fn exec_from_entry(
     let yes = if force { YesFlags::all() } else { YesFlags::default() };
 
     execute_publish_configs(
-        &mut config,
+        config,
         vec![command_config],
         true,
         config_dir,

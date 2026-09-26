@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "sourceCommit": "abf8aaed6d5963508c327e38d74c3e00ab66dc03",
+  "targetCommit": "a1b3f6473894fee35f89bda9b8c265833391b8bf",
+  "priorReview": "qualification-evidence/ecommerce-l3-stock-view-20260925/reuse-review.json",
+  "changedBehavior": {
+    "stackIsolation": "Shared harness code no longer names stacks. Stack-specific branches in grading, reset, provenance, crash control, admission, release images, reference deployment and prompt setup became adapter fields implemented in each stack's own files with the previous behaviour. Qualification scope ownership is by filename, the adapter and identity registries are hashed per stack, stack modules may not import other stacks' modules, and contract interface blocks leave the recipe meaning hash and join their own stack's scope.",
+    "supabase": "A new supabase stack, its reference application, guidance and contract interface blocks. It is registered but not qualified; the calibration does not list it."
+  },
+  "reuseBoundary": "The existing references, mutation manifests, fixtures, checks and every existing stack's agent-visible contract text are unchanged; the recipe execution hashes are identical and only the meaning hashes moved, because meaning now covers interface-neutral contract text. The executable change for existing stacks is a behaviour-preserving move of their code behind adapter fields. Reference and mutation results for postgres, mongodb, spacetime and convex and the null control are reusable. This review does not qualify supabase.",
+  "validation": [
+    "Every existing stack's reference and mutation scope, the null scope and the recipe content hash are byte-identical between the committed tree and the same tree with every trace of supabase removed (local-notes/isolation-check.mjs, local-notes/make-isolation-baseline.sh).",
+    "tests/qualification-scope.test.ts pins that registering another stack, its runtime assets and its interface blocks leaves other scopes unchanged, and that a cross-stack module import fails closed.",
+    "Reference metadata validation and build commands for the four existing references are identical before and after across 77 valid and malformed metadata cases; all five references validate.",
+    "Unit, contract and dashboard tiers pass on Windows except tests needing Linux flock, transport-frames body capture and the calibration evidence-count assertion, which fail identically at the source commit.",
+    "qualification status for ecommerce L3 reports ready with no blockers on the Windows checkout; the Linux appliance check follows before the next campaign."
+  ]
+}

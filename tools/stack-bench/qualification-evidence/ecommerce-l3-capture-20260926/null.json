@@ -1,0 +1,227 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-26T14-42-42-444Z",
+  "attempt": {
+    "id": "null-control-2026-09-26T14-42-42-444Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-26T14:42:42.445Z",
+    "completedAt": "2026-09-26T14:43:07.522Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "248999a3b442f70fe16eccbe6d45001a156b0125b881273e4aa917c080a66337"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "080e6698db20af1a4a57d7e3e84678e38ab375f750c8d5af93d633f794dda523"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "d19a837b9632d0f09a37fee7117ab9a765a88f911bd2ba50cf13d3960b9668d4"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 25077,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 34,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "2a609df28d0b3f98ebe988241f4fd032f7ad25355a8a6ef08edd8dec44d663ef",
+      "executableSha256": "0abbce601fad15fcaa51fc9f2153ada10b9deee6bc9e9f0d895f33f6f0e6f6e8",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "080e6698db20af1a4a57d7e3e84678e38ab375f750c8d5af93d633f794dda523",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "02feab01d4c7e2da6235d5a2ced1fbe6ce7d78c757fd28b7ea0e9823d0bb02af"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 9,
+      "points": 14,
+      "expectedFailures": {
+        "criteria": 9,
+        "points": 14
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 9,
+          "points": 14
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-002",
+        "scenario": "scenarios/01-account-disclosure.json",
+        "feature": 110,
+        "featureName": "Account password disclosure",
+        "criterion": "110a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-074",
+        "scenario": "scenarios/progression-customer-profile.json",
+        "feature": 620,
+        "featureName": "Customer profile",
+        "criterion": "620c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-074",
+        "scenario": "scenarios/progression-customer-profile.json",
+        "feature": 620,
+        "featureName": "Customer profile",
+        "criterion": "620a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-074",
+        "scenario": "scenarios/progression-customer-profile.json",
+        "feature": 620,
+        "featureName": "Customer profile",
+        "criterion": "620b",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-078",
+        "scenario": "scenarios/progression-managed-support-privacy.json",
+        "feature": 613,
+        "featureName": "Managed support privacy",
+        "criterion": "613b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612b",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612d",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

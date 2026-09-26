@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "kind": "supabase",
+  "installDirectories": [".", "client"],
+  "client": { "directory": "client" },
+  "requiredEnvironment": ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_DB_URL", "VITE_PORT"]
+}

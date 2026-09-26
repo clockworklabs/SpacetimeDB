@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "sourceCommit": "3213109f50",
+  "targetCommit": "23d7105869",
+  "changedFiles": [
+    "src/composition/product-config.ts",
+    "src/runtime/resource-lock-worker.ts",
+    "src/evidence/provenance.ts",
+    "src/composition/qualification-scope.ts",
+    "tests/resource-lock-transactions.test.ts",
+    "tests/provenance.test.ts",
+    "appliance/README.md"
+  ],
+  "change": "Admission reserves ATTEMPT_STARTUP_MEMORY_BYTES (2.5 GiB) for each launch in its first minute instead of the 9.25 GiB sum of container caps. Container caps are unchanged. The qualification scope hash also reads text with LF line endings, as Git stores it, so a CRLF checkout of the same commit hashes like the appliance; LF-tree hashes are unchanged.",
+  "gradingImpact": "None. No grader, action, scenario, stack adapter, reference app, mutation, check or scoring code changed. Admission decides when an attempt may start; it does not change how an attempt is graded.",
+  "measurement": {
+    "source": "docker stats every 5 s during the 2026-09-24 L3 qualification runs",
+    "attempts": 29,
+    "maxConcurrentAttempts": 12,
+    "firstMinuteAttemptMiB": {
+      "p99": 1664,
+      "max": 1909
+    },
+    "wholeAttemptMiB": {
+      "p50": 676,
+      "p99": 2341,
+      "max": 3151
+    }
+  },
+  "verification": {
+    "tests": [
+      "tests/resource-lock-transactions.test.ts",
+      "tests/backend-lease.test.ts",
+      "tests/provenance.test.ts"
+    ],
+    "result": "resource-lock-transactions and backend-lease 18 pass; provenance and qualification-scope 12 pass",
+    "compilerStaleness": "qualification status at 23d7105869 reports only executableSha256 changed for all nine scopes"
+  },
+  "scopes": [
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "b310b0eff5eea718770af2f1963675b716fbf6a8f2c65e5517d1f4d66b01eac8"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "b310b0eff5eea718770af2f1963675b716fbf6a8f2c65e5517d1f4d66b01eac8"
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+      "toExecutableSha256": "387e4fedc9c94b23d005b6bb036975ef76221c0df6bb1497b3511c71d77b6fe6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+      "toExecutableSha256": "387e4fedc9c94b23d005b6bb036975ef76221c0df6bb1497b3511c71d77b6fe6"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+      "toExecutableSha256": "2dd613e6ec3d95eac7eceea555c85b35d3e977eba194a6520dc54fef59854807"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+      "toExecutableSha256": "2dd613e6ec3d95eac7eceea555c85b35d3e977eba194a6520dc54fef59854807"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "6e2c57f54c8279db0ae912c796eeba5db5d57dd20cdf207d1bf41cddfbbbab9a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "6e2c57f54c8279db0ae912c796eeba5db5d57dd20cdf207d1bf41cddfbbbab9a"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+      "toExecutableSha256": "7e2a0fc6ecf1e3bfc79ca8034cbc7a83c8e4c235b60d813f6f189bf6202c87eb"
+    }
+  ],
+  "backendMemoryCap": {
+    "change": "The backend sidecar memory cap is 2 GiB instead of 1 GiB.",
+    "reason": "The backend holds the stack database; it peaked at 922 MiB of the former 1 GiB cap during the qualification runs, so a spike could kill a correct database.",
+    "gradingImpact": "A higher cap only removes an environment failure; it cannot make an incorrect application pass."
+  },
+  "unpricedProviderRequests": {
+    "change": "The credential broker forwards requests it cannot fully price instead of refusing them, and marks those sessions as unpriced so reports show their spend as unknown with the priced part as a lower bound; an attempt cost cap then refuses automatic retries.",
+    "gradingImpact": "None. Only provider request forwarding and cost accounting changed; the reference and mutation qualification runs use the model-free reference agent, which sends no provider requests."
+  }
+}

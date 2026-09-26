@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 6,
+  "name": "Refund allocation",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
+  "features": [
+    {
+      "id": 751,
+      "name": "Full refund restores each original payment portion",
+      "actors": [
+        "owner",
+        "staff"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"credit-owner-751"},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-panel"},
+        {"do":"expect","actor":"owner","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"click","actor":"staff","testid":"credit-link","unlessVisible":"credit-panel"},
+        {"do":"expect","actor":"staff","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"fill","actor":"staff","testid":"credit-amount-input","text":"10.00"},
+        {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-751"},
+        {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-751","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
+        {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000},
+        {"do":"click","actor":"owner","testid":"catalog-link"},
+        {"do":"click","actor":"owner","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
+        {"do":"click","actor":"owner","testid":"cart-toggle"},
+        {"do":"expectNumber","actor":"owner","testid":"cart-total","equals":42},
+        {"do":"click","actor":"owner","testid":"credit-checkout"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expectNumber","actor":"owner","testid":"payment-credit-amount","equals":10,"in":{"testid":"order-item","contains":"Desk Lamp"},"within":10000},
+        {"do":"expectNumber","actor":"owner","testid":"payment-external-amount","equals":32,"in":{"testid":"order-item","contains":"Desk Lamp"}},
+        {"do":"click","actor":"owner","testid":"support-link"},
+        {"do":"fill","actor":"owner","testid":"support-subject","text":"Split refund 751"},
+        {"do":"fill","actor":"owner","testid":"support-message","text":"Please refund this order."},
+        {"do":"click","actor":"owner","testid":"support-submit"},
+        {"do":"click","actor":"owner","testid":"support-order-option","contains":"Desk Lamp","in":{"testid":"support-ticket","contains":"Split refund 751"}},
+        {"do":"click","actor":"owner","testid":"support-link-order","in":{"testid":"support-ticket","contains":"Split refund 751"}},
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true,"within":1000}
+      ],
+      "criteria": [
+        {
+          "id": "751a",
+          "category": "feature",
+          "desc": "Full refund restores each original payment portion",
+          "points": 2,
+          "steps": [
+            {"do":"click","actor":"staff","testid":"support-refund","in":{"testid":"support-ticket","contains":"Split refund 751"}},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"credit-owner-751"},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"refund-entry","contains":"Desk Lamp","equals":1,"within":10000},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"order-refund-total","equals":42,"in":{"testid":"order-item","contains":"Desk Lamp"}},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"refund-credit-amount","equals":10,"in":{"testid":"refund-entry","contains":"Desk Lamp"}},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"refund-external-amount","equals":32,"in":{"testid":"refund-entry","contains":"Desk Lamp"}},
+            {"do":"click","actor":"owner-fresh","testid":"credit-link"},
+            {"do":"expect","actor":"owner-fresh","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"credit-balance","equals":10}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 756,
+      "name": "Concurrent refunds do not duplicate credit after restart",
+      "actors": [
+        "owner",
+        "staff",
+        "staff2"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"credit-owner-756"},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-panel"},
+        {"do":"expect","actor":"owner","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"click","actor":"staff","testid":"credit-link","unlessVisible":"credit-panel"},
+        {"do":"expect","actor":"staff","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"fill","actor":"staff","testid":"credit-amount-input","text":"10.00"},
+        {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-756"},
+        {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-756","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
+        {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000},
+        {"do":"click","actor":"owner","testid":"catalog-link"},
+        {"do":"click","actor":"owner","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
+        {"do":"click","actor":"owner","testid":"cart-toggle"},
+        {"do":"expectNumber","actor":"owner","testid":"cart-total","equals":42},
+        {"do":"click","actor":"owner","testid":"credit-checkout"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expectNumber","actor":"owner","testid":"payment-credit-amount","equals":10,"in":{"testid":"order-item","contains":"Desk Lamp"},"within":10000},
+        {"do":"expectNumber","actor":"owner","testid":"payment-external-amount","equals":32,"in":{"testid":"order-item","contains":"Desk Lamp"}},
+        {"do":"click","actor":"owner","testid":"support-link"},
+        {"do":"fill","actor":"owner","testid":"support-subject","text":"Split refund 756"},
+        {"do":"fill","actor":"owner","testid":"support-message","text":"Please refund this order."},
+        {"do":"click","actor":"owner","testid":"support-submit"},
+        {"do":"click","actor":"owner","testid":"support-order-option","contains":"Desk Lamp","in":{"testid":"support-ticket","contains":"Split refund 756"}},
+        {"do":"click","actor":"owner","testid":"support-link-order","in":{"testid":"support-ticket","contains":"Split refund 756"}},
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true,"within":1000},
+        {"do":"signIn","actor":"staff2","name":"staff","password":"stackbench-staff-2026","exact":true}
+      ],
+      "criteria": [
+        {
+          "id": "756a",
+          "category": "production",
+          "desc": "Concurrent refunds restore the original credit and external amounts once, including after restart",
+          "points": 2,
+          "steps": [
+            {"do":"callConcurrently","actors":["staff","staff2"],"action":"supportRefund","namedAction":{"id":"supportRefund","path":"/api/support/cases/{caseId}/refund","method":"POST","reducer":"support_refund","args":[0],"params":[{"name":"caseId","in":"path","placeholder":"{caseId}","wireType":"u64"}]},"from":"staff","input":{"testid":"support-ticket","contains":"Split refund 756","attribute":"data-refund-input"},"settleMs":0},
+            {"do":"expectCallOutcomes"},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"credit-owner-756"},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"refund-entry","contains":"Desk Lamp","equals":1,"within":10000},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"order-refund-total","equals":42,"in":{"testid":"order-item","contains":"Desk Lamp"}},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"refund-credit-amount","equals":10,"in":{"testid":"refund-entry","contains":"Desk Lamp"}},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"refund-external-amount","equals":32,"in":{"testid":"refund-entry","contains":"Desk Lamp"}},
+            {"do":"click","actor":"owner-fresh","testid":"credit-link"},
+            {"do":"expect","actor":"owner-fresh","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"credit-balance","equals":10},
+            {"do":"restartBackend","settleMs":1000},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"credit-owner-756"},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"refund-entry","contains":"Desk Lamp","equals":1,"within":10000},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"order-refund-total","equals":42,"in":{"testid":"order-item","contains":"Desk Lamp"}},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"refund-credit-amount","equals":10,"in":{"testid":"refund-entry","contains":"Desk Lamp"}},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"refund-external-amount","equals":32,"in":{"testid":"refund-entry","contains":"Desk Lamp"}},
+            {"do":"click","actor":"owner-fresh","testid":"credit-link"},
+            {"do":"expect","actor":"owner-fresh","testid":"credit-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"credit-balance","equals":10}
+          ]
+        }
+      ]
+    }
+  ]
+}

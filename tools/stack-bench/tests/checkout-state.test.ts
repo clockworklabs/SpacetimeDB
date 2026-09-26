@@ -1,0 +1,681 @@
+import assert from 'node:assert/strict';
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, checkoutCrashDifferences, cancellationDifferences, orderCancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+  from '../src/stacks/checkout-state.js';
+import type { CheckoutState } from '../src/stacks/checkout-state.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
+import { executeAction } from '../src/actions/action-contract.js';
+import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
+import { getSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-operations.js';
+
+function states(): { before: CheckoutState; prepared: CheckoutState; after: CheckoutState } {
+  const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 1999, cart: [],
+    stock: [{ warehouseId: 'w', quantity: 10 }], reservations: [], orders: [], payments: [], orphanOrderLines: 0 };
+  const prepared = structuredClone(before);
+  prepared.cart = [{ itemId: 'i', quantity: 1 }];
+  prepared.stock[0]!.quantity = 9;
+  prepared.reservations = [{ itemId: 'i', warehouseId: 'w', quantity: 1 }];
+  const after = structuredClone(before);
+  after.stock[0]!.quantity = 9;
+  after.orders = [{ id: 'o', accountId: 'a', totalMinor: 1999, status: 'pending',
+    lines: [{ itemId: 'i', quantity: 1, priceMinor: 1999, allocations: [{ warehouseId: 'w', quantity: 1 }] }] }];
+  after.payments = [{ id: 'p', orderId: 'o', amountMinor: 1999, status: 'paid' }];
+  return { before, prepared, after };
+}
+
+test('order-only checkout rejects partial, duplicate, lost and refunded effects without inventing payments', () => {
+  const { before, prepared, after } = states();
+  prepared.stock = structuredClone(before.stock);
+  for (const state of [before, prepared, after]) {
+    state.payments = []; state.reservations = []; state.orphanAllocations = 0;
+    for (const order of state.orders) order.refundedMinor = 0;
+    state.orders.push({ ...structuredClone(after.orders[0]!), id: 'prior', refundedMinor: 0 });
+    state.refunds = [{ orderId: 'prior', accountId: 'a', amountMinor: 0 }]; state.orphanRefunds = 0;
+  }
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, prepared, 1, true), []);
+  assert(checkoutDifferences(before, prepared, after, 1).some(row => row.control === 'payments created by one checkout'));
+  for (const mutate of [
+    (state: CheckoutState) => { state.orders[0]!.lines = []; },
+    (state: CheckoutState) => { state.orders.push({ ...structuredClone(state.orders[0]!), id: 'duplicate' }); },
+    (state: CheckoutState) => { state.orders = state.orders.filter(order => order.id !== 'prior'); },
+    (state: CheckoutState) => { state.orders.find(order => order.id === 'prior')!.refundedMinor = 1999; },
+    (state: CheckoutState) => { state.orders[0]!.refundedMinor = 1999; },
+    (state: CheckoutState) => { state.stock[0]!.quantity++; },
+    (state: CheckoutState) => { state.stock = []; },
+    (state: CheckoutState) => { state.orphanAllocations = 1; },
+    (state: CheckoutState) => { state.refunds![0]!.amountMinor = 1; },
+    (state: CheckoutState) => { state.refunds!.push({ orderId: 'o', accountId: 'a', amountMinor: 1999 }); },
+    (state: CheckoutState) => { state.orphanRefunds = 1; },
+  ]) {
+    const broken = structuredClone(after); mutate(broken);
+    assert(orderCheckoutDifferences(before, prepared, broken, 1, true).length);
+  }
+  const missing = structuredClone(after); delete missing.orders[0]!.refundedMinor;
+  assert.throws(() => orderCheckoutDifferences(before, prepared, missing, 1));
+  for (const state of [before, prepared, after]) for (const order of state.orders) order.refundedMinor = null;
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
+  const preparedRefund = structuredClone(prepared); preparedRefund.refunds = [];
+  assert(orderCheckoutDifferences(before, preparedRefund, after, 1).some(row => row.control === 'refunds unchanged during cart preparation'));
+
+  // An optional stock hold must explain the stock debit without covering more than the cart.
+  const held = states();
+  for (const state of [held.before, held.prepared, held.after]) {
+    state.payments = []; state.orphanAllocations = 0;
+    for (const order of state.orders) order.refundedMinor = 0;
+  }
+  assert.deepEqual(orderCheckoutDifferences(held.before, held.prepared, held.after, 1), []);
+  assert(orderCheckoutDifferences(held.before, held.prepared, held.prepared, 1).length, 'confirmed checkout cannot remain just a stock hold');
+  const unexplained = structuredClone(held.prepared); unexplained.reservations = [];
+  assert(orderCheckoutDifferences(held.before, unexplained, held.after, 1).length, 'stock debit needs an actual hold');
+  const overheld = structuredClone(held.prepared); overheld.reservations[0]!.quantity = 2; overheld.stock[0]!.quantity = 8;
+  assert(orderCheckoutDifferences(held.before, overheld, held.after, 1).length, 'hold cannot exceed the cart');
+  const retained = structuredClone(held.after); retained.reservations = structuredClone(held.prepared.reservations);
+  assert(orderCheckoutDifferences(held.before, held.prepared, retained, 1, true).length, 'checkout must release its hold');
+  // A cart may hold only part of its quantity; final allocations must still account for the whole order.
+  held.prepared.cart[0]!.quantity = 2;
+  held.after.stock[0]!.quantity = 8;
+  held.after.orders[0]!.totalMinor *= 2;
+  held.after.orders[0]!.lines[0]!.quantity = 2;
+  held.after.orders[0]!.lines[0]!.allocations[0]!.quantity = 2;
+  assert.deepEqual(orderCheckoutDifferences(held.before, held.prepared, held.after, 2), []);
+});
+
+test('cart add overlapping checkout accepts both serial orders and rejects lost, duplicated and partial effects', () => {
+  const { before, prepared, after } = states();
+  for (const state of [before, prepared, after]) {
+    state.payments = []; state.orphanAllocations = 0;
+    state.stock[0]!.itemId = 'i'; state.stock.push({ itemId: 'j', warehouseId: 'w', quantity: 20 });
+    for (const order of state.orders) order.refundedMinor = 0;
+  }
+  const lines = [{ itemId: 'i', quantity: 1, priceMinor: 1999 }];
+  const added = { itemId: 'j', quantity: 1, priceMinor: 500 };
+  const checkoutFirst = structuredClone(after);
+  checkoutFirst.cart = [{ itemId: 'j', quantity: 1 }];
+  const addFirst = structuredClone(after);
+  addFirst.stock[1]!.quantity--;
+  addFirst.orders[0]!.totalMinor += 500;
+  addFirst.orders[0]!.lines.push({ ...added, allocations: [{ warehouseId: 'w', quantity: 1 }] });
+  const compare = (result: CheckoutState) => orderCheckoutWithAddDifferences(before, prepared, result, lines, added);
+  assert.deepEqual(compare(addFirst), []);
+  assert.deepEqual(compare(checkoutFirst), []);
+  checkoutFirst.reservations = [{ itemId: 'j', warehouseId: 'w', quantity: 1 }];
+  checkoutFirst.stock[1]!.quantity--;
+  assert.deepEqual(compare(checkoutFirst), [], 'reservation-backed carts are valid too');
+  assert(compare(after).length, 'the added unit cannot disappear');
+  assert(compare(prepared).length, 'acknowledging both operations without checkout cannot pass');
+  for (const accepted of [addFirst, checkoutFirst]) for (const mutate of [
+    (state: CheckoutState) => { state.orders[0]!.totalMinor++; },
+    (state: CheckoutState) => { state.orders[0]!.accountId = 'wrong'; },
+    (state: CheckoutState) => { state.orders[0]!.lines[0]!.quantity++; },
+    (state: CheckoutState) => { state.orders.push({ ...state.orders[0]!, id: 'duplicate' }); },
+    (state: CheckoutState) => { state.stock[1]!.quantity--; },
+    (state: CheckoutState) => { state.stock[1]!.quantity++; },
+    (state: CheckoutState) => { state.cart.push({ itemId: 'j', quantity: 1 }); },
+    (state: CheckoutState) => { state.reservations.push({ itemId: 'j', warehouseId: 'unknown', quantity: 1 }); },
+  ]) {
+    const broken = structuredClone(accepted); mutate(broken); assert(compare(broken).length);
+  }
+  const malformed = structuredClone(prepared); malformed.cart[0]!.quantity = 2;
+  assert(orderCheckoutWithAddDifferences(before, malformed, addFirst, lines, added).length);
+  assert.throws(() => orderCheckoutWithAddDifferences(before, prepared, after, lines, lines[0]!), /new product/);
+  const emptyStock = [before, prepared, checkoutFirst].map(state => structuredClone(state));
+  emptyStock[0]!.stock[1]!.quantity = 0; emptyStock[1]!.stock[1]!.quantity = 0; emptyStock[2]!.stock[1]!.quantity = -1;
+  assert(orderCheckoutWithAddDifferences(emptyStock[0]!, emptyStock[1]!, emptyStock[2]!, lines, added)
+    .some(row => row.control.includes('negative stock')), 'restoring a hold must not mask negative stock');
+  for (const state of [before, prepared, addFirst, checkoutFirst]) {
+    state.stock = []; state.reservations = [];
+    for (const order of state.orders) for (const line of order.lines) line.allocations = [];
+  }
+  for (const state of [addFirst, checkoutFirst]) {
+    assert.deepEqual(orderCheckoutWithAddDifferences(before, prepared, state, lines, added, false), []);
+  }
+});
+
+test('unsettled server work blocks later checkout and stock comparisons until a new grade', () => {
+  const checkoutActivity = { unsettled: false };
+  const capability = createDatabaseReadCapability({ expand: value => value, skip: true, checkoutActivity });
+  capability.markCheckoutUnsettled();
+  const nextAction = createDatabaseReadCapability({ expand: value => value, skip: true, checkoutActivity });
+  assert.throws(() => nextAction.getCheckoutState({ account: 'buyer', item: 'Keyboard' }), /transport evidence is incomplete/);
+  assert.throws(() => nextAction.getStock({ item: 'Keyboard' }), /transport evidence is incomplete/);
+  const fresh = createDatabaseReadCapability({ expand: value => value, skip: true });
+  assert.throws(() => fresh.getCheckoutState({ account: 'buyer', item: 'Keyboard' }), /reads are disabled/);
+});
+
+test('checkout reconciliation accepts stock reservation and atomic checkout alternatives', () => {
+  const { before, prepared, after } = states();
+  assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);
+  prepared.stock = structuredClone(before.stock);
+  prepared.reservations = [];
+  assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);
+  for (const snapshot of [before, prepared, after]) assert.deepEqual(checkoutStateSchema.parse(snapshot), snapshot);
+  const prior = { ...structuredClone(after.orders[0]!), id: 'prior',
+    lines: [{ ...structuredClone(after.orders[0]!.lines[0]!), itemId: 'old-a' },
+      { ...structuredClone(after.orders[0]!.lines[0]!), itemId: 'old-b' }] };
+  before.orders.push(structuredClone(prior)); prepared.orders.push(structuredClone(prior));
+  prior.lines.reverse(); after.orders.push(prior);
+  assert.deepEqual(checkoutDifferences(before, prepared, after, 1), [], 'nested database row order is not corruption');
+
+  // One order can split a product across warehouse lines.
+  const split = states();
+  split.before.stock.push({ warehouseId: 'west', quantity: 5 });
+  split.prepared.stock.push({ warehouseId: 'west', quantity: 4 });
+  split.after.stock.push({ warehouseId: 'west', quantity: 4 });
+  split.prepared.cart[0]!.quantity = 2;
+  split.prepared.reservations.push({ itemId: 'i', warehouseId: 'west', quantity: 1 });
+  split.after.orders[0]!.lines.push({ itemId: 'i', quantity: 1, priceMinor: 1999, allocations: [{ warehouseId: 'west', quantity: 1 }] });
+  split.after.orders[0]!.totalMinor *= 2;
+  split.after.payments[0]!.amountMinor *= 2;
+  assert.deepEqual(checkoutDifferences(split.before, split.prepared, split.after, 2), []);
+});
+
+test('crash recovery permits complete or absent effects only without an acknowledgement', () => {
+  const { before, prepared, after } = states();
+  assert.deepEqual(checkoutDifferences(before, prepared, after, 1, true), []);
+  assert.deepEqual(checkoutDifferences(before, prepared, prepared, 1, true), []);
+  assert(checkoutDifferences(before, prepared, prepared, 1).length, 'acknowledged checkout cannot disappear');
+  for (const mutate of [
+    (state: CheckoutState) => { state.payments = []; },
+    (state: CheckoutState) => { state.cart = structuredClone(prepared.cart); },
+    (state: CheckoutState) => { state.stock[0]!.quantity++; },
+    (state: CheckoutState) => { state.orders.push({ ...structuredClone(state.orders[0]!), id: 'duplicate' }); },
+  ]) {
+    const partial = structuredClone(after); mutate(partial);
+    assert(checkoutDifferences(before, prepared, partial, 1, true).length);
+  }
+  const invalid = structuredClone(prepared);
+  invalid.cart[0]!.quantity++;
+  assert(checkoutDifferences(before, invalid, invalid, 1, true).length, 'an invalid setup cannot pass as absent');
+});
+
+test('purchase histories reconcile owners, money, old rows and each warehouse even when total stock is unchanged', () => {
+  const { before, after } = states();
+  before.orders.push({ ...structuredClone(after.orders[0]!), id: 'old', accountId: 'old' });
+  before.payments.push({ ...after.payments[0]!, id: 'old', orderId: 'old' });
+  after.orders.push(...structuredClone(before.orders)); after.payments.push(...before.payments);
+  for (const state of [before, after]) state.stock.push({ warehouseId: 'west', quantity: 5 });
+  after.stock[1]!.quantity += 2;
+  const accepted = new Map([['a', 1], ['b', 0]]), restocked = new Map([['west', 2]]);
+  assert.deepEqual(purchaseDifferences(before, after, accepted, restocked), []);
+  after.orders.reverse(); after.payments.reverse(); after.stock.reverse();
+  assert.deepEqual(purchaseDifferences(before, after, accepted, restocked), []);
+  const defects: Record<string, (state: CheckoutState) => void> = {
+    duplicate: state => state.orders.push({ ...structuredClone(state.orders.find(row => row.id === 'o')!), id: 'extra' }),
+    wrongBuyer: state => { state.orders.find(row => row.id === 'o')!.accountId = 'b'; },
+    missingPayment: state => { state.payments = state.payments.filter(row => row.orderId !== 'o'); },
+    wrongPrice: state => { state.orders.find(row => row.id === 'o')!.lines[0]!.priceMinor++; },
+    wrongAmount: state => { state.payments.find(row => row.orderId === 'o')!.amountMinor++; },
+    lostRestock: state => { state.stock.find(row => row.warehouseId === 'west')!.quantity -= 2; },
+    lostPurchase: state => { state.stock.find(row => row.warehouseId === 'w')!.quantity++; },
+    wrongWarehouse: state => { state.stock[0]!.quantity--; state.stock[1]!.quantity++; },
+    corruptHistory: state => { state.orders.find(row => row.id === 'old')!.totalMinor = 0; },
+    retainedCart: state => { state.cart = [{itemId:'i',quantity:1}]; },
+    oversell: state => { state.stock[0]!.quantity = -1; },
+    noOp: state => { Object.assign(state, structuredClone(before)); },
+  };
+  for (const [name, defect] of Object.entries(defects)) {
+    const value = structuredClone(after); defect(value);
+    assert(purchaseDifferences(before, value, accepted, restocked).length, name);
+  }
+  assert.throws(() => purchaseDifferences(before, after, accepted, new Map([['missing',1]])), /invalid restock/);
+});
+
+test('purchase action retains failed business evidence and keeps unknown outcomes unmeasured', async () => {
+  for (const mode of ['valid','no-op','reject-all','unknown','missing','reader-error','schema-change']) {
+    const {before,after}=states();
+    const snapshots=new Map([['before',{state:before,account:'a',item:'i',schemaSha256:{schema:'same'}}]]);
+    const result=await executeAction(ACTION_REGISTRY,'dbExpectPurchases',{
+      do:'dbExpectPurchases',before:{buyer:'before'},purchases:1,
+    },{capabilities:{
+      'database-read':{...createDatabaseReadCapability({expand:value=>value,checkoutSnapshots:snapshots}),getCheckoutState:()=>{
+        if(mode==='reader-error')throw new Error('unavailable');
+        return {state:['no-op','reject-all'].includes(mode)?before:after,schemaSha256:{schema:mode==='schema-change'?'changed':'same'}};
+      }},
+      'named-actions':{lastCalls:{get:()=>mode==='missing'?null:{action:'buy',fired:1,ms:1,outcomes:[{
+        action:'buy',values:{itemId:'i'},name:'buyer',ok:!['reject-all','unknown'].includes(mode),status:mode==='unknown'?0:mode==='reject-all'?409:200,text:'',
+      }]}}},
+    }});
+    assert.equal(result.status,mode==='valid'?'passed':['unknown','missing'].includes(mode)?'inconclusive':['reader-error','schema-change'].includes(mode)?'harness_failure':'failed',mode);
+    if(['no-op','reject-all'].includes(mode))assert(result.observation);
+  }
+});
+
+test('refused purchases must leave stored state unchanged, including orders without stock effects', async () => {
+  for (const mode of ['unchanged', 'order-only', 'purchase', 'reader-error', 'schema-change']) {
+    const { before, after } = states();
+    if (mode === 'order-only') after.stock = structuredClone(before.stock);
+    const snapshot = { state: before, account: 'a', item: 'i', schemaSha256: { schema: 'same' } };
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectNoPurchase', { do: 'dbExpectNoPurchase', before: 'before' }, { capabilities: {
+      'database-read': { ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: new Map([['before', snapshot]]) }),
+        getCheckoutState: () => {
+          if (mode === 'reader-error') throw new Error('unavailable');
+          return { state: mode === 'unchanged' ? before : after, schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
+        } },
+    } });
+    assert.equal(result.status, mode === 'unchanged' ? 'passed' : ['reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed', `${mode}: ${JSON.stringify(result)}`);
+  }
+});
+
+test('bounded purchase populations reconcile both accounts and preserve missing or broken reader outcomes', async () => {
+  for (const mode of ['valid', 'wrong-owner', 'lost-order', 'wrong-price', 'stock', 'missing', 'duplicate-account', 'reader-error', 'schema-change']) {
+    const { before, after } = states();
+    for (const state of [before, after]) {
+      state.payments = []; state.orphanAllocations = 0;
+      for (const order of state.orders) order.refundedMinor = 0;
+    }
+    after.orders.push({ ...structuredClone(after.orders[0]!), id: 'other', accountId: 'b' });
+    after.stock[0]!.quantity = 8;
+    if (mode === 'wrong-owner') after.orders[1]!.accountId = 'a';
+    if (mode === 'lost-order') after.orders.pop();
+    if (mode === 'wrong-price') after.orders[1]!.totalMinor++;
+    if (mode === 'stock') after.stock[0]!.quantity++;
+    const storage = { kind: 'order-data' as const, cart: false, warehouses: true };
+    const snapshot = { state: before, account: 'a', item: 'i', scope: 'orders' as const, storage, schemaSha256: { schema: 'same' } };
+    const snapshots = new Map([['a', snapshot], ['b', { ...snapshot, account: 'b',
+      state: { ...structuredClone(before), accountId: mode === 'duplicate-account' ? 'a' : 'b' } }]]);
+    if (mode === 'missing') snapshots.delete('b');
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectPurchaseCount', {
+      do: 'dbExpectPurchaseCount', before: ['a', 'b'], purchasesEach: 1,
+    }, { capabilities: { 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: snapshots }),
+      getCheckoutState: ({ account }: { account: string }) => {
+        if (mode === 'reader-error') throw new Error('reader unavailable');
+        return { ...snapshot, state: { ...after, accountId: account },
+          schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
+      },
+    } } });
+    assert.equal(result.status, mode === 'valid' ? 'passed' : mode === 'missing' ? 'inconclusive'
+      : ['duplicate-account', 'reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed', mode);
+    if (result.status === 'failed') assert(result.observation, mode);
+  }
+});
+
+test('direct price probes reconcile accepted or refused effects without requiring warehouse features', async () => {
+  for (const mode of ['accepted', 'placed', 'completed', 'refused', 'wrong-owner', 'wrong-total', 'wrong-line', 'refunded', 'write-then-refuse', 'stock-only', 'no-op', 'duplicate', 'old-order-changed', 'timeout', 'reader-error', 'schema-change']) {
+    const { before, after } = states();
+    for (const state of [before, after]) {
+      state.stock = []; state.payments = []; state.orphanAllocations = 0;
+      for (const order of state.orders) { order.refundedMinor = 0; order.lines[0]!.allocations = []; }
+    }
+    const old = { ...structuredClone(after.orders[0]!), id: 'old' };
+    before.orders.push(structuredClone(old)); after.orders.push(old);
+    if (['placed', 'completed'].includes(mode)) after.orders[0]!.status = mode;
+    if (mode === 'wrong-owner') after.orders[0]!.accountId = 'other';
+    if (mode === 'refunded') after.orders[0]!.refundedMinor = 1999;
+    if (mode === 'wrong-total') after.orders[0]!.totalMinor = 100;
+    if (mode === 'wrong-line') after.orders[0]!.lines[0]!.priceMinor = 100;
+    if (mode === 'duplicate') after.orders.push({ ...structuredClone(after.orders[0]!), id: 'extra' });
+    if (mode === 'old-order-changed') after.orders[1]!.totalMinor = 100;
+    const accepted = !['refused', 'write-then-refuse', 'stock-only', 'timeout'].includes(mode);
+    const unchanged = ['refused', 'stock-only', 'no-op'].includes(mode);
+    const snapshot = { state: before, account: 'a', item: 'i', schemaSha256: { schema: 'same' },
+      scope: 'orders' as const, storage: { kind: 'order-data' as const, cart: false, warehouses: false } };
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectPurchase', {
+      do: 'dbExpectPurchase', actor: 'buyer', before: 'before', stockBefore: 'stock',
+    }, { capabilities: {
+      actors: { get: () => ({ actionCall: { action: 'buy', accepted, status: mode === 'timeout' ? 0 : accepted ? 200 : 400,
+        complete: mode !== 'timeout' } }) },
+      'browser-observation': { recorded: new Map([['stock', 10]]) },
+      'database-read': { checkoutSnapshots: new Map([['before', snapshot]]),
+        getStock: async () => ({ quantity: ['refused', 'no-op'].includes(mode) ? 10 : 9 }),
+        getCheckoutState: () => {
+          if (mode === 'reader-error') throw new Error('unavailable');
+          return { ...snapshot, state: unchanged ? before : after,
+            schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
+        } },
+    } });
+    const expected = ['accepted', 'placed', 'completed', 'refused'].includes(mode) ? 'passed' : mode === 'timeout' ? 'inconclusive'
+      : ['reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed';
+    assert.equal(result.status, expected, mode + ': ' + JSON.stringify(result));
+  }
+});
+
+test('checkout reconciliation detects duplicate, partial, wrong-owner and reject-all effects', () => {
+  const defects: Record<string, (state: ReturnType<typeof states>) => void> = {
+    duplicate: ({ after }) => { after.orders.push({ ...structuredClone(after.orders[0]!), id: 'o2' }); },
+    duplicatePayment: ({ after }) => { after.payments.push({ ...after.payments[0]!, id: 'p2' }); },
+    wrongOwner: ({ after }) => { after.orders[0]!.accountId = 'someone-else'; },
+    wrongQuantity: ({ after }) => { after.orders[0]!.lines[0]!.quantity = 2; },
+    wrongPrice: ({ after }) => { after.orders[0]!.lines[0]!.priceMinor = 1; },
+    wrongTotal: ({ after }) => { after.orders[0]!.totalMinor = 1; },
+    wrongPayment: ({ after }) => { after.payments[0]!.orderId = 'another-order'; },
+    missingPayment: ({ after }) => { after.payments = []; },
+    cartRetained: ({ after, prepared }) => { after.cart = prepared.cart; },
+    reservationRetained: ({ after, prepared }) => { after.reservations = prepared.reservations; },
+    wrongAllocation: ({ after }) => { after.orders[0]!.lines[0]!.allocations[0]!.warehouseId = 'wrong'; },
+    missingStockEffect: ({ after, before }) => { after.stock = before.stock; },
+    duplicateStockEffect: ({ after }) => { after.stock[0]!.quantity--; },
+    orphanLine: ({ after }) => { after.orphanOrderLines = 1; },
+    rejectAll: state => { state.after = structuredClone(state.prepared); },
+    erasedHistory: ({ before, prepared }) => {
+      const old = { id: 'old', accountId: 'other', totalMinor: 0, status: 'pending', lines: [] };
+      before.orders.push(old); prepared.orders.push(old);
+    },
+  };
+  for (const [name, defect] of Object.entries(defects)) {
+    const snapshots = states();
+    defect(snapshots);
+    assert(checkoutDifferences(snapshots.before, snapshots.prepared, snapshots.after, 1).length > 0, name);
+  }
+});
+
+test('unreadable or inexact checkout data cannot become empty or rounded success', () => {
+  assert.equal(checkoutMinor(19.99), 1999);
+  assert.equal(checkoutMinor('0.29'), 29);
+  for (const value of [null, '', NaN, Infinity, 1.001, Number.MAX_SAFE_INTEGER]) assert.throws(() => checkoutMinor(value));
+  assert.equal(checkoutId('18446744073709551615'), '18446744073709551615');
+  assert.throws(() => checkoutId(Number('18446744073709551615')));
+  assert.throws(() => checkoutStateSchema.parse({ ...states().before, stock: null }));
+  assert.throws(() => checkoutStateSchema.parse({ ...states().before, accountId: null }));
+  const { before, prepared, after } = states();
+  before.stock.push({ warehouseId: 'large', quantity: Number.MAX_SAFE_INTEGER });
+  assert.throws(() => checkoutDifferences(before, prepared, after, 1));
+});
+
+test('empty stock is measurable after checkout but cannot establish a setup snapshot', async () => {
+  const { before, prepared, after } = states();
+  after.stock = [];
+  assert.deepEqual(checkoutStateSchema.parse(after), after);
+  assert(checkoutDifferences(before, prepared, after, 1).some(row => row.control === 'stored stock consumed by one checkout'));
+  before.stock = []; prepared.stock = []; prepared.reservations = [];
+  assert(checkoutDifferences(before, prepared, prepared, 1, true).some(row => row.control === 'initial stock warehouses for item i'));
+  const checkoutSnapshots = new Map();
+  const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
+    do: 'dbRecordCheckout', account: 'buyer', item: 'item', as: 'before',
+  }, { capabilities: { 'database-read': {
+    ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+    getCheckoutState: () => ({ state: before, schemaSha256: { schema: 'same' } }),
+  } } });
+  assert.equal(result.status, 'inconclusive');
+  assert.equal(checkoutSnapshots.size, 0);
+  // A mapped warehouse with zero remaining units is still a valid observation.
+  const zero = states();
+  zero.before.stock[0]!.quantity = 1;
+  zero.prepared.stock[0]!.quantity = 0; zero.after.stock[0]!.quantity = 0;
+  assert.deepEqual(checkoutDifferences(zero.before, zero.prepared, zero.after, 1), []);
+});
+
+test('cancellation restores each allocation once and preserves other orders and payment history', () => {
+  const before = states().after;
+  before.stock.push({ warehouseId: 'west', quantity: 6 });
+  before.orders[0]!.lines[0]!.allocations.push({ warehouseId: 'west', quantity: 2 });
+  before.orders[0]!.lines[0]!.quantity = 3;
+  before.orders[0]!.totalMinor *= 3;
+  before.payments[0]!.amountMinor *= 3;
+  before.orders.push({ ...structuredClone(before.orders[0]!), id: 'other', accountId: 'other' });
+  const after = structuredClone(before);
+  after.orders[0]!.status = 'cancelled';
+  after.stock[0]!.quantity++;
+  after.stock[1]!.quantity += 2;
+  assert.deepEqual(cancellationDifferences(before, after), []);
+  after.stock.reverse();
+  after.orders.reverse();
+  after.orders.forEach(order => order.lines.forEach(line => line.allocations.reverse()));
+  assert.deepEqual(cancellationDifferences(before, after), []);
+  const defects: Record<string, (state: CheckoutState) => void> = {
+    duplicateStock: state => { state.stock[0]!.quantity += 2; },
+    missingStock: state => { state.stock = structuredClone(before.stock); },
+    wrongWarehouse: state => { state.stock[0]!.quantity--; state.stock[1]!.quantity++; },
+    missingHistory: state => { state.orders = []; },
+    wrongOrder: state => { state.orders.find(row => row.id === 'other')!.status = 'cancelled'; },
+    duplicatePayment: state => { state.payments.push({ ...state.payments[0]!, id: 'extra' }); },
+    changedTotal: state => { state.orders.find(row => row.id === 'o')!.totalMinor = 0; },
+    noOp: state => { state.orders.find(row => row.id === 'o')!.status = 'pending'; },
+  };
+  for (const [name, defect] of Object.entries(defects)) {
+    const value = structuredClone(after); defect(value);
+    assert(cancellationDifferences(before, value).length > 0, name);
+  }
+  assert(cancellationDifferences(before, before).length > 0, 'reject all');
+  assert(cancellationDifferences(states().before, after).length, 'a missing purchased order is a failed application precondition');
+});
+
+test('shipping and cancellation admit only complete legal outcomes, not combined effects or no progress', async () => {
+  const before = states().after;
+  before.payments = []; before.orphanAllocations = 0;
+  before.orders[0]!.refundedMinor = 0;
+  const shipped = structuredClone(before); shipped.orders[0]!.status = 'shipped';
+  const cancelled = structuredClone(before); cancelled.orders[0]!.status = 'cancelled';
+  cancelled.orders[0]!.refundedMinor = cancelled.orders[0]!.totalMinor;
+  cancelled.stock[0]!.quantity++;
+  assert.deepEqual(orderCancellationDifferences(before, shipped, 'wins'), []);
+  assert.deepEqual(orderCancellationDifferences(before, shipped, 'competes'), []);
+  assert.deepEqual(orderCancellationDifferences(before, cancelled, 'competes'), []);
+  assert.deepEqual(orderCancellationDifferences(before, cancelled), []);
+  assert(orderCancellationDifferences(before, shipped).length);
+  assert(orderCancellationDifferences(before, cancelled, 'wins').length);
+  assert(orderCancellationDifferences(before, before, 'competes').length, 'reject both');
+  for (const valid of [shipped, cancelled]) {
+    for (const mutate of [
+      (state: CheckoutState) => { state.stock[0]!.quantity++; },
+      (state: CheckoutState) => { state.orders[0]!.status = valid === shipped ? 'cancelled' : 'shipped'; },
+      (state: CheckoutState) => { state.orders[0]!.refundedMinor = valid === shipped ? 1999 : 0; },
+      (state: CheckoutState) => { state.orders[0]!.accountId = 'other'; },
+      (state: CheckoutState) => { state.orders[0]!.lines = []; },
+      (state: CheckoutState) => { state.orders = []; },
+      (state: CheckoutState) => { state.orphanAllocations = 1; },
+    ]) {
+      const broken = structuredClone(valid); mutate(broken);
+      assert(orderCancellationDifferences(before, broken, 'competes').length);
+    }
+  }
+  for (const shipping of ['wins', 'competes'] as const) {
+    const scope = { scope: 'orders', storage: { kind: 'order-data', cart: false, warehouses: true },
+      account: 'a', item: 'i', schemaSha256: { schema: 'verified' } } as const;
+    const checkoutSnapshots = new Map([['before', { ...scope, state: before }]]);
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCancellation', {
+      do: 'dbExpectCancellation', before: 'before', shipping,
+    }, { capabilities: { 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+      getCheckoutState: () => ({ ...scope, state: shipped }),
+    } } });
+    assert.equal(result.status, 'passed', shipping);
+  }
+});
+
+test('cancellation action retains mismatches and cannot pass absent or unreadable evidence', async () => {
+  for (const mode of ['valid', 'mismatch', 'missing-order', 'missing', 'reader-error', 'schema-change']) {
+    const before = states().after;
+    const after = structuredClone(before);
+    after.orders[0]!.status = 'cancelled'; after.stock[0]!.quantity++;
+    if (mode === 'missing-order') before.orders = [];
+    const checkoutSnapshots = new Map(mode === 'missing' ? [] : [['before', {
+      state: before, account: 'a', item: 'i', schemaSha256: { schema: 'verified' },
+    }]]);
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCancellation', {
+      do: 'dbExpectCancellation', before: 'before',
+    }, { capabilities: { 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+      getCheckoutState: () => {
+        if (mode === 'reader-error') throw new Error('database unavailable');
+        return { state: mode === 'mismatch' ? before : after,
+          schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'verified' } };
+      },
+    } } });
+    assert.equal(result.status, mode === 'valid' ? 'passed' : ['mismatch', 'missing-order'].includes(mode) ? 'failed'
+      : mode === 'missing' ? 'inconclusive' : 'harness_failure', mode);
+    if (mode === 'mismatch') assert(result.observation);
+  }
+});
+
+test('checkout reader rejects an unverified source mapping before a database read', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-checkout-schema-'));
+  try {
+    const file = 'server/src/schema.ts';
+    const source = join(STACK_BENCH_ROOT, 'reference-apps/ecommerce/postgres');
+    cpSync(join(source, 'server/src'), join(root, 'server/src'), { recursive: true });
+    assert.match(verifyCheckoutSchema('postgres', root, [file])[file]!, /^[a-f0-9]{64}$/);
+    writeFileSync(join(root, file), 'different schema');
+    assert.throws(() => verifyCheckoutSchema('postgres', root, [file]), /no verified mapping/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('checkout actions retain a failed reconciliation and treat reader failures as unmeasured', async () => {
+  for (const failedRead of [false, true]) {
+    const snapshots = states();
+    const queue = [snapshots.before, snapshots.prepared, snapshots.prepared];
+    const checkoutSnapshots = new Map();
+    const capabilities = () => ({ actors: { get: () => undefined }, 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+      getCheckoutState: () => {
+        if (failedRead) throw new Error('database unavailable');
+        return { state: queue.shift()!, schemaSha256: { schema: 'verified' } };
+      },
+    } });
+    for (const as of ['before', 'prepared']) {
+      const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
+        do: 'dbRecordCheckout', account: 'a', item: 'i', as,
+      }, { capabilities: capabilities() });
+      assert.equal(result.status, failedRead ? 'harness_failure' : 'passed');
+    }
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCheckout', {
+      do: 'dbExpectCheckout', before: 'before', prepared: 'prepared', quantity: 1,
+    }, { capabilities: capabilities() });
+    assert.equal(result.status, failedRead ? 'inconclusive' : 'failed');
+    if (!failedRead) assert(result.observation);
+  }
+});
+
+test('checkout response reconciliation requires the stored effect to match acceptance or refusal', async () => {
+  for (const scoped of [false, true]) for (const mode of [
+    'accepted', 'refused', 'committed-refusal', 'accepted-no-effect', 'wrong-price', 'refused-cart-change',
+    'invalid-preparation', 'missing-response', 'incomplete', 'wrong-action',
+  ]) {
+    const { before, prepared, after } = states();
+    if (scoped) for (const state of [before, prepared, after]) {
+      state.payments = []; state.stock = []; state.reservations = []; state.orphanAllocations = 0;
+      for (const order of state.orders) {
+        order.refundedMinor = 0;
+        for (const line of order.lines) line.allocations = [];
+      }
+    }
+    const refused = ['refused', 'committed-refusal', 'refused-cart-change', 'invalid-preparation'].includes(mode);
+    const current = structuredClone(mode === 'committed-refusal' || (!refused && mode !== 'accepted-no-effect') ? after : prepared);
+    if (mode === 'wrong-price') current.orders[0]!.totalMinor = 1;
+    if (mode === 'refused-cart-change') current.cart = [];
+    if (mode === 'invalid-preparation') prepared.cart = [];
+    const scope = scoped ? 'orders' as const : undefined;
+    const storage = scoped ? { kind: 'order-data' as const, cart: true, warehouses: false } : undefined;
+    const snapshot = (state: CheckoutState) => ({ account: 'a', item: 'i', state,
+      ...(scoped ? { scope, storage } : {}), schemaSha256: { schema: 'verified' } });
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCheckout', {
+      do: 'dbExpectCheckout', before: 'before', prepared: 'prepared', quantity: 1, actor: 'buyer',
+    }, { capabilities: {
+      actors: { get: () => ({ actionCall: mode === 'missing-response' ? undefined : {
+        action: mode === 'wrong-action' ? 'buy' : 'checkout', accepted: !refused,
+        complete: mode !== 'incomplete', status: refused ? 400 : 200,
+      } }) },
+      'database-read': {
+        ...createDatabaseReadCapability({ expand: value => value,
+          checkoutSnapshots: new Map([['before', snapshot(before)], ['prepared', snapshot(prepared)]]) }),
+        getCheckoutState: () => snapshot(current),
+      },
+    } });
+    assert.equal(result.status, ['accepted', 'refused'].includes(mode) ? 'passed'
+      : ['missing-response', 'incomplete'].includes(mode) ? 'inconclusive'
+      : mode === 'wrong-action' ? 'harness_failure' : 'failed', `${scoped}:${mode}`);
+  }
+});
+
+test('SpacetimeDB checkout reads one bounded subscription snapshot and rejects malformed rows', () => {
+  const results: Record<string, { inserts: Record<string, unknown>[]; deletes: unknown[] }> = {
+    account:{inserts:[{id:1}],deletes:[]}, item:{inserts:[{id:2,price:19.99}],deletes:[]},
+    stock:{inserts:[{item_id:2,warehouse_id:3,quantity:10}],deletes:[]},
+    cart_item:{inserts:[{account_id:1,item_id:2,quantity:1}],deletes:[]},
+  };
+  const read = () => getSpacetimeCheckoutState({ account:'reader', item:'Keyboard',
+    app:join(STACK_BENCH_ROOT,'reference-apps/ecommerce/spacetime'),
+    spacetime:{buildContainer:{id:'owned',name:'test'},mod:'test',containerUri:'http://127.0.0.1:3000'},
+    exec:(_command,args) => {
+      if (args[0]==='inspect') return 'owned';
+      assert(args.includes('subscribe'));
+      assert.equal(args[args.indexOf('--num-updates')+1],'0');
+      assert.equal(args[args.indexOf('--timeout')+1],'30');
+      assert.equal(args.filter(value=>value.startsWith('SELECT *')).length,9);
+      return JSON.stringify(results);
+    },
+  });
+  assert.equal(read().state.priceMinor,1999);
+  assert.equal(read().state.cart[0]!.quantity,1);
+  results.cart_item!.inserts=[{accountId:1,itemId:2,quantity:1}];
+  assert.throws(read,/invalid row shape/);
+  delete results.cart_item;
+  assert.deepEqual(read().state.cart,[]);
+  delete results.stock;
+  assert.deepEqual(read().state.stock,[], 'a successful empty subscription must reach reconciliation');
+  delete results.account;
+  assert.throws(read,/account or item is missing/);
+});
+
+
+test('one crash observation separates partial effects, acknowledged rollback and prior history loss', () => {
+  for (const scoped of [false, true]) {
+    const { before, prepared, after } = states();
+    for (const state of [before, prepared, after]) {
+      state.orders.push({ ...structuredClone(after.orders[0]!), id: 'prior' });
+      if (scoped) {
+        state.payments = []; state.reservations = []; state.stock = []; state.orphanAllocations = 0;
+        for (const order of state.orders) {
+          order.refundedMinor = 0;
+          for (const line of order.lines) line.allocations = [];
+        }
+      } else state.payments.push({ id: 'prior-payment', orderId: 'prior', amountMinor: 1999, status: 'paid' });
+    }
+    const compare = (state: CheckoutState, allow: boolean) => scoped
+      ? orderCheckoutDifferences(before, prepared, state, 1, allow, false)
+      : checkoutDifferences(before, prepared, state, 1, allow);
+    const verdict = (state: CheckoutState, confirmed: boolean) => checkoutCrashDifferences(before, state, confirmed, compare);
+    assert.deepEqual(verdict(after, true), { atomicity: [], durability: [] });
+    assert.deepEqual(verdict(prepared, false), { atomicity: [], durability: [] });
+    const rollback = verdict(prepared, true);
+    assert.equal(rollback.atomicity.length, 0);
+    assert(rollback.durability.length > 0);
+    for (const confirmed of [false, true]) {
+      const partial = structuredClone(after); partial.orders[0]!.lines = [];
+      const broken = verdict(partial, confirmed);
+      assert(broken.atomicity.length > 0);
+      assert.equal(broken.durability.length, 0, 'do not score the same partial order twice');
+      for (const recovered of [after, prepared]) {
+        const lost = structuredClone(recovered); lost.orders = lost.orders.filter(row => row.id !== 'prior');
+        const result = verdict(lost, confirmed);
+        assert.equal(result.atomicity.length, 0, 'old history loss is not an interrupted partial write');
+        assert(result.durability.some(row => row.control === 'acknowledged orders preserved'));
+      }
+    }
+  }
+});
+
+test('catalog creation waits for committed data and separates missing products from broken readers', async () => {
+  for (const mode of ['valid', 'delayed', 'missing', 'duplicate', 'price', 'missing-baseline', 'existing-name', 'schema-change', 'missing-catalog', 'reader-error']) {
+    const before = { state: states().before, account: 'admin', item: 'i', scope: 'orders' as const,
+      storage: { kind: 'order-data' as const, cart: false, warehouses: false }, schemaSha256: { item: 'same' },
+      catalog: mode === 'existing-name' ? [{ itemId: 'old', name: 'New product', priceMinor: 125 }] : [] };
+    let reads = 0, sleeps = 0;
+    const row = { itemId: 'new', name: 'New product', priceMinor: mode === 'price' ? 126 : 125 };
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCatalogItem', {
+      do: 'dbExpectCatalogItem', before: 'before', name: 'New product', priceMinor: 125, ...(mode === 'delayed' ? { within: 1000 } : {}),
+    }, { capabilities: {
+      clock: { sleep: async () => { sleeps++; } },
+      'database-read': {
+        ...createDatabaseReadCapability({ expand: value => value,
+          checkoutSnapshots: new Map(mode === 'missing-baseline' ? [] : [['before', before]]) }),
+        getCheckoutState: () => {
+          reads++;
+          if (mode === 'reader-error') throw new Error('database unavailable');
+          return { ...before, schemaSha256: { item: mode === 'schema-change' ? 'changed' : 'same' },
+            catalog: mode === 'missing-catalog' ? undefined : mode === 'missing' || (mode === 'delayed' && reads === 1) ? []
+              : mode === 'duplicate' ? [row, { ...row, itemId: 'duplicate' }] : [row] };
+        },
+      },
+    } });
+    assert.equal(result.status, ['valid', 'delayed'].includes(mode) ? 'passed' : mode === 'missing-baseline' ? 'inconclusive'
+      : ['existing-name', 'schema-change', 'missing-catalog', 'reader-error'].includes(mode) ? 'harness_failure' : 'failed', mode);
+    if (result.status === 'failed') assert(result.observation, mode);
+    if (mode === 'delayed') { assert.equal(reads, 2); assert.equal(sleeps, 1); }
+  }
+});

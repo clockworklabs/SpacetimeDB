@@ -1,0 +1,701 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { runInNewContext } from 'node:vm';
+
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
+import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
+import {
+  createDatabaseWriteCapability,
+  createDatabaseReadCapability,
+  createLifecycleCapability,
+  databaseWriteFailureDetail,
+} from '../src/actions/runtime-action-executors.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { inspectBuildContainer } from '../src/stacks/hosted-lifecycle.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+
+type UnknownRecord = Record<string, unknown>;
+
+interface ServiceOverrides {
+  readonly applicationLifecycle?: unknown;
+  readonly backendLifecycle?: unknown;
+  readonly browser?: unknown;
+  readonly clock?: unknown;
+  readonly concurrency?: unknown;
+  readonly databaseWrite?: unknown;
+}
+
+const sleep = async (_milliseconds?: number, _signal?: AbortSignal): Promise<void> => {};
+const restartSpec = { backend: 'stub', app: '.', port: 7000, probe: '' };
+
+function services(
+  actors: ReadonlyMap<string, unknown> = new Map(),
+  overrides: ServiceOverrides = {},
+): Record<string, unknown> {
+  return {
+    actors: { get: (name: string) => actors.get(name) },
+    'application-lifecycle': overrides.applicationLifecycle
+      ?? createLifecycleCapability({ target: 'app-server', sleep, control: async () => {} }),
+    'backend-lifecycle': overrides.backendLifecycle
+      ?? createLifecycleCapability({ target: 'backend-runtime', sleep, control: async () => {} }),
+    'browser-interaction': overrides.browser ?? {
+      clients: { open: async () => {}, fresh: async () => 'a-fresh' },
+      sleep,
+    },
+    clock: overrides.clock ?? { sleep },
+    concurrency: overrides.concurrency ?? {
+      defaultWithin: 5000,
+      dispatch: async () => null,
+      expand: (value: string | undefined) => value,
+      sleep,
+      testId: (id: string) => `[data-testid="${id}"]`,
+    },
+    'database-write': overrides.databaseWrite ?? { setStock: async (input: unknown) => input },
+  };
+}
+
+async function run(input: UnknownRecord, capabilities: Record<string, unknown>) {
+  const action = String(input.do);
+  return executeAction(ACTION_REGISTRY, action, input, {
+    capabilities,
+  });
+}
+
+function observation(result: { readonly observation: unknown }): UnknownRecord {
+  assert(result.observation !== null && typeof result.observation === 'object');
+  return result.observation as UnknownRecord;
+}
+
+test('stock observations compare authoritative quantities and cannot use a missing baseline', async () => {
+  const recorded = new Map<string, number>();
+  let quantity = 20;
+  const capabilities = {
+    clock: { sleep },
+    'browser-observation': { recorded },
+    'database-read': { getStock: async () => ({ backend: 'postgres', item: 'Keyboard', quantity }) },
+  };
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before' }, capabilities)).status,
+    'inconclusive');
+  assert.equal((await run({ do: 'dbRecordStock', item: 'Keyboard', as: 'before' }, capabilities)).status, 'passed');
+  quantity = 19;
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before', plus: -1 }, capabilities)).status,
+    'passed');
+  quantity = 18;
+  const failed = await run({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before', plus: -1 }, capabilities);
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.summary ?? '', /stored stock for Keyboard/);
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, capabilities)).status, 'passed');
+  for (const [lower, upper, status] of [[18, 19, 'passed'], [17, 18, 'passed'],
+    [19, 20, 'failed'], [16, 17, 'failed']] as const) {
+    assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', atLeast: lower, atMost: upper }, capabilities)).status, status);
+  }
+  const disabled = { ...capabilities, 'database-read': createDatabaseReadCapability({
+    backend: 'postgres', skip: true, expand: value => value,
+  }) };
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, disabled)).status, 'inconclusive');
+});
+
+test('contention checks reject negative warehouse stock even when the total is correct', async () => {
+  for (const [file, criterionId, good, bad] of [
+    ['01-last-unit.json', '201a', [0, 0], [1, -1]],
+    ['01-restock-race.json', '202a', [51, 51], [103, -1]],
+  ] as const) {
+    const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file);
+    const criterion = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+      .features.flatMap(feature => feature.criteria).find(check => check.id === criterionId)!;
+    const steps = criterion.steps.filter(step => step.do === 'dbExpectStock' && step.warehouse);
+    assert.equal(steps.length, 2);
+    assert.equal(good[0] + good[1], bad[0] + bad[1]);
+    for (const quantities of [good, bad]) {
+      const results = await Promise.all(steps.map(step => run(step, {
+        clock: { sleep }, 'browser-observation': { recorded: new Map() },
+        'database-read': { getStock: async ({ warehouse }: { warehouse: string }) => ({
+          quantity: quantities[warehouse === 'East' ? 0 : 1],
+        }) },
+      })));
+      assert.equal(results.every(result => result.status === 'passed'), quantities === good);
+      if (quantities === bad) assert(results.some(result => result.status === 'failed'));
+    }
+  }
+});
+
+test('timed observations use the original origin and a missed window is unmeasured', async () => {
+  const recorded = new Map<string, number>();
+  const waits: number[] = [];
+  const capabilities = {
+    actors: { get: () => ({}) },
+    'browser-observation': { recorded },
+    clock: { sleep: async (ms: number) => { waits.push(ms); } },
+  };
+  assert.equal((await run({ do: 'expectElapsed', since: 'start', atMost: 1000 }, capabilities)).status, 'inconclusive');
+  assert.equal((await run({ do: 'recordTime', as: 'start' }, capabilities)).status, 'passed');
+  assert.equal((await run({ do: 'expectElapsed', since: 'start', atMost: 1000 }, capabilities)).status, 'passed');
+  recorded.set('start', performance.now() - 2000);
+  const missed = await run({ do: 'expectElapsed', since: 'start', atMost: 1000 }, capabilities);
+  assert.equal(missed.status, 'inconclusive');
+  assert.match(missed.summary ?? '', /timing observation window/);
+  assert.equal((await run({ do: 'wait', actor: 'a', ms: 5000, since: 'start' }, capabilities)).status, 'passed');
+  assert(waits[0] !== undefined && waits[0] > 2000 && waits[0] <= 3000);
+  assert.equal((await run({ do: 'wait', actor: 'a', ms: 1000, since: 'start' }, capabilities)).status, 'passed');
+  assert.equal(waits[1], 0);
+  const missing = await run({ do: 'wait', actor: 'missing', ms: 1 }, { ...capabilities, actors: { get: () => undefined } });
+  assert.equal(missing.status, 'harness_failure');
+  assert.equal(missing.code, 'unclassified_exception');
+  assert.equal(missing.summary, 'harness did not create actor "missing"');
+  assert.equal(waits.length, 2);
+});
+
+test('transfer conservation rejects moving the wrong product despite correct warehouse totals', async () => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/02-strengthened.json');
+  const criterion = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+    .features.find(feature => feature.id === 202)!.criteria[0];
+  assert(criterion);
+  for (const wrongProduct of [false, true]) {
+    const quantities = new Map([['East', 50], ['West', 50]]);
+    const capabilities = { clock: { sleep }, 'browser-observation': { recorded: new Map<string, number>() },
+      'database-read': { getStock: async (input: { item: string; warehouse: string }) => ({
+        item: input.item, quantity: quantities.get(input.warehouse),
+      }) } };
+    for (const step of criterion.steps.filter(step => step.do === 'dbRecordStock')) {
+      assert.equal((await run(step, capabilities)).status, 'passed');
+    }
+    if (!wrongProduct) { quantities.set('East', 33); quantities.set('West', 67); }
+    const checks: readonly UnknownRecord[] = criterion.steps.filter(step => step.do === 'dbExpectStock');
+    assert.equal(checks.length, 2);
+    for (const step of checks) {
+      assert.equal((await run({ ...step, within: 1 }, capabilities)).status, wrongProduct ? 'failed' : 'passed');
+    }
+  }
+});
+
+test('bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes', async () => {
+  for (const [values, status] of [[[100, 105], 'passed'], [[100], 'failed'], [[110], 'failed']] as const) {
+    let reads = 0;
+    const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 20 }, {
+      'browser-observation': { recorded: new Map() },
+      'database-read': { getStock: async () => ({ quantity: values[Math.min(reads++, values.length - 1)] }) },
+      clock: { sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
+    });
+    assert.equal(result.status, status);
+  }
+  const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 20 }, {
+    'browser-observation': { recorded: new Map() },
+    'database-read': { getStock: async () => { throw new Error('database unavailable'); } },
+    clock: { sleep },
+  });
+  assert.equal(result.status, 'harness_failure');
+});
+
+test('cancellation probes reject a refund to the wrong warehouse even when total stock is restored', async () => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/02-self-contained.json');
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+    .features.find(feature => feature.id === 202)!;
+  for (const criterion of feature.criteria) {
+    const stock = new Map([['East', 50], ['West', 50]]);
+    const capabilities = { clock: { sleep }, 'browser-observation': { recorded: new Map<string, number>() },
+      'database-read': { getStock: async (input: { item: string; warehouse?: string }) => ({
+        backend: 'postgres', item: input.item,
+        quantity: input.warehouse ? stock.get(input.warehouse)! : [...stock.values()].reduce((a, b) => a + b, 0),
+      }) } };
+    const records = criterion.steps.filter(step => step.do === 'dbRecordStock');
+    const checks = criterion.steps.filter(step => step.do === 'dbExpectStock' && step.plus === 0);
+    for (const step of records) assert.equal((await run(step, capabilities)).status, 'passed');
+    for (const step of checks) assert.equal((await run(step, capabilities)).status, 'passed');
+    stock.set('East', 49); stock.set('West', 51);
+    const results = await Promise.all(checks.map(step => run(step, capabilities)));
+    assert.equal(results.filter(result => result.status === 'failed').length, 2);
+  }
+});
+
+test('optional diagnostics keep fixed fresh-account schedules and cannot pass by rejecting all work', () => {
+  const load = (file: string) => {
+    const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file);
+    return compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  };
+  for (const [file, cohorts] of [['diagnostic-checkout-contention.json', 12], ['diagnostic-purchase-contention.json', 24]] as const) {
+    const scenario = load(file);
+    const accounts = scenario.features.flatMap(feature => feature.setup.filter(step => step.do === 'signUp').map(step => step.name));
+    assert.equal(new Set(accounts).size, cohorts);
+    const widths: unknown[] = [];
+    for (const feature of scenario.features) {
+      const account = feature.setup.find(step => step.do === 'signUp')!.name;
+      const initial = feature.setup.findIndex(step => step.do === 'dbRecordCheckout');
+      if (file === 'diagnostic-checkout-contention.json') {
+        assert(feature.setup.some(step => step.do === 'dbRecordStock'));
+        assert(initial < feature.setup.findIndex(step => step.do === 'click'));
+        assert.equal(feature.setup[initial]!.account, `{user:${account}}`);
+      } else {
+        assert(feature.setup.some(step => step.do === 'dbSetStock' && step.quantity === 128));
+        assert.equal(feature.setup.filter(step => step.do === 'dbRecordCheckout').length, 2);
+      }
+      for (const criterion of feature.criteria) {
+        assert.equal(criterion.points, 0, 'diagnostics must not add scored ladder credit');
+        const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
+        widths.push(call.requests);
+        if (file === 'diagnostic-checkout-contention.json') {
+          assert.equal(criterion.steps[0]!.do, 'dbRecordCheckout');
+          assert.equal(criterion.steps[0]!.account, `{user:${account}}`);
+          assert(criterion.steps.some(step => step.do === 'dbExpectCheckout' && step.quantity === 1));
+          assert(criterion.steps.some(step => step.do === 'expectCallOutcomes'));
+          assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -1));
+          assert(criterion.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+        } else {
+          // Purchases require every affordable request and its stored effect.
+          assert.equal(call.action, 'buy');
+          assert(criterion.steps.some(step => step.do === 'expectCallOutcomes' && step.accepted === call.requests));
+          assert(criterion.steps.some(step => step.do === 'dbExpectPurchases' && step.purchases === call.requests));
+        }
+      }
+    }
+    assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
+  }
+  // Scarce and mixed diagnostics keep their fixed schedules and mandatory stored progress.
+  for (const [file, cohorts, calls] of [['diagnostic-scarce-stock.json', 12, 255], ['diagnostic-restock-contention.json', 80, 1000]] as const) {
+    const scenario = load(file);
+    assert.equal(scenario.features.length, cohorts);
+    let count = 0;
+    for (const feature of scenario.features) {
+      const criterion = feature.criteria[0]!;
+      assert.equal(criterion.points, 0);
+      const call = criterion.steps[0]!;
+      const restock = (call.alongside as Array<{ requests: number }> | undefined)?.[0];
+      count += Number(call.requests) + (restock?.requests ?? 0);
+      assert.equal(criterion.steps[1]!.do, 'dbExpectPurchases');
+      assert.equal(criterion.steps[1]!.purchases, restock ? call.requests : Math.min(3, Number(call.requests)));
+      if (restock) assert(feature.setup.some(step => step.do === 'signIn' && step.actor === 'admin'));
+    }
+    assert.equal(count, calls);
+  }
+});
+
+test('race preserves branch ordering while overlapping branches through registered dispatch', async () => {
+  const events: string[] = [];
+  const capability = services(new Map(), { concurrency: {
+    defaultWithin: 5000,
+    expand: (value: string | undefined) => value,
+    sleep,
+    testId: (id: string) => id,
+    dispatch: async (step: UnknownRecord) => {
+      events.push(`start-${String(step.actor)}-${String(step.ms)}`);
+      if (step.ms === 1) await new Promise(resolve => setImmediate(resolve));
+      events.push(`end-${String(step.actor)}-${String(step.ms)}`);
+    },
+  } });
+  const result = await run({ do: 'race', settleMs: 0, branches: [
+    [{ do: 'wait', actor: 'a', ms: 1 }, { do: 'wait', actor: 'a', ms: 2 }],
+    [{ do: 'wait', actor: 'b', ms: 3 }],
+  ] }, capability);
+  assert.equal(result.status, 'passed');
+  assert(events.indexOf('start-b-3') < events.indexOf('start-a-2'));
+  assert(events.indexOf('end-a-1') < events.indexOf('start-a-2'));
+
+  const nestedFailure = new Error('nested action failed');
+  Object.defineProperty(nestedFailure, 'actionEvidence', { value: {
+    status: 'failed', summary: 'nested application mismatch',
+  } });
+  const failed = await run({ do: 'race', settleMs: 0, branches: [
+    [{ do: 'wait', actor: 'a', ms: 1 }], [{ do: 'wait', actor: 'b', ms: 1 }],
+  ] }, services(new Map(), { concurrency: {
+    defaultWithin: 5000, expand: (value: string | undefined) => value, sleep,
+    testId: (id: string) => id,
+    dispatch: async () => { throw nestedFailure; },
+  } }));
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.summary, 'nested application mismatch');
+});
+
+test('concurrent branches drain and preserve uncertainty over an earlier app failure', async () => {
+  for (const later of [null, new ActionInconclusive('unmeasured'), new Error('browser protocol failed')]) {
+    let drained = false;
+    const result = await run({ do: 'race', settleMs: 0, branches: [
+      [{ do: 'wait', actor: 'a', ms: 1 }], [{ do: 'wait', actor: 'b', ms: 1 }],
+    ] }, services(new Map(), { concurrency: {
+      sleep,
+      dispatch: async (step: UnknownRecord) => {
+        if (step.actor === 'a') throw new ActionApplicationFailure('app failed');
+        await new Promise(resolve => setImmediate(resolve));
+        drained = true;
+        if (later) throw later;
+      },
+    } }));
+    assert.equal(drained, true, 'no branch may keep changing the app after the action returns');
+    assert.equal(result.status, later instanceof ActionInconclusive ? 'inconclusive'
+      : later ? 'harness_failure' : 'failed');
+  }
+});
+
+test('concurrent replay refuses to invent contention when fewer than two writes exist', async () => {
+  const actor = { writes: [], lastWrites: {}, lastWrite: null };
+  const result = await run({ do: 'replayConcurrently', actors: ['a', 'b'],
+    settleMs: 0 }, services(new Map([['a', actor], ['b', actor]])));
+  assert.equal(result.status, 'inconclusive');
+  assert.match(result.summary ?? '', /never contended/);
+});
+
+test('lifecycle operations distinguish missing control, unsafe refusal, and success', async () => {
+  const missing = await run({ do: 'restartBackend', settleMs: 0 }, services());
+  assert.equal(missing.status, 'inconclusive');
+  assert.match(missing.summary ?? '', /no control over the database runtime/);
+
+  const refusedError = Object.assign(new Error('refused'), { status: 3 });
+  const refusedCapability = createLifecycleCapability({ restartSpec,
+    target: 'backend-runtime', sleep,
+    control: async () => { throw refusedError; } });
+  const refused = await run({ do: 'restartBackend', settleMs: 0 },
+    services(new Map(), { backendLifecycle: refusedCapability }));
+  assert.equal(refused.status, 'inconclusive');
+  assert.match(refused.summary ?? '', /was refused on this host/);
+
+  const calls: Array<readonly [unknown, string]> = [];
+  const operated: Array<'restart' | 'start' | 'stop'> = [];
+  const successful = createLifecycleCapability({ restartSpec,
+    target: 'backend-runtime', sleep,
+    control: async (spec, mode) => { calls.push([spec, mode]); },
+    onOperated: mode => operated.push(mode) });
+  const passed = await run({ do: 'restartBackend', settleMs: 0 },
+    services(new Map(), { backendLifecycle: successful }));
+  assert.equal(passed.status, 'passed');
+  assert.deepEqual(calls, [[restartSpec, 'restart']]);
+  assert.deepEqual(operated, ['restart']);
+});
+
+test('a lifecycle operation reports the state it left only when the control completed', async () => {
+  const operated: Array<'restart' | 'start' | 'stop'> = [];
+  const failing = createLifecycleCapability({ restartSpec, target: 'app-server', sleep,
+    control: async () => { throw Object.assign(new Error('exit 1'), { status: 1, stdout: 'port busy' }); },
+    onOperated: mode => operated.push(mode) });
+  const failed = await run({ do: 'stopAppServer', settleMs: 0 },
+    services(new Map(), { applicationLifecycle: failing }));
+  assert.equal(failed.status, 'failed');
+  assert.equal(operated.length, 0);
+
+  const working = createLifecycleCapability({ restartSpec, target: 'app-server', sleep,
+    control: async () => {}, onOperated: mode => operated.push(mode) });
+  const capabilities = services(new Map(), { applicationLifecycle: working });
+  assert.equal((await run({ do: 'stopAppServer', settleMs: 0 }, capabilities)).status, 'passed');
+  assert.equal((await run({ do: 'startAppServer', settleMs: 0 }, capabilities)).status, 'passed');
+  assert.deepEqual(operated, ['stop', 'start']);
+});
+
+test('lifecycle control failures are app failures only when the app is at fault', async () => {
+  const outcome = async (target: 'app-server' | 'backend-runtime', error: Error) => {
+    const capability = createLifecycleCapability({ restartSpec, target, sleep,
+      control: async () => { throw error; } });
+    return run({ do: target === 'app-server' ? 'startAppServer' : 'restartBackend', settleMs: 0 },
+      services(new Map(), target === 'app-server'
+        ? { applicationLifecycle: capability } : { backendLifecycle: capability }));
+  };
+  const appFault = () => Object.assign(new Error('application did not start'),
+    { code: 'generated_app_not_restartable' });
+  const dockerTimeout = () => Object.assign(new Error('docker exec timed out'), { code: 'ETIMEDOUT' });
+
+  const appStart = await outcome('app-server', appFault());
+  assert.equal(appStart.status, 'failed');
+  assert.match(appStart.summary ?? '', /application server could not start/);
+  assert.equal((await outcome('backend-runtime', appFault())).status, 'failed');
+  assert.equal((await outcome('app-server', dockerTimeout())).status, 'harness_failure');
+  assert.equal((await outcome('backend-runtime', dockerTimeout())).status, 'harness_failure');
+  assert.equal((await outcome('backend-runtime',
+    new Error('SPACETIME_BIN is unavailable: <unset>'))).status, 'harness_failure');
+  // A replaced container is lost ownership, not an application that cannot start.
+  const lease = { resources: { buildContainer: { owned: true, name: 'owned-app', id: 'a'.repeat(64) } } };
+  const lostOwnership = (() => {
+    try { inspectBuildContainer(lease as never, (() => 'b'.repeat(64)) as never); }
+    catch (error) { return error as Error; }
+    throw new Error('a replaced container was accepted');
+  })();
+  assert.equal((await outcome('app-server', lostOwnership)).status, 'harness_failure');
+});
+
+test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
+  const waits: number[] = [];
+  let stockSql = '';
+  const databaseLease = { resources: { database: 'bench',
+    container: { name: 'leased-postgres', id: 'postgres-id' } } };
+  const capability = createDatabaseWriteCapability({
+    backend: 'postgres',
+    databaseLease,
+    expand: value => value,
+    exec: (_command, args, options) => {
+      if (args[0] === 'inspect') return 'postgres-id\n';
+      stockSql = options.input ?? '';
+      return 'UPDATE 1\n';
+    },
+  });
+  const passed = await run({ do: 'dbSetStock', item: "Kid's Keyboard", warehouse: 'Main',
+    quantity: 7, settleMs: 17 }, {
+    ...services(new Map(), { databaseWrite: capability, clock: {
+      sleep: async (ms: number) => { waits.push(ms); },
+    } }),
+  });
+  assert.equal(passed.status, 'passed');
+  assert.match(stockSql, /Kid''s Keyboard/);
+  assert.deepEqual(waits, [17]);
+
+  const missed = (counts: Record<string, number>) => createDatabaseWriteCapability({ backend: 'postgres', databaseLease,
+    expand: value => value, exec: (_command, args) => {
+      if (args[0] === 'inspect') return 'postgres-id\n';
+      return `UPDATE 0\n${JSON.stringify(counts)}\n`;
+    } });
+  const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
+    quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed({ items: 1, warehouses: 1, stocks: 0 }) }));
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.finding?.kind, 'stock-interface-missing');
+  assert.match(String(failed.finding?.fields.detail), /could not locate one relational stock row/);
+  assert.equal(failed.finding?.fields.missingRow, 'stock');
+  for (const [counts, row] of [[{ items: 0, warehouses: 1, stocks: 0 }, 'item'],
+    [{ items: 1, warehouses: 0, stocks: 0 }, 'warehouse']] as const) {
+    const result = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main', quantity: 7, settleMs: 0 },
+      services(new Map(), { databaseWrite: missed(counts) }));
+    assert.equal(result.finding?.kind, 'stock-interface-missing');
+    assert.equal(result.finding?.fields.missingRow, row);
+  }
+  // Duplicate names are an invalid interface, as they are for the stock read.
+  const ambiguous = await run({ do: 'dbSetStock', item: 'Keyboard', warehouse: 'Main', quantity: 7, settleMs: 0 },
+    services(new Map(), { databaseWrite: missed({ items: 2, warehouses: 1, stocks: 1 }) }));
+  assert.equal(ambiguous.status, 'failed');
+  assert.equal(ambiguous.finding?.kind, 'interface-invalid');
+  assert.equal(ambiguous.finding?.fields.action, 'set stock');
+  assert.match(String(ambiguous.finding?.fields.detail), /ambiguous/);
+});
+
+test('a database without the stock interface is an application failure that keeps its diagnostic', async () => {
+  const error = Object.assign(new Error('direct stock correction requires singular collections '
+    + '`item`, `warehouse`, and `stock`'), { stdout: 'MISSING\n' });
+  assert.match(databaseWriteFailureDetail(error), /singular collections/);
+  assert.match(databaseWriteFailureDetail(error), /MISSING/);
+
+  const capability = createDatabaseWriteCapability({ backend: 'mongodb',
+    databaseLease: { resources: { database: 'bench',
+      container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
+    expand: value => value, exec: (_command, args) => {
+      if (args[0] === 'inspect') return 'mongodb-id\n';
+      throw error;
+    } });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  // The contract names the stock tables; an app without them has failed the
+  // interface, and the writer's diagnostic travels as detail.
+  assert.equal(result.status, 'failed');
+  assert.equal(result.finding?.kind, 'stock-interface-missing');
+  assert.match(String(result.finding?.fields.detail), /singular collections/);
+  assert.match(String(result.finding?.fields.detail), /MISSING/);
+  for (const row of ['ITEM', 'WAREHOUSE'] as const) {
+    const missing = createDatabaseWriteCapability({ backend: 'mongodb',
+      databaseLease: { resources: { database: 'bench', container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
+      expand: value => value, exec: (_command, args) => {
+        if (args[0] === 'inspect') return 'mongodb-id\n';
+        throw Object.assign(new Error('missing row'), { stdout: `MISSING_${row}\n` });
+      } });
+    const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East', quantity: 5, settleMs: 0 },
+      services(new Map(), { databaseWrite: missing }));
+    assert.equal(result.finding?.kind, 'stock-interface-missing');
+    assert.equal(result.finding?.fields.missingRow, row.toLowerCase());
+    assert.equal(result.finding?.fields.item, 'Desk Lamp');
+    assert.equal(result.finding?.fields.warehouse, 'East');
+  }
+
+});
+
+test('direct MongoDB writes preserve IDs and reject ambiguous stock rows', async () => {
+  class ObjectId {
+    readonly _bsontype = 'ObjectId';
+    constructor(readonly value: string) {}
+    toHexString(): string { return this.value; }
+  }
+  const hex = '0123456789abcdef01234567';
+  const bson = new ObjectId(hex);
+  const equal = (a: unknown, b: unknown): boolean => a instanceof ObjectId && b instanceof ObjectId
+    ? a.value === b.value : a === b;
+  for (const [parent, reference] of [[0, 0], [bson, hex], [hex, bson], [bson, bson]] as const) {
+  for (const duplicates of ['', 'stock', 'parent']) {
+    const calls: Array<readonly [string, readonly string[]]> = [];
+    const stock = { _id: 'stock-id', item_id: reference, warehouse_id: 7, quantity: 1 };
+    const cursor = (rows: unknown[]) => ({ limit: () => ({ toArray: () => rows }) });
+    const capability = createDatabaseWriteCapability({
+      backend: 'mongodb',
+      databaseLease: { resources: { database: 'bench',
+        container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
+      expand: value => value,
+      exec: (command, args) => {
+        calls.push([command, args]);
+        if (args[0] === 'inspect') return 'mongodb-id\n';
+        let output = '';
+        runInNewContext(args.at(-1)!, {
+          ObjectId,
+          db: {
+            getCollectionNames: () => ['item', 'warehouse', 'stock'],
+            item: { find: () => cursor(Array(duplicates === 'parent' ? 2 : 1)
+              .fill({ id: parent, _id: 'generated-item-object-id' })) },
+            warehouse: { find: () => cursor([{ id: stock.warehouse_id, _id: 'generated-warehouse-object-id' }]) },
+            stock: {
+              find: (query: { item_id: { $in: unknown[] }; warehouse_id: { $in: unknown[] } }) => {
+                const matched = query.item_id.$in.some(id => equal(id, stock.item_id))
+                  && query.warehouse_id.$in.includes(stock.warehouse_id);
+                return cursor(matched ? (duplicates === 'stock' ? [stock, stock] : [stock]) : []);
+              },
+              updateOne: (query: { _id: string }, update: { $set: { quantity: number } }) => {
+                assert.equal(query._id, stock._id);
+                stock.quantity = update.$set.quantity;
+                return { matchedCount: 1 };
+              },
+            },
+          },
+          quit: () => { throw Object.assign(new Error('refused'), { stdout: output }); },
+          print: (value: string) => { output += value + '\n'; },
+        });
+        return output;
+      },
+    });
+    const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+      quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+    // Ambiguity is the application's invalid interface, graded as on every other stack.
+    assert.equal(result.status, duplicates ? 'failed' : 'passed');
+    assert.equal(result.finding?.kind, duplicates ? 'interface-invalid' : undefined);
+    assert.equal(stock.quantity, duplicates ? 1 : 5);
+    assert.deepEqual(calls.find(([, args]) => args.includes('mongosh'))?.[1].slice(0, 2),
+      ['exec', 'mongodb-id']);
+    }
+  }
+});
+
+test('MongoDB auth and command failures cannot be scored as missing stock data', async () => {
+  const databaseLease = { resources: { database: 'bench',
+    container: { name: 'leased-mongodb', id: 'mongodb-id' } } };
+  for (const error of [
+    Object.assign(new Error('mongosh --password SENTINEL_PRIVATE_PASSWORD exited 1'),
+      { stderr: 'MongoServerError: Command find requires authentication' }),
+    Object.assign(new Error('mongosh exited 1'),
+      { stderr: 'MongoServerError: Authentication failed' }),
+    Object.assign(new Error('docker exec exited 126'),
+      { stderr: 'OCI runtime exec failed: executable file not found in $PATH' }),
+    Object.assign(new Error('docker timed out'), { code: 'ETIMEDOUT' }),
+  ]) {
+    const capability = createDatabaseWriteCapability({ backend: 'mongodb', databaseLease,
+      expand: value => value, exec: (_command, args) => {
+        if (args[0] === 'inspect') return 'mongodb-id\n';
+        throw error;
+      } });
+    const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+      quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+    assert.equal(result.status, 'harness_failure', error.message);
+    assert.equal(result.finding, null);
+    assert.match(result.summary ?? '', /authentication|Authentication|executable file|timed out/);
+    assert.doesNotMatch(JSON.stringify(result), /SENTINEL_PRIVATE_PASSWORD/);
+  }
+  for (const [output, status] of [['NOMATCH\n', 'failed'], ['unexpected output\n', 'harness_failure']]) {
+    const capability = createDatabaseWriteCapability({ backend: 'mongodb', databaseLease,
+      expand: value => value, exec: (_command, args) => args[0] === 'inspect' ? 'mongodb-id\n' : output! });
+    const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+      quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+    assert.equal(result.status, status);
+  }
+});
+
+test('direct database writes fail as harness errors without lease authority', async () => {
+  const capability = createDatabaseWriteCapability({
+    backend: 'postgres', expand: value => value, exec: () => 'UPDATE 1\n',
+  });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  assert.equal(result.status, 'harness_failure');
+  assert.match(result.summary ?? '', /authenticated backend lease/);
+});
+
+test('the null control can skip direct database writes', async () => {
+  const capability = createDatabaseWriteCapability({
+    backend: 'postgres', skip: true, expand: value => value,
+    exec: () => { throw new Error('must not execute'); },
+  });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  assert.equal(result.status, 'passed');
+});
+
+const interruption = { interrupt: async () => ({ closed: 1, open: [] }), restore: async () => {} };
+
+test('offline lifecycle preserves settling time and verifies browser network state', async () => {
+  const offlineStates: boolean[] = [];
+  const waits: number[] = [];
+  let browserOnline = true;
+  const actor = { networkInterruption: interruption, page: {
+    evaluate: async () => browserOnline,
+    context: () => ({
+    setOffline: async (value: boolean) => {
+      offlineStates.push(value);
+      browserOnline = !value;
+    },
+  }) } };
+  const capabilities = services(new Map([['a', actor]]), { browser: {
+    clients: { open: async () => {}, fresh: async () => 'a-fresh' },
+    sleep: async (ms: number) => { waits.push(ms); },
+  } });
+  const disconnected = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 10 },
+    capabilities);
+  const reconnected = await run({ do: 'setOffline', actor: 'a', offline: false, settleMs: 20 },
+    capabilities);
+  assert.equal(disconnected.status, 'passed');
+  assert.equal(observation(disconnected).browserOnline, false);
+  assert.equal(reconnected.status, 'passed');
+  assert.equal(observation(reconnected).browserOnline, true);
+  assert.deepEqual(offlineStates, [true, false]);
+  assert.deepEqual(waits, [10, 20]);
+});
+
+test('offline lifecycle fails closed when browser network state does not change', async () => {
+  const actor = { networkInterruption: interruption, page: { evaluate: async () => true,
+    context: () => ({ setOffline: async () => {} }) } };
+  const result = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 1 },
+    services(new Map([['a', actor]])));
+  assert.equal(result.status, 'harness_failure');
+  assert.match(result.summary ?? '', /navigator\.onLine remained true/);
+});
+
+test('a crashed page during a concurrency barrier or click remains a harness failure', async () => {
+  for (const phase of ['barrier', 'click']) {
+    const closed = () => { throw new Error('Target page, context or browser has been closed'); };
+    const actor = { loc: () => ({
+      waitFor: async () => { if (phase === 'barrier') closed(); },
+      isEnabled: async () => true,
+      click: async () => closed(),
+    }) };
+    const result = await run({ do: 'clickConcurrently', actors: ['a', 'b'],
+      testid: 'buy', settleMs: 0 }, services(new Map([['a', actor], ['b', actor]])));
+    assert.equal(result.status, 'harness_failure', phase);
+    assert.equal(result.code, 'unclassified_exception', phase);
+  }
+});
+
+test('concurrent click timeouts on a starved host are retryable and inconclusive', async () => {
+  const gib = 1024 ** 3;
+  const idle = { memTotalBytes: 32 * gib, memAvailableBytes: 20 * gib, cpuCount: 8, load: 2 };
+  const timeout = () => Object.assign(new Error('locator timed out'), { name: 'TimeoutError' });
+  for (const phase of ['barrier', 'click']) {
+    const actor = { loc: () => ({
+      waitFor: async () => { if (phase === 'barrier') throw timeout(); },
+      isEnabled: async () => true,
+      click: async () => { throw timeout(); },
+      count: async () => 1,
+    }) };
+    for (const [pressure, status] of [
+      [idle, 'failed'],
+      [{ ...idle, load: 8 }, 'inconclusive'],
+      [{ ...idle, memAvailableBytes: 3 * gib }, 'inconclusive'],
+    ] as const) {
+      const result = await run({ do: 'clickConcurrently', actors: ['a', 'b'], testid: 'buy', settleMs: 0 },
+        services(new Map([['a', actor], ['b', actor]]), { concurrency: {
+          defaultWithin: 5000, dispatch: async () => null, expand: (value: string | undefined) => value,
+          hostPressure: () => pressure, sleep, testId: (id: string) => id,
+        } }));
+      assert.equal(result.status, status, phase);
+      assert.equal(result.retryable, status === 'inconclusive', phase);
+      assert.equal(result.finding?.kind ?? null, status === 'failed'
+        ? (phase === 'barrier' ? 'control-not-ready' : 'clicks-failed') : null, phase);
+      assert.deepEqual(observation(result).hostPressure, pressure, phase);
+      assert.deepEqual(observation(result).attached,
+        [{ actor: 'a', attached: true }, { actor: 'b', attached: true }], phase);
+    }
+  }
+});

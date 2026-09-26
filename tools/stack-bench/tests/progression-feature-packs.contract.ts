@@ -1,0 +1,222 @@
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compilePackDefinition, resolveTaskFragment,
+  type CompiledPackDefinition } from '../src/composition/composition-compiler.js';
+import { compileScenarioDefinition, type CompiledCriterion, type CompiledFeature }
+  from '../src/composition/definition-compiler.js';
+import { compileProgressionDefinitionFile, type CompiledProgressionNode }
+  from '../src/progression/progression-definition.js';
+
+// Rules every feature pack in the dependency catalog must hold, checked once
+// over the whole catalog rather than restated per pack. Exact ids, points,
+// paths and hook names are data the compiler already binds; they are not
+// asserted here.
+
+const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
+const packRoot = join(trackRoot, 'composition', 'packs');
+const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
+const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
+  .filter(name => name.endsWith('.json')).map(name => {
+    const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
+    return [pack.id, pack];
+  }));
+const definition = compileProgressionDefinitionFile(
+  join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
+
+test('stored review script safety belongs to reviews and review access is verified at the server boundary', () => {
+  const pack = packs.get('ecommerce.progression.review-access-specifications')!;
+  const check = pack.checks.find(check => check.id === 'stored-review-script')!;
+  assert.equal(check.role, 'guarantee');
+  assert.deepEqual(check.requiresFeatures, ['ecommerce.feature.purchasing', 'ecommerce.feature.reviews']);
+  assert.deepEqual(definition.nodes.filter(node => node.gradingChecks.some(item =>
+    item.id === `${pack.id}.${check.id}.9180a`)).map(node => node.id), ['reviews']);
+  const feature = scenarioFeature(check, check.id).feature;
+  const steps = feature.criteria[0]!.steps;
+  assert(steps.some(step => step.do === 'expectActionOutcome' && step.actor === 'owner'
+    && step.outcome === 'accepted'), 'reject-all cannot pass');
+  assert.deepEqual(steps.filter(step => step.do === 'expectNoScriptExecution').map(step => step.actor),
+    ['owner', 'reader-fresh']);
+
+  const [reviewCriterion] = selectedCriteria(pack);
+  assert(reviewCriterion);
+  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'owner'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted'));
+  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'stranger'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome'
+    && step.outcome === 'application-refused' && step.routeProvenBy === 'owner'));
+});
+
+test('shipping accounting is an unprompted production check owned only by fulfilment', () => {
+  const pack = packs.get('ecommerce.progression.inventory-conservation-specifications')!;
+  const check = pack.checks.find(check => check.id === 'shipping-accounting')!;
+  assert.equal(check.role, 'guarantee');
+  const stableKey = `${pack.stableId}.${check.stableId}.202e`;
+  assert.deepEqual(definition.nodes.filter(node => node.gradingChecks.some(check => check.id === stableKey))
+    .map(node => node.id), ['fulfilment-queue']);
+  const criterion = scenarioFeature(check, check.id).feature.criteria.find(criterion => criterion.id === '202e')!;
+  assert.equal(criterion.category, 'production');
+  assert(pack.task.requirements.every(fragment => !fragment.requiresFeatures?.includes('ecommerce.progression.fulfilment-queue')));
+});
+
+function requiredPack(reference: string): CompiledPackDefinition {
+  const pack = packs.get(reference);
+  if (!pack) throw new Error(`the catalog references missing pack ${reference}`);
+  return pack;
+}
+
+const featurePacks: Array<{ node: CompiledProgressionNode; pack: CompiledPackDefinition }> =
+  definition.nodes.flatMap(node => node.featureRefs.map(reference =>
+    ({ node, pack: requiredPack(reference) })));
+
+type Fragment = CompiledPackDefinition['task']['requirements'][number];
+
+function fragmentText(fragment: Fragment): string {
+  return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
+}
+
+function scenarioFeature(check: CompiledPackDefinition['checks'][number],
+  at: string): { feature: CompiledFeature } {
+  const scenario = compileScenarioDefinition(readJson(join(trackRoot, check.source)),
+    { source: check.source });
+  const feature = scenario.features.find(candidate => candidate.id === check.feature);
+  assert(feature, `${at} must select a feature that exists in ${check.source}`);
+  return { feature };
+}
+
+function selectedCriteria(pack: CompiledPackDefinition): CompiledCriterion[] {
+  return pack.checks.flatMap(check => {
+    const at = `${pack.id}.${check.id}`;
+    const { feature } = scenarioFeature(check, at);
+    const ids = check.criteria ?? feature.criteria.map(criterion => criterion.id);
+    return ids.map(id => {
+      const criterion = feature.criteria.find(candidate => candidate.id === id);
+      assert(criterion, `${at} must select ${id} from ${check.source}`);
+      return criterion;
+    });
+  });
+}
+
+test('every feature pack states one whole product request and one interface it can add to an app', () => {
+  const requirementPaths = new Set<string>();
+  const contractPaths = new Set<string>();
+  for (const { pack } of featurePacks) {
+    const at = pack.id;
+    assert.equal(pack.moduleType, 'feature', at);
+    assert.equal(pack.task.requirements.length, 1, `${at} must state one product request`);
+    const ownedContracts = pack.task.contracts.filter(fragment => fragment.id !== 'ecommerce.orders.data');
+    assert.equal(ownedContracts.length, 1, `${at} must state one application interface`);
+    const [requirement] = pack.task.requirements;
+    const [contract] = ownedContracts;
+    assert(requirement && contract);
+    // Dependency mode adds features to an existing app, so every feature
+    // must compose as an upgrade, and its interface must travel with it.
+    assert(requirement.modes?.includes('upgrade'), `${at} must compose as an upgrade`);
+    for (const fragment of pack.task.contracts) {
+      assert.deepEqual(fragment.modes, requirement.modes, `${at} interface modes must match its request`);
+      if (fragment.id === 'ecommerce.orders.data') assert.equal(fragment.path, 'contracts/order-data.md');
+    }
+    for (const fragment of [requirement, ...pack.task.contracts]) {
+      assert.equal(fragment.from, undefined, `${at} must not slice ${fragment.path}`);
+      assert.equal(fragment.until, undefined, `${at} must not slice ${fragment.path}`);
+    }
+    assert.equal(requirementPaths.has(requirement.path), false,
+      `${requirement.path} is shared by two feature packs`);
+    assert.equal(contractPaths.has(contract.path), false,
+      `${contract.path} is shared by two feature packs`);
+    requirementPaths.add(requirement.path);
+    contractPaths.add(contract.path);
+  }
+});
+
+test('feature requests are implementation-neutral and never name the testing interface', () => {
+  for (const { pack } of featurePacks) {
+    const [requirement] = pack.task.requirements;
+    assert(requirement);
+    assert.doesNotMatch(fragmentText(requirement),
+      /framework|ORM|database|websocket|endpoint|\broutes?\b|reducer|testid|MongoDB|PostgreSQL|SpacetimeDB/i,
+      `${pack.id} ${requirement.path}`);
+  }
+});
+
+test('shopping criteria in one scenario never share a product, so state cannot leak between them', () => {
+  const [quantity, checkout] = requiredPack('ecommerce.feature.cart').checks.length
+    ? selectedCriteria(requiredPack('ecommerce.feature.cart'))
+      .concat(selectedCriteria(requiredPack('ecommerce.feature.checkout')))
+    : [];
+  assert(quantity && checkout, 'cart and checkout must each select a criterion');
+  const product = (criterion: CompiledCriterion): string => {
+    const add = criterion.steps.find(step => step.do === 'click' && step.testid === 'add-to-cart');
+    assert(add && typeof add.in?.contains === 'string', `${criterion.id} must add a named product`);
+    return add.in.contains;
+  };
+  assert.notEqual(product(quantity), product(checkout));
+});
+
+test('every replayed request names a declared actor whose request it replays', () => {
+  // A replay captured from an actor the scenario never declared records
+  // nothing and degrades to inconclusive, which reads as a pass on its own.
+  // Replaying one's own request is legitimate (idempotency); an undeclared
+  // source is not.
+  const graded = new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id)));
+  let replays = 0;
+  for (const pack of packs.values()) {
+    for (const check of pack.checks) {
+      const prefix = `${pack.stableId ?? pack.id}.${check.stableId ?? check.id}.`;
+      if (![...graded].some(id => id.startsWith(prefix))) continue;
+      const { feature } = scenarioFeature(check, `${pack.id}.${check.id}`);
+      const actors = feature.actors ?? [];
+      for (const criterion of feature.criteria) {
+        for (const step of criterion.steps.filter(candidate => candidate.do === 'replayAs')) {
+          replays += 1;
+          assert(typeof step.from === 'string' && actors.includes(step.from),
+            `${check.source} ${criterion.id} replays a request from undeclared actor ${String(step.from)}`);
+          assert(typeof step.actor === 'string' && actors.includes(step.actor),
+            `${check.source} ${criterion.id} replays as undeclared actor ${String(step.actor)}`);
+        }
+      }
+    }
+  }
+  assert(replays > 0, 'the catalog must grade at least one replayed request');
+});
+
+test('refund accounting proves one persisted effect after a same-staff replay', () => {
+  const refund = requiredPack('ecommerce.spec.transactional-integrity');
+  const accounting = selectedCriteria(refund).find(criterion => criterion.id === '615b');
+  assert(accounting);
+  const replay = accounting.steps.findIndex(step => step.do === 'replayAs');
+  assert(replay >= 0);
+  assert.equal(accounting.steps[replay]?.actor, 'staff');
+  assert.equal(accounting.steps[replay]?.from, 'staff');
+  assert.equal(accounting.steps[replay + 1]?.do, 'expectReplayCompleted');
+  assert.equal(accounting.steps.some(step => step.do === 'expectReplayRejected'), false);
+  const fresh = accounting.steps.findIndex(step => step.do === 'freshClient');
+  assert(fresh > replay);
+  const observations = accounting.steps.slice(fresh + 1);
+  assert(observations.some(step => step.do === 'signIn' && step.actor === 'owner-fresh'));
+  for (const testid of ['support-refund-total', 'order-refund-total']) {
+    assert(observations.some(step => step.do === 'expectNumber' && step.actor === 'owner-fresh'
+      && step.testid === testid && step.relativeTo === 'paid-total' && step.plus === 0));
+  }
+  assert(observations.some(step => step.do === 'expectElementCount'
+    && step.testid === 'refund-entry' && step.equals === 1));
+  assert(observations.some(step => step.do === 'expectNumber'
+    && step.testid === 'order-refund-total' && step.equals === 0
+    && step.in?.contains === 'Mouse'));
+  assert(observations.some(step => step.do === 'expectElementCount'
+    && step.testid === 'refund-entry' && step.contains === 'Mouse' && step.equals === 0));
+  const access = selectedCriteria(requiredPack('ecommerce.spec.access-control')).find(criterion => criterion.id === '615c');
+  assert(access?.steps.some(step => step.do === 'expectActionOutcome'
+    && step.outcome === 'refused'));
+});
+
+// Each check has authored reporting metadata; browser transport is not a UI category.
+test('every current progression check has a category independent of its operational role', () => {
+  const checks = definition.nodes.flatMap(node => node.gradingChecks);
+  assert.ok(checks.length);
+  assert.ok(checks.every(check => ['feature', 'production', 'interface'].includes(check.category ?? '')));
+  assert.ok(checks.some(check => check.role === 'feature' && check.category === 'production'));
+});

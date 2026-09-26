@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.l2.price-history-features", "stableId": "ecommerce.returns-pricing", "moduleType": "feature",
+  "title": "Price history", "description": "Administrators update prices and public prices update live.",
+  "requiresPacks": ["ecommerce.progression.catalog-management"],
+  "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.l2.price-history", "path": "prompts/modular/price-history.md", "order": 2040, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.l2.price-hooks", "path": "contracts/price-history.md", "order": 2041, "modes": ["upgrade"] }]
+  },
+  "checks": [
+    { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-live-price.json", "feature": 4, "criteria": ["4b"], "role": "feature" }
+  ]
+}

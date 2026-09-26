@@ -1,0 +1,2182 @@
+{
+  "schemaVersion": 2,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.dependency-l3-calibration",
+  "title": "Ecommerce dependency L3 calibration",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/progression-catalog.json",
+    "id": "ecommerce.progression-catalog",
+    "meaningSha256": "885021e830495efb62e43a1ac7e9374b058ca7b36456a48702da51d099a104dd",
+    "executionSha256": "e864a909143f430d0ac774c7a3cd30ef156e7c3c004836f4e0fb021b9e78839a",
+    "contentSha256": "080e6698db20af1a4a57d7e3e84678e38ab375f750c8d5af93d633f794dda523"
+  },
+  "fixture": {
+    "id": "ecommerce.operations",
+    "sourceSha256": "d06444b72dc94fe1ef5e08867d875e1f3bbaa5cd82c35a3558f399c1fcb5ceae"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      {
+        "backend": "mongodb",
+        "id": "ecommerce-reference-mongodb",
+        "sourceSha256": "837e7e81b58f17afdaf29de8ddb7a17da2ac95d3716145c4f0ef996b4b4f5e7d"
+      },
+      {
+        "backend": "postgres",
+        "id": "ecommerce-reference-postgres",
+        "sourceSha256": "d7c162ae456010e5d3b334ac839c445ff5c9c889d83bbc94b9d840b0042534a5"
+      },
+      {
+        "backend": "spacetime",
+        "id": "ecommerce-reference-spacetime",
+        "sourceSha256": "fbd3c09759587f14781d5bc5b8d0357aec59aaaf34f8fe29f721a2a62d70fe52"
+      },
+      {
+        "backend": "convex",
+        "id": "ecommerce-reference-convex",
+        "sourceSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe"
+      }
+    ]
+  },
+  "mutations": [
+    {
+      "backend": "mongodb",
+      "path": "grader/mutations/mongodb-ecommerce.json",
+      "sha256": "db73a9efff3e4b53136d52d8e77d0c5162262d5c6333e4f6ce345de4b425ec55",
+      "referenceId": "ecommerce-reference-mongodb"
+    },
+    {
+      "backend": "postgres",
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "sha256": "706742c938b7d112c2b7dbeb1dd5bbd84d17542e8516fee3cf7737041ae942fd",
+      "referenceId": "ecommerce-reference-postgres"
+    },
+    {
+      "backend": "spacetime",
+      "path": "grader/mutations/spacetime-ecommerce.json",
+      "sha256": "834667879661c661985bc94869ffc0e08e1b83582d7c745d89d39e16d968a689",
+      "referenceId": "ecommerce-reference-spacetime"
+    },
+    {
+      "backend": "convex",
+      "path": "grader/mutations/convex-ecommerce.json",
+      "sha256": "d642f2973dead90f927c223473083beb9eb5fa73625b0cd682aff4aa8107d022",
+      "referenceId": "ecommerce-reference-convex"
+    }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 1,
+    "mutationRepetitions": 1,
+    "checks": [
+      "ecommerce.feature.accounts.accounts.1a",
+      "ecommerce.feature.accounts.accounts.1b",
+      "ecommerce.feature.accounts.accounts.1c",
+      "ecommerce.feature.accounts.accounts.1d",
+      "ecommerce.feature.cart-checkout.cart.4a",
+      "ecommerce.feature.cart-checkout.cart.4d",
+      "ecommerce.feature.catalog.catalog-ranking.2b",
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.feature.catalog.catalog-values.2a",
+      "ecommerce.feature.purchasing.purchase-order.3c",
+      "ecommerce.feature.reviews.reviews.6a",
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.operational-views.5c",
+      "ecommerce.inventory-operations.operational-views.5d",
+      "ecommerce.inventory-operations.operational-views.5e",
+      "ecommerce.inventory-operations.operational-views.5f",
+      "ecommerce.inventory-operations.shipping-accounting.202e",
+      "ecommerce.inventory-operations.stock-conservation.202b",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.stock-conservation.202f",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.l3.deferred-integrity.exactly-once.311a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+      "ecommerce.l3.server-time.server-time.312a",
+      "ecommerce.operations-access.fulfilment-queue.1b",
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.catalog-management.catalog-management.622a",
+      "ecommerce.progression.catalog-management.catalog-management.622b",
+      "ecommerce.progression.customer-profile.customer-profile.620c",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.progression.managed-support.managed-support.613c",
+      "ecommerce.progression.notification-preferences.notification-preferences.630c",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+      "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+      "ecommerce.progression.staff-access.staff-access.601a",
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.progression.support-history.support-history.612c",
+      "ecommerce.progression.support-intake.support-intake.610a",
+      "ecommerce.progression.support-triage.support-assignment.611a",
+      "ecommerce.progression.support-triage.support-priority.611b",
+      "ecommerce.progression.support-triage.support-status.611c",
+      "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "ecommerce.returns-pricing.cancellation-and-return.3b",
+      "ecommerce.returns-pricing.refund-accounting.203a",
+      "ecommerce.spec.access-control.account-disclosure.110a",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.review-eligibility.108a",
+      "ecommerce.spec.access-control.review-eligibility.108b",
+      "ecommerce.spec.access-control.signed-out-purchase.3a",
+      "ecommerce.spec.access-control.staff-area-boundary.601b",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.access-control.support-history-logout.612d",
+      "ecommerce.spec.access-control.support-history-privacy.612b",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.external-data-sync.external-stock.901a",
+      "ecommerce.spec.external-data-sync.external-stock.901d",
+      "ecommerce.spec.live-state.fulfilment-queue.1a",
+      "ecommerce.spec.live-state.inventory-dashboard.5a",
+      "ecommerce.spec.live-state.managed-support.613a",
+      "ecommerce.spec.live-state.open-list.902a",
+      "ecommerce.spec.live-state.purchase-stock.3b",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.spec.live-state.rating.6c",
+      "ecommerce.spec.live-state.sales-dashboard.5b",
+      "ecommerce.spec.live-state.shared-cart.4c",
+      "ecommerce.spec.live-state.warehouse-stock.7c",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "ecommerce.spec.state-durability.cart-reload.4b",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+      "ecommerce.spec.state-durability.session-reload.1e",
+      "ecommerce.spec.state-durability.staff-role-reload.621a",
+      "ecommerce.spec.state-durability.support-history-reload.612a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+      "ecommerce.spec.transactional-integrity.unique-review.6b"
+    ],
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "stacks": [
+      "mongodb",
+      "postgres",
+      "spacetime",
+      "convex"
+    ],
+    "evidence": [
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-reference.json",
+        "sha256": "c984f9495874f4924732d79a1985c6a2c4dcf0a16c2e18fa0d44da469f859635",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-mutation.json",
+        "sha256": "8b2bfde52ac6a816bfa7dee2d9733fb82677b9a88418dbf06da53116006991c1",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/mongodb-reference.json",
+        "sha256": "89165bf5d343c6a1d3e1b1a4f1b7a4aa8a113fd2c7b1629240aab1b23134ffd8",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/mongodb-mutation.json",
+        "sha256": "c9c7ec1e6db455ccd5ead6fcb8543c6feb603c9669292c83801e24aa9d846586",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/postgres-reference.json",
+        "sha256": "a3fd19e32a78318d6172aa5967b3af8e5f91a7991e9ee0f8b534511840210ce1",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/postgres-mutation.json",
+        "sha256": "1d8098f3604160b58a79bd8ce8b58c22d2f9802bd4b78fc6c7dbf40f4ae0f151",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-reference.json",
+        "sha256": "241e507d6d3f5748a2b7c525caed31ff8edf63fdf834dc0e560dcf2f50f27bdb",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-mutation.json",
+        "sha256": "1f8506fb9a3110f69ccdbfb691f950885546a51cdd0107f847e520d7635b17f5",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/null.json",
+        "sha256": "aea50eb653e6f5380dc0ea4163d85df2bb43f502fb709442e0b653ac197234f7",
+        "slice": {
+          "checks": [
+            "ecommerce.feature.accounts.accounts.1a",
+            "ecommerce.feature.accounts.accounts.1b",
+            "ecommerce.feature.accounts.accounts.1c",
+            "ecommerce.feature.accounts.accounts.1d",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d",
+            "ecommerce.feature.catalog.catalog-ranking.2b",
+            "ecommerce.feature.catalog.catalog-search.2d",
+            "ecommerce.feature.catalog.catalog-values.2a",
+            "ecommerce.feature.purchasing.purchase-order.3c",
+            "ecommerce.feature.reviews.reviews.6a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+            "ecommerce.inventory-operations.operational-views.5c",
+            "ecommerce.inventory-operations.operational-views.5d",
+            "ecommerce.inventory-operations.operational-views.5e",
+            "ecommerce.inventory-operations.operational-views.5f",
+            "ecommerce.inventory-operations.shipping-accounting.202e",
+            "ecommerce.inventory-operations.stock-conservation.202b",
+            "ecommerce.inventory-operations.stock-conservation.202d",
+            "ecommerce.inventory-operations.stock-conservation.202f",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+            "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.operations-access.fulfilment-queue.1b",
+            "ecommerce.operations-access.fulfilment-queue.1c",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.operations-access.operator-authorization.201c",
+            "ecommerce.operations-access.order-owner.204a",
+            "ecommerce.progression.catalog-management.catalog-management.622a",
+            "ecommerce.progression.catalog-management.catalog-management.622b",
+            "ecommerce.progression.faceted-search.faceted-search.401a",
+            "ecommerce.progression.faceted-search.faceted-search.402a",
+            "ecommerce.progression.managed-support.managed-support.613c",
+            "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+            "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+            "ecommerce.progression.staff-access.staff-access.601a",
+            "ecommerce.progression.staff-roles.staff-roles.621c",
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "ecommerce.progression.support-intake.support-intake.610a",
+            "ecommerce.progression.support-triage.support-assignment.611a",
+            "ecommerce.progression.support-triage.support-priority.611b",
+            "ecommerce.progression.support-triage.support-status.611c",
+            "ecommerce.returns-pricing.cancellation-and-return.3a",
+            "ecommerce.returns-pricing.cancellation-and-return.3b",
+            "ecommerce.returns-pricing.refund-accounting.203a",
+            "ecommerce.spec.access-control.cart-boundary.109a",
+            "ecommerce.spec.access-control.cart-boundary.109b",
+            "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+            "ecommerce.spec.access-control.order-ownership.106a",
+            "ecommerce.spec.access-control.promotion-management-boundary.620b",
+            "ecommerce.spec.access-control.purchase-attribution.102a",
+            "ecommerce.spec.access-control.review-eligibility.108a",
+            "ecommerce.spec.access-control.review-eligibility.108b",
+            "ecommerce.spec.access-control.signed-out-purchase.3a",
+            "ecommerce.spec.access-control.staff-area-boundary.601b",
+            "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+            "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "ecommerce.spec.concurrency-safety.last-unit.201a",
+            "ecommerce.spec.concurrency-safety.last-unit.201b",
+            "ecommerce.spec.concurrency-safety.last-unit.201c",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.spec.external-data-sync.external-stock.901a",
+            "ecommerce.spec.live-state.fulfilment-queue.1a",
+            "ecommerce.spec.live-state.inventory-dashboard.5a",
+            "ecommerce.spec.live-state.managed-support.613a",
+            "ecommerce.spec.live-state.open-list.902a",
+            "ecommerce.spec.live-state.purchase-stock.3b",
+            "ecommerce.spec.live-state.ranking.2c",
+            "ecommerce.spec.live-state.rating.6c",
+            "ecommerce.spec.live-state.sales-dashboard.5b",
+            "ecommerce.spec.live-state.shared-cart.4c",
+            "ecommerce.spec.live-state.warehouse-stock.7c",
+            "ecommerce.spec.search-ordering.search-ordering.402b",
+            "ecommerce.spec.state-durability.account-state-recovery.105a",
+            "ecommerce.spec.state-durability.cart-reload.4b",
+            "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "ecommerce.spec.state-durability.session-reload.1e",
+            "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "ecommerce.spec.transactional-integrity.books-balance.107b",
+            "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "ecommerce.spec.transactional-integrity.server-price.104a",
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.spec.transactional-integrity.unique-review.6b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/convex.json",
+        "sha256": "cb09ea3e84156bf2f80ceb774f00d671e7264338e24f11b4d4d341fa5ca18b10",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/convex.json",
+        "sha256": "cb09ea3e84156bf2f80ceb774f00d671e7264338e24f11b4d4d341fa5ca18b10",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/mongodb.json",
+        "sha256": "6c53173500dce888684b01f0a80456e071d5607684523bfbe7f44f4a5193205a",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/mongodb.json",
+        "sha256": "6c53173500dce888684b01f0a80456e071d5607684523bfbe7f44f4a5193205a",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/postgres.json",
+        "sha256": "68f77f832c93f883e71f341f55771caeff46a8fb40cc0c3751098a9211612f7e",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/postgres.json",
+        "sha256": "68f77f832c93f883e71f341f55771caeff46a8fb40cc0c3751098a9211612f7e",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/spacetime.json",
+        "sha256": "4e05d69e36be00b69590970bfd8768c28cffd975185161cbfabe65bbd7c22a52",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/spacetime.json",
+        "sha256": "4e05d69e36be00b69590970bfd8768c28cffd975185161cbfabe65bbd7c22a52",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/null.json",
+        "sha256": "db1aca798a43cc07072323b51c5815fde6319ccd74cfe89e4ac8b54cc01e1634",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.external-data-sync.external-stock.901d",
+            "ecommerce.spec.state-durability.account-state-recovery.105b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+            "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/convex-reference.json",
+        "sha256": "5014cfb529e1aaaf1856a57df8eeaa0277a21d2bf95ddc27e6b7aa9560a632c5",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/mongodb-reference.json",
+        "sha256": "8a1b0401a315a98b0bb7f3eff88b49f31f6bfb11b684ed886ab5fd53409539e0",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/postgres-reference.json",
+        "sha256": "f0c09920c161731aec994937bb063db575784b895b4ef0ebe4a5468d9eb2e860",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/spacetime-reference.json",
+        "sha256": "6f4cae86212ff78a704606d9c4aa0481b39183f926fcfc6039a41ce294d93f38",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/null-auth.json",
+        "sha256": "a7b5f0d576352d94ebaa29792e629cb59df20a9cc02b470ff21694b32e050077",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/mongodb-mutation.json",
+        "sha256": "0881b3aaa5f4f934d2aafffcaf98beee74c3595f83fa2818d542b90948c0ac70",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/postgres-mutation.json",
+        "sha256": "ae267e2d6f5ce83c9b373468832ddc0587daabdb25e24f7cd2406829da132b84",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/convex-mutation.json",
+        "sha256": "d39e8b6aacca0b609bac518fa55c9a9c9174ed80ffb883117a8e7fa3e2b52d51",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/spacetime-mutation.json",
+        "sha256": "330eec5f01cf5627936f8e952167949706ea7dc292ee49b2b3c548238d016fc9",
+        "slice": {
+          "checks": [
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-auth-20260925/shared-inputs.json",
+            "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/postgres.json",
+        "sha256": "2795f1e6a5fa29668161892b81e772daa1e613fd018489693347353c2c70f585",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/postgres.json",
+        "sha256": "2795f1e6a5fa29668161892b81e772daa1e613fd018489693347353c2c70f585",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/mongodb.json",
+        "sha256": "bd29008d27a8f6315deb772d978dd7d7aedde9224fd98d6a30d3e3b3363af2e9",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/mongodb.json",
+        "sha256": "bd29008d27a8f6315deb772d978dd7d7aedde9224fd98d6a30d3e3b3363af2e9",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/convex.json",
+        "sha256": "935f5a643fccf3445d1ca301279e34a07a902895d5e31ad30ec3736b6ea52881",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/convex.json",
+        "sha256": "935f5a643fccf3445d1ca301279e34a07a902895d5e31ad30ec3736b6ea52881",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/spacetime.json",
+        "sha256": "3b7ab365dce19ccd8300c093a2513aae073e12a00d1e0fad4e17ce7b39896d28",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/spacetime.json",
+        "sha256": "3b7ab365dce19ccd8300c093a2513aae073e12a00d1e0fad4e17ce7b39896d28",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/null.json",
+        "sha256": "2ac1a87c5abd2ad681f4d0247f5dbdc593e9427c818a53dd1fb7c2340cd485d1",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/postgres.json",
+        "sha256": "62957287793e793c6fe7c0bfdc5339c7d293a59f4f387698d2f8a93631fcdfc6",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/postgres.json",
+        "sha256": "62957287793e793c6fe7c0bfdc5339c7d293a59f4f387698d2f8a93631fcdfc6",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/mongodb.json",
+        "sha256": "0b5ec785d4b6cd7b2be6838a463f9a94b548dee4a36cd1327a821b66459ae668",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/mongodb.json",
+        "sha256": "0b5ec785d4b6cd7b2be6838a463f9a94b548dee4a36cd1327a821b66459ae668",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/spacetime.json",
+        "sha256": "85ead52cb4dbff4a9f7d98e31b51ca0354ed53b207ebad64982fd3b7a94ce2f9",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/spacetime.json",
+        "sha256": "85ead52cb4dbff4a9f7d98e31b51ca0354ed53b207ebad64982fd3b7a94ce2f9",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/convex.json",
+        "sha256": "6f601c440baf882a81ea4c9fa6449fb3ef983af8cf8829559cdc9e4b1aabe525",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/convex.json",
+        "sha256": "6f601c440baf882a81ea4c9fa6449fb3ef983af8cf8829559cdc9e4b1aabe525",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/null.json",
+        "sha256": "1dd549af3d8e5f0456d9d2cfba208b1ab20d090bccec82dfdfbd05510bc74327",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.customer-profile.customer-profile.620c",
+            "ecommerce.progression.support-history.support-history.612c",
+            "ecommerce.spec.access-control.account-disclosure.110a",
+            "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "ecommerce.spec.access-control.managed-support-privacy.613b",
+            "ecommerce.spec.access-control.support-history-logout.612d",
+            "ecommerce.spec.access-control.support-history-privacy.612b",
+            "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "ecommerce.spec.state-durability.support-history-reload.612a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      }
+    ],
+    "featureCatalog": {
+      "path": "progression/ecommerce.json",
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    }
+  },
+  "equivalenceDecisions": [],
+  "selection": {
+    "path": "composition/dependency.json",
+    "sha256": "e73002df8a7a42e612f2bd1ee5de1f9db2d6c13cb9c819e405a5f2512eca3048",
+    "alias": "L3",
+    "coveredAliases": [
+      "L1",
+      "L2",
+      "L3"
+    ]
+  },
+  "qualificationReuse": {
+    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration. The notification review replaces all three affected checks and validates unchanged capture outcomes with safer diagnostics. The capture review replaces nine affected checks and preserves unchanged outcomes for the bounded body-drain and safe diagnostic changes.",
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
+        "sha256": "2bc7bc26b2db46f44bb6b5fa813e33abfbd094d59be1792c8dfc49c8e4d7c205"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/reuse-review.json",
+        "sha256": "6b6d38c12c209104c5cf28379d6d2d9bbdf660ee34bfa55f68dd14d2393757cb"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-model-selection-20260925/reuse-review.json",
+        "sha256": "35bd9c773773771a88765de396d6011e83d026da18cf9dd599451cf9be2d613d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-stock-view-20260925/reuse-review.json",
+        "sha256": "1b001bf2d26382cda924677486826b5e0e6d35c89f38044b6871906bae52f654"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-stack-isolation-20260925/reuse-review.json",
+        "sha256": "25ec523075fb8d5d434af25a98bdc3d593d0ad37596e913ab7f5c97d2fe63db3"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-candidate-641c6e86/reuse-review.json",
+        "sha256": "02afe5d3568f72d25fc0b75452d174ed8641479302d6587f3b71cdfca8c3d252"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/reuse-review.json",
+        "sha256": "8f2b117c96b7ab51d3a6b5c1fa658d48d2b7e88461be55a2ac22025e82629779"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/reuse-review.json",
+        "sha256": "985d8d2a042ac8100282779b61165f158f291d64e6e6e73790e8f81a3084b1d6"
+      }
+    ],
+    "scopes": [
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+        "toExecutableSha256": "2848a35e33a739df6d8ff87709f97b7d84b4ff83d4ca2ca792dcbbaebd2ed6bd"
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "272845b7811dc374c203909430f73e21d0e798ea627b80b9f635b9fcfded0fd2",
+        "toExecutableSha256": "2848a35e33a739df6d8ff87709f97b7d84b4ff83d4ca2ca792dcbbaebd2ed6bd"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "898c8a692a2c7ab9a721c39d35b3b2ca3982d28f2d01e52d5db72ef219991563",
+        "toExecutableSha256": "2848a35e33a739df6d8ff87709f97b7d84b4ff83d4ca2ca792dcbbaebd2ed6bd"
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "a7a87046aed1fa83fa12bc977db8cafb56312ff84702ede2967116add828f516",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "a7a87046aed1fa83fa12bc977db8cafb56312ff84702ede2967116add828f516",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "acb98a0cf5423ecb97889ec4a183a1aa6bab2f4699b38a1c7cf594f57cda5d68",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "acb98a0cf5423ecb97889ec4a183a1aa6bab2f4699b38a1c7cf594f57cda5d68",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "1542f81f8eb9cb769b3f600f9892908fd432663971a0270d76e8823d9154a690",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "1542f81f8eb9cb769b3f600f9892908fd432663971a0270d76e8823d9154a690",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "f619a3748c18b0f1c05d49ecb3fb05f1f59a3255e0acda9df0c443bf68e3d975",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "f619a3748c18b0f1c05d49ecb3fb05f1f59a3255e0acda9df0c443bf68e3d975",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "0abbce601fad15fcaa51fc9f2153ada10b9deee6bc9e9f0d895f33f6f0e6f6e8",
+        "toExecutableSha256": "2848a35e33a739df6d8ff87709f97b7d84b4ff83d4ca2ca792dcbbaebd2ed6bd"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e",
+        "toExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052",
+        "toExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731",
+        "toExecutableSha256": "92236dbabff1c5e95891ce7340c9f1f6ae4d225b7488d10707786b9877981eef"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab",
+        "toExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "1510d33ff4e77f83a730ba2aae24baabdc9831be846a95b42bcbd10ecb2a7e21",
+        "toExecutableSha256": "2848a35e33a739df6d8ff87709f97b7d84b4ff83d4ca2ca792dcbbaebd2ed6bd"
+      }
+    ]
+  }
+}

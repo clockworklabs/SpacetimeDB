@@ -1,0 +1,1796 @@
+import assert from 'node:assert/strict';
+import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { runInNewContext } from 'node:vm';
+
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
+import { classifyResponseContract, tamperedSessionCredentials } from '../src/actions/named-action-runtime.js';
+import { executeAction } from '../src/actions/action-contract.js';
+import { createNamedActionsCapability } from '../src/actions/actor-transport-action-executors.js';
+
+type UnknownRecord = Record<string, unknown>;
+type NamedOptions = Parameters<typeof createNamedActionsCapability>[0];
+type Calls = ReturnType<NamedOptions['lastCalls']['get']>;
+type Verification = readonly ['structural' | 'unverified' | 'verified', string];
+
+interface ServiceOverrides {
+  readonly actions?: NamedOptions['actions'];
+  readonly appRoot?: string | null;
+  readonly backend?: string;
+  readonly fetchImpl?: NamedOptions['fetchImpl'];
+  readonly sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  readonly spacetime?: { uri: string; mod: string };
+}
+
+interface ProvidedServices {
+  readonly capabilities: Readonly<Record<string, unknown>>;
+  readonly calls: Calls;
+  readonly verification: Verification[];
+}
+
+interface CapturedRequest {
+  readonly options: UnknownRecord;
+  readonly url: string;
+}
+
+const record = (value: unknown): UnknownRecord => {
+  assert(value !== null && typeof value === 'object');
+  return value as UnknownRecord;
+};
+
+const namedResponse = (status: number, ok: boolean) => ({
+  status,
+  ok,
+  text: async (): Promise<string> => '',
+});
+
+function services(
+  actors: ReadonlyMap<string, unknown>,
+  overrides: ServiceOverrides = {},
+): ProvidedServices {
+  for (const value of actors.values()) {
+    const actor = record(value);
+    actor.record ??= () => {};
+    actor.context ??= { cookies: async () => [] };
+    actor.page ??= {};
+    record(actor.page).evaluate ??= async () => [];
+    for (const write of (actor.writes ?? []) as UnknownRecord[]) {
+      write.url ??= `${overrides.backend === 'spacetime' ? overrides.spacetime?.uri : 'http://app.test'}/api/session`;
+    }
+  }
+  const verification: Verification[] = [];
+  let calls: Calls = null;
+  const sleep = overrides.sleep
+    ?? (async (_milliseconds: number, _signal: AbortSignal): Promise<void> => {});
+  const browser = {
+    defaultWithin: 5000,
+    expand: (value: string) => value === '{room:test}' ? 'test-scoped' : value,
+    hyphenatedScopedUser: (name: string) => `${name}-scope`,
+    roomName: (room: string) => `${room}-scope`,
+    scopedUser: (name: string) => `${name}scope`,
+    sleep,
+    testId: (id: string) => `[data-testid="${id}"]`,
+  };
+  const named = createNamedActionsCapability({
+    actions: overrides.actions ?? [{ id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }],
+    backend: overrides.backend ?? 'postgres',
+    url: 'http://app.test',
+    spacetime: overrides.spacetime,
+    lastCalls: { get: () => calls, set: value => { calls = value; } },
+    sleep,
+    fetchImpl: overrides.fetchImpl ?? (async () => ({ status: 200, ok: true, text: async () => '' })),
+    now: (() => { let value = 10; return () => value++; })(),
+  });
+  return {
+    capabilities: {
+      actors: { get: (name: string) => actors.get(name) },
+      'application-files': { root: overrides.appRoot ?? null, expand: browser.expand },
+      'browser-interaction': browser,
+      'named-actions': named,
+      subprocess: { sleep },
+      'transport-observation': {
+        defaultWithin: 5000,
+        expand: browser.expand,
+        sleep,
+        verification: {
+          structural: (message: string) => { verification.push(['structural', message]); },
+          unverified: (message: string) => { verification.push(['unverified', message]); },
+          verified: (message: string) => { verification.push(['verified', message]); },
+        },
+      },
+    },
+    get calls() { return calls; },
+    verification,
+  };
+}
+
+async function run(input: UnknownRecord, provided: ProvidedServices) {
+  const action = String(input.do);
+  return executeAction(ACTION_REGISTRY, action, input, {
+    capabilities: provided.capabilities,
+  });
+}
+
+test('a parameterless action needs no DOM input; parameterized actions still do', async () => {
+  let calls = 0;
+  const provided = services(new Map([['guest', { name: 'guest' }]]), {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'http://app.test/api/checkout');
+      assert.deepEqual(JSON.parse(String(options.body)), {});
+      calls++;
+      return namedResponse(200, true);
+    },
+  });
+  const input = { do: 'callAction', actor: 'guest', action: 'checkout', authentication: 'none',
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+  const result = await run(input, provided);
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal((await run({ ...input, namedAction: { ...input.namedAction, args: [1] } }, provided)).status,
+    'harness_failure');
+  assert.equal(calls, 1);
+});
+
+test('live session hooks override captured credentials after signout and account changes', async () => {
+  // An array is an app without the hook that keeps these session tokens in storage and has no captured Authorization.
+  for (const current of [null, 'current-session', 'broken', 'no-hook', ['illicit-session'], ['one-token', 'another-token']]) {
+    let calls = 0;
+    const stored = Array.isArray(current) ? current : [];
+    const storage = { length: stored.length, key: (index: number) => `session-${index}`,
+      getItem: (key: string) => stored[Number(key.slice('session-'.length))] ?? null };
+    const actor = { name: 'buyer', writes: [{ url: 'http://app.test/buy', headers: {
+      ...(Array.isArray(current) ? {} : { authorization: 'Bearer old-session' }), 'x-csrf-token': 'current-context',
+    } }], context: { cookies: async () => [] }, page: {
+      evaluate: async (callback: () => unknown) =>
+        runInNewContext(`(${callback.toString()})()`, { localStorage: storage, sessionStorage: { length: 0 },
+          window: current === 'no-hook' || Array.isArray(current) ? {} : {
+            getSessionToken: () => { if (current === 'broken') throw new Error('broken hook'); return current; },
+          } }),
+    } };
+    const broken = current === 'broken' || stored.length > 1;
+    const provided = services(new Map([['buyer', actor]]), { fetchImpl: async (_url, options) => {
+      calls++;
+      assert.equal(options.headers?.['x-csrf-token'], 'current-context');
+      assert.equal(options.headers?.Authorization ?? options.headers?.authorization,
+        current === null ? undefined : `Bearer ${Array.isArray(current) ? current[0] : current === 'no-hook' ? 'old-session' : current}`);
+      return namedResponse(401, false);
+    } });
+    const result = await run({ do: 'callAction', actor: 'buyer', action: 'buy', authentication: 'optional', settleMs: 0,
+      namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } }, provided);
+    assert.equal(result.status, broken ? 'inconclusive' : 'passed', JSON.stringify(result));
+    assert.equal(calls, broken ? 0 : 1);
+  }
+});
+
+test('session tampering reaches the server, preserves context, requires a valid matching control and restores access', async () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.ABCD1234';
+  const credentials: Record<string, string>[] = [{ Authorization: `Bearer ${jwt}` }, { Cookie: 'sid=0123456789abcdef' }];
+  for (const credential of credentials) {
+    const [key, valid] = Object.entries(credential)[0]!;
+    let requests = 0, writes = 0;
+    const server = createServer((req, res) => {
+      requests++;
+      assert.equal(req.headers.origin, 'http://app.test');
+      assert.equal(req.headers.referer, 'http://app.test/');
+      if (req.headers[key.toLowerCase()] !== valid) { res.writeHead(401).end('refused'); return; }
+      writes++; res.end('{}');
+    });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    try {
+      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/buy`;
+      const headers: Record<string, string> = { ...credential, Origin: 'http://app.test', Referer: 'http://app.test/' };
+      const actor = { name: 'buyer', record() {}, writes: [{ url: 'http://app.test/buy', headers }],
+        page: { evaluate: async () => [] },
+        context: { cookies: async () => key === 'Cookie' ? [{ name: 'sid', value: headers.Cookie!.slice(4) }] : [] } };
+      const provided = services(new Map([['buyer', actor]]), { fetchImpl: (_url, options) => fetch(url, options) });
+      const input = { do: 'callAction', actor: 'buyer', action: 'buy', settleMs: 0,
+        namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } };
+      const attack = { ...input, authentication: 'tampered-session' };
+      const unproven = await run(attack, provided);
+      assert.equal(unproven.status, 'inconclusive', JSON.stringify(unproven));
+      assert.equal(requests, 0);
+      assert.equal((await run(input, provided)).status, 'passed');
+      assert.equal((await run(attack, provided)).status, 'passed');
+      assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, provided)).status, 'passed');
+      assert.equal(writes, 1);
+      assert.equal((await run(input, provided)).status, 'passed');
+      assert.equal(writes, 2);
+      headers[key] = `${valid}changed`;
+      assert.equal((await run(attack, provided)).status, 'inconclusive', 'a stale positive control proves nothing');
+      assert.equal(requests, 3);
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
+  const changed = tamperedSessionCredentials({ Authorization: `Bearer ${jwt}`, 'x-csrf-token': 'context' }, 'buyer');
+  assert.deepEqual(changed.Authorization!.split('.').slice(0, 2), `Bearer ${jwt}`.split('.').slice(0, 2));
+  assert.equal(changed['x-csrf-token'], 'context');
+  assert.notEqual(changed.Authorization, `Bearer ${jwt}`);
+  const ambiguous: Record<string, string>[] = [
+    { Authorization: 'Bearer token', Cookie: 'sid=token' },
+    { Cookie: 'sid=token; extra=other' }, { Cookie: 'sid=token', 'x-csrf-token': 'token' },
+    { Cookie: 'csrf=token' }, { Authorization: 'Basic dGVzdA==' },
+    { Authorization: 'Bearer token', 'x-auth-token': 'other' },
+  ];
+  for (const headers of ambiguous) assert.throws(() => tamperedSessionCredentials(headers, 'buyer'), /could not issue the replay/);
+  for (const cookies of [[{ name: 'sid', value: 'token' }], [{ name: 'theme', value: 'dark' }]]) {
+    let requests = 0;
+    const actor = { name: 'buyer', writes: [{ headers: { authorization: `Bearer ${jwt}` } }],
+      context: { cookies: async () => cookies } };
+    const provided = services(new Map([['buyer', actor]]), { fetchImpl: async () => {
+      requests++; return namedResponse(200, true);
+    } });
+    const input = { do: 'callAction', actor: 'buyer', action: 'checkout', settleMs: 0,
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+    const positive = await run(input, provided);
+    assert.equal(positive.status, 'passed', JSON.stringify(positive));
+    assert.equal((await run({ ...input, authentication: 'tampered-session' }, provided)).status, 'inconclusive');
+    assert.equal(requests, 1, 'neither a fallback credential nor an unrelated cookie can silently earn a result');
+  }
+  for (const status of [401, 403]) {
+    const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: 'unauthorized' });
+    assert.equal(classified.refusalKind, 'access'); assert.equal(classified.ok, false);
+  }
+});
+
+test('mixed credentials need a measured isolated control; cookie and CSRF dependencies stay inconclusive', async t => {
+  for (const mode of ['bearer', 'cookie-only', 'requires-cookie', 'accept-forgery', 'commit-then-refuse', 'reject-all', 'response-loss']) {
+    await t.test(mode, async () => {
+      const token = 'server-issued-session-0123456789';
+      let purchases = 0, requests = 0;
+      const observed: { cookie: string | undefined; authorization: string | undefined }[] = [];
+      const server = createServer((req, res) => {
+        if (req.url === '/login') {
+          res.setHeader('Set-Cookie', [`sid=${token}; HttpOnly; Path=/`, 'locale=en; Path=/']);
+          res.end(JSON.stringify({ token })); return;
+        }
+        requests++;
+        observed.push({ cookie: req.headers.cookie, authorization: req.headers.authorization });
+        assert.equal(req.headers.origin, 'http://app.test');
+        assert.equal(req.headers['x-csrf-token'], 'unchanged-context');
+        const bearer = req.headers.authorization === `Bearer ${token}`;
+        const cookie = req.headers.cookie?.includes(`sid=${token}`) === true;
+        if (mode === 'response-loss' && !cookie) { res.destroy(); return; }
+        const accepted = mode === 'reject-all' ? false : mode === 'cookie-only' ? cookie
+          : mode === 'requires-cookie' ? bearer && cookie
+          : ['accept-forgery', 'commit-then-refuse'].includes(mode) ? !!req.headers.authorization : bearer;
+        if (accepted) purchases++;
+        res.writeHead(accepted && !(mode === 'commit-then-refuse' && !bearer) ? 200 : 401).end('{}');
+      });
+      server.listen(0, '127.0.0.1'); await once(server, 'listening');
+      try {
+        const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+        const login = await fetch(`${url}/login`, { method: 'POST' });
+        const cookies = login.headers.getSetCookie().map(value => {
+          const [name, cookieValue] = value.split(';')[0]!.split('=');
+          return { name: name!, value: cookieValue! };
+        });
+        const credentials = await login.json() as { token: string };
+        const headers: Record<string, string> = { Origin: 'http://app.test', 'x-csrf-token': 'unchanged-context' };
+        if (mode !== 'cookie-only') headers.Authorization = `Bearer ${credentials.token}`;
+        const actor = { name: 'buyer', writes: [{ url: 'http://app.test/buy', headers }],
+          context: { cookies: async () => cookies }, page: { evaluate: async () => [] } };
+        const provided = services(new Map([['buyer', actor]]), { fetchImpl: (_url, options) => fetch(`${url}/buy`, options) });
+        const input = { do: 'callAction', actor: 'buyer', action: 'buy', settleMs: 0,
+          namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } };
+        const control = { ...input, authentication: 'session-control' };
+        assert.equal((await run(control, provided)).status, 'inconclusive', 'isolation requires a full-credential control');
+        assert.equal(requests, 0);
+        assert.equal((await run(input, provided)).status, 'passed');
+        const positive = await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'accepted' }, provided);
+        if (mode === 'reject-all') {
+          assert.equal(positive.status, 'failed', 'reject-all must fail the original positive control');
+          assert.equal((await run(control, provided)).status, 'inconclusive');
+          assert.equal(requests, 1); return;
+        }
+        assert.equal(positive.status, 'passed');
+        const isolated = await run(control, provided);
+        if (['cookie-only', 'requires-cookie', 'response-loss'].includes(mode)) {
+          assert.equal(isolated.status, 'inconclusive', JSON.stringify(isolated));
+          assert.equal(purchases, 1);
+          assert.equal(requests, mode === 'cookie-only' ? 1 : 2);
+          assert.equal((await run({ ...input, authentication: 'tampered-session' }, provided)).status, 'inconclusive');
+          assert.equal(requests, mode === 'cookie-only' ? 1 : 2, 'no forgery after an unproven isolated control');
+          return;
+        }
+        assert.equal(isolated.status, 'passed');
+        assert.equal(purchases, 2, 'isolation is a real purchase, not an auth discovery request hidden from accounting');
+        assert.equal(observed[1]!.cookie, undefined);
+        const beforeForgery = purchases;
+        assert.equal((await run({ ...input, authentication: 'tampered-session' }, provided)).status, 'passed');
+        assert.equal(observed[2]!.cookie, undefined, 'no valid fallback credential can mask the forgery');
+        assert.notEqual(observed[2]!.authorization, observed[1]!.authorization);
+        const refusal = await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, provided);
+        assert.equal(refusal.status, mode === 'accept-forgery' ? 'failed' : 'passed');
+        assert.equal(purchases - beforeForgery, mode === 'bearer' ? 0 : 1,
+          'stored effects must catch commit-then-refuse even though the refusal assertion passes');
+        assert.equal((await run(input, provided)).status, 'passed');
+        assert.equal(purchases, beforeForgery + (mode === 'bearer' ? 1 : 2));
+        assert.equal(observed[3]!.cookie, `sid=${token}; locale=en`, 'the original browser session is unchanged');
+      } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+    });
+  }
+});
+
+test('shipping accounting waits for the staff response before reading accounting', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-shipping-accounting.json'), 'utf8'));
+  const steps = scenario.features[0].criteria[0].steps as UnknownRecord[];
+  const index = steps.findIndex(step => step.do === 'callAction' && step.action === 'ship');
+  assert(index >= 0);
+  let release!: () => void;
+  const response = new Promise<void>(resolve => { release = resolve; });
+  let submitted!: () => void;
+  const started = new Promise<void>(resolve => { submitted = resolve; });
+  const staff = { name: 'staff', writes: [{ headers: { authorization: 'Bearer staff' } }] };
+  const customer = { name: 'customer', loc: () => ({ waitFor: async () => {},
+    getAttribute: async () => JSON.stringify({ orderId: '42' }) }) };
+  const provided = services(new Map<string, unknown>([['staff', staff], ['customer', customer]]), {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'http://app.test/api/fulfilment/ship');
+      assert.equal(options.headers?.authorization, 'Bearer staff');
+      assert.deepEqual(JSON.parse(String(options.body)), { orderId: '42' });
+      submitted();
+      await response;
+      return namedResponse(200, true);
+    },
+  });
+  let finished = false;
+  const pending = run(steps[index]!, provided).then(result => { finished = true; return result; });
+  await started;
+  assert.equal(finished, false, 'the action cannot finish while its response is pending');
+  release();
+  assert.equal((await pending).status, 'passed');
+  assert.equal(steps[index + 1]!.do, 'expectActionOutcome');
+  assert.equal((await run(steps[index + 1]!, provided)).status, 'passed');
+  assert.equal(steps[index + 2]!.do, 'reload');
+});
+
+test('one named server action maps DOM input symmetrically and verifies its outcome', async () => {
+  const requests: CapturedRequest[] = [];
+  const source = {
+    name: 'source',
+    loc: (testid: string, options: UnknownRecord) => {
+      assert.equal(testid, 'item-card');
+      assert.deepEqual(options, { contains: 'Desk Lamp' });
+      return {
+        waitFor: async (value: unknown) =>
+          assert.deepEqual(value, { state: 'attached', timeout: 5000 }),
+        getAttribute: async (attribute: string) => {
+          assert.equal(attribute, 'data-action-input');
+          return JSON.stringify({ itemId: 'item-42' });
+        },
+      };
+    },
+  };
+  const guest = { name: 'guest' };
+  const provided = services(new Map<string, unknown>([['source', source], ['guest', guest]]), {
+    actions: [{ id: 'buy', path: '/api/items/:item/buy', reducer: 'buy_now', args: [0],
+      params: [{ name: 'itemId', in: 'path', placeholder: ':item' }] }],
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options: options as unknown as UnknownRecord });
+      return namedResponse(401, false);
+    },
+  });
+
+  const called = await run({ do: 'callAction', actor: 'guest', from: 'source', action: 'buy',
+    input: { testid: 'item-card', contains: 'Desk Lamp', attribute: 'data-action-input' },
+    authentication: 'none', settleMs: 0 }, provided);
+  assert.equal(called.status, 'passed');
+  assert.deepEqual(called.observation, { action: 'buy', accepted: false, status: 401 });
+  const request = requests[0];
+  assert(request);
+  assert.equal(request.url, 'http://app.test/api/items/item-42/buy');
+  assert.deepEqual(JSON.parse(String(request.options.body)), {});
+  assert.equal(Object.hasOwn(record(request.options.headers), 'Authorization'), false);
+
+  const checked = await run({ do: 'expectActionOutcome', actor: 'guest', outcome: 'refused' }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.equal(record(checked.observation).classification, 'verified');
+  assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
+});
+
+test('named action input uses declared defaults and a missing route is not mistaken for a refusal', async () => {
+  const actor = (input: UnknownRecord) => ({
+    name: 'customer',
+    loc: () => ({ waitFor: async () => {}, getAttribute: async () => JSON.stringify(input) }),
+  });
+  const action: NonNullable<NamedOptions['actions']>[number] = {
+    id: 'restock', path: '/api/admin/restock', reducer: 'admin_restock', args: [0, 0, 1],
+    params: [{ name: 'itemId', in: 'body' }, { name: 'warehouseId', in: 'body' },
+      { name: 'quantity', in: 'body' }],
+  };
+  const withDefault = services(new Map<string, unknown>([
+    ['customer', actor({ itemId: 1, warehouseId: 2 })],
+  ]), { actions: [action], fetchImpl: async (_url, options) => {
+    assert.deepEqual(JSON.parse(String(options.body)), { itemId: 1, warehouseId: 2, quantity: 1 });
+    return namedResponse(200, true);
+  } });
+  const calledWithDefault = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, withDefault);
+  assert.equal(calledWithDefault.status, 'passed');
+
+  const unexpected = services(new Map<string, unknown>([
+    ['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3, extra: true })],
+  ]), { actions: [action] });
+  const rejectedInput = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, unexpected);
+  assert.equal(rejectedInput.status, 'failed');
+  assert.match(rejectedInput.summary ?? '', /unexpected extra/);
+
+  const route = { name: 'route', actionCall: { action: 'restock', accepted: true, status: 200 } };
+  const missing = services(new Map<string, unknown>([
+    ['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3 })], ['route', route],
+  ]), {
+    actions: [action], fetchImpl: async () => namedResponse(404, false),
+  });
+  await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, missing);
+  const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, missing);
+  assert.equal(checked.status, 'failed');
+  assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+  assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
+  // A 404 names the operation the application interface requires, so a repair
+  // round can create the missing endpoint instead of chasing authorization.
+  assert.match(checked.summary ?? '', /the admin_restock reducer/);
+  assert.match(checked.summary ?? '', /POST \/api\/admin\/restock/);
+
+  const privateResource = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
+    routeProvenBy: 'route' }, missing);
+  assert.equal(privateResource.status, 'passed');
+  assert.equal(record(privateResource.observation).status, 404);
+
+  route.actionCall.action = 'different-action';
+  const unrelatedProof = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
+    routeProvenBy: 'route' }, missing);
+  assert.equal(unrelatedProof.status, 'failed');
+});
+
+test('validation refusal accepts only deliberate application rejection statuses', async () => {
+  for (const [outcome, status, expected] of [
+    ['validation-refused', 400, 'passed'], ['validation-refused', 409, 'passed'], ['validation-refused', 422, 'passed'],
+    ['validation-refused', 403, 'failed'], ['validation-refused', 500, 'failed'],
+    // Generic client errors do not prove a named action was refused for authorization.
+    ['refused', 400, 'failed'], ['refused', 409, 'failed'], ['refused', 422, 'failed'],
+  ] as const) {
+    const actor = { name: 'customer',
+      actionCall: { action: 'cart-set-quantity', accepted: false, status } };
+    const provided = services(new Map<string, unknown>([['customer', actor]]));
+    const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
+    assert.equal(checked.status, expected, checked.summary ?? undefined);
+    if (outcome === 'refused') {
+      assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+      assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
+    }
+  }
+});
+
+test('business outcomes allow deliberate refusals but never turn server errors into completed work', async () => {
+  for (const outcome of ['completed', 'application-refused']) {
+    for (const status of [0, 200, 400, 401, 403, 404, 409, 422, 500, 530]) {
+      const actor = { name: 'customer', actionCall: { action: 'review', status,
+        accepted: status === 200, applicationRejected: status === 530 } };
+      const provided = services(new Map<string, unknown>([['customer', actor]]));
+      const result = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
+      const allowed = [400, 401, 403, 409, 422, 530].includes(status)
+        || (outcome === 'completed' && status === 200);
+      assert.equal(result.status, allowed ? 'passed' : 'failed', `${outcome}: ${status}`);
+    }
+    const customer = { name: 'customer',
+      actionCall: { action: 'review', status: 404, accepted: false } };
+    const owner = { name: 'owner',
+      actionCall: { action: 'review', status: 200, accepted: true } };
+    const provided = services(new Map<string, unknown>([['customer', customer], ['owner', owner]]));
+    assert.equal((await run({ do: 'expectActionOutcome', actor: 'customer', outcome,
+      routeProvenBy: 'owner' }, provided)).status, 'passed');
+    owner.actionCall.action = 'buy';
+    assert.equal((await run({ do: 'expectActionOutcome', actor: 'customer', outcome,
+      routeProvenBy: 'owner' }, provided)).status, 'failed');
+  }
+});
+
+test('purchase and restock privacy refusals require their successful control', async () => {
+  for (const [file, id] of [['01-purchase-session.json', '101a'], ['01-admin-write-staff.json', '103b']]) {
+    const scenario = JSON.parse(readFileSync(`tracks/ecommerce/scenarios/${file}`, 'utf8'));
+    const feature = scenario.features.find((feature: { criteria: { id: string }[] }) =>
+      feature.criteria.some(criterion => criterion.id === id));
+    const steps = [...feature.setup, ...feature.criteria.find((criterion: { id: string }) => criterion.id === id).steps];
+    const refusal = steps.find(step => step.do === 'expectActionOutcome' && step.outcome === 'refused');
+    const accepted = steps.findIndex(step => step.do === 'expectActionOutcome'
+      && step.outcome === 'accepted' && step.actor === refusal.routeProvenBy);
+    assert(accepted >= 0 && accepted < steps.indexOf(refusal));
+    const control = steps.slice(0, accepted).findLast(step => step.do === 'callAction');
+    const caller = { name: refusal.actor, actionCall: { action: control.action, status: 404, accepted: false } };
+    const owner = { name: refusal.routeProvenBy, actionCall: { action: control.action, status: 200, accepted: true } };
+    const provided = services(new Map<string, unknown>([[caller.name, caller], [owner.name, owner]]));
+    assert.equal((await run(refusal, provided)).status, 'passed');
+    owner.actionCall.accepted = false;
+    owner.actionCall.status = 404;
+    assert.equal((await run(refusal, provided)).status, 'failed');
+  }
+});
+
+test('purchase-session tampering uses early order data, awaits a response, checks effects and restores access', () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/01-purchase-session.json', 'utf8'));
+  assert.equal(scenario.level, 1);
+  const criterion = scenario.features[0].criteria[0];
+  assert.equal(criterion.id, '101a');
+  assert.equal(criterion.points, 2);
+  const steps = criterion.steps as UnknownRecord[];
+  assert.equal(steps[0]!.do, 'dbRecordCheckout');
+  assert.deepEqual(steps[0]!.storage, { kind: 'order-data', cart: false, warehouses: false });
+  for (const actor of ['guest', 'wrong-password', 'query-input', 'duplicate']) {
+    const call = steps.findIndex(step => step.do === 'callAction' && step.actor === actor);
+    const nextCall = steps.findIndex((step, i) => i > call && step.do === 'callAction');
+    assert(call > 0 && nextCall > call);
+    assert(steps.slice(call + 1, nextCall).some(step => step.do === 'dbExpectNoPurchase'
+      && step.before === steps[0]!.as), `${actor}: check orders before later purchases can absorb them`);
+  }
+  const attack = steps.findIndex(step => step.authentication === 'tampered-session');
+  assert(attack > 0);
+  const control = steps.findIndex(step => step.authentication === 'session-control');
+  assert(control >= 0 && control < attack - 1);
+  assert.deepEqual(steps.slice(control + 1, attack - 1).map(step => [step.do, step.outcome ?? step.plus]), [
+    ['expectActionOutcome', 'accepted'], ['dbExpectStock', -2],
+  ]);
+  assert.deepEqual(steps[attack - 1]!.storage, { kind: 'order-data', cart: false, warehouses: false });
+  assert.deepEqual(steps.slice(attack + 1, attack + 8).map(step => [step.do, step.outcome ?? step.plus]), [
+    ['expectActionOutcome', 'completed'], ['dbExpectNoPurchase', undefined], ['dbExpectStock', -2],
+    ['expectActionOutcome', 'refused'], ['callAction', undefined], ['expectActionOutcome', 'accepted'], ['dbExpectStock', -3],
+  ]);
+  for (const site of ['same-site', 'cross-site']) {
+    const origin = steps.findIndex(step => step.browserOrigin === site);
+    assert.equal(steps[origin - 1]!.do, 'dbRecordCheckout');
+    assert.equal(steps[origin + 1]!.do, 'dbExpectNoPurchase');
+    assert.equal(steps[origin + 4]!.outcome, 'accepted');
+  }
+});
+
+test('browser-origin calls need a matching positive control and a real browser observer', async () => {
+  let requests = 0;
+  const caller = { name: 'buyer', writes: [{ headers: { authorization: 'Bearer private' } }] };
+  const provided = services(new Map([['buyer', caller]]), { fetchImpl: async () => {
+    requests++; return namedResponse(200, true);
+  } });
+  const input = { do: 'callAction', actor: 'buyer', action: 'checkout', settleMs: 0,
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+  assert.equal((await run({ ...input, browserOrigin: 'same-site' }, provided)).status, 'inconclusive');
+  assert.equal(requests, 0);
+  assert.equal((await run(input, provided)).status, 'passed');
+  assert.equal((await run({ ...input, browserOrigin: 'same-site' }, provided)).status, 'inconclusive');
+  assert.equal(requests, 1, 'missing browser observation cannot fall back to a server fetch');
+  assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'accepted' }, provided)).status, 'inconclusive');
+});
+
+test('restock role claims reach the real write with staff credentials and stored-state checks', async () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/01-admin-write-staff.json', 'utf8'));
+  const criterion = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '103b');
+  assert.equal(criterion.points, 2);
+  const steps = criterion.steps as UnknownRecord[];
+  const calls = steps.filter(step => step.do === 'callAction' && ['admin', 'staff'].includes(String(step.actor)));
+  assert.equal(calls.length, 4);
+  const attack = steps.indexOf(calls[2]!);
+  assert.equal(steps[attack - 1]!.do, 'dbRecordStock');
+  assert.deepEqual(steps.slice(attack + 1, attack + 4).map(step => [step.do, step.outcome ?? step.plus]), [
+    ['expectActionOutcome', 'completed'], ['dbExpectStock', 0], ['expectActionOutcome', 'application-refused'],
+  ]);
+  assert.equal(steps.at(-1)!.plus, 1, 'normal administrator access must still work after the claim');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: { url: string; body: string; authorization: string | undefined }[] = [];
+    const provided = services(new Map(['admin', 'staff'].map(name => [name, {
+      name, writes: [{ headers: { authorization: `Bearer ${name}` } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () =>
+        JSON.stringify({ itemId: '9007199254740993', warehouseId: '17', quantity: 1 }) }),
+    }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, body: options.body!, authorization: options.headers?.authorization });
+        return namedResponse(403, false);
+      } });
+    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+    assert.deepEqual(requests.map(request => request.authorization),
+      ['Bearer admin', 'Bearer staff', 'Bearer staff', 'Bearer admin']);
+    assert(requests.every(request => request.url === requests[0]!.url), 'the claim must keep the original operation');
+    if (backend === 'spacetime') {
+      assert.equal(requests[2]!.body, '[9007199254740993,17,1,"admin"]');
+      assert.equal(requests[0]!.body, '[9007199254740993,17,1]');
+    } else {
+      assert.deepEqual(JSON.parse(requests[2]!.body), {
+        itemId: '9007199254740993', warehouseId: '17', quantity: 1, role: 'admin',
+      });
+      assert.equal(JSON.parse(requests[0]!.body).role, undefined);
+    }
+  }
+});
+
+test('shipping role and cancellation owner claims retain the caller and check fresh state before classifying refusal', async () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/02-server-actions.json', 'utf8'));
+  for (const [id, [caller, claimant], final] of [
+    [201, ['staff', 'customer'], 'shipped'], [204, ['owner', 'other'], 'cancelled'],
+  ] as const) {
+    const feature = scenario.features.find((f: UnknownRecord) => f.id === id);
+    const owner = feature.setup.find((s: UnknownRecord) => s.do === 'signUp' && s.actor === 'owner');
+    if (id === 204) assert.equal(owner.exact, true);
+    const criterion = feature.criteria[0];
+    const steps = criterion.steps as UnknownRecord[], calls = steps.filter(step => step.do === 'callAction');
+    assert.equal(criterion.points, 2);
+    assert.equal(calls.length, 4);
+    const attack = steps.indexOf(calls[2]!);
+    assert.equal(steps[attack + 1]!.outcome, 'completed');
+    const refused = steps.findIndex((step, i) => i > attack && step.outcome === 'application-refused');
+    assert(steps.slice(attack, refused).some(step => step.do === 'reload'));
+    assert.equal(steps[refused - 1]!.value, 'pending');
+    assert.equal(steps.at(-1)!.value, final);
+    for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+      const requests: { body: string; authorization: string | undefined }[] = [];
+      const provided = services(new Map([caller, claimant].map(name => [name, { name,
+        writes: [{ headers: { authorization: `Bearer ${name}` } }],
+        loc: () => ({ waitFor: async () => {}, getAttribute: async () => '{"orderId":"9007199254740993"}' }),
+      }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+        fetchImpl: async (_url, options) => { requests.push({ body: options.body!, authorization: options.headers?.authorization }); return namedResponse(403, false); } });
+      for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+      assert.deepEqual(requests.map(r => r.authorization), [caller, claimant, claimant, caller].map(name => `Bearer ${name}`));
+      if (id === 201) {
+        if (backend === 'spacetime') assert.equal(requests[2]!.body, '[9007199254740993,"staff"]');
+        else assert.deepEqual(JSON.parse(requests[2]!.body), { orderId: '9007199254740993', role: 'staff' });
+      } else if (backend === 'spacetime') assert.equal(requests[2]!.body, `[9007199254740993,${JSON.stringify(owner.name)}]`);
+      else assert.deepEqual(JSON.parse(requests[2]!.body), { username: owner.name });
+    }
+  }
+});
+
+test('fixed checkout price claims reach the native transport without inventing a DOM hook', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-cart-checkout.json'), 'utf8'));
+  const steps = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '4d').steps as UnknownRecord[];
+  const call = steps.find(step => step.do === 'callAction')!;
+  assert(steps.findIndex(step => step.do === 'dbExpectCheckout') < steps.indexOf(call));
+  assert.equal(steps[steps.indexOf(call) + 2]!.do, 'dbExpectCheckout');
+  assert.equal(steps[steps.indexOf(call) + 2]!.actor, 'checkout');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: string[] = [];
+    const provided = services(new Map([['checkout', { name: 'checkout',
+      writes: [{ headers: { authorization: 'Bearer buyer' } }],
+      loc: () => { throw new Error('fixed body has no DOM input'); },
+    }]]), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (_url, options) => {
+        assert.equal(options.headers?.authorization, 'Bearer buyer');
+        requests.push(options.body!);
+        return namedResponse(400, false);
+      } });
+    assert.equal((await run(call, provided)).status, 'passed');
+    assert.deepEqual(requests.map(body => JSON.parse(body)), backend === 'spacetime' ? [[1]] : [{ price: 1 }]);
+  }
+});
+
+test('price claims reach the purchase transport without replacing the normal purchase controls', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-server-price.json'), 'utf8'));
+  const criterion = scenario.features[0].criteria[0];
+  assert.equal(criterion.points, 2);
+  const steps = criterion.steps as UnknownRecord[];
+  const calls = steps.filter(step => step.do === 'callAction');
+  assert.equal(calls.length, 4);
+  const attack = steps.indexOf(calls[2]!);
+  assert.deepEqual(steps.slice(attack + 1, attack + 3).map(step => [step.do, step.outcome]),
+    [['expectActionOutcome', 'completed'], ['dbExpectPurchase', undefined]]);
+  assert.equal(steps.at(-2)!.outcome, 'accepted');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: { url: string; body: string; authorization: string | undefined }[] = [];
+    const provided = services(new Map([['buyer', {
+      name: 'buyer', writes: [{ headers: { authorization: 'Bearer buyer' } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () => JSON.stringify({ itemId: '9007199254740993' }) }),
+    }]]), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, body: options.body!, authorization: options.headers?.authorization });
+        return namedResponse(400, false);
+      } });
+    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+    assert(requests.every(request => request.authorization === 'Bearer buyer'));
+    assert(requests.every(request => request.url === requests[0]!.url));
+    if (backend === 'spacetime') {
+      assert.equal(requests[2]!.body, '[9007199254740993,1]');
+      assert.equal(requests[3]!.body, '[9007199254740993]');
+    } else {
+      assert.deepEqual(JSON.parse(requests[2]!.body), { price: 1 });
+      assert.equal(JSON.parse(requests[3]!.body).price, undefined);
+    }
+  }
+});
+
+test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
+  let requests = 0;
+  const customer = {
+    name: 'customer',
+    loc: () => ({ waitFor: async () => {},
+      getAttribute: async () => JSON.stringify({ itemId: '-1' }) }),
+  };
+  const provided = services(new Map<string, unknown>([['customer', customer]]), {
+    backend: 'spacetime',
+    spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+    actions: [{ id: 'buy', path: '/api/items/:id/buy', reducer: 'buy_now', args: [0],
+      params: [{ name: 'itemId', in: 'path', placeholder: ':id', wireType: 'u64' }] }],
+    fetchImpl: async () => { requests += 1; return namedResponse(400, false); },
+  });
+  const called = await run({ do: 'callAction', actor: 'customer', action: 'buy',
+    input: { testid: 'item-card', attribute: 'data-buy-input' },
+    authentication: 'none', settleMs: 0 }, provided);
+  assert.equal(called.status, 'failed');
+  assert.match(called.summary ?? '', /input for the buy action is not valid/);
+  assert.equal(requests, 0);
+
+  const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, provided);
+  // An assertion whose action never ran measures the scenario, not the app.
+  assert.equal(checked.status, 'inconclusive');
+  assert.match(checked.summary ?? '', /no callAction ran/);
+});
+
+test('account setup preserves scoped credentials and classifies browser failures', async () => {
+  const calls: unknown[][] = [];
+  let actualUser = 'Alicescope';
+  const locator = (purpose: string) => ({
+    first() { return this; },
+    isVisible: async () => true,
+    fill: async (value: string) => { calls.push([purpose, 'fill', value]); },
+    inputValue: async () => actualUser,
+    click: async () => { calls.push([purpose, 'click']); },
+    waitFor: async (options: unknown) => { calls.push([purpose, 'waitFor', options]); },
+  });
+  const actor = {
+    loc: () => assert.fail('a visible signup form does not need a toggle'),
+    page: { locator: (selector: string) => locator(selector) },
+  };
+  const passed = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(passed.status, 'passed');
+  assert.equal(record(passed.observation).user, 'Alicescope');
+  assert(calls.some(call => call[2] === 'pw-Alicescope'));
+  actualUser = 'Alice'; calls.length = 0;
+  const truncated = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(truncated.status, 'inconclusive');
+  assert.match(JSON.stringify(truncated.finding), /input changed the requested username/);
+  assert(!calls.some(call => call[1] === 'click'));
+  // A refusal-tolerant signup must still deliver the exact account name, or it measures nothing.
+  const refusalTolerant = await run({ do: 'signUp', actor: 'a', name: 'Alice', expectFailure: true },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(refusalTolerant.status, 'inconclusive');
+  assert.equal(refusalTolerant.finding?.kind, 'invalid-input');
+  assert.match(JSON.stringify(refusalTolerant.finding), /input changed the requested username/);
+  assert(!calls.some(call => call[1] === 'click'));
+
+  const timeout = Object.assign(new Error('locator.fill: timed out'), { name: 'TimeoutError' });
+  const timedOutActor = { page: { locator: () => ({ first() { return this; },
+    isVisible: async () => true,
+    fill: async () => { throw timeout; } }) } };
+  const timedOut = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
+    services(new Map<string, unknown>([['a', timedOutActor]])));
+  assert.equal(timedOut.status, 'failed');
+  assert.equal(timedOut.code, 'application_failure');
+
+  const buggyActor = { page: { locator: () => ({ first() { return this; },
+    isVisible: async () => true,
+    fill: async () => { throw new TypeError('executor bug'); } }) } };
+  const bug = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
+    services(new Map<string, unknown>([['a', buggyActor]])));
+  assert.equal(bug.status, 'harness_failure');
+  assert.equal(bug.code, 'unclassified_exception');
+});
+
+test('awaitSignedIn false leaves the signed-in view to the following expect', async () => {
+  const timeout = Object.assign(new Error('locator.waitFor: timed out'), { name: 'TimeoutError' });
+  for (const action of ['signIn', 'signUp']) {
+    const prefix = action === 'signIn' ? 'signin' : 'signup';
+    for (const signedInViewAppears of [true, false]) {
+      const calls: unknown[][] = [];
+      const locator = (purpose: string) => ({
+        first() { return this; },
+        or() { return this; },
+        filter() { return this; },
+        isVisible: async () => true,
+        fill: async (value: string) => { calls.push([purpose, 'fill', value]); },
+        inputValue: async () => 'Alicescope',
+        click: async () => { calls.push([purpose, 'click']); },
+        waitFor: async (options: unknown) => {
+          calls.push([purpose, 'waitFor', options]);
+          if (purpose.includes('current-user') && !signedInViewAppears) throw timeout;
+        },
+      });
+      const actor = {
+        loc: (id: string) => locator(`[data-testid="${id}"]`),
+        page: { locator: (selector: string) => locator(selector) },
+      };
+      const awaited = await run({ do: action, actor: 'a', name: 'Alice' },
+        services(new Map<string, unknown>([['a', actor]])));
+      assert.equal(awaited.status, signedInViewAppears ? 'passed' : 'failed', action);
+      assert(calls.some(call => call[0] === '[data-testid="current-user"]' && call[1] === 'waitFor'), action);
+      calls.length = 0;
+      const submitted = await run({ do: action, actor: 'a', name: 'Alice', awaitSignedIn: false },
+        services(new Map<string, unknown>([['a', actor]])));
+      // The refusal must land on the next expect, not on this interaction step.
+      assert.equal(submitted.status, 'passed', action);
+      assert.deepEqual(submitted.observation, { user: 'Alicescope', authenticationPath: 'local-form', submitted: true });
+      assert(calls.some(call => call[0] === `[data-testid="${prefix}-submit"]` && call[1] === 'click'), action);
+      assert(!calls.some(call => String(call[0]).includes('current-user')), action);
+    }
+    const compile = ACTION_REGISTRY.get(action).compile;
+    assert.doesNotThrow(() => compile({ do: action, actor: 'a', name: 'Alice', awaitSignedIn: false }));
+    assert.throws(() => compile({ do: action, actor: 'a', name: 'Alice', awaitSignedIn: 'no' }), /awaitSignedIn/);
+  }
+  assert.throws(() => ACTION_REGISTRY.get('ensureSignedIn')
+    .compile({ do: 'ensureSignedIn', actor: 'a', name: 'Alice', awaitSignedIn: false }), /awaitSignedIn/);
+});
+
+test('account restoration does not accept the wrong signed-in user', async () => {
+  const currentUser = {
+    first() { return this; },
+    isVisible: async () => true,
+    innerText: async () => 'signed in as another-user',
+  };
+  const actor = {
+    name: 'browser-a',
+    page: { locator: () => currentUser },
+  };
+  const result = await run({ do: 'ensureSignedIn', actor: 'a', name: 'alice' },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(result.status, 'harness_failure');
+  assert.match(result.summary ?? '', /different account/);
+});
+
+test('an unreplayable WebSocket write or missing transport evidence cannot earn server-side forgery credit', async () => {
+  for (const lastWsWrite of [{ event: 'send_message', body: { content: 'hello' } }, null]) {
+    const actor = { name: 'a', lastWrite: null, lastWsWrite };
+    const provided = services(new Map<string, unknown>([['a', actor], ['victim', {}]]));
+    const forged = await run({ do: 'forgeWrite', actor: 'a', fromActor: 'victim', settleMs: 0 }, provided);
+    assert.equal(forged.status, 'passed');
+    assert.deepEqual(forged.observation, { attempted: false, classification: 'unverified' });
+
+    const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
+    assert.equal(checked.status, 'inconclusive');
+    assert.match(checked.summary ?? '', /could not verify the forgery refusal/);
+    assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
+  }
+});
+
+test('a negative delivery check observes its full window before passing', async () => {
+  const delays: number[] = [];
+  const actor = { name: 'outsider', wasSent: () => false };
+  const provided = services(new Map<string, unknown>([['outsider', actor]]), {
+    sleep: async milliseconds => { delays.push(milliseconds); },
+  });
+  const checked = await run({ do: 'expectNotReceived', actor: 'outsider', contains: 'secret',
+    within: 1234 }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.deepEqual(delays, [1234]);
+});
+
+test('a delivery check is inconclusive when application traffic is not observable', async () => {
+  const actor = { name: 'owner', wasSent: () => false };
+  const provided = services(new Map<string, unknown>([['owner', actor]]), {
+    sleep: async () => undefined,
+  });
+  const checked = await run({ do: 'expectReceived', actor: 'owner', contains: 'private message',
+    within: 1 }, provided);
+  assert.equal(checked.status, 'inconclusive');
+});
+
+test('replay retargeting maps nested entity ids by field and relationship depth', async () => {
+  const requests: CapturedRequest[] = [];
+  const actor = (name: string, received: string[], writes: UnknownRecord[]) => ({
+    name,
+    received,
+    writes,
+    page: {
+      request: { fetch: async (url: string, options: UnknownRecord) => {
+        requests.push({ url, options });
+        return { status: () => 200, ok: () => true };
+      } },
+    },
+  });
+  const staff = actor('staff', [[
+    'data: {"orders":[{"_id":"order-desk","userId":"staff-user",',
+    'data: "items":[{"itemId":"item-desk","name":"Desk Lamp"}]}]}',
+    '',
+  ].join('\n')], [{
+    url: 'http://app.test/api/fulfilment/order-desk/ship', method: 'POST',
+    headers: { authorization: 'Bearer staff-token' }, body: null,
+  }]);
+  const customer = actor('customer', [JSON.stringify({ order: {
+    _id: 'order-webcam', userId: 'customer-user',
+    items: [{ itemId: 'item-webcam', name: 'Webcam' }],
+  } })], [{
+    url: 'http://app.test/api/items/item-webcam/buy', method: 'POST',
+    headers: { authorization: 'Bearer customer-token' }, body: null,
+  }]);
+  const provided = services(new Map<string, unknown>([
+    ['staff', staff],
+    ['customer', customer],
+  ]));
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: 'Desk Lamp', with: 'Webcam' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation,
+    { attempted: true, accepted: true, status: 200 });
+  const request = requests[0];
+  assert(request);
+  assert.equal(request.url, 'http://app.test/api/fulfilment/order-webcam/ship');
+  assert.equal(record(request.options.headers).authorization, 'Bearer customer-token');
+
+  const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(rejected.status, 'failed');
+  assert.match(rejected.summary ?? '', /who must be refused, was accepted/);
+});
+
+test('replay decodes Socket.IO entities and uses the target actor browser cookie', async () => {
+  const requests: CapturedRequest[] = [];
+  const actor = (name: string, received: string[], writes: UnknownRecord[], sid: string) => ({
+    name,
+    received,
+    writes,
+    context: { cookies: async () => [{ name: 'sid', value: sid }] },
+    page: {
+      evaluate: async () => null,
+      request: { fetch: async (url: string, options: UnknownRecord) => {
+        requests.push({ url, options });
+        return { status: () => 403, ok: () => false };
+      } },
+    },
+  });
+  const staff = actor('staff', [JSON.stringify({ queue: [{
+    id: 41, items: [{ itemId: 7, name: 'Desk Lamp' }],
+  }] })], [{
+    url: 'http://app.test/api/fulfilment/ship', method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: { orderId: 41 },
+  }], 'staff-session');
+  const customer = actor('customer', [
+    JSON.stringify({ items: [{ id: 8, name: 'Webcam' }] }),
+    `42["orders:update",${JSON.stringify({ orders: [{
+      id: 52, items: [{ orderItemId: 61, itemId: 8, name: 'Webcam' }],
+    }] })}]`,
+  ], [{
+    url: 'http://app.test/api/items/8/buy', method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: null,
+  }], 'customer-session');
+  const provided = services(new Map<string, unknown>([
+    ['staff', staff],
+    ['customer', customer],
+  ]));
+
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: 'Desk Lamp', with: 'Webcam' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation,
+    { attempted: true, accepted: false, status: 403 });
+  const request = requests[0];
+  assert(request);
+  assert.deepEqual(JSON.parse(String(request.options.data)), { orderId: 52 });
+  assert.match(String(record(request.options.headers).cookie), /sid=customer-session/);
+
+  const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(rejected.status, 'passed');
+  assert.equal(record(rejected.observation).classification, 'verified');
+});
+
+test('replay uses an authenticated named action when the source write is an opaque WebSocket call', async () => {
+  const requests: CapturedRequest[] = [];
+  const source = { name: 'staff', writes: [], received: [],
+    lastWsWrite: { event: 'binary reducer call', body: {} },
+    loc: (testid: string, options: UnknownRecord) => {
+      assert.equal(testid, 'order-item');
+      assert.deepEqual(options, { contains: 'test-scoped' });
+      return {
+        waitFor: async (value: unknown) =>
+          assert.deepEqual(value, { state: 'visible', timeout: 5000 }),
+        getAttribute: async (attribute: string) => {
+          assert.equal(attribute, 'data-entity-id');
+          return '52';
+        },
+      };
+    } };
+  const customer = {
+    name: 'customer', writes: [], received: [],
+    context: { cookies: async () => [] },
+    page: { evaluate: async (callback: () => unknown) => Function('window',
+      `return (${callback.toString()})()`)({ getSessionToken: () => 'eyJcustomer.token.value' }) },
+  };
+  const provided = services(new Map<string, unknown>([
+    ['staff', source],
+    ['customer', customer],
+  ]), {
+    backend: 'spacetime',
+    actions: [{ id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] }],
+    spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options: options as unknown as UnknownRecord });
+      return namedResponse(530, false);
+    },
+  });
+
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: '52', with: '53' },
+    namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
+    namedTarget: { testid: 'order-item', contains: '{room:test}',
+      attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation,
+    { attempted: true, accepted: false, status: 530, namedAction: 'ship' });
+  const request = requests[0];
+  assert(request);
+  assert.equal(request.url, 'http://127.0.0.1:3000/v1/database/shop/call/ship_order');
+  assert.equal(request.options.body, '[53]');
+  assert.equal(record(request.options.headers).Authorization, 'Bearer eyJcustomer.token.value');
+
+  const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(rejected.status, 'passed');
+  assert.equal(record(rejected.observation).classification, 'verified');
+});
+
+test('named replay can replace a declared literal without an undeclared UI attribute', async () => {
+  const requests: CapturedRequest[] = [];
+  const source = { name: 'staff', writes: [], received: [],
+    lastWsWrite: { event: 'binary reducer call', body: {} } };
+  const customer = {
+    name: 'customer', writes: [], received: [],
+    context: { cookies: async () => [] },
+    page: { evaluate: async () => ['customer-token'] },
+  };
+  const provided = services(new Map<string, unknown>([
+    ['staff', source],
+    ['customer', customer],
+  ]), {
+    backend: 'spacetime',
+    spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options: options as unknown as UnknownRecord });
+      return namedResponse(530, false);
+    },
+  });
+
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'SAVE10',
+    swap: { find: 'SAVE10', with: 'HACK10' },
+    namedAction: { id: 'createPromotion', path: '/api/promotions', reducer: 'create_promotion',
+      args: ['SAVE10', 10] }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.equal(requests[0]?.options.body, '["HACK10",10]');
+});
+
+test('a missing or malformed declared replay target is an application failure', async () => {
+  for (const [value, message] of [[null, /exposes no data-entity-id/],
+    ['not-an-id', /data-entity-id for the ship action is not valid/]] as const) {
+    const source = { name: 'staff', writes: [], received: [],
+      loc: () => ({ waitFor: async () => undefined, getAttribute: async () => value }) };
+    const customer = { name: 'customer', writes: [], received: [] };
+    const provided = services(new Map<string, unknown>([
+      ['staff', source],
+      ['customer', customer],
+    ]));
+    const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+      namedAction: { id: 'ship', path: '/api/ship', reducer: 'ship', args: [0] },
+      namedTarget: { testid: 'order', attribute: 'data-entity-id', valueType: 'number' },
+      settleMs: 0 }, provided);
+    assert.equal(replayed.status, 'failed');
+    assert.match(replayed.summary ?? '', message);
+  }
+});
+
+test('only an explicit authorization response proves a replay refusal', async () => {
+  for (const status of [0, 302, 400, 404, 422, 503]) {
+    const actor = {
+      name: 'customer',
+      replay: { accepted: false, status, method: 'POST', url: '/ship' },
+    };
+    const provided = services(new Map<string, unknown>([['customer', actor]]));
+    const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+    assert.equal(checked.status, 'failed');
+    assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+    assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
+    assert.equal(provided.verification.length, 0);
+  }
+  // A private-resource replay may explicitly treat not found as refusal.
+  const privateResource = services(new Map<string, unknown>([['customer', { name: 'customer',
+    replay: { accepted: false, status: 404, method: 'POST', url: '/support/1/replies' } }]]));
+  assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound: true },
+    privateResource)).status, 'passed');
+  for (const status of [200, 400, 401, 403, 404, 500]) {
+    const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: '{}' });
+    const actor = { name: 'customer', replay: { ...classified, accepted: classified.ok, status, method: 'POST', url: '/api/mutation' } };
+    const provided = services(new Map([['customer', actor]]));
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound: true }, provided)).status,
+      [401, 403].includes(status) ? 'passed' : 'failed', String(status));
+    actor.replay.complete = false;
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer' }, provided)).status, 'inconclusive');
+  }
+});
+
+test('an idempotent replay permits success or deliberate validation refusal, never a transport failure', async () => {
+  for (const status of [0, 200, 204, 302, 400, 401, 403, 404, 409, 422, 500, 530]) {
+    const actor = { name: 'staff', replay: { accepted: status >= 200 && status < 300,
+      status, method: 'POST', url: '/refund', applicationRejected: status === 530 } };
+    const provided = services(new Map<string, unknown>([['staff', actor]]));
+    const checked = await run({ do: 'expectReplayCompleted', actor: 'staff' }, provided);
+    assert.equal(checked.status,
+      [200, 204, 400, 409, 422, 530].includes(status) ? 'passed' : 'failed', String(status));
+    assert.equal((await run({ do: 'expectReplayCompleted', actor: 'staff', requireAccepted: true }, provided)).status,
+      actor.replay.accepted ? 'passed' : 'failed');
+    if (actor.replay.accepted) {
+      assert.equal((await run({ do: 'expectReplayRejected', actor: 'staff' }, provided)).status,
+        'failed', 'idempotency acceptance must not weaken authorization checks');
+    }
+  }
+  const absent = services(new Map<string, unknown>([['staff', { name: 'staff' }]]));
+  assert.equal((await run({ do: 'expectReplayCompleted', actor: 'staff' }, absent)).status,
+    'inconclusive');
+});
+
+test('only an explicit authorization response proves a forged-write refusal', async () => {
+  for (const status of [400, 404, 422, 500]) {
+    const actor = {
+      name: 'attacker',
+      forge: { accepted: false, status, tamperedField: 'userId', reason: 'tampered request sent' },
+    };
+    const provided = services(new Map<string, unknown>([['attacker', actor]]));
+    const checked = await run({ do: 'expectForgeryRejected', actor: 'attacker' }, provided);
+    assert.equal(checked.status, 'failed');
+    assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+    assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
+    assert.equal(provided.verification.length, 0);
+  }
+});
+
+test('a missing numeric literal makes the server-side replay check inconclusive', async () => {
+  const requests: unknown[][] = [];
+  const buyer = {
+    name: 'buyer',
+    received: [JSON.stringify({ items: [{ _id: 'item-espresso', name: 'Espresso Machine', price: 449 }] })],
+    writes: [{
+      url: 'http://app.test/api/items/item-espresso/buy', method: 'POST',
+      headers: { authorization: 'Bearer buyer-token' }, body: null,
+    }],
+    page: { request: { fetch: async (...args: unknown[]) => { requests.push(args); } } },
+  };
+  const provided = services(new Map<string, unknown>([['buyer', buyer]]));
+  const replayed = await run({ do: 'replayAs', actor: 'buyer', from: 'buyer', match: 'buy',
+    swap: { find: '449', with: '1' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'inconclusive');
+  assert.match(replayed.summary ?? '', /could not issue the replay as/);
+  assert.equal(requests.length, 0);
+});
+
+test('named calls scope browser cookies and captured request context to the action destination', async () => {
+  const seen: CapturedRequest[] = [];
+  const scoped: string[] = [];
+  const actor = (name: string) => ({
+    name,
+    writes: [
+      { url: 'http://app.test/api/cart', method: 'POST', body: {},
+        headers: { cookie: 'stale=must-not-replay', 'x-csrf-token': `${name}-csrf`,
+          origin: 'http://app.test', referer: 'http://app.test/cart' } },
+      { url: 'http://provider.test/token', method: 'POST', body: {},
+        headers: { authorization: 'Bearer provider-private', cookie: 'provider=private',
+          'x-csrf-token': 'provider-private', origin: 'http://provider.test' } },
+    ],
+    context: { cookies: async (url: string) => {
+      scoped.push(url);
+      assert.equal(url, 'http://app.test/api/checkout');
+      // The browser owns cookie domain/path/secure matching; an unscoped read
+      // would also expose provider and /account-only cookies.
+      return [{ name: 'sid', value: name }];
+    } },
+    page: { evaluate: async () => null },
+  });
+  const provided = services(new Map([['a', actor('a')], ['b', actor('b')]]), {
+    fetchImpl: async (url, options) => {
+      seen.push({ url, options: options as unknown as UnknownRecord });
+      const headers = record(options.headers);
+      const user = String(headers.Cookie).slice(4);
+      const valid = headers.origin === 'http://app.test'
+        && headers['x-csrf-token'] === `${user}-csrf` && !headers.authorization;
+      return namedResponse(valid ? 200 : 403, valid);
+    },
+  });
+  for (const step of [
+    { do: 'callAction', actor: 'a', action: 'checkout', settleMs: 0,
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } },
+    { do: 'expectActionOutcome', actor: 'a', outcome: 'accepted' },
+    { do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout', settleMs: 0 },
+    { do: 'expectCallOutcomes', accepted: 2 },
+  ]) {
+    const result = await run(step, provided);
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+  }
+  assert.equal(scoped.length, 3);
+  assert.equal(seen.length, 3);
+  assert(!JSON.stringify(seen).includes('provider-private'));
+  assert(!JSON.stringify(seen).includes('stale=must-not-replay'));
+  assert.equal(provided.calls?.action, 'checkout');
+  assert.equal(provided.calls?.fired, 2);
+  assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'passed',
+    'idempotent success does not require a specific accepted-response count');
+  const mismatch = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
+  assert.equal(mismatch.status, 'failed');
+  assert.match(mismatch.summary ?? '', /calls were accepted, expected 1/);
+});
+
+test('cross-account replay uses caller CSRF context and cannot credit missing caller context', async () => {
+  for (const callerContext of [true, false]) {
+    let requests = 0;
+    const owner = { name: 'owner', received: [], writes: [{
+      url: 'http://app.test/api/orders/1/cancel', method: 'POST', body: {},
+      headers: { cookie: 'sid=owner', 'x-csrf-token': 'owner-csrf', origin: 'http://app.test' },
+    }] };
+    const other = { name: 'other', received: [], writes: callerContext ? [{
+      url: 'http://app.test/api/cart', method: 'POST', body: {},
+      headers: { cookie: 'sid=other', 'x-csrf-token': 'other-csrf', origin: 'http://app.test' },
+    }] : [], context: { cookies: async (url: string) => {
+      assert.equal(url, 'http://app.test/api/orders/1/cancel');
+      return [{ name: 'sid', value: 'other' }];
+    } }, page: { evaluate: async () => null, request: { fetch: async (_url: string, options: UnknownRecord) => {
+      requests++;
+      const headers = record(options.headers);
+      assert.equal(headers.cookie, 'sid=other');
+      assert.equal(headers['x-csrf-token'], 'other-csrf');
+      assert.equal(headers.origin, 'http://app.test');
+      // A valid caller request reaches the ownership check and is refused.
+      return { status: () => 403, ok: () => false };
+    } } } };
+    const provided = services(new Map<string, unknown>([['owner', owner], ['other', other]]));
+    const result = await run({ do: 'replayAs', actor: 'other', from: 'owner', match: 'cancel', settleMs: 0 }, provided);
+    assert.equal(result.status, callerContext ? 'passed' : 'inconclusive', JSON.stringify(result));
+    assert.equal(requests, callerContext ? 1 : 0);
+    if (callerContext) assert.equal((await run({ do: 'expectReplayRejected', actor: 'other' }, provided)).status, 'passed');
+  }
+});
+
+test('concurrent calls classify every result before counting accepted requests', async () => {
+  for (const backend of ['postgres', 'spacetime']) {
+    for (const status of [0, 400, 401, 403, 404, 409, 422, 500, 530]) {
+      const actors = new Map(['a', 'b'].map(name => [name, { name,
+        writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+      let calls = 0;
+      const provided = services(actors, { backend,
+        spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+        fetchImpl: async () => {
+          if (calls++ === 0) return namedResponse(200, true);
+          if (status === 0) throw new Error('connection lost');
+          return namedResponse(status, false);
+        } });
+      assert.equal((await run({ do: 'callConcurrently', actors: ['a', 'b'],
+        action: 'checkout', settleMs: 0 }, provided)).status, 'passed');
+      const checked = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
+      assert.equal(checked.status, status === 0 ? 'inconclusive' : [400, 409, 422].includes(status)
+        || (backend === 'spacetime' && status === 530) ? 'passed' : 'failed',
+      `${backend}: ${status}`);
+    }
+  }
+  const provided = services(new Map());
+  const named = provided.capabilities['named-actions'] as ReturnType<typeof createNamedActionsCapability>;
+  // A missing outcome must not pass, and an unknown outcome outranks an error response in either order.
+  for (const [statuses, accepted] of [[[200], 1], [[0, 500], undefined], [[500, 0], undefined]] as const) {
+    named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
+      outcomes: statuses.map(status => ({ name: 'a', status, ok: status === 200, text: '' })) });
+    assert.equal((await run({ do: 'expectCallOutcomes', ...(accepted === undefined ? {} : { accepted }) }, provided)).status,
+      'inconclusive', statuses.join(','));
+  }
+});
+
+test('bounded checkout cohorts issue every request and retain client timing and transport outcomes', async () => {
+  const actors = new Map(['a', 'b'].map(name => [name, { name,
+    writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+  for (const requests of [1, 4, 16, 64]) {
+    let dispatched = 0;
+    let release!: () => void;
+    const allDispatched = new Promise<void>(resolve => { release = resolve; });
+    const provided = services(actors, { fetchImpl: async () => {
+      dispatched++;
+      if (dispatched === requests) release();
+      await allDispatched;
+      return namedResponse(200, true);
+    } });
+    const result = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', requests, settleMs: 0 }, provided);
+    assert.equal(result.status, 'passed');
+    const evidence = record(result.observation);
+    assert.equal(dispatched, requests);
+    assert.equal(evidence.responses, requests);
+    assert.equal(evidence.transportErrors, 0);
+    assert.equal(evidence.timeouts, 0);
+    assert.match(String(evidence.timingScope), /not server execution overlap/);
+    for (const [index, outcome] of provided.calls!.outcomes.entries()) {
+      assert.equal(outcome.requestIndex, index + 1);
+      assert.equal(outcome.name, index % 2 ? 'b' : 'a');
+      assert.equal(outcome.transport, 'response');
+      assert(outcome.completedAtMs! >= outcome.startedAtMs!);
+      assert.equal(outcome.durationMs, outcome.completedAtMs! - outcome.startedAtMs!);
+    }
+  }
+  let calls = 0;
+  const provided = services(actors, { fetchImpl: async (_url, options) => {
+    if (calls++ === 0) throw new Error('sensitive transport internals');
+    return new Promise((_resolve, reject) => options.signal!.addEventListener('abort',
+      () => reject(options.signal!.reason), { once: true }));
+  } });
+  const keepAlive = setInterval(() => {}, 20);
+  try {
+    const result = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', requests: 2, requestTimeoutMs: 10, settleMs: 0 }, provided);
+    assert.equal(record(result.observation).responses, 0);
+    assert.equal(record(result.observation).transportErrors, 1);
+    assert.equal(record(result.observation).timeouts, 1);
+    assert.doesNotMatch(JSON.stringify(result), /sensitive transport internals/);
+    assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'inconclusive');
+  } finally { clearInterval(keepAlive); }
+});
+
+test('named writes expose refused response bodies to the existing privacy check', async () => {
+  const received: string[] = [];
+  const actor = { name: 'guest', record: (text: string) => received.push(text),
+    wasSent: (needle: string) => received.some(text => text.includes(needle)) };
+  const provided = services(new Map([['guest', actor]]), {
+    fetchImpl: async () => ({ ok: false, status: 403, text: async () => 'private-owner-address' }),
+  });
+  assert.equal((await run({ do: 'callAction', actor: 'guest', authentication: 'none', action: 'checkout',
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } }, provided)).status, 'passed');
+  assert.equal((await run({ do: 'expectNotReceived', actor: 'guest', contains: 'private-owner-address' }, provided)).status, 'failed');
+});
+
+test('cancelled cohorts drain requests and retain their history in action evidence', async () => {
+  for (const duringSettle of [false, true]) {
+    const controller = new AbortController();
+    let drained = false;
+    let calls = 0;
+    const actors = new Map(['a', 'b'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+    const provided = services(actors, {
+      fetchImpl: async (_url, options) => {
+        if (calls++ === 0 || duringSettle) return namedResponse(200, true);
+        return new Promise((_resolve, reject) => {
+          options.signal!.addEventListener('abort', () => setTimeout(() => {
+            drained = true;
+            reject(options.signal!.reason);
+          }, 5), { once: true });
+          controller.abort('test cancellation');
+        });
+      },
+      sleep: async () => { controller.abort('test cancellation'); throw controller.signal.reason; },
+    });
+    const result = await executeAction(ACTION_REGISTRY, 'callConcurrently', {
+      do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout', settleMs: 1,
+    }, { capabilities: provided.capabilities, signal: controller.signal, onAbort: async () => {} });
+    assert.equal(result.code, 'cancelled');
+    assert.equal(result.status, 'inconclusive');
+    assert.equal(calls, 2);
+    assert.equal(drained, !duringSettle);
+    const history = record(result.observation);
+    assert.deepEqual(history.outcomes, provided.calls!.outcomes);
+    assert.equal(history.responses, duringSettle ? 2 : 1);
+    assert.equal(history.cancelled, duringSettle ? 0 : 1);
+    assert.doesNotMatch(JSON.stringify(result), /Bearer|session/);
+  }
+});
+
+test('a committed operation with a truncated HTTP success body remains unknown', { timeout: 10000 }, async () => {
+  let committed = 0;
+  const server = createServer((_request, response) => {
+    committed++;
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    if (committed === 1) response.end('{"accepted":true}');
+    else response.write('{"accepted":'); // Commit occurred, but the reply never finishes.
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const address = server.address();
+    assert(address && typeof address !== 'string');
+    const actors = new Map(['a', 'b'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+    const provided = services(actors, { fetchImpl: (url, options) => fetch(
+      url.replace('http://app.test', `http://127.0.0.1:${address.port}`), options) });
+    const result = await run({ do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout',
+      requestTimeoutMs: 1000, settleMs: 0 }, provided);
+    assert.equal(committed, 2);
+    assert.equal(record(result.observation).responses, 1);
+    assert.equal(record(result.observation).timeouts, 1);
+    assert.equal((await run({ do: 'expectCallOutcomes', accepted: 1 }, provided)).status, 'inconclusive');
+  } finally {
+    const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    server.closeAllConnections();
+    await closed;
+  }
+});
+
+test('purchase bursts reuse validated dynamic action inputs across stack transports', async () => {
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: CapturedRequest[] = [];
+    let raw = '{"itemId":"9007199254740993"}';
+    const actors = new Map(['a', 'b'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}-session` } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () => raw }),
+    }]));
+    const provided = services(actors, { backend,
+      spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return namedResponse(200, true);
+      } });
+    const action = { do: 'callConcurrently', actors: ['a', 'b'], action: 'buy',
+      namedAction: { id: 'buy', path: '/api/items/:id/buy', reducer: 'buy_now', args: [0],
+        params: [{ name: 'itemId', in: 'path', placeholder: ':id', wireType: 'u64' }] },
+      input: { testid: 'item-card', contains: 'Keyboard', attribute: 'data-buy-input' },
+      requests: 4, settleMs: 0 };
+    assert.equal((await run(action, provided)).status, 'passed', backend);
+    assert.equal(requests.length, 4);
+    for (const request of requests) {
+      if (backend === 'spacetime') assert.equal(request.options.body, '[9007199254740993]');
+      else assert.match(request.url, /\/api\/items\/9007199254740993\/buy$/);
+    }
+    raw = '{"itemId":1,"unexpected":2}';
+    assert.equal((await run(action, provided)).status, 'failed');
+    assert.equal(requests.length, 4, 'malformed interface cannot dispatch another request');
+  }
+});
+
+test('mixed groups prepare every input before release and keep each operation and buyer in the history', async () => {
+  let reads=0;
+  const requests: CapturedRequest[]=[];
+  const actors=new Map(['a','admin'].map(name=>[name,{name,
+    writes:[{headers:{authorization:`Bearer ${name}`}}],
+    loc:()=>({waitFor:async()=>{},getAttribute:async()=>{reads++;return name==='a'?'{"itemId":"1"}':'{"itemId":"1","warehouseId":"2","quantity":2}';}}),
+  }]));
+  const provided=services(actors,{fetchImpl:async(url,options)=>{
+    assert.equal(reads,2,'no mutation before all inputs are prepared');
+    requests.push({url,options:options as unknown as UnknownRecord});return namedResponse(200,true);
+  }});
+  const call={do:'callConcurrently',action:'buy',actors:['a'],requests:4,settleMs:0,
+    namedAction:{id:'buy',path:'/api/items/:id/buy',reducer:'buy_now',args:[0],params:[{name:'itemId',in:'path',placeholder:':id',wireType:'u64'}]},
+    input:{testid:'item',attribute:'data-buy-input'},alongside:[{action:'restock',actors:['admin'],requests:4,delayMs:5,
+      namedAction:{id:'restock',path:'/api/admin/restock',reducer:'admin_restock',args:[0,0,1],params:[{name:'itemId',in:'body',wireType:'u64'},{name:'warehouseId',in:'body',wireType:'u64'},{name:'quantity',in:'body'}]},
+      input:{testid:'stock',attribute:'data-restock-input'}}]};
+  const result=await run(call,provided);
+  assert.equal(result.status,'passed',JSON.stringify(result));assert.equal(requests.length,8);
+  const outcomes=record(result.observation).outcomes as UnknownRecord[];
+  assert.equal(outcomes.length,8);
+  for(const row of outcomes){
+    assert.equal(row.name,row.action==='buy'?'a':'admin');
+    assert.equal(row.dispatched,true);
+    assert.deepEqual(row.values,row.action==='buy'?{itemId:'1'}:{itemId:'1',warehouseId:'2',quantity:2});
+    assert(Number(row.startedAtMs)>=Number(row.scheduledAtMs));
+  }
+  for (const invalid of [{body:{}}, {actors:['admin','admin']}, {input:{}}, {alongside:[]},
+    {namedAction:{...call.alongside[0]!.namedAction,id:'wrong'}}]) {
+    const rejected=await run({...call,alongside:[{...call.alongside[0],...invalid}]},provided);
+    assert.equal(rejected.status,'harness_failure');
+    assert.equal(requests.length,8,'invalid nested input cannot dispatch mutations');
+  }
+});
+
+test('named calls keep actor credentials separate in storage and in-memory accessors', async () => {
+  for (const inMemory of [false, true]) {
+    const requests: CapturedRequest[] = [];
+    const storage = (entries: ReadonlyArray<readonly [string, string]>) => ({
+      length: entries.length,
+      key: (index: number) => entries[index]?.[0] ?? null,
+      getItem: (key: string) =>
+        entries.find(([candidate]) => candidate === key)?.[1] ?? null,
+    });
+    const actor = (name: string) => ({
+      name,
+      context: { cookies: async () => [{ name: 'ui', value: name }] },
+      page: { evaluate: async (browserFunction: () => unknown) => Function('localStorage', 'sessionStorage', 'window',
+        `return (${browserFunction.toString()})()`)(
+        storage(inMemory ? [] : [['theme', 'dark'], ['pgshop_token', `${name}-opaque-session-token-value`]]),
+        storage([]), inMemory ? { getSessionToken: () => `${name}-opaque-session-token-value` } : {}) },
+    });
+    const provided = services(new Map<string, unknown>([
+      ['a', actor('a')],
+      ['b', actor('b')],
+    ]), {
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return { status: 200, ok: true, text: async () => '' };
+      },
+    });
+    const called = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', settleMs: 0 }, provided);
+    assert.equal(called.status, 'passed');
+    assert.equal(requests.length, 2);
+    const firstRequest = requests[0];
+    const secondRequest = requests[1];
+    assert(firstRequest && secondRequest);
+    assert.equal(record(firstRequest.options.headers).Authorization,
+      'Bearer a-opaque-session-token-value');
+    assert.equal(record(firstRequest.options.headers).Cookie, 'ui=a');
+    assert.equal(record(secondRequest.options.headers).Authorization,
+      'Bearer b-opaque-session-token-value');
+    assert.equal(record(secondRequest.options.headers).Cookie, 'ui=b');
+  }
+});
+
+test('unobserved session tokens cannot issue a replay or earn authorization credit', async () => {
+  for (const getSessionToken of [undefined, () => null, () => '', () => 42,
+    () => 'invalid\r\nheader', () => { throw new Error('private-token-sentinel'); }]) {
+    let requests = 0;
+    const actor = { name: 'customer', writes: [], received: [],
+      context: { cookies: async () => [] },
+      page: { evaluate: async (callback: () => unknown) => {
+        const storage = { length: getSessionToken ? 1 : 0, key: () => 'auth_token',
+          getItem: () => 'stale-storage-token' };
+        return Function('window', 'localStorage', 'sessionStorage',
+          `return (${callback.toString()})()`)({ getSessionToken }, storage, storage);
+      } } };
+    const provided = services(new Map<string, unknown>([
+      ['customer', actor], ['staff', { name: 'staff', writes: [], received: [] }],
+    ]), { fetchImpl: async () => { requests++; return namedResponse(403, false); } });
+    const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+      namedAction: { id: 'ship', path: '/api/ship', reducer: 'ship_order', args: [52] },
+      settleMs: 0 }, provided);
+    assert.equal(replayed.status, 'inconclusive');
+    assert.match(replayed.summary ?? '', /could not issue the replay/);
+    if (getSessionToken) assert.match(JSON.stringify(replayed), /getSessionToken/);
+    assert.doesNotMatch(JSON.stringify(replayed), /private-token-sentinel|stale-storage-token/);
+    assert.equal(requests, 0);
+    const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+    assert.equal(checked.status, 'inconclusive');
+  }
+});
+
+test('missing named actions and application roots stay inconclusive', async () => {
+  const actor = { context: { cookies: async () => [{ name: 'sid', value: 'a' }] },
+    page: { evaluate: async () => null } };
+  const missingAction = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+    action: 'missing', settleMs: 0 },
+  services(new Map<string, unknown>([['a', actor], ['b', actor]]), { actions: [] }));
+  assert.equal(missingAction.status, 'inconclusive');
+  assert.match(missingAction.summary ?? '', /track names no missing action/);
+
+  const missingRoot = await run({ do: 'runScript', script: 'backoffice.mjs', args: [] },
+    services(new Map<string, unknown>()));
+  assert.equal(missingRoot.status, 'inconclusive');
+  assert.match(missingRoot.summary ?? '', /application directory is unknown/);
+});
+
+test('an application-owned script timeout is a scored application failure', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-script-timeout-'));
+  try {
+    writeFileSync(join(root, 'slow.mjs'), 'await new Promise(resolve => setTimeout(resolve, 10000));\n');
+    const result = await run({ do: 'runScript', script: 'slow.mjs', args: [], timeoutMs: 20 },
+      services(new Map<string, unknown>(), { appRoot: root }));
+    assert.equal(result.status, 'failed');
+    assert.match(result.summary ?? '', /failed|timed out/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('named calls override one declared parameter from another actor without changing the caller', async () => {
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    for (const doAction of ['callAction', 'callConcurrently']) {
+      const requests: CapturedRequest[] = [];
+      let targetId: string | null = '202';
+      const owner = { name: 'owner', writes: [{ headers: { Authorization: 'Bearer owner' } }], loc: () => ({ waitFor: async () => {},
+        getAttribute: async () => JSON.stringify({ caseId: '101', orderId: '303' }) }) };
+      const other = { name: 'other', writes: [{ headers: { Authorization: 'Bearer other' } }],
+        loc: () => ({ waitFor: async () => {}, getAttribute: async () => targetId }) };
+      const provided = services(new Map<string, unknown>([['owner', owner], ['other', other]]), {
+        backend, spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+        actions: [{ id: 'link', path: '/api/cases/{caseId}/order', reducer: 'link_support_order',
+          args: [0, 0], params: [{ name: 'caseId', in: 'path', placeholder: '{caseId}', wireType: 'u64' },
+            { name: 'orderId', in: 'body', wireType: 'u64' }] }],
+        fetchImpl: async (url, options) => {
+          requests.push({ url, options: options as unknown as UnknownRecord });
+          return namedResponse(200, true);
+        },
+      });
+      const selector = { actor: 'other', testid: 'support-ticket', attribute: 'data-entity-id' };
+      const input = { do: doAction, ...(doAction === 'callAction' ? { actor: 'other' } : { actors: ['other', 'owner'], requests: 1 }), from: 'owner', action: 'link',
+        input: { testid: 'support-link-order', attribute: 'data-action-input', overrides: { caseId: selector } },
+        settleMs: 0 };
+      const called = await run(input, provided);
+      assert.equal(called.status, 'passed', JSON.stringify({ backend, doAction, called }));
+      const request = requests[0]!;
+      assert.equal(record(request.options.headers).authorization, 'Bearer other');
+      if (backend === 'spacetime') {
+        assert.deepEqual(JSON.parse(String(request.options.body)), [202, 303]);
+      } else {
+        assert.equal(request.url, 'http://app.test/api/cases/202/order');
+        assert.deepEqual(JSON.parse(String(request.options.body)), { orderId: '303' });
+      }
+      const rejected = await run({ ...input, input: { ...input.input, overrides: { unknown: selector } } }, provided);
+      assert.equal(rejected.status, 'failed');
+      assert.match(JSON.stringify(rejected.finding), /not declared/);
+      targetId = null;
+      assert.equal((await run(input, provided)).status, 'failed');
+      assert.equal(requests.length, 1, 'invalid override must not send a request');
+    }
+  }
+});
+
+
+test('staff-role replay changes the role without changing the HTTP route or the reducer target', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'));
+  const steps = scenario.features[0].criteria.find((c: { id: string }) => c.id === '621b').steps;
+  const replay = steps.find((step: { do: string }) => step.do === 'replayAs');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: CapturedRequest[] = [];
+    const source = { name: 'replayAdmin', received: [],
+      writes: backend === 'spacetime' ? [] : [{
+        url: 'http://app.test/api/staff/42/role', method: 'PUT',
+        headers: { authorization: 'Bearer admin-token' }, body: { role: 'staff' },
+      }],
+      loc: () => ({ waitFor: async () => undefined, getAttribute: async () => '42' }),
+    };
+    const staff = { name: 'staff', received: [], writes: [{
+      url: 'http://app.test/api/me', method: 'GET',
+      headers: { authorization: 'Bearer staff-token' }, body: null,
+    }], page: { request: { fetch: async (url: string, options: UnknownRecord) => {
+      requests.push({ url, options });
+      return { status: () => 403, ok: () => false };
+    } } } };
+    const provided = services(new Map<string, unknown>([['staff', staff], ['replayAdmin', source]]), {
+      backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return namedResponse(530, false);
+      },
+    });
+    assert.equal((await run({ ...replay, settleMs: 0 }, provided)).status, 'passed');
+    assert.equal(requests.length, 1);
+    if (backend === 'spacetime') {
+      assert.equal(requests[0]!.options.body, '[42,"inventory"]');
+    } else {
+      assert.equal(requests[0]!.url, 'http://app.test/api/staff/42/role');
+      assert.equal(requests[0]!.options.data, '{"role":"inventory"}');
+    }
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'staff' }, provided)).status, 'passed');
+  }
+  const rejected = steps.findIndex((step: { do: string }) => step.do === 'expectReplayRejected');
+  const after = steps.slice(rejected + 1);
+  assert.equal(after[0].do, 'reload');
+  assert.equal(after.at(-1).value, 'staff', 'a denied response must leave the persisted role unchanged');
+  assert.equal(after.at(-1).in.testid, 'staff-role-account-staff');
+});
+
+
+test('role revocation uses declared transitions despite earlier captured role writes', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'));
+  const steps = scenario.features[0].criteria.find((c: { id: string }) => c.id === '621d').steps;
+  const calls = steps.filter((step: { do: string }) => step.do === 'replayAs');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: CapturedRequest[] = [];
+    const actor = (name: string) => ({ name, received: [], writes: [{
+      url: 'http://app.test/api/staff/42/role', method: 'PUT',
+      headers: { authorization: `Bearer ${name}-token` }, body: { role: 'staff' },
+    }], loc: () => ({ waitFor: async () => undefined, getAttribute: async () => '42' }) });
+    const provided = services(new Map<string, unknown>([
+      ['roleAdmin', actor('roleAdmin')], ['promotedStaff', actor('promotedStaff')],
+    ]), { backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return namedResponse(200, true);
+      },
+    });
+    for (const step of calls) assert.equal((await run(step, provided)).status, 'passed');
+    assert.equal(requests.length, calls.length);
+    assert.deepEqual(requests.map(request => {
+      const body = JSON.parse(String(request.options.body));
+      return backend === 'spacetime' ? body[1] : body.role;
+    }), ['admin', 'admin', 'staff', 'admin']);
+    assert.deepEqual(requests.map(request => record(request.options.headers).authorization
+      ?? record(request.options.headers).Authorization), calls.map((step: { actor: string }) => `Bearer ${step.actor}-token`));
+  }
+});
+
+
+test('native envelopes govern single, concurrent and replay outcomes, including body loss', async () => {
+  for (const session of ['bearer', 'argument'])
+  for (const reply of ['accepted', 'refused', 'schema-refused', 'unhandled', 'malformed', 'body-loss', 'native400']) {
+    const actor = { name: 'buyer', received: [], writes: [], context: { cookies: async () => [] },
+      page: { evaluate: async () => ['real-browser-token'] } };
+    recordConvexSession(actor.page, 'ws://native.test/api/1.0.0/sync', JSON.stringify(session === 'bearer'
+      ? { type: 'Authenticate', tokenType: 'User', value: 'real-browser-token' }
+      : { type: 'Mutation', args: [{ session: 'real-browser-token' }] }));
+    const provided = services(new Map([['buyer', actor]]));
+    const prior = record(provided.capabilities['named-actions']);
+    const status = reply === 'native400' ? 400 : 200;
+    const text = reply === 'accepted' ? '{"status":"success","value":null}'
+      : reply === 'refused' ? '{"status":"error","errorMessage":"refused","errorData":null}'
+      : reply === 'schema-refused' ? JSON.stringify({ status: 'error', errorMessage: '[Request ID: c3c0e4b69f8972e5] Server Error\nArgumentValidationError: extra field' })
+      : reply === 'unhandled' ? '{"status":"error","errorMessage":"missing function"}' : '{}';
+    const native = { ...provided, capabilities: { ...provided.capabilities, 'named-actions': {
+      ...prior,
+      request: () => ({ url: 'http://native.test/api/mutation', method: 'POST', body: '{"path":"api:checkout","args":{}}', responseContract: 'convex-mutation' }),
+      classifyResponse: (request: Parameters<typeof classifyResponseContract>[0], response: Parameters<typeof classifyResponseContract>[1]) =>
+        classifyResponseContract(request, response),
+      fetch: async (_url: string, options: { headers: Record<string, string>; body: string }) => {
+        assert.equal(options.headers.Authorization, session === 'bearer' ? 'Bearer real-browser-token' : undefined);
+        assert.equal(JSON.parse(options.body).args.session, session === 'argument' ? 'real-browser-token' : undefined);
+        return { status, ok: status === 200, text: async () => { if (reply === 'body-loss') throw new Error('lost'); return text; } };
+      },
+    } } };
+    const call = await run({ do: 'callAction', actor: 'buyer', action: 'checkout',
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }, settleMs: 0 }, native);
+    assert.equal(call.status, 'passed', JSON.stringify({ reply, call }));
+    const outcome = await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'completed' }, native);
+    assert.equal(outcome.status, ['accepted', 'refused', 'schema-refused'].includes(reply) ? 'passed'
+      : reply === 'body-loss' ? 'inconclusive' : 'failed', reply);
+    const concurrentCall = await run({ do: 'callConcurrently', action: 'checkout', actors: ['buyer'], requests: 2, settleMs: 0 }, native);
+    assert.equal(concurrentCall.status, 'passed', JSON.stringify({ reply, concurrentCall }));
+    const concurrent = await run({ do: 'expectCallOutcomes' }, native);
+    assert.equal(concurrent.status, outcome.status, JSON.stringify({ reply, concurrent }));
+    await run({ do: 'replayAs', actor: 'buyer', from: 'buyer', match: 'checkout',
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }, settleMs: 0 }, native);
+    const replay = await run({ do: 'expectReplayCompleted', actor: 'buyer' }, native);
+    assert.equal(replay.status, outcome.status, reply);
+    if (reply === 'schema-refused') {
+      assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, native)).status, 'failed');
+      assert.equal((await run({ do: 'expectReplayRejected', actor: 'buyer' }, native)).status, 'failed');
+    }
+  }
+});
+
+
+test('native POST queries cannot be forged as writes, and mutation arguments stay inside their envelope', async () => {
+  for (const withMutation of [false, true]) {
+    const query = { url: 'http://native.test/api/query', method: 'POST', headers: {},
+      body: { path: 'api:list', args: { userId: 'buyer' } } };
+    const mutation = { ...query, url: 'http://native.test/api/mutation', body: { path: 'api:write', args: [{ userId: 'buyer', message: 'old' }] } };
+    const sent: unknown[] = [];
+    const actor = { name: 'buyer', writes: withMutation ? [mutation, query] : [query], lastWrite: query,
+      page: { request: { fetch: async (url: string, options: UnknownRecord) => {
+        assert.equal(url, mutation.url); sent.push(JSON.parse(String(options.data)));
+        return { status: () => 200, ok: () => true, text: async () => '{"status":"error","errorMessage":"denied","errorData":null}' };
+      } } } };
+    const victim = { name: 'victim', lastWrite: { ...mutation, body: { path: 'api:write', args: [{ userId: 'victim' }] } } };
+    const provided = services(new Map<string, unknown>([['buyer', actor], ['victim', victim]]));
+    const prior = record(provided.capabilities['named-actions']);
+    const native = { ...provided, capabilities: { ...provided.capabilities, 'named-actions': { ...prior,
+      classifyResponse: (request: Parameters<typeof classifyResponseContract>[0], response: Parameters<typeof classifyResponseContract>[1]) =>
+        classifyResponseContract({ ...request, responseContract: request.url?.endsWith('/query') ? 'convex-query' : 'convex-mutation' }, response),
+    } } };
+    const result = await run({ do: 'forgeWrite', actor: 'buyer', fromActor: 'victim', text: 'new', settleMs: 0 }, native);
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+    assert.equal(sent.length, withMutation ? 1 : 0);
+    if (withMutation) {
+      assert.deepEqual(sent[0], { path: 'api:write', args: [{ userId: 'victim', message: 'new' }] });
+      assert.equal((await run({ do: 'expectForgeryRejected', actor: 'buyer' }, native)).status, 'passed');
+    } else assert.equal((await run({ do: 'expectForgeryRejected', actor: 'buyer' }, native)).status, 'inconclusive');
+  }
+});
+
+test('an accepted forged write is decided by its stored effect, not the status', async () => {
+  const actor = { name: 'attacker',
+    forge: { accepted: true, status: 200, tamperedField: 'userId', reason: 'tampered request sent' } };
+  const provided = services(new Map<string, unknown>([['attacker', actor]]));
+  const checked = await run({ do: 'expectForgeryRejected', actor: 'attacker' }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
+});
+
+test('platform request headers reach single and concurrent calls under the caller bearer token', async () => {
+  const seen: UnknownRecord[] = [];
+  const actor = (token: string | null) => ({ name: token ?? 'guest', writes: [], context: { cookies: async () => [] },
+    page: { evaluate: async (callback: () => unknown) => runInNewContext(`(${callback.toString()})()`,
+      { localStorage: { length: 0 }, sessionStorage: { length: 0 }, window: { getSessionToken: () => token } }) } });
+  const provided = services(new Map([['a', actor('token-a')], ['b', actor('token-b')], ['guest', actor(null)]]), {
+    fetchImpl: async (_url, options) => { seen.push(record(options.headers)); return namedResponse(200, true); },
+  });
+  const named = record(provided.capabilities['named-actions']);
+  const platform = { ...named, request: () => ({ url: 'http://platform.test/rest/v1/rpc/checkout', method: 'POST',
+    body: '{}', headers: { apikey: 'project-key', Authorization: 'Bearer project-key' } }) };
+  const capabilities = { ...provided.capabilities, 'named-actions': platform };
+  const namedAction = { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] };
+  for (const step of [
+    { do: 'callAction', actor: 'a', action: 'checkout', namedAction, settleMs: 0 },
+    { do: 'callAction', actor: 'guest', action: 'checkout', namedAction, authentication: 'none', settleMs: 0 },
+    { do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout', settleMs: 0 },
+  ]) {
+    const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities });
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+  }
+  assert.deepEqual(seen.map(headers => [headers.apikey, headers.Authorization]), [
+    ['project-key', 'Bearer token-a'], ['project-key', 'Bearer project-key'],
+    ['project-key', 'Bearer token-a'], ['project-key', 'Bearer token-b'],
+  ]);
+  assert(seen.every(headers => Object.keys(headers).filter(key => /^authorization$/i.test(key)).length === 1));
+});

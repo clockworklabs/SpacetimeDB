@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.warehouse-admin",
+  "title": "Warehouse administration",
+  "moduleType": "feature",
+  "description": "Warehouse inventory, restocking, and revenue views.",
+  "requiresPacks": [
+    "ecommerce.feature.catalog-items",
+    "ecommerce.progression.staff-access"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 30000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.warehouse-admin.requirement",
+        "path": "prompts/modular/warehouse-administration.md",
+        "order": 600,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.warehouse-admin.hooks",
+        "path": "contracts/warehouse-administration.md",
+        "order": 2500,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "warehouse-view",
+      "source": "scenarios/01-warehouse-admin-staff.json",
+      "feature": 7,
+      "criteria": [
+        "7b"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "admin-write",
+      "source": "scenarios/01-admin-write-staff.json",
+      "feature": 103,
+      "criteria": [
+        "103a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

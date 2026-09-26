@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Only an administrator can restock through staff access",
+  "note": "Draft: staff cannot gain restock authority by submitting role=admin. The same real write receives an extra body field on HTTP/Convex or an extra positional reducer argument. Native schema rejection is valid; it does not prove an application role branch ran. Stored stock must remain unchanged, including after a refusal response. Normal administrator writes must work before and after the probe. This bounded claim does not cover arbitrary authority fields or query injection. Signup also submits role=admin through the real form request. Rejection or an ordinary account is valid; it must not grant stock-write authority. A normal signup must still work. Missing or ambiguous credential-request capture is inconclusive. This does not cover query injection.",
+  "features": [
+    {
+      "id": 103,
+      "name": "Only an administrator can restock",
+      "actors": ["admin", "staff", "claimant", "ordinary"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "103a",
+          "category": "feature",
+          "desc": "an administrator can restock a warehouse",
+          "points": 1,
+          "statedBy": "An administrator can add units to a selected item and warehouse.",
+          "steps": [
+            { "do": "recordNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-before-control" },
+            { "do": "callAction", "actor": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-control", "plus": 1 }
+          ]
+        },
+        {
+          "id": "103b",
+          "category": "production",
+          "desc": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+          "points": 2,
+          "statedBy": "Only administrators can change warehouse stock.",
+          "note": "The ordinary signup submits without waiting for success (expectFailure accepts either response) so that the next step observes the created session. The registration is still required to succeed.",
+          "steps": [
+            { "do": "callAction", "actor": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            { "do": "recordNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-before-refusal" },
+            { "do": "callAction", "actor": "staff", "from": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "staff", "outcome": "refused", "routeProvenBy": "admin" },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-refusal", "plus": 0 },
+            { "do": "dbRecordStock", "item": "Air Purifier", "as": "before-admin-claim" },
+            { "do": "callAction", "actor": "staff", "from": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1, "admin"], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }, { "name": "role", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 1000 },
+            { "do": "expectActionOutcome", "actor": "staff", "outcome": "completed", "routeProvenBy": "admin" },
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before-admin-claim", "plus": 0 },
+            { "do": "expectActionOutcome", "actor": "staff", "outcome": "application-refused", "routeProvenBy": "admin" },
+            { "do": "signUp", "actor": "claimant", "name": "claimant", "requestPatch": { "fields": { "role": "admin" } } },
+            { "do": "callAction", "actor": "claimant", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 1000, "from": "admin", "authentication": "optional" },
+            { "do": "expectActionOutcome", "actor": "claimant", "outcome": "completed", "routeProvenBy": "admin" },
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before-admin-claim", "plus": 0 },
+            { "do": "expectActionOutcome", "actor": "claimant", "outcome": "application-refused", "routeProvenBy": "admin" },
+            { "do": "signUp", "actor": "ordinary", "name": "ordinary", "expectFailure": true },
+            { "do": "expect", "actor": "ordinary", "testid": "current-user", "contains": "{user:ordinary}", "within": 10000 },
+            { "do": "callAction", "actor": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 1000 },
+            { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before-admin-claim", "plus": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

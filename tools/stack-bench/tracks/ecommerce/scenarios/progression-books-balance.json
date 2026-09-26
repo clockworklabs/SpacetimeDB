@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression books balance",
+  "note": "Draft: 1,000 serial accepted purchases, split equally between two customers. Native order and warehouse snapshots qualify the seeded population; revenue and fresh stock retain their existing scoring owners. Each selected check runs the same setup. No latency or throughput SLO is scored.",
+  "features": [
+    {
+      "id": 107,
+      "name": "The books balance",
+      "actors": [
+        "buyer",
+        "other",
+        "admin"
+      ],
+      "setup": [
+        {"do": "signUp", "actor": "buyer", "name": "sam"},
+        {"do": "signUp", "actor": "other", "name": "tess"},
+        {"do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true},
+        {"do": "dbSetStock", "item": "Laptop Stand", "warehouse": "East", "quantity": 1020, "settleMs": 0},
+        {"do": "dbSetStock", "item": "Laptop Stand", "warehouse": "West", "quantity": 0, "settleMs": 0},
+        {"do": "click", "actor": "admin", "testid": "admin-link"},
+        {"do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before"},
+        {"do": "dbRecordStock", "item": "Laptop Stand", "as": "stand-before"},
+        {"do": "dbRecordCheckout", "account": "{user:sam}", "item": "Laptop Stand", "as": "orders-buyer", "storage": {"kind": "order-data", "cart": false, "warehouses": false}},
+        {"do": "dbRecordCheckout", "account": "{user:tess}", "item": "Laptop Stand", "as": "orders-other", "storage": {"kind": "order-data", "cart": false, "warehouses": false}},
+        {"do": "dbRecordCheckout", "account": "{user:sam}", "item": "Laptop Stand", "as": "stock-buyer", "storage": {"kind": "order-data", "cart": false, "warehouses": true}},
+        {"do": "dbRecordCheckout", "account": "{user:tess}", "item": "Laptop Stand", "as": "stock-other", "storage": {"kind": "order-data", "cart": false, "warehouses": true}},
+        {
+          "repeat": 500,
+          "steps": [
+            {"do": "callAction", "actor": "buyer", "action": "buy", "namedAction": {"id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{"name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64"}]}, "input": {"testid": "item-card", "contains": "Laptop Stand", "attribute": "data-buy-input"}, "settleMs": 0},
+            {"do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted"},
+            {"do": "callAction", "actor": "other", "action": "buy", "namedAction": {"id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{"name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64"}]}, "input": {"testid": "item-card", "contains": "Laptop Stand", "attribute": "data-buy-input"}, "settleMs": 0},
+            {"do": "expectActionOutcome", "actor": "other", "outcome": "accepted"}
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "id": "107a",
+          "category": "production",
+          "desc": "revenue includes all 1,000 accepted purchases at their stored prices",
+          "points": 1,
+          "statedBy": "total revenue equals the sum of order totals",
+          "steps": [
+            {"do": "dbExpectPurchaseCount", "before": ["orders-buyer", "orders-other"], "purchasesEach": 500},
+            {"do": "reload", "actor": "admin", "settleMs": 1000},
+            {"do": "ensureSignedIn", "actor": "admin", "name": "admin", "readyTestid": "current-user", "password": "stackbench-admin-2026", "exact": true},
+            {"do": "click", "actor": "admin", "testid": "overlay-close", "ifAvailable": true, "within": 1000},
+            {"do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": "admin-revenue"},
+            {"do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 29000, "within": 10000}
+          ]
+        },
+        {
+          "id": "107b",
+          "category": "production",
+          "desc": "all 1,000 purchases have matching warehouse effects and fresh stock",
+          "points": 1,
+          "statedBy": "warehouse totals and a fresh storefront agree with completed sales",
+          "steps": [
+            {"do": "dbExpectPurchaseCount", "before": ["stock-buyer", "stock-other"], "purchasesEach": 500},
+            {"do": "reload", "actor": "admin", "settleMs": 2000},
+            {"do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user"},
+            {"do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true},
+            {"do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": {"testid": "admin-item-row", "contains": "Laptop Stand"}, "relativeTo": "stand-before", "plus": -1000},
+            {"do": "freshClient", "actor": "buyer"},
+            {"do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": {"testid": "item-card", "contains": "Laptop Stand"}, "relativeTo": "stand-before", "plus": -1000}
+          ]
+        }
+      ]
+    }
+  ]
+}

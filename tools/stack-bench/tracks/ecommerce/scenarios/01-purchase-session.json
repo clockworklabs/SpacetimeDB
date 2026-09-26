@@ -1,0 +1,777 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Purchase requires an account",
+  "note": "Draft: the purchase-session check includes bounded login-input and credential-tampering probes. The login probe replaces the password in one matched JSON form request with query-like text. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused login or forgery. The read scope requires neither carts nor warehouses. Missing, ambiguous, repeated, redirected, non-JSON or incomplete login requests remain inconclusive. This proves one login string cannot grant purchase authority; it does not prove general injection safety. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry or invalidation of previously copied tokens. After signout, the current browser credential must not authorize a purchase; sign-in must restore access. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie. Same-site and cross-site simple POSTs use the real browser cookie policy, without copied tokens. Complete opaque responses do not prove refusal: native state must remain unchanged, and valid purchases must still work. Local-network permission is granted only to the controlled origin because the appliance addresses are private.",
+  "features": [
+    {
+      "id": 101,
+      "name": "Purchase requires an account",
+      "actors": [
+        "buyer",
+        "guest",
+        "wrong-password",
+        "duplicate",
+        "query-input"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "kim"
+        },
+        {
+          "do": "dbRecordStock",
+          "item": "Bluetooth Speaker",
+          "as": "speaker-before-control"
+        },
+        {
+          "do": "callAction",
+          "actor": "buyer",
+          "action": "buy",
+          "namedAction": {
+            "id": "buy",
+            "path": "/api/items/:id/buy",
+            "reducer": "buy_now",
+            "args": [
+              0
+            ],
+            "params": [
+              {
+                "name": "itemId",
+                "in": "path",
+                "placeholder": ":id",
+                "wireType": "u64"
+              }
+            ]
+          },
+          "input": {
+            "testid": "item-card",
+            "contains": "Bluetooth Speaker",
+            "attribute": "data-buy-input"
+          },
+          "settleMs": 2000
+        },
+        {
+          "do": "expectActionOutcome",
+          "actor": "buyer",
+          "outcome": "accepted"
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "speaker-before-control",
+          "plus": -1
+        }
+      ],
+      "criteria": [
+        {
+          "id": "101a",
+          "category": "production",
+          "desc": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+          "points": 2,
+          "steps": [
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-rejected-access",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "guest",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "none",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "guest",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "signIn",
+              "actor": "wrong-password",
+              "name": "kim",
+              "password": "not-kims-password",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "wrong-password",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "reload",
+              "actor": "wrong-password",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "wrong-password",
+              "testid": "current-user",
+              "absent": true,
+              "within": 1000
+            },
+            {
+              "do": "callAction",
+              "actor": "wrong-password",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "optional",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "wrong-password",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "signIn",
+              "actor": "query-input",
+              "name": "kim",
+              "password": "not-kims-password",
+              "expectFailure": true,
+              "requestPatch": {
+                "password": "' OR '1'='1"
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "query-input",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "optional",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "query-input",
+              "outcome": "completed",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "query-input",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "signUp",
+              "actor": "duplicate",
+              "name": "kim",
+              "password": "not-kims-password",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "duplicate",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "reload",
+              "actor": "duplicate",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "duplicate",
+              "testid": "current-user",
+              "absent": true,
+              "within": 1000
+            },
+            {
+              "do": "callAction",
+              "actor": "duplicate",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "optional",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "duplicate",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 2000,
+              "authentication": "session-control"
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -2
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-forgery",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 1000,
+              "authentication": "tampered-session"
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "completed"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-forgery"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -2
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "refused"
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -3
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-same-site",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 1000,
+              "browserOrigin": "same-site"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-same-site"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -3
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -4
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-cross-site",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 1000,
+              "browserOrigin": "cross-site"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-cross-site"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -4
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -5
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-signout",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "current-user",
+              "unlessVisible": "signout"
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "signout"
+            },
+            {
+              "do": "waitUntilAbsent",
+              "actor": "buyer",
+              "testid": "current-user",
+              "within": 6000
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 2000,
+              "authentication": "optional"
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "completed"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-signout"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -5
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "refused"
+            },
+            {
+              "do": "signIn",
+              "actor": "buyer",
+              "name": "kim",
+              "awaitSignedIn": false
+            },
+            {
+              "do": "expect",
+              "actor": "buyer",
+              "testid": "current-user",
+              "contains": "kim",
+              "within": 10000
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -6
+            }
+          ],
+          "statedBy": "the server refuses a purchase without an authenticated customer"
+        }
+      ]
+    }
+  ]
+}

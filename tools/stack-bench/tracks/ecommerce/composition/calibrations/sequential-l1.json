@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 2,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.sequential-l1-calibration",
+  "title": "Ecommerce sequential L1 calibration",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/sequential-l1.json",
+    "id": "ecommerce.sequential-l1",
+    "meaningSha256": "98c7d31e117e21d365bd18fbcad4c9d8cf609ea2773c4fe76d9a86019c4917ba",
+    "executionSha256": "c49cd39481c3c3b20ec57a2c0cd155811ac10020ee3088a061f7fa14616d840e",
+    "contentSha256": "7cad50ec11c52e36c3d54f2a02c0c74192c48710156cb855c71de76779f5fd23"
+  },
+  "fixture": {
+    "id": "ecommerce.storefront",
+    "sourceSha256": "5b320fb646efc8c7efc4f8c643130f8e41695ea4c4b2217b18963044e666b80b"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      {
+        "backend": "mongodb",
+        "id": "ecommerce-reference-mongodb",
+        "sourceSha256": "837e7e81b58f17afdaf29de8ddb7a17da2ac95d3716145c4f0ef996b4b4f5e7d"
+      },
+      {
+        "backend": "postgres",
+        "id": "ecommerce-reference-postgres",
+        "sourceSha256": "d7c162ae456010e5d3b334ac839c445ff5c9c889d83bbc94b9d840b0042534a5"
+      },
+      {
+        "backend": "spacetime",
+        "id": "ecommerce-reference-spacetime",
+        "sourceSha256": "fbd3c09759587f14781d5bc5b8d0357aec59aaaf34f8fe29f721a2a62d70fe52"
+      }
+    ]
+  },
+  "mutations": [
+    {
+      "backend": "mongodb",
+      "path": "grader/mutations/mongodb-ecommerce.json",
+      "sha256": "db73a9efff3e4b53136d52d8e77d0c5162262d5c6333e4f6ce345de4b425ec55",
+      "referenceId": "ecommerce-reference-mongodb"
+    },
+    {
+      "backend": "postgres",
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "sha256": "706742c938b7d112c2b7dbeb1dd5bbd84d17542e8516fee3cf7737041ae942fd",
+      "referenceId": "ecommerce-reference-postgres"
+    },
+    {
+      "backend": "spacetime",
+      "path": "grader/mutations/spacetime-ecommerce.json",
+      "sha256": "834667879661c661985bc94869ffc0e08e1b83582d7c745d89d39e16d968a689",
+      "referenceId": "ecommerce-reference-spacetime"
+    }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [
+    {
+      "stableKey": "ecommerce.spec.concurrency-safety.restock-race.202-control",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": [],
+      "reason": "This proves that ordinary restock works before the contended restock check; it does not duplicate the existing scored restock behavior."
+    },
+    {
+      "stableKey": "ecommerce.spec.external-data-sync.external-stock.901b",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": [],
+      "reason": "This reload assertion confirms that the scored live update came from persisted data rather than a page-only patch."
+    }
+  ],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 1,
+    "mutationRepetitions": 1,
+    "checks": [
+      "ecommerce.feature.accounts.accounts.1a",
+      "ecommerce.feature.accounts.accounts.1b",
+      "ecommerce.feature.accounts.accounts.1c",
+      "ecommerce.spec.state-durability.session-reload.1e",
+      "ecommerce.feature.accounts.accounts.1d",
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.spec.live-state.purchase-stock.3b",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.feature.cart-checkout.cart.4a",
+      "ecommerce.feature.cart-checkout.cart.4d",
+      "ecommerce.spec.state-durability.cart-reload.4b",
+      "ecommerce.spec.live-state.shared-cart.4c",
+      "ecommerce.feature.catalog.catalog-ranking.2b",
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.feature.catalog.catalog-values.2a",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.external-data-sync.external-stock.901a",
+      "ecommerce.spec.external-data-sync.external-stock.901d",
+      "ecommerce.spec.external-data-sync.external-stock.901b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.concurrency-safety.restock-race.202-control",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.access-control.review-eligibility.108a",
+      "ecommerce.spec.access-control.review-eligibility.108b",
+      "ecommerce.spec.live-state.rating.6c",
+      "ecommerce.spec.transactional-integrity.unique-review.6b",
+      "ecommerce.feature.reviews.reviews.6a",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.spec.live-state.warehouse-stock.7c",
+      "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.spec.live-state.open-list.902a",
+      "ecommerce.feature.purchasing.purchase-order.3c",
+      "ecommerce.spec.access-control.signed-out-purchase.3a",
+      "ecommerce.spec.concurrency-safety.stock-limit.3d"
+    ],
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "stacks": [
+      "mongodb",
+      "postgres",
+      "spacetime"
+    ],
+    "evidence": []
+  },
+  "equivalenceDecisions": [],
+  "selection": {
+    "path": "composition/sequential.json",
+    "sha256": "84e8147089c325eb28068d3a2c86fcb8118768938f575bdfd5b5a14467047a9a",
+    "alias": "L1"
+  }
+}

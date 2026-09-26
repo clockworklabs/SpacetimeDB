@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Search ordering after purchases",
+  "note": "Draft: requires matching reference and defect-control qualification.",
+  "features": [
+    {
+      "id": 402,
+      "name": "Purchases preserve search ordering",
+      "actors": [
+        "visitor",
+        "buyer"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "search-order-buyer"
+        },
+        {
+          "do": "dbRecordStock",
+          "item": "Headphones",
+          "as": "before-search-purchase"
+        },
+        {
+          "do": "click",
+          "actor": "buyer",
+          "testid": "buy-now",
+          "in": {
+            "testid": "item-card",
+            "contains": "Headphones"
+          }
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Headphones",
+          "relativeTo": "before-search-purchase",
+          "plus": -1
+        },
+        {
+          "do": "reload",
+          "actor": "visitor",
+          "settleMs": 0
+        },
+        {
+          "do": "fill",
+          "actor": "visitor",
+          "testid": "minimum-price",
+          "text": "1"
+        },
+        {
+          "do": "click",
+          "actor": "visitor",
+          "testid": "filter-apply",
+          "ifAvailable": true
+        }
+      ],
+      "criteria": [
+        {
+          "id": "402b",
+          "category": "production",
+          "desc": "active filters and text searches remain alphabetical after purchases; clearing them restores purchase ranking",
+          "points": 1,
+          "statedBy": "Active search and filter results use item-name order; clearing them restores purchase ranking",
+          "steps": [
+            {
+              "do": "expectSequence",
+              "actor": "visitor",
+              "testid": "item-name",
+              "in": {
+                "testid": "search-results"
+              },
+              "equals": [
+                "Air Purifier",
+                "Bluetooth Speaker",
+                "Coffee Grinder",
+                "Desk Lamp",
+                "Espresso Machine",
+                "Gaming Mouse",
+                "Headphones",
+                "Induction Cooktop",
+                "Keyboard",
+                "Laptop Stand"
+              ]
+            },
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "e",
+              "enter": true
+            },
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "minimum-price",
+              "text": ""
+            },
+            {
+              "do": "click",
+              "actor": "visitor",
+              "testid": "filter-apply",
+              "ifAvailable": true
+            },
+            {
+              "do": "expectSequence",
+              "actor": "visitor",
+              "testid": "item-name",
+              "in": {
+                "testid": "search-results"
+              },
+              "equals": [
+                "Air Purifier",
+                "Bluetooth Speaker",
+                "Coffee Grinder",
+                "Desk Lamp",
+                "Espresso Machine",
+                "Gaming Mouse",
+                "Headphones",
+                "Keyboard",
+                "Mirrorless Camera",
+                "USB Cable"
+              ]
+            },
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "",
+              "enter": true
+            },
+            {
+              "do": "expectSequence",
+              "actor": "visitor",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-list"
+              },
+              "equals": [
+                "Headphones",
+                "Air Purifier",
+                "Bluetooth Speaker",
+                "Coffee Grinder",
+                "Desk Lamp",
+                "Espresso Machine",
+                "Gaming Mouse",
+                "Induction Cooktop",
+                "Keyboard",
+                "Laptop Stand"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

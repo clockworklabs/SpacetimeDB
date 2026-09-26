@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "sourceCommit": "bd562650c4c2bfbad629dbe963810c9e78c1a9a4",
+  "targetCommit": "bb161fe3daa5d578818e303abb441ac2a5756c38",
+  "priorReview": "qualification-evidence/ecommerce-l3-model-selection-20260925/reuse-review.json",
+  "changedBehavior": {
+    "stockWriter": "A SpacetimeDB SQL error stating that stock is a read-only view is now an application stock-interface failure. The warehouse contract requires stock to be writable by database tools. No reference or registered defect control exposes stock as a read-only view.",
+    "preflight": "If an owned Docker smoke container fails at start --attach, the preflight records its state, exit code and bounded sanitized output. Successful starts and the smoke acceptance rules are unchanged."
+  },
+  "reuseBoundary": "The dependency L3 reference apps and registered mutations retain their stock tables and produce the same graded behavior. The new stock error branch was observed in the invalid GPT-6 Sol SpacetimeDB attempt and checked against the exact saved error; unrelated database errors remain harness failures. The Docker change only records more evidence after a failed preflight, which cannot yield valid qualification evidence. Existing reference and mutation results are reusable for their unchanged behaviors. This review does not make the invalid Sol attempts valid, establish the cause of the Convex startup failure, or qualify a new paid study.",
+  "validation": [
+    "The exact saved read-only-stock-view error was added as a positive application-interface case before the classifier change; an unrelated read-only view remains a negative case. The focused stock adapter test and runtime action executor tests pass.",
+    "A model-free owned-network Docker probe passed a normal smoke, forced a closed-port startup failure, recorded exit code 1 and ECONNREFUSED, and verified removal of the smoke container, anchor and network. Repeatable script and result are in ignored local-notes/sol6-four-stack-20260925/.",
+    "The cancelled campaign and its historical grades remain unchanged."
+  ]
+}

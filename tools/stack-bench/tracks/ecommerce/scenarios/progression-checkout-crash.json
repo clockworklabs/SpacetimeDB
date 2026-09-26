@@ -1,0 +1,602 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Checkout recovery after process crashes",
+  "note": "One fixed 16-call, zero-offset trial per independent process boundary. Database then application; combined SpacetimeDB and Convex boundaries reuse their measured database crash once. Both assertions use both retained observations. Unknown outcomes, missed windows and incomplete recovery remain unmeasured. Each baseline, interrupted cart and fresh-customer progress checkout contains Keyboard and Coffee Grinder. The test observes recovered order/cart correctness across both products, including stock/reservation/allocation conservation when the delivered task declares warehouse access. It does not test physical rows, optional payment features, power loss or storage-device durability. After each retained crash observation, remove any remaining cart lines through the declared UI before the next baseline. This prevents earlier reservations expiring into a later trial; it never changes the saved fault verdict.",
+  "features": [
+    {
+      "id": 910,
+      "name": "Checkout crash recovery",
+      "actors": [
+        "a",
+        "b",
+        "c"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "database"
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:database}",
+          "item": "Keyboard",
+          "as": "database-baseline-before",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Coffee Grinder"
+          }
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:database}",
+          "item": "Keyboard",
+          "as": "database-baseline-prepared",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "confirmCheckout",
+          "actor": "a",
+          "namedAction": {
+            "id": "checkout",
+            "reducer": "checkout",
+            "path": "/api/checkout",
+            "args": []
+          }
+        },
+        {
+          "do": "dbExpectCheckout",
+          "before": "database-baseline-before",
+          "prepared": "database-baseline-prepared",
+          "quantity": [
+            {
+              "item": "Keyboard",
+              "quantity": 1
+            },
+            {
+              "item": "Coffee Grinder",
+              "quantity": 1
+            }
+          ]
+        },
+        {
+          "do": "reload",
+          "actor": "a",
+          "settleMs": 0
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:database}",
+          "item": "Keyboard",
+          "as": "database-before",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Coffee Grinder"
+          }
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:database}",
+          "item": "Keyboard",
+          "as": "database-prepared",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "crashCheckout",
+          "actor": "a",
+          "before": "database-before",
+          "prepared": "database-prepared",
+          "quantity": [
+            {
+              "item": "Keyboard",
+              "quantity": 1
+            },
+            {
+              "item": "Coffee Grinder",
+              "quantity": 1
+            }
+          ],
+          "requests": 16,
+          "offsetMs": 0,
+          "target": "database",
+          "as": "database-crash-observation",
+          "namedAction": {
+            "id": "checkout",
+            "reducer": "checkout",
+            "path": "/api/checkout",
+            "args": []
+          }
+        },
+        {
+          "do": "reload",
+          "actor": "a",
+          "settleMs": 0
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "a",
+          "name": "database",
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "cart-toggle",
+          "unlessVisible": "cart-total"
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "cart-remove",
+          "in": {
+            "testid": "cart-item",
+            "contains": "Keyboard"
+          },
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "cart-remove",
+          "in": {
+            "testid": "cart-item",
+            "contains": "Coffee Grinder"
+          },
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "expectNumber",
+          "actor": "a",
+          "testid": "cart-count",
+          "equals": 0,
+          "within": 10000
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "application"
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:application}",
+          "item": "Keyboard",
+          "as": "application-baseline-before",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Coffee Grinder"
+          }
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:application}",
+          "item": "Keyboard",
+          "as": "application-baseline-prepared",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "confirmCheckout",
+          "actor": "b",
+          "namedAction": {
+            "id": "checkout",
+            "reducer": "checkout",
+            "path": "/api/checkout",
+            "args": []
+          }
+        },
+        {
+          "do": "dbExpectCheckout",
+          "before": "application-baseline-before",
+          "prepared": "application-baseline-prepared",
+          "quantity": [
+            {
+              "item": "Keyboard",
+              "quantity": 1
+            },
+            {
+              "item": "Coffee Grinder",
+              "quantity": 1
+            }
+          ]
+        },
+        {
+          "do": "reload",
+          "actor": "b",
+          "settleMs": 0
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:application}",
+          "item": "Keyboard",
+          "as": "application-before",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Coffee Grinder"
+          }
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:application}",
+          "item": "Keyboard",
+          "as": "application-prepared",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "crashCheckout",
+          "actor": "b",
+          "before": "application-before",
+          "prepared": "application-prepared",
+          "quantity": [
+            {
+              "item": "Keyboard",
+              "quantity": 1
+            },
+            {
+              "item": "Coffee Grinder",
+              "quantity": 1
+            }
+          ],
+          "requests": 16,
+          "offsetMs": 0,
+          "target": "application",
+          "as": "application-crash-observation",
+          "reuseCombinedFrom": "database-crash-observation",
+          "namedAction": {
+            "id": "checkout",
+            "reducer": "checkout",
+            "path": "/api/checkout",
+            "args": []
+          }
+        },
+        {
+          "do": "reload",
+          "actor": "b",
+          "settleMs": 0
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "b",
+          "name": "application",
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "cart-toggle",
+          "unlessVisible": "cart-total"
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "cart-remove",
+          "in": {
+            "testid": "cart-item",
+            "contains": "Keyboard"
+          },
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "b",
+          "testid": "cart-remove",
+          "in": {
+            "testid": "cart-item",
+            "contains": "Coffee Grinder"
+          },
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "expectNumber",
+          "actor": "b",
+          "testid": "cart-count",
+          "equals": 0,
+          "within": 10000
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "recovered"
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:recovered}",
+          "item": "Keyboard",
+          "as": "recovered-before",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "add-to-cart",
+          "in": {
+            "testid": "item-card",
+            "contains": "Coffee Grinder"
+          }
+        },
+        {
+          "do": "dbRecordCheckout",
+          "account": "{user:recovered}",
+          "item": "Keyboard",
+          "as": "recovered-prepared",
+          "storage": {
+            "kind": "order-data",
+            "cart": true,
+            "warehouses": "if-requested"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "cart-toggle",
+          "unlessVisible": "cart-total"
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "checkout-submit"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "c",
+          "testid": "cart-count",
+          "equals": 0,
+          "within": 10000
+        },
+        {
+          "do": "click",
+          "actor": "c",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "within": 1000
+        },
+        {
+          "do": "dbExpectCheckout",
+          "before": "recovered-before",
+          "prepared": "recovered-prepared",
+          "quantity": [
+            {
+              "item": "Keyboard",
+              "quantity": 1
+            },
+            {
+              "item": "Coffee Grinder",
+              "quantity": 1
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "id": "910a",
+          "category": "production",
+          "points": 1,
+          "desc": "interrupted checkout recovers to the prepared cart or one complete order with the cart cleared after each independent process crash",
+          "steps": [
+            {
+              "do": "expectCrashCheckout",
+              "from": "database-crash-observation",
+              "verdict": "atomicity"
+            },
+            {
+              "do": "expectCrashCheckout",
+              "from": "application-crash-observation",
+              "verdict": "atomicity"
+            }
+          ]
+        },
+        {
+          "id": "910b",
+          "category": "production",
+          "points": 1,
+          "desc": "acknowledged checkout is not rolled back and earlier orders remain unchanged after each independent process crash",
+          "steps": [
+            {
+              "do": "expectCrashCheckout",
+              "from": "database-crash-observation",
+              "verdict": "durability"
+            },
+            {
+              "do": "expectCrashCheckout",
+              "from": "application-crash-observation",
+              "verdict": "durability"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
