@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "build:js": "tsup",
-    "build:types": "tsc -p tsconfig.build.json && node scripts/emit-cjs-types.mjs",
+    "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm -s build:js && pnpm -s build:types",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
@@ -47,30 +47,21 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": {
-        "require": "./dist/index.d.cts",
-        "default": "./dist/index.d.ts"
-      },
+      "types": "./dist/index.d.ts",
       "browser": "./dist/index.browser.mjs",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "default": "./dist/index.mjs"
     },
     "./sdk": {
-      "types": {
-        "require": "./dist/index.d.cts",
-        "default": "./dist/index.d.ts"
-      },
+      "types": "./dist/index.d.ts",
       "browser": "./dist/sdk/index.browser.mjs",
       "import": "./dist/sdk/index.mjs",
       "require": "./dist/sdk/index.cjs",
       "default": "./dist/sdk/index.mjs"
     },
     "./react": {
-      "types": {
-        "require": "./dist/react/index.d.cts",
-        "default": "./dist/react/index.d.ts"
-      },
+      "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.mjs",
       "require": "./dist/react/index.cjs",
       "default": "./dist/react/index.mjs"
@@ -82,46 +73,31 @@
       "default": "./dist/server/index.mjs"
     },
     "./vue": {
-      "types": {
-        "require": "./dist/vue/index.d.cts",
-        "default": "./dist/vue/index.d.ts"
-      },
+      "types": "./dist/vue/index.d.ts",
       "import": "./dist/vue/index.mjs",
       "require": "./dist/vue/index.cjs",
       "default": "./dist/vue/index.mjs"
     },
     "./tanstack": {
-      "types": {
-        "require": "./dist/tanstack/index.d.cts",
-        "default": "./dist/tanstack/index.d.ts"
-      },
+      "types": "./dist/tanstack/index.d.ts",
       "import": "./dist/tanstack/index.mjs",
       "require": "./dist/tanstack/index.cjs",
       "default": "./dist/tanstack/index.mjs"
     },
     "./svelte": {
-      "types": {
-        "require": "./dist/svelte/index.d.cts",
-        "default": "./dist/svelte/index.d.ts"
-      },
+      "types": "./dist/svelte/index.d.ts",
       "import": "./dist/svelte/index.mjs",
       "require": "./dist/svelte/index.cjs",
       "default": "./dist/svelte/index.mjs"
     },
     "./angular": {
-      "types": {
-        "require": "./dist/angular/index.d.cts",
-        "default": "./dist/angular/index.d.ts"
-      },
+      "types": "./dist/angular/index.d.ts",
       "import": "./dist/angular/index.mjs",
       "require": "./dist/angular/index.cjs",
       "default": "./dist/angular/index.mjs"
     },
     "./solid": {
-      "types": {
-        "require": "./dist/solid/index.d.cts",
-        "default": "./dist/solid/index.d.ts"
-      },
+      "types": "./dist/solid/index.d.ts",
       "import": "./dist/solid/index.mjs",
       "require": "./dist/solid/index.cjs",
       "default": "./dist/solid/index.mjs"
