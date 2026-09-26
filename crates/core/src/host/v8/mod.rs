@@ -111,7 +111,7 @@ use std::num::NonZeroUsize;
 use std::os::raw::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use v8::script_compiler::{compile_module, Source};
 use v8::{
@@ -265,6 +265,7 @@ impl V8RuntimeInner {
             load_balance_guard,
             core_pinner,
             procedure_instance_pool_size: config.procedure_instance_pool_size,
+            procedure_queue_timeout: config.procedure_queue_timeout,
             heap_policy: config.heap_policy,
             metrics,
         };
@@ -280,6 +281,7 @@ pub struct JsModule {
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
     procedure_instance_pool_size: NonZeroUsize,
+    procedure_queue_timeout: Option<Duration>,
     heap_policy: V8HeapPolicyConfig,
     metrics: InstanceManagerMetrics,
 }
@@ -303,6 +305,10 @@ impl JsModule {
 
     pub(in crate::host) fn procedure_instance_pool_size(&self) -> NonZeroUsize {
         self.procedure_instance_pool_size
+    }
+
+    pub(in crate::host) fn procedure_queue_timeout(&self) -> Option<Duration> {
+        self.procedure_queue_timeout
     }
 
     async fn create_procedure_instance(&self) -> JsProcedureInstance {
