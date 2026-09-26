@@ -14,6 +14,10 @@ library.
 This library provides a simple way to handle OpenID Connect (OIDC) authentication
 in React.
 
+If you are building a browser-based JavaScript or TypeScript application without
+React, see the
+[JavaScript/TypeScript integration guide](./00550-javascript-typescript-integration.md).
+
 ## Prerequisites
 
 1. Create a SpacetimeAuth project and configure a client as described in the
