@@ -614,10 +614,12 @@ impl CommittedState {
         pending_schema_changes: ThinVec<PendingSchemaChange>,
         truncates: &mut IntSet<TableId>,
     ) {
+        #[allow(clippy::too_many_arguments)]
         fn delete_rows(
             tx_data: &mut TxData,
             table_id: TableId,
             table: &mut Table,
+            page_pool: &PagePool,
             blob_store: &mut dyn BlobStore,
             row_ptrs_len: usize,
             row_ptrs: impl Iterator<Item = RowPointer>,
@@ -634,7 +636,7 @@ impl CommittedState {
 
                 // TODO: re-write `TxData` to remove `ProductValue`s
                 let pv = table
-                    .delete(blob_store, row_ptr, |row| row.to_product_value())
+                    .delete(page_pool, blob_store, row_ptr, |row| row.to_product_value())
                     .expect("Delete for non-existent row!");
                 deletes.push(pv);
             }
@@ -651,10 +653,11 @@ impl CommittedState {
 
         for (table_id, row_ptrs) in delete_tables {
             match self.get_table_and_blob_store_mut(table_id) {
-                Ok((table, blob_store, ..)) => delete_rows(
+                Ok((table, blob_store, _index_map, page_pool)) => delete_rows(
                     tx_data,
                     table_id,
                     table,
+                    page_pool,
                     blob_store,
                     row_ptrs.len(),
                     row_ptrs.iter(),
@@ -676,6 +679,7 @@ impl CommittedState {
                     tx_data,
                     table_id,
                     &mut table,
+                    &self.page_pool,
                     &mut self.blob_store,
                     row_ptrs.len(),
                     row_ptrs.into_iter(),
