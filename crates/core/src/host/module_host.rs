@@ -2399,24 +2399,32 @@ impl ModuleHost {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
 
-        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        // A verified container credential for this database makes the call a self-call,
+        // which may invoke private reducers and observes internal authority.
+        let hosted_self_call = client
+            .as_ref()
+            .and_then(|client| client.auth.claims.container)
+            .is_some_and(|container| container.database == self.info.database_identity);
+
+        if reducer_def.visibility.is_private() && !hosted_self_call && !self.is_database_owner(caller_identity) {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
-        Ok((
+        let mut params = Self::call_reducer_params(
+            owning_def,
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_id,
             reducer_def,
-            Self::call_reducer_params(
-                owning_def,
-                caller_identity,
-                caller_connection_id,
-                client,
-                request_id,
-                timer,
-                reducer_id,
-                reducer_def,
-                args,
-            )?,
-        ))
+            args,
+        )?;
+        if hosted_self_call {
+            params.call_auth_flags = 1;
+        }
+        Ok((reducer_def, params))
     }
 
     async fn call_reducer_with_params(

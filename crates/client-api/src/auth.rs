@@ -166,6 +166,7 @@ impl TokenClaims {
             extra: self.extra.clone(),
             iat,
             exp,
+            container: None,
         };
         let token = signer.sign(&claims)?;
         Ok((claims, token))
@@ -394,7 +395,17 @@ pub async fn validate_token<S: NodeDelegate>(
     state: &S,
     token: &str,
 ) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
-    state.jwt_auth_provider().validator().validate_token(token).await
+    let claims = state.jwt_auth_provider().validator().validate_token(token).await?;
+    // A container credential is only valid while its generation is the current assignment.
+    if let Some(container) = &claims.container
+        && !state.is_current_container(container).await
+    {
+        return Err(TokenValidationError::Other(anyhow!(
+            "container credential for generation {} is no longer current",
+            container.generation
+        )));
+    }
+    Ok(claims)
 }
 
 pub struct SpacetimeAuthHeader {
