@@ -97,11 +97,8 @@ async fn fetch(request: reqwest::RequestBuilder, query: Query) -> anyhow::Result
         .body(query.sql()?)
         .send()
         .await?;
-    ensure!(
-        response.status().is_success(),
-        "Environment read failed with HTTP {}",
-        response.status()
-    );
+    let response = response.error_for_status().context("failed to fetch environment")?;
+    // TODO(noa): what are we doing here. what. why are we manually buffering. help me
     let mut body = Vec::new();
     let limit = MAX_ENV_VARS * (MAX_ENV_KEY_BYTES + MAX_ENV_VALUE_BYTES) * 6 + 64 * 1024;
     let mut stream = response.bytes_stream();

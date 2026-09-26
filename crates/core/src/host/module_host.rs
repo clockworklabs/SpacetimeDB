@@ -1598,6 +1598,41 @@ impl UpdateDatabaseResult {
     }
 }
 
+#[derive(Debug)]
+pub enum UpdateEnvironmentResult {
+    NoUpdateNeeded,
+    UpdatePerformed {
+        /// The transaction offset of the successful database update.
+        tx_offset: TransactionOffset,
+        /// The durable transaction offset of the database.
+        /// `None` if the database is in-memory only.
+        durable_offset: Option<DurableOffset>,
+    },
+    ErrorExecutingMigration(anyhow::Error),
+}
+impl UpdateEnvironmentResult {
+    /// Check if an environment update was successful.
+    pub fn was_successful(&self) -> bool {
+        matches!(self, Self::UpdatePerformed { .. })
+    }
+}
+
+impl From<UpdateEnvironmentResult> for UpdateDatabaseResult {
+    fn from(value: UpdateEnvironmentResult) -> Self {
+        match value {
+            UpdateEnvironmentResult::NoUpdateNeeded => Self::NoUpdateNeeded,
+            UpdateEnvironmentResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            } => Self::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            },
+            UpdateEnvironmentResult::ErrorExecutingMigration(e) => Self::ErrorExecutingMigration(e),
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
 pub struct NoSuchModule;
@@ -3275,6 +3310,19 @@ impl ModuleHost {
             (program, old_module_info, policy, environment),
             |(a, b, c, d), inst| inst.update_database(a, b, c, d),
             |(a, b, c, d), inst| inst.update_database(a, b, c, d).await,
+        )?
+    }
+
+    pub async fn update_environment(
+        &self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<UpdateEnvironmentResult, anyhow::Error> {
+        call_instance!(
+            self,
+            "<update_database>",
+            environment,
+            |environment, inst| inst.update_environment(environment),
+            |environment, inst| inst.update_environment(environment).await,
         )?
     }
 

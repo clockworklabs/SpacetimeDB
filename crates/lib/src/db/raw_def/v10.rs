@@ -103,7 +103,7 @@ pub enum RawModuleDefV10Section {
     Submodules(Vec<RawSubmoduleV10>),
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
-    Environment(Vec<crate::environment::EnvironmentDeclaration>),
+    Environment(Vec<RawEnvironmentDeclarationV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -142,6 +142,24 @@ pub struct RawSubmoduleV10 {
     /// name overrides it.
     pub namespace: String,
     pub module: RawModuleDefV10,
+}
+
+#[derive(Debug, Clone, crate::SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub enum RawEnvVarTypeV10 {
+    String,
+    StringLiteral(String),
+    Union(Vec<String>),
+}
+
+#[derive(Debug, Clone, crate::SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawEnvironmentDeclarationV10 {
+    pub name: String,
+    pub ty: RawEnvVarTypeV10,
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -733,27 +751,6 @@ impl RawModuleDefV10Builder {
         Default::default()
     }
 
-    /// Declare a complete environment schema, including an explicit empty schema.
-    /// Repeated calls remain repeated sections so host validation rejects ambiguity.
-    pub fn add_environment(&mut self, declarations: Vec<crate::environment::EnvironmentDeclaration>) -> &mut Self {
-        self.module
-            .sections
-            .push(RawModuleDefV10Section::Environment(declarations));
-        self
-    }
-
-    /// New ENV-aware bindings declare an empty schema when no declaration is registered.
-    pub fn ensure_environment(&mut self) {
-        if !self
-            .module
-            .sections
-            .iter()
-            .any(|section| matches!(section, RawModuleDefV10Section::Environment(_)))
-        {
-            self.add_environment(Vec::new());
-        }
-    }
-
     /// Get mutable access to the typespace section, creating it if missing.
     fn typespace_mut(&mut self) -> &mut Typespace {
         let idx = self
@@ -990,6 +987,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::HttpRoutes(routes) => routes,
             _ => unreachable!("Just ensured HttpRoutes section exists"),
+        }
+    }
+
+    /// Get mutable access to the environment section, creating it if missing.
+    fn environment_mut(&mut self) -> &mut Vec<RawEnvironmentDeclarationV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Environment(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::Environment(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Environment(env) => env,
+            _ => unreachable!("Just ensured Environment section exists"),
         }
     }
 
@@ -1307,6 +1324,12 @@ impl RawModuleDefV10Builder {
         self.module
             .sections
             .push(RawModuleDefV10Section::CaseConversionPolicy(policy));
+    }
+
+    /// Declare a complete environment schema.
+    pub fn add_environment(&mut self, declarations: Vec<RawEnvironmentDeclarationV10>) -> &mut Self {
+        self.environment_mut().extend(declarations);
+        self
     }
 
     /// Finish building, consuming the builder and returning the module.

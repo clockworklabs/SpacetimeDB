@@ -1,5 +1,5 @@
-mod publish_environment;
-use publish_environment::{ModuleBody, PublishBody};
+use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
+use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentRemove, EnvironmentUpdate};
 
 use std::borrow::Cow;
 use std::future::Future;
@@ -33,7 +33,7 @@ use log::{debug, info, warn};
 use serde::Deserialize;
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited};
+use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited, UpdateEnvironmentResult};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
@@ -42,8 +42,9 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
-    PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
+    self, DatabaseName, DomainName, EnvironmentPublishError, EnvironmentVersionConflict, MigrationPolicy,
+    PrePublishAutoMigrateResult, PrePublishManualMigrateResult, PrePublishResult, PrettyPrintStyle, PublishOp,
+    PublishResult,
 };
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
@@ -579,52 +580,44 @@ impl From<Database> for DatabaseResponse {
     }
 }
 
-fn environment_validation_error(error: &anyhow::Error) -> Option<axum::response::ErrorResponse> {
-    use spacetimedb::db::environment::EnvironmentError;
+fn extract_environment_error(mut error: &anyhow::Error) -> Option<axum::response::Result<EnvironmentPublishError>> {
+    // TODO(noa): clean up these errors my g-d this is bad
     use spacetimedb::host::module_host::InitDatabaseError;
-    use spacetimedb_lib::environment::{validate_key, EnvironmentSchemaError, EnvironmentSchemaErrorKind};
-    if let Some(InitDatabaseError::Other(error)) = error.downcast_ref::<InitDatabaseError>() {
-        return environment_validation_error(error);
+    use spacetimedb_lib::environment::EnvironmentSchemaError;
+    while let Some(InitDatabaseError::Other(e)) = error.downcast_ref::<InitDatabaseError>() {
+        error = e;
     }
-    let error =
-        error
-            .downcast_ref::<EnvironmentSchemaError>()
-            .or_else(|| match error.downcast_ref::<EnvironmentError>() {
-                Some(EnvironmentError::Schema(error)) => Some(error),
-                _ => None,
-            })?;
-    // Only typed host validation can ask the caller for a secret. Never infer
-    // missing keys from module failures or arbitrary diagnostic text.
-    if error.kind == EnvironmentSchemaErrorKind::MissingRequired
-        && let Some(key) = error.key.as_deref().filter(|key| validate_key(key).is_ok())
-    {
-        return Some(
-            (
-                StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({
-                    "error": "missing_required_environment",
-                    "key": key,
-                })),
-            )
-                .into(),
-        );
-    }
-    Some((StatusCode::BAD_REQUEST, error.to_string()).into())
+    let res = if let Some(error) = error.chain().find_map(|x| x.downcast_ref::<EnvironmentSchemaError>()) {
+        // Only typed host validation can ask the caller for a secret. Never infer
+        // missing keys from module failures or arbitrary diagnostic text.
+        if let EnvironmentSchemaError::MissingRequired { key } = error {
+            // TODO(noa): in the future, return multiple missing keys at once
+            Ok(EnvironmentPublishError::MissingRequiredEnvironment { keys: vec![key.into()] })
+        } else {
+            Err((StatusCode::BAD_REQUEST, error.to_string()).into())
+        }
+    } else if let Some(error) = error.downcast_ref::<EnvironmentVersionConflict>() {
+        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
+    } else {
+        return None;
+    };
+    Some(res)
 }
 
 fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
-    if let Some(response) = environment_validation_error(&error) {
-        return response;
+    match extract_environment_error(&error) {
+        Some(Ok(err)) => (err.status_code(), axum::Json(err)).into(),
+        Some(Err(e)) => e,
+        None => log_and_500(error),
     }
-    if let Some(error) = error.downcast_ref::<spacetimedb::host::EnvironmentVersionConflict>() {
-        return (StatusCode::CONFLICT, error.to_string()).into();
-    }
-    log_and_500(error)
 }
 
 fn publish_migration_error(error: anyhow::Error) -> axum::response::ErrorResponse {
-    environment_validation_error(&error)
-        .unwrap_or_else(|| bad_request(format!("Failed to create or update the database: {error}").into()))
+    match extract_environment_error(&error) {
+        Some(Ok(err)) => (err.status_code(), axum::Json(err)).into(),
+        Some(Err(e)) => e,
+        None => bad_request(format!("Failed to create or update the database: {error}").into()),
+    }
 }
 
 pub async fn environment_metadata<S>(
@@ -640,6 +633,96 @@ where
     let leader = find_database_leader(&ctx, &database).await?;
     let metadata = leader.environment_metadata().await.map_err(log_and_500)?;
     Ok(([(http::header::CACHE_CONTROL, "no-store")], axum::Json(metadata)))
+}
+
+#[derive(Deserialize)]
+pub struct EnvironmentUpdateQueryParams {
+    expected_module_hash: Hash,
+}
+
+pub async fn environment_set<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
+    axum::Json(values): axum::Json<EnvironmentMap>,
+) -> EnvironmentPublishResult
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    let remove = EnvironmentRemove::All;
+    let update = EnvironmentUpdate { values, remove };
+    update
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let result = ctx
+        .update_environment(
+            &auth.claims.identity,
+            &database.database_identity,
+            update,
+            expected_module_hash,
+        )
+        .await;
+
+    environment_publish_result(result)
+}
+
+pub async fn environment_patch<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
+    TypedHeader(SpacetimeEnvironmentRemove(remove)): TypedHeader<SpacetimeEnvironmentRemove>,
+    axum::Json(values): axum::Json<EnvironmentMap>,
+) -> EnvironmentPublishResult
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    if remove == EnvironmentRemove::All {
+        // if you want to fully replace, just PUT /environment
+        return Err(bad_request(
+            format!(
+                "{} ({})",
+                headers::Error::invalid(),
+                <SpacetimeEnvironmentRemove as headers::Header>::name()
+            )
+            .into(),
+        ));
+    }
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    let update = EnvironmentUpdate { values, remove };
+    update
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let result = ctx
+        .update_environment(
+            &auth.claims.identity,
+            &database.database_identity,
+            update,
+            expected_module_hash,
+        )
+        .await;
+
+    environment_publish_result(result)
+}
+
+type EnvironmentPublishResult = axum::response::Result<(StatusCode, axum::Json<Result<(), EnvironmentPublishError>>)>;
+
+fn environment_publish_result(result: anyhow::Result<UpdateEnvironmentResult>) -> EnvironmentPublishResult {
+    let result = match result {
+        Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e)) => return Err(publish_migration_error(e)),
+        Ok(UpdateEnvironmentResult::NoUpdateNeeded | UpdateEnvironmentResult::UpdatePerformed { .. }) => Ok(()),
+        Err(e) => match extract_environment_error(&e) {
+            Some(Ok(e)) => Err(e),
+            Some(Err(e)) => return Err(e),
+            None => return Err(log_and_500(e)),
+        },
+    };
+    let status = result.as_ref().err().map_or(StatusCode::OK, |e| e.status_code());
+    Ok((status, axum::Json(result)))
 }
 
 pub async fn db_info<S: ControlStateDelegate>(
@@ -901,21 +984,9 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    PublishBody {
-        program_bytes,
-        environment,
-        environment_remove,
-        environment_replace,
-        expected_module_version,
-        environment_only,
-    }: PublishBody,
+    TypedHeader(SpacetimeEnvironment(environment)): TypedHeader<SpacetimeEnvironment>,
+    program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    if expected_module_version.is_some() {
-        return Err(bad_request(
-            "expected_module_version is not supported for database reset".into(),
-        ));
-    }
-    let _ = environment_only;
     let database_identity = database.database_identity;
 
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
@@ -934,13 +1005,11 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         &auth.claims.identity,
         DatabaseResetDef {
             database_identity,
-            program_bytes,
-            environment,
-            environment_remove,
-            environment_replace,
+            program_bytes: Some(program_bytes),
             num_replicas,
             host_type: Some(host_type),
         },
+        environment,
     )
     .await
     .map_err(publish_error)?;
@@ -1014,31 +1083,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         organization,
         update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
+    TypedHeader(SpacetimeEnvironment(environment)): TypedHeader<SpacetimeEnvironment>,
+    TypedHeader(SpacetimeEnvironmentRemove(environment_remove)): TypedHeader<SpacetimeEnvironmentRemove>,
     Extension(auth): Extension<SpacetimeAuth>,
-    PublishBody {
-        program_bytes,
-        environment,
-        environment_remove,
-        environment_replace,
-        expected_module_version,
-        environment_only,
-    }: PublishBody,
+    program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    if environment_only && (clear || parent.is_some() || organization.is_some() || num_replicas.is_some()) {
-        return Err(bad_request(
-            "environment-only publication cannot change database configuration or reset data".into(),
-        ));
-    }
-    if environment_only && expected_module_version.is_none() {
-        return Err(bad_request(
-            "environment-only publication requires expected_module_version".into(),
-        ));
-    }
-    if environment_only && name_or_identity.is_none() {
-        return Err(bad_request(
-            "environment-only publication requires an existing database".into(),
-        ));
-    }
     // If `clear`, check that the database exists and delegate to `reset`.
     // If it doesn't exist, ignore the `clear` parameter.
     // TODO: Replace with actual redirect at the next possible version bump.
@@ -1067,27 +1116,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    PublishBody {
-                        program_bytes,
-                        environment,
-                        environment_remove,
-                        environment_replace,
-                        expected_module_version,
-                        environment_only,
-                    },
+                    TypedHeader(SpacetimeEnvironment(environment)),
+                    program_bytes,
                 )
                 .await;
             }
         }
     }
 
-    let program_bytes = program_bytes.unwrap_or_default();
-    let (database_identity, db_name) = if environment_only {
-        let name = name_or_identity.as_ref().expect("validated existing database name");
-        (name.resolve(&ctx).await?, name.name())
-    } else {
-        get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?
-    };
+    if name_or_identity.is_none() && environment_remove != EnvironmentRemove::No {
+        return Err(bad_request(
+            "cannot specify spacetime-environment-remove without an existing database".into(),
+        ));
+    }
+
+    let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
     let maybe_parent_database_identity = match parent.as_ref() {
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
@@ -1107,13 +1150,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .get_database_by_identity(&database_identity)
         .await
         .map_err(log_and_500)?;
-    if environment_only && existing.is_none() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "environment-only publication requires an existing database",
-        )
-            .into());
-    }
     match existing.as_ref() {
         None => {
             allow_creation(&auth)?;
@@ -1157,16 +1193,16 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             DatabaseDef {
                 database_identity,
                 program_bytes,
-                environment,
-                environment_remove,
-                environment_replace,
-                expected_module_version,
                 num_replicas,
                 host_type,
                 parent,
                 organization: maybe_org_identity,
             },
             schema_migration_policy,
+            EnvironmentUpdate {
+                values: environment,
+                remove: environment_remove,
+            },
         )
         .await
         .map_err(publish_error)?;
@@ -1343,7 +1379,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Query(PrePublishQueryParams { style, host_type }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    ModuleBody(program_bytes): ModuleBody,
+    program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
     let database_identity = database.database_identity;
 
@@ -1362,10 +1398,6 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             DatabaseDef {
                 database_identity,
                 program_bytes,
-                environment: Default::default(),
-                environment_remove: Default::default(),
-                environment_replace: false,
-                expected_module_version: None,
                 num_replicas: None,
                 host_type,
                 parent: None,
@@ -1605,7 +1637,12 @@ pub struct DatabaseRoutes<S> {
     pub call_reducer_procedure_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/environment
     pub environment_get: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/environment
+    pub environment_put: MethodRouter<S>,
+    /// PATCH: /database/:name_or_identity/environment
+    pub environment_patch: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
@@ -1635,7 +1672,7 @@ where
     S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
-        use axum::routing::{any, delete, get, post, put};
+        use axum::routing::{any, delete, get, patch, post, put};
         Self {
             root_post: post(publish::<S>),
             db_put: put(publish::<S>),
@@ -1649,6 +1686,8 @@ where
             call_reducer_procedure_post: post(call::<S>),
             schema_get: get(schema::<S>),
             environment_get: get(environment_metadata::<S>),
+            environment_put: put(environment_set::<S>),
+            environment_patch: patch(environment_patch::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
             mcp_post: post(crate::routes::mcp::mcp::<S>),
@@ -1682,6 +1721,8 @@ where
             .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/environment", self.environment_get)
+            .route("/environment", self.environment_put)
+            .route("/environment", self.environment_patch)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
             .route("/mcp", self.mcp_post)
@@ -1823,11 +1864,13 @@ mod tests {
     use spacetimedb::auth::token_validation::{TokenSigner, TokenValidationError, TokenValidator};
     use spacetimedb::client::ClientActorIndex;
     use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+    use spacetimedb::host::module_host::UpdateEnvironmentResult;
     use spacetimedb::identity::AuthCtx;
     use spacetimedb::messages::control_db::{Database, Node, Replica};
     use spacetimedb_client_api_messages::name::{
         DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
     };
+    use spacetimedb_lib::environment::EnvironmentMap;
     use spacetimedb_lib::Hash;
     use spacetimedb_paths::server::ModuleLogsDir;
     use spacetimedb_paths::FromPathUnchecked;
@@ -1839,11 +1882,8 @@ mod tests {
 
     #[tokio::test]
     async fn publish_environment_error_identifies_only_typed_missing_required_keys() {
-        use spacetimedb_lib::environment::{EnvironmentSchemaError, EnvironmentSchemaErrorKind};
-        let missing = || EnvironmentSchemaError {
-            key: Some("API_KEY".into()),
-            kind: EnvironmentSchemaErrorKind::MissingRequired,
-        };
+        use spacetimedb_lib::environment::EnvironmentSchemaError;
+        let missing = || EnvironmentSchemaError::MissingRequired { key: "API_KEY".into() };
         for response in [
             publish_error(anyhow::Error::new(missing()).context("publication failed")),
             publish_migration_error(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
@@ -1867,22 +1907,13 @@ mod tests {
             assert_eq!(
                 serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
                 serde_json::json!({
-                    "error": "missing_required_environment", "key": "API_KEY",
+                    "MissingRequiredEnvironment": { "keys": ["API_KEY"] }
                 })
             );
         }
         for error in [
             anyhow::anyhow!("environment key API_KEY: required value is missing"),
-            EnvironmentSchemaError {
-                key: Some("API_KEY".into()),
-                kind: EnvironmentSchemaErrorKind::ConstraintMismatch,
-            }
-            .into(),
-            EnvironmentSchemaError {
-                key: Some("INVALID-KEY".into()),
-                kind: EnvironmentSchemaErrorKind::MissingRequired,
-            }
-            .into(),
+            EnvironmentSchemaError::ConstraintMismatch { key: "API_KEY".into() }.into(),
         ] {
             let response = Err::<(), _>(publish_migration_error(error)).into_response();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -2137,6 +2168,7 @@ mod tests {
             _publisher: &Identity,
             _spec: DatabaseDef,
             _policy: MigrationPolicy,
+            _environment: EnvironmentUpdate,
         ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
             Err(anyhow::anyhow!("unused"))
         }
@@ -2166,7 +2198,12 @@ mod tests {
             Err(anyhow::anyhow!("unused"))
         }
 
-        async fn reset_database(&self, _caller_identity: &Identity, _spec: DatabaseResetDef) -> anyhow::Result<()> {
+        async fn reset_database(
+            &self,
+            _caller_identity: &Identity,
+            _spec: DatabaseResetDef,
+            _environment: EnvironmentMap,
+        ) -> anyhow::Result<()> {
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2197,6 +2234,16 @@ mod tests {
             _owner_identity: &Identity,
             _domain_names: &[DomainName],
         ) -> anyhow::Result<SetDomainsResult> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn update_environment(
+            &self,
+            _publisher: &Identity,
+            _database_identity: &Identity,
+            _environment: EnvironmentUpdate,
+            _expected_module_hash: Hash,
+        ) -> anyhow::Result<UpdateEnvironmentResult> {
             Err(anyhow::anyhow!("unused"))
         }
     }

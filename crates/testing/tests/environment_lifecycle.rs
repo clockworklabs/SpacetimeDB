@@ -10,6 +10,7 @@ use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_client_api::{
     ControlStateReadAccess as _, ControlStateWriteAccess as _, DatabaseDef, DatabaseResetDef, NodeDelegate as _,
 };
+use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentUpdate};
 use spacetimedb_lib::{bsatn, sats::product, AlgebraicValue, Identity};
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::{server::ServerDataDir, FromPathUnchecked};
@@ -67,13 +68,9 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 ("REQUIRED".into(), "initial-required".into()),
                 ("MODE".into(), "ready".into()),
             ]);
-            let spec = |environment| DatabaseDef {
+            let spec = || DatabaseDef {
                 database_identity: Identity::ZERO,
                 program_bytes: bytes.clone(),
-                environment,
-                environment_remove: Vec::new(),
-                environment_replace: false,
-                expected_module_version: None,
                 num_replicas: None,
                 host_type: HostType::Wasm,
                 parent: None,
@@ -83,7 +80,12 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
             assert!(env
                 .as_ref()
                 .unwrap()
-                .publish_database(&Identity::ZERO, spec(initial.clone()), MigrationPolicy::Compatible)
+                .publish_database(
+                    &Identity::ZERO,
+                    spec(),
+                    MigrationPolicy::Compatible,
+                    initial.clone().into()
+                )
                 .await?
                 .is_none());
             let database = env
@@ -100,8 +102,7 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 .unwrap();
             log::info!("ENV standalone fixture: rejected publication preserves live host");
             for changed_program in [false, true] {
-                let mut invalid = spec(Values::new());
-                invalid.environment_replace = true;
+                let mut invalid = spec();
                 if changed_program {
                     // An empty custom section changes the Wasm hash without changing
                     // its declarations, exercising rejection of a candidate module.
@@ -111,9 +112,15 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 }
                 let rejected = tokio::time::timeout(
                     std::time::Duration::from_secs(30),
-                    env.as_ref()
-                        .unwrap()
-                        .publish_database(&Identity::ZERO, invalid, MigrationPolicy::Compatible),
+                    env.as_ref().unwrap().publish_database(
+                        &Identity::ZERO,
+                        invalid,
+                        MigrationPolicy::Compatible,
+                        EnvironmentUpdate {
+                            values: Values::new(),
+                            remove: EnvironmentRemove::All,
+                        },
+                    ),
                 )
                 .await
                 .expect("rejected publication must not hang");
@@ -128,21 +135,27 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
             assert!(matches!(
                 env.as_ref()
                     .unwrap()
-                    .publish_database(&Identity::ZERO, spec(Values::new()), MigrationPolicy::Compatible)
+                    .publish_database(
+                        &Identity::ZERO,
+                        spec(),
+                        MigrationPolicy::Compatible,
+                        Values::new().into()
+                    )
                     .await?,
                 Some(UpdateDatabaseResult::NoUpdateNeeded)
             ));
             let previous_module = env.as_ref().unwrap().leader(database.id).await?.module().await?;
             let version = previous_module.info.module_hash;
-            let mut env_only = spec(Values::from([("FUTURE".into(), "undeclared".into())]));
-            env_only.program_bytes = Default::default();
-            env_only.expected_module_version = Some(version);
             assert!(env
                 .as_ref()
                 .unwrap()
-                .publish_database(&Identity::ZERO, env_only, MigrationPolicy::Compatible)
+                .update_environment(
+                    &Identity::ZERO,
+                    &Identity::ZERO,
+                    Values::from([("FUTURE".into(), "undeclared".into())]).into(),
+                    version
+                )
                 .await?
-                .unwrap()
                 .was_successful());
             let current = env.as_ref().unwrap().leader(database.id).await?.module().await?;
             assert!(Arc::ptr_eq(&previous_module.info, &current.info));
@@ -159,13 +172,16 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 AlgebraicValue::from(Some("initial-required".to_owned()))
             );
             assert!(read(env.as_ref().unwrap(), database.id, "FUTURE").await.is_err());
-            let mut stale = spec(Values::new());
-            stale.program_bytes = Default::default();
-            stale.expected_module_version = Some(spacetimedb_lib::Hash::from_hex("00".repeat(32))?);
+            let expected_module_hash = spacetimedb_lib::Hash::from_hex("00".repeat(32))?;
             assert!(env
                 .as_ref()
                 .unwrap()
-                .publish_database(&Identity::ZERO, stale, MigrationPolicy::Compatible)
+                .update_environment(
+                    &Identity::ZERO,
+                    &Identity::ZERO,
+                    Values::new().into(),
+                    expected_module_hash
+                )
                 .await
                 .is_err());
             log::info!("ENV standalone fixture: same-program update");
@@ -174,7 +190,7 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
             assert!(env
                 .as_ref()
                 .unwrap()
-                .publish_database(&Identity::ZERO, spec(updated), MigrationPolicy::Compatible)
+                .publish_database(&Identity::ZERO, spec(), MigrationPolicy::Compatible, updated.into())
                 .await?
                 .unwrap()
                 .was_successful());
@@ -193,15 +209,16 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
             drop(env.take());
             env = Some(StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?);
             // The first request after restart is env-only, before leader lookup has started a host.
-            let mut cold = spec(Values::from([("EMPTY".into(), "after-restart".into())]));
-            cold.program_bytes = Default::default();
-            cold.expected_module_version = Some(version);
             assert!(env
                 .as_ref()
                 .unwrap()
-                .publish_database(&Identity::ZERO, cold, MigrationPolicy::Compatible)
+                .update_environment(
+                    &Identity::ZERO,
+                    &Identity::ZERO,
+                    Values::from([("EMPTY".into(), "after-restart".into())]).into(),
+                    version
+                )
                 .await?
-                .unwrap()
                 .was_successful());
             assert_eq!(
                 read(env.as_ref().unwrap(), database.id, "EMPTY").await?,
@@ -221,12 +238,10 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                     DatabaseResetDef {
                         database_identity: Identity::ZERO,
                         program_bytes: None,
-                        environment_remove: Default::default(),
-                        environment_replace: false,
-                        environment: Values::new(),
                         num_replicas: None,
                         host_type: None,
-                    }
+                    },
+                    Default::default()
                 )
                 .await
                 .is_err());
@@ -244,12 +259,10 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                     DatabaseResetDef {
                         database_identity: Identity::ZERO,
                         program_bytes: None,
-                        environment_remove: Default::default(),
-                        environment_replace: false,
-                        environment: reset,
                         num_replicas: None,
                         host_type: None,
                     },
+                    reset,
                 )
                 .await?;
             assert_ne!(

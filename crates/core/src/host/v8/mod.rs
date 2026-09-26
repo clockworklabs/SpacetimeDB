@@ -66,7 +66,7 @@ use self::syscall::{
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
     CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
-    ModuleWithInstance,
+    ModuleWithInstance, UpdateEnvironmentResult,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -489,6 +489,13 @@ impl JsMainInstance {
         .await
     }
 
+    pub async fn update_environment(
+        &self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        self.request(UpdateEnvironmentRequest { environment }).await
+    }
+
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
         self.request(CallReducerRequest { params }).await
     }
@@ -631,6 +638,12 @@ js_main_request! {
         policy: MigrationPolicy,
         environment: std::collections::BTreeMap<String, String>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
+}
+
+js_main_request! {
+    UpdateEnvironmentRequest {
+        environment: std::collections::BTreeMap<String, String>,
+    } => "update_environment", anyhow::Result<UpdateEnvironmentResult>, UpdateEnvironment
 }
 
 js_main_request! {
@@ -815,6 +828,11 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    },
+    /// See [`JsMainInstance::update_environment`].
+    UpdateEnvironment {
+        reply_tx: JsReplyTx<anyhow::Result<UpdateEnvironmentResult>>,
         environment: std::collections::BTreeMap<String, String>,
     },
     /// See [`JsMainInstance::call_reducer`].
@@ -1416,6 +1434,12 @@ fn handle_main_worker_request(
             let res = instance_common.update_database(program, old_module_info, policy, environment, inst);
             (res, false)
         }),
+        JsMainWorkerRequest::UpdateEnvironment { reply_tx, environment } => {
+            handle_worker_request("update_environment", reply_tx, || {
+                let res = instance_common.update_environment(environment, inst);
+                (res, false)
+            })
+        }
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
