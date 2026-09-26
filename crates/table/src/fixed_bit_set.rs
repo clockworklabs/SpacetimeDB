@@ -59,8 +59,9 @@ mod internal_unsafe {
 
     use super::{BitBlock, DefaultBitBlock};
     use crate::{static_assert_align, static_assert_size};
+    #[cfg(not(target_pointer_width = "32"))]
+    use core::mem;
     use core::{
-        mem,
         ptr::NonNull,
         slice::{from_raw_parts, from_raw_parts_mut},
     };

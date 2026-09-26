@@ -18,6 +18,7 @@ default = ["rand"]
 rand = ["rand08"]
 rand08 = ["dep:rand08", "dep:getrandom02"]
 unstable = ["spacetimedb-bindings-sys/unstable"]
+test-utils = ["spacetimedb-bindings-macro/test-utils", "dep:spacetimedb-auth", "dep:spacetimedb-test-datastore"]
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true
@@ -39,9 +40,17 @@ rand08 = { workspace = true, optional = true }
 getrandom02 = { workspace = true, optional = true, features = ["custom"] }
 serde_json.workspace = true
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+spacetimedb-auth = { workspace = true, optional = true }
+spacetimedb-test-datastore = { workspace = true, optional = true }
+
 [dev-dependencies]
 insta.workspace = true
 trybuild.workspace = true
+
+[[test]]
+name = "test_utils"
+required-features = ["test-utils"]
 
 [lints]
 workspace = true

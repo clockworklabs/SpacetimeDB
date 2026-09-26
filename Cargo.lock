@@ -1042,6 +1042,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-portable-datastore"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
 name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
@@ -7922,11 +7931,13 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "serde_json",
+ "spacetimedb-auth",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-query-builder",
+ "spacetimedb-test-datastore",
  "trybuild",
 ]
 
@@ -8328,6 +8339,7 @@ dependencies = [
  "prometheus",
  "proptest",
  "rand 0.9.2",
+ "rand_core 0.9.3",
  "rand_xoshiro",
  "smallvec",
  "spacetimedb-commitlog",
@@ -8336,6 +8348,7 @@ dependencies = [
  "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-metrics",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -8584,6 +8597,33 @@ dependencies = [
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
+]
+
+[[package]]
+name = "spacetimedb-portable-datastore"
+version = "2.11.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "spacetimedb-datastore",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-query",
+ "spacetimedb-schema",
+ "spacetimedb-table",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-portable-datastore-wasm"
+version = "2.11.0"
+dependencies = [
+ "js-sys",
+ "spacetimedb-lib",
+ "spacetimedb-portable-datastore",
+ "spacetimedb-primitives",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -8895,6 +8935,22 @@ dependencies = [
  "spacetimedb-memory-usage",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-test-datastore"
+version = "2.11.0"
+dependencies = [
+ "anyhow",
+ "scopeguard",
+ "spacetimedb-core",
+ "spacetimedb-datastore",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-schema",
  "thiserror 1.0.69",
 ]
