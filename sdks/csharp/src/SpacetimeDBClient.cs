@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -26,6 +27,9 @@ namespace SpacetimeDB
         Compression? compression;
         bool light;
         bool? confirmedReads;
+        bool automaticReconnect;
+        (TimeSpan Min, TimeSpan Max) reconnectDelays = (ReconnectPolicy.DefaultMinDelay, ReconnectPolicy.DefaultMaxDelay);
+        Func<Task<string>>? tokenProvider;
 
         public DbConnection Build()
         {
@@ -37,6 +41,7 @@ namespace SpacetimeDB
             {
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithDatabaseName() first.");
             }
+            conn.ConfigureReconnect(automaticReconnect, tokenProvider, reconnectDelays.Min, reconnectDelays.Max);
             conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light, confirmedReads);
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
@@ -62,6 +67,28 @@ namespace SpacetimeDB
         public DbConnectionBuilder<DbConnection> WithToken(string? token)
         {
             this.token = token;
+            return this;
+        }
+
+        /// <summary>
+        /// Reconnect after an established connection drops, preserving handles and callbacks.
+        /// Retries use exponential backoff from <c>MinDelay</c> (default 1 s) up to <c>MaxDelay</c>
+        /// (default 30 s). Values below the 500 ms and 1 s floors are raised with a warning, so
+        /// that retrying clients cannot overwhelm the database.
+        /// </summary>
+        public DbConnectionBuilder<DbConnection> WithAutomaticReconnect(AutomaticReconnectOptions? options = null)
+        {
+            automaticReconnect = true;
+            if (options != null)
+            {
+                reconnectDelays = ReconnectPolicy.Resolve(options);
+            }
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection> WithTokenProvider(Func<Task<string>> provider)
+        {
+            tokenProvider = provider ?? throw new ArgumentNullException(nameof(provider));
             return this;
         }
 
@@ -92,18 +119,26 @@ namespace SpacetimeDB
         }
 
         public delegate void ConnectErrorCallback(Exception e);
+        public delegate void ConnectErrorWithReconnectCallback(Exception e, NextReconnect? nextReconnect);
 
-        public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorCallback cb)
+        public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorCallback cb) =>
+            OnConnectError((e, _) => cb(e));
+
+        public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorWithReconnectCallback cb)
         {
-            conn.AddOnConnectError(e => cb(e));
+            conn.AddOnConnectError((e, next) => cb(e, next));
             return this;
         }
 
         public delegate void DisconnectCallback(DbConnection conn, Exception? e);
+        public delegate void DisconnectWithReconnectCallback(DbConnection conn, Exception? e, NextReconnect? nextReconnect);
 
-        public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectCallback cb)
+        public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectCallback cb) =>
+            OnDisconnect((conn, e, _) => cb(conn, e));
+
+        public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectWithReconnectCallback cb)
         {
-            conn.AddOnDisconnect(e => cb(conn, e));
+            conn.AddOnDisconnect((e, next) => cb(conn, e, next));
             return this;
         }
     }
@@ -113,8 +148,11 @@ namespace SpacetimeDB
         internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads);
 
         internal void AddOnConnect(Action<Identity, string> cb);
-        internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
-        internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
+        internal void AddOnConnectError(Action<Exception, NextReconnect?> cb);
+        internal void AddOnDisconnect(Action<Exception?, NextReconnect?> cb);
+        internal void ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay);
+        bool IsReconnecting { get; }
+        internal bool AutomaticReconnectEnabled { get; }
 
         internal QuerySetId? Subscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Unsubscribe(QuerySetId queryId);
@@ -164,13 +202,42 @@ namespace SpacetimeDB
         /// </summary>
         private UintAllocator querySetIdAllocator;
 
-        public readonly ConnectionId ConnectionId = ConnectionId.Random();
+        public ConnectionId ConnectionId { get; private set; } = ConnectionId.Random();
         public Identity? Identity { get; private set; }
         private ConnectionId? initialConnectionId;
         private bool onConnectInvoked;
 
-        internal WebSocket webSocket;
+        // Created by StartSocket when Connect is first called.
+        internal WebSocket? webSocket;
         private bool connectionClosed;
+
+        // State for automatic reconnect: retries, authentication, socket generations, and subscription replay.
+        private bool automaticReconnect;
+        private TimeSpan reconnectMinDelay = ReconnectPolicy.DefaultMinDelay;
+        private TimeSpan reconnectMaxDelay = ReconnectPolicy.DefaultMaxDelay;
+        private Func<Task<string>>? tokenProvider;
+        private string? retainedToken;
+        private readonly ConnectionId sessionId = ConnectionId.Random();
+        private (string Uri, string Database, Compression Compression, bool Light, bool? Confirmed) connectionOptions;
+        private bool hasEverConnected;
+        private bool preparingReplay;
+        private bool forceTokenRefresh;
+        private bool usedFreshToken;
+        private int reconnectAttempt;
+        private double? reconnectAt;
+        private Task<string>? tokenTask;
+        private volatile int socketGeneration;
+        private uint? replayRequestId;
+        private HashSet<uint>? replayQueryIds;
+        private readonly Random reconnectRandom = new();
+        private readonly Dictionary<uint, List<string>> subscriptionQueries = new();
+        private readonly HashSet<uint> unsubscribeRequested = new();
+        private event Action<Exception, NextReconnect?>? onConnectError;
+        private event Action<Exception?, NextReconnect?>? onDisconnect;
+
+        internal Func<double> ReconnectClock = () => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+        internal Func<WebSocket> SocketFactory = () => new WebSocket(new WebSocket.ConnectOptions { Protocol = "v2.bsatn.spacetimedb" });
+
         public abstract Tables Db { get; }
 
         protected abstract IEventContext ToEventContext(Event<Reducer> Event);
@@ -202,7 +269,20 @@ namespace SpacetimeDB
                 }
             }
 
-            pendingReducerCalls.Clear();
+            foreach (var entry in pendingReducerCalls.ToArray())
+            {
+                if (!pendingReducerCalls.TryRemove(entry.Key, out var pending) || !automaticReconnect)
+                {
+                    continue;
+                }
+                try
+                {
+                    var reducerEvent = new ReducerEvent<Reducer>(default, new Status.UnknownResult(default),
+                        Identity ?? default, ConnectionId, null, pending.Reducer);
+                    Dispatch(ToReducerEventContext(reducerEvent), pending.Reducer);
+                }
+                catch (Exception e) { Log.Exception(e); }
+            }
 
             try
             {
@@ -224,32 +304,19 @@ namespace SpacetimeDB
             }
         }
 
-        private bool isClosing;
+        private volatile bool isClosing;
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
         private readonly Thread networkMessageParseThread;
+#endif
         public readonly Stats stats = new();
 
         protected DbConnectionBase()
         {
-            var options = new WebSocket.ConnectOptions
-            {
-                Protocol = "v2.bsatn.spacetimedb"
-            };
-            webSocket = new WebSocket(options);
-            webSocket.OnMessage += OnMessageReceived;
-            webSocket.OnSendError += a => onSendError?.Invoke(a);
-#if UNITY_5_3_OR_NEWER
-            webSocket.OnClose += (e) =>
-            {
-                if (SpacetimeDBNetworkManager._instance != null)
-                {
-                    SpacetimeDBNetworkManager._instance.RemoveConnection(this);
-                }
-            };
-
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (SpacetimeDBNetworkManager._instance != null)
+            {
                 SpacetimeDBNetworkManager._instance.StartCoroutine(ParseMessages());
-#endif
+            }
 #endif
 
 #if !(UNITY_WEBGL && !UNITY_EDITOR)
@@ -266,6 +333,8 @@ namespace SpacetimeDB
             /// The bytes of the message.
             /// </summary>
             public byte[] bytes;
+            public int generation;
+            public Action? action;
 
             /// <summary>
             /// The timestamp the message came off the wire.
@@ -281,11 +350,13 @@ namespace SpacetimeDB
         internal struct ParsedMessage
         {
             public ServerMessage message;
+            public int generation;
+            public Action? action;
+            public Exception? error;
+            public Status? reducerStatus;
             public ParsedDatabaseUpdate dbOps;
             public DateTime receiveTimestamp;
             public uint applyQueueTrackerId;
-            public ReducerEvent<Reducer>? reducerEvent;
-            public ProcedureEvent? procedureEvent;
         }
 
         private readonly BlockingCollection<UnparsedMessage> _parseQueue =
@@ -336,9 +407,9 @@ namespace SpacetimeDB
                 }
             }
 
-            ParsedDatabaseUpdate ParseSubscribeRows(QueryRows queryRows)
+            ParsedDatabaseUpdate ParseSubscribeRows(QueryRows queryRows, ParsedDatabaseUpdate? target = null)
             {
-                var dbOps = ParsedDatabaseUpdate.New();
+                var dbOps = target ?? ParsedDatabaseUpdate.New();
                 var empty = EmptyRowList();
                 foreach (var tableRows in queryRows.Tables)
                 {
@@ -426,28 +497,32 @@ namespace SpacetimeDB
                 }
             }
 
-            void ParseOneOffQuery(OneOffQueryResult resp)
-            {
-                if (!waitingOneOffQueries.TryRemove(resp.RequestId, out var resultSource))
-                {
-                    Log.Error($"Response to unknown one-off-query request_id: {resp.RequestId}");
-                    return;
-                }
-
-                resultSource.TrySetResult(resp);
-            }
-
             while (!isClosing)
             {
 
 #if UNITY_WEBGL && !UNITY_EDITOR
                 yield return null;
                 while (_parseQueue.Count > 0)
+                {
 #endif
                 try
                 {
                     var message = _parseQueue.Take(_parseCancellationToken);
-                    var parsedMessage = ParseMessage(message);
+                    if (message.generation != socketGeneration)
+                    {
+                        continue;
+                    }
+                    ParsedMessage parsedMessage;
+                    try
+                    {
+                        parsedMessage = message.action != null
+                            ? new ParsedMessage { action = message.action, generation = message.generation }
+                            : ParseMessage(message);
+                    }
+                    catch (Exception e)
+                    {
+                        parsedMessage = new ParsedMessage { error = e, generation = message.generation };
+                    }
                     _applyQueue.Add(parsedMessage, _parseCancellationToken);
                 }
                 catch (OperationCanceledException)
@@ -461,14 +536,16 @@ namespace SpacetimeDB
                 catch (Exception e)
                 {
                     Log.Exception(e);
-                    FailPendingOperations(new OperationCanceledException("Message parsing failed; connection closed.", e));
-                    Disconnect();
+                    _applyQueue.Add(new ParsedMessage { error = e, generation = socketGeneration });
 #if UNITY_WEBGL && !UNITY_EDITOR
                     break;
 #else
                     return;
 #endif
                 }
+#if UNITY_WEBGL && !UNITY_EDITOR
+                }
+#endif
             }
 
             ParsedMessage ParseMessage(UnparsedMessage unparsed)
@@ -480,8 +557,7 @@ namespace SpacetimeDB
                 stats.ParseMessageQueueTracker.FinishTrackingRequest(unparsed.parseQueueTrackerId, trackerMetadata);
                 var parseStart = DateTime.UtcNow;
 
-                ReducerEvent<Reducer>? reducerEvent = default;
-                ProcedureEvent? procedureEvent = default;
+                Status? reducerStatus = null;
 
                 switch (message)
                 {
@@ -490,6 +566,16 @@ namespace SpacetimeDB
                     case ServerMessage.SubscribeApplied(var subscribeApplied):
                         stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId, unparsed.timestamp);
                         dbOps = ParseSubscribeRows(subscribeApplied.Rows);
+                        break;
+                    case ServerMessage.SubscribeBatchApplied(var batch):
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(batch.RequestId, unparsed.timestamp);
+                        foreach (var result in batch.Results)
+                        {
+                            if (result.Outcome is SubscribeSetOutcome.Applied(var rows))
+                            {
+                                ParseSubscribeRows(rows, dbOps);
+                            }
+                        }
                         break;
                     case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
                         stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId, unparsed.timestamp);
@@ -508,7 +594,13 @@ namespace SpacetimeDB
                         dbOps = ParseTransactionUpdate(transactionUpdate);
                         break;
                     case ServerMessage.OneOffQueryResult(var resp):
-                        ParseOneOffQuery(resp);
+                        // Queries do not mutate the client cache and must complete without FrameTick.
+                        // Recheck after decoding in case the socket was replaced while parsing.
+                        if (!isClosing && unparsed.generation == socketGeneration &&
+                            waitingOneOffQueries.TryRemove(resp.RequestId, out var completion))
+                        {
+                            completion.TrySetResult(resp);
+                        }
                         break;
                     case ServerMessage.ReducerResult(var reducerResult):
                         if (!stats.ReducerRequestTracker.FinishTrackingRequest(reducerResult.RequestId, unparsed.timestamp))
@@ -516,7 +608,7 @@ namespace SpacetimeDB
                             Log.Warn($"Failed to finish tracking reducer request: {reducerResult.RequestId}");
                         }
 
-                        var reducerStatus = reducerResult.Result switch
+                        reducerStatus = reducerResult.Result switch
                         {
                             ReducerOutcome.Ok => Committed,
                             ReducerOutcome.OkEmpty => Committed,
@@ -530,40 +622,8 @@ namespace SpacetimeDB
                             dbOps = ParseTransactionUpdate(ok.TransactionUpdate);
                         }
 
-                        if (pendingReducerCalls.TryRemove(reducerResult.RequestId, out var pendingReducer))
-                        {
-                            try
-                            {
-                                reducerEvent = new(
-                                    (DateTimeOffset)reducerResult.Timestamp,
-                                    reducerStatus,
-                                    Identity ?? throw new InvalidOperationException("Identity not set"),
-                                    ConnectionId,
-                                    null,
-                                    pendingReducer.Reducer);
-                            }
-                            catch (Exception)
-                            {
-                                // The local reducer request still completed; failure here should not block update apply.
-                            }
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException(
-                                $"Reducer result for unknown request_id {reducerResult.RequestId}"
-                            );
-                        }
                         break;
                     case ServerMessage.ProcedureResult(var procedureResult):
-                        procedureEvent = new ProcedureEvent(
-                            procedureResult.Timestamp,
-                            procedureResult.Status,
-                            Identity ?? throw new InvalidOperationException("Identity not set"),
-                            ConnectionId,
-                            procedureResult.TotalHostExecutionDuration,
-                            procedureResult.RequestId
-                        );
-
                         if (!stats.ProcedureRequestTracker.FinishTrackingRequest(procedureResult.RequestId, unparsed.timestamp))
                         {
                             Log.Warn($"Failed to finish tracking procedure request: {procedureResult.RequestId}");
@@ -577,31 +637,18 @@ namespace SpacetimeDB
                 stats.ParseMessageTracker.InsertRequest(parseStart, trackerMetadata);
                 var applyTracker = stats.ApplyMessageQueueTracker.StartTrackingRequest(trackerMetadata);
 
-                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent, procedureEvent = procedureEvent };
+                return new ParsedMessage { generation = unparsed.generation, reducerStatus = reducerStatus, message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker };
             }
         }
 
         public void Disconnect()
         {
-            isClosing = true;
-            connectionClosed = true;
-            FailPendingOperations(new OperationCanceledException("Connection closed."));
-
-            // Only try to close if the connection is active
-            if (webSocket.IsConnected)
+            if (isClosing)
             {
-                webSocket.Close();
+                return;
             }
-#if UNITY_WEBGL && !UNITY_EDITOR
-            else if (webSocket.IsConnecting)
-#else
-            else if (webSocket.IsConnecting || webSocket.IsNoneState)
-#endif
-            {
-                webSocket.Abort(); // forceful during connecting
-            }
-
-            _parseCancellationTokenSource.Cancel();
+            EndConnection();
+            onDisconnect?.Invoke(null, null);
         }
 
         /// <summary>
@@ -626,14 +673,7 @@ namespace SpacetimeDB
         /// </param>
         void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads)
         {
-            isClosing = false;
-            connectionClosed = false;
-            Identity = null;
-            initialConnectionId = null;
-            onConnectInvoked = false;
-            while (_parseQueue.TryTake(out _)) { }
-            while (_applyQueue.TryTake(out _)) { }
-
+            retainedToken = token;
             uri = uri.Replace("http://", "ws://");
             uri = uri.Replace("https://", "wss://");
             if (!uri.StartsWith("ws://") && !uri.StartsWith("wss://"))
@@ -644,38 +684,388 @@ namespace SpacetimeDB
             // like `/foo` and then end up with `//` in the URI.
             uri = uri.TrimEnd('/');
 
-            Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
-            if (!IsTesting)
-            {
-#if UNITY_WEBGL && !UNITY_EDITOR
-                async Task Function()
-#else
-                Task.Run(async () =>
-#endif
-                {
-                    try
-                    {
-                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light, confirmedReads);
-                    }
-                    catch (Exception e)
-                    {
-                        if (connectionClosed)
-                        {
-                            Log.Info("Connection closed gracefully.");
-                            return;
-                        }
+            connectionOptions = (uri, addressOrName, compression, light, confirmedReads);
+            preparingReplay = automaticReconnect;
+            StartSocket();
+        }
 
-                        Log.Exception(e);
-                    }
-#if UNITY_WEBGL && !UNITY_EDITOR
-                }
-                _ = Function();
-#else
-                });
-#endif
+        bool IDbConnection.AutomaticReconnectEnabled => automaticReconnect;
+
+        public bool IsReconnecting => automaticReconnect && hasEverConnected && !onConnectInvoked && !isClosing;
+
+        void IDbConnection.ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay)
+        {
+            automaticReconnect = enabled;
+            tokenProvider = provider;
+            reconnectMinDelay = minDelay;
+            reconnectMaxDelay = maxDelay;
+        }
+
+        private WebSocket CreateWebSocket()
+        {
+            var socket = SocketFactory();
+            var generation = socketGeneration;
+            socket.OnMessage += (bytes, timestamp) => EnqueueMessage(bytes, timestamp, generation);
+            socket.OnClose += error => EnqueueSocketAction(() => HandleSocketFailure(error), generation);
+            socket.OnConnectError += error => EnqueueSocketAction(() => HandleSocketFailure(error), generation);
+            socket.OnSendError += error => EnqueueSocketAction(() =>
+            {
+                onSendError?.Invoke(error);
+                HandleSocketFailure(error);
+            }, generation);
+            return socket;
+        }
+
+        private void EnqueueMessage(byte[] bytes, DateTime timestamp, int generation)
+        {
+            if (isClosing || generation != socketGeneration)
+            {
+                return;
+            }
+            _parseQueue.Add(new UnparsedMessage
+            {
+                bytes = bytes,
+                timestamp = timestamp,
+                generation = generation,
+                parseQueueTrackerId = stats.ParseMessageQueueTracker.StartTrackingRequest()
+            });
+        }
+
+        private void EnqueueSocketAction(Action action, int generation)
+        {
+            if (!isClosing && generation == socketGeneration)
+            {
+                _parseQueue.Add(new UnparsedMessage { action = action, generation = generation });
             }
         }
 
+        private void StartSocket()
+        {
+            if (isClosing)
+            {
+                return;
+            }
+            connectionClosed = false;
+            onConnectInvoked = false;
+            initialConnectionId = null;
+            if (hasEverConnected)
+            {
+                ConnectionId = ConnectionId.Random();
+            }
+            socketGeneration++;
+            webSocket?.Abort();
+            webSocket = CreateWebSocket();
+            Log.Info($"SpacetimeDBClient: Connecting to {connectionOptions.Uri} {connectionOptions.Database}");
+            if (IsTesting)
+            {
+                return;
+            }
+            var socket = webSocket;
+            var connectionId = ConnectionId;
+            var generation = socketGeneration;
+            async Task ConnectSocket()
+            {
+                try
+                {
+                    await socket.Connect(retainedToken, connectionOptions.Uri, connectionOptions.Database,
+                        connectionId, connectionOptions.Compression, connectionOptions.Light, connectionOptions.Confirmed,
+                        automaticReconnect ? sessionId : null);
+                }
+                catch (Exception error)
+                {
+                    EnqueueSocketAction(() => HandleSocketFailure(error), generation);
+                }
+            }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            _ = ConnectSocket();
+#else
+            _ = Task.Run(ConnectSocket);
+#endif
+        }
+
+        private void HandleInitialConnection(InitialConnection initial)
+        {
+            if (automaticReconnect && (onConnectInvoked || initial.ConnectionId != ConnectionId ||
+                (Identity is Identity identity && identity != initial.Identity)))
+            {
+                HandleSocketFailure(new ConnectionProtocolException("Unexpected identity or connection ID in InitialConnection."));
+                return;
+            }
+            if (!automaticReconnect && ((Identity.HasValue && Identity.Value != initial.Identity) ||
+                (initialConnectionId.HasValue && initialConnectionId.Value != initial.ConnectionId)))
+            {
+                Log.Error("Received InitialConnection with an unexpected identity or connection ID.");
+                return;
+            }
+            if (onConnectInvoked)
+            {
+                return;
+            }
+            var reconnect = hasEverConnected;
+            Identity = initial.Identity;
+            initialConnectionId = initial.ConnectionId;
+            ConnectionId = initial.ConnectionId;
+            if (string.IsNullOrEmpty(retainedToken))
+            {
+                retainedToken = initial.Token;
+            }
+            hasEverConnected = true;
+            onConnectInvoked = true;
+            reconnectAttempt = 0;
+            reconnectAt = null;
+            try
+            {
+                onConnect?.Invoke(initial.Identity, automaticReconnect ? retainedToken! : initial.Token);
+            }
+            catch (Exception error)
+            {
+                Log.Exception(error);
+            }
+            finally
+            {
+                if (!automaticReconnect)
+                {
+                    onConnect = null;
+                }
+                if (!isClosing && automaticReconnect)
+                {
+                    if (reconnect)
+                    {
+                        ReplaySubscriptions();
+                    }
+                    else
+                    {
+                        preparingReplay = false;
+                        foreach (var id in subscriptions.Keys.ToArray())
+                        {
+                            SendSubscription(id, subscriptionQueries[id]);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void HandleSocketFailure(Exception? error)
+        {
+            if (isClosing || connectionClosed)
+            {
+                return;
+            }
+            var established = onConnectInvoked;
+            connectionClosed = true;
+            onConnectInvoked = false;
+            socketGeneration++;
+            webSocket?.Abort();
+            preparingReplay = automaticReconnect;
+            replayRequestId = null;
+            replayQueryIds = null;
+            tokenTask = null;
+            var authError = error is WebSocket.ConnectException { StatusCode: 400 or 401 or 403 };
+            var terminal = error is ConnectionProtocolException ||
+                (authError && (tokenProvider == null || usedFreshToken));
+            NextReconnect? next = null;
+            if (automaticReconnect && hasEverConnected && !terminal)
+            {
+                if (authError)
+                {
+                    forceTokenRefresh = true;
+                }
+                var sessionBusy = !established && error is WebSocket.CloseException { Code: 4000 };
+                if (!sessionBusy)
+                {
+                    reconnectAttempt = reconnectAttempt == int.MaxValue ? int.MaxValue : reconnectAttempt + 1;
+                }
+                var delay = ReconnectPolicy.Delay(sessionBusy ? 1 : reconnectAttempt, reconnectRandom.NextDouble(), reconnectMinDelay, reconnectMaxDelay);
+                reconnectAt = ReconnectClock() + delay.TotalSeconds;
+                next = new NextReconnect(reconnectAttempt, delay);
+            }
+            else
+            {
+                EndConnection();
+            }
+            FailPendingOperations(automaticReconnect ? new UnknownResultException() : new OperationCanceledException("Connection closed."));
+            foreach (var id in unsubscribeRequested.ToArray())
+            {
+                EndSubscription(id);
+            }
+            if (isClosing && next != null)
+            {
+                return;
+            }
+            if (established)
+            {
+                onDisconnect?.Invoke(error, next);
+            }
+            else
+            {
+                onConnectError?.Invoke(error ?? new SpacetimeDBException("Connection closed before InitialConnection."), next);
+            }
+        }
+
+        private void TickReconnect()
+        {
+            if (isClosing)
+            {
+                return;
+            }
+            if (tokenTask != null)
+            {
+                if (!tokenTask.IsCompleted)
+                {
+                    return;
+                }
+                var completed = tokenTask;
+                tokenTask = null;
+                try
+                {
+                    retainedToken = completed.GetAwaiter().GetResult();
+                    if (string.IsNullOrEmpty(retainedToken))
+                    {
+                        throw new InvalidOperationException("Token provider returned an empty token.");
+                    }
+                    forceTokenRefresh = false;
+                    usedFreshToken = true;
+                    StartSocket();
+                }
+                catch (Exception error)
+                {
+                    connectionClosed = false;
+                    HandleSocketFailure(error);
+                }
+                return;
+            }
+            if (reconnectAt is not double due || ReconnectClock() < due)
+            {
+                return;
+            }
+            reconnectAt = null;
+            usedFreshToken = false;
+            if (tokenProvider != null && (forceTokenRefresh || ReconnectPolicy.TokenNeedsRefresh(retainedToken, DateTimeOffset.UtcNow)))
+            {
+                try
+                {
+                    tokenTask = tokenProvider() ?? Task.FromException<string>(new InvalidOperationException("Token provider returned no task."));
+                }
+                catch (Exception error)
+                {
+                    connectionClosed = false;
+                    HandleSocketFailure(error);
+                }
+            }
+            else
+            {
+                StartSocket();
+            }
+        }
+
+        private void EndConnection()
+        {
+            isClosing = true;
+            connectionClosed = true;
+            onConnectInvoked = false;
+            reconnectAt = null;
+            tokenTask = null;
+            socketGeneration++;
+            webSocket?.Abort();
+            _parseCancellationTokenSource.Cancel();
+            while (_parseQueue.TryTake(out _)) { }
+            while (_applyQueue.TryTake(out _)) { }
+            FailPendingOperations(automaticReconnect ? new UnknownResultException() : new OperationCanceledException("Connection closed."));
+#if UNITY_5_3_OR_NEWER
+            SpacetimeDBNetworkManager._instance?.RemoveConnection(this);
+#endif
+        }
+
+        private void SendSubscription(uint id, List<string> queries)
+        {
+            webSocket!.Send(new ClientMessage.Subscribe(new Subscribe(
+                stats.SubscriptionRequestTracker.StartTrackingRequest(), new QuerySetId(id), queries)));
+        }
+
+        private void RemoveSubscription(uint id)
+        {
+            subscriptions.Remove(id);
+            subscriptionQueries.Remove(id);
+            unsubscribeRequested.Remove(id);
+        }
+
+        private void EndSubscription(uint id)
+        {
+            if (!subscriptions.TryGetValue(id, out var handle))
+            {
+                return;
+            }
+            RemoveSubscription(id);
+            try { handle.OnEnded(MakeSubscriptionEventContext()); }
+            catch (Exception error) { Log.Exception(error); }
+        }
+
+        private void ReplaySubscriptions()
+        {
+            var entries = subscriptions.Select(entry => (entry.Value, subscriptionQueries[entry.Key])).ToArray();
+            subscriptions.Clear();
+            subscriptionQueries.Clear();
+            var sets = new List<SubscribeSet>();
+            foreach (var (handle, queries) in entries)
+            {
+                var id = querySetIdAllocator.Next();
+                handle.RebindQuerySetId(new QuerySetId(id));
+                subscriptions[id] = handle;
+                subscriptionQueries[id] = queries;
+                sets.Add(new SubscribeSet(new QuerySetId(id), queries));
+            }
+            preparingReplay = false;
+            replayRequestId = stats.SubscriptionRequestTracker.StartTrackingRequest();
+            replayQueryIds = new HashSet<uint>(subscriptions.Keys);
+            if (sets.Count == 0)
+            {
+                stats.SubscriptionRequestTracker.FinishTrackingRequest(replayRequestId.Value);
+                ApplyReplayBatch(new SubscribeBatchApplied(replayRequestId.Value, new()), ParsedDatabaseUpdate.New());
+                return;
+            }
+            webSocket!.Send(new ClientMessage.SubscribeBatch(new SubscribeBatch(replayRequestId.Value, sets)));
+        }
+
+        private void ApplyReplayBatch(SubscribeBatchApplied batch, ParsedDatabaseUpdate update)
+        {
+            var ids = new HashSet<uint>(batch.Results.Select(result => result.QuerySetId.Id));
+            if (batch.RequestId != replayRequestId || replayQueryIds == null ||
+                ids.Count != batch.Results.Count || !ids.SetEquals(replayQueryIds))
+            {
+                HandleSocketFailure(new ConnectionProtocolException("Unexpected subscription replay response."));
+                return;
+            }
+            replayRequestId = null;
+            replayQueryIds = null;
+            foreach (var table in Db.AllTables)
+            {
+                table.AddSnapshotDeletes(update);
+            }
+            ApplyUpdate(ToEventContext(new Event<Reducer>.SubscribeApplied()), update);
+            foreach (var result in batch.Results)
+            {
+                if (!subscriptions.TryGetValue(result.QuerySetId.Id, out var handle))
+                {
+                    continue;
+                }
+                try
+                {
+                    if (result.Outcome is SubscribeSetOutcome.Error(var message))
+                    {
+                        RemoveSubscription(result.QuerySetId.Id);
+                        handle.OnError(ToErrorContext(new SpacetimeDBException(message)));
+                    }
+                    else
+                    {
+                        handle.OnApplied(MakeSubscriptionEventContext());
+                    }
+                }
+                catch (Exception error)
+                {
+                    Log.Exception(error);
+                }
+            }
+        }
 
         private void ApplyUpdate(IEventContext eventContext, ParsedDatabaseUpdate dbOps)
         {
@@ -700,6 +1090,25 @@ namespace SpacetimeDB
 
         private void ApplyMessage(ParsedMessage parsed)
         {
+            if (parsed.generation != socketGeneration || isClosing)
+            {
+                return;
+            }
+            if (parsed.action != null)
+            {
+                parsed.action();
+                return;
+            }
+            if (parsed.error != null)
+            {
+                HandleSocketFailure(new ConnectionProtocolException("Could not parse server message.", parsed.error));
+                return;
+            }
+            if (automaticReconnect && !onConnectInvoked && parsed.message is not ServerMessage.InitialConnection)
+            {
+                HandleSocketFailure(new ConnectionProtocolException("Expected InitialConnection."));
+                return;
+            }
             var message = parsed.message;
             var dbOps = parsed.dbOps;
             var timestamp = parsed.receiveTimestamp;
@@ -709,6 +1118,9 @@ namespace SpacetimeDB
 
             switch (message)
             {
+                case ServerMessage.SubscribeBatchApplied(var batch):
+                    ApplyReplayBatch(batch, dbOps);
+                    break;
                 case ServerMessage.SubscribeApplied(var subscribeApplied):
                     {
                         var eventContext = MakeSubscriptionEventContext();
@@ -753,7 +1165,7 @@ namespace SpacetimeDB
                                 Log.Exception(e);
                             }
 
-                            subscriptions.Remove(subscriptionError.QuerySetId.Id);
+                            RemoveSubscription(subscriptionError.QuerySetId.Id);
                         }
                         else
                         {
@@ -780,7 +1192,7 @@ namespace SpacetimeDB
                             }
                         }
 
-                        subscriptions.Remove(unsubscribeApplied.QuerySetId.Id);
+                        RemoveSubscription(unsubscribeApplied.QuerySetId.Id);
                     }
                     break;
 
@@ -792,8 +1204,11 @@ namespace SpacetimeDB
                     }
                 case ServerMessage.ReducerResult(var reducerResult):
                     {
-                        if (parsed.reducerEvent is { } reducerEvent)
+                        if (pendingReducerCalls.TryRemove(reducerResult.RequestId, out var pending))
                         {
+                            var reducerEvent = new ReducerEvent<Reducer>(
+                                (DateTimeOffset)reducerResult.Timestamp, parsed.reducerStatus!,
+                                Identity ?? default, ConnectionId, null, pending.Reducer);
                             var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
                             ApplyUpdate(legacyEventContext, dbOps);
                             var eventContext = ToReducerEventContext(reducerEvent);
@@ -801,49 +1216,21 @@ namespace SpacetimeDB
                         }
                         else
                         {
-                            var legacyEventContext = ToEventContext(new Event<Reducer>.UnknownTransaction());
-                            ApplyUpdate(legacyEventContext, dbOps);
+                            HandleSocketFailure(new ConnectionProtocolException($"Reducer result for unknown request_id {reducerResult.RequestId}."));
                         }
                         break;
                     }
                 case ServerMessage.InitialConnection(var initialConnection):
-                    try
-                    {
-                        if (Identity is Identity identity && identity != initialConnection.Identity)
-                        {
-                            throw new InvalidOperationException(
-                                $"Received InitialConnection with unexpected identity. Previous={identity}, New={initialConnection.Identity}"
-                            );
-                        }
-
-                        if (initialConnectionId is ConnectionId connectionId
-                            && connectionId != initialConnection.ConnectionId)
-                        {
-                            throw new InvalidOperationException(
-                                $"Received InitialConnection with unexpected connection_id. Previous={connectionId}, New={initialConnection.ConnectionId}"
-                            );
-                        }
-
-                        Identity = initialConnection.Identity;
-                        initialConnectionId = initialConnection.ConnectionId;
-                        if (!onConnectInvoked)
-                        {
-                            onConnectInvoked = true;
-                            onConnect?.Invoke(initialConnection.Identity, initialConnection.Token);
-                            onConnect = null;
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        Log.Exception(e);
-                    }
+                    HandleInitialConnection(initialConnection);
                     break;
 
                 case ServerMessage.OneOffQueryResult:
                     /* OneOffQuery is async and handles its own responses */
                     break;
                 case ServerMessage.ProcedureResult(var procedureResult):
-                    var procedureEventContext = ToProcedureEventContext(parsed.procedureEvent!);
+                    var procedureEventContext = ToProcedureEventContext(new ProcedureEvent(
+                        procedureResult.Timestamp, procedureResult.Status, Identity ?? default,
+                        ConnectionId, procedureResult.TotalHostExecutionDuration, procedureResult.RequestId));
                     if (!procedureCallbacks.TryResolveCallback(procedureEventContext, procedureResult.RequestId, procedureResult))
                     {
                         Log.Warn($"Received ProcedureResult for unknown request ID: {procedureResult.RequestId}");
@@ -859,12 +1246,16 @@ namespace SpacetimeDB
         // Note: this method is called from unit tests.
         internal void OnMessageReceived(byte[] bytes, DateTime timestamp)
         {
-            _parseQueue.Add(new UnparsedMessage { bytes = bytes, timestamp = timestamp, parseQueueTrackerId = stats.ParseMessageQueueTracker.StartTrackingRequest() });
+            EnqueueMessage(bytes, timestamp, socketGeneration);
         }
 
         void IDbConnection.InternalCallReducer<T>(T args)
         {
-            if (!webSocket.IsConnected)
+            if (automaticReconnect && !IsActive)
+            {
+                throw new InvalidOperationException("Not connected to server.");
+            }
+            if (webSocket?.IsConnected != true)
             {
                 Log.Error("Cannot call reducer, not connected to server!");
                 return;
@@ -897,7 +1288,11 @@ namespace SpacetimeDB
             TArgs args,
             ProcedureCallback<TReturn> callback)
         {
-            if (!webSocket.IsConnected)
+            if (automaticReconnect && !IsActive)
+            {
+                throw new InvalidOperationException("Not connected to server.");
+            }
+            if (webSocket?.IsConnected != true)
             {
                 Log.Error("Cannot call procedure, not connected to server!");
                 return;
@@ -916,25 +1311,27 @@ namespace SpacetimeDB
 
         QuerySetId? IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
-            if (!webSocket.IsConnected)
+            if (!automaticReconnect && webSocket?.IsConnected != true)
             {
                 Log.Error("Cannot subscribe, not connected to server!");
                 return null;
             }
-
-            var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
-            // We use a distinct ID from the request ID as a sanity check that we're not
-            // casting request IDs to query IDs anywhere in the new code path.
+            if (isClosing)
+            {
+                throw new InvalidOperationException("Connection closed.");
+            }
             var querySetId = querySetIdAllocator.Next();
             subscriptions[querySetId] = handle;
-            webSocket.Send(new ClientMessage.Subscribe(
-                new Subscribe
-                {
-                    RequestId = id,
-                    QuerySetId = new QuerySetId(querySetId),
-                    QueryStrings = querySqls.ToList(),
-                }
-            ));
+            // Copy once: callers may mutate their array before the asynchronous send or replay.
+            var queries = querySqls.ToList();
+            if (automaticReconnect)
+            {
+                subscriptionQueries[querySetId] = queries;
+            }
+            if (!automaticReconnect || (IsActive && !preparingReplay))
+            {
+                SendSubscription(querySetId, queries);
+            }
             return new QuerySetId(querySetId);
         }
 
@@ -945,7 +1342,7 @@ namespace SpacetimeDB
 
         async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
         {
-            if (!webSocket.IsConnected)
+            if (!IsActive)
             {
                 var error = "Cannot run one-off query, not connected to server!";
                 Log.Error(error);
@@ -953,12 +1350,12 @@ namespace SpacetimeDB
             }
 
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
-            var resultSource = new TaskCompletionSource<OneOffQueryResult>();
+            var resultSource = new TaskCompletionSource<OneOffQueryResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             waitingOneOffQueries[requestId] = resultSource;
 
             try
             {
-                webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
+                webSocket!.Send(new ClientMessage.OneOffQuery(new OneOffQuery
                 {
                     RequestId = requestId,
                     QueryString = query,
@@ -971,7 +1368,8 @@ namespace SpacetimeDB
                 throw;
             }
 
-            var result = await resultSource.Task;
+            // Keep row decoding off the caller's synchronization context (e.g. Unity's main thread).
+            var result = await resultSource.Task.ConfigureAwait(false);
 
             if (!stats.OneOffRequestTracker.FinishTrackingRequest(requestId))
             {
@@ -1018,15 +1416,16 @@ namespace SpacetimeDB
             return output;
         }
 
-        public bool IsActive => webSocket.IsConnected;
+        public bool IsActive => !connectionClosed && webSocket?.IsConnected == true && (!automaticReconnect || onConnectInvoked);
 
         public void FrameTick()
         {
-            webSocket.Update();
+            webSocket?.Update();
             while (_applyQueue.TryTake(out var parsedMessage))
             {
                 ApplyMessage(parsedMessage);
             }
+            TickReconnect();
         }
 
         void IDbConnection.Unsubscribe(QuerySetId queryId)
@@ -1036,9 +1435,15 @@ namespace SpacetimeDB
                 Log.Warn($"Unsubscribing from a subscription that the DbConnection does not know about, with QuerySetId {queryId.Id}");
             }
 
+            unsubscribeRequested.Add(queryId.Id);
+            if (automaticReconnect && (!IsActive || preparingReplay))
+            {
+                EndSubscription(queryId.Id);
+                return;
+            }
             var requestId = stats.SubscriptionRequestTracker.StartTrackingRequest();
 
-            webSocket.Send(new ClientMessage.Unsubscribe(new()
+            webSocket?.Send(new ClientMessage.Unsubscribe(new()
             {
                 RequestId = requestId,
                 QuerySetId = queryId,
@@ -1049,9 +1454,9 @@ namespace SpacetimeDB
 
         void IDbConnection.AddOnConnect(Action<Identity, string> cb) => onConnect += cb;
 
-        void IDbConnection.AddOnConnectError(WebSocket.ConnectErrorEventHandler cb) => webSocket.OnConnectError += cb;
+        void IDbConnection.AddOnConnectError(Action<Exception, NextReconnect?> cb) => onConnectError += cb;
 
-        void IDbConnection.AddOnDisconnect(WebSocket.CloseEventHandler cb) => webSocket.OnClose += cb;
+        void IDbConnection.AddOnDisconnect(Action<Exception?, NextReconnect?> cb) => onDisconnect += cb;
     }
 
     /// <summary>

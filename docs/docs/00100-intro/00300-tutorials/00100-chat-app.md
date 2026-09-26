@@ -1856,6 +1856,12 @@ DbConnection ConnectToDB()
 }
 ```
 
+#### Automatic reconnect
+
+The C# connection above uses the default behavior and will not reconnect after an outage. Add `.WithAutomaticReconnect()` to the builder to recover an established connection automatically. Keep calling `FrameTick()` while disconnected, register row callbacks and subscriptions only once, and use the `OnDisconnect((conn, error, next) => ...)` and `OnConnectError((error, next) => ...)` overloads to inspect the next retry. `OnConnect` and subscription `OnApplied` run again after recovery; guard any one-time setup or commands in those callbacks. Initial connection failures do not retry, and `Disconnect()` stops recovery.
+
+For expiring credentials, combine `WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`. The provider is called before reconnect attempts when the retained token needs refreshing and must return a token for the same identity. Calls made during an outage fail immediately; pending reducer calls may report `Status.UnknownResult` and are not replayed. See the [C# reconnect reference](/clients/c-sharp#method-withautomaticreconnect) for details.
+
 #### Save credentials
 
 SpacetimeDB will accept any [OpenID Connect](https://openid.net/developers/how-connect-works/) compliant [JSON Web Token](https://jwt.io/) and use it to compute an `Identity` for the user. More complex applications will generally authenticate their user somehow, generate or retrieve a token, and attach it to their connection via `WithToken`. In our case, though, we'll connect anonymously the first time, let SpacetimeDB generate a fresh `Identity` and corresponding JWT for us, and save that token locally to re-use the next time we connect.

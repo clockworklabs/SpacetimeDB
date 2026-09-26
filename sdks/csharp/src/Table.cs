@@ -37,6 +37,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
         internal IParsedTableUpdate MakeParsedTableUpdate();
+        internal void AddSnapshotDeletes(ParsedDatabaseUpdate update);
 
         /// <summary>
         /// Parses an insert-only table update and applies the results to the specified parsed database update.
@@ -292,6 +293,22 @@ namespace SpacetimeDB
         IParsedTableUpdate IRemoteTableHandle.MakeParsedTableUpdate()
         {
             return new ParsedTableUpdate();
+        }
+
+        void IRemoteTableHandle.AddSnapshotDeletes(ParsedDatabaseUpdate update)
+        {
+            if (IsEventTable)
+            {
+                return;
+            }
+            var delta = ((ParsedTableUpdate)update.UpdateForTable(this)).Delta;
+            foreach (var entry in Entries.Entries)
+            {
+                for (var i = 0u; i < Entries.Multiplicity(entry.Key); i++)
+                {
+                    delta.Remove(entry.Key, entry.Value);
+                }
+            }
         }
 
         /// <summary>

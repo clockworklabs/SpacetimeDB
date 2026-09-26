@@ -240,5 +240,6 @@ spacetime logs
 
 ## Next steps
 
+- Enable [automatic reconnect](../../00200-core-concepts/00600-clients/00600-csharp-reference.md#method-withautomaticreconnect) with `.WithAutomaticReconnect()` on your client's connection builder. Keep calling `FrameTick()` during outages and register subscriptions only once; the SDK replays them after recovery. For expiring authentication tokens, also use [`.WithTokenProvider(() => RefreshTokenAsync())`](../../00200-core-concepts/00600-clients/00600-csharp-reference.md#method-withtokenprovider).
 - See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
 - Read the [C# SDK Reference](../../00200-core-concepts/00600-clients/00600-csharp-reference.md) for detailed API docs
