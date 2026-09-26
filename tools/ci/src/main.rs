@@ -85,6 +85,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-run-spacetime",
     },
     Command {
+        path: &["other-workflows", "rollback-file"],
+        package: "ci-rollback-file",
+    },
+    Command {
         path: &["other-workflows", "check-release-deps"],
         package: "ci-check-release-deps",
     },

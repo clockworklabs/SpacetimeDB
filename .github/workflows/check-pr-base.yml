@@ -30,7 +30,7 @@ jobs:
     # This builds a small CI helper and inspects release metadata and git history.
     runs-on: spacetimedb-linux-small
     permissions:
-      contents: read
+      contents: write
       pull-requests: read
     env:
       GH_TOKEN: ${{ github.token }}
@@ -41,6 +41,7 @@ jobs:
         with:
           # We inspect local tags and git commits in order to determine whether things have been released
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: dsherret/rust-toolchain-file@v1
       - name: Check release dependencies
         run: >-
@@ -48,3 +49,23 @@ jobs:
           --current-repo .
           --allowed-reference-repo .
           --pr-number "${{ github.event.pull_request.number }}"
+      - name: Generate rollback file
+        run: >-
+          cargo ci other-workflows rollback-file
+          --pr-number "${{ github.event.pull_request.number }}"
+      - name: Commit updated rollback file
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- earliest-allowed-rollback-point; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add earliest-allowed-rollback-point
+          git commit -m "Update earliest allowed rollback point"
+          git push origin "HEAD:${HEAD_REF}"
+      - name: Require forked PR to commit generated rollback file
+        if: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        run: git diff --exit-code -- earliest-allowed-rollback-point
