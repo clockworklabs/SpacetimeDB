@@ -9,6 +9,7 @@ use axum::response::ErrorResponse;
 use bytes::Bytes;
 use http::StatusCode;
 
+use spacetimedb::auth::identity::ContainerClaim;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::module_host::UpdateEnvironmentResult;
@@ -62,6 +63,12 @@ pub trait NodeDelegate: Send + Sync {
     /// The [`Host`] is spawned implicitly if not already running.
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError>;
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
+
+    /// Whether `claim` names the currently assigned generation of a database's container.
+    /// Servers without container hosting reject every container credential.
+    async fn is_current_container(&self, _claim: &ContainerClaim) -> bool {
+        false
+    }
 }
 
 /// Predicate on the [NodeDelegate::GetLeaderHostError].
@@ -552,6 +559,10 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         (**self).module_logs_dir(replica_id)
+    }
+
+    async fn is_current_container(&self, claim: &ContainerClaim) -> bool {
+        (**self).is_current_container(claim).await
     }
 }
 
