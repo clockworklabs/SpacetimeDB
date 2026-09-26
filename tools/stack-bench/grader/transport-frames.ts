@@ -81,13 +81,15 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
     catch (error) {
       received.markIncomplete('bodyReadFailures');
       if (reportedBodyFailures++ < 8) {
-        const url = new URL(response.url());
-        process.stderr.write(`transport body unavailable ${JSON.stringify({
-          origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
-          status: response.status(), contentType: type, resourceType: response.request().resourceType(),
-          pageClosed: page.isClosed(), failure: response.request().failure()?.errorText ?? null,
-          error: error instanceof Error ? error.name : typeof error,
-        })}\n`);
+        try {
+          const url = new URL(response.url());
+          process.stderr.write(`transport body unavailable ${JSON.stringify({
+            origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
+            status: response.status(), contentType: type, resourceType: response.request().resourceType(),
+            pageClosed: page.isClosed(), failure: response.request().failure()?.errorText ?? null,
+            error: error instanceof Error ? error.name : typeof error,
+          })}\n`);
+        } catch { /* Diagnostics must not turn incomplete capture into a process failure. */ }
       }
     }
     finally { received.pending--; }
