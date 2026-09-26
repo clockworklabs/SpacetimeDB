@@ -58,6 +58,8 @@
             { "do": "ensureSignedIn", "actor": "owner", "name": "notification-owner", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" },
+            { "do": "reload", "actor": "other", "settleMs": 3000 },
+            { "do": "ensureSignedIn", "actor": "other", "name": "notification-other", "readyTestid": "current-user" },
             { "do": "click", "actor": "other", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "other", "testid": "notification-order", "attribute": "data-state", "value": "off" }
           ]

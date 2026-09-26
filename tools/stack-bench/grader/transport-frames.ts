@@ -5,6 +5,18 @@ import { inconclusive } from '../src/actions/actor-action-runtime.js';
 
 const MAX_RECEIVED_BYTES = 8 * 1024 * 1024;
 
+function bodyReadErrorCategory(error: unknown): string {
+  // Browser errors can include private URLs or payloads. Emit only fixed labels.
+  const message = error instanceof Error ? error.message : '';
+  if (/evicted from inspector cache/i.test(message)) return 'body-evicted';
+  if (/No (?:resource|data) (?:with|found for) given identifier/i.test(message)) return 'resource-unavailable';
+  if (/Target page, context or browser has been closed|Session closed/i.test(message)) return 'target-closed';
+  if (/net::ERR_BLOCKED_BY_ORB\b/.test(message)) return 'blocked-by-orb';
+  if (/net::ERR_[A-Z_]+\b/.test(message)) return 'request-failed';
+  if (/Protocol error \(/.test(message)) return 'protocol-error';
+  return 'unknown';
+}
+
 // A SpacetimeDB server frame carries a one-byte compression tag ahead of the
 // message: 0 none, 1 brotli, 2 gzip, and the SDK compresses by default. The
 // message text is inline UTF-8 once decoded, so a substring search finds it
@@ -87,7 +99,7 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
             origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
             status: response.status(), contentType: type, resourceType: response.request().resourceType(),
             pageClosed: page.isClosed(), failure: response.request().failure()?.errorText ?? null,
-            error: error instanceof Error ? error.name : typeof error,
+            error: bodyReadErrorCategory(error),
           })}\n`);
         } catch { /* Diagnostics must not turn incomplete capture into a process failure. */ }
       }

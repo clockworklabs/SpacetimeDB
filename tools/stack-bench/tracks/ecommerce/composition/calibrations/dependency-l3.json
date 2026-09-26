@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "f8858c696c33d5a7246b312ad496c10fa3680a34ac3a437bc4b299c050aba114",
-    "executionSha256": "a46d0e87e384a1b969982afd22809ceb790c9d4a5bbf14b566b14e1e64914f6e",
-    "contentSha256": "eb73df94c24f85d96e2e05310faf92d3bd46b28cdb8509c30d2f6de895b4a577"
+    "meaningSha256": "885021e830495efb62e43a1ac7e9374b058ca7b36456a48702da51d099a104dd",
+    "executionSha256": "e864a909143f430d0ac774c7a3cd30ef156e7c3c004836f4e0fb021b9e78839a",
+    "contentSha256": "080e6698db20af1a4a57d7e3e84678e38ab375f750c8d5af93d633f794dda523"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -250,7 +250,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -271,7 +270,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -309,7 +307,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -374,7 +371,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -395,7 +391,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -433,7 +428,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -498,7 +492,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -519,7 +512,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -557,7 +549,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -622,7 +613,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -643,7 +633,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -681,7 +670,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -746,7 +734,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -767,7 +754,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -805,7 +791,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -870,7 +855,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -891,7 +875,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -929,7 +912,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -993,7 +975,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -1014,7 +995,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -1051,7 +1031,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -1115,7 +1094,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -1136,7 +1114,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -1173,7 +1150,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -1237,7 +1213,6 @@
             "ecommerce.progression.faceted-search.faceted-search.401a",
             "ecommerce.progression.faceted-search.faceted-search.402a",
             "ecommerce.progression.managed-support.managed-support.613c",
-            "ecommerce.progression.notification-preferences.notification-preferences.630c",
             "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
             "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
             "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
@@ -1258,7 +1233,6 @@
             "ecommerce.spec.access-control.customer-profile-privacy.620b",
             "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
             "ecommerce.spec.access-control.managed-support-privacy.613b",
-            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
             "ecommerce.spec.access-control.order-ownership.106a",
             "ecommerce.spec.access-control.promotion-management-boundary.620b",
             "ecommerce.spec.access-control.purchase-attribution.102a",
@@ -1295,7 +1269,6 @@
             "ecommerce.spec.state-durability.checkout-crash-durability.910b",
             "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
             "ecommerce.spec.state-durability.customer-profile-reload.620a",
-            "ecommerce.spec.state-durability.notification-preferences-reload.630a",
             "ecommerce.spec.state-durability.session-reload.1e",
             "ecommerce.spec.state-durability.staff-role-reload.621a",
             "ecommerce.spec.state-durability.support-history-reload.612a",
@@ -1612,6 +1585,167 @@
             "sha256": "2fba73e41c816f9f44540c30d9f6edbe7115e6e4aa1103a9822452c27810be9d"
           }
         }
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/postgres.json",
+        "sha256": "2795f1e6a5fa29668161892b81e772daa1e613fd018489693347353c2c70f585",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/postgres.json",
+        "sha256": "2795f1e6a5fa29668161892b81e772daa1e613fd018489693347353c2c70f585",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/mongodb.json",
+        "sha256": "bd29008d27a8f6315deb772d978dd7d7aedde9224fd98d6a30d3e3b3363af2e9",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/mongodb.json",
+        "sha256": "bd29008d27a8f6315deb772d978dd7d7aedde9224fd98d6a30d3e3b3363af2e9",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/convex.json",
+        "sha256": "935f5a643fccf3445d1ca301279e34a07a902895d5e31ad30ec3736b6ea52881",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/convex.json",
+        "sha256": "935f5a643fccf3445d1ca301279e34a07a902895d5e31ad30ec3736b6ea52881",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/spacetime.json",
+        "sha256": "3b7ab365dce19ccd8300c093a2513aae073e12a00d1e0fad4e17ce7b39896d28",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/spacetime.json",
+        "sha256": "3b7ab365dce19ccd8300c093a2513aae073e12a00d1e0fad4e17ce7b39896d28",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/null.json",
+        "sha256": "2ac1a87c5abd2ad681f4d0247f5dbdc593e9427c818a53dd1fb7c2340cd485d1",
+        "slice": {
+          "checks": [
+            "ecommerce.progression.notification-preferences.notification-preferences.630c",
+            "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+          ],
+          "snapshot": {
+            "path": "qualification-evidence/ecommerce-l3-notifications-20260926/shared-inputs.json",
+            "sha256": "b8e2fe97ec39b8d5d518ee5cdb7c592673e2dd07b5626237ba351d967faef8b0"
+          }
+        }
       }
     ],
     "featureCatalog": {
@@ -1632,16 +1766,7 @@
     ]
   },
   "qualificationReuse": {
-    "sourceRecipe": {
-      "id": "ecommerce.progression-catalog",
-      "contentSha256": "c1e134ac66ea4682989a814c3916122b34c3ccc1a628d956c77ffb0ae81db87e",
-      "executionSha256": "a46d0e87e384a1b969982afd22809ceb790c9d4a5bbf14b566b14e1e64914f6e"
-    },
-    "sourceCalibration": {
-      "id": "ecommerce.dependency-l3-calibration",
-      "contentSha256": "63aaee2df48f7f6e8a0caaf5c04981a99a3be63aa9c6c99d05b5fc04be3f031c"
-    },
-    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration.",
+    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration. The notification review replaces all three affected checks and validates unchanged capture outcomes with safer diagnostics.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
@@ -1666,6 +1791,10 @@
       {
         "path": "qualification-evidence/ecommerce-l3-candidate-641c6e86/reuse-review.json",
         "sha256": "02afe5d3568f72d25fc0b75452d174ed8641479302d6587f3b71cdfca8c3d252"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/reuse-review.json",
+        "sha256": "8f2b117c96b7ab51d3a6b5c1fa658d48d2b7e88461be55a2ac22025e82629779"
       }
     ],
     "scopes": [
@@ -1673,160 +1802,160 @@
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "bbcfc38200aac3d8c16a4f8d51a28473da5d87059f599eb4cc5a0081d7c5d136"
+        "toExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
-        "toExecutableSha256": "bbcfc38200aac3d8c16a4f8d51a28473da5d87059f599eb4cc5a0081d7c5d136"
+        "toExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "215381d867075adde815041dc0ad1d17e66200c7e7a95e3df9fddaefde9b9397"
+        "toExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "d9562064a5789f6f6b5404c1d44316ccd4be5e15711b459d17c09dc97dcee451",
-        "toExecutableSha256": "215381d867075adde815041dc0ad1d17e66200c7e7a95e3df9fddaefde9b9397"
+        "toExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "ca44651ed7c82205fd5a8994328e1f23293c948eaa9a3e6a15961641d2867d1d"
+        "toExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "78c833af95491aff19a2a2fae2ec5732845a5e8f6be6dda4239e0747e1ec8dfe",
-        "toExecutableSha256": "ca44651ed7c82205fd5a8994328e1f23293c948eaa9a3e6a15961641d2867d1d"
+        "toExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "c72e6bd145f6f380ab364c084d5bdd74c08eae3ff67da2c3e51d8b4e6fffab7e"
+        "toExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "c72e6bd145f6f380ab364c084d5bdd74c08eae3ff67da2c3e51d8b4e6fffab7e"
+        "toExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
-        "toExecutableSha256": "72f4c06f3d36685b9dc4794d8c202fcfeb56fcf69d4d1047d84f480a73260d1b"
+        "toExecutableSha256": "1510d33ff4e77f83a730ba2aae24baabdc9831be846a95b42bcbd10ecb2a7e21"
       },
       {
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
-        "toExecutableSha256": "bbcfc38200aac3d8c16a4f8d51a28473da5d87059f599eb4cc5a0081d7c5d136"
+        "toExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "e447d45d159821e491ba389002b1a388f541ae5d1289adc4e0c543d1d96ea83d",
-        "toExecutableSha256": "bbcfc38200aac3d8c16a4f8d51a28473da5d87059f599eb4cc5a0081d7c5d136"
+        "toExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
-        "toExecutableSha256": "215381d867075adde815041dc0ad1d17e66200c7e7a95e3df9fddaefde9b9397"
+        "toExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "b22280365d3206290c8fc8bea67ebd4d22db462438ed57d17a27ecc991ec88c4",
-        "toExecutableSha256": "215381d867075adde815041dc0ad1d17e66200c7e7a95e3df9fddaefde9b9397"
+        "toExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
-        "toExecutableSha256": "ca44651ed7c82205fd5a8994328e1f23293c948eaa9a3e6a15961641d2867d1d"
+        "toExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "148de326798491cca7ec1d82bd0c2420720f97c81e7fcd2c14a15ffdff27231b",
-        "toExecutableSha256": "ca44651ed7c82205fd5a8994328e1f23293c948eaa9a3e6a15961641d2867d1d"
+        "toExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
-        "toExecutableSha256": "c72e6bd145f6f380ab364c084d5bdd74c08eae3ff67da2c3e51d8b4e6fffab7e"
+        "toExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "dde8bf58017228c4a41455ce82feae012c6b9d17a652ebdd6e9dfaf1b4692e6e",
-        "toExecutableSha256": "c72e6bd145f6f380ab364c084d5bdd74c08eae3ff67da2c3e51d8b4e6fffab7e"
+        "toExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "272845b7811dc374c203909430f73e21d0e798ea627b80b9f635b9fcfded0fd2",
-        "toExecutableSha256": "72f4c06f3d36685b9dc4794d8c202fcfeb56fcf69d4d1047d84f480a73260d1b"
+        "toExecutableSha256": "1510d33ff4e77f83a730ba2aae24baabdc9831be846a95b42bcbd10ecb2a7e21"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "898c8a692a2c7ab9a721c39d35b3b2ca3982d28f2d01e52d5db72ef219991563",
-        "toExecutableSha256": "72f4c06f3d36685b9dc4794d8c202fcfeb56fcf69d4d1047d84f480a73260d1b"
+        "toExecutableSha256": "1510d33ff4e77f83a730ba2aae24baabdc9831be846a95b42bcbd10ecb2a7e21"
       },
       {
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50",
-        "toExecutableSha256": "bbcfc38200aac3d8c16a4f8d51a28473da5d87059f599eb4cc5a0081d7c5d136"
+        "toExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731"
       },
       {
         "kind": "mutation",
         "stack": "convex",
         "fromExecutableSha256": "fd5a8e431af0d95de749ed1bc2a2a3586633777e278cbbf82eee748fe9d7ea50",
-        "toExecutableSha256": "bbcfc38200aac3d8c16a4f8d51a28473da5d87059f599eb4cc5a0081d7c5d136"
+        "toExecutableSha256": "8ab0f2951a3e0e7fb390d748ba5ab9b591322c0e0804cfbee1f62f1c4728e731"
       },
       {
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a",
-        "toExecutableSha256": "215381d867075adde815041dc0ad1d17e66200c7e7a95e3df9fddaefde9b9397"
+        "toExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "8b557135094ec7095fabbda3fbd6b54073e6e6db9cdb5090a5dc7045fa13023a",
-        "toExecutableSha256": "215381d867075adde815041dc0ad1d17e66200c7e7a95e3df9fddaefde9b9397"
+        "toExecutableSha256": "f115e3246e589c48ef41784ddfabe3c40785f132a8fb01cf4a25f6db5a616052"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba",
-        "toExecutableSha256": "ca44651ed7c82205fd5a8994328e1f23293c948eaa9a3e6a15961641d2867d1d"
+        "toExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "f3051587c9e76e3bb9c172babc5e3a74977cf692522462d22fefad962c6859ba",
-        "toExecutableSha256": "ca44651ed7c82205fd5a8994328e1f23293c948eaa9a3e6a15961641d2867d1d"
+        "toExecutableSha256": "f3219a6c372da62bc71a59d253c74f4a4703ace53803aad72af86cccf5eaa52e"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc",
-        "toExecutableSha256": "c72e6bd145f6f380ab364c084d5bdd74c08eae3ff67da2c3e51d8b4e6fffab7e"
+        "toExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "9659e2dadd1c2a5702b6f252c501b518dfd49e547d964d8098431337302e4ecc",
-        "toExecutableSha256": "c72e6bd145f6f380ab364c084d5bdd74c08eae3ff67da2c3e51d8b4e6fffab7e"
+        "toExecutableSha256": "e90501a874c640f9e9b0822fca62e6abfe21c5c90456bc4925bfbbf3a12449ab"
       }
     ]
   }

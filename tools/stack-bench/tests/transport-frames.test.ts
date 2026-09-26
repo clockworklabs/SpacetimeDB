@@ -117,3 +117,42 @@ test('privacy capture includes public script, style and error bodies', async () 
   }
   assert.equal(received.contains('absent'), false);
 });
+
+test('body failure diagnostics use bounded categories without error text or URL secrets', async t => {
+  const messages: string[] = [];
+  t.mock.method(process.stderr, 'write', (chunk: string) => { messages.push(String(chunk)); return true; });
+  const session = Object.assign(new EventEmitter(), { send: async () => {} });
+  const page = Object.assign(new EventEmitter(), {
+    context: () => ({ newCDPSession: async () => session }), isClosed: () => false,
+  });
+  const received = new ReceivedTransport();
+  await captureResponses(page as unknown as Page, received);
+  const cases: [unknown, string][] = [
+    [new Error('Protocol error (Network.getResponseBody): Request content was evicted from inspector cache'), 'body-evicted'],
+    [new Error('Protocol error (Network.getResponseBody): No resource with given identifier found'), 'resource-unavailable'],
+    [new Error('Target page, context or browser has been closed'), 'target-closed'],
+    [new Error('response.body: net::ERR_BLOCKED_BY_ORB'), 'blocked-by-orb'],
+    [new Error('response.body: net::ERR_FAILED'), 'request-failed'],
+    [new Error('Protocol error (Network.getResponseBody): private-password'), 'protocol-error'],
+    [Object.assign(new Error('private-password https://private.test/secret'), { name: 'private-error-name' }), 'unknown'],
+    ['private-password', 'unknown'],
+    [new Error('another private-password'), 'unknown'],
+  ];
+  for (const [error] of cases) {
+    page.emit('response', {
+      headers: () => ({ 'content-type': 'text/html' }), status: () => 200,
+      url: () => 'https://assets.test/private-password?token=private-password',
+      request: () => ({ resourceType: () => 'font', failure: () => null }),
+      text: async () => { throw error; },
+    });
+    await new Promise<void>(resolve => setImmediate(resolve));
+  }
+  assert.equal(messages.length, 8, 'Diagnostics must remain bounded');
+  const records = messages.map(line => JSON.parse(line.slice(line.indexOf('{'))));
+  assert.deepEqual(records.map(record => record.error), cases.slice(0, 8).map(([, category]) => category));
+  assert(records.every(record => record.origin === 'https://assets.test' && /^[a-f0-9]{64}$/.test(record.pathSha256)));
+  assert.doesNotMatch(messages.join(''), /private-password|private-error-name|private\.test/);
+  assert.equal(captureFailure(received)?.bodyReadFailures, 9);
+  received.record('observed-secret');
+  assert.equal(received.contains('observed-secret'), true);
+});
