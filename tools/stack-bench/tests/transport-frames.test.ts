@@ -129,7 +129,7 @@ test('body failure diagnostics use bounded categories without error text or URL 
   await captureResponses(page as unknown as Page, received);
   const cases: [unknown, string][] = [
     [new Error('Protocol error (Network.getResponseBody): Request content was evicted from inspector cache'), 'body-evicted'],
-    [new Error('Protocol error (Network.getResponseBody): No resource with given identifier found'), 'resource-unavailable'],
+    [new Error('Protocol error (Network.getResponseBody): No data found for resource with given identifier'), 'resource-unavailable'],
     [new Error('Target page, context or browser has been closed'), 'target-closed'],
     [new Error('response.body: net::ERR_BLOCKED_BY_ORB'), 'blocked-by-orb'],
     [new Error('response.body: net::ERR_FAILED'), 'request-failed'],

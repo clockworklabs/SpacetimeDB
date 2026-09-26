@@ -9,7 +9,7 @@ function bodyReadErrorCategory(error: unknown): string {
   // Browser errors can include private URLs or payloads. Emit only fixed labels.
   const message = error instanceof Error ? error.message : '';
   if (/evicted from inspector cache/i.test(message)) return 'body-evicted';
-  if (/No (?:resource|data) (?:with|found for) given identifier/i.test(message)) return 'resource-unavailable';
+  if (/No resource with given identifier|No data found for (?:resource with )?given identifier/i.test(message)) return 'resource-unavailable';
   if (/Target page, context or browser has been closed|Session closed/i.test(message)) return 'target-closed';
   if (/net::ERR_BLOCKED_BY_ORB\b/.test(message)) return 'blocked-by-orb';
   if (/net::ERR_[A-Z_]+\b/.test(message)) return 'request-failed';
@@ -75,7 +75,7 @@ export class ReceivedTransport {
   }
 }
 
-export async function captureResponses(page: Page, received: ReceivedTransport): Promise<void> {
+export async function captureResponses(page: Page, received: ReceivedTransport, freshResponses = false): Promise<void> {
   let reportedBodyFailures = 0;
   page.on('response', async response => {
     const type = response.headers()['content-type'] ?? '';
@@ -115,6 +115,9 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
     }
   });
   await session.send('Network.enable');
+  // Chromium discards decoded font bytes; a later memory-cache hit has no body
+  // to inspect. Privacy absence observations require fresh HTTP responses.
+  if (freshResponses) await session.send('Network.setCacheDisabled', { cacheDisabled: true });
   // Keep response bodies available when the app reloads immediately after reading them.
   await session.send('Network.configureDurableMessages', {
     maxTotalBufferSize: MAX_RECEIVED_BYTES, maxResourceBufferSize: MAX_RECEIVED_BYTES,

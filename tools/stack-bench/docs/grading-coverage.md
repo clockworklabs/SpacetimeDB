@@ -72,6 +72,14 @@ repeated request bursts; it is not a capacity test.
   WebSocket decoder. Positive owner observations establish that the data was
   delivered. Dropped, unreadable, or unfinished evidence cannot establish absence.
   Fetch-based SSE streams are not supported and fail closed.
+  Actors with a selected `expectNotReceived` observation disable browser HTTP
+  caching before navigation, including fresh and reopened clients. Chromium can
+  discard decoded font bodies and cannot expose those bytes on later cache hits.
+  These privacy checks measure fresh HTTP responses; they do not establish HTTP
+  cache isolation. Other actors retain normal caching. No domain or asset type
+  is exempted from the existing capture rules.
+  At the end of the observation window, pending body reads get at most one second
+  to finish. Reads still pending after that limit remain inconclusive.
 - **Deferred work.** Checks anchor on the original time and use early and late
   observations. Missing an observation window is unmeasured, not an app failure.
   The probes do not change the host or client clock.

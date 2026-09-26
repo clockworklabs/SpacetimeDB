@@ -102,6 +102,7 @@ export interface Actor {
   readonly name: string;
   readonly page: BrowserPage;
   readonly received: readonly string[];
+  readonly pendingReceived: number;
   readonly writes: readonly CapturedWrite[];
   actionCall?: ActionCall;
   forge?: ForgeResult;

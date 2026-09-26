@@ -145,6 +145,7 @@ type GradeRunContext = {
   appDir?: string;
   scope?: string;
   extraContexts?: ActorContextEntry[];
+  privacyActors?: ReadonlySet<string>;
   recorded?: Record<string, unknown>;
   unverified?: string[];
   verified?: string[];
@@ -297,6 +298,7 @@ export class Actor {
   private readonly transport = new ReceivedTransport();
   readonly ready: Promise<void>;
   get received(): readonly string[] { return this.transport.chunks; }
+  get pendingReceived(): number { return this.transport.pending; }
   lastWrite: ActorWrite | null = null;
   lastWrites: Record<string, ActorWrite> = {};
   writes: ActorWrite[] = [];
@@ -308,7 +310,7 @@ export class Actor {
   constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false,
     readonly replaySpacetime = false, readonly spacetimeBackend = false,
     // A stack's platform endpoints that receive the application's writes, whatever they are named.
-    readonly writeEndpoints: readonly string[] = []) {
+    readonly writeEndpoints: readonly string[] = [], readonly freshResponses = false) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -392,7 +394,7 @@ export class Actor {
       this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`);
       if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
     });
-    await captureResponses(page, this.transport);
+    await captureResponses(page, this.transport, this.freshResponses);
   }
   record(payload: string | Buffer): void {
     this.transport.record(payload);
@@ -513,7 +515,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         entry.page = fresh;
         fresh.setDefaultTimeout(defaultWithin);
         const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication, actor.replaySpacetime,
-          actor.spacetimeBackend, actor.writeEndpoints);
+          actor.spacetimeBackend, actor.writeEndpoints, ctx.privacyActors?.has(name));
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -885,6 +887,13 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined
       || Boolean(step.branches?.some(branch => branch.some(needsAuthPatch)));
     const patchAuthentication = steps.some(needsAuthPatch);
+    const privacyActors = new Set<string>();
+    const collectPrivacyActors = (step: CompiledStep): void => {
+      if (step.do === 'expectNotReceived' && step.actor) privacyActors.add(step.actor);
+      step.branches?.forEach(branch => branch.forEach(collectPrivacyActors));
+    };
+    steps.forEach(collectPrivacyActors);
+    ctx.privacyActors = privacyActors;
     const replayActors = new Set<string>();
     const collectReplayActors = (step: CompiledStep): void => {
       if (step.do === 'repeatFormWrite' && step.actor) replayActors.add(step.actor);
@@ -915,7 +924,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
         networkInterruption.attach(context, page));
       page.setDefaultTimeout(SETUP_WITHIN);
       const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name), args.backend === 'spacetime',
-        ctx.applicationWriteEndpoints);
+        ctx.applicationWriteEndpoints, privacyActors.has(name));
       actor.networkInterruption = networkInterruption;
       await actor.ready;
       actor.annotate = Boolean(args.media);

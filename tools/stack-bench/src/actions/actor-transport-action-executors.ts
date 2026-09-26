@@ -647,6 +647,12 @@ async function expectNotReceived({ input, capabilities, signal }: TransportArgum
   const transport = transportFor(capabilities);
   const needle = transport.expand(input.contains);
   await transport.sleep(input.within ?? transport.defaultWithin, signal);
+  // A response can arrive at the observation boundary while its body is still
+  // being read. Drain briefly; stalled or lost evidence still fails closed.
+  const drainDeadline = Date.now() + 1000;
+  while (actor.pendingReceived && !actor.wasSent(needle, false) && Date.now() < drainDeadline) {
+    await transport.sleep(25, signal);
+  }
   if (actor.wasSent(needle)) fail('message-delivered', { actor: actor.name });
   return { received: false, contains: needle };
 }
