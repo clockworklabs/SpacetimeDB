@@ -1,0 +1,2348 @@
+{
+  "schemaVersion": 3,
+  "fixtureSha256": "7fac6736a8b8a64d285c2cc77a52e3a76ea1a7c9ff6d6353544eb4e72fd61a5e",
+  "backend": "supabase",
+  "track": "ecommerce",
+  "note": "Native Supabase selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Restart and crash-recovery controls act through the start-up seed path that every application start runs; reconnect controls act on the real Realtime channel.",
+  "mutations": [
+    {
+      "id": "signup-does-not-expose-created-account",
+      "scenario": "tracks/ecommerce/scenarios/01-account-create.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "desc": "Every account view omits the username, so the created account is never shown as signed in, including after Realtime refreshes.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "'username', account.username, 'roles', account.roles",
+          "replace": "'username', '', 'roles', account.roles"
+        }
+      ]
+    },
+    {
+      "id": "session-token-not-persisted",
+      "scenario": "tracks/ecommerce/scenarios/01-account-reload.json",
+      "targets": [
+        "ecommerce.spec.state-durability.session-reload.1e"
+      ],
+      "desc": "Fresh sign-in works, but each new document deletes the stored Auth session before the Supabase client starts, so reload cannot restore it.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "const STORAGE_KEY = 'storefront-auth';",
+          "replace": "const STORAGE_KEY = 'storefront-auth';\nlocalStorage.removeItem(STORAGE_KEY);"
+        }
+      ]
+    },
+    {
+      "id": "reload-hydrates-an-empty-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-cart.json",
+      "targets": [
+        "ecommerce.spec.state-durability.cart-reload.4b"
+      ],
+      "desc": "Page loads that start with a stored session discard the cart from shop_state; the first signup page and its working cart are unchanged.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const CATALOG_PAGE_SIZE = 10;",
+          "replace": "const CATALOG_PAGE_SIZE = 10;\nconst discardHydratedCart = Boolean(sessionToken());"
+        },
+        {
+          "find": "    setCart(state.cart);",
+          "replace": "    setCart(discardHydratedCart ? { items: [], total: 0 } : state.cart);"
+        }
+      ]
+    },
+    {
+      "id": "warehouse-view-omits-one-location",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+      ],
+      "desc": "The admin warehouse projection truncates the final item-location row.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {overview.locations.map((loc) => (",
+          "replace": "          {overview.locations.slice(0, -1).map((loc) => ("
+        }
+      ]
+    },
+    {
+      "id": "sign-in-starts-an-empty-cart",
+      "scenario": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
+      "targets": [
+        "ecommerce.spec.state-durability.account-state-recovery.105a"
+      ],
+      "desc": "A successful password sign-in removes the account's stored cart lines through the native cart write, so a fresh sign-in after a restart finds an empty cart; sign-up, token-restored sessions and orders are unchanged.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "  session = data.session;\n  return { token: data.session.access_token, user: (await mutate('shop_state')).user };",
+          "replace": "  session = data.session;\n  // Defect: each sign-in starts a new cart instead of restoring the account cart.\n  if (flow === 'signIn') for (const line of (await mutate('shop_state')).cart.items) await mutate('update_cart_quantity', { itemId: line.itemId, quantity: 0 });\n  return { token: data.session.access_token, user: (await mutate('shop_state')).user };"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-signup-reports-success",
+      "scenario": "tracks/ecommerce/scenarios/01-account-duplicate.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1b"
+      ],
+      "desc": "Sign-up gives Auth a fresh address for a taken username, and the new-user trigger re-points the existing account at the new Auth user, so the impostor is signed in as the existing account without its password.",
+      "file": "supabase/migrations/20260925000000_schema.sql",
+      "edits": [
+        {
+          "find": "  account_name := convert_from(decode(split_part(new.email, '@', 1), 'hex'), 'UTF8');",
+          "replace": "  account_name := convert_from(decode(split_part(split_part(new.email, '@', 1), '.', 1), 'hex'), 'UTF8');"
+        },
+        {
+          "find": "  insert into order_account (auth_user_id, username) values (new.id, account_name);",
+          "replace": "  insert into order_account (auth_user_id, username) values (new.id, account_name)\n    on conflict (username) do update set auth_user_id = excluded.auth_user_id;"
+        },
+        {
+          "file": "client/src/request.ts",
+          "find": "    ? await supabase.auth.signUp(credentials)",
+          "replace": "    ? await supabase.auth.signUp({ ...credentials, email: credentials.email.replace('@', `.${Date.now()}@`) })"
+        }
+      ]
+    },
+    {
+      "id": "signin-skips-password-verification",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "The client derives the Auth password without the typed password, so any password signs in to an account created through the storefront.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "new TextEncoder().encode(password))));",
+          "replace": "new TextEncoder().encode(''))));"
+        }
+      ]
+    },
+    {
+      "id": "signout-keeps-current-account",
+      "scenario": "tracks/ecommerce/scenarios/01-account-signout.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1d"
+      ],
+      "desc": "Sign-out neither ends the Auth session nor clears the current account.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    await signOut();\n    clearSession();",
+          "replace": "    // Defect: sign-out leaves the authenticated account intact."
+        }
+      ]
+    },
+    {
+      "id": "signout-keeps-session",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Show a signed-out interface while keeping the Auth session and its purchase authority in the browser.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    await signOut();\n    clearSession();",
+          "replace": "    clearSession(); // Defect: hide the account without ending the Auth session."
+        },
+        {
+          "find": "          {currentUser ? (",
+          "replace": "          {currentUser && token ? ("
+        }
+      ]
+    },
+    {
+      "id": "purchase-session-rejects-returning-login",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Refuse every returning login; blocking all access after logout must not pass the session check.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "    : await supabase.auth.signInWithPassword(credentials);",
+          "replace": "    : await supabase.auth.signInWithPassword({ ...credentials, password: credentials.password + '-refused' });"
+        }
+      ]
+    },
+    {
+      "id": "account-disclosure-rejects-login",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Reject every valid login; absent disclosures alone must not earn a pass.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "    : await supabase.auth.signInWithPassword(credentials);",
+          "replace": "    : await supabase.auth.signInWithPassword({ ...credentials, password: credentials.password + '-refused' });"
+        }
+      ]
+    },
+    {
+      "id": "account-password-in-public-data",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Sign-up stores the typed password in Auth user metadata and the new-user trigger appends it to a public catalog item name, delivering it to other clients.",
+      "file": "supabase/migrations/20260925000000_schema.sql",
+      "edits": [
+        {
+          "find": "  insert into order_account (auth_user_id, username) values (new.id, account_name);\n  return new;",
+          "replace": "  insert into order_account (auth_user_id, username) values (new.id, account_name);\n  if new.raw_user_meta_data ? 'password' then\n    update item set name = name || ' ' || (new.raw_user_meta_data ->> 'password') where id = (select min(id) from item);\n  end if;\n  return new;"
+        },
+        {
+          "file": "client/src/request.ts",
+          "find": "    ? await supabase.auth.signUp(credentials)",
+          "replace": "    ? await supabase.auth.signUp({ ...credentials, options: { data: { password } } })"
+        }
+      ]
+    },
+    {
+      "id": "account-password-in-script",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Ship the account password sentinel in the public JavaScript bundle while normal signup and login still work.",
+      "file": "client/src/main.tsx",
+      "edits": [
+        {
+          "find": "import React from \"react\";",
+          "replace": "import React from \"react\";\nObject.assign(window, { debugPassword: 'sb-private-pw-76dc492ea153' });"
+        }
+      ]
+    },
+    {
+      "id": "account-password-in-style",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Ship the account password sentinel in a public stylesheet while normal signup and login still work.",
+      "file": "client/src/index.css",
+      "edits": [
+        {
+          "find": ":root {",
+          "replace": ":root {\n  --debug-password: \"sb-private-pw-76dc492ea153\";"
+        }
+      ]
+    },
+    {
+      "id": "signup-accepts-admin-claim",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "The new-user trigger trusts a role claimed in sign-up user metadata and grants the administrator role, including its stock-write authority.",
+      "file": "supabase/migrations/20260925000000_schema.sql",
+      "edits": [
+        {
+          "find": "  insert into order_account (auth_user_id, username) values (new.id, account_name);",
+          "replace": "  insert into order_account (auth_user_id, username, roles) values (new.id, account_name,\n    case when new.raw_user_meta_data ->> 'role' = 'admin' then array['admin'] else '{}'::text[] end);"
+        }
+      ]
+    },
+    {
+      "id": "admin-boundary-rejects-all-signups",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Keep fixture provisioning available, but the new-user trigger refuses every other registration; blocking useful signup must not pass the authority check.",
+      "file": "supabase/migrations/20260925000000_schema.sql",
+      "edits": [
+        {
+          "find": "  if account_name !~ '^[A-Za-z0-9-]{1,48}$' then\n    raise exception 'Invalid username';\n  end if;",
+          "replace": "  if account_name !~ '^[A-Za-z0-9-]{1,48}$' then\n    raise exception 'Invalid username';\n  end if;\n  if account_name not in ('admin', 'staff', 'customer') then\n    raise exception 'Registration disabled';\n  end if;"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-hydration-loses-account-state",
+      "scenario": "tracks/ecommerce/scenarios/progression-account-state-reconnect.json",
+      "targets": [
+        "ecommerce.spec.state-durability.account-state-recovery.105b"
+      ],
+      "desc": "Network loss permanently removes the Realtime channel, so the account misses peer cart changes after reconnect.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "setTimeout(followChanges);\n});",
+          "replace": "setTimeout(followChanges);\n});\nwindow.addEventListener('offline', () => { if (changes) supabase.removeChannel(changes); changes = null; }, { once: true });"
+        }
+      ]
+    },
+    {
+      "id": "profile-data-is-lost-on-server-restart",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.spec.state-durability.customer-profile-reload.620a"
+      ],
+      "desc": "The start-up seed path clears stored customer profiles whenever the application restarts; the initial save and token reload remain valid.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "  if exists (select 1 from public.item) then return; end if;",
+          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restarting the application resets customer profiles.\n    update public.order_account set profile_name = '', profile_address = '';\n    return;\n  end if;"
+        }
+      ]
+    },
+    {
+      "id": "purchased-review-ui-does-not-submit",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "targets": [
+        "ecommerce.spec.access-control.review-eligibility.108b"
+      ],
+      "desc": "The review form discards valid customer submissions. Direct authorized and unauthorized review calls retain their normal behavior.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const handleReviewSubmit = async (itemId: string, rating: number, comment: string) => {\n    setReviewError(\"\");",
+          "replace": "  const handleReviewSubmit = async (itemId: string, rating: number, comment: string) => {\n    setReviewError(\"Review submission unavailable\");\n    return;"
+        }
+      ]
+    },
+    {
+      "id": "progression-customer-sees-fulfilment-content",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.fulfilment-area-boundary.1d"
+      ],
+      "desc": "Expose the protected staff area to signed-in customers, including its navigation and content.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\"",
+          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\""
+        },
+        {
+          "find": "{fulfilmentOpen && (currentUser?.isStaff || currentUser?.isAdmin) && (",
+          "replace": "{fulfilmentOpen && currentUser && ("
+        }
+      ]
+    },
+    {
+      "id": "queue-warehouse-reports-west",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1b"
+      ],
+      "desc": "The queue renders West for the deterministic Desk Lamp allocation even though the order reserved stock in East.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(l.warehouseNames || []).join(\", \") || \"Unknown\"}",
+          "replace": "{\"West\"}"
+        }
+      ]
+    },
+    {
+      "id": "catalog-initial-ranking-is-reversed",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-ranking.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-ranking.2b"
+      ],
+      "desc": "The initial catalog uses reverse alphabetical order.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || a.name.localeCompare(b.name))",
+          "replace": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || b.name.localeCompare(a.name))"
+        }
+      ]
+    },
+    {
+      "id": "catalog-search-requires-exact-name",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-search.2d"
+      ],
+      "desc": "Partial catalog search is replaced with exact matching.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "(!q || it.name.toLowerCase().includes(q))",
+          "replace": "(!q || it.name.toLowerCase() === q)"
+        }
+      ]
+    },
+    {
+      "id": "scheduled-restock-countdown-is-fixed",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a"
+      ],
+      "desc": "The pending restock UI shows a fixed countdown.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "{Math.max(0, Math.ceil((new Date(entry.dueAt).getTime() - now) / 1000))}",
+          "replace": "{90}"
+        }
+      ]
+    },
+    {
+      "id": "catalog-product-name-is-not-published",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "targets": [
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
+      ],
+      "desc": "The public product card omits the submitted name while retaining its product and variants.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name}\n      </div>",
+          "replace": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name === \"Travel Mug\" ? \"\" : item.name}\n      </div>"
+        }
+      ]
+    },
+    {
+      "id": "catalog-variants-are-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "targets": [
+        "ecommerce.progression.catalog-management.catalog-management.622b"
+      ],
+      "desc": "Catalog management stores the submitted product without its named variants.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "save_catalog_item.name, coalesce(save_catalog_item.variants, '{}'))",
+          "replace": "save_catalog_item.name, '{}')"
+        }
+      ]
+    },
+    {
+      "id": "faceted-search-ignores-category",
+      "scenario": "tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "targets": [
+        "ecommerce.progression.faceted-search.faceted-search.401a"
+      ],
+      "desc": "Faceted search ignores the selected category.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "&& (!categoryFilter || it.category === categoryFilter)",
+          "replace": "&& (!categoryFilter || true)"
+        }
+      ]
+    },
+    {
+      "id": "active-search-uses-purchase-ranking",
+      "scenario": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "targets": [
+        "ecommerce.spec.search-ordering.search-ordering.402b"
+      ],
+      "desc": "Keep purchase ranking when search text or filters are active.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const filtering = Boolean(q || categoryFilter || minimumPrice || maximumPrice || inStockOnly);",
+          "replace": "const filtering = false;"
+        }
+      ]
+    },
+    {
+      "id": "pagination-repeats-first-page",
+      "scenario": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "targets": [
+        "ecommerce.progression.faceted-search.faceted-search.402a"
+      ],
+      "desc": "Every catalog page repeats the first page.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const searchResults = filteredItems.slice(searchPage * CATALOG_PAGE_SIZE,\n    searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);",
+          "replace": "const searchResults = filteredItems.slice(0, CATALOG_PAGE_SIZE);"
+        }
+      ]
+    },
+    {
+      "id": "staff-signin-loses-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "targets": [
+        "ecommerce.progression.staff-access.staff-access.601a"
+      ],
+      "desc": "Deny administrators entry to staff tools while keeping ordinary staff access working.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\"",
+          "replace": "          {(currentUser?.isStaff && !currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "support-history-rows-are-hidden",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.progression.support-history.support-history.612c",
+        "ecommerce.spec.state-durability.support-history-reload.612a",
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
+      ],
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. History, reload, privacy, and logout require the owner to see the ticket first. This breaks those positive observations; it does not create a privacy leak or remove stored data.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "data-role=\"support-ticket\"",
+          "replace": "data-role=\"support-ticket\" style={{ display: \"none\" }}"
+        }
+      ]
+    },
+    {
+      "id": "profile-summary-frozen-at-open",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.progression.customer-profile.customer-profile.620c"
+      ],
+      "desc": "The profile summary shows the address loaded when the profile card opened, so a freshly saved address is not visible until the page is reloaded.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "      <p data-role=\"profile-address-summary\">{state.profile?.address || \"\"}</p>",
+          "replace": "      <ProfileAddressSummary address={state.profile?.address || \"\"} />"
+        },
+        {
+          "find": "function SupportTicket({ ticket, user, act }: any) {",
+          "replace": "function ProfileAddressSummary({ address }: { address: string }) {\n  const [shown] = useState(address); // Defect: the summary keeps the address loaded when the card opened.\n  return <p data-role=\"profile-address-summary\">{shown}</p>;\n}\n\nfunction SupportTicket({ ticket, user, act }: any) {"
+        }
+      ]
+    },
+    {
+      "id": "support-replies-present-at-open-are-hidden",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "targets": [
+        "ecommerce.progression.managed-support.managed-support.613c"
+      ],
+      "desc": "A support case renders only replies that arrive while it is open, so after a reload the replies already exchanged are missing while live replies still appear.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "  const [reply, setReply] = useState(\"\");",
+          "replace": "  const [reply, setReply] = useState(\"\");\n  const [repliesAtOpen] = useState(() => new Set((ticket.replies || []).map((entry: any) => entry.id || entry.createdAt))); // Defect: replies already on the case when it opened are never rendered."
+        },
+        {
+          "find": "    {(ticket.replies || []).map((entry: any) => <div data-role=\"support-reply-item\" key={entry.id || entry.createdAt}>{entry.username}: {entry.body}</div>)}",
+          "replace": "    {(ticket.replies || []).filter((entry: any) => !repliesAtOpen.has(entry.id || entry.createdAt)).map((entry: any) => <div data-role=\"support-reply-item\" key={entry.id || entry.createdAt}>{entry.username}: {entry.body}</div>)}"
+        }
+      ]
+    },
+    {
+      "id": "notification-toggle-frozen-at-open",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.progression.notification-preferences.notification-preferences.630c"
+      ],
+      "desc": "The order-notification toggle displays the state loaded when the settings card opened, so the saved choice is reported as off until a reload.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "      <button data-role=\"notification-order\" data-state={preference.order ? \"on\" : \"off\"} className=\"btn btn-ghost\"\n        onClick={() => setPreference(value => ({ ...value, order: !value.order }))}>\n        Order notifications {preference.order ? \"on\" : \"off\"}\n      </button>",
+          "replace": "      <OrderNotificationToggle on={preference.order}\n        onToggle={() => setPreference(value => ({ ...value, order: !value.order }))} />"
+        },
+        {
+          "find": "function SupportTicket({ ticket, user, act }: any) {",
+          "replace": "function OrderNotificationToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {\n  const [shown] = useState(on); // Defect: the toggle keeps the state loaded when the card opened.\n  return <button data-role=\"notification-order\" data-state={shown ? \"on\" : \"off\"} className=\"btn btn-ghost\" onClick={onToggle}>\n    Order notifications {shown ? \"on\" : \"off\"}\n  </button>;\n}\n\nfunction SupportTicket({ ticket, user, act }: any) {"
+        }
+      ]
+    },
+    {
+      "id": "role-editor-snaps-back-to-stored-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.progression.staff-roles.staff-roles.621c"
+      ],
+      "desc": "Pressing Save persists the role but resets the dropdown to the role that was stored before the save, so the assignment is not visible until a reload.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "        <button data-role=\"staff-role-save\" onClick={() => act(\"assign_staff_role\", {\n          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n        })}>Save</button>",
+          "replace": "        <button data-role=\"staff-role-save\" onClick={() => {\n          setRoles(value => ({ ...value, [entry.username]: entry.roles?.[0] ?? \"staff\" })); // Defect: the editor snaps back to the previously stored role.\n          return act(\"assign_staff_role\", {\n          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n        }); }}>Save</button>"
+        }
+      ]
+    },
+    {
+      "id": "review-script-unsafe-render",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Render stored review text as HTML so it executes in another customer session.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "<div>{r.comment}</div>",
+          "replace": "<div dangerouslySetInnerHTML={{ __html: r.comment }} />"
+        }
+      ]
+    },
+    {
+      "id": "shipping-counts-sale-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "targets": [
+        "ecommerce.inventory-operations.shipping-accounting.202e"
+      ],
+      "desc": "Shipping doubles the authoritative booked order total.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update order_header set status = 'shipped' where id = \"orderId\" and status = 'pending';",
+          "replace": "  update order_header set status = 'shipped', total = total * 2 where id = \"orderId\" and status = 'pending';"
+        }
+      ]
+    },
+    {
+      "id": "checkout-retains-purchased-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout reads its cart without consuming it; concurrent calls create duplicate effects.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    delete from order_cart where account_id = me.id returning id, item_id, quantity",
+          "replace": "    select id, item_id, quantity from order_cart where account_id = me.id"
+        }
+      ]
+    },
+    {
+      "id": "checkout-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Reject every checkout, including the positive control; refusal alone is insufficient.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  return json_build_object('orderId', private.place_order(me.id, lines));",
+          "replace": "  raise exception 'Checkout rejected';\n  return json_build_object('orderId', private.place_order(me.id, lines));"
+        }
+      ]
+    },
+    {
+      "id": "purchases-do-not-decrement-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
+      ],
+      "desc": "Record purchases without decrementing stock, causing unchanged inventory, excess orders and excess revenue in the same purchase burst.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "update stock set quantity = quantity - take",
+          "replace": "update stock set quantity = quantity"
+        }
+      ]
+    },
+    {
+      "id": "purchase-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
+      ],
+      "desc": "Reject every purchase, leaving unchanged stock, zero successful orders and zero revenue in the required purchase burst.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  insert into order_header (account_id, total) values (buyer, 0) returning id into new_order;",
+          "replace": "  raise exception 'Purchases rejected';\n  insert into order_header (account_id, total) values (buyer, 0) returning id into new_order;"
+        }
+      ]
+    },
+    {
+      "id": "order-history-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Order history exposes every customer's orders instead of only the signed-in customer's orders.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "      from order_header entry where entry.account_id = me.id),",
+          "replace": "      from order_header entry),"
+        }
+      ]
+    },
+    {
+      "id": "cart-repeat-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4a"
+      ],
+      "desc": "An existing cart line remains at its old quantity.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    set quantity = case when adding then order_cart.quantity + excluded.quantity else excluded.quantity end",
+          "replace": "    set quantity = case when adding then excluded.quantity else excluded.quantity end"
+        }
+      ]
+    },
+    {
+      "id": "checkout-leaves-cart-claimed",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Checkout creates an order without emptying the cart.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    delete from order_cart where account_id = me.id returning id, item_id, quantity",
+          "replace": "    select id, item_id, quantity from order_cart where account_id = me.id"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-is-offset",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-values.2a"
+      ],
+      "desc": "Public catalog prices are seeded one unit too high.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "select name, category, price, description from catalogue returning id, name",
+          "replace": "select name, category, price + 1, description from catalogue returning id, name"
+        }
+      ]
+    },
+    {
+      "id": "purchase-order-uses-zero-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
+      "targets": [
+        "ecommerce.feature.purchasing.purchase-order.3c"
+      ],
+      "desc": "A direct purchase records the item but stores a zero order total instead of the price paid.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update order_header set total = booked where id = new_order;",
+          "replace": "  update order_header set total = 0 where id = new_order;"
+        }
+      ]
+    },
+    {
+      "id": "authorized-restock-does-not-change-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Accept an administrator restock without changing warehouse stock.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + admin_restock.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "purchases-do-not-affect-best-sellers",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-best-sellers.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5d"
+      ],
+      "desc": "Rank signed-out recommendations without purchase counts.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "      from private.catalog order by purchase_count desc, name limit 10) best;",
+          "replace": "      from private.catalog order by name limit 10) best;"
+        }
+      ]
+    },
+    {
+      "id": "initial-dashboard-load-omits-low-stock",
+      "scenario": "tracks/ecommerce/scenarios/02-low-stock.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5e",
+        "ecommerce.spec.live-state.inventory-dashboard.5a"
+      ],
+      "desc": "The dashboard reports no low-stock items, so an item already at ten units or fewer is missing; 5a's opening precondition re-asserts the same listing, so it necessarily regresses with 5e.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "from private.catalog where stock <= 10),",
+          "replace": "from private.catalog where false),"
+        }
+      ]
+    },
+    {
+      "id": "category-totals-skip-the-newest-order",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5f"
+      ],
+      "desc": "Category totals leave out the most recent order, so the reloaded dashboard shows a purchase only once a later order pushes it into the aggregate.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "          where header.status <> 'cancelled' and not line.returned group by item.category) sold",
+          "replace": "          where header.status <> 'cancelled' and not line.returned\n            and header.id < (select max(id) from order_header) group by item.category) sold"
+        }
+      ]
+    },
+    {
+      "id": "transfer-debits-source-without-crediting-existing-destination",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a"
+      ],
+      "desc": "A transfer debits the source but credits zero to the destination. This breaks both movement/conservation assertions and the authorized-transfer positive observation inside the authorization check; that last failure is not evidence of an unauthorized transfer.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + admin_transfer_stock.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-fresh-client",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202b"
+      ],
+      "desc": "Cancellation changes order state but skips restoration, so a fresh client reads the persisted shortfall.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + allocation.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "transfer-creates-stock-during-race",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "A transfer creates one extra unit while a purchase runs.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + admin_transfer_stock.quantity",
+          "replace": "  update stock set quantity = stock.quantity + admin_transfer_stock.quantity + 1"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-scheduled-restock",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-access.json",
+      "targets": [
+        "ecommerce.l3.deferred-access.scheduled-work-access.317a"
+      ],
+      "desc": "Scheduled-restock cancellation omits its administrator check.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  perform private.require_operator(true);\n  update scheduled_restock set status = 'cancelled'",
+          "replace": "  perform private.require_account();\n  update scheduled_restock set status = 'cancelled'"
+        }
+      ]
+    },
+    {
+      "id": "completed-restock-is-replayed",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.exactly-once.311a"
+      ],
+      "desc": "Completing the deferred work applies its stock effect twice.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "    update stock set quantity = quantity + due.quantity",
+          "replace": "    update stock set quantity = quantity + 2 * due.quantity"
+        }
+      ]
+    },
+    {
+      "id": "due-restock-does-not-change-stock",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a"
+      ],
+      "desc": "A due restock is recorded without adding stock.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "    update stock set quantity = quantity + due.quantity",
+          "replace": "    update stock set quantity = quantity"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-restock-remains-pending",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a"
+      ],
+      "desc": "Cancelling a restock is acknowledged but leaves it pending so it later applies.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  update scheduled_restock set status = 'cancelled' where id = \"restockId\" and status = 'pending';",
+          "replace": "  perform 1 from scheduled_restock where id = \"restockId\" and status = 'pending';"
+        }
+      ]
+    },
+    {
+      "id": "server-time-restock-never-completes",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
+      "targets": [
+        "ecommerce.l3.server-time.server-time.312a"
+      ],
+      "desc": "Scheduling ignores the requested delay and sets a due time a day away, so the restock never completes in time.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "now() + make_interval(secs => \"delaySeconds\")",
+          "replace": "now() + interval '1 day'"
+        }
+      ]
+    },
+    {
+      "id": "scheduled-restock-never-becomes-due-after-restart",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
+      "targets": [
+        "ecommerce.l3.server-time.server-time.312a"
+      ],
+      "desc": "The start-up seed path mistakenly cancels pending deferred work whenever the application restarts; ordinary scheduling before a restart still completes.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "  if exists (select 1 from public.item) then return; end if;",
+          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restarting the application cancels pending restocks.\n    update public.scheduled_restock set status = 'cancelled' where status = 'pending';\n    return;\n  end if;"
+        }
+      ]
+    },
+    {
+      "id": "ship-acknowledges-without-changing-status",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1c"
+      ],
+      "desc": "Shipping returns success but writes pending back to the order, leaving both live views unchanged.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update order_header set status = 'shipped' where id = \"orderId\" and status = 'pending';",
+          "replace": "  update order_header set status = 'pending' where id = \"orderId\" and status = 'pending';"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-direct-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "The shipping operation keeps authentication but drops its staff role gate.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  me order_account := private.require_operator(false);",
+          "replace": "  me order_account := private.require_account();"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-foreign-order-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Cancellation retains authentication and pending-state validation but drops order ownership.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  select * into found_order from order_header where id = wanted and account_id = me.id for update;",
+          "replace": "  select * into found_order from order_header where id = wanted for update;"
+        }
+      ]
+    },
+    {
+      "id": "promotion-save-drops-bounded-values",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "targets": [
+        "ecommerce.progression.promotion-rules.promotion-rule-values.620a"
+      ],
+      "desc": "Promotion creation drops its bounded discount and limit.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "    values (create_promotion.code, \"discountPercent\", \"startMicros\", \"endMicros\", \"usageLimit\");",
+          "replace": "    values (create_promotion.code, 0, \"startMicros\", \"endMicros\", 0);"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-delivery-is-suppressed",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "targets": [
+        "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+      ],
+      "desc": "A request is accepted and marked delivered, but restored stock does not deliver its alert.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  from delivered join item on item.id = delivered.item_id;",
+          "replace": "  from delivered join item on item.id = delivered.item_id where false;"
+        }
+      ]
+    },
+    {
+      "id": "support-intake-returns-no-reference",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-intake.json",
+      "targets": [
+        "ecommerce.progression.support-intake.support-intake.610a"
+      ],
+      "desc": "Support intake creates a ticket but stores and returns an empty reference.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  update support_ticket set reference = 'SUP-' || lpad(ticket.id::text, 6, '0') where id = ticket.id",
+          "replace": "  update support_ticket set reference = '' where id = ticket.id"
+        }
+      ]
+    },
+    {
+      "id": "support-triage-discards-updates",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "targets": [
+        "ecommerce.progression.support-triage.support-assignment.611a",
+        "ecommerce.progression.support-triage.support-priority.611b",
+        "ecommerce.progression.support-triage.support-status.611c"
+      ],
+      "desc": "Support triage accepts but discards assignment, priority, and status updates.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  update support_ticket set assignee = coalesce(update_support.assignee, ''),\n    priority = coalesce(update_support.priority, ''), status = coalesce(update_support.status, '')\n    where id = \"ticketId\";",
+          "replace": "  perform 1 from support_ticket where id = \"ticketId\";"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3a"
+      ],
+      "desc": "Cancellation changes order state but skips restoration of its recorded warehouse allocations.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + allocation.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "cancel-restores-stock-but-keeps-pending-status",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-history.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3b"
+      ],
+      "desc": "Cancellation restores allocations but writes pending back to order history.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update order_header set status = 'cancelled', refunded = total where id = target.id;",
+          "replace": "  update order_header set status = 'pending', refunded = total where id = target.id;"
+        }
+      ]
+    },
+    {
+      "id": "cancellation-accounting-loses-stock-restoration",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        "ecommerce.returns-pricing.refund-accounting.203a"
+      ],
+      "desc": "Cancellation removes revenue and changes order status, but loses the original warehouse stock restoration. The native refund-accounting assertion must detect this.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + allocation.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "negative-cart-quantity-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.cart-boundary.109b"
+      ],
+      "desc": "Cart quantity updates accept values below one.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  perform private.check_quantity(amount, not adding);",
+          "replace": "  if amount >= 0 then perform private.check_quantity(amount, not adding); end if;"
+        },
+        {
+          "file": "supabase/migrations/20260925000000_schema.sql",
+          "find": "  quantity integer not null check (quantity > 0),\n  unique (account_id, item_id)",
+          "replace": "  quantity integer not null,\n  unique (account_id, item_id)"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-create-promotion",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "targets": [
+        "ecommerce.spec.access-control.promotion-management-boundary.620b"
+      ],
+      "desc": "Promotion creation omits its staff authorization check.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  perform private.require_operator(false);\n  if coalesce(trim(code), '') = ''",
+          "replace": "  perform private.require_account();\n  if coalesce(trim(code), '') = ''"
+        }
+      ]
+    },
+    {
+      "id": "unpurchased-review-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "targets": [
+        "ecommerce.spec.access-control.review-eligibility.108a"
+      ],
+      "desc": "The review operation bypasses its completed-purchase eligibility check.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    raise exception 'Purchase this item before reviewing' using errcode = '42501';",
+          "replace": "    null; -- Defect: the purchase requirement is not enforced."
+        }
+      ]
+    },
+    {
+      "id": "customer-signin-gains-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-area-boundary.601b"
+      ],
+      "desc": "Treat every signed-in account, including the seeded customer, as staff in authorization and public account state.",
+      "file": "supabase/migrations/20260925000000_schema.sql",
+      "edits": [
+        {
+          "find": "select coalesce(roles && array['admin', 'staff', 'inventory'], false)",
+          "replace": "select roles is not null"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-assign-roles",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-boundary.621b",
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Staff can call the role assignment operation, including after administrator access is revoked.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  perform private.require_operator(true);\n  if role is null or role not in ('staff', 'inventory', 'admin')",
+          "replace": "  perform private.require_operator(false);\n  if role is null or role not in ('staff', 'inventory', 'admin')"
+        }
+      ]
+    },
+    {
+      "id": "stock-alerts-are-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "targets": [
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+      ],
+      "desc": "Notification reads expose alerts from other accounts.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "      order by id), '[]') from notification where account_id = me.id),",
+          "replace": "      order by id), '[]') from notification),"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-use-direct-restock",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "The direct restock operation accepts staff instead of administrators only.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  perform private.require_operator(true);\n  perform private.check_quantity(admin_restock.quantity);",
+          "replace": "  perform private.require_operator(false);\n  perform private.check_quantity(admin_restock.quantity);"
+        }
+      ]
+    },
+    {
+      "id": "concurrent-cart-add-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+      ],
+      "desc": "Concurrent cart adds overwrite the line quantity instead of incrementing it, so the existing cart remains checkable at checkout.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    set quantity = case when adding then order_cart.quantity + excluded.quantity else excluded.quantity end",
+          "replace": "    set quantity = case when adding then excluded.quantity else excluded.quantity end"
+        }
+      ]
+    },
+    {
+      "id": "restock-race-records-wrong-order-total",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Purchases preserve stock and visible order counts but record the wrong booked total. Native mixed-race reconciliation must reject them.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update order_header set total = booked where id = new_order;",
+          "replace": "  update order_header set total = booked + 1 where id = new_order;"
+        }
+      ]
+    },
+    {
+      "id": "profile-read-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.spec.access-control.customer-profile-privacy.620b"
+      ],
+      "desc": "Profile reads expose another account's saved address.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "      json_build_object('name', me.profile_name, 'address', me.profile_address) end,",
+          "replace": "      (select json_build_object('name', acct.profile_name, 'address', acct.profile_address)\n        from order_account acct where acct.profile_address <> '' order by acct.id limit 1) end,"
+        }
+      ]
+    },
+    {
+      "id": "support-read-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
+      ],
+      "desc": "All customers and signed-out clients receive private support history.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "      from support_ticket ticket where staff or ticket.account_id = me.id),",
+          "replace": "      from support_ticket ticket),"
+        }
+      ]
+    },
+    {
+      "id": "support-reply-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "targets": [
+        "ecommerce.spec.access-control.managed-support-privacy.613b"
+      ],
+      "desc": "A customer can reply to another customer's support case.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  if not exists (select 1 from support_ticket where id = \"ticketId\"\n      and (account_id = me.id or private.staff_roles(me.roles))) then",
+          "replace": "  if not exists (select 1 from support_ticket where id = \"ticketId\") then"
+        }
+      ]
+    },
+    {
+      "id": "preference-read-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
+      ],
+      "desc": "Notification settings expose another customer's saved preference.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "    'preference', json_build_object('order', coalesce(me.order_notifications, false),\n      'stock', coalesce(me.stock_notifications, false)),",
+          "replace": "    'preference', coalesce((select json_build_object('order', acct.order_notifications, 'stock', acct.stock_notifications)\n      from order_account acct where acct.order_notifications or acct.stock_notifications order by acct.id limit 1),\n      json_build_object('order', false, 'stock', false)),"
+        }
+      ]
+    },
+    {
+      "id": "staff-admin-access-survives-role-removal",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Role reassignment retains the previous administrator privilege.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  update order_account set roles = array[role] where id = \"accountId\";",
+          "replace": "  update order_account set roles = array[role] || case when 'admin' = any(roles) and role <> 'admin' then array['admin'] else '{}'::text[] end where id = \"accountId\";"
+        }
+      ]
+    },
+    {
+      "id": "review-eligibility-not-enforced",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "The native review operation permits an account that never purchased the item.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    raise exception 'Purchase this item before reviewing' using errcode = '42501';",
+          "replace": "    null; -- Defect: non-buyers may submit a review."
+        }
+      ]
+    },
+    {
+      "id": "review-script-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Reject every review, including benign text; rejecting all input is not safe rendering.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if exists (select 1 from review where item_id = \"itemId\" and account_id = me.id) then",
+          "replace": "  raise exception 'Reviews rejected';\n  if exists (select 1 from review where item_id = \"itemId\" and account_id = me.id) then"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-review-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.unique-review.6b"
+      ],
+      "desc": "The same purchaser can record multiple reviews for one item: the duplicate check and its unique constraint are both gone.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    raise exception 'Already reviewed';",
+          "replace": "    null; -- Defect: duplicate author reviews are accepted."
+        },
+        {
+          "file": "supabase/migrations/20260925000000_schema.sql",
+          "find": "  created_at timestamptz not null default now(),\n  unique (item_id, account_id)\n);",
+          "replace": "  created_at timestamptz not null default now()\n);"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-client-snapshot-open",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901a"
+      ],
+      "desc": "Keep the first catalog values from shop_state instead of accepting later Realtime-driven stock changes.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => current.length ? current : state.items);"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-client-snapshot-reconnect",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901d"
+      ],
+      "desc": "Keep the first catalog values from shop_state instead of accepting later Realtime-driven stock changes.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => current.length ? current : state.items);"
+        }
+      ]
+    },
+    {
+      "id": "review-comment-is-not-persisted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-visibility.json",
+      "targets": [
+        "ecommerce.feature.reviews.reviews.6a"
+      ],
+      "desc": "Review submission persists an empty comment rather than the customer's submitted text.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    values (\"itemId\", me.id, submit_review.rating, submit_review.comment);",
+          "replace": "    values (\"itemId\", me.id, submit_review.rating, '');"
+        }
+      ]
+    },
+    {
+      "id": "queue-ignores-live-fulfilment-updates",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.fulfilment-queue.1a"
+      ],
+      "desc": "The open staff queue ignores fulfilment state from shop_state, so a new order never appears in it.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setFulfilmentQueue(state.fulfilment || { orders: [], depth: 0 });",
+          "replace": "    // Defect: the refreshed fulfilment view is ignored."
+        }
+      ]
+    },
+    {
+      "id": "managed-support-live-refresh-keeps-stale-tickets",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "targets": [
+        "ecommerce.spec.live-state.managed-support.613a"
+      ],
+      "desc": "The progression subscription keeps the first support ticket snapshot. Saved replies remain visible on initial load, but another open client does not receive updates.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "  useEffect(() => subscribeProgression(next => {\n    setState({ ...next, loadedToken: token });",
+          "replace": "  useEffect(() => subscribeProgression(next => {\n    setState((current: any) => ({ ...next, tickets: current.loadedToken === token ? current.tickets : next.tickets, loadedToken: token }));"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-ignores-live-update",
+      "scenario": "tracks/ecommerce/scenarios/progression-open-list-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.open-list.902a"
+      ],
+      "desc": "The detail state retains its first review list while other item data stays current. New reviews appear on reload but not in the already-open view.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItemDetails(state.details);",
+          "replace": "    setItemDetails(previous => state.details.map((item: ItemDetailT) => ({ ...item, reviews: previous.find(old => old.id === item.id)?.reviews || item.reviews })));"
+        }
+      ]
+    },
+    {
+      "id": "espresso-stock-row-ignores-live-updates",
+      "scenario": "tracks/ecommerce/scenarios/01-buying.json",
+      "targets": [
+        "ecommerce.spec.live-state.purchase-stock.3b"
+      ],
+      "desc": "The live catalogue handler preserves a stale Espresso Machine stock projection while applying all other item updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => state.items.map((item: ItemT) => item.name === 'Espresso Machine' ? current.find(previous => previous.id === item.id) || item : item));"
+        }
+      ]
+    },
+    {
+      "id": "purchase-counts-never-affect-ranking",
+      "scenario": "tracks/ecommerce/scenarios/01-core.json",
+      "targets": [
+        "ecommerce.spec.live-state.ranking.2c"
+      ],
+      "desc": "The catalogue ranking ignores recorded purchases and therefore never promotes the bought item.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    coalesce((select sum(line.quantity) from public.order_line line\n      join public.order_header header on header.id = line.order_id\n      where line.item_id = item.id and not line.returned and header.status <> 'cancelled'), 0)::integer as purchase_count",
+          "replace": "    0 as purchase_count"
+        }
+      ]
+    },
+    {
+      "id": "live-review-average-uses-an-extra-divisor",
+      "scenario": "tracks/ecommerce/scenarios/01-review-rating-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.rating.6c"
+      ],
+      "desc": "The review average divides the rating sum by one more review than actually exists.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "        avg(review.rating) as average",
+          "replace": "        sum(review.rating)::numeric / (count(*) + 1) as average"
+        }
+      ]
+    },
+    {
+      "id": "live-admin-updates-keep-stale-category-totals",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "targets": [
+        "ecommerce.spec.live-state.sales-dashboard.5b"
+      ],
+      "desc": "Live admin updates keep the category totals loaded at page load, so a purchase does not move units or revenue until a reload.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setAdminOverview(state.admin);",
+          "replace": "    setAdminOverview(previous => state.admin && previous ? { ...state.admin, categories: previous.categories } : state.admin);"
+        }
+      ]
+    },
+    {
+      "id": "shared-cart-live-events-ignored",
+      "scenario": "tracks/ecommerce/scenarios/01-cart.json",
+      "targets": [
+        "ecommerce.spec.live-state.shared-cart.4c"
+      ],
+      "desc": "The cart accepts initial snapshots and updates after a local write, but an idle second session ignores remote cart changes.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const [cart, setCart] = useState<CartT>({ items: [], total: 0 });",
+          "replace": "  const [cart, setCart] = useState<CartT>({ items: [], total: 0 });\n  const cartSnapshotAccount = useRef<string | null>(null);\n  const cartWrittenHere = useRef(false);"
+        },
+        {
+          "find": "    setCart(state.cart);",
+          "replace": "    const cartAccount = state.user?.id ?? \"anonymous\";\n    if (cartSnapshotAccount.current !== cartAccount) cartWrittenHere.current = false;\n    if (cartSnapshotAccount.current !== cartAccount || cartWrittenHere.current) setCart(state.cart);\n    cartSnapshotAccount.current = cartAccount;"
+        },
+        {
+          "find": "      await mutate(\"add_to_cart\", { itemId, quantity: 1 });",
+          "replace": "      cartWrittenHere.current = true;\n      await mutate(\"add_to_cart\", { itemId, quantity: 1 });"
+        }
+      ]
+    },
+    {
+      "id": "restock-does-not-increase-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
+      "targets": [
+        "ecommerce.spec.live-state.warehouse-stock.7c"
+      ],
+      "desc": "The restock operation accepts a positive quantity but increments authoritative stock by zero.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + admin_restock.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "notification-preference-is-not-saved",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
+      ],
+      "desc": "Saved notification preferences remain disabled after reload. It also breaks the owner's saved-choice positive control in 630b; that coupled failure is not evidence of a privacy defect.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  update order_account set order_notifications = coalesce(\"order\", false),\n    stock_notifications = coalesce(save_preferences.stock, false) where id = me.id;",
+          "replace": "  update order_account set order_notifications = false, stock_notifications = false where id = me.id;"
+        }
+      ]
+    },
+    {
+      "id": "role-assignment-drops-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.state-durability.staff-role-reload.621a"
+      ],
+      "desc": "Inventory role assignments are saved as staff; staff and administrator role transitions still work.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  update order_account set roles = array[role] where id = \"accountId\";",
+          "replace": "  update order_account set roles = array[case when role = 'inventory' then 'staff' else role end] where id = \"accountId\";"
+        }
+      ]
+    },
+    {
+      "id": "revenue-aggregation-ignores-order-totals",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "The admin revenue aggregation counts every order as zero regardless of its stored total.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "      'revenue', (select coalesce(sum(total - refunded), 0) from order_header),",
+          "replace": "      'revenue', 0,"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reduce-warehouse-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107b"
+      ],
+      "desc": "Purchases create orders without reducing warehouse stock.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "update stock set quantity = quantity - take",
+          "replace": "update stock set quantity = quantity"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-total-ignores-store-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "The direct purchase creates one order but books one unit of currency per item rather than the store's current price.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    booked := booked + product.price * amount;",
+          "replace": "    booked := booked + 1 * amount;"
+        }
+      ]
+    },
+    {
+      "id": "overdraw-transfer-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+      ],
+      "desc": "The source debit no longer requires sufficient quantity and the stock table no longer forbids negative quantities, so an overdrawn transfer succeeds and moves both warehouse totals.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if available < admin_transfer_stock.quantity then raise exception 'Not enough stock'; end if;",
+          "replace": "  -- Defect: a transfer may debit below zero."
+        },
+        {
+          "file": "supabase/migrations/20260925000000_schema.sql",
+          "find": "  quantity integer not null check (quantity >= 0),",
+          "replace": "  quantity integer not null,"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-recommendations.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5c"
+      ],
+      "desc": "Never use the customer's purchases to choose recommended categories.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "          where header.account_id = me.id and header.status <> 'cancelled' and not line.returned)",
+          "replace": "          where false)"
+        }
+      ]
+    },
+    {
+      "id": "cart-add-line-lookup-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.cart-boundary.109a"
+      ],
+      "desc": "Cart line lookup ignores account ownership, so a second customer changes the first customer's item quantity.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  insert into order_cart (account_id, item_id, quantity) values (me.id, product, amount)\n    on conflict (account_id, item_id) do update",
+          "replace": "  -- Defect: an existing cart line for the item is found without checking its owner.\n  update order_cart set quantity = case when adding then order_cart.quantity + amount else amount end\n    where id = (select id from order_cart where item_id = product order by id limit 1)\n    returning quantity into next_quantity;\n  if not found then\n  insert into order_cart (account_id, item_id, quantity) values (me.id, product, amount)\n    on conflict (account_id, item_id) do update"
+        },
+        {
+          "find": "    returning quantity into next_quantity;\n  if next_quantity >",
+          "replace": "    returning quantity into next_quantity;\n  end if;\n  if next_quantity >"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-is-attributed-to-another-account",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-attribution.102a"
+      ],
+      "desc": "The purchase order is attributed to another account despite the real caller session.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "values (buyer, 0) returning id into new_order;",
+          "replace": "values ((select id from order_account where id <> buyer order by id limit 1), 0) returning id into new_order;"
+        }
+      ]
+    },
+    {
+      "id": "unauthenticated-purchase-defaults-to-admin",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "A signed-out direct buy defaults to the administrator account and commits a purchase.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  me order_account := private.require_account();\nbegin\n  return json_build_object('orderId',\n    private.place_order(me.id, jsonb_build_array(",
+          "replace": "  me order_account := private.current_account();\nbegin\n  -- Defect: a signed-out purchase is booked to the administrator account.\n  if me.id is null then select * into me from order_account where 'admin' = any(roles) order by id limit 1; end if;\n  return json_build_object('orderId',\n    private.place_order(me.id, jsonb_build_array("
+        }
+      ]
+    },
+    {
+      "id": "signed-out-visitor-purchase-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
+      "targets": [
+        "ecommerce.spec.access-control.signed-out-purchase.3a"
+      ],
+      "desc": "Expose the purchase control while signed out and accept its anonymous buy as an administrator-owned purchase.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  me order_account := private.require_account();\nbegin\n  return json_build_object('orderId',\n    private.place_order(me.id, jsonb_build_array(",
+          "replace": "  me order_account := private.current_account();\nbegin\n  -- Defect: a signed-out purchase is booked to the administrator account.\n  if me.id is null then select * into me from order_account where 'admin' = any(roles) order by id limit 1; end if;\n  return json_build_object('orderId',\n    private.place_order(me.id, jsonb_build_array("
+        },
+        {
+          "file": "client/src/App.tsx",
+          "find": "  const isCustomer = !!currentUser && !currentUser.isAdmin && !currentUser.isStaff;",
+          "replace": "  const isCustomer = !currentUser || (!currentUser.isAdmin && !currentUser.isStaff);"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-see-admin-navigation",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+      ],
+      "desc": "Staff are incorrectly treated as administrators in reads, navigation, and writes.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "'isAdmin', 'admin' = any(account.roles),",
+          "replace": "'isAdmin', account.roles && array['admin', 'staff'],"
+        },
+        {
+          "find": "  admin boolean := coalesce('admin' = any(me.roles), false);",
+          "replace": "  admin boolean := coalesce(me.roles && array['admin', 'staff'], false);"
+        },
+        {
+          "find": "then 'admin' = any(me.roles) else",
+          "replace": "then me.roles && array['admin', 'staff'] else"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-repeats-while-in-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+      ],
+      "desc": "One restock delivers two independent notifications for the same pending stock alert.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  from delivered join item on item.id = delivered.item_id;",
+          "replace": "  from delivered join item on item.id = delivered.item_id cross join generate_series(1, 2);"
+        }
+      ]
+    },
+    {
+      "id": "last-unit-allows-negative-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
+      ],
+      "desc": "Allocation permits an oversell and debits the first warehouse below zero; the stock table no longer forbids negative quantities.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if (select coalesce(sum(quantity), 0) from stock where item_id = product) < wanted then\n    raise exception 'Not enough stock';\n  end if;",
+          "replace": "  -- Defect: insufficient stock is accepted."
+        },
+        {
+          "find": "      where item_id = product and quantity > 0 order by warehouse_id loop",
+          "replace": "      where item_id = product order by warehouse_id loop"
+        },
+        {
+          "find": "    take := least(holding.quantity, wanted);",
+          "replace": "    take := wanted;"
+        },
+        {
+          "file": "supabase/migrations/20260925000000_schema.sql",
+          "find": "  quantity integer not null check (quantity >= 0),",
+          "replace": "  quantity integer not null,"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-integrity",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "The start-up seed path that runs when the crashed application restarts writes a wrong cart quantity for every account with an order, producing neither the prepared cart nor a completed checkout.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "  if exists (select 1 from public.item) then return; end if;",
+          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restart recovery restores a wrong cart quantity.\n    insert into public.order_cart (account_id, item_id, quantity)\n      select header.account_id, min(line.item_id), 2 from public.order_header header\n      join public.order_line line on line.order_id = header.id group by header.account_id\n      on conflict (account_id, item_id) do update set quantity = 2;\n    return;\n  end if;"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-sibling-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "The start-up seed path that runs when the crashed application restarts removes Coffee Grinder stock while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "  if exists (select 1 from public.item) then return; end if;",
+          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restart recovery removes sibling-product stock.\n    update public.stock set quantity = quantity - 1 where item_id = (select id from public.item where name = 'Coffee Grinder')\n      and exists (select 1 from public.order_header);\n    return;\n  end if;"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-durability",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      ],
+      "desc": "The start-up seed path that runs when the crashed application restarts corrupts the totals of earlier acknowledged orders without changing stock, allocations or cart state.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "  if exists (select 1 from public.item) then return; end if;",
+          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restart recovery rewrites acknowledged order totals.\n    update public.order_header set total = 0;\n    return;\n  end if;"
+        }
+      ]
+    },
+    {
+      "id": "restock-trusts-submitted-admin-role",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust an administrator role supplied by staff in the restock request. Normal staff requests are still refused.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "create function public.admin_restock(\"itemId\" bigint, \"warehouseId\" bigint, quantity integer) returns void",
+          "replace": "create function public.admin_restock(\"itemId\" bigint, \"warehouseId\" bigint, quantity integer, role text default null) returns void"
+        },
+        {
+          "find": "  perform private.require_operator(true);\n  perform private.check_quantity(admin_restock.quantity);",
+          "replace": "  perform private.require_operator(admin_restock.role is distinct from 'admin');\n  perform private.check_quantity(admin_restock.quantity);"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "Ordinary purchases use the catalog price; an extra price field overrides the booked order and line price.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "create function public.buy_now(\"itemId\" bigint) returns json",
+          "replace": "create function public.buy_now(\"itemId\" bigint, price numeric default null) returns json"
+        },
+        {
+          "find": "jsonb_build_object('item_id', \"itemId\", 'quantity', 1)",
+          "replace": "jsonb_build_object('item_id', \"itemId\", 'quantity', 1, 'price', buy_now.price)"
+        },
+        {
+          "find": "    if not found then raise exception 'Unknown item'; end if;\n    insert into order_line",
+          "replace": "    if not found then raise exception 'Unknown item'; end if;\n    product.price := coalesce((entry ->> 'price')::numeric, product.price);\n    insert into order_line"
+        }
+      ]
+    },
+    {
+      "id": "order-cache-survives-account-switch",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Merge order updates into a browser cache that is never cleared when the account changes. Separate-browser ownership still works.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const [orders, setOrders] = useState<OrderT[]>([]);",
+          "replace": "  const [orders, setStoredOrders] = useState<OrderT[]>([]);\n  const setOrders: typeof setStoredOrders = update => setStoredOrders(previous => {\n    const incoming = typeof update === 'function' ? update(previous) : update;\n    return [...new Map([...previous, ...incoming].map(order => [order.id, order])).values()];\n  });"
+        }
+      ]
+    },
+    {
+      "id": "checkout-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Accept an optional price field and overwrite the checkout total with it.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "create function public.checkout() returns json",
+          "replace": "create function public.checkout(price numeric default null) returns json"
+        },
+        {
+          "find": "  lines jsonb;\n",
+          "replace": "  lines jsonb;\n  placed bigint;\n"
+        },
+        {
+          "find": "  return json_build_object('orderId', private.place_order(me.id, lines));",
+          "replace": "  placed := private.place_order(me.id, lines);\n  -- Defect: a submitted price overwrites the booked checkout total.\n  if checkout.price is not null then update order_header set total = checkout.price where id = placed; end if;\n  return json_build_object('orderId', placed);"
+        }
+      ]
+    },
+    {
+      "id": "checkout-missing-sibling-line",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Commit the cart checkout with its Coffee Grinder line missing while retaining the other product and the full order total.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  lines jsonb;\n",
+          "replace": "  lines jsonb;\n  placed bigint;\n"
+        },
+        {
+          "find": "  return json_build_object('orderId', private.place_order(me.id, lines));",
+          "replace": "  placed := private.place_order(me.id, lines);\n  -- Defect: the Coffee Grinder line is dropped after the order is booked.\n  delete from order_allocation where order_line_id in (select line.id from order_line line\n    join item on item.id = line.item_id where line.order_id = placed and item.name = 'Coffee Grinder');\n  delete from order_line where order_id = placed and item_id = (select id from item where name = 'Coffee Grinder');\n  return json_build_object('orderId', placed);"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-cancel-shipped",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation accepts a shipped order and restores its stock after shipping.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
+          "replace": "  if false then raise exception 'Only pending orders can be cancelled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-resurrect-cancelled",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Shipping accepts a cancelled order after its stock was restored.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update order_header set status = 'shipped' where id = \"orderId\" and status = 'pending';",
+          "replace": "  update order_header set status = 'shipped' where id = \"orderId\";"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-combined-race",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation restores stock but records a shipped status, combining mutually exclusive effects.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
+          "replace": "  if false then raise exception 'Only pending orders can be cancelled'; end if;"
+        },
+        {
+          "find": "  update order_header set status = 'cancelled', refunded = total where id = target.id;",
+          "replace": "  update order_header set status = 'shipped', refunded = total where id = target.id;"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-reject-both",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Both cancellation and shipping refuse pending orders; useful progress must remain required.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
+          "replace": "  if true then raise exception 'Only pending orders can be cancelled'; end if;"
+        },
+        {
+          "find": "  update order_header set status = 'shipped' where id = \"orderId\" and status = 'pending';",
+          "replace": "  raise exception 'Order is not pending';\n  update order_header set status = 'shipped' where id = \"orderId\" and status = 'pending';"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-queue-retains-removed-order",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "The live staff queue accepts new orders but retains rows after cancellation; the database state remains correct.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setFulfilmentQueue(state.fulfilment || { orders: [], depth: 0 });",
+          "replace": "    setFulfilmentQueue(previous => { const next = state.fulfilment || { orders: [], depth: 0 }; return next.orders.length < previous.orders.length ? previous : next; });"
+        }
+      ]
+    },
+    {
+      "id": "opposing-transfer-ignored",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is acknowledged without moving stock.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if \"fromWarehouseId\" = \"toWarehouseId\" then raise exception 'Choose different warehouses'; end if;",
+          "replace": "  if \"fromWarehouseId\" = \"toWarehouseId\" then raise exception 'Choose different warehouses'; end if;\n  if admin_transfer_stock.quantity = 7 then return; end if;"
+        }
+      ]
+    },
+    {
+      "id": "opposing-transfer-rejected",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is refused despite ample source stock.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if \"fromWarehouseId\" = \"toWarehouseId\" then raise exception 'Choose different warehouses'; end if;",
+          "replace": "  if \"fromWarehouseId\" = \"toWarehouseId\" then raise exception 'Choose different warehouses'; end if;\n  if admin_transfer_stock.quantity = 7 then raise exception 'Transfer disabled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "overlapping-cart-add-ignored",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is ignored while ordinary cart setup still works.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;",
+          "replace": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;\n  if adding and me.username like '%checkout-overlap%' and (select name from item where id = product) = 'Coffee Grinder' then return; end if;"
+        }
+      ]
+    },
+    {
+      "id": "overlapping-cart-add-rejected",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is rejected while ordinary cart setup still works.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;",
+          "replace": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;\n  if adding and me.username like '%checkout-overlap%' and (select name from item where id = product) = 'Coffee Grinder' then raise exception 'Cart add disabled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-lost-transfer",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: lost-transfer. The stored-state comparison must catch the defect at its first effect.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  update stock set quantity = stock.quantity + admin_transfer_stock.quantity",
+          "replace": "  update stock set quantity = stock.quantity"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-price",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-price. The stored-state comparison must catch the defect at its first effect.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "    booked := booked + product.price * amount;",
+          "replace": "    booked := booked + 1 * amount;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-ignored-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: ignored-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;",
+          "replace": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;\n  if adding and me.username like '%history-%' and (select name from item where id = product) = 'Coffee Grinder' then return; end if;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-reject-valid-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: reject-valid-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;",
+          "replace": "  if not exists (select 1 from item where id = product) then raise exception 'Unknown item'; end if;\n  if adding and me.username like '%history-%' and (select name from item where id = product) = 'Coffee Grinder' then raise exception 'Cart add disabled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-repeat-cancel",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: repeat-cancel. The stored-state comparison must catch the defect at its first effect.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
+          "replace": "  if target.status not in ('pending', 'cancelled') then raise exception 'Only pending orders can be cancelled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-owner",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-owner. The stored-state comparison must catch the defect at its first effect.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "values (buyer, 0) returning id into new_order;",
+          "replace": "values ((select id from order_account where id <> buyer order by id limit 1), 0) returning id into new_order;"
+        }
+      ]
+    },
+    {
+      "id": "checkout-empty-replay-creates-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Allow retrying the consumed empty cart to create another order after a lost reply.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if jsonb_array_length(lines) = 0 then raise exception 'Cart is empty'; end if;",
+          "replace": "  -- Defect: an empty consumed cart may create another order."
+        }
+      ]
+    },
+    {
+      "id": "checkout-replay-loses-prior-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Retrying the consumed cart deletes an earlier acknowledged order.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  return json_build_object('orderId', private.place_order(me.id, lines));",
+          "replace": "  if jsonb_array_length(lines) = 0 then\n    -- Defect: retrying a consumed cart deletes the account's earliest order.\n    delete from order_allocation where order_line_id in (select id from order_line\n      where order_id = (select min(id) from order_header where account_id = me.id));\n    delete from order_line where order_id = (select min(id) from order_header where account_id = me.id);\n    delete from order_header where id = (select min(id) from order_header where account_id = me.id);\n    return json_build_object('orderId', null);\n  end if;\n  return json_build_object('orderId', private.place_order(me.id, lines));"
+        }
+      ]
+    },
+    {
+      "id": "checkout-clears-cart-without-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout returns success and empties the cart without recording an order.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  return json_build_object('orderId', private.place_order(me.id, lines));",
+          "replace": "  return json_build_object('orderId', null);"
+        }
+      ]
+    },
+    {
+      "id": "revenue-aggregation-truncates-order-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "Calculate revenue from only the first 256 stored orders while preserving all acknowledged purchases.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "      'revenue', (select coalesce(sum(total - refunded), 0) from order_header),",
+          "replace": "      'revenue', (select coalesce(sum(total - refunded), 0) from (select * from order_header order by id limit 256) first_orders),"
+        }
+      ]
+    },
+    {
+      "id": "catalog-truncates-created-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Omit committed products after the first 256 search results.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".slice(searchPage * CATALOG_PAGE_SIZE,",
+          "replace": ".slice(0, 256).slice(searchPage * CATALOG_PAGE_SIZE,"
+        }
+      ]
+    },
+    {
+      "id": "catalog-discards-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Acknowledge catalog creation without committing a product.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  perform private.require_operator(true);\n  if coalesce(trim(name), '') = '' or coalesce(trim(category), '') = ''",
+          "replace": "  perform private.require_operator(true);\n  return; -- Defect: the product write is acknowledged but never committed.\n  if coalesce(trim(name), '') = '' or coalesce(trim(category), '') = ''"
+        }
+      ]
+    },
+    {
+      "id": "catalog-rejects-all-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Reject every catalog creation while keeping sign-in and catalog reads available.",
+      "file": "supabase/migrations/20260925000200_progression.sql",
+      "edits": [
+        {
+          "find": "  perform private.require_operator(true);\n  if coalesce(trim(name), '') = '' or coalesce(trim(category), '') = ''",
+          "replace": "  perform private.require_operator(true);\n  raise exception 'Catalog writes refused';\n  if coalesce(trim(name), '') = '' or coalesce(trim(category), '') = ''"
+        }
+      ]
+    },
+    {
+      "id": "shipping-trusts-submitted-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Trust a staff role supplied by a customer; ordinary customers remain refused.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "create function public.ship_order(\"orderId\" bigint) returns void",
+          "replace": "create function public.ship_order(\"orderId\" bigint, role text default null) returns void"
+        },
+        {
+          "find": "  me order_account := private.require_operator(false);",
+          "replace": "  me order_account := case when ship_order.role = 'staff' then private.require_account() else private.require_operator(false) end;"
+        }
+      ]
+    },
+    {
+      "id": "shipping-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Reject legitimate staff shipping as well as customer requests.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if 'inventory' = any(me.roles) and not 'admin' = any(me.roles) then",
+          "replace": "  raise exception 'Shipping refused';\n  if 'inventory' = any(me.roles) and not 'admin' = any(me.roles) then"
+        }
+      ]
+    },
+    {
+      "id": "cancel-trusts-submitted-owner",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Trust a username submitted by another signed-in customer as the order owner.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "create function public.cancel_order(\"orderId\" bigint) returns void",
+          "replace": "create function public.cancel_order(\"orderId\" bigint, username text default null) returns void"
+        },
+        {
+          "find": "  target order_header := private.owned_order(\"orderId\");\n  line order_line;\nbegin\n  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
+          "replace": "  target order_header;\n  line order_line;\nbegin\n  -- Defect: a submitted username is trusted as the order owner.\n  perform private.require_account();\n  select o.* into target from order_header o join order_account a on a.id = o.account_id\n    where o.id = \"orderId\" and a.username = cancel_order.username for update of o;\n  if not found then target := private.owned_order(\"orderId\"); end if;\n  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "cancel-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Reject legitimate cancellation as well as foreign requests.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
+          "replace": "  raise exception 'Cancellation refused';\n  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;"
+        }
+      ]
+    }
+  ]
+}

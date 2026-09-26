@@ -9,6 +9,7 @@ import { mutationFileEdits, mutationScenario, mutationTargetKeys,
   from '../src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { STACK_IDS } from '../src/stacks/stack-identities.js';
 
 const MUTATIONS = join(STACK_BENCH_ROOT, 'grader', 'mutations');
 
@@ -55,7 +56,7 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
       'schemaVersion', 'fixtureSha256', 'backend', 'track', 'scenario', 'note', 'mutations',
     ]).has(field)), [], `${file} has unknown root fields`);
     assert(typeof manifest.backend === 'string');
-    assert.match(manifest.backend, /^(spacetime|postgres|mongodb|convex)$/);
+    assert.ok(STACK_IDS.includes(manifest.backend), `${file} names an unregistered stack`);
     assert.equal(typeof manifest.track, 'string');
     assert.equal(manifest.level, undefined);
     assert(typeof manifest.fixtureSha256 === 'string');
