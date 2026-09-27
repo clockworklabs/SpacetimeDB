@@ -126,8 +126,6 @@ public:
 // INLINE IMPLEMENTATIONS
 // ============================================================================
 
-constexpr uint16_t ERROR_BUFFER_TOO_SMALL = 11;
-
 inline AuthCtx::AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader)
     : is_internal_(is_internal), jwt_loader_(std::move(loader)) {}
 
@@ -169,25 +167,18 @@ inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity 
         }
         
         // Read the JWT payload from the BytesSource
-        std::vector<uint8_t> buffer;
-        buffer.resize(4096); // Start with 4KB buffer
-        
-        size_t buffer_len = buffer.size();
-        int16_t result = bytes_source_read(jwt_source, buffer.data(), &buffer_len);
-        
-        while (result == ERROR_BUFFER_TOO_SMALL) {
-            buffer.resize(buffer.size() * 2);
-            buffer_len = buffer.size();
-            result = bytes_source_read(jwt_source, buffer.data(), &buffer_len);
+        std::array<uint8_t, 4096> buffer;
+        std::string jwt_payload;
+        for (;;) {
+            size_t buffer_len = buffer.size();
+            const auto result = bytes_source_read(jwt_source, buffer.data(), &buffer_len);
+            if (result != 0 && result != -1) return std::nullopt;
+            jwt_payload.append(reinterpret_cast<const char*>(buffer.data()), buffer_len);
+            // -1 is successful exhaustion and may include the final payload bytes.
+            if (result == -1) break;
+            if (buffer_len == 0) return std::nullopt;
         }
-        
-        if (result < 0) {
-            return std::nullopt;
-        }
-        
-        // Convert bytes to string
-        std::string jwt_payload(buffer.begin(), buffer.begin() + buffer_len);
-        
+        if (jwt_payload.empty()) return std::nullopt;
         // Use the provided sender identity (already computed by host from JWT claims)
         return JwtClaims(std::move(jwt_payload), sender);
     });
