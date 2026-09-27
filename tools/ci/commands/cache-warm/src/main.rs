@@ -69,7 +69,7 @@ where
     let command = cmd("cargo", args);
     if cfg!(target_os = "windows") {
         command
-            .env("CARGO_TARGET_DIR", r"C:\actions-runner\_work\target")
+            .env("CARGO_TARGET_DIR", "C:/actions-runner/_work/target")
             .env("OPENSSL_RUST_USE_NASM", "1")
             .env("RUST_BACKTRACE", "full")
     } else {
