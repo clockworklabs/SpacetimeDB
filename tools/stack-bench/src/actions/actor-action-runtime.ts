@@ -110,6 +110,7 @@ export interface Actor {
   loc(testid: string, options?: UnknownRecord): Locator;
   record(payload: string | Buffer): void;
   wasSent(value: string, requireComplete?: boolean): boolean;
+  syncReceived?(): Promise<void>;
 }
 
 export interface BrowserCapability {

@@ -4,7 +4,7 @@
 //
 import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
-import type { Browser, BrowserContext, Page, Request } from 'playwright';
+import type { Browser, BrowserContext, Page, Request, Response } from 'playwright';
 import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
 import { inspectSavedDiagnostic } from '../src/runtime/saved-diagnostic.js';
 import { randomUUID } from 'node:crypto';
@@ -146,6 +146,7 @@ type GradeRunContext = {
   appDir?: string;
   scope?: string;
   extraContexts?: ActorContextEntry[];
+  interruptions?: NetworkInterruption[];
   privacyActors?: ReadonlySet<string>;
   recorded?: Record<string, unknown>;
   unverified?: string[];
@@ -297,10 +298,15 @@ export class Actor {
   page!: Page;
   readonly consoleErrors: string[];
   private readonly transport = new ReceivedTransport();
+  private readonly completedTransport = new ReceivedTransport();
+  private readonly httpReceipts = new Map<string, { url: string; method: string; status: number; contentType: string }>();
+  private serviceWorkerSeen = false;
+  private pendingHttp = 0;
   private readonly pendingRequests = new Map<Promise<boolean>, { request: Request; startedAt: number }>();
   readonly ready: Promise<void>;
-  get received(): readonly string[] { return this.transport.chunks; }
-  get pendingReceived(): number { return this.transport.pending + this.pendingRequests.size; }
+  get received(): readonly string[] { return this.networkInterruption?.observesHttp
+    ? this.completedTransport.chunks : this.transport.chunks; }
+  get pendingReceived(): number { return this.transport.pending + this.pendingHttp + this.unobservedRequests().length; }
   lastWrite: ActorWrite | null = null;
   lastWrites: Record<string, ActorWrite> = {};
   writes: ActorWrite[] = [];
@@ -312,10 +318,14 @@ export class Actor {
   constructor(name: string, page: Page, context: BrowserContext, readonly patchAuthentication = false,
     readonly replaySpacetime = false, readonly spacetimeBackend = false,
     // A stack's platform endpoints that receive the application's writes, whatever they are named.
-    readonly writeEndpoints: readonly string[] = [], readonly freshResponses = false) {
+    readonly writeEndpoints: readonly string[] = [], readonly freshResponses = false,
+    networkInterruption?: NetworkInterruption) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
+    this.networkInterruption = networkInterruption;
+    this.serviceWorkerSeen = context.serviceWorkers().length > 0;
+    context.on('serviceworker', () => { this.serviceWorkerSeen = true; });
     // Test privacy against delivered payloads, not rendered content.
     this.ready = this.attach(page);
   }
@@ -404,10 +414,48 @@ export class Actor {
       this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`);
       if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
     });
-    await captureResponses(page, this.transport, this.freshResponses);
+    await captureResponses(page, this.transport, this.freshResponses, this.networkInterruption?.observesHttp
+      ? { covered: response => this.coveredHttpResponse(response), completed: this.completedTransport } : undefined);
   }
   record(payload: string | Buffer): void {
     this.transport.record(payload);
+    if (this.networkInterruption?.observesHttp) this.completedTransport.record(payload);
+  }
+  private unobservedRequests() {
+    return [...this.pendingRequests.values()].filter(({ request }) =>
+      !this.networkInterruption?.observesHttp || this.serviceWorkerSeen || this.patchAuthentication
+        || this.responseLoss || !request.url().startsWith('http:'));
+  }
+  private async coveredHttpResponse(response: Response): Promise<boolean> {
+    if (!response.url().startsWith('http:') || response.fromServiceWorker()) return false;
+    const id = response.headers()['x-stack-bench-capture'];
+    if (!id || this.httpReceipts.has(id)) return false;
+    const address = await response.serverAddr();
+    const proxy = new URL(this.networkInterruption!.proxy.server);
+    // Synthetic/cache responses cannot borrow an old proxy receipt. The exact
+    // request record is checked again at the snapshot boundary.
+    if (!address || address.port !== Number(proxy.port)
+      || !['127.0.0.1', '::ffff:127.0.0.1'].includes(address.ipAddress)) return false;
+    this.httpReceipts.set(id, { url: response.url(), method: response.request().method(),
+      status: response.status(), contentType: response.headers()['content-type'] ?? '' });
+    return true;
+  }
+  async syncReceived(): Promise<void> {
+    if (!this.networkInterruption?.observesHttp) return;
+    try {
+      const snapshot = await this.networkInterruption.httpSnapshot();
+      this.pendingHttp = snapshot.pending;
+      for (const record of snapshot.records) this.transport.record(record.body, true);
+      const records = new Map(snapshot.records.map(record => [record.id, record]));
+      if (snapshot.incomplete || records.size !== snapshot.records.length
+        || [...this.httpReceipts].some(([id, expected]) => {
+          const actual = records.get(id);
+          return !actual || actual.url !== expected.url || actual.method !== expected.method
+            || actual.status !== expected.status || actual.contentType !== expected.contentType;
+        })) this.transport.markIncomplete('bodyReadFailures');
+    } catch {
+      this.transport.markIncomplete('bodyReadFailures');
+    }
   }
   private reportPendingRequests(phase: 'navigation' | 'absence'): void {
     for (const { request, startedAt } of [...this.pendingRequests.values()].slice(0, 8)) {
@@ -421,7 +469,8 @@ export class Actor {
     // An ordinary reload must not abort the response this privacy observer is recording.
     // Fault actions navigate directly and deliberately do not use this wait.
     const deadline = Date.now() + within;
-    while (this.pendingRequests.size || this.transport.pending) {
+    await this.syncReceived();
+    while (this.pendingReceived) {
       if (Date.now() >= deadline) {
         // Preserve a captured disclosure; incomplete capture only prevents proving absence.
         this.reportPendingRequests('navigation');
@@ -429,11 +478,12 @@ export class Actor {
         return;
       }
       await abortableSleep(Math.min(25, deadline - Date.now()), signal);
+      await this.syncReceived();
     }
   }
   wasSent(needle: string, requireComplete = true): boolean {
     const found = this.transport.contains(needle, requireComplete);
-    if (!found && requireComplete && this.pendingRequests.size) {
+    if (!found && requireComplete && (this.pendingHttp || this.unobservedRequests().length)) {
       this.reportPendingRequests('absence');
       inconclusive('transport-incomplete', {});
     }
@@ -541,18 +591,22 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       async fresh(actor: Actor, sourceName: string, preserveStorage: boolean) {
         const browser = actor.page.context().browser();
         if (!browser) throw new Error('actor browser is unavailable');
-        const context = await browser.newContext(preserveStorage
-          ? { storageState: await actor.context.storageState({ indexedDB: true }) }
-          : undefined);
         const name = `${sourceName}-fresh`;
+        const interruption = ctx.privacyActors?.has(name) ? await startNetworkInterruption(true) : undefined;
+        if (interruption) ctx.interruptions?.push(interruption);
+        const context = await browser.newContext({
+          ...(preserveStorage ? { storageState: await actor.context.storageState({ indexedDB: true }) } : {}),
+          ...(interruption ? { proxy: interruption.proxy } : {}),
+        });
         // Own cleanup before page creation or navigation can fail.
         const entry: ActorContextEntry = { context, name, page: null };
         ctx.extraContexts?.push(entry);
         const fresh = await context.newPage();
         entry.page = fresh;
+        if (interruption) await interruption.attach(context, fresh);
         fresh.setDefaultTimeout(defaultWithin);
         const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication, actor.replaySpacetime,
-          actor.spacetimeBackend, actor.writeEndpoints, ctx.privacyActors?.has(name));
+          actor.spacetimeBackend, actor.writeEndpoints, ctx.privacyActors?.has(name), interruption);
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -861,6 +915,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   const actors = new Map();
   const contexts: ActorContextEntry[] = [];
   const interruptions: NetworkInterruption[] = [];
+  ctx.interruptions = interruptions;
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
 
   // A feature is worth what its criteria are worth. An explicit `max` is only
@@ -940,8 +995,8 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     for (const name of feature.actors!) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
-      const networkInterruption = offlineActors.has(name)
-        ? await runBrowserInfrastructureOperation('network interruption start', () => startNetworkInterruption())
+      const networkInterruption = offlineActors.has(name) || privacyActors.has(name)
+        ? await runBrowserInfrastructureOperation('browser proxy start', () => startNetworkInterruption(privacyActors.has(name)))
         : undefined;
       if (networkInterruption) interruptions.push(networkInterruption);
       const context = await runBrowserInfrastructureOperation('context creation', () =>
@@ -961,8 +1016,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
         networkInterruption.attach(context, page));
       page.setDefaultTimeout(SETUP_WITHIN);
       const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name), args.backend === 'spacetime',
-        ctx.applicationWriteEndpoints, privacyActors.has(name));
-      actor.networkInterruption = networkInterruption;
+        ctx.applicationWriteEndpoints, privacyActors.has(name), networkInterruption);
       await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);

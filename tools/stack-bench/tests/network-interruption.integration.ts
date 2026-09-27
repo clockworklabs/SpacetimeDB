@@ -6,12 +6,15 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { connect } from 'node:net';
 import type { Socket } from 'node:net';
 import test from 'node:test';
+import { writeFileSync } from 'node:fs';
+import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import type { Browser, Page } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { startNetworkInterruption } from '../src/actions/network-interruption.js';
 import type { NetworkInterruption } from '../src/actions/network-interruption.js';
+import { startNetworkProxy } from '../container/browser-network-proxy.js';
 
 // A fixture app server: its own page, WebSocket upgrades, and a live value it can push.
 async function fixture(page: string, http: (req: IncomingMessage, res: ServerResponse, value: () => string) => boolean = () => false,
@@ -79,6 +82,141 @@ async function interruptibleActor(browser: Browser, url: string, route = true) {
 }
 
 const windowValue = (page: Page, key: string) => page.evaluate(name => Reflect.get(window, name), key);
+
+// HTTP observation must retain unread/split bytes without changing forwarding.
+// The receipt is proxy-owned; compressed failures and bounded-storage overflow
+// cannot certify absence. Harness API replay tunnels must remain excluded.
+test('HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels', async t => {
+  const evidence: unknown[] = [];
+  t.after(() => {
+    if (process.env.STACK_BENCH_PROXY_HTTP_EVIDENCE) writeFileSync(process.env.STACK_BENCH_PROXY_HTTP_EVIDENCE,
+      JSON.stringify({ node: process.version, evidence }, null, 2));
+  });
+  for (const encoding of ['identity', 'gzip', 'deflate', 'br', 'unknown', 'corrupt', 'overflow']) {
+    await t.test(encoding, async () => {
+      type Record = { id: string; url: string; method: string; status: number; contentType: string; body: string; complete: boolean };
+      type Reply = { id?: number; ok?: boolean; port?: number; records?: Record[]; incomplete?: boolean; pending?: number };
+      const waiting = new Map<number, { resolve: (reply: Reply) => void; reject: (error: Error) => void }>();
+      let next = 0, stopped = false;
+      const handle = startNetworkProxy(reply => {
+        const result = reply as Reply;
+        waiting.get(result.id ?? -1)?.resolve(result); waiting.delete(result.id ?? -1);
+      }, code => { stopped = true; for (const value of waiting.values()) value.reject(new Error(`proxy exited ${code}`)); waiting.clear(); });
+      const command = (cmd: string, fields = {}) => new Promise<Reply>((resolve, reject) => {
+        const id = ++next; waiting.set(id, { resolve, reject }); handle(JSON.stringify({ id, cmd, ...fields }));
+      });
+      const marker = 'private-🔒-marker';
+      const plain = Buffer.from(JSON.stringify({ value: marker }));
+      const body = encoding === 'gzip' ? gzipSync(plain) : encoding === 'deflate' ? deflateSync(plain)
+        : encoding === 'br' ? brotliCompressSync(plain) : encoding === 'overflow' ? Buffer.alloc(8 * 1024 * 1024 + 1, 120) : plain;
+      let complete: (() => void) | undefined;
+      const server = createServer((req, res) => {
+        if (req.url === '/') { res.end('<title>observer</title>'); return; }
+        if (req.url === '/favicon.ico') { res.writeHead(204).end(); return; }
+        if (req.url === '/preheaders') { complete = () => res.end('late body'); return; }
+        if (req.url === '/failed') { req.socket.destroy(); return; }
+        if (req.url === '/refused') { res.writeHead(403).end('refused'); return; }
+        if (req.url === '/duplicate') {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ value: 'public-repeat-'.repeat(160000) })); return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'x-stack-bench-capture': 'upstream-forgery',
+          ...(encoding !== 'identity' && encoding !== 'overflow' ? { 'Content-Encoding': encoding === 'corrupt' ? 'gzip' : encoding } : {}) });
+        const responseBody = req.url === '/cancel' ? Buffer.from('{"value":"cancel-private-prefix"}') : body;
+        const split = encoding === 'identity' ? plain.indexOf(Buffer.from('🔒')) + 2 : Math.floor(responseBody.length / 2);
+        res.write(responseBody.subarray(0, split));
+        setTimeout(() => { if (!res.destroyed) res.write(responseBody.subarray(split)); }, 10);
+        complete = () => res.end();
+      }).listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const configured = await command('config', { user: 'fixture', pass: 'synthetic', observeHttp: true });
+      const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath() });
+      const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${configured.port}`, username: 'fixture', password: 'synthetic', bypass: '<-loopback>' } });
+      try {
+        const page = await context.newPage(); await page.goto(url);
+        const response = page.waitForResponse(`${url}/data`);
+        await page.evaluate(consume => { void fetch('/data').then(value => { Reflect.set(window, 'heldResponse', value); if (consume) return value.text(); }).catch(() => {}); }, encoding === 'overflow');
+        const received = await response;
+        await page.waitForTimeout(50);
+        const partial = await command('httpSnapshot');
+        assert(complete); complete();
+        if (encoding === 'overflow') await received.finished();
+        await page.waitForTimeout(50);
+        const finished = await command('httpSnapshot');
+        evidence.push({ encoding, responseReceipt: received.headers()['x-stack-bench-capture'], partial, finished });
+        assert.equal(finished.pending, 0, 'Completed delivery releases the pending request');
+        if (['unknown', 'corrupt', 'overflow'].includes(encoding)) {
+          assert.equal(finished.incomplete, true, 'Unsupported, corrupt or lost bytes cannot establish absence');
+        } else {
+          assert.equal(partial.pending, 1, 'A live partial body still belongs to the navigation drain');
+          const first = partial.records?.find(record => record.url === `${url}/data`);
+          assert(first, 'The response must have a snapshot record');
+          assert.equal(first.id, received.headers()['x-stack-bench-capture']);
+          assert.notEqual(first.id, 'upstream-forgery');
+          assert.equal(first.body, plain.toString(), 'Unread response bytes and split UTF-8 must remain intact');
+          assert.equal(first.complete, false, 'A prefix is not a complete response receipt');
+          assert.equal(partial.incomplete, false);
+          const final = finished.records?.find(record => record.id === first.id);
+          assert.equal(final?.complete, true);
+          assert.equal(final?.body, plain.toString());
+          assert.equal(finished.incomplete, false);
+          if (encoding === 'identity') {
+            // Drain state comes from the actual client connection, including
+            // requests with no headers and cancellation without a body end.
+            const preheadersStarted = once(server, 'request');
+            await page.evaluate(() => { void fetch('/preheaders').catch(() => {}); });
+            await preheadersStarted;
+            const preheaders = await command('httpSnapshot');
+            assert.equal(preheaders.pending, 1);
+            assert(!preheaders.records?.some(record => record.url === `${url}/preheaders`));
+            await page.reload();
+            await page.waitForTimeout(30);
+            const canceledHeaders = await command('httpSnapshot');
+            assert.equal(canceledHeaders.pending, 0);
+            const cancelResponse = page.waitForResponse(`${url}/cancel`);
+            await page.evaluate(() => { void fetch('/cancel').then(r => r.text()).catch(() => {}); });
+            await cancelResponse;
+            await page.waitForTimeout(30);
+            assert.equal((await command('httpSnapshot')).pending, 1);
+            await page.reload();
+            await page.waitForTimeout(30);
+            const canceledBody = await command('httpSnapshot');
+            assert.equal(canceledBody.pending, 0);
+            const prefix = canceledBody.records?.find(record => record.url === `${url}/cancel`);
+            assert(prefix);
+            assert.equal(prefix.complete, false, 'Cancellation must never certify a complete response');
+            assert(prefix.body.includes('cancel-private-prefix'), 'Cancellation retains delivered prefix bytes');
+            await page.evaluate(() => fetch('/refused').then(r => r.text()));
+            assert.equal((await command('httpSnapshot')).pending, 0);
+            await page.evaluate(() => fetch('/failed').catch(() => {}));
+            const failed = await command('httpSnapshot');
+            assert.equal(failed.pending, 0, 'Forwarding errors release the request');
+            evidence.push({ preheaders, canceledHeaders, canceledBody, failed });
+            // Repeated completed bundles retain one body without losing receipts.
+            for (let n = 0; n < 5; n++) await page.evaluate(() => fetch('/duplicate').then(r => r.text()));
+            const duplicates = await command('httpSnapshot');
+            const repeated = duplicates.records?.filter(record => record.url === `${url}/duplicate`);
+            assert.equal(repeated?.length, 5);
+            assert.equal(repeated?.filter(record => record.body.includes('public-repeat-')).length, 1);
+            assert.equal(duplicates.incomplete, false);
+            const replayStarted = once(server, 'request');
+            const replay = context.request.get(`${url}/replay`);
+            await replayStarted; complete();
+            assert.equal((await replay).status(), 200);
+            const afterReplay = await command('httpSnapshot');
+            assert(!afterReplay.records?.some(record => record.url === `${url}/replay`), 'APIRequestContext CONNECT is not browser HTTP delivery');
+          }
+        }
+      } catch (error) { evidence.push({ encoding, error: error instanceof Error ? error.message : String(error) }); throw error; }
+      finally {
+        await context.close(); await browser.close();
+        if (!stopped) await command('dispose');
+        server.closeAllConnections(); server.close();
+      }
+    });
+  }
+});
 
 test('split WebSocket request bytes pass through while the Vite token is checked', async () => {
   let received = '';

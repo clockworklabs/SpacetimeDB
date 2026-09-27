@@ -7,12 +7,15 @@
 // {id, cmd: 'cut' | 'restore' | 'dispose'}. EOF or a malformed command closes
 // the listener and every owned socket.
 import { createServer, get as httpGet, request as httpRequest } from 'node:http';
-import type { IncomingHttpHeaders, Server } from 'node:http';
+import type { IncomingHttpHeaders, Server, ServerResponse } from 'node:http';
 import { connect } from 'node:net';
 import type { Socket } from 'node:net';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
+import { brotliDecompressSync, gunzipSync, inflateSync, constants } from 'node:zlib';
 
 // Hop-by-hop and proxy headers never reach the application.
 const HOP = new Set(['proxy-authorization', 'proxy-connection', 'connection', 'keep-alive',
@@ -47,6 +50,57 @@ function viteToken(authority: string, token: string): Promise<boolean> {
 
 export function startNetworkProxy(reply: (value: object) => void, exit: (code: number) => void) {
   let server: Server | undefined, expected = '', cut = false, port = 0;
+  const limit = 8 * 1024 * 1024;
+  let observeHttp = false, incomplete = false, wireBytes = 0, wireChunks = 0, retainedBytes = 0, metadataBytes = 0;
+  const bodies = new Set<string>();
+  const pendingHttp = new Set<ServerResponse>();
+  const records: { id: string; url: string; method: string; status: number; contentType: string;
+    body: string; complete: boolean; encoding: string; chunks: Buffer[] | null; bytes: number }[] = [];
+  const decoded = (record: typeof records[number]): string => {
+    if (!record.chunks) return record.body;
+    const wire = Buffer.concat(record.chunks, record.bytes);
+    if (!wire.length) return '';
+    try {
+      const options = { maxOutputLength: limit,
+        finishFlush: record.complete ? constants.Z_FINISH : constants.Z_SYNC_FLUSH };
+      const bytes = record.encoding === '' || record.encoding === 'identity' ? wire
+        : record.encoding === 'gzip' ? gunzipSync(wire, options)
+        : record.encoding === 'deflate' ? inflateSync(wire, options)
+        : record.encoding === 'br' ? brotliDecompressSync(wire, { maxOutputLength: limit,
+          finishFlush: record.complete ? constants.BROTLI_OPERATION_FINISH : constants.BROTLI_OPERATION_FLUSH })
+        : null;
+      if (!bytes) { incomplete = true; return ''; }
+      const decoder = new StringDecoder('utf8');
+      return decoder.write(bytes) + (record.complete ? decoder.end() : '');
+    } catch { incomplete = true; return ''; }
+  };
+  const retain = (record: typeof records[number]) => {
+    if (!record.chunks) return;
+    const body = decoded(record), size = Buffer.byteLength(body);
+    if (!bodies.has(body)) {
+      if (retainedBytes + size > limit) incomplete = true;
+      else { bodies.add(body); retainedBytes += size; record.body = body; }
+    }
+    wireBytes -= record.bytes;
+    wireChunks -= record.chunks.length;
+    record.chunks = null;
+  };
+  const httpSnapshot = () => {
+    let size = retainedBytes;
+    const seen = new Set(bodies);
+    const snapshot = records.map(record => {
+      let body = record.body;
+      if (record.chunks) {
+        body = decoded(record);
+        if (seen.has(body)) body = '';
+        else if (size + Buffer.byteLength(body) > limit) { incomplete = true; body = ''; }
+        else { seen.add(body); size += Buffer.byteLength(body); }
+      }
+      return { id: record.id, url: record.url, method: record.method, status: record.status,
+        contentType: record.contentType, body, complete: record.complete };
+    });
+    return { records: snapshot, incomplete, pending: pendingHttp.size };
+  };
   const owned = new Map<Socket, string | null>(); // socket -> the Vite token it carries, if tooling
   const pending = new Map<Socket, Promise<void>>();
   // Where each browser-side connection goes, as host:port plus path (never the query).
@@ -80,9 +134,57 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
         res.writeHead(400).end();
         return;
       }
+      if (observeHttp) {
+        pendingHttp.add(res);
+        const settled = () => pendingHttp.delete(res);
+        res.once('finish', settled);
+        res.once('close', settled);
+        res.once('error', settled);
+      }
       own(req.socket, `${target.hostname}:${target.port || 80}${target.pathname}`);
       const upstream = httpRequest(target, { method: req.method, headers: endToEnd(req.headers) }, answer => {
-        res.writeHead(answer.statusCode ?? 502, endToEnd(answer.headers));
+        const headers = endToEnd(answer.headers);
+        if (observeHttp) {
+          const record = { id: randomUUID(), url: target.href, method: req.method ?? 'GET',
+            status: answer.statusCode ?? 502, contentType: answer.headers['content-type'] ?? '',
+            body: '', complete: false, encoding: (answer.headers['content-encoding'] ?? '').trim().toLowerCase(),
+            chunks: [] as Buffer[] | null, bytes: 0 };
+          // Native EventSource is observed without waiting for stream closure.
+          // The browser observer separately rejects fetch-based SSE capture.
+          if (/text\/event-stream/i.test(record.contentType)) pendingHttp.delete(res);
+          metadataBytes += Buffer.byteLength(JSON.stringify({ ...record, chunks: undefined }));
+          // Overwrite any application-supplied receipt. An unretained ID cannot
+          // be matched to a successful snapshot by the observer.
+          headers['x-stack-bench-capture'] = record.id;
+          if (metadataBytes > limit) incomplete = true;
+          else {
+            records.push(record);
+            // Match the existing body observer: binary images remain uninspected,
+            // while scripts, styles and even mislabeled HTML fonts are retained.
+            const textual = /(application\/(json|[^;]+\+json|x-ndjson|(?:x-)?(?:java|ecma)script)|text\/(plain|html|css|(?:java|ecma)script))/i.test(record.contentType);
+            const write = res.write.bind(res);
+            res.write = (chunk, encodingOrCallback?, callback?) => {
+              const live = !res.destroyed && !res.writableEnded;
+              const forwarded = Reflect.apply(write, res, [chunk, encodingOrCallback, callback]) as boolean;
+              if (live && textual && record.chunks) {
+                const bytes = typeof chunk === 'string' ? Buffer.from(chunk,
+                  typeof encodingOrCallback === 'string' ? encodingOrCallback : 'utf8') : Buffer.from(chunk);
+                const available = Math.max(0, limit - wireBytes);
+                // Bound Buffer/array overhead as well as payload bytes when a
+                // response deliberately writes many one-byte chunks.
+                if (bytes.length > available || wireChunks >= limit / 64) incomplete = true;
+                if (bytes.length && available && wireChunks < limit / 64) {
+                  const copy = Buffer.from(bytes.subarray(0, available));
+                  record.chunks.push(copy); record.bytes += copy.length; wireBytes += copy.length; wireChunks++;
+                }
+              }
+              return forwarded;
+            };
+            res.on('finish', () => { record.complete = answer.complete; retain(record); });
+            res.on('close', () => retain(record));
+          }
+        }
+        res.writeHead(answer.statusCode ?? 502, headers);
         answer.pipe(res);
       });
       upstream.on('socket', socket => own(socket));
@@ -143,14 +245,16 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
 
   let queue = Promise.resolve();
   const handle = async (line: string) => {
-    let command: { id?: unknown; cmd?: unknown; user?: unknown; pass?: unknown };
+    let command: { id?: unknown; cmd?: unknown; user?: unknown; pass?: unknown; observeHttp?: unknown };
     try { command = JSON.parse(line); } catch { return shutdown(2); }
     const { id, cmd } = command ?? {};
     if (cmd === 'config' && !server && typeof command.user === 'string' && typeof command.pass === 'string') {
+      observeHttp = command.observeHttp === true;
       expected = `Basic ${Buffer.from(`${command.user}:${command.pass}`).toString('base64')}`;
       return reply({ id, ok: true, port: await listen() });
     }
     if (!server) return shutdown(2);
+    if (cmd === 'httpSnapshot' && observeHttp) return reply({ id, ok: true, ...httpSnapshot() });
     if (cmd === 'cut') {
       // Refuse first, then close, so nothing races through the cut.
       cut = true;

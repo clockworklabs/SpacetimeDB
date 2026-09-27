@@ -13,19 +13,29 @@ import { compiledEntrypoint } from '../package-root.js';
 export interface NetworkInterruption {
   // Context options that route the actor's traffic, loopback included, through the proxy.
   readonly proxy: NonNullable<BrowserContextOptions['proxy']>;
+  readonly observesHttp: boolean;
+  httpSnapshot(): Promise<HttpCaptureSnapshot>;
   attach(context: BrowserContext, page: Page): Promise<void>;
   interrupt(): Promise<{ closed: number; open: string[] }>;
   restore(): Promise<void>;
   dispose(): Promise<void>;
 }
 
+export interface HttpCaptureSnapshot {
+  pending: number;
+  records: { id: string; url: string; method: string; status: number;
+    contentType: string; body: string; complete: boolean }[];
+  incomplete: boolean;
+}
+
 const SETTLE_MS = 5000;
 const COMMAND_TIMEOUT_MS = 10_000;
 
-type Reply = { id?: number; ok?: boolean; port?: number; closed?: string[]; tooling?: string[] };
+type Reply = { id?: number; ok?: boolean; port?: number; closed?: string[]; tooling?: string[] }
+  & Partial<HttpCaptureSnapshot>;
 
 // Start before the actor's context exists; register dispose() with its cleanup at once.
-export async function startNetworkInterruption(): Promise<NetworkInterruption> {
+export async function startNetworkInterruption(observeHttp = false): Promise<NetworkInterruption> {
   // The proxy runs where the browser runs: the leased browser container, or this
   // host for an unleased browser such as the null control's own browser server.
   const container = process.env.STACK_BENCH_LEASE ? browserContainer() : null;
@@ -88,7 +98,7 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
   };
   const username = 'stack-bench', password = randomBytes(24).toString('hex');
   let port: number | undefined;
-  try { ({ port } = await command('config', { user: username, pass: password })); }
+  try { ({ port } = await command('config', { user: username, pass: password, observeHttp })); }
   catch (error) {
     try { await dispose(); }
     catch (cleanupError) { throw new AggregateError([error, cleanupError], 'network interruption setup and cleanup failed'); }
@@ -128,6 +138,16 @@ export async function startNetworkInterruption(): Promise<NetworkInterruption> {
   return {
     // `<-loopback>` removes Chromium's implicit loopback bypass, so local apps go through it too.
     proxy: { server: `http://127.0.0.1:${port}`, bypass: '<-loopback>', username, password },
+    observesHttp: observeHttp,
+    async httpSnapshot() {
+      if (!observeHttp) throw new Error('HTTP observation was not enabled for this context');
+      const reply = await command('httpSnapshot');
+      if (!Array.isArray(reply.records) || typeof reply.incomplete !== 'boolean'
+        || !Number.isSafeInteger(reply.pending) || reply.pending! < 0) {
+        throw new Error('the HTTP observer returned no capture receipt');
+      }
+      return { records: reply.records, incomplete: reply.incomplete, pending: reply.pending! };
+    },
     async attach(context, page) {
       if (!attachedContexts.has(context)) {
         attachedContexts.add(context);

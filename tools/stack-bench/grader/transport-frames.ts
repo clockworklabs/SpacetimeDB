@@ -63,14 +63,21 @@ export class ReceivedTransport {
     this.incompleteCounts[reason]++;
   }
 
-  record(payload: string | Buffer): void {
+  record(payload: string | Buffer, cumulative = false): void {
     const text = transportFrameText(payload);
     // Receipt checks need presence, not frequency. Reloading an identical bundle
     // adds no evidence and must not evict distinct data.
-    if (!text || this.chunks.includes(text)) return;
+    if (!text || (cumulative ? this.chunks.some(chunk => chunk.startsWith(text)) : this.chunks.includes(text))) return;
     if (Buffer.byteLength(text) > this.limit) {
       this.markIncomplete('byteLimit');
       return;
+    }
+    // A later snapshot can extend an earlier prefix. It already contains every
+    // marker in that prefix; retaining both would count the same bytes twice.
+    for (let i = cumulative ? this.chunks.length - 1 : -1; i >= 0; i--) {
+      if (!text.startsWith(this.chunks[i]!)) continue;
+      this.bytes -= Buffer.byteLength(this.chunks[i]!);
+      this.chunks.splice(i, 1);
     }
     this.chunks.push(text);
     this.bytes += Buffer.byteLength(text);
@@ -96,7 +103,8 @@ export class ReceivedTransport {
   }
 }
 
-export async function captureResponses(page: Page, received: ReceivedTransport, freshResponses = false): Promise<void> {
+export async function captureResponses(page: Page, received: ReceivedTransport, freshResponses = false,
+  http?: { covered(response: Response): Promise<boolean>; completed: ReceivedTransport }): Promise<void> {
   let reportedBodyFailures = 0;
   page.on('response', async response => {
     const type = response.headers()['content-type'] ?? '';
@@ -111,7 +119,19 @@ export async function captureResponses(page: Page, received: ReceivedTransport, 
     }
     received.pending++;
     received.pendingResponses.set(response, { page, startedAt: Date.now() });
-    try { received.record(await response.text()); }
+    const body = response.text();
+    // The proxy observes HTTP prefixes. Replay discovery still receives only
+    // complete bodies, independently of the privacy observation window.
+    void body.catch(() => {});
+    try {
+      if (http && await http.covered(response)) {
+        void body.then(text => http.completed.record(text)).catch(() => {});
+        return;
+      }
+      const text = await body;
+      received.record(text);
+      http?.completed.record(text);
+    }
     catch (error) {
       received.markIncomplete('bodyReadFailures');
       if (reportedBodyFailures++ < 8) {
@@ -126,7 +146,11 @@ export async function captureResponses(page: Page, received: ReceivedTransport, 
     finally { received.pending--; received.pendingResponses.delete(response); }
   });
   const session = await page.context().newCDPSession(page);
-  session.on('Network.eventSourceMessageReceived', event => received.record(event.data));
+  if (http) session.on('close', () => { if (!page.isClosed()) received.markIncomplete('bodyReadFailures'); });
+  session.on('Network.eventSourceMessageReceived', event => {
+    received.record(event.data);
+    http?.completed.record(event.data);
+  });
   session.on('Network.responseReceived', event => {
     // Fetch streams have no EventSource events. Absence of an unseen body is not a pass.
     if (event.response.mimeType === 'text/event-stream' && event.type !== 'EventSource') {

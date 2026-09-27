@@ -4,12 +4,15 @@ import { once } from 'node:events';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
+import { createGzip, constants } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { chromium } from 'playwright';
-import { gradeFeature } from '../grader/grade.js';
-import type { ActionEvidence } from '../src/actions/action-contract.js';
+import { chromium, type CDPSession } from 'playwright';
+import { Actor, gradeFeature } from '../grader/grade.js';
+import { executeAction, type ActionEvidence } from '../src/actions/action-contract.js';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { startNetworkInterruption } from '../src/actions/network-interruption.js';
 
 // Failure cases specified before the fix: decoded cached fonts have no readable
 // body; fresh/reopened actors can lose capture settings; cache bypass can leak
@@ -157,8 +160,9 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
       }
       if (mode === 'stalled') {
         const pending = stderr.mock.calls.map(call => String(call.arguments[0]))
-          .find(line => line.startsWith('transport body pending '));
+          .find(line => line.startsWith('transport request pending '));
         assert(pending, 'The inconclusive result must identify the pending response');
+        assert(pending.includes('"phase":"absence"'));
         assert(pending.includes('"resourceType":"fetch"'));
         assert(!/private-route|private-query|private-body-canary/.test(pending));
       }
@@ -248,4 +252,216 @@ test('privacy reload preserves preceding read and write responses', async t => {
       assert.equal(browser.contexts().length, 0);
     });
   }
+});
+
+// Failure matrix, before observer changes: normal reload must not erase bytes
+// already delivered; split UTF-8 and gzip retain exact markers; a finite-window
+// observation keeps a silent live request inconclusive. Detached capture and byte overflow
+// remain inconclusive, while an already captured leak takes precedence.
+test('privacy observes HTTP delivery through reload during a finite window', async t => {
+  let mode = '';
+  let loads = 0;
+  const marker = 'private-🔒-marker';
+  const wire: { event: string; at: number; bytes?: number }[] = [];
+  const server = createServer((req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.url === '/poll') {
+      wire.push({ event: 'request', at: Date.now() });
+      res.on('close', () => wire.push({ event: 'close', at: Date.now() }));
+      if (mode === 'silent') return;
+      const start = () => {
+        if (res.destroyed) return;
+        const gzip = mode === 'gzip-leak';
+        res.writeHead(200, { 'Content-Type': 'application/json', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
+        const output = gzip ? createGzip() : res;
+        if (output !== res) output.pipe(res);
+        const text = (mode.includes('leak') && mode !== 'future-leak') || mode === 'completed' ? marker : 'public';
+        const body = Buffer.from(`{"value":"${text}"}`);
+        if (mode === 'overflow') {
+          res.end('x'.repeat(8 * 1024 * 1024 + 1));
+          wire.push({ event: 'overflow-sent', at: Date.now() });
+        } else if (mode === 'completed' || mode.endsWith('capture-lost')) {
+          res.end(body);
+          wire.push({ event: 'complete', at: Date.now(), bytes: body.length });
+        } else {
+          // Split inside the four-byte lock character, not just between words.
+          const split = text === marker ? body.indexOf(Buffer.from('🔒')) + 2 : 8;
+          output.write(body.subarray(0, split));
+          if (gzip) (output as ReturnType<typeof createGzip>).flush(constants.Z_SYNC_FLUSH);
+          wire.push({ event: 'first-chunk', at: Date.now(), bytes: split });
+          setTimeout(() => {
+            if (res.destroyed) return;
+            output.write(body.subarray(split));
+            if (gzip) (output as ReturnType<typeof createGzip>).flush(constants.Z_SYNC_FLUSH);
+            wire.push({ event: 'second-chunk', at: Date.now(), bytes: body.length - split });
+          }, 25);
+          setTimeout(() => { if (!res.destroyed) { output.end(); wire.push({ event: 'complete', at: Date.now() }); } }, 350);
+        }
+      };
+      if (mode === 'zero-headers') setTimeout(start, 200);
+      else start();
+    } else if (req.url === '/later') {
+      res.setHeader('Content-Type', 'application/json');
+      setTimeout(() => { if (!res.destroyed) { res.end(JSON.stringify({ value: marker })); wire.push({ event: 'later-leak', at: Date.now() }); } }, 100);
+    } else {
+      loads++;
+      res.setHeader('Content-Type', 'text/html');
+      res.end(`<button id="poll" onclick="fetch('/poll').then(r=>r.text()).then(()=>document.getElementById('loaded').textContent='consumed').catch(()=>{})">Poll</button><span id="loaded">ready</span>${loads > 1 && mode === 'future-leak' ? '<script>setTimeout(()=>fetch("/later").then(r=>r.text()).catch(()=>{}),50)</script>' : ''}`);
+    }
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  // Match the appliance's full Chromium executable, not headless_shell.
+  const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath() });
+  t.after(() => browser.close());
+  const evidence: unknown[] = [];
+  t.after(() => {
+    if (process.env.STACK_BENCH_CAPTURE_EVIDENCE) writeFileSync(`${process.env.STACK_BENCH_CAPTURE_EVIDENCE}.finite-http.json`,
+      JSON.stringify({ browser: browser.version(), executable: chromium.executablePath(), evidence }, null, 2));
+  });
+  for (mode of ['clean', 'zero-headers', 'split-leak', 'gzip-leak', 'future-leak', 'completed', 'silent', 'capture-lost', 'overflow', 'leak-capture-lost']) {
+    await t.test(mode, async caseT => {
+      wire.length = 0; loads = 0;
+      const sessions: CDPSession[] = [];
+      const newContext = browser.newContext.bind(browser);
+      caseT.mock.method(browser, 'newContext', async (...args: Parameters<typeof browser.newContext>) => {
+        const context = await newContext(...args);
+        const newSession = context.newCDPSession.bind(context);
+        caseT.mock.method(context, 'newCDPSession', async (...sessionArgs: Parameters<typeof context.newCDPSession>) => {
+          const session = await newSession(...sessionArgs);
+          sessions.push(session);
+          return session;
+        });
+        const newPage = context.newPage.bind(context);
+        caseT.mock.method(context, 'newPage', async () => {
+          const page = await newPage();
+          const reload = page.reload.bind(page);
+          caseT.mock.method(page, 'reload', async (...reloadArgs: Parameters<typeof page.reload>) => {
+            // A real fetch starts at the boundary of the normal reload action.
+            // No route is intercepted and no application traffic is suppressed.
+            const request = page.waitForRequest(`${url}/poll`);
+            const response = mode === 'zero-headers' ? null : page.waitForResponse(`${url}/poll`);
+            await page.evaluate(() => { void fetch('/poll').then(r => r.text()).catch(() => {}); });
+            await request;
+            if (response) {
+              const received = await response;
+              if (mode === 'completed' || mode.endsWith('capture-lost')) {
+                await received.finished();
+                if (mode === 'completed') await page.waitForTimeout(120);
+              }
+              else await page.waitForTimeout(60);
+            }
+            wire.push({ event: 'reload', at: Date.now() });
+            const result = await reload(...reloadArgs);
+            if (mode.endsWith('capture-lost')) {
+              for (const session of sessions) await session.detach();
+              wire.push({ event: 'observer-detached', at: Date.now() });
+            }
+            return result;
+          });
+          return page;
+        });
+        return context;
+      });
+      const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1, features: [{
+        id: 1, name: 'finite HTTP privacy window', actors: ['reader'], setup: [], criteria: [{
+          id: 'capture', desc: 'all delivered bytes remain observable through navigation', points: 1, steps: [
+            { do: 'expect', actor: 'reader', testid: 'loaded', contains: 'ready' },
+            ...(mode === 'silent' || mode === 'overflow' ? [{ do: 'click', actor: 'reader', testid: 'poll' }]
+              : [{ do: 'reload', actor: 'reader', settleMs: 0 }]),
+            ...(mode === 'overflow' ? [{ do: 'expect', actor: 'reader', testid: 'loaded', contains: 'consumed' }] : []),
+            { do: 'expectNotReceived', actor: 'reader', contains: marker, within: 250 },
+          ],
+        }],
+      }] }).features[0]!;
+      const result = await gradeFeature(browser, feature,
+        { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
+        { runId: 'finite-http', roomName: name => name, url, actions: [], spacetime: null,
+          backend: 'postgres', nullControl: false, defaultWithin: 1000 });
+      evidence.push({ mode, wire: [...wire], result });
+      assert.equal(result.setupEvidence.status, 'passed', JSON.stringify(result));
+      const expected = mode.includes('leak') || mode === 'completed' ? 'failed'
+        : mode === 'capture-lost' || mode === 'overflow' || mode === 'silent' ? 'inconclusive' : 'passed';
+      assert.equal(result.criteria[0]!.evidence.status, expected, JSON.stringify(evidence.at(-1)));
+      if (mode === 'split-leak' || mode === 'gzip-leak') {
+        assert(wire.find(event => event.event === 'second-chunk')!.at <= wire.find(event => event.event === 'reload')!.at,
+          'The complete marker must reach the wire before reload');
+      }
+      if (mode === 'future-leak') assert(wire.some(event => event.event === 'later-leak'));
+      assert.equal(browser.contexts().length, 0, 'All actor contexts must close');
+    });
+  }
+});
+
+// Partial bytes may prove a privacy failure, but must not become complete JSON
+// for ID discovery or confirm a write for bulk replay before its response ends.
+test('HTTP privacy fragments do not become completed source or confirmed writes', async t => {
+  const marker = 'private-write-marker';
+  const json = JSON.stringify({ id: 7, value: marker, padding: 'x'.repeat(2 * 1024 * 1024) });
+  let finish: (() => void) | undefined;
+  let append: ((end: number) => void) | undefined;
+  const server = createServer((req, res) => {
+    if (req.url === '/api/write') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      let sent = 100;
+      res.write(json.slice(0, sent));
+      append = end => { res.write(json.slice(sent, end)); sent = end; };
+      finish = () => res.end();
+    } else { res.setHeader('Content-Type', 'text/html'); res.end('<title>write receipt</title>'); }
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath() });
+  const proxy = await startNetworkInterruption(true);
+  const context = await browser.newContext({ proxy: proxy.proxy });
+  const page = await context.newPage();
+  const actor = new Actor('reader', page, context, false, false, false, [`${url}/api/write`], true, proxy);
+  t.after(async () => { await context.close(); await proxy.dispose(); await browser.close(); });
+  await actor.ready;
+  await page.goto(url);
+  const response = page.waitForResponse(`${url}/api/write`);
+  await page.evaluate(() => { void fetch('/api/write', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"name":"item"}' }).then(r => r.json()); });
+  const received = await response;
+  const observation = await executeAction(ACTION_REGISTRY, 'expectNotReceived',
+    { do: 'expectNotReceived', actor: 'reader', contains: marker, within: 100 }, {
+      capabilities: {
+        actors: { get: (name: string) => name === 'reader' ? actor : undefined },
+        'transport-observation': {
+          defaultWithin: 1000, expand: (value: string) => value,
+          sleep: (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds)),
+          verification: { structural() {}, unverified() {}, verified() {} },
+        },
+      },
+    });
+  const before = { received: [...actor.received], confirmed: actor.writes.at(-1)?.confirmed ?? null, observation };
+  assert(finish, 'The real response must have delivered its first bytes');
+  assert(append);
+  // Repeated observations of one growing 2 MiB body must not exhaust the
+  // capture budget by counting every prefix as a separate response.
+  for (let end = 256 * 1024; end <= json.length + 256 * 1024; end += 256 * 1024) {
+    const length = Math.min(end, json.length);
+    append(length);
+    const deadline = Date.now() + 3000;
+    while (!(await proxy.httpSnapshot()).records.some(record => record.body.length === length)) {
+      assert(Date.now() < deadline, 'The proxy must receive the next real body prefix');
+      await page.waitForTimeout(10);
+    }
+    await actor.syncReceived();
+  }
+  finish();
+  await received.finished();
+  const deadline = Date.now() + 1000;
+  while ((!actor.received.includes(json) || actor.writes.at(-1)?.confirmed !== true) && Date.now() < deadline) await page.waitForTimeout(10);
+  const after = { received: [...actor.received], confirmed: actor.writes.at(-1)?.confirmed ?? null };
+  await actor.syncReceived();
+  assert.equal(actor.wasSent('not-in-this-response'), false, 'Growing prefixes must count once against the byte limit');
+  if (process.env.STACK_BENCH_CAPTURE_EVIDENCE) writeFileSync(`${process.env.STACK_BENCH_CAPTURE_EVIDENCE}.write-boundary.json`,
+    JSON.stringify({ browser: browser.version(), before, after }, null, 2));
+  assert(!before.received.some(body => body.includes(marker)), 'Partial JSON cannot supply discovered IDs');
+  assert.notEqual(before.confirmed, true, 'Partial HTTP success cannot authorize bulk replay');
+  assert.equal(observation.status, 'failed', JSON.stringify(observation));
+  assert(after.received.includes(json), 'The completed response remains available to existing source consumers');
+  assert.equal(after.confirmed, true, 'A complete successful response confirms the captured write');
 });

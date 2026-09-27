@@ -78,6 +78,11 @@ repeated request bursts; it is not a capacity test.
   These privacy checks measure fresh HTTP responses; they do not establish HTTP
   cache isolation. Other actors retain normal caching. No domain or asset type
   is exempted from the existing capture rules.
+  Plain HTTP capture uses the browser context's authenticated proxy. It records
+  text bytes forwarded to that context, even if the page has not read them.
+  This is evidence of delivery, not application consumption. HTTPS still uses
+  browser body capture; encrypted tunnels are not decoded by the proxy.
+  Partial bodies cannot confirm writes or supply IDs for setup replay.
   Before an ordinary reload, privacy actors wait for started HTTP reads and writes
   within the existing navigation deadline. An unfinished long poll can therefore
   make the check inconclusive. Native EventSource stays open and uses event capture.
