@@ -13,6 +13,7 @@
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true, "unlessVisible": "schedule-restock-item" },
+        { "do": "click", "actor": "watcher", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "before" }
       ],
       "criteria": [
@@ -35,6 +36,7 @@
             { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
             { "do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true },
             { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true },
+            { "do": "click", "actor": "watcher", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "before", "plus": 7, "within": 15000 },
             { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "absent": true },
             { "do": "expectElementCount", "actor": "admin", "testid": "stock-ledger-entry", "relativeTo": "ledger-before", "plus": 1 }

@@ -26,6 +26,7 @@
           "item": "Bluetooth Speaker",
           "as": "speaker-before-control"
         },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "callAction",
           "actor": "buyer",
@@ -115,7 +116,7 @@
             {
               "do": "expectActionOutcome",
               "actor": "guest",
-              "outcome": "refused",
+              "outcome": "application-refused",
               "routeProvenBy": "buyer"
             },
             {
@@ -186,7 +187,7 @@
             {
               "do": "expectActionOutcome",
               "actor": "wrong-password",
-              "outcome": "refused",
+              "outcome": "application-refused",
               "routeProvenBy": "buyer"
             },
             {
@@ -257,7 +258,7 @@
             {
               "do": "expectActionOutcome",
               "actor": "query-input",
-              "outcome": "refused",
+              "outcome": "application-refused",
               "routeProvenBy": "buyer"
             },
             {
@@ -318,7 +319,7 @@
             {
               "do": "expectActionOutcome",
               "actor": "duplicate",
-              "outcome": "refused",
+              "outcome": "application-refused",
               "routeProvenBy": "buyer"
             },
             {
@@ -427,7 +428,7 @@
             {
               "do": "expectActionOutcome",
               "actor": "buyer",
-              "outcome": "refused"
+              "outcome": "application-refused"
             },
             {
               "do": "callAction",
@@ -669,6 +670,7 @@
               "testid": "current-user",
               "within": 6000
             },
+            { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "callAction",
               "actor": "buyer",
@@ -715,7 +717,7 @@
             {
               "do": "expectActionOutcome",
               "actor": "buyer",
-              "outcome": "refused"
+              "outcome": "application-refused"
             },
             {
               "do": "signIn",
@@ -730,6 +732,7 @@
               "contains": "kim",
               "within": 10000
             },
+            { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "callAction",
               "actor": "buyer",

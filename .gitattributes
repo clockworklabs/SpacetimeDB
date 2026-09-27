@@ -5,3 +5,4 @@
 /tools/stack-bench/** text eol=lf
 /tools/stack-bench/**/*.woff2 -text -diff
 /tools/stack-bench/qualification-evidence/**/*.json -text whitespace=cr-at-eol
+/tools/stack-bench/qualification-evidence/ecommerce-l3-navigation-20260927/** -text -whitespace

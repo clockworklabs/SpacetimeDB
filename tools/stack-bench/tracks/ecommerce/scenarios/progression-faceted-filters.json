@@ -13,6 +13,7 @@
         { "do": "dbSetStock", "item": "Coffee Grinder", "warehouse": "East", "quantity": 0, "settleMs": 0 },
         { "do": "dbSetStock", "item": "Coffee Grinder", "warehouse": "West", "quantity": 0, "settleMs": 1000 },
         { "do": "reload", "actor": "visitor", "settleMs": 1000 },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "fill", "actor": "visitor", "testid": "category-filter", "text": "Home" },
         { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "50" },
         { "do": "fill", "actor": "visitor", "testid": "maximum-price", "text": "200" },

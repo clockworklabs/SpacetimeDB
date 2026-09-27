@@ -26,6 +26,8 @@
         {"do": "dbRecordCheckout", "account": "{user:tess}", "item": "Laptop Stand", "as": "orders-other", "storage": {"kind": "order-data", "cart": false, "warehouses": false}},
         {"do": "dbRecordCheckout", "account": "{user:sam}", "item": "Laptop Stand", "as": "stock-buyer", "storage": {"kind": "order-data", "cart": false, "warehouses": true}},
         {"do": "dbRecordCheckout", "account": "{user:tess}", "item": "Laptop Stand", "as": "stock-other", "storage": {"kind": "order-data", "cart": false, "warehouses": true}},
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "other", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "repeat": 500,
           "steps": [
@@ -65,6 +67,7 @@
             {"do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true},
             {"do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": {"testid": "admin-item-row", "contains": "Laptop Stand"}, "relativeTo": "stand-before", "plus": -1000},
             {"do": "freshClient", "actor": "buyer"},
+            { "do": "click", "actor": "buyer-fresh", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": {"testid": "item-card", "contains": "Laptop Stand"}, "relativeTo": "stand-before", "plus": -1000}
           ]
         }

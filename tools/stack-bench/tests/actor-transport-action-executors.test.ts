@@ -498,7 +498,8 @@ test('purchase and restock privacy refusals require their successful control', a
     const feature = scenario.features.find((feature: { criteria: { id: string }[] }) =>
       feature.criteria.some(criterion => criterion.id === id));
     const steps = [...feature.setup, ...feature.criteria.find((criterion: { id: string }) => criterion.id === id).steps];
-    const refusal = steps.find(step => step.do === 'expectActionOutcome' && step.outcome === 'refused');
+    const refusal = steps.find(step => step.do === 'expectActionOutcome'
+      && ['refused', 'application-refused'].includes(step.outcome));
     const accepted = steps.findIndex(step => step.do === 'expectActionOutcome'
       && step.outcome === 'accepted' && step.actor === refusal.routeProvenBy);
     assert(accepted >= 0 && accepted < steps.indexOf(refusal));

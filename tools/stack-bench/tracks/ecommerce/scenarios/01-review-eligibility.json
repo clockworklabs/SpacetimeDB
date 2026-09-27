@@ -12,7 +12,9 @@
       "actors": ["owner", "stranger"],
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "tam" },
-        { "do": "signUp", "actor": "stranger", "name": "uma" }
+        { "do": "signUp", "actor": "stranger", "name": "uma" },
+        { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "stranger", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

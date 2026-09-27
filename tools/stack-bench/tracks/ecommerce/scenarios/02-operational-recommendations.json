@@ -10,7 +10,8 @@
       "name": "Customer recommendations",
       "actors": ["customer"],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "recommendations" }
+        { "do": "signUp", "actor": "customer", "name": "recommendations" },
+        { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

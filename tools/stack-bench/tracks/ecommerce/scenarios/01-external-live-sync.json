@@ -11,6 +11,7 @@
       "name": "An open storefront follows a direct database write",
       "actors": ["viewer"],
       "setup": [
+        { "do": "click", "actor": "viewer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "expectNumber",
           "actor": "viewer",

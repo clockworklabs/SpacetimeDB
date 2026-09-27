@@ -11,6 +11,7 @@
       "actors": ["author"],
       "setup": [
         { "do": "signUp", "actor": "author", "name": "kira" },
+        { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "callAction", "actor": "author", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" } },
 
         { "do": "expectActionOutcome", "actor": "author", "outcome": "accepted" },

@@ -14,7 +14,8 @@
       ],
       "setup": [
         {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
-        {"do":"click","actor":"admin","testid":"admin-link"}
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -200,6 +201,7 @@
             {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"not-operator","readyTestid":"current-user"},
+            { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do":"recordNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"as":"unauthorized-item-before"},
             {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             {"do":"recordNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"East"},"as":"unauthorized-east-before"},
@@ -222,6 +224,7 @@
             {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"East"},"relativeTo":"unauthorized-east-before","plus":0},
             {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"West"},"relativeTo":"unauthorized-west-before","plus":0},
+            { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"relativeTo":"unauthorized-item-before","plus":0}
           ]
         },

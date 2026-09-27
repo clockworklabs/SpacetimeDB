@@ -16,7 +16,8 @@
           "do": "signUp",
           "actor": "buyer",
           "name": "oli"
-        }
+        },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -106,6 +107,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
+            { "do": "click", "actor": "buyer-fresh", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "click",
               "actor": "buyer-fresh",

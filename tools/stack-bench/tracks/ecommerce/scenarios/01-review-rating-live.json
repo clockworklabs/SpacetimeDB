@@ -12,6 +12,7 @@
       "setup": [
         { "do": "signUp", "actor": "author", "name": "leon" },
         { "do": "signUp", "actor": "other", "name": "maya" },
+        { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "callAction", "actor": "author", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Gaming Mouse", "attribute": "data-buy-input" } },
 
         { "do": "expectActionOutcome", "actor": "author", "outcome": "accepted" },
@@ -26,6 +27,7 @@
         { "do": "fill", "actor": "author", "testid": "review-input", "text": "works for travel" },
         { "do": "click", "actor": "author", "testid": "review-submit" },
         { "do": "expect", "actor": "author", "testid": "review-item", "contains": "works for travel" },
+        { "do": "click", "actor": "other", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "callAction", "actor": "other", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Gaming Mouse", "attribute": "data-buy-input" } },
 
         { "do": "expectActionOutcome", "actor": "other", "outcome": "accepted" },

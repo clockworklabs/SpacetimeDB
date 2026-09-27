@@ -10,7 +10,9 @@
       "name": "Purchases are attributed to whoever made them",
       "actors": ["victim","attacker"],
       "setup": [{"do":"signUp","actor":"victim","name":"lee"},{"do":"signUp","actor":"attacker","name":"mel"},
-        {"do":"click","actor":"victim","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"}}],
+        { "do": "click", "actor": "victim", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        {"do":"click","actor":"victim","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"}},
+        { "do": "click", "actor": "attacker", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }],
       "criteria": [
         {
           "id": "102a",

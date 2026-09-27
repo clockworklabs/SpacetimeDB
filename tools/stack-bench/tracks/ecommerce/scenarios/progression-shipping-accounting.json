@@ -17,7 +17,8 @@
         {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
         {"do":"click","actor":"admin","testid":"admin-link"},
         {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
-        {"do":"click","actor":"staff","testid":"staff-link"}
+        {"do":"click","actor":"staff","testid":"staff-link"},
+        { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -49,6 +50,7 @@
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"shipping-accounting","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped", "ignoreCase": true,"within":10000},
             {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","relativeTo":"East-before-ship","plus":0},

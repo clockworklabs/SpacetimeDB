@@ -225,7 +225,8 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
       detail: `the isolated session credential did not complete a successful control purchase (status ${status})` });
   }
   return { action: input.action, accepted: caller.actionCall.accepted,
-    status: caller.actionCall.status };
+    status: caller.actionCall.status, responseContract: caller.actionCall.responseContract,
+    refusalKind: caller.actionCall.refusalKind, applicationRejected: caller.actionCall.applicationRejected };
 }
 
 // A 404 names the operation the application interface promised; any other

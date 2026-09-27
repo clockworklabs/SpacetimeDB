@@ -11,8 +11,10 @@
     "setup": [
       {"do":"signUp","actor":"owner","name":"claim-review-owner","exact":true},
       {"do":"signUp","actor":"stranger","name":"claim-review-stranger","exact":true},
+      { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
       {"do":"callAction","actor":"owner","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
-      {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"}
+      {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+      { "do": "click", "actor": "stranger", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
     ],
     "criteria": [{
       "id":"618a", "category":"production", "points":2,
@@ -27,6 +29,7 @@
         {"do":"expectActionOutcome","actor":"stranger","outcome":"application-refused","routeProvenBy":"owner"},
         {"do":"freshClient","actor":"owner"},
         {"do":"signIn","actor":"owner-fresh","name":"claim-review-owner","exact":true},
+        { "do": "click", "actor": "owner-fresh", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"openItem","actor":"owner-fresh","item":"Keyboard"},
         {"do":"expect","actor":"owner-fresh","testid":"review-item","contains":"Original buyer review","within":10000},
         {"do":"expect","actor":"owner-fresh","testid":"review-item","contains":"Nonbuyer review","absent":true,"within":3000},

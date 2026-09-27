@@ -48,6 +48,7 @@
           "item": "Bluetooth Speaker",
           "as": "stored-before-serial-purchase"
         },
+        { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
           "actor": "a",
@@ -239,7 +240,9 @@
           "item": "Bluetooth Speaker",
           "relativeTo": "stored-before-control",
           "plus": 5
-        }
+        },
+        { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -377,6 +380,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
+            { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "click",
               "actor": "a",
@@ -410,6 +414,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
+            { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "click",
               "actor": "b",
@@ -443,6 +448,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
+            { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "click",
               "actor": "c",
@@ -514,6 +520,7 @@
             { "do": "dbRecordCheckout", "account": "{user:r1}", "item": "Bluetooth Speaker", "as": "mixed-a", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
             { "do": "dbRecordCheckout", "account": "{user:r2}", "item": "Bluetooth Speaker", "as": "mixed-b", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
             { "do": "dbRecordCheckout", "account": "{user:r3}", "item": "Bluetooth Speaker", "as": "mixed-c", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+            { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {
               "do": "callConcurrently", "action": "buy", "actors": ["a", "b", "c"], "from": "a", "requests": 3, "settleMs": 3000,
               "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] },

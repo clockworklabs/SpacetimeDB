@@ -11,7 +11,10 @@
       "actors": ["buyer", "watcher", "visitor"],
       "setup": [
         { "do": "signUp", "actor": "buyer", "name": "eli" },
-        { "do": "signUp", "actor": "watcher", "name": "fay" }
+        { "do": "signUp", "actor": "watcher", "name": "fay" },
+        { "do": "click", "actor": "watcher", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -31,6 +34,7 @@
           "points": 2,
           "steps": [
             { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 100 },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 100 },
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Espresso Machine" } },
             { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 99 },
             { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 99 }

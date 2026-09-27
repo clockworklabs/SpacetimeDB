@@ -11,6 +11,7 @@
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 100 }
       ],
       "criteria": [

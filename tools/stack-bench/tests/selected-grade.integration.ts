@@ -3,6 +3,7 @@ import { execFile, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { readGradeArtifactPayload } from '../src/evidence/artifacts.js';
@@ -148,6 +149,161 @@ test('catalog values are checked on the catalog page, including through navigati
       server.child.kill('SIGTERM');
     }
   });
+});
+
+test('purchase observers reach a separate catalog before the write and stay there', async t => {
+  // A working linked catalog must pass. A dead link must fail. A stale observer
+  // must fail even if returning to the catalog would show the updated stock.
+  const root = mkdtempSync(join(STACK_BENCH_ROOT, 'results', 'diagnostics', 'purchase-navigation-'));
+  t.diagnostic(`Evidence: ${root}; repeat: node --test --test-name-pattern="purchase observers" dist/tests/selected-grade.integration.js`);
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 2, { id: 'ecommerce.progression-catalog' });
+  const check = binding.release.checkCatalog.find(c => c.stableKey === 'ecommerce.spec.live-state.purchase-stock.3b');
+  assert(check?.source);
+  const selection = resolveRecipeSelection(binding.release, { checkKeys: [check.stableKey] });
+  for (const fixture of [
+    { name: 'root', linked: false, opens: true, live: true, expected: 'passed' },
+    { name: 'linked', linked: true, opens: true, live: true, expected: 'passed' },
+    { name: 'dead-link', linked: true, opens: false, live: true, expected: 'failed' },
+    { name: 'stale-observer', linked: true, opens: true, live: false, expected: 'failed' },
+    { name: 'late-first-read', linked: true, opens: true, live: true, delayGuest: true, expected: 'failed' },
+  ]) await t.test(fixture.name, async () => {
+    const app = join(root, fixture.name);
+    mkdirSync(app);
+    let stock = 100, navigationsAfterPurchase = 0, purchases = 0;
+    const pendingReads: Array<() => void> = [];
+    const delayGuest = 'delayGuest' in fixture;
+    const catalog = `<section id="item-list"><article data-role="item-card">
+      <span data-role="item-name">Espresso Machine</span><span data-role="item-stock">100</span>
+      <button id="buy-now" onclick="fetch('/stock',{method:'POST'})">Buy</button></article></section>`;
+    const html = (inCatalog: boolean) => `<!doctype html>
+      <input id="signup-username"><input id="signup-password"><button id="signup-submit">Sign up</button>
+      <div id="current-user" hidden></div>
+      <a id="catalog-link" href="${fixture.opens ? '/catalog' : '#'}">Shop</a>
+      ${inCatalog ? catalog : '<h1>Home</h1>'}
+      <script>
+        const current = document.querySelector('#current-user');
+        if(sessionStorage.user){current.hidden=false;current.textContent=sessionStorage.user;}
+        document.querySelector('#signup-submit').onclick=()=>{
+          sessionStorage.user=document.querySelector('#signup-username').value;
+          current.textContent=sessionStorage.user;current.hidden=false;
+        };
+        const lateGuest=${delayGuest && inCatalog}&&!sessionStorage.user;
+        if(lateGuest)document.querySelector('[data-role="item-stock"]').textContent='';
+        async function update(){const response=await fetch('/stock'+(lateGuest?'?wait=1':''));const value=await response.text();
+          const element=document.querySelector('[data-role="item-stock"]');if(element)element.textContent=value;}
+        update();if(${fixture.live}&&!lateGuest)setInterval(update,100);
+      </script>`;
+    const server = createServer((request, response) => {
+      if (request.url?.startsWith('/stock')) {
+        if (request.method === 'POST') { stock--; purchases++; pendingReads.splice(0).forEach(read => read()); }
+        response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+        if (request.url === '/stock?wait=1' && !purchases) {
+          pendingReads.push(() => response.end(String(stock)));
+          return;
+        }
+        response.end(String(stock));
+        return;
+      }
+      if (purchases) navigationsAfterPurchase++;
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(html(!fixture.linked || request.url === '/catalog'));
+    });
+    writeFileSync(join(app, 'index.html'), html(!fixture.linked));
+    writeFileSync(join(app, 'catalog.html'), html(true));
+    writeFileSync(join(app, 'expected.json'), JSON.stringify(fixture, null, 2));
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      assert(address && typeof address !== 'string');
+      const out = join(app, 'grade.json');
+      const execution = await run(GRADER, ['--url', `http://127.0.0.1:${address.port}`, '--level', '2',
+        '--track', 'ecommerce', '--backend', 'postgres', '--app', app,
+        '--spec', join(track.dir, check.source!), '--out', out, '--recipe', binding.release.id,
+        '--selected-check', check.stableKey, '--expected-recipe-sha256', binding.release.contentSha256,
+        '--selection-sha256', selection.sha256]);
+      writeFileSync(join(app, 'stdout.log'), execution.stdout);
+      writeFileSync(join(app, 'stderr.log'), execution.stderr);
+      writeFileSync(join(app, 'effects.json'), JSON.stringify({ purchases, stock, navigationsAfterPurchase }));
+      const report = readGradeArtifactPayload(out);
+      assert.equal(first(first(report.features).criteria).evidence.status, fixture.expected);
+      if (fixture.opens) assert.equal(purchases, delayGuest ? 0 : 1, 'observe initial data before the purchase');
+      assert.equal(navigationsAfterPurchase, 0, 'observers must not reload to see the write');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+});
+
+test('cart checks reopen catalog after authentication and reload without refreshing live observers', async t => {
+  // Authentication and reload can both return a state-based app to its home
+  // screen. Persistence must still be measured; stale live views must fail.
+  const root = mkdtempSync(join(STACK_BENCH_ROOT, 'results', 'diagnostics', 'cart-navigation-'));
+  t.diagnostic(`Evidence: ${root}; repeat: node --test --test-name-pattern="cart checks reopen" dist/tests/selected-grade.integration.js`);
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 2, { id: 'ecommerce.progression-catalog' });
+  for (const fixture of [{ id: '4b', live: true }, { id: '4c', live: true }, { id: '4c', live: false }]) {
+    await t.test(`${fixture.id}-${fixture.live ? 'live' : 'stale'}`, async () => {
+      const check = binding.release.checkCatalog.find(c => c.criterionId === fixture.id && c.source === 'scenarios/01-cart.json');
+      assert(check?.source);
+      const selection = resolveRecipeSelection(binding.release, { checkKeys: [check.stableKey] });
+      const app = join(root, `${fixture.id}-${fixture.live}`);
+      mkdirSync(app);
+      let item = '', writes = 0;
+      const html = `<!doctype html><h1>Home</h1>
+        <input id="signup-username"><input id="signup-password"><button id="signup-submit">Sign up</button>
+        <input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button>
+        <span id="current-user" hidden></span><button id="catalog-link">Catalog</button>
+        <section id="catalog" hidden><div id="item-list">
+          ${['Laptop Stand', 'Induction Cooktop'].map(name => `<article data-role="item-card">${name}
+            <button data-role="add-to-cart" onclick="fetch('/cart',{method:'POST',body:'${name}'})">Add</button></article>`).join('')}
+        </div><button id="cart-toggle">Cart</button><div id="cart" hidden><span id="cart-total">1</span><div id="lines"></div></div></section>
+        <script>
+          const catalog=document.querySelector('#catalog'),current=document.querySelector('#current-user');
+          if(sessionStorage.user){current.textContent=sessionStorage.user;current.hidden=false;}
+          for(const action of ['signup','signin'])document.querySelector('#'+action+'-submit').onclick=()=>{
+            sessionStorage.user=document.querySelector('#'+action+'-username').value;
+            current.textContent=sessionStorage.user;current.hidden=false;catalog.hidden=true;
+          };
+          document.querySelector('#catalog-link').onclick=()=>{catalog.hidden=false;};
+          async function update(){const response=await fetch('/cart');const item=await response.text();
+            document.querySelector('#lines').innerHTML=item?'<div data-role="cart-item">'+item+'</div>':'';}
+          document.querySelector('#cart-toggle').onclick=()=>{document.querySelector('#cart').hidden=false;update();};
+          if(${fixture.live})setInterval(update,100);
+        </script>`;
+      const server = createServer((request, response) => {
+        if (request.url === '/cart') {
+          response.setHeader('content-type', 'text/plain');
+          response.setHeader('cache-control', 'no-store');
+          if (request.method === 'POST') {
+            let body = ''; request.on('data', chunk => { body += chunk; });
+            request.on('end', () => { item = body; writes++; response.end(item); });
+          } else response.end(item);
+        } else { response.setHeader('content-type', 'text/html'); response.end(html); }
+      });
+      writeFileSync(join(app, 'index.html'), html);
+      writeFileSync(join(app, 'expected.json'), JSON.stringify(fixture));
+      await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const address = server.address(); assert(address && typeof address !== 'string');
+        const out = join(app, 'grade.json');
+        const execution = await run(GRADER, ['--url', `http://127.0.0.1:${address.port}`, '--level', '2', '--track', 'ecommerce',
+          '--backend', 'postgres', '--app', app, '--spec', join(track.dir, check.source), '--out', out,
+          '--recipe', binding.release.id, '--selected-check', check.stableKey,
+          '--expected-recipe-sha256', binding.release.contentSha256, '--selection-sha256', selection.sha256]);
+        writeFileSync(join(app, 'stdout.log'), execution.stdout);
+        writeFileSync(join(app, 'stderr.log'), execution.stderr);
+        writeFileSync(join(app, 'effects.json'), JSON.stringify({ item, writes }));
+        const report = readGradeArtifactPayload(out);
+        assert.equal(first(first(report.features).criteria).evidence.status, fixture.live ? 'passed' : 'failed');
+        assert.equal(writes, 1, 'the cart observation must follow an actual add');
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+    });
+  }
 });
 
 test('setup can wait for app readiness without relaxing scored checks', async () => {

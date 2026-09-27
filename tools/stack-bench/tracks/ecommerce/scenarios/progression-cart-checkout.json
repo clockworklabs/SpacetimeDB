@@ -11,7 +11,9 @@
       "actors": ["quantity", "checkout", "raceCheckout", "raceAdd"],
       "setup": [
         { "do": "signUp", "actor": "quantity", "name": "cart-quantity" },
-        { "do": "signUp", "actor": "checkout", "name": "cart-checkout" }
+        { "do": "signUp", "actor": "checkout", "name": "cart-checkout" },
+        { "do": "click", "actor": "quantity", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -52,6 +54,8 @@
             { "do": "dbExpectCheckout", "before": "normal-before", "prepared": "normal-prepared", "quantity": [{ "item": "Desk Lamp", "quantity": 1 }, { "item": "Coffee Grinder", "quantity": 1 }] },
             { "do": "reload", "actor": "checkout", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "checkout", "name": "cart-checkout", "readyTestid": "current-user" },
+            { "do": "click", "actor": "checkout", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
+            { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             { "do": "click", "actor": "checkout", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 0 },
             { "do": "click", "actor": "checkout", "testid": "overlay-close", "ifAvailable": true },
@@ -77,10 +81,12 @@
             {"do":"signUp","actor":"raceCheckout","name":"checkout-overlap"},
             {"do":"signIn","actor":"raceAdd","name":"checkout-overlap"},
             {"do":"dbRecordCheckout","account":"{user:checkout-overlap}","item":"Desk Lamp","as":"overlap-before","storage":{"kind":"order-data","cart":true,"warehouses":"if-requested"}},
+            { "do": "click", "actor": "raceCheckout", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do":"click","actor":"raceCheckout","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
             {"do":"click","actor":"raceCheckout","testid":"cart-toggle","unlessVisible":"cart-total"},
             {"do":"expect","actor":"raceCheckout","testid":"cart-item","contains":"Desk Lamp","count":1},
             {"do":"dbRecordCheckout","account":"{user:checkout-overlap}","item":"Desk Lamp","as":"overlap-prepared","storage":{"kind":"order-data","cart":true,"warehouses":"if-requested"}},
+            { "do": "click", "actor": "raceAdd", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do":"callConcurrently","actors":["raceCheckout"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","method":"POST","reducer":"checkout","args":[]},"requests":1,"settleMs":0,"alongside":[{"actors":["raceAdd"],"action":"cart-add","namedAction":{"id":"cart-add","path":"/api/cart","method":"POST","reducer":"add_to_cart","args":[0],"params":[{"name":"itemId","in":"body","wireType":"u64"}]},"requests":1,"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"}}]},
             {"do":"expectCallOutcomes","accepted":2},
             {"do":"dbExpectCheckout","before":"overlap-before","prepared":"overlap-prepared","quantity":[{"item":"Desk Lamp","quantity":1}],"alongsideAdd":"Coffee Grinder"}

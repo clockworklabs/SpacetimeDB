@@ -20,8 +20,9 @@ Report reducer errors by failing the call.
 <!-- interface:convex -->
 Expose the named application operations below as public native Convex mutations in `convex/api.ts`.
 Use the same mutations from the visible controls. Pass arguments as JSON objects with the
-names shown below. Preserve native document identifiers as strings. Reject expected access
-or input errors with `ConvexError`; successful calls use the normal Convex return value.
+names shown below. Preserve native document identifiers as strings. Handlers reject expected
+access or input errors with `ConvexError`. Native argument validation may also refuse a request
+before its handler runs. Successful calls use the normal Convex return value.
 Do not add HTTP routes merely to wrap these mutations.
 <!-- /interface -->
 

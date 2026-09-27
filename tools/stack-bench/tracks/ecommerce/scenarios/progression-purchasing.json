@@ -9,7 +9,8 @@
       "name": "Purchase order history",
       "actors": ["buyer"],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "purchase-buyer" }
+        { "do": "signUp", "actor": "buyer", "name": "purchase-buyer" },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

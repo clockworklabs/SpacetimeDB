@@ -11,7 +11,8 @@
       "setup": [
         { "do": "signUp", "actor": "customer", "name": "cancel-core" },
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "click", "actor": "admin", "testid": "admin-link" }
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

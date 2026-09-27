@@ -23,6 +23,7 @@
           "item": "Headphones",
           "as": "before-search-purchase"
         },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
           "actor": "buyer",
@@ -43,6 +44,7 @@
           "actor": "visitor",
           "settleMs": 0
         },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "fill",
           "actor": "visitor",

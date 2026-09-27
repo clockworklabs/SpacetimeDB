@@ -24,7 +24,8 @@
           "do": "click",
           "actor": "admin",
           "testid": "admin-link"
-        }
+        },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

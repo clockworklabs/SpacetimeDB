@@ -161,7 +161,8 @@
       "name": "Stock recovery is durable across clients",
       "actors": ["customer"],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "fresh-stock" }
+        { "do": "signUp", "actor": "customer", "name": "fresh-stock" },
+        { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

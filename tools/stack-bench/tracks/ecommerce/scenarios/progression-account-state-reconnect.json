@@ -11,9 +11,11 @@
       "setup": [
         { "do": "signUp", "actor": "shopper", "name": "pat" },
         { "do": "signIn", "actor": "peer", "name": "pat" },
+        { "do": "click", "actor": "shopper", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "click", "actor": "shopper", "testid": "cart-toggle", "unlessVisible": "cart-total" },
-        { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" }
+        { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
+        { "do": "click", "actor": "peer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

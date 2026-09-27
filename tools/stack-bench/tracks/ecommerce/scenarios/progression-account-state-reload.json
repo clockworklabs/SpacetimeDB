@@ -9,7 +9,8 @@
       "name": "An account keeps what belongs to it",
       "actors": ["shopper"],
       "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "pat" }
+        { "do": "signUp", "actor": "shopper", "name": "pat" },
+        { "do": "click", "actor": "shopper", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -30,6 +31,7 @@
             { "do": "restartBackend", "settleMs": 1000 },
             { "do": "freshClient", "actor": "shopper" },
             { "do": "signIn", "actor": "shopper-fresh", "name": "pat" },
+            { "do": "click", "actor": "shopper-fresh", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             { "do": "click", "actor": "shopper-fresh", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "shopper-fresh", "testid": "cart-item", "contains": "Keyboard", "count": 1 },
             { "do": "click", "actor": "shopper-fresh", "testid": "overlay-close", "ifAvailable": true },

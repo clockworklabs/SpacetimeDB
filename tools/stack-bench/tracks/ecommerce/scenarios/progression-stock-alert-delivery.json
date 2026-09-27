@@ -10,6 +10,8 @@
       "actors": ["subscriber", "admin"],
       "setup": [
         {"do":"signUp","actor":"subscriber","name":"stock-subscriber"},
+        { "do": "click", "actor": "subscriber", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
+        { "do": "click", "actor": "subscriber", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"click","actor":"subscriber","testid":"notification-settings","unlessVisible":"notification-order"},
         {"do":"click","actor":"subscriber","testid":"notification-stock"},
         {"do":"expect","actor":"subscriber","testid":"notification-stock","attribute":"data-state","value":"on"},
@@ -21,6 +23,7 @@
         {"do":"dbSetStock","item":"Air Purifier","warehouse":"West","quantity":0,"settleMs":1000},
         {"do":"reload","actor":"subscriber","settleMs":1000},
         {"do":"ensureSignedIn","actor":"subscriber","name":"stock-subscriber","readyTestid":"current-user"},
+        { "do": "click", "actor": "subscriber", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"click","actor":"subscriber","testid":"stock-alert","in":{"testid":"item-card","contains":"Air Purifier"}},
         {"do":"expect","actor":"subscriber","testid":"item-card","contains":"Air Purifier","attribute":"data-submit-state","value":"succeeded","within":10000}
       ],

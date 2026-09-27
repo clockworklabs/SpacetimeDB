@@ -10,7 +10,9 @@
       "actors": ["buyer", "visitor"],
       "setup": [
         { "do": "signUp", "actor": "buyer", "name": "signed-in-buyer" },
-        { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" }
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

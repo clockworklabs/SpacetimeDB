@@ -10,7 +10,9 @@
       "name": "Storefront is public and live",
       "actors": ["buyer", "visitor", "inspector"],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "dov" }
+        { "do": "signUp", "actor": "buyer", "name": "dov" },
+        { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {
@@ -40,6 +42,7 @@
           "desc": "a purchase moves the bought item to the front of the ranking, live",
           "points": 1,
           "steps": [
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-list" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] },
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-list" }, "within": 10000, "equals": ["Coffee Grinder", "Air Purifier", "Bluetooth Speaker", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] },
             { "do": "expectAgreement", "actors": ["buyer", "visitor"], "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "numeric": true }

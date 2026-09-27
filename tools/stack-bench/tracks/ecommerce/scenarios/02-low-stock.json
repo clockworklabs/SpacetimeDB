@@ -19,7 +19,8 @@
         { "do": "reload", "actor": "customer", "settleMs": 1000 },
         { "do": "ensureSignedIn", "actor": "customer", "name": "low-stock-focused", "readyTestid": "current-user" },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "click", "actor": "admin", "testid": "low-stock-link", "ifAvailable": true, "unlessVisible": "low-stock-item", "within": 10000 }
+        { "do": "click", "actor": "admin", "testid": "low-stock-link", "ifAvailable": true, "unlessVisible": "low-stock-item", "within": 10000 },
+        { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

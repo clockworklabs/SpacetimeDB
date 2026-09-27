@@ -11,6 +11,7 @@
       "setup": [
         { "do": "signUp", "actor": "reviewer", "name": "raceR" },
         { "do": "signUp", "actor": "reader", "name": "raceL" },
+        { "do": "click", "actor": "reviewer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"callAction","actor":"reviewer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"}},
         {"do":"expectActionOutcome","actor":"reviewer","outcome":"accepted"},
         {"do":"click","actor":"reviewer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
@@ -21,7 +22,8 @@
         {"do": "openItem", "actor": "reviewer", "item": "Keyboard"},
         { "do": "expect", "actor": "reviewer", "testid": "item-detail", "within": 10000 },
         {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
-        { "do": "fill", "actor": "reviewer", "testid": "review-rating", "text": "5" }
+        { "do": "fill", "actor": "reviewer", "testid": "review-rating", "text": "5" },
+        { "do": "click", "actor": "reader", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

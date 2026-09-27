@@ -9,7 +9,8 @@
       "name": "Cancellation history",
       "actors": ["customer"],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "cancel-focused" }
+        { "do": "signUp", "actor": "customer", "name": "cancel-focused" },
+        { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

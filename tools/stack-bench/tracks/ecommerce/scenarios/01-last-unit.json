@@ -39,6 +39,12 @@
         { "do": "dbRecordCheckout", "account": "{user:c4}", "item": "Air Purifier", "as": "buy-d", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
         { "do": "dbRecordCheckout", "account": "{user:c5}", "item": "Air Purifier", "as": "buy-e", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
         { "do": "dbRecordCheckout", "account": "{user:c6}", "item": "Air Purifier", "as": "buy-f", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+        { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "d", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "e", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "f", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "callConcurrently",
           "action": "buy",

@@ -140,6 +140,7 @@
         {"do":"click","actor":"admin","testid":"catalog-save","settleMs":100},
         {"do":"dbExpectCatalogItem","before":"catalog-before","name":"Volume Item 0000","priceMinor":125,"within":10000},
         {"do":"reload","actor":"visitor","settleMs":500},
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"fill","actor":"visitor","testid":"search-input","text":"Volume Item","enter":true},
         {"do":"dbRecordCheckout","account":"admin","item":"Bluetooth Speaker","as":"seeded-catalog","storage":{"kind":"order-data","cart":false,"warehouses":false}},
         {"do":"expectSequence","actor":"visitor","testid":"item-name","in":{"testid":"search-results"},"equals":["Volume Item 0000","Volume Item 0001","Volume Item 0002","Volume Item 0003","Volume Item 0004","Volume Item 0005","Volume Item 0006","Volume Item 0007","Volume Item 0008","Volume Item 0009"]},

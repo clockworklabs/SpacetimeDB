@@ -11,6 +11,7 @@
       "name": "A reconnecting storefront catches up to an external write",
       "actors": ["viewer"],
       "setup": [
+        { "do": "click", "actor": "viewer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "expectNumber",
           "actor": "viewer",

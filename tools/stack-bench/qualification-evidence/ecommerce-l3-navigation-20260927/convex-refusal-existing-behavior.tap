@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: business outcomes allow deliberate refusals but never turn server errors into completed work
+ok 1 - business outcomes allow deliberate refusals but never turn server errors into completed work
+  ---
+  duration_ms: 7.6027
+  type: 'test'
+  ...
+# Subtest: purchase and restock privacy refusals require their successful control
+ok 2 - purchase and restock privacy refusals require their successful control
+  ---
+  duration_ms: 1.2005
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 523.1028

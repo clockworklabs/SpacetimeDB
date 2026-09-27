@@ -13,9 +13,11 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "vic" },
         { "do": "signUp", "actor": "stranger", "name": "wes" },
+        { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "click", "actor": "owner", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
         { "do": "wait", "actor": "owner", "ms": 1500 },
-        { "do": "click", "actor": "owner", "testid": "cart-toggle", "unlessVisible": "cart-total" }
+        { "do": "click", "actor": "owner", "testid": "cart-toggle", "unlessVisible": "cart-total" },
+        { "do": "click", "actor": "stranger", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
         {

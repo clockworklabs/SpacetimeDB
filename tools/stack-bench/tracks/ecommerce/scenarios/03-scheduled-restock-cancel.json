@@ -13,6 +13,7 @@
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true, "unlessVisible": "schedule-restock-item" },
+        { "do": "click", "actor": "watcher", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "as": "before" }
       ],
       "criteria": [
@@ -33,6 +34,7 @@
             { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "equals": 0, "within": 6000 },
             { "do": "wait", "actor": "admin", "ms": 25000 },
             { "do": "reload", "actor": "watcher", "settleMs": 2000 },
+            { "do": "click", "actor": "watcher", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": 0 }
           ]
         }

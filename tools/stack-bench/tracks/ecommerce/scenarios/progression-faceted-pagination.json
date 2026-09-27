@@ -9,6 +9,7 @@
       "name": "Pages are stable",
       "actors": ["visitor"],
       "setup": [
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "1" },
         { "do": "click", "actor": "visitor", "testid": "filter-apply", "ifAvailable": true }
       ],
