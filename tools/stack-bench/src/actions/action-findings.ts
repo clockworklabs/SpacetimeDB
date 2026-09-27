@@ -136,6 +136,7 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
   'transport-incomplete': f => 'transport evidence is incomplete; absence cannot be established'
     + (f.capture ? ` (byte-limit losses: ${f.capture.byteLimit}; body-read failures: ${f.capture.bodyReadFailures};`
       + ` unsupported streams: ${f.capture.unsupportedStreams}; pending bodies: ${f.capture.pendingBodies};`
+      + (f.capture.navigationInterrupted === undefined ? '' : ` navigation interruptions: ${f.capture.navigationInterrupted};`)
       + ` retained bytes: ${f.capture.retainedBytes})` : ''),
   'nothing-contended': () => 'the requests never contended',
   'network-not-interrupted': f => `could not interrupt the network for ${f.actor}`,
@@ -256,6 +257,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
       byteLimit: z.number().int().nonnegative(),
       bodyReadFailures: z.number().int().nonnegative(),
       unsupportedStreams: z.number().int().nonnegative(),
+      navigationInterrupted: z.number().int().nonnegative().optional(),
       pendingBodies: z.number().int().nonnegative(),
       retainedBytes: z.number().int().nonnegative(),
     }).optional(),

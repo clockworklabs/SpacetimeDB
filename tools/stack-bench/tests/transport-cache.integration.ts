@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { gradeFeature } from '../grader/grade.js';
+import type { ActionEvidence } from '../src/actions/action-contract.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
 // Failure cases specified before the fix: decoded cached fonts have no readable
@@ -202,6 +203,18 @@ test('privacy reload preserves preceding read and write responses', async t => {
           backend: 'postgres', nullControl: false, defaultWithin: 1000 });
       evidence.push({ method, mode, result });
       assert.equal(result.criteria[0]!.evidence.status, capturedLeak || leak || eventLeak ? 'failed' : stalled ? 'inconclusive' : 'passed', JSON.stringify(result));
+      if (mode === 'stalled') {
+        // The interrupted read must retain its cause in both durable evidence layers.
+        const persisted = JSON.parse(JSON.stringify(result)) as typeof result;
+        const check = persisted.criteria[0]!.evidence;
+        assert(check.finding?.kind === 'transport-incomplete', 'The criterion must retain the structured capture finding');
+        assert(check.finding.fields.capture);
+        assert.equal(check.finding.fields.capture.navigationInterrupted, 1);
+        const action = check.actions.at(-1)!.evidence as ActionEvidence;
+        assert.deepEqual(action.finding, check.finding, 'Action and criterion must preserve the same cause');
+        assert.match(check.summary!, /navigation interruptions: 1/);
+        assert.match(action.summary!, /navigation interruptions: 1/);
+      }
       assert.equal(browser.contexts().length, 0);
     });
   }
