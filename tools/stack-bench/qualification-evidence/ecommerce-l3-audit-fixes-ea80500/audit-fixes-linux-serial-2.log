@@ -1,0 +1,58 @@
+Paused after depth 2. Waiting for campaign continue-depth.
+Paused after depth 2. Waiting for campaign continue-depth.
+Paused after depth 2. Waiting for campaign continue-depth.
+Paused after depth 2. Waiting for campaign continue-depth.
+✔ planned hold preserves the L3 action, repair history, cohort and cost accounting (32431.758584ms)
+Paused after depth 2. Waiting for campaign continue-depth.
+Paused after depth 2. Waiting for campaign continue-depth.
+✔ hold rejects source changes, ignores a release from another controller and permits cancellation (909.248971ms)
+✔ a planned process hold preserves remaining working time and still permits cancellation (1171.789088ms)
+✔ killing the pause owner preserves evidence and refuses a false live continuation (34175.216609ms)
+✔ a continuation that inherits the paused depth does not pause again (3.550566ms)
+✔ dashboard shares validated plan/state until either file changes, but checks liveness each read (4479.570904ms)
+✔ saved plans compile once until a plan file changes (9863.332066ms)
+✔ dashboard run progress reports only completed grades while the next repair is underway (4.472923ms)
+✔ dashboard compares the declared stack treatments but separates changed models, guidance, and scope (2071.272616ms)
+✔ dashboard operation feed ignores only a truncated final write (11.117258ms)
+✔ dashboard follows the actual level when a completed L1 advances to the first L2 grade (2.03072ms)
+✔ dashboard reports a dependency repair by feature instead of the level session count (0.411128ms)
+✔ a regression is a kept pass that later fails, not an unmeasured or never-passed check (0.533974ms)
+✔ an aborted first grade is classified, not treated as a scored zero (0.519287ms)
+✔ dashboard CLI is deliberately loopback-only (1.484946ms)
+✔ dashboard marks a current-schema campaign as interrupted when its controller stops (1330.909575ms)
+✔ dashboard keeps frozen campaign evidence readable after the controller is upgraded (873.174827ms)
+✔ dashboard rejects a run artifact that does not belong to its frozen attempt (1280.928934ms)
+✔ inspection corrects historical incomplete counts while retaining recorded classification (849.395767ms)
+✔ dashboard overview defers historical evidence validation until the sheet is opened (1856.500875ms)
+✔ dashboard keeps the recorded invalidation reason when the result is unreadable (0.900924ms)
+✔ the attempt package exposes the evidence but not arbitrary campaign files (594.291843ms)
+✔ dashboard serves real state and protects campaign launch with same-origin browser tokens (39564.481814ms)
+✔ host development mode is read-only even with a valid browser request (12.920294ms)
+✔ the overview stays a summary and the sheet stays one campaign at appliance scale (1857.601579ms)
+✔ a liveness probe that cannot answer still reads the campaign (1530.390528ms)
+✔ the overview caches a running campaign until its evidence changes (7.933819ms)
+✔ dashboard pause state validates the receipt and observes resume changes (9163.013698ms)
+✔ the sheet reports dependency submodes and questlines in definition order (35264.183052ms)
+✔ log-only refresh keeps the evidence sheet cached and returns live fields only (1773.122078ms)
+✔ the sheet says a dependency campaign that stopped between executions can resume (44541.797391ms)
+✔ every view has a route, and a name that is not a campaign never reaches the evidence (2106.983706ms)
+Stack Bench dashboard: campaign watcher watch
+✔ the event stream reports a campaign write and the log bytes that follow it (1001.795788ms)
+✔ the progression view replays the graph once per stack within its budget (25663.030406ms)
+✔ the campaign overview links every simultaneous attempt of the same stack (1.43832ms)
+✔ cost and completion keep unknown spend and the full selected scope visible (5.172611ms)
+✔ time controls require authorization and validate minutes before requesting a grant (50.603722ms)
+✔ Stop requires the browser token and cannot cancel a successor controller (1319.888438ms)
+✔ the client renders controls, evidence links, and every supported page (22395.957238ms)
+✔ job endpoints authenticate writes, paginate reads, and queue without launching (813.427852ms)
+✔ Resume keeps a job campaign on its job and accepts a model-free draft (33456.726348ms)
+✔ bad client input on campaign controls is a client error (485.434032ms)
+✔ the sheet links a report only while it describes the current state (2761.196243ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 374540.876325

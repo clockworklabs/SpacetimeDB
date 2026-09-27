@@ -1,0 +1,2665 @@
+{
+  "browser": "151.0.7922.34",
+  "evidence": [
+    {
+      "method": "PUT",
+      "mode": "clean",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524328451,
+                "completedAtMs": 1790524329012,
+                "durationMs": 561
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524328451,
+                      "completedAtMs": 1790524328594,
+                      "durationMs": 143,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524328594,
+                      "completedAtMs": 1790524328948,
+                      "durationMs": 354,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-save-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524328949,
+                      "completedAtMs": 1790524329012,
+                      "durationMs": 63,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524328451,
+            "completedAtMs": 1790524328451,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "PUT",
+      "mode": "leak",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524329091,
+                "completedAtMs": 1790524329535,
+                "durationMs": 444
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524329091,
+                      "completedAtMs": 1790524329140,
+                      "durationMs": 49,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524329140,
+                      "completedAtMs": 1790524329473,
+                      "durationMs": 333,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524329473,
+                      "completedAtMs": 1790524329535,
+                      "durationMs": 62,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524329091,
+            "completedAtMs": 1790524329091,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "PUT",
+      "mode": "late-clean",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524329616,
+                "completedAtMs": 1790524330243,
+                "durationMs": 627
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524329616,
+                      "completedAtMs": 1790524329673,
+                      "durationMs": 57,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524329673,
+                      "completedAtMs": 1790524330182,
+                      "durationMs": 509,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-save-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524330182,
+                      "completedAtMs": 1790524330243,
+                      "durationMs": 61,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524329616,
+            "completedAtMs": 1790524329616,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "PUT",
+      "mode": "late-leak",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524330314,
+                "completedAtMs": 1790524330936,
+                "durationMs": 622
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524330314,
+                      "completedAtMs": 1790524330373,
+                      "durationMs": 59,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524330373,
+                      "completedAtMs": 1790524330884,
+                      "durationMs": 511,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524330884,
+                      "completedAtMs": 1790524330936,
+                      "durationMs": 52,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524330314,
+            "completedAtMs": 1790524330314,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "PUT",
+      "mode": "stalled",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "inconclusive",
+              "code": "inconclusive",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; navigation interruptions: 1; retained bytes: 192)",
+              "finding": {
+                "kind": "transport-incomplete",
+                "fields": {
+                  "capture": {
+                    "byteLimit": 0,
+                    "bodyReadFailures": 0,
+                    "unsupportedStreams": 0,
+                    "navigationInterrupted": 1,
+                    "pendingBodies": 1,
+                    "retainedBytes": 192
+                  }
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524331001,
+                "completedAtMs": 1790524337157,
+                "durationMs": 6156
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524331001,
+                      "completedAtMs": 1790524331055,
+                      "durationMs": 54,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524331055,
+                      "completedAtMs": 1790524336069,
+                      "durationMs": 5014,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "inconclusive",
+                    "type": "transport-evidence",
+                    "code": "inconclusive",
+                    "phase": "execute",
+                    "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; navigation interruptions: 1; retained bytes: 192)",
+                    "finding": {
+                      "kind": "transport-incomplete",
+                      "fields": {
+                        "capture": {
+                          "byteLimit": 0,
+                          "bodyReadFailures": 0,
+                          "unsupportedStreams": 0,
+                          "navigationInterrupted": 1,
+                          "pendingBodies": 1,
+                          "retainedBytes": 192
+                        }
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524336070,
+                      "completedAtMs": 1790524337157,
+                      "durationMs": 1087,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524331000,
+            "completedAtMs": 1790524331000,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        },
+        "inconclusive": [
+          {
+            "id": "capture",
+            "points": 1,
+            "status": "inconclusive",
+            "code": "inconclusive",
+            "phase": "assertion",
+            "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; navigation interruptions: 1; retained bytes: 192)"
+          }
+        ]
+      },
+      "diagnostics": [
+        "transport request pending {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"PUT\",\"resourceType\":\"fetch\",\"phase\":\"navigation\",\"elapsedMs\":5004}\n",
+        "transport body pending {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"PUT\",\"resourceType\":\"fetch\",\"status\":200,\"contentType\":\"application/json\",\"pageClosed\":false,\"failure\":null,\"elapsedMs\":6092}\n",
+        "transport body unavailable {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"PUT\",\"resourceType\":\"fetch\",\"status\":200,\"contentType\":\"application/json\",\"pageClosed\":true,\"failure\":null,\"error\":\"target-closed\"}\n"
+      ]
+    },
+    {
+      "method": "PUT",
+      "mode": "captured-stalled",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524337242,
+                "completedAtMs": 1790524342403,
+                "durationMs": 5161
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524337242,
+                      "completedAtMs": 1790524337307,
+                      "durationMs": 65,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524337307,
+                      "completedAtMs": 1790524342340,
+                      "durationMs": 5033,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524342340,
+                      "completedAtMs": 1790524342402,
+                      "durationMs": 62,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524337242,
+            "completedAtMs": 1790524337242,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": [
+        "transport request pending {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"PUT\",\"resourceType\":\"fetch\",\"phase\":\"navigation\",\"elapsedMs\":5002}\n",
+        "transport body unavailable {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"PUT\",\"resourceType\":\"fetch\",\"status\":200,\"contentType\":\"application/json\",\"pageClosed\":true,\"failure\":null,\"error\":\"target-closed\"}\n"
+      ]
+    },
+    {
+      "method": "PUT",
+      "mode": "eventsource-clean",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524342476,
+                "completedAtMs": 1790524342926,
+                "durationMs": 450
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524342476,
+                      "completedAtMs": 1790524342524,
+                      "durationMs": 48,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524342525,
+                      "completedAtMs": 1790524342875,
+                      "durationMs": 350,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-save-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524342876,
+                      "completedAtMs": 1790524342926,
+                      "durationMs": 50,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524342476,
+            "completedAtMs": 1790524342476,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "PUT",
+      "mode": "eventsource-leak",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524342992,
+                "completedAtMs": 1790524343450,
+                "durationMs": 458
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524342993,
+                      "completedAtMs": 1790524343040,
+                      "durationMs": 47,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524343040,
+                      "completedAtMs": 1790524343387,
+                      "durationMs": 347,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524343387,
+                      "completedAtMs": 1790524343450,
+                      "durationMs": 63,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524342992,
+            "completedAtMs": 1790524342992,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "GET",
+      "mode": "clean",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524343529,
+                "completedAtMs": 1790524344003,
+                "durationMs": 474
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524343529,
+                      "completedAtMs": 1790524343588,
+                      "durationMs": 59,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524343588,
+                      "completedAtMs": 1790524343942,
+                      "durationMs": 354,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-save-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524343943,
+                      "completedAtMs": 1790524344003,
+                      "durationMs": 60,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524343529,
+            "completedAtMs": 1790524343529,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "GET",
+      "mode": "leak",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524344083,
+                "completedAtMs": 1790524344542,
+                "durationMs": 459
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524344083,
+                      "completedAtMs": 1790524344140,
+                      "durationMs": 57,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524344140,
+                      "completedAtMs": 1790524344491,
+                      "durationMs": 351,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524344491,
+                      "completedAtMs": 1790524344542,
+                      "durationMs": 51,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524344083,
+            "completedAtMs": 1790524344083,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "GET",
+      "mode": "late-clean",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524344627,
+                "completedAtMs": 1790524345260,
+                "durationMs": 633
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524344627,
+                      "completedAtMs": 1790524344688,
+                      "durationMs": 61,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524344688,
+                      "completedAtMs": 1790524345199,
+                      "durationMs": 511,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-save-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524345199,
+                      "completedAtMs": 1790524345260,
+                      "durationMs": 61,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524344627,
+            "completedAtMs": 1790524344627,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "GET",
+      "mode": "late-leak",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524345333,
+                "completedAtMs": 1790524345967,
+                "durationMs": 634
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524345333,
+                      "completedAtMs": 1790524345390,
+                      "durationMs": 57,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524345390,
+                      "completedAtMs": 1790524345906,
+                      "durationMs": 516,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524345906,
+                      "completedAtMs": 1790524345967,
+                      "durationMs": 61,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524345333,
+            "completedAtMs": 1790524345333,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "GET",
+      "mode": "stalled",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "inconclusive",
+              "code": "inconclusive",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; navigation interruptions: 1; retained bytes: 164)",
+              "finding": {
+                "kind": "transport-incomplete",
+                "fields": {
+                  "capture": {
+                    "byteLimit": 0,
+                    "bodyReadFailures": 0,
+                    "unsupportedStreams": 0,
+                    "navigationInterrupted": 1,
+                    "pendingBodies": 1,
+                    "retainedBytes": 164
+                  }
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524346047,
+                "completedAtMs": 1790524352219,
+                "durationMs": 6172
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524346047,
+                      "completedAtMs": 1790524346104,
+                      "durationMs": 57,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524346104,
+                      "completedAtMs": 1790524351129,
+                      "durationMs": 5025,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "inconclusive",
+                    "type": "transport-evidence",
+                    "code": "inconclusive",
+                    "phase": "execute",
+                    "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; navigation interruptions: 1; retained bytes: 164)",
+                    "finding": {
+                      "kind": "transport-incomplete",
+                      "fields": {
+                        "capture": {
+                          "byteLimit": 0,
+                          "bodyReadFailures": 0,
+                          "unsupportedStreams": 0,
+                          "navigationInterrupted": 1,
+                          "pendingBodies": 1,
+                          "retainedBytes": 164
+                        }
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524351130,
+                      "completedAtMs": 1790524352218,
+                      "durationMs": 1088,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524346047,
+            "completedAtMs": 1790524346047,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        },
+        "inconclusive": [
+          {
+            "id": "capture",
+            "points": 1,
+            "status": "inconclusive",
+            "code": "inconclusive",
+            "phase": "assertion",
+            "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; navigation interruptions: 1; retained bytes: 164)"
+          }
+        ]
+      },
+      "diagnostics": [
+        "transport request pending {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"GET\",\"resourceType\":\"fetch\",\"phase\":\"navigation\",\"elapsedMs\":5013}\n",
+        "transport body pending {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"GET\",\"resourceType\":\"fetch\",\"status\":200,\"contentType\":\"application/json\",\"pageClosed\":false,\"failure\":null,\"elapsedMs\":6103}\n",
+        "transport body unavailable {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"GET\",\"resourceType\":\"fetch\",\"status\":200,\"contentType\":\"application/json\",\"pageClosed\":true,\"failure\":null,\"error\":\"target-closed\"}\n"
+      ]
+    },
+    {
+      "method": "GET",
+      "mode": "captured-stalled",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524352288,
+                "completedAtMs": 1790524357415,
+                "durationMs": 5127
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524352288,
+                      "completedAtMs": 1790524352336,
+                      "durationMs": 48,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524352336,
+                      "completedAtMs": 1790524357363,
+                      "durationMs": 5027,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524357363,
+                      "completedAtMs": 1790524357415,
+                      "durationMs": 52,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524352288,
+            "completedAtMs": 1790524352288,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": [
+        "transport request pending {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"GET\",\"resourceType\":\"fetch\",\"phase\":\"navigation\",\"elapsedMs\":5016}\n",
+        "transport body unavailable {\"origin\":\"http://127.0.0.1:56122\",\"pathSha256\":\"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82\",\"method\":\"GET\",\"resourceType\":\"fetch\",\"status\":200,\"contentType\":\"application/json\",\"pageClosed\":true,\"failure\":null,\"error\":\"target-closed\"}\n"
+      ]
+    },
+    {
+      "method": "GET",
+      "mode": "eventsource-clean",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524357475,
+                "completedAtMs": 1790524357925,
+                "durationMs": 450
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524357475,
+                      "completedAtMs": 1790524357519,
+                      "durationMs": 44,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524357519,
+                      "completedAtMs": 1790524357873,
+                      "durationMs": 354,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-save-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524357874,
+                      "completedAtMs": 1790524357925,
+                      "durationMs": 51,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524357475,
+            "completedAtMs": 1790524357475,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "method": "GET",
+      "mode": "eventsource-leak",
+      "result": {
+        "id": 1,
+        "name": "save then reload",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "the save response is captured before controlled reload",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790524357994,
+                "completedAtMs": 1790524358448,
+                "durationMs": 454
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "profile-save"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524357994,
+                      "completedAtMs": 1790524358055,
+                      "durationMs": 61,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524358055,
+                      "completedAtMs": 1790524358384,
+                      "durationMs": 329,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790524358384,
+                      "completedAtMs": 1790524358448,
+                      "durationMs": 64,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790524357994,
+            "completedAtMs": 1790524357994,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "diagnostics": []
+    }
+  ]
+}

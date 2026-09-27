@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: selected authentication probes survive browser lifecycle and expose privilege escalation
+ok 1 - selected authentication probes survive browser lifecycle and expose privilege escalation
+  ---
+  duration_ms: 24060.5607
+  type: 'test'
+  ...
+# Subtest: credential patches preserve native envelopes and reject ambiguous matches
+ok 2 - credential patches preserve native envelopes and reject ambiguous matches
+  ---
+  duration_ms: 2.3515
+  type: 'test'
+  ...
+# Subtest: credential patches can replace the located password without guessing its key
+ok 3 - credential patches can replace the located password without guessing its key
+  ---
+  duration_ms: 0.4147
+  type: 'test'
+  ...
+# Subtest: Convex credential probes preserve the live socket and require its matching response
+ok 4 - Convex credential probes preserve the live socket and require its matching response
+  ---
+  duration_ms: 878.808
+  type: 'test'
+  ...
+# Subtest: real browser credential patch reaches the native request and keeps uncertain delivery unmeasured
+ok 5 - real browser credential patch reaches the native request and keeps uncertain delivery unmeasured
+  ---
+  duration_ms: 446.8256
+  type: 'test'
+  ...
+# Subtest: a SpacetimeDB signup patch places authority by the module schema and never guesses
+ok 6 - a SpacetimeDB signup patch places authority by the module schema and never guesses
+  ---
+  duration_ms: 415.0909
+  type: 'test'
+  ...
+# Subtest: a platform password endpoint patch reaches the cross-origin request only through the stack hook
+ok 7 - a platform password endpoint patch reaches the cross-origin request only through the stack hook
+  ---
+  duration_ms: 290.1304
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 24744.2092

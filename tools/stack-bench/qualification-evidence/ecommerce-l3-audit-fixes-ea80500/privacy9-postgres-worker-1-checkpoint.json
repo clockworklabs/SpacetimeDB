@@ -1,0 +1,340 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T18-16-40-596Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T18-16-40-596Z",
+    "parentId": "ecommerce-postgres-run108-20260927181556-e2a8a887"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:16:40.596Z",
+    "completedAt": "2026-09-27T18:20:59.303Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 258707,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-mHBgSe/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-mHBgSe/selected-mutations.json",
+    "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "../tracks/ecommerce/scenarios/progression-support-history.json",
+      "../tracks/ecommerce/scenarios/01-account-disclosure.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "progression-profile-address-is-discarded",
+        "progression-support-history-leaks",
+        "profile-summary-ignores-saved-address",
+        "account-disclosure-rejects-login"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "3b05d98779e1731aca96b09decad3d045cb040a5b85bb5ee283a9a38411335ef"
+      },
+      "total": 13,
+      "max": 13,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "identitySha256": "8204961e802c00dd0c6e7acd812ac9aa8b74142620e9b29a39854837e1fee3d1",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "identitySha256": "4d1f714821d5e7a27dd9798d27fdcae502b4cffcaa43c3c6c590ad49c6b54074",
+          "total": 7,
+          "max": 7
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "identitySha256": "45362204476af20baf0ea1d1f2d38f86c6bea2c4cd9071925e3235e07d51ed9d",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 4,
+      "completed": 4,
+      "total": 4,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "progression-profile-address-is-discarded",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"14 Market Street profilemarker1abc5e6c-2b3f-4af620\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "progression-support-history-leaks",
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "targets": [
+          "ecommerce.spec.access-control.support-history-privacy.612b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.support-history-privacy.612b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 612,
+            "criterion": "612b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Private ticket privateticketmarker56b3463e-5249-48f612\" was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.support-history-privacy.612b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "profile-summary-ignores-saved-address",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.progression.customer-profile.customer-profile.620c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.customer-profile.customer-profile.620c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"14 Market Street profilemarker0801cecd-2832-40f620\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.customer-profile.customer-profile.620c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "account-disclosure-rejects-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "targets": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 110,
+            "criterion": "110a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"private-password\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.account-disclosure.110a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "progression-profile-address-is-discarded",
+          "progression-support-history-leaks",
+          "profile-summary-ignores-saved-address",
+          "account-disclosure-rejects-login"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "scenarioSha256": "726b5330f10e5c782b89c3e36f3ecfa95ba190c5240508cc70db9495f6aeb70e",
+          "mutationSha256": "313622e83d47765b223fc07352f8318df20c019c21369b7845855c16c376c4f1",
+          "selectionSha256": "dc22661c6d55c81a922124ae6703877aefe0bcecf9b276e841f7691c2507c453",
+          "identitySha256": "8204961e802c00dd0c6e7acd812ac9aa8b74142620e9b29a39854837e1fee3d1",
+          "mutationIds": [
+            "progression-profile-address-is-discarded",
+            "profile-summary-ignores-saved-address"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "scenarioSha256": "a9799e8d9c5d96e29eaafffcd1fc3f6e205a3f7f00b2f0bb2b157c4db8982492",
+          "mutationSha256": "fb7e456da09039b178c1925d62ae4d58569a387af9e19ebb23439a2415db7efe",
+          "selectionSha256": "1b57aaf333e3aa86ac39641cc51fa95db1c7be82d3f8e960d2bb9a7c3d69eb4f",
+          "identitySha256": "4d1f714821d5e7a27dd9798d27fdcae502b4cffcaa43c3c6c590ad49c6b54074",
+          "mutationIds": [
+            "progression-support-history-leaks"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "scenarioSha256": "b078ded6d5350e83a6b754f01349e21ee5fd53434636164d2436aa66593bd2c0",
+          "mutationSha256": "e27244927b9611c541073eaf2435d86e6f1976247c3442824433ebc994566eb2",
+          "selectionSha256": "7fb7eb11f8baacc56ffe990b1ffd5a97a89c8c324b938c515c19c4df9718288f",
+          "identitySha256": "45362204476af20baf0ea1d1f2d38f86c6bea2c4cd9071925e3235e07d51ed9d",
+          "mutationIds": [
+            "account-disclosure-rejects-login"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T18:20:59.303Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "progression-profile-address-is-discarded",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-tNGxVV/grade.json",
+          "sha256": "a99cf456c32076f53c195685f16fe670deca0dbae3a6212c16fe79b29888f59a"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "profile-summary-ignores-saved-address",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-leto40/grade.json",
+          "sha256": "59035d55511658cfd62b2fdc58d9687f7accb4347944e69ead52511f53ccafcb"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "mutationId": "progression-support-history-leaks",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-PruLyT/grade.json",
+          "sha256": "154e4493d502781cb62b095462bfc96cfceedde734a1de56194f9b7f028c3d40"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "mutationId": "account-disclosure-rejects-login",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-svy02s/grade.json",
+          "sha256": "efa1ebc71cde54be5c0c3c4921203794326514e6005a3a2148abc0b330f969ff"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

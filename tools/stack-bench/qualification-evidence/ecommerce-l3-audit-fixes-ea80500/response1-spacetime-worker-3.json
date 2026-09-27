@@ -1,0 +1,120 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260927185508-4381",
+  "attempt": {
+    "id": "reference-live-spacetime-20260927185508-4381",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:55:08.911Z",
+    "completedAt": "2026-09-27T18:57:28.211Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "8a6b9f7f96b7bbefc9e9592c1020843c7a57131f9b351cdcf9d546494db67255"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-spacetime",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "554c67b92aea78fe8d3ba7b65cd88fc2599915ab90eeb3159b6014e154287783"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-spacetime",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 47,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "b44cb5d2b1147cce629b8d0eafa4f0177a16ed3e32b2956263325aa0bbd18061",
+      "executableSha256": "080c8579e9d6275c5cbf8b928239b4c4e0af7590ef6023dbac2f9f30c7f73153",
+      "kind": "mutation",
+      "mutationSha256": "e9cdc50f800a2b36712b05fea465fd8272079124aaac7c059c9022e0a28c8580",
+      "recipe": {
+        "contentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "spacetime",
+        "reference": {
+          "id": "ecommerce-reference-spacetime",
+          "sourceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+        },
+        "version": "1.4.0"
+      },
+      "sha256": "81d78b69be50d9fb7f2e8a8f2e3c50f2254560ada50fb4797ed27962ab4cf8ef"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "w3.runs/r1",
+        "durationMs": 139184,
+        "capacityWaitMs": 2278,
+        "processError": null,
+        "harnessSha256Before": "7e59e44144c66438838179a7e47c263f927207df322796669effacbe71b73f87",
+        "harnessSha256After": "7e59e44144c66438838179a7e47c263f927207df322796669effacbe71b73f87",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-spacetime-run142-20260927185510-fe532bad",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "outcome": "passed",
+        "mutations": {
+          "caught": 1,
+          "completed": 1,
+          "total": 1,
+          "remaining": 0
+        },
+        "score": null,
+        "criteria": null,
+        "zeroPointCriteria": null,
+        "fingerprint": null,
+        "packRuntime": null
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "7e59e44144c66438838179a7e47c263f927207df322796669effacbe71b73f87",
+    "qualifiedCheckKeys": [
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

@@ -1,0 +1,182 @@
+TAP version 13
+# Subtest: HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels
+    # Subtest: identity
+    not ok 1 - identity
+      ---
+      duration_ms: 945.5123
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: gzip
+    not ok 2 - gzip
+      ---
+      duration_ms: 856.7405
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: deflate
+    not ok 3 - deflate
+      ---
+      duration_ms: 830.3078
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: br
+    not ok 4 - br
+      ---
+      duration_ms: 951.3653
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: unknown
+    not ok 5 - unknown
+      ---
+      duration_ms: 939.7663
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: corrupt
+    not ok 6 - corrupt
+      ---
+      duration_ms: 986.3139
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: overflow
+    not ok 7 - overflow
+      ---
+      duration_ms: 987.3915
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Completed delivery releases the pending request
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:177:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:102:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..7
+not ok 1 - HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels
+  ---
+  duration_ms: 6500.9065
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:95:1'
+  failureType: 'subtestsFailed'
+  error: '7 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 8
+# suites 0
+# pass 0
+# fail 8
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7169.4114

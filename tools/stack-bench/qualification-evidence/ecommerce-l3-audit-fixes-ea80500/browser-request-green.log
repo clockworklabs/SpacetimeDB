@@ -1,0 +1,656 @@
+TAP version 13
+# Subtest: a parameterless action needs no DOM input; parameterized actions still do
+ok 1 - a parameterless action needs no DOM input; parameterized actions still do
+  ---
+  duration_ms: 6.8693
+  type: 'test'
+  ...
+# Subtest: live session hooks override captured credentials after signout and account changes
+ok 2 - live session hooks override captured credentials after signout and account changes
+  ---
+  duration_ms: 13.063
+  type: 'test'
+  ...
+# Subtest: session tampering reaches the server, preserves context, requires a valid matching control and restores access
+ok 3 - session tampering reaches the server, preserves context, requires a valid matching control and restores access
+  ---
+  duration_ms: 64.5124
+  type: 'test'
+  ...
+# Subtest: mixed credentials need a measured isolated control; cookie and CSRF dependencies stay inconclusive
+    # Subtest: bearer
+    ok 1 - bearer
+      ---
+      duration_ms: 19.2991
+      type: 'test'
+      ...
+    # Subtest: cookie-only
+    ok 2 - cookie-only
+      ---
+      duration_ms: 9.822
+      type: 'test'
+      ...
+    # Subtest: requires-cookie
+    ok 3 - requires-cookie
+      ---
+      duration_ms: 12.972
+      type: 'test'
+      ...
+    # Subtest: accept-forgery
+    ok 4 - accept-forgery
+      ---
+      duration_ms: 18.5996
+      type: 'test'
+      ...
+    # Subtest: commit-then-refuse
+    ok 5 - commit-then-refuse
+      ---
+      duration_ms: 13.8039
+      type: 'test'
+      ...
+    # Subtest: reject-all
+    ok 6 - reject-all
+      ---
+      duration_ms: 11.2091
+      type: 'test'
+      ...
+    # Subtest: response-loss
+    ok 7 - response-loss
+      ---
+      duration_ms: 19.3697
+      type: 'test'
+      ...
+    1..7
+ok 4 - mixed credentials need a measured isolated control; cookie and CSRF dependencies stay inconclusive
+  ---
+  duration_ms: 107.1882
+  type: 'test'
+  ...
+# Subtest: shipping accounting waits for the staff response before reading accounting
+ok 5 - shipping accounting waits for the staff response before reading accounting
+  ---
+  duration_ms: 1.881
+  type: 'test'
+  ...
+# Subtest: one named server action maps DOM input symmetrically and verifies its outcome
+ok 6 - one named server action maps DOM input symmetrically and verifies its outcome
+  ---
+  duration_ms: 0.8016
+  type: 'test'
+  ...
+# Subtest: named action input uses declared defaults and a missing route is not mistaken for a refusal
+ok 7 - named action input uses declared defaults and a missing route is not mistaken for a refusal
+  ---
+  duration_ms: 3.4896
+  type: 'test'
+  ...
+# Subtest: validation refusal accepts only deliberate application rejection statuses
+ok 8 - validation refusal accepts only deliberate application rejection statuses
+  ---
+  duration_ms: 1.7172
+  type: 'test'
+  ...
+# Subtest: business outcomes allow deliberate refusals but never turn server errors into completed work
+ok 9 - business outcomes allow deliberate refusals but never turn server errors into completed work
+  ---
+  duration_ms: 1.6728
+  type: 'test'
+  ...
+# Subtest: purchase and restock privacy refusals require their successful control
+ok 10 - purchase and restock privacy refusals require their successful control
+  ---
+  duration_ms: 1.6316
+  type: 'test'
+  ...
+# Subtest: purchase-session tampering uses early order data, awaits a response, checks effects and restores access
+ok 11 - purchase-session tampering uses early order data, awaits a response, checks effects and restores access
+  ---
+  duration_ms: 1.1573
+  type: 'test'
+  ...
+# Subtest: browser-origin calls need a matching positive control and a real browser observer
+ok 12 - browser-origin calls need a matching positive control and a real browser observer
+  ---
+  duration_ms: 1.7387
+  type: 'test'
+  ...
+# Subtest: restock role claims reach the real write with staff credentials and stored-state checks
+ok 13 - restock role claims reach the real write with staff credentials and stored-state checks
+  ---
+  duration_ms: 7.0304
+  type: 'test'
+  ...
+# Subtest: shipping role and cancellation owner claims retain the caller and check fresh state before classifying refusal
+ok 14 - shipping role and cancellation owner claims retain the caller and check fresh state before classifying refusal
+  ---
+  duration_ms: 6.0457
+  type: 'test'
+  ...
+# Subtest: fixed checkout price claims reach the native transport without inventing a DOM hook
+ok 15 - fixed checkout price claims reach the native transport without inventing a DOM hook
+  ---
+  duration_ms: 1.6027
+  type: 'test'
+  ...
+# Subtest: price claims reach the purchase transport without replacing the normal purchase controls
+ok 16 - price claims reach the purchase transport without replacing the normal purchase controls
+  ---
+  duration_ms: 2.62
+  type: 'test'
+  ...
+# Subtest: an invalid Spacetime u64 input fails before transport and cannot prove refusal
+ok 17 - an invalid Spacetime u64 input fails before transport and cannot prove refusal
+  ---
+  duration_ms: 1.2639
+  type: 'test'
+  ...
+# Subtest: account setup preserves scoped credentials and classifies browser failures
+ok 18 - account setup preserves scoped credentials and classifies browser failures
+  ---
+  duration_ms: 2.8682
+  type: 'test'
+  ...
+# Subtest: awaitSignedIn false leaves the signed-in view to the following expect
+ok 19 - awaitSignedIn false leaves the signed-in view to the following expect
+  ---
+  duration_ms: 2.2575
+  type: 'test'
+  ...
+# Subtest: account restoration does not accept the wrong signed-in user
+ok 20 - account restoration does not accept the wrong signed-in user
+  ---
+  duration_ms: 0.3848
+  type: 'test'
+  ...
+# Subtest: an unreplayable WebSocket write or missing transport evidence cannot earn server-side forgery credit
+ok 21 - an unreplayable WebSocket write or missing transport evidence cannot earn server-side forgery credit
+  ---
+  duration_ms: 1.5694
+  type: 'test'
+  ...
+# Subtest: a negative delivery check observes its full window before passing
+ok 22 - a negative delivery check observes its full window before passing
+  ---
+  duration_ms: 0.4401
+  type: 'test'
+  ...
+# Subtest: a delivery check is inconclusive when application traffic is not observable
+ok 23 - a delivery check is inconclusive when application traffic is not observable
+  ---
+  duration_ms: 1.4275
+  type: 'test'
+  ...
+# Subtest: replay retargeting maps nested entity ids by field and relationship depth
+ok 24 - replay retargeting maps nested entity ids by field and relationship depth
+  ---
+  duration_ms: 4.2085
+  type: 'test'
+  ...
+# Subtest: replay decodes Socket.IO entities and uses the target actor browser cookie
+ok 25 - replay decodes Socket.IO entities and uses the target actor browser cookie
+  ---
+  duration_ms: 1.5868
+  type: 'test'
+  ...
+# Subtest: replay uses an authenticated named action when the source write is an opaque WebSocket call
+ok 26 - replay uses an authenticated named action when the source write is an opaque WebSocket call
+  ---
+  duration_ms: 1.9751
+  type: 'test'
+  ...
+# Subtest: named replay can replace a declared literal without an undeclared UI attribute
+ok 27 - named replay can replace a declared literal without an undeclared UI attribute
+  ---
+  duration_ms: 0.5976
+  type: 'test'
+  ...
+# Subtest: a missing or malformed declared replay target is an application failure
+ok 28 - a missing or malformed declared replay target is an application failure
+  ---
+  duration_ms: 1.4832
+  type: 'test'
+  ...
+# Subtest: only an explicit authorization response proves a replay refusal
+ok 29 - only an explicit authorization response proves a replay refusal
+  ---
+  duration_ms: 3.118
+  type: 'test'
+  ...
+# Subtest: an idempotent replay permits success or deliberate validation refusal, never a transport failure
+ok 30 - an idempotent replay permits success or deliberate validation refusal, never a transport failure
+  ---
+  duration_ms: 2.742
+  type: 'test'
+  ...
+# Subtest: only an explicit authorization response proves a forged-write refusal
+ok 31 - only an explicit authorization response proves a forged-write refusal
+  ---
+  duration_ms: 1.0234
+  type: 'test'
+  ...
+# Subtest: a missing numeric literal makes the server-side replay check inconclusive
+ok 32 - a missing numeric literal makes the server-side replay check inconclusive
+  ---
+  duration_ms: 0.6746
+  type: 'test'
+  ...
+# Subtest: named calls scope browser cookies and captured request context to the action destination
+ok 33 - named calls scope browser cookies and captured request context to the action destination
+  ---
+  duration_ms: 3.3414
+  type: 'test'
+  ...
+# Subtest: cross-account replay uses caller CSRF context and cannot credit missing caller context
+ok 34 - cross-account replay uses caller CSRF context and cannot credit missing caller context
+  ---
+  duration_ms: 1.7196
+  type: 'test'
+  ...
+# Subtest: concurrent calls classify every result before counting accepted requests
+ok 35 - concurrent calls classify every result before counting accepted requests
+  ---
+  duration_ms: 8.8151
+  type: 'test'
+  ...
+# Subtest: bounded checkout cohorts issue every request and retain client timing and transport outcomes
+ok 36 - bounded checkout cohorts issue every request and retain client timing and transport outcomes
+  ---
+  duration_ms: 20.2368
+  type: 'test'
+  ...
+# Subtest: named writes expose refused response bodies to the existing privacy check
+ok 37 - named writes expose refused response bodies to the existing privacy check
+  ---
+  duration_ms: 1.3955
+  type: 'test'
+  ...
+# Subtest: cancelled cohorts drain requests and retain their history in action evidence
+ok 38 - cancelled cohorts drain requests and retain their history in action evidence
+  ---
+  duration_ms: 15.3504
+  type: 'test'
+  ...
+# Subtest: a committed operation with a truncated HTTP success body remains unknown
+ok 39 - a committed operation with a truncated HTTP success body remains unknown
+  ---
+  duration_ms: 1010.4392
+  type: 'test'
+  ...
+# Subtest: purchase bursts reuse validated dynamic action inputs across stack transports
+ok 40 - purchase bursts reuse validated dynamic action inputs across stack transports
+  ---
+  duration_ms: 1.9934
+  type: 'test'
+  ...
+# Subtest: mixed groups prepare every input before release and keep each operation and buyer in the history
+ok 41 - mixed groups prepare every input before release and keep each operation and buyer in the history
+  ---
+  duration_ms: 1.4711
+  type: 'test'
+  ...
+# Subtest: named calls keep actor credentials separate in storage and in-memory accessors
+ok 42 - named calls keep actor credentials separate in storage and in-memory accessors
+  ---
+  duration_ms: 1.3363
+  type: 'test'
+  ...
+# Subtest: unobserved session tokens cannot issue a replay or earn authorization credit
+ok 43 - unobserved session tokens cannot issue a replay or earn authorization credit
+  ---
+  duration_ms: 1.9776
+  type: 'test'
+  ...
+# Subtest: missing named actions and application roots stay inconclusive
+ok 44 - missing named actions and application roots stay inconclusive
+  ---
+  duration_ms: 1.0449
+  type: 'test'
+  ...
+# Subtest: an application-owned script timeout is a scored application failure
+ok 45 - an application-owned script timeout is a scored application failure
+  ---
+  duration_ms: 49.2019
+  type: 'test'
+  ...
+# Subtest: named calls override one declared parameter from another actor without changing the caller
+ok 46 - named calls override one declared parameter from another actor without changing the caller
+  ---
+  duration_ms: 4.661
+  type: 'test'
+  ...
+# Subtest: staff-role replay changes the role without changing the HTTP route or the reducer target
+ok 47 - staff-role replay changes the role without changing the HTTP route or the reducer target
+  ---
+  duration_ms: 1.9202
+  type: 'test'
+  ...
+# Subtest: role revocation uses declared transitions despite earlier captured role writes
+ok 48 - role revocation uses declared transitions despite earlier captured role writes
+  ---
+  duration_ms: 2.4555
+  type: 'test'
+  ...
+# Subtest: native envelopes govern single, concurrent and replay outcomes, including body loss
+ok 49 - native envelopes govern single, concurrent and replay outcomes, including body loss
+  ---
+  duration_ms: 11.6779
+  type: 'test'
+  ...
+# Subtest: native POST queries cannot be forged as writes, and mutation arguments stay inside their envelope
+ok 50 - native POST queries cannot be forged as writes, and mutation arguments stay inside their envelope
+  ---
+  duration_ms: 1.5313
+  type: 'test'
+  ...
+# Subtest: an accepted forged write is decided by its stored effect, not the status
+ok 51 - an accepted forged write is decided by its stored effect, not the status
+  ---
+  duration_ms: 0.4028
+  type: 'test'
+  ...
+# Subtest: platform request headers reach single and concurrent calls under the caller bearer token
+ok 52 - platform request headers reach single and concurrent calls under the caller bearer token
+  ---
+  duration_ms: 3.7942
+  type: 'test'
+  ...
+# Subtest: credential patches preserve native envelopes and reject ambiguous matches
+ok 53 - credential patches preserve native envelopes and reject ambiguous matches
+  ---
+  duration_ms: 2.183
+  type: 'test'
+  ...
+# Subtest: credential patches can replace the located password without guessing its key
+ok 54 - credential patches can replace the located password without guessing its key
+  ---
+  duration_ms: 0.2746
+  type: 'test'
+  ...
+# Subtest: Convex credential probes preserve the live socket and require its matching response
+ok 55 - Convex credential probes preserve the live socket and require its matching response
+  ---
+  duration_ms: 1431.3263
+  type: 'test'
+  ...
+# Subtest: real browser credential patch reaches the native request and keeps uncertain delivery unmeasured
+ok 56 - real browser credential patch reaches the native request and keeps uncertain delivery unmeasured
+  ---
+  duration_ms: 609.5561
+  type: 'test'
+  ...
+# Subtest: a SpacetimeDB signup patch places authority by the module schema and never guesses
+ok 57 - a SpacetimeDB signup patch places authority by the module schema and never guesses
+  ---
+  duration_ms: 625.3907
+  type: 'test'
+  ...
+# Subtest: a platform password endpoint patch reaches the cross-origin request only through the stack hook
+ok 58 - a platform password endpoint patch reaches the cross-origin request only through the stack hook
+  ---
+  duration_ms: 441.4733
+  type: 'test'
+  ...
+# Subtest: evaluator requests preserve actor cookies without the browser-only proxy
+    # Subtest: controller request avoids unreachable browser proxy and consumes the full body
+    ok 1 - controller request avoids unreachable browser proxy and consumes the full body
+      ---
+      duration_ms: 87.9611
+      type: 'test'
+      ...
+    # Subtest: current cookies rotate and delete without losing unrelated concurrent cookies
+    ok 2 - current cookies rotate and delete without losing unrelated concurrent cookies
+      ---
+      duration_ms: 30.2688
+      type: 'test'
+      ...
+    # Subtest: another actor stays isolated and explicit forged Cookie is preserved
+    ok 3 - another actor stays isolated and explicit forged Cookie is preserved
+      ---
+      duration_ms: 39.6588
+      type: 'test'
+      ...
+    # Subtest: partitioned cookies are not flattened into an evaluator cookie jar
+    ok 4 - partitioned cookies are not flattened into an evaluator cookie jar
+      ---
+      duration_ms: 8.2931
+      type: 'test'
+      ...
+    # Subtest: a concurrent change to the same cookie is not overwritten
+    ok 5 - a concurrent change to the same cookie is not overwritten
+      ---
+      duration_ms: 10.1219
+      type: 'test'
+      ...
+    # Subtest: unregistered contexts use their original request unchanged
+    ok 6 - unregistered contexts use their original request unchanged
+      ---
+      duration_ms: 4.2137
+      type: 'test'
+      ...
+    # Subtest: an active network cut cannot be bypassed by evaluator requests
+    ok 7 - an active network cut cannot be bypassed by evaluator requests
+      ---
+      duration_ms: 0.5223
+      type: 'test'
+      ...
+    # Subtest: callback and network failures dispose their temporary request context
+    ok 8 - callback and network failures dispose their temporary request context
+      ---
+      duration_ms: 11.9251
+      type: 'test'
+      ...
+    # Subtest: a fulfilled response lets the browser apply relative-expiry cookies once
+    ok 9 - a fulfilled response lets the browser apply relative-expiry cookies once
+      ---
+      duration_ms: 1461.6115
+      type: 'test'
+      ...
+    # Subtest: a dropped routed response does not apply evaluator response cookies
+    ok 10 - a dropped routed response does not apply evaluator response cookies
+      ---
+      duration_ms: 275.4769
+      type: 'test'
+      ...
+    1..10
+ok 59 - evaluator requests preserve actor cookies without the browser-only proxy
+  ---
+  duration_ms: 2739.4757
+  type: 'test'
+  ...
+# Subtest: a lost browser HTTP reply keeps its committed effect and does not change the write
+    # Subtest: loss=false
+    ok 1 - loss=false
+      ---
+      duration_ms: 241.2984
+      type: 'test'
+      ...
+    # Subtest: loss=true
+    ok 2 - loss=true
+      ---
+      duration_ms: 206.4752
+      type: 'test'
+      ...
+    1..2
+ok 60 - a lost browser HTTP reply keeps its committed effect and does not change the write
+  ---
+  duration_ms: 741.915
+  type: 'test'
+  ...
+# Subtest: native text and binary WebSocket replies are dropped without changing requests or subprotocol
+    # Subtest: binary=false, loss=false
+    ok 1 - binary=false, loss=false
+      ---
+      duration_ms: 146.8878
+      type: 'test'
+      ...
+    # Subtest: binary=false, loss=true
+    ok 2 - binary=false, loss=true
+      ---
+      duration_ms: 126.9069
+      type: 'test'
+      ...
+    # Subtest: binary=true, loss=false
+    ok 3 - binary=true, loss=false
+      ---
+      duration_ms: 97.2568
+      type: 'test'
+      ...
+    # Subtest: binary=true, loss=true
+    ok 4 - binary=true, loss=true
+      ---
+      duration_ms: 97.5215
+      type: 'test'
+      ...
+    1..4
+ok 61 - native text and binary WebSocket replies are dropped without changing requests or subprotocol
+  ---
+  duration_ms: 686.5904
+  type: 'test'
+  ...
+# Subtest: stock observations compare authoritative quantities and cannot use a missing baseline
+ok 62 - stock observations compare authoritative quantities and cannot use a missing baseline
+  ---
+  duration_ms: 7.7429
+  type: 'test'
+  ...
+# Subtest: contention checks reject negative warehouse stock even when the total is correct
+ok 63 - contention checks reject negative warehouse stock even when the total is correct
+  ---
+  duration_ms: 3.8968
+  type: 'test'
+  ...
+# Subtest: timed observations use the original origin and a missed window is unmeasured
+ok 64 - timed observations use the original origin and a missed window is unmeasured
+  ---
+  duration_ms: 1.1956
+  type: 'test'
+  ...
+# Subtest: transfer conservation rejects moving the wrong product despite correct warehouse totals
+ok 65 - transfer conservation rejects moving the wrong product despite correct warehouse totals
+  ---
+  duration_ms: 3.1104
+  type: 'test'
+  ...
+# Subtest: bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes
+ok 66 - bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes
+  ---
+  duration_ms: 82.4978
+  type: 'test'
+  ...
+# Subtest: cancellation probes reject a refund to the wrong warehouse even when total stock is restored
+ok 67 - cancellation probes reject a refund to the wrong warehouse even when total stock is restored
+  ---
+  duration_ms: 3.8834
+  type: 'test'
+  ...
+# Subtest: optional diagnostics keep fixed fresh-account schedules and cannot pass by rejecting all work
+ok 68 - optional diagnostics keep fixed fresh-account schedules and cannot pass by rejecting all work
+  ---
+  duration_ms: 13.2514
+  type: 'test'
+  ...
+# Subtest: race preserves branch ordering while overlapping branches through registered dispatch
+ok 69 - race preserves branch ordering while overlapping branches through registered dispatch
+  ---
+  duration_ms: 2.1165
+  type: 'test'
+  ...
+# Subtest: concurrent branches drain and preserve uncertainty over an earlier app failure
+ok 70 - concurrent branches drain and preserve uncertainty over an earlier app failure
+  ---
+  duration_ms: 1.6874
+  type: 'test'
+  ...
+# Subtest: concurrent replay refuses to invent contention when fewer than two writes exist
+ok 71 - concurrent replay refuses to invent contention when fewer than two writes exist
+  ---
+  duration_ms: 1.0694
+  type: 'test'
+  ...
+# Subtest: lifecycle operations distinguish missing control, unsafe refusal, and success
+ok 72 - lifecycle operations distinguish missing control, unsafe refusal, and success
+  ---
+  duration_ms: 1.6057
+  type: 'test'
+  ...
+# Subtest: a lifecycle operation reports the state it left only when the control completed
+ok 73 - a lifecycle operation reports the state it left only when the control completed
+  ---
+  duration_ms: 1.1268
+  type: 'test'
+  ...
+# Subtest: lifecycle control failures are app failures only when the app is at fault
+ok 74 - lifecycle control failures are app failures only when the app is at fault
+  ---
+  duration_ms: 1.0289
+  type: 'test'
+  ...
+# Subtest: direct PostgreSQL stock writes quote names and require exactly one updated row
+ok 75 - direct PostgreSQL stock writes quote names and require exactly one updated row
+  ---
+  duration_ms: 4.1909
+  type: 'test'
+  ...
+# Subtest: a database without the stock interface is an application failure that keeps its diagnostic
+ok 76 - a database without the stock interface is an application failure that keeps its diagnostic
+  ---
+  duration_ms: 1.7818
+  type: 'test'
+  ...
+# Subtest: direct MongoDB writes preserve IDs and reject ambiguous stock rows
+ok 77 - direct MongoDB writes preserve IDs and reject ambiguous stock rows
+  ---
+  duration_ms: 9.2286
+  type: 'test'
+  ...
+# Subtest: MongoDB auth and command failures cannot be scored as missing stock data
+ok 78 - MongoDB auth and command failures cannot be scored as missing stock data
+  ---
+  duration_ms: 1.3137
+  type: 'test'
+  ...
+# Subtest: direct database writes fail as harness errors without lease authority
+ok 79 - direct database writes fail as harness errors without lease authority
+  ---
+  duration_ms: 0.3578
+  type: 'test'
+  ...
+# Subtest: the null control can skip direct database writes
+ok 80 - the null control can skip direct database writes
+  ---
+  duration_ms: 0.2512
+  type: 'test'
+  ...
+# Subtest: offline lifecycle preserves settling time and verifies browser network state
+ok 81 - offline lifecycle preserves settling time and verifies browser network state
+  ---
+  duration_ms: 1.368
+  type: 'test'
+  ...
+# Subtest: offline lifecycle fails closed when browser network state does not change
+ok 82 - offline lifecycle fails closed when browser network state does not change
+  ---
+  duration_ms: 0.5327
+  type: 'test'
+  ...
+# Subtest: a crashed page during a concurrency barrier or click remains a harness failure
+ok 83 - a crashed page during a concurrency barrier or click remains a harness failure
+  ---
+  duration_ms: 1.0217
+  type: 'test'
+  ...
+# Subtest: concurrent click timeouts on a starved host are retryable and inconclusive
+ok 84 - concurrent click timeouts on a starved host are retryable and inconclusive
+  ---
+  duration_ms: 3.1002
+  type: 'test'
+  ...
+1..84
+# tests 107
+# suites 0
+# pass 107
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4125.1252

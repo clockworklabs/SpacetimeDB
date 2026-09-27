@@ -1,0 +1,439 @@
+TAP version 13
+# Subtest: HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels
+    # Subtest: identity
+    ok 1 - identity
+      ---
+      duration_ms: 1505.9211
+      type: 'test'
+      ...
+    # Subtest: gzip
+    ok 2 - gzip
+      ---
+      duration_ms: 784.1842
+      type: 'test'
+      ...
+    # Subtest: deflate
+    ok 3 - deflate
+      ---
+      duration_ms: 796.3959
+      type: 'test'
+      ...
+    # Subtest: br
+    ok 4 - br
+      ---
+      duration_ms: 893.349
+      type: 'test'
+      ...
+    # Subtest: unknown
+    ok 5 - unknown
+      ---
+      duration_ms: 816.3964
+      type: 'test'
+      ...
+    # Subtest: corrupt
+    ok 6 - corrupt
+      ---
+      duration_ms: 996.5286
+      type: 'test'
+      ...
+    # Subtest: overflow
+    ok 7 - overflow
+      ---
+      duration_ms: 870.0044
+      type: 'test'
+      ...
+    1..7
+ok 1 - HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels
+  ---
+  duration_ms: 6742.1711
+  type: 'test'
+  ...
+# Subtest: split WebSocket request bytes pass through while the Vite token is checked
+ok 2 - split WebSocket request bytes pass through while the Vite token is checked
+  ---
+  duration_ms: 1292.3815
+  type: 'test'
+  ...
+# Subtest: going offline closes open sockets, never delivers held updates, and keeps the dev reload socket
+ok 3 - going offline closes open sockets, never delivers held updates, and keeps the dev reload socket
+  ---
+  duration_ms: 3244.9044
+  type: 'test'
+  ...
+# Subtest: going offline cuts event streams, long polls and streamed fetches (recovering client)
+ok 4 - going offline cuts event streams, long polls and streamed fetches (recovering client)
+  ---
+  duration_ms: 5686.1548
+  type: 'test'
+  ...
+# Subtest: going offline cuts event streams, long polls and streamed fetches (no recovery client)
+ok 5 - going offline cuts event streams, long polls and streamed fetches (no recovery client)
+  ---
+  duration_ms: 5579.6941
+  type: 'test'
+  ...
+# Subtest: a root/token app socket is cut, and an unproven cut is unmeasured
+ok 6 - a root/token app socket is cut, and an unproven cut is unmeasured
+  ---
+  duration_ms: 7524.5312
+  type: 'test'
+  ...
+# Subtest: same-document navigation keeps a live socket tracked until the document is replaced
+ok 7 - same-document navigation keeps a live socket tracked until the document is replaced
+  ---
+  duration_ms: 5961.7282
+  type: 'test'
+  ...
+# Subtest: a disposed interruption releases its listener and cannot report a cut
+ok 8 - a disposed interruption releases its listener and cannot report a cut
+  ---
+  duration_ms: 116.5507
+  type: 'test'
+  ...
+# Subtest: an unleased appliance browser, such as the null control, gets a local proxy
+ok 9 - an unleased appliance browser, such as the null control, gets a local proxy
+  ---
+  duration_ms: 109.8726
+  type: 'test'
+  ...
+# transport body unavailable {"origin":"http://127.0.0.1:59592","pathSha256":"15b6f7aa2137c0ccb870e676491120a662f743be5e9d1d5a3defea9312e9a822","method":"GET","resourceType":"font","status":200,"contentType":"text/html","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+# transport body unavailable {"origin":"http://127.0.0.1:59592","pathSha256":"15b6f7aa2137c0ccb870e676491120a662f743be5e9d1d5a3defea9312e9a822","method":"GET","resourceType":"font","status":200,"contentType":"text/html","pageClosed":false,"failure":null,"error":"resource-unavailable"}
+# Subtest: privacy actors retain font bodies across reloads without changing ordinary HTTP caching
+    # Subtest: ordinary, leak=false
+    ok 1 - ordinary, leak=false
+      ---
+      duration_ms: 297.7991
+      type: 'test'
+      ...
+    # Subtest: initial, leak=false
+    ok 2 - initial, leak=false
+      ---
+      duration_ms: 494.1962
+      type: 'test'
+      ...
+    # Subtest: initial, leak=true
+    ok 3 - initial, leak=true
+      ---
+      duration_ms: 471.1557
+      type: 'test'
+      ...
+    # Subtest: replacement, leak=false
+    ok 4 - replacement, leak=false
+      ---
+      duration_ms: 616.8391
+      type: 'test'
+      ...
+    # Subtest: replacement, leak=true
+    ok 5 - replacement, leak=true
+      ---
+      duration_ms: 620.5574
+      type: 'test'
+      ...
+    # Subtest: fresh, leak=false
+    ok 6 - fresh, leak=false
+      ---
+      duration_ms: 568.7594
+      type: 'test'
+      ...
+    # Subtest: fresh, leak=true
+    ok 7 - fresh, leak=true
+      ---
+      duration_ms: 627.8151
+      type: 'test'
+      ...
+    # Subtest: race, leak=false
+    ok 8 - race, leak=false
+      ---
+      duration_ms: 490.1171
+      type: 'test'
+      ...
+    # Subtest: race, leak=true
+    ok 9 - race, leak=true
+      ---
+      duration_ms: 471.818
+      type: 'test'
+      ...
+    1..9
+ok 10 - privacy actors retain font bodies across reloads without changing ordinary HTTP caching
+  ---
+  duration_ms: 4980.4391
+  type: 'test'
+  ...
+# Subtest: privacy verdict drains an in-flight body and keeps a stalled response inconclusive
+    # Subtest: clean
+    ok 1 - clean
+      ---
+      duration_ms: 759.1252
+      type: 'test'
+      ...
+    # Subtest: leak
+    ok 2 - leak
+      ---
+      duration_ms: 652.3856
+      type: 'test'
+      ...
+    # Subtest: captured
+    ok 3 - captured
+      ---
+      duration_ms: 316.1912
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1099}
+    # Subtest: stalled
+    ok 4 - stalled
+      ---
+      duration_ms: 1324.3778
+      type: 'test'
+      ...
+    # Subtest: late-clean
+    ok 5 - late-clean
+      ---
+      duration_ms: 825.6428
+      type: 'test'
+      ...
+    # Subtest: late-leak
+    ok 6 - late-leak
+      ---
+      duration_ms: 788.8237
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1107}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1106}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1106}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1104}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1101}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1101}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1101}
+# transport request pending {"origin":"http://127.0.0.1:53916","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1100}
+    # Subtest: headers-stalled
+    ok 7 - headers-stalled
+      ---
+      duration_ms: 1298.3267
+      type: 'test'
+      ...
+    1..7
+ok 11 - privacy verdict drains an in-flight body and keeps a stalled response inconclusive
+  ---
+  duration_ms: 6218.7438
+  type: 'test'
+  ...
+# Subtest: privacy reload preserves preceding read and write responses
+    # Subtest: PUT clean
+    ok 1 - PUT clean
+      ---
+      duration_ms: 773.5488
+      type: 'test'
+      ...
+    # Subtest: PUT leak
+    ok 2 - PUT leak
+      ---
+      duration_ms: 687.6608
+      type: 'test'
+      ...
+    # Subtest: PUT late-clean
+    ok 3 - PUT late-clean
+      ---
+      duration_ms: 833.781
+      type: 'test'
+      ...
+    # Subtest: PUT late-leak
+    ok 4 - PUT late-leak
+      ---
+      duration_ms: 828.0834
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:63976","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","phase":"navigation","elapsedMs":5007}
+    # Subtest: PUT stalled
+    ok 5 - PUT stalled
+      ---
+      duration_ms: 5325.5048
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:63976","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","phase":"navigation","elapsedMs":5016}
+    # Subtest: PUT captured-stalled
+    ok 6 - PUT captured-stalled
+      ---
+      duration_ms: 5343.0485
+      type: 'test'
+      ...
+    # Subtest: PUT eventsource-clean
+    ok 7 - PUT eventsource-clean
+      ---
+      duration_ms: 645.3465
+      type: 'test'
+      ...
+    # Subtest: PUT eventsource-leak
+    ok 8 - PUT eventsource-leak
+      ---
+      duration_ms: 352.0199
+      type: 'test'
+      ...
+    # Subtest: GET clean
+    ok 9 - GET clean
+      ---
+      duration_ms: 624.0457
+      type: 'test'
+      ...
+    # Subtest: GET leak
+    ok 10 - GET leak
+      ---
+      duration_ms: 626.6842
+      type: 'test'
+      ...
+    # Subtest: GET late-clean
+    ok 11 - GET late-clean
+      ---
+      duration_ms: 770.607
+      type: 'test'
+      ...
+    # Subtest: GET late-leak
+    ok 12 - GET late-leak
+      ---
+      duration_ms: 761.9222
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:63976","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","phase":"navigation","elapsedMs":5013}
+    # Subtest: GET stalled
+    ok 13 - GET stalled
+      ---
+      duration_ms: 5381.7261
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:63976","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","phase":"navigation","elapsedMs":5002}
+    # Subtest: GET captured-stalled
+    ok 14 - GET captured-stalled
+      ---
+      duration_ms: 5368.727
+      type: 'test'
+      ...
+    # Subtest: GET eventsource-clean
+    ok 15 - GET eventsource-clean
+      ---
+      duration_ms: 651.2172
+      type: 'test'
+      ...
+    # Subtest: GET eventsource-leak
+    ok 16 - GET eventsource-leak
+      ---
+      duration_ms: 650.2952
+      type: 'test'
+      ...
+    1..16
+ok 12 - privacy reload preserves preceding read and write responses
+  ---
+  duration_ms: 29877.1514
+  type: 'test'
+  ...
+# Subtest: privacy observes HTTP delivery through reload during a finite window
+    # Subtest: clean
+    ok 1 - clean
+      ---
+      duration_ms: 733.3596
+      type: 'test'
+      ...
+    # Subtest: zero-headers
+    ok 2 - zero-headers
+      ---
+      duration_ms: 650.5881
+      type: 'test'
+      ...
+    # Subtest: split-leak
+    ok 3 - split-leak
+      ---
+      duration_ms: 711.1073
+      type: 'test'
+      ...
+    # Subtest: gzip-leak
+    ok 4 - gzip-leak
+      ---
+      duration_ms: 721.5291
+      type: 'test'
+      ...
+    # Subtest: future-leak
+    ok 5 - future-leak
+      ---
+      duration_ms: 713.5932
+      type: 'test'
+      ...
+    # Subtest: completed
+    ok 6 - completed
+      ---
+      duration_ms: 769.7123
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:55231","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1277}
+    # Subtest: silent
+    ok 7 - silent
+      ---
+      duration_ms: 1632.7532
+      type: 'test'
+      ...
+    # Subtest: capture-lost
+    ok 8 - capture-lost
+      ---
+      duration_ms: 681.9292
+      type: 'test'
+      ...
+    # Subtest: overflow
+    ok 9 - overflow
+      ---
+      duration_ms: 718.0643
+      type: 'test'
+      ...
+    # Subtest: leak-capture-lost
+    ok 10 - leak-capture-lost
+      ---
+      duration_ms: 644.9597
+      type: 'test'
+      ...
+    1..10
+ok 13 - privacy observes HTTP delivery through reload during a finite window
+  ---
+  duration_ms: 8580.4994
+  type: 'test'
+  ...
+# Subtest: HTTP privacy fragments do not become completed source or confirmed writes
+ok 14 - HTTP privacy fragments do not become completed source or confirmed writes
+  ---
+  duration_ms: 1355.2848
+  type: 'test'
+  ...
+# Subtest: compressed SpacetimeDB frames decode to their message text and other frames keep their bytes
+ok 15 - compressed SpacetimeDB frames decode to their message text and other frames keep their bytes
+  ---
+  duration_ms: 3.5315
+  type: 'test'
+  ...
+# Subtest: transport absence cannot pass after truncation, eviction, or an unreadable body
+ok 16 - transport absence cannot pass after truncation, eviction, or an unreadable body
+  ---
+  duration_ms: 5.9713
+  type: 'test'
+  ...
+# Subtest: capture failures identify body reads, declared body caps, and unsupported streams without payloads
+ok 17 - capture failures identify body reads, declared body caps, and unsupported streams without payloads
+  ---
+  duration_ms: 6.1225
+  type: 'test'
+  ...
+# Subtest: privacy capture includes public script, style and error bodies
+ok 18 - privacy capture includes public script, style and error bodies
+  ---
+  duration_ms: 1.5979
+  type: 'test'
+  ...
+# Subtest: body failure diagnostics use bounded categories without error text or URL secrets
+ok 19 - body failure diagnostics use bounded categories without error text or URL secrets
+  ---
+  duration_ms: 4.9555
+  type: 'test'
+  ...
+1..19
+# tests 68
+# suites 0
+# pass 68
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 51693.0834
