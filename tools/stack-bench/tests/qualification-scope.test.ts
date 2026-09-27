@@ -62,7 +62,8 @@ test('SpacetimeDB replay qualification includes its executable codec and rejects
     const mongo = scoped(root, 'reference', 'mongodb');
     write(root, bundle, 'export const codec = 2;');
     assert.notEqual(scope().sha256, before.sha256);
-    assert.deepEqual(scoped(root, 'reference', 'mongodb'), mongo);
+    assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, mongo.sha256,
+      'the shared grader imports this codec path for MongoDB too');
     write(root, replay, "import(new URL('../other-codec.js', import.meta.url).href);\n");
     assert.throws(scope, /unmapped dynamic import/);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -124,6 +125,21 @@ function scoped(root: string, kind: QualificationKind, stack: TestStack | null =
     stackBenchRoot: root,
   });
 }
+
+// Directory ownership cannot hide a dependency called by the shared grader.
+// Registry-only backends must still stay separate (covered by the reset test).
+test('a directly imported backend helper invalidates every caller scope', () => {
+  const root = fixture();
+  try {
+    write(root, 'grader/grade.ts', "import '../src/stacks/backends/postgres-operations.js';\n");
+    const before = [scoped(root, 'reference', 'mongodb'), scoped(root, 'mutation', 'mongodb'), scoped(root, 'null')];
+    write(root, 'src/stacks/backends/postgres-operations.ts', 'changed shared observer behavior\n');
+    const after = [scoped(root, 'reference', 'mongodb'), scoped(root, 'mutation', 'mongodb'), scoped(root, 'null')];
+    for (let index = 0; index < before.length; index++) {
+      assert.notEqual(after[index]!.executableSha256, before[index]!.executableSha256);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('qualification identities isolate stack, mutation, and selected-check inputs', () => {
   const root = fixture();

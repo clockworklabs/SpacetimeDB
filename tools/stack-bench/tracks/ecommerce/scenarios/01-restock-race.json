@@ -148,7 +148,7 @@
         {
           "do": "click",
           "actor": "a",
-          "testid": "catalog-link"
+          "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list"
         },
         {
           "do": "recordNumber",
@@ -225,7 +225,7 @@
         {
           "do": "click",
           "actor": "a",
-          "testid": "catalog-link"
+          "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list"
         },
         {
           "do": "expectNumber",
@@ -356,7 +356,7 @@
             {
               "do": "click",
               "actor": "a",
-              "testid": "catalog-link"
+              "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list"
             },
             {
               "do": "expectNumber",
@@ -510,7 +510,7 @@
             {
               "do": "click",
               "actor": "a",
-              "testid": "catalog-link"
+              "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list"
             },
             {
               "do": "expectNumber",

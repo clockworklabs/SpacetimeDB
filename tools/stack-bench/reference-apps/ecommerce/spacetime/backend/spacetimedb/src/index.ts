@@ -391,12 +391,14 @@ export const init = spacetimedb.init((ctx) => {
     });
   }
 
-  if (!ctx.db.account.username.find('staff')) {
+  for (const username of ['staff', 'staff2']) {
+    if (ctx.db.account.username.find(username)) continue;
+    const salt = `fixture-${username}`;
     const staffAccount = ctx.db.account.insert({
       id: 0n,
-      username: 'staff',
-      passwordSalt: 'fixture-staff',
-      passwordHash: hashPassword('stackbench-staff-2026', 'fixture-staff'),
+      username,
+      passwordSalt: salt,
+      passwordHash: hashPassword(`stackbench-${username}-2026`, salt),
       isAdmin: false,
       isStaff: true,
     });

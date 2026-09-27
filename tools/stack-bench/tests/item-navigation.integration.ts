@@ -12,6 +12,36 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { gradeFeature } from '../grader/grade.js';
 
+test('restock race accepts an open catalog and still requires catalog contents', async () => {
+  const definition = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/01-restock-race.json'), 'utf8')));
+  const feature = definition.features[0]!;
+  const steps = [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)]
+    .filter(step => step.do === 'click' && step.testid === 'catalog-link');
+  const browser = await chromium.launch({ headless: true });
+  const evidence: unknown[] = [];
+  try {
+    const page = await browser.newPage();
+    const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }) };
+    const service = { defaultWithin: 150, expand: (text: string) => text, testId: stableElementSelector,
+      sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+    for (const layout of ['inline', 'closed', 'missing']) for (const step of steps) {
+      await page.setContent(`${layout === 'closed' ? '<button id="catalog-link" onclick="document.querySelector(\'#item-list\').hidden=false">Catalog</button>' : ''}
+        ${layout === 'missing' ? '' : `<section id="item-list" ${layout === 'closed' ? 'hidden' : ''}>Products</section>`}`);
+      const clicked = await executeAction(ACTION_REGISTRY, 'click', { ...step, within: 150 }, { capabilities });
+      const observed = clicked.status === 'passed' ? await executeAction(ACTION_REGISTRY, 'expect',
+        { do: 'expect', actor: step.actor, testid: 'item-list', contains: 'Products', within: 150 }, { capabilities }) : clicked;
+      evidence.push({ layout, step, clicked, observed });
+      assert.equal(observed.status, layout === 'missing' ? 'failed' : 'passed', JSON.stringify(evidence.at(-1)));
+    }
+  } finally {
+    await browser.close();
+    if (process.env.STACK_BENCH_ITEM_NAVIGATION_EVIDENCE) writeFileSync(process.env.STACK_BENCH_ITEM_NAVIGATION_EVIDENCE,
+      JSON.stringify({ rerun: 'node --test --test-name-pattern="restock race accepts" dist/tests/item-navigation.integration.js', evidence }, null, 2));
+  }
+});
+
 test('catalog management reaches a declared inner tab and verifies the created product', async t => {
   // Failure first: a valid inner tab must work; broken navigation and missing fields must not pass.
   let layout = '', products: Array<{ name: string; variants: string[] }> = [];

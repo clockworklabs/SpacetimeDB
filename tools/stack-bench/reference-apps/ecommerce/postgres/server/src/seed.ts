@@ -56,15 +56,16 @@ export async function seed() {
     console.log("Seeded admin account");
   }
 
-  const existingStaff = await db.select({ id: account.id }).from(account).where(sql`username = 'staff'`).limit(1);
-  if (existingStaff.length === 0) {
+  for (const username of ['staff', 'staff2']) {
+    const existingStaff = await db.select({ id: account.id }).from(account).where(sql`username = ${username}`).limit(1);
+    if (existingStaff.length) continue;
     await db.insert(account).values({
-      username: "staff",
-      passwordHash: await hashPassword("stackbench-staff-2026"),
+      username,
+      passwordHash: await hashPassword(`stackbench-${username}-2026`),
       isAdmin: false,
       isStaff: true,
     });
-    console.log("Seeded staff account");
+    console.log(`Seeded ${username} account`);
   }
 
   const existingCustomer = await db.select({ id: account.id }).from(account).where(sql`username = 'customer'`).limit(1);

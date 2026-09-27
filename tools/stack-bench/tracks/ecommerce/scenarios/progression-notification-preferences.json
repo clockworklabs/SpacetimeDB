@@ -16,7 +16,8 @@
         {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
         { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
         { "do": "click", "actor": "owner", "testid": "notification-order" },
-        { "do": "click", "actor": "owner", "testid": "notification-save" }
+        { "do": "click", "actor": "owner", "testid": "notification-save" },
+        { "do": "expect", "actor": "owner", "testid": "notification-save-state", "attribute": "data-submit-state", "value": "succeeded", "within": 10000 }
       ],
       "criteria": [
         {

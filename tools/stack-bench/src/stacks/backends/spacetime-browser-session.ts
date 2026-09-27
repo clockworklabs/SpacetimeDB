@@ -180,7 +180,8 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
 // declared reducer parameters are the only authority for locating extra fields.
 export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
   patch: (args: unknown[], parameters: readonly { name: string }[]) =>
-    { body: string; shape: string; absentParameters?: string[] } | null) {
+    { body: string; shape: string; absentParameters?: string[] } | null,
+  onFailure: () => void) {
   const capture = captures.get(page);
   if (!capture) return null;
   if (capture.auth) throw new Error('Authentication request patch is already active');
@@ -194,31 +195,32 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
     schema = await response.json();
     if (!schema || typeof schema !== 'object') return { receipt: async () => undefined, dispose: () => {} };
   } catch { return { receipt: async () => undefined, dispose: () => {} }; }
-  const stringType = (raw: Record<string, unknown> | undefined, depth = 0): boolean => {
-    if (!raw || depth > 8) return false;
-    return typeof raw.Ref === 'number'
-      ? stringType(schema.typespace?.types?.[raw.Ref], depth + 1)
-      : Object.keys(raw).length === 1 && Object.hasOwn(raw, 'String');
+  const scalarType = (raw: Record<string, unknown> | undefined, depth = 0): { tag: string } | undefined => {
+    if (!raw || depth > 8) return undefined;
+    if (typeof raw.Ref === 'number') return scalarType(schema.typespace?.types?.[raw.Ref], depth + 1);
+    const tags = Object.keys(raw);
+    return tags.length === 1 && ['String', 'Bool', 'U32'].includes(tags[0]!) ? { tag: tags[0]! } : undefined;
   };
   const declarations = new Map<string, { names: string[]; read: ((reader: Reader) => unknown)[];
     write: ((writer: Writer, value: unknown) => void)[] }>();
   for (const reducer of schema.reducers ?? []) {
-    if (!/^(signup|signin)$/i.test(reducer.name.replaceAll('_', ''))) continue;
     const fields = reducer.params?.elements;
-    if (!fields?.length || !fields.every(field => stringType(field.algebraic_type)
-      && typeof field.name?.some === 'string')) continue;
-    const type = { tag: 'String' };
+    if (!fields?.length || !fields.every(field => typeof field.name?.some === 'string')) continue;
+    const types = fields.map(field => scalarType(field.algebraic_type));
+    if (types.some(type => !type)) continue;
     declarations.set(reducer.name, {
       names: fields.map(field => field.name!.some!),
-      read: fields.map(() => capture.codec.AlgebraicType.makeDeserializer(type)),
-      write: fields.map(() => capture.codec.AlgebraicType.makeSerializer(type)),
+      read: types.map(type => capture.codec.AlgebraicType.makeDeserializer(type!)),
+      write: types.map(type => capture.codec.AlgebraicType.makeSerializer(type!)),
     });
   }
-  let matched = false, settled = false, timer: ReturnType<typeof setTimeout> | undefined;
+  let matched = false, settled = false, failed = false, timer: ReturnType<typeof setTimeout> | undefined;
   let finish!: (value: AuthReceipt | undefined) => void;
   const done = new Promise<AuthReceipt | undefined>(resolve => {
     finish = value => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
   });
+  // Invalidation can follow the first receipt while the form is still active.
+  const fail = () => { failed = true; onFailure(); finish(undefined); };
   capture.auth = {
     change(message, socket) {
       const declaration = declarations.get(message.value.reducer);
@@ -231,32 +233,35 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       const writer = new capture.codec.BinaryWriter(128);
       declaration.write.forEach((write, index) => write(writer, values[index]));
       if (!Buffer.from(writer.getBuffer()).equals(Buffer.from(message.value.args))
-        || matched || socket.authPending || socket.invalid) { finish(undefined); throw new Error('Ambiguous credential call'); }
+        || matched || socket.authPending || socket.invalid) { fail(); throw new Error('Ambiguous credential call'); }
       const changed = patch(values, declaration.names.map(name => ({ name })));
       if (!changed) return null;
       const args = JSON.parse(changed.body) as unknown[];
-      if (!Array.isArray(args) || args.length !== values.length || args.some(value => typeof value !== 'string')) {
-        finish(undefined); throw new Error('Unsupported credential arguments');
+      if (!Array.isArray(args) || args.length !== values.length) {
+        fail(); throw new Error('Unsupported credential arguments');
       }
       const encoded = new capture.codec.BinaryWriter(128);
       declaration.write.forEach((write, index) => write(encoded, args[index]));
+      const roundTrip = new capture.codec.BinaryReader(encoded.getBuffer());
+      if (!isDeepStrictEqual(declaration.read.map(read => read(roundTrip)), args) || roundTrip.remaining) {
+        fail(); throw new Error('Credential arguments changed type');
+      }
       const sent = { ...message, value: { ...message.value, args: encoded.getBuffer() } };
       const bodySha256 = createHash('sha256').update(encode(capture.codec, capture.codec.ClientMessage, sent)).digest('hex');
       matched = true;
       socket.authPending = { id: message.value.requestId, finish(result) {
         socket.authPending = undefined;
-        finish(['Ok', 'OkEmpty', 'Err'].includes(result) && !socket.invalid
-          ? { shape: changed.shape, success: result !== 'Err', transport: 'spacetime-websocket',
-              bodySha256, ...(changed.absentParameters ? { absentParameters: changed.absentParameters } : {}) }
-          : undefined);
+        if (!['Ok', 'OkEmpty', 'Err'].includes(result) || socket.invalid) { fail(); return; }
+        finish({ shape: changed.shape, success: result !== 'Err', transport: 'spacetime-websocket',
+          bodySha256, ...(changed.absentParameters ? { absentParameters: changed.absentParameters } : {}) });
       } };
       timer = setTimeout(() => socket.authPending?.finish('unknown'), 30_000);
       return sent;
     },
-    fail: () => finish(undefined),
+    fail,
   };
   return {
-    receipt: async () => matched ? done : undefined,
+    receipt: async () => { const value = matched ? await done : undefined; return failed ? undefined : value; },
     dispose: () => { capture.auth = undefined; finish(undefined); },
   };
 }

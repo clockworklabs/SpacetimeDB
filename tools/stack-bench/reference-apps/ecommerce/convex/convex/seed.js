@@ -28,14 +28,14 @@ export const catalog = internalMutationGeneric({ args: {}, handler: async ctx =>
 }});
 export const missingAccounts = internalQueryGeneric({ args: {}, handler: async ctx => {
   const missing = [];
-  for (const username of ['admin', 'staff', 'customer']) {
+  for (const username of ['admin', 'staff', 'staff2', 'customer']) {
     if (!await ctx.db.query('order_account').withIndex('username', q => q.eq('username', username)).unique()) missing.push(username);
   }
   return missing;
 }});
 export const seedRole = internalMutationGeneric({ args: { username: v.string() }, handler: async (ctx, { username }) => {
-  if (!['admin', 'staff', 'customer'].includes(username)) throw new ConvexError('Unknown seed account');
+  if (!['admin', 'staff', 'staff2', 'customer'].includes(username)) throw new ConvexError('Unknown seed account');
   const user = await ctx.db.query('order_account').withIndex('username', q => q.eq('username', username)).unique();
   if (!user) throw new ConvexError('Seed account is missing');
-  await ctx.db.patch(user._id, { roles: username === 'customer' ? [] : [username] });
+  await ctx.db.patch(user._id, { roles: username === 'customer' ? [] : [username === 'admin' ? 'admin' : 'staff'] });
 }});

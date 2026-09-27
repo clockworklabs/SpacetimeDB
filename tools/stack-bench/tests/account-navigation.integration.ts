@@ -894,10 +894,18 @@ test('account creation accepts explicit login without masking refused or wrong-a
     response.setHeader('Content-Type', 'text/html');
     response.end(`<form id="signup-form"><input id="signup-username"><input id="signup-password">
       <button id="signup-submit">Create account</button></form>
-      <form id="signin-form"><input id="signin-username"><input id="signin-password">
+      <button id="signin-toggle" ${mode.startsWith('restored-') ? '' : 'hidden'}>Sign in</button>
+      <form id="signin-form" ${mode.startsWith('restored-') ? 'hidden' : ''}><input id="signin-username"><input id="signin-password">
       <button id="signin-submit">Sign in</button></form>
       <strong id="current-user" hidden></strong><span id="auth-error" hidden></span>
       <script>
+      // Session restoration can complete when the login panel opens after registration.
+      document.querySelector('#signin-toggle').onclick = () => {
+        const user = document.querySelector('#current-user');
+        user.textContent = '${mode}' === 'restored-wrong-account' ? 'other-account' : document.querySelector('#signup-username').value;
+        user.hidden = false;
+        document.querySelector('#signin-toggle').hidden = true;
+      };
       for (const action of ['signup','signin']) document.querySelector('#'+action+'-form').onsubmit = async event => {
         event.preventDefault();
         const response = await fetch('/'+action, {method:'POST', headers:{'Content-Type':'application/json'},
@@ -914,7 +922,7 @@ test('account creation accepts explicit login without masking refused or wrong-a
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     for (mode of ['patched-silent-refusal', 'missing-identity-observed', 'auto', 'manual', 'delayed-manual', 'reject', 'missing', 'duplicate', 'wrong-account',
-      'manual-observed', 'rejected-observed', 'patched-manual', 'patched-reject']) {
+      'manual-observed', 'rejected-observed', 'patched-manual', 'patched-reject', 'restored-correct-account', 'restored-wrong-account']) {
       accounts.clear(); requests.length = 0; signupPending = false;
       if (mode === 'duplicate') accounts.set('Alice-scope', { password: 'fixture-password', role: 'customer' });
       const page = await browser.newPage();
@@ -945,7 +953,13 @@ test('account creation accepts explicit login without masking refused or wrong-a
         evidence.push(observation);
         assert.equal(requests.filter(r => r.path === '/signup').length, 1, `${mode}: do not retry registration`);
         assert.equal(loginRequests.some(r => r.signupPending), false, `${mode}: visible login form is not signup completion`);
-        if (mode === 'patched-silent-refusal') {
+        if (mode.startsWith('restored-')) {
+          assert.equal(accounts.get('Alice-scope')?.password, 'fixture-password');
+          assert.equal(loginRequests.length, 0, 'a restored session must not submit another login');
+          assert.equal(observation.currentUser, mode === 'restored-wrong-account' ? 'other-account' : 'Alice-scope');
+          assert.equal(result.status, mode === 'restored-wrong-account' ? 'failed' : 'passed',
+            `restored identity is an app observation, not a harness exception: ${JSON.stringify(result)}`);
+        } else if (mode === 'patched-silent-refusal') {
           assert.equal(result.status, 'failed', 'a known rejected patch must not gain an error observation from a later login');
           assert.equal(accounts.size, 0);
           assert.equal(loginRequests.length, 0, 'never sign in after a proved HTTP registration refusal');

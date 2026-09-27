@@ -1,4 +1,4 @@
-import { actionImplementation } from './action-contract.js';
+import { actionImplementation, ActionApplicationFailure } from './action-contract.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import {
   actorFor,
@@ -132,7 +132,7 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   const restoredSession = async () => {
     if (!acceptRestoredSession || !(await currentUser.isVisible())) return false;
     if (!(await currentUser.innerText()).includes(user)) {
-      throw new Error(`${actor.name} is already signed in as a different account`);
+      throw new ActionApplicationFailure(`${actor.name} is already signed in as a different account`);
     }
     return true;
   };

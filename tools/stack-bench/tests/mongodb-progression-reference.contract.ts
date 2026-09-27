@@ -24,7 +24,7 @@ function visit(value: unknown, callback: (item: Record<string, unknown>) => void
   }
 }
 
-test('the MongoDB progression reference exposes every graph testing hook', () => {
+test('the MongoDB reference source inventory includes graph hooks and the declared account prefix', () => {
   const graph = compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce.json'));
   const packs = new Map(readdirSync(packRoot).filter(name => name.endsWith('.json')).map(name => {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
@@ -50,8 +50,8 @@ test('the MongoDB progression reference exposes every graph testing hook', () =>
     .filter(name => name.endsWith('.tsx'))
     .map(name => readFileSync(join(appRoot, 'client', 'src', name), 'utf8'))
     .join('\n');
-  const missing = [...testIds].filter(id => id === 'staff-role-account-staff'
-    ? !clientSource.includes('id={`staff-role-account-${encodeURIComponent(entry.username)}`}')
+  const missing = [...testIds].filter(id => id.startsWith('staff-role-account-')
+    ? !clientSource.includes('staff-role-account-${encodeURIComponent(')
     : /^subscription-(pause|resume|cancel)$/.test(id)
       ? !(clientSource.includes('data-role={`subscription-${action}`}')
         && clientSource.includes("['pause', 'resume', 'cancel']"))

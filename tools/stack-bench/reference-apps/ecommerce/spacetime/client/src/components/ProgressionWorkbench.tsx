@@ -61,6 +61,9 @@ export default function ProgressionWorkbench(props: Props) {
   } = props;
   const reducers = conn?.reducers;
   const [profileName, setProfileName] = useState(profile?.name ?? '');
+  const [profileSaveState, setProfileSaveState] = useState('idle');
+  const [notificationSaveState, setNotificationSaveState] = useState('idle');
+  const [roleSaveState, setRoleSaveState] = useState<Record<string, string>>({});
   const [profileAddress, setProfileAddress] = useState(profile?.address ?? '');
   const [supportEmail, setSupportEmail] = useState('');
   const [supportSubject, setSupportSubject] = useState('');
@@ -117,6 +120,10 @@ export default function ProgressionWorkbench(props: Props) {
 
   return (
     <section className="progression-workbench">
+      {isSignedIn && <>
+        <span data-role="profile-save-state" data-submit-state={profileSaveState}>{profileSaveState}</span>
+        <span data-role="notification-save-state" data-submit-state={notificationSaveState}>{notificationSaveState}</span>
+      </>}
       <nav className="feature-links" aria-label="Account and staff tools">
         {isSignedIn && <button className="btn btn-ghost btn-sm" data-role="profile-link">Profile</button>}
         <button className="btn btn-ghost btn-sm" data-role="support-link">Support</button>
@@ -132,7 +139,14 @@ export default function ProgressionWorkbench(props: Props) {
           <h2>Customer profile</h2>
           <input data-role="profile-name" value={profileName} onChange={e => setProfileName(value(e))} placeholder="Name" />
           <input data-role="profile-address" value={profileAddress} onChange={e => setProfileAddress(value(e))} placeholder="Shipping address" />
-          <button className="btn btn-primary btn-sm" data-role="profile-save" onClick={() => reducers?.saveProfile({ name: profileName, address: profileAddress })}>Save profile</button>
+          <button className="btn btn-primary btn-sm" data-role="profile-save" onClick={async () => {
+            setProfileSaveState('pending');
+            try {
+              if (!reducers) throw new Error('Not connected');
+              await reducers.saveProfile({ name: profileName, address: profileAddress });
+              setProfileSaveState('succeeded');
+            } catch { setProfileSaveState('failed'); }
+          }}>Save profile</button>
           <div data-role="profile-address-summary">{profile?.name} {profile?.address}</div>
         </section>
       )}
@@ -211,14 +225,22 @@ export default function ProgressionWorkbench(props: Props) {
         <section className="feature-card">
           <h2>Staff roles</h2>
           {staffRoles.map(row => (
-            <div className="feature-row" data-role="staff-role-row" id={`staff-role-account-${encodeURIComponent(row.username)}`} data-account-id={String(row.accountId)} key={String(row.accountId)}>
+            <div className="feature-row" data-role="staff-role-row" data-submit-state={roleSaveState[String(row.accountId)] ?? 'idle'} id={`staff-role-account-${encodeURIComponent(row.username)}`} data-account-id={String(row.accountId)} key={String(row.accountId)}>
               <span>{row.username}</span>
               <span data-role="staff-role-value">{row.role}</span>
               <input data-role="staff-role-select" defaultValue={row.role} id={`role-${String(row.accountId)}`} />
-              <button className="btn btn-ghost btn-sm" data-role="staff-role-save" onClick={() => reducers?.assignStaffRole({
-                accountId: row.accountId,
-                role: (document.getElementById(`role-${String(row.accountId)}`) as HTMLSelectElement)?.value ?? 'warehouse',
-              })}>Save role</button>
+              <button className="btn btn-ghost btn-sm" data-role="staff-role-save" onClick={async () => {
+                const key = String(row.accountId);
+                setRoleSaveState(value => ({ ...value, [key]: 'pending' }));
+                try {
+                  if (!reducers) throw new Error('Not connected');
+                  await reducers.assignStaffRole({
+                    accountId: row.accountId,
+                    role: (document.getElementById(`role-${String(row.accountId)}`) as HTMLSelectElement)?.value ?? 'warehouse',
+                  });
+                  setRoleSaveState(value => ({ ...value, [key]: 'succeeded' }));
+                } catch { setRoleSaveState(value => ({ ...value, [key]: 'failed' })); }
+              }}>Save role</button>
             </div>
           ))}
         </section>
@@ -261,7 +283,14 @@ export default function ProgressionWorkbench(props: Props) {
           <h2>Notification preferences</h2>
           <button className="btn btn-ghost btn-sm" data-role="notification-order" data-state={orderEnabled ? 'on' : 'off'} onClick={() => setOrderEnabled((enabled: boolean) => !enabled)}>Order notifications: {orderEnabled ? 'on' : 'off'}</button>
           <button className="btn btn-ghost btn-sm" data-role="notification-stock" data-state={stockEnabled ? 'on' : 'off'} onClick={() => setStockEnabled((enabled: boolean) => !enabled)}>Stock notifications: {stockEnabled ? 'on' : 'off'}</button>
-          <button className="btn btn-primary btn-sm" data-role="notification-save" onClick={() => reducers?.saveNotificationPreferences({ orderEnabled, stockEnabled })}>Save preferences</button>
+          <button className="btn btn-primary btn-sm" data-role="notification-save" onClick={async () => {
+            setNotificationSaveState('pending');
+            try {
+              if (!reducers) throw new Error('Not connected');
+              await reducers.saveNotificationPreferences({ orderEnabled, stockEnabled });
+              setNotificationSaveState('succeeded');
+            } catch { setNotificationSaveState('failed'); }
+          }}>Save preferences</button>
           {notifications.map(row => <div data-role="notification-item" key={String(row.id)}><span data-role={row.kind === 'stock' ? 'stock-alert-delivery' : undefined}>{row.message}</span></div>)}
         </section>
       )}

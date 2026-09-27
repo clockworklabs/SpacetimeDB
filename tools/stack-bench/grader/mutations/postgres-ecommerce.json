@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "7a56b268900a471b4a0d61d22493ce78b546b4b4bc63e19fb1534b24ec9f0dc4",
+  "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -2068,8 +2068,8 @@
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "            <button data-role=\"staff-role-save\" onClick={() => run(() => request(`/api/staff/${role.id}/role`, \"PUT\", {\n              role: (document.getElementById(`role-${role.id}`) as HTMLSelectElement).value,\n            }))}>Save</button></div>)}",
-          "replace": "            <button data-role=\"staff-role-save\" onClick={() => run(async () => {\n              const select = document.getElementById(`role-${role.id}`) as HTMLSelectElement;\n              await request(`/api/staff/${role.id}/role`, \"PUT\", { role: select.value });\n              select.value = role.role;\n            })}>Save</button></div>)}"
+          "find": "            <button data-role=\"staff-role-save\" onClick={() => {\n              setRoleSaveState(value => ({ ...value, [role.id]: \"pending\" }));\n              return run(() => request(`/api/staff/${role.id}/role`, \"PUT\", {\n                role: (document.getElementById(`role-${role.id}`) as HTMLSelectElement).value,\n              }), state => setRoleSaveState(value => ({ ...value, [role.id]: state })));\n            }}>Save</button></div>)}",
+          "replace": "            <button data-role=\"staff-role-save\" onClick={() => {\n              setRoleSaveState(value => ({ ...value, [role.id]: \"pending\" }));\n              return run(async () => {\n                const select = document.getElementById(`role-${role.id}`) as HTMLSelectElement;\n                await request(`/api/staff/${role.id}/role`, \"PUT\", { role: select.value });\n                select.value = role.role;\n              }, state => setRoleSaveState(value => ({ ...value, [role.id]: state })));\n            }}>Save</button></div>)}"
         }
       ]
     },

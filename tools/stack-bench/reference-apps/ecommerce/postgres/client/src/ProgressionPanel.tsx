@@ -17,6 +17,9 @@ export function ProgressionPanel({
 }) {
   const staff = Boolean(account?.isAdmin || account?.isStaff);
   const [message, setMessage] = useState("");
+  const [profileSaveState, setProfileSaveState] = useState("idle");
+  const [notificationSaveState, setNotificationSaveState] = useState("idle");
+  const [roleSaveState, setRoleSaveState] = useState<Record<number, string>>({});
   const [profile, setProfile] = useState({ name: state?.profile?.name ?? "", address: state?.profile?.address ?? "" });
   const [signin, setSignin] = useState({ username: "", password: "" });
   const [support, setSupport] = useState({ email: "", subject: "", message: "" });
@@ -40,11 +43,18 @@ export function ProgressionPanel({
     if (state?.profile) setProfile({ name: state.profile.name, address: state.profile.address });
   }, [state?.profile?.name, state?.profile?.address]);
 
-  const run = async (work: () => Promise<unknown>) => {
-    try { await work(); setMessage(""); await reload(); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "request failed"); }
+  const run = async (work: () => Promise<unknown>, onComplete?: (state: "succeeded" | "failed") => void) => {
+    try { await work(); }
+    catch (error) { onComplete?.("failed"); setMessage(error instanceof Error ? error.message : "request failed"); return; }
+    onComplete?.("succeeded"); setMessage("");
+    try { await reload(); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "refresh failed"); }
   };
   return <section className="progression" data-role="progression-panel">
+    {account && <>
+      <span data-role="profile-save-state" data-submit-state={profileSaveState}>{profileSaveState}</span>
+      <span data-role="notification-save-state" data-submit-state={notificationSaveState}>{notificationSaveState}</span>
+    </>}
     <h2>Progression features</h2>
     <nav className="progression-links">
       <a data-role="profile-link" href="#profile">Profile</a>
@@ -74,7 +84,10 @@ export function ProgressionPanel({
           onChange={(event) => setProfile({ ...profile, name: event.target.value })} />
         <input data-role="profile-address" value={profile.address} placeholder="Address"
           onChange={(event) => setProfile({ ...profile, address: event.target.value })} />
-        <button data-role="profile-save" onClick={() => run(() => request("/api/profile", "PUT", profile))}>Save profile</button>
+        <button data-role="profile-save" onClick={() => {
+          setProfileSaveState("pending");
+          return run(() => request("/api/profile", "PUT", profile), setProfileSaveState);
+        }}>Save profile</button>
         <span data-role="profile-address-summary">{state?.profile?.address}</span>
       </article>}
 
@@ -154,8 +167,10 @@ export function ProgressionPanel({
         <button data-role="notification-stock" data-state={preferences.stock ? "on" : "off"} onClick={() => setPreferences({ ...preferences, stock: !preferences.stock })}>
           Stock updates: {preferences.stock ? "on" : "off"}
         </button>
-        <button data-role="notification-save" onClick={() => run(() =>
-          request("/api/notifications/preferences", "PUT", preferences))}>Save</button>
+        <button data-role="notification-save" onClick={() => {
+          setNotificationSaveState("pending");
+          return run(() => request("/api/notifications/preferences", "PUT", preferences), setNotificationSaveState);
+        }}>Save</button>
         <span data-role="notifications-toggle">{state?.notifications?.length ?? 0}</span>
         <span data-role="notification-unread-count">{state?.notifications?.filter((item: any) => !item.read).length ?? 0}</span>
         {(state?.notifications ?? []).map((item: any) => <div data-role="notification-item" key={item.id}><span data-role={item.kind === 'stock' ? 'stock-alert-delivery' : undefined}>{item.message}</span></div>)}
@@ -239,13 +254,16 @@ export function ProgressionPanel({
         </article>
         <article className="progression-card">
           <h3>Roles and activity</h3>
-          {account?.isAdmin && (state?.roles ?? []).map((role: any) => <div data-role="staff-role-row" id={`staff-role-account-${encodeURIComponent(role.username)}`} data-account-id={role.id} key={role.id}>{role.username}
+          {account?.isAdmin && (state?.roles ?? []).map((role: any) => <div data-role="staff-role-row" data-submit-state={roleSaveState[role.id] ?? "idle"} id={`staff-role-account-${encodeURIComponent(role.username)}`} data-account-id={role.id} key={role.id}>{role.username}
             <select data-role="staff-role-select" defaultValue={role.role} id={`role-${role.id}`}>
               <option>staff</option><option>inventory</option><option>admin</option>
             </select>
-            <button data-role="staff-role-save" onClick={() => run(() => request(`/api/staff/${role.id}/role`, "PUT", {
-              role: (document.getElementById(`role-${role.id}`) as HTMLSelectElement).value,
-            }))}>Save</button></div>)}
+            <button data-role="staff-role-save" onClick={() => {
+              setRoleSaveState(value => ({ ...value, [role.id]: "pending" }));
+              return run(() => request(`/api/staff/${role.id}/role`, "PUT", {
+                role: (document.getElementById(`role-${role.id}`) as HTMLSelectElement).value,
+              }), state => setRoleSaveState(value => ({ ...value, [role.id]: state })));
+            }}>Save</button></div>)}
           {(state?.activity ?? []).map((item: any) => <div data-role="activity-entry" key={item.id}>
             <span data-role="activity-actor">{item.actor}</span> <span data-role="activity-action">{item.action}</span>
             <span data-role="activity-subject">{item.subject}</span> <span data-role="activity-time">{item.time}</span>

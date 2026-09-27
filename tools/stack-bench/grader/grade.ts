@@ -415,7 +415,11 @@ export class Actor {
     // Fault actions navigate directly and deliberately do not use this wait.
     const deadline = Date.now() + within;
     while (this.pendingRequests.size || this.transport.pending) {
-      if (Date.now() >= deadline) inconclusive('transport-incomplete', {});
+      if (Date.now() >= deadline) {
+        // Preserve a captured disclosure; incomplete capture only prevents proving absence.
+        this.transport.markIncomplete('navigationInterrupted');
+        return;
+      }
       await abortableSleep(Math.min(25, deadline - Date.now()), signal);
     }
   }

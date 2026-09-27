@@ -41,7 +41,7 @@ function collectScenarioInterface(value: unknown, interfaceNames: ScenarioInterf
   for (const entry of Object.values(value)) collectScenarioInterface(entry, interfaceNames);
 }
 
-test('the client implements every graph feature interface', () => {
+test('the SpacetimeDB reference source inventory includes graph hooks and the declared account prefix', () => {
   const graph = progressionGraph();
   const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog.json');
   const packs = recipePackPaths(readJson(catalogPath), catalogPath);
@@ -64,8 +64,8 @@ test('the client implements every graph feature interface', () => {
     .map(read)
     .join('\n');
   for (const role of interfaceNames.roles) {
-    if (role === 'staff-role-account-staff') {
-      assert(clientSource.includes('id={`staff-role-account-${encodeURIComponent(row.username)}`}'));
+    if (role.startsWith('staff-role-account-')) {
+      assert(clientSource.includes('staff-role-account-${encodeURIComponent('));
       continue;
     }
     assert(clientSource.includes(`data-role="${role}"`) || clientSource.includes(`id="${role}"`)

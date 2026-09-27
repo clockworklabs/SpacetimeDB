@@ -5187,6 +5187,16 @@
                   {
                     "actor": "admin",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "current-user",
+                    "unlessVisible": [
+                      "admin-link",
+                      "admin-revenue"
+                    ]
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
                     "testid": "admin-link",
                     "unlessVisible": "admin-revenue"
                   },
@@ -5205,6 +5215,16 @@
                     "testid": "overlay-close",
                     "unlessVisible": "order-item",
                     "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "current-user",
+                    "unlessVisible": [
+                      "orders-toggle",
+                      "order-item"
+                    ]
                   },
                   {
                     "actor": "customer",
@@ -5293,6 +5313,16 @@
                     "ifAvailable": true,
                     "testid": "overlay-close",
                     "within": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "current-user",
+                    "unlessVisible": [
+                      "admin-link",
+                      "admin-revenue"
+                    ]
                   },
                   {
                     "actor": "admin",
@@ -5518,7 +5548,23 @@
               {
                 "actor": "admin",
                 "do": "click",
+                "ifAvailable": true,
+                "testid": "current-user",
+                "unlessVisible": [
+                  "admin-link"
+                ]
+              },
+              {
+                "actor": "admin",
+                "do": "click",
                 "testid": "admin-link"
+              },
+              {
+                "actor": "customer",
+                "do": "click",
+                "ifAvailable": true,
+                "testid": "catalog-link",
+                "unlessVisible": "item-list"
               }
             ]
           },

@@ -783,7 +783,9 @@ export function initializeCampaignDirectory(input: unknown, directory: string,
 export function writeCampaignState(path: string, input: unknown, state: unknown): unknown {
   const plan = validateCompiledCampaignPlan(input);
   return writeArtifact(path, { kind: 'campaign_state', id: `${plan.id}-state`,
-    identities: identities(plan), payload: assertStateMatchesPlan(validateCampaignState(state), plan) });
+    identities: emptyArtifactIdentities({ experiment: {
+      id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
+    } }), payload: assertStateMatchesPlan(validateCampaignState(state), plan) });
 }
 
 export function readCampaignState(directory: string,

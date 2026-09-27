@@ -103,11 +103,11 @@ async function seed() {
     await Cart.create({ userId: adminUser._id, items: [] });
   }
 
-  const staff = await User.findOne({ username: "staff" });
-  if (!staff) {
-    console.log("Seeding staff account...");
-    const passwordHash = await hashPassword("stackbench-staff-2026");
-    const staffUser = await User.create({ username: "staff", passwordHash, isStaff: true });
+  for (const username of ['staff', 'staff2']) {
+    if (await User.findOne({ username })) continue;
+    console.log(`Seeding ${username} account...`);
+    const passwordHash = await hashPassword(`stackbench-${username}-2026`);
+    const staffUser = await User.create({ username, passwordHash, isStaff: true });
     await Cart.create({ userId: staffUser._id, items: [] });
   }
 

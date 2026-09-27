@@ -10,7 +10,7 @@ Deno.serve(async (req: Request) => {
   }
   const envVars = Object.entries(Deno.env.toObject());
   try {
-    // @ts-ignore EdgeRuntime is a global of the edge-runtime image.
+    // @ts-expect-error EdgeRuntime is supplied by the edge-runtime image.
     const worker = await EdgeRuntime.userWorkers.create({ servicePath: `/home/deno/app/supabase/functions/${name}`,
       memoryLimitMb: 150, workerTimeoutMs: 60_000, noModuleCache: false, forceCreate: true, envVars });
     return await worker.fetch(req);

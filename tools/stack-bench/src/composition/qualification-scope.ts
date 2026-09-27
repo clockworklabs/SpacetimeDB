@@ -111,8 +111,8 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
   ],
 });
 // A file under this root belongs to the stack named before the first '-' of its
-// name, or of its top directory for files a stack reads at runtime. Another stack's
-// files never enter a scope, so adding a stack changes no other stack's scope.
+// name, or of its top directory for files a stack reads at runtime. Registry
+// dispatch is filtered by owner; shared direct imports remain dependencies.
 const STACK_OWNED_ROOT = 'src/stacks/backends/';
 const BACKEND_ONLY_MODULES = new Set(['src/stacks/stack-adapters.ts']);
 // Registries hold one registration per stack. A scope hashes their shared lines and
@@ -247,11 +247,10 @@ function moduleGraph(root: string, entrypoints: readonly string[], {
     const relativePath = relative(root, path).replaceAll('\\', '/');
     if (!existsSync(path)) fail(`mapped input does not exist: ${relativePath}`);
     const owner = moduleOwner(relativePath);
-    if (owner && (stack === null || (owner !== '*' && owner !== stack))) continue;
+    if (owner === '*' && stack === null) continue;
     files.add(path);
     const imports = localImports(path, root);
-    // A stack's modules may not reach into another stack's: that module would be
-    // pruned from this scope, so a change to it could not invalidate this stack.
+    // Backend implementations stay independent; shared callers may use both.
     if (owner && owner !== '*') {
       for (const imported of imports) {
         const importedOwner = moduleOwner(relative(root, imported).replaceAll('\\', '/'));
@@ -260,7 +259,13 @@ function moduleGraph(root: string, entrypoints: readonly string[], {
         }
       }
     }
-    pending.push(...imports);
+    // Only registry dispatch excludes foreign backends. A shared caller's direct
+    // import executes regardless of the directory's nominal stack ownership.
+    pending.push(...imports.filter(imported => {
+      if (!REGISTRY_MODULES.has(relativePath)) return true;
+      const importedOwner = moduleOwner(relative(root, imported).replaceAll('\\', '/'));
+      return !importedOwner || importedOwner === '*' || importedOwner === stack;
+    }));
     pending.push(...(CHILD_ENTRYPOINTS[relativePath] ?? []).map(child => resolve(root, child)));
   }
   return [...files];

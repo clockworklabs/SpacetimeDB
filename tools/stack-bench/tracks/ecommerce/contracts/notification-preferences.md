@@ -10,3 +10,9 @@ Use `notification-order` and
 its current state in `data-state` as `on` or `off`.
 Both choices start `off` for a new account. Activating `notification-order` or
 `notification-stock` switches it between `on` and `off`.
+
+Expose `notification-save-state` as the status of the latest save, with `data-submit-state`:
+`idle` initially, `pending` immediately when submitted, `succeeded` only after the
+server confirms success, or `failed` after rejection or transport failure. Keep this
+status visible if the editor closes. Keep its terminal state until the next submission
+or page navigation. A new submission must replace the old state immediately.

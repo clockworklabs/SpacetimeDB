@@ -44,8 +44,11 @@ test('support privacy confirms persisted owner writes without requiring live ref
   const privacy = scenario('progression-managed-support-privacy.json').features[0]!.criteria[0]!;
   const tail = privacy.steps.slice(privacy.steps.findIndex(step => step.do === 'expectReplayRejected'));
   assert.equal(tail[0]!.do, 'expectReplayRejected');
-  assert.equal(tail[6]!.do, 'expectElementCount');
-  assert.equal(tail[6]!.equals, 1, 'an unauthorized replay must not add a second reply');
+  const count = tail.find(step => step.do === 'expectElementCount' && step.testid === 'support-reply-item');
+  assert(count, 'the reply readback must count stored replies');
+  assert.equal(count.equals, 1, 'an unauthorized replay must not add a second reply');
+  assert(tail.slice(0, tail.indexOf(count)).some(step => step.do === 'reload' && step.actor === count.actor),
+    'the reply count observes a fresh page');
   const live = scenario('progression-managed-support-shared.json').features[0]!.criteria
     .find(criterion => criterion.id === '613a')!;
   const write = live.steps.findIndex(step => step.do === 'click' && step.testid === 'support-reply-submit');
@@ -64,7 +67,6 @@ test('the direct conservation race and queue warehouse label are observed on fre
     const reload = before.findLastIndex(step => step.do === 'reload' && step.actor === 'staff');
     assert(reload >= 0, `${name}: staff reloads before reading the queue`);
     assert.equal(before[reload + 1]!.do, 'ensureSignedIn');
-    assert.deepEqual(before[reload + 2], { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
   }
   const race = scenario('02-server-actions.json').features.flatMap(feature => feature.criteria)
     .find(criterion => criterion.id === '202d')!;

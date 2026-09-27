@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+  "fixtureSha256": "f38d9274708f70bb282c52609afc7a3ac5c7d488b9b9a6dd8f463a23d6030405",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
@@ -2073,8 +2073,8 @@
           "replace": "  const [profileName, setProfileName] = useState(profile?.name ?? '');\n  const [profileSavedHere, setProfileSavedHere] = useState(false);"
         },
         {
-          "find": "onClick={() => reducers?.saveProfile({ name: profileName, address: profileAddress })}",
-          "replace": "onClick={() => { setProfileSavedHere(true); return reducers?.saveProfile({ name: profileName, address: profileAddress }); }}"
+          "find": "onClick={async () => {\n            setProfileSaveState('pending');\n            try {\n              if (!reducers) throw new Error('Not connected');\n              await reducers.saveProfile({ name: profileName, address: profileAddress });\n              setProfileSaveState('succeeded');\n            } catch { setProfileSaveState('failed'); }\n          }}",
+          "replace": "onClick={async () => {\n            setProfileSavedHere(true);\n            setProfileSaveState('pending');\n            try {\n              if (!reducers) throw new Error('Not connected');\n              await reducers.saveProfile({ name: profileName, address: profileAddress });\n              setProfileSaveState('succeeded');\n            } catch { setProfileSaveState('failed'); }\n          }}"
         },
         {
           "find": "<div data-role=\"profile-address-summary\">{profile?.name} {profile?.address}</div>",
@@ -2115,8 +2115,8 @@
           "replace": "  const [preferencesSubmitted, setPreferencesSubmitted] = useState(false);\n  useEffect(() => {\n    if (preferencesSubmitted) return;\n    setOrderEnabled(preferences?.orderEnabled ?? false);\n    setStockEnabled(preferences?.stockEnabled ?? false);\n  }, [preferences?.orderEnabled, preferences?.stockEnabled, preferencesSubmitted]);"
         },
         {
-          "find": "onClick={() => reducers?.saveNotificationPreferences({ orderEnabled, stockEnabled })}",
-          "replace": "onClick={() => { reducers?.saveNotificationPreferences({ orderEnabled, stockEnabled }); setPreferencesSubmitted(true); setOrderEnabled(false); setStockEnabled(false); }}"
+          "find": "onClick={async () => {\n            setNotificationSaveState('pending');\n            try {\n              if (!reducers) throw new Error('Not connected');\n              await reducers.saveNotificationPreferences({ orderEnabled, stockEnabled });\n              setNotificationSaveState('succeeded');\n            } catch { setNotificationSaveState('failed'); }\n          }}",
+          "replace": "onClick={async () => {\n            setNotificationSaveState('pending');\n            try {\n              if (!reducers) throw new Error('Not connected');\n              await reducers.saveNotificationPreferences({ orderEnabled, stockEnabled });\n              setPreferencesSubmitted(true); setOrderEnabled(false); setStockEnabled(false);\n              setNotificationSaveState('succeeded');\n            } catch { setNotificationSaveState('failed'); }\n          }}"
         }
       ]
     },
@@ -2130,8 +2130,8 @@
       "file": "client/src/components/ProgressionWorkbench.tsx",
       "edits": [
         {
-          "find": "              <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-role-save\" onClick={() => reducers?.assignStaffRole({\n                accountId: row.accountId,\n                role: (document.getElementById(`role-${String(row.accountId)}`) as HTMLSelectElement)?.value ?? 'warehouse',\n              })}>Save role</button>",
-          "replace": "              <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-role-save\" onClick={() => {\n                const roleInput = document.getElementById(`role-${String(row.accountId)}`) as HTMLInputElement | null;\n                reducers?.assignStaffRole({ accountId: row.accountId, role: roleInput?.value ?? 'warehouse' });\n                if (roleInput) roleInput.value = row.role;\n              }}>Save role</button>"
+          "find": "              <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-role-save\" onClick={async () => {\n                const key = String(row.accountId);\n                setRoleSaveState(value => ({ ...value, [key]: 'pending' }));\n                try {\n                  if (!reducers) throw new Error('Not connected');\n                  await reducers.assignStaffRole({\n                    accountId: row.accountId,\n                    role: (document.getElementById(`role-${String(row.accountId)}`) as HTMLSelectElement)?.value ?? 'warehouse',\n                  });\n                  setRoleSaveState(value => ({ ...value, [key]: 'succeeded' }));\n                } catch { setRoleSaveState(value => ({ ...value, [key]: 'failed' })); }\n              }}>Save role</button>",
+          "replace": "              <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-role-save\" onClick={async () => {\n                const key = String(row.accountId);\n                setRoleSaveState(value => ({ ...value, [key]: 'pending' }));\n                try {\n                  if (!reducers) throw new Error('Not connected');\n                  await reducers.assignStaffRole({\n                    accountId: row.accountId,\n                    role: (document.getElementById(`role-${String(row.accountId)}`) as HTMLSelectElement)?.value ?? 'warehouse',\n                  });\n                  const roleInput = document.getElementById(`role-${key}`) as HTMLInputElement | null;\n                  if (roleInput) roleInput.value = row.role;\n                  setRoleSaveState(value => ({ ...value, [key]: 'succeeded' }));\n                } catch { setRoleSaveState(value => ({ ...value, [key]: 'failed' })); }\n              }}>Save role</button>"
         }
       ]
     },

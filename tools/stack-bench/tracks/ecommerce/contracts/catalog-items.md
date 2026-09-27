@@ -5,7 +5,7 @@ needed, show `catalog-link` directly on the signed-out first page to open the ca
 
 | Element ID | Required element |
 | --- | --- |
-| `catalog-link` | Opens the public catalog; omit when the catalog is already visible. |
+| `catalog-link` | Opens the public catalog; may be omitted when the catalog is already visible. |
 | `item-list` | Contains the public catalog items. |
 | `item-card` | Shows one catalog item. |
 | `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |

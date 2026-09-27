@@ -4,8 +4,7 @@ Use `staff-link` to open the staff area. In that area, use `promotions-link` for
 management. Use `promotion-code`, `promotion-discount`,
 `promotion-start`, `promotion-end`, `promotion-limit`, and `promotion-submit` to create a rule.
 List rules as `promotion-item` elements and expose the saved values with the matching field IDs.
-A visible `promotions-link` does not grant permission to manage promotions. Unauthorized
-accounts must not create or change promotion rules.
+The `promotions-link` control may be visible to any account.
 
 Expose the same rule creation used by `promotion-submit`.
 

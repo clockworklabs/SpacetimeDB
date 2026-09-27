@@ -12,6 +12,10 @@ const VERIFIED_ACCOUNT_OUTPUT_LIMITS: Readonly<Record<string, number>> = {
   'gpt-5.3-codex': 128_000, 'gpt-5.4': 128_000, 'gpt-5.4-2026-03-05': 128_000,
   'gpt-5.6-sol': 128_000, 'gpt-6-astra': 128_000, 'gpt-6-sol': 128_000,
 };
+// No Sol patch multiplier is documented. All image and text input must fit this
+// complete context: https://developers.openai.com/api/docs/models/gpt-6-sol
+// https://developers.openai.com/api/docs/guides/images-vision (checked 2026-09-27).
+const VERIFIED_IMAGE_CONTEXT_LIMITS: Readonly<Record<string, number>> = { 'gpt-6-sol': 1_050_000 };
 type JsonRecord = Record<string, unknown>;
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -45,6 +49,12 @@ function parseProviderRequest(body: Buffer, path: string, config: BrokerConfig):
       || payload.max_tokens > config.maxOutputTokens)) {
     fail(`max_tokens must be from 1 through ${config.maxOutputTokens}`);
   }
+  // Anthropic auto can select Priority capacity; only standard has bound rates.
+  // https://platform.claude.com/docs/en/api/service-tiers
+  if (path === '/v1/messages' && config.maxBudgetUsd != null
+    && (payload.service_tier === undefined || payload.service_tier === 'auto')) {
+    payload.service_tier = 'standard_only';
+  }
   return payload;
 }
 
@@ -58,10 +68,13 @@ function anthropicRequestPricing(payload: JsonRecord): RequestPricing {
   const serverTools = payload.tools !== undefined && (!Array.isArray(payload.tools)
     || payload.tools.some(tool => !isRecord(tool) || (tool.type !== undefined && tool.type !== 'custom')));
   const unpriced = firstUnpricedReason(
+    hasUnpricedInput([payload.messages, payload.system]) ? 'unpriced-input' : null,
+    payload.service_tier !== undefined && !['auto', 'standard_only'].includes(String(payload.service_tier)) ? 'service-tier' : null,
     payload.speed !== undefined && payload.speed !== 'standard' ? 'speed' : null,
     declared(payload.mcp_servers) ? 'mcp' : null,
     declared(payload.container) ? 'container' : null);
-  return { unpriced, unlessUnused: serverTools ? 'server-tool' : null, bounded: !serverTools && unpriced === null };
+  return { unpriced, unlessUnused: serverTools ? 'server-tool' : null,
+    bounded: !serverTools && unpriced === null && payload.service_tier === 'standard_only' };
 }
 
 // Server tools run inside the provider and return these content blocks.
@@ -172,6 +185,7 @@ interface BrokerProtocol {
   parseRequest(body: Buffer, path: string): JsonRecord;
   requestPricing(payload: JsonRecord): RequestPricing;
   inputTokenAdjustment?(payload: JsonRecord): number;
+  inputTokenLimit?(payload: JsonRecord): number | undefined;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
 }
@@ -233,6 +247,7 @@ function hasUnpricedInput(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(hasUnpricedInput);
   if (!isRecord(value)) return false;
   if (['input_file', 'item_reference'].includes(String(value.type))) return true;
+  if (isRecord(value.source) && ['url', 'file'].includes(String(value.source.type))) return true;
   return Object.values(value).some(hasUnpricedInput);
 }
 
@@ -244,11 +259,15 @@ function images(value: unknown): JsonRecord[] {
 }
 
 // Only inline images on these models have a verified token bound.
-function boundedImageUrl(image: JsonRecord, model: string): string | null {
-  return ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-2026-03-05'].includes(model)
-    && typeof image.image_url === 'string'
+function inlineImageUrl(image: JsonRecord): string | null {
+  return typeof image.image_url === 'string'
     && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(image.image_url)
     && image.file_id === undefined ? image.image_url : null;
+}
+
+function boundedImageUrl(image: JsonRecord, model: string): string | null {
+  return ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-2026-03-05'].includes(model)
+    ? inlineImageUrl(image) : null;
 }
 
 // Provider receipts price actual tokens; this only bounds the reservation.
@@ -272,7 +291,8 @@ function responsesRequestFeature(payload: JsonRecord, model: string): UnpricedRe
     payload.tools !== undefined && (!Array.isArray(payload.tools)
       || payload.tools.some(tool => !isRecord(tool) || !['function', 'custom'].includes(String(tool.type))))
       ? 'hosted-tool' : null,
-    hasUnpricedInput(payload.input) || images(payload.input).some(image => boundedImageUrl(image, model) === null)
+    hasUnpricedInput(payload.input) || images(payload.input).some(image => boundedImageUrl(image, model) === null
+      && !(Object.hasOwn(VERIFIED_IMAGE_CONTEXT_LIMITS, model) && inlineImageUrl(image)))
       ? 'unpriced-input' : null,
     payload.image_config !== undefined || payload.audio !== undefined
       || (payload.modalities !== undefined && (!Array.isArray(payload.modalities)
@@ -358,6 +378,8 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
       return { unpriced: router ? null : feature, unlessUnused: null, bounded: feature === null };
     },
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
+    inputTokenLimit: payload => Object.hasOwn(VERIFIED_IMAGE_CONTEXT_LIMITS, config.model)
+      && images(payload.input).length > 0 ? VERIFIED_IMAGE_CONTEXT_LIMITS[config.model] : undefined,
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
   };

@@ -252,7 +252,7 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
       const changed = patchAuthRequest(args, username, password, patch, parameters);
       if (changed && ++matches !== 1) throw new Error('Multiple credential requests');
       return changed;
-    });
+    }, () => { error = true; });
   } catch (error) {
     if (sockets) sockets.active = undefined;
     throw error;

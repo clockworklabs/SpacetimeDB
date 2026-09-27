@@ -30,6 +30,8 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
   const [supportOpen, setSupportOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
+  const [profileSaveState, setProfileSaveState] = useState("idle");
+  const [notificationSaveState, setNotificationSaveState] = useState("idle");
   const [profileAddress, setProfileAddress] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
   const [supportSubject, setSupportSubject] = useState("");
@@ -91,10 +93,17 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
     if (result) setSupportReference(result.ticket.reference);
   };
 
-  const saveProfile = () => act("/api/progression/profile", { method: "PUT",
-    body: JSON.stringify({ name: profileName, address: profileAddress }) });
+  const saveProfile = () => {
+    setProfileSaveState("pending");
+    return act("/api/progression/profile", { method: "PUT",
+      body: JSON.stringify({ name: profileName, address: profileAddress }) }, setProfileSaveState);
+  };
 
   return <section className="progression-panel">
+    {user && <>
+      <span data-role="profile-save-state" data-submit-state={profileSaveState}>{profileSaveState}</span>
+      <span data-role="notification-save-state" data-submit-state={notificationSaveState}>{notificationSaveState}</span>
+    </>}
     {!user ? <div className="progression-card staff-signin">
       <h3>Staff sign in</h3>
       <input data-role="staff-signin-username" value={staffName}
@@ -143,9 +152,10 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
       </button>
       <span data-role="notification-unread-count">{(state.notifications || []).length}</span>
       <button data-role="notification-save" className="btn btn-primary" onClick={async () => {
+        setNotificationSaveState("pending");
         const result = await act("/api/progression/preferences", {
           method: "PUT", body: JSON.stringify(preference),
-        });
+        }, setNotificationSaveState);
         if (result?.preference) setPreference(result.preference);
       }}>Save</button>
       {(state.notifications || []).map((notification: any) =>
@@ -222,6 +232,7 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "" });
   const [reorder, setReorder] = useState({ item: "", threshold: "", quantity: "" });
   const [roles, setRoles] = useState<Record<string, string>>({});
+  const [roleSaveState, setRoleSaveState] = useState<Record<string, string>>({});
   const findItem = (name: string) => items.find((entry: any) => entry.name === name);
 
   return <div className="progression-staff-tools">
@@ -233,16 +244,19 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
 
     {user.isAdmin && <div className="progression-card">
       <h3>Staff roles</h3>
-      {(state.staffUsers || []).map((entry: any) => <div data-role="staff-role-row" id={`staff-role-account-${encodeURIComponent(entry.username)}`} data-account-id={entry.id} key={entry.username}>
+      {(state.staffUsers || []).map((entry: any) => <div data-role="staff-role-row" data-submit-state={roleSaveState[entry.username] ?? "idle"} id={`staff-role-account-${encodeURIComponent(entry.username)}`} data-account-id={entry.id} key={entry.username}>
         <span>{entry.username} {entry.roles?.join(", ")}</span>
         <select data-role="staff-role-select"
           value={roles[entry.username] ?? entry.roles?.[0] ?? "staff"}
           onChange={event => setRoles(value => ({ ...value, [entry.username]: event.target.value }))}>
           <option>staff</option><option>inventory</option><option>admin</option>
         </select>
-        <button data-role="staff-role-save" onClick={() => act(`/api/staff/${entry.id}/role`, {
-          method: "PUT", body: JSON.stringify({ role: roles[entry.username] ?? entry.roles?.[0] ?? "staff" }),
-        })}>Save</button>
+        <button data-role="staff-role-save" onClick={() => {
+          setRoleSaveState(value => ({ ...value, [entry.username]: "pending" }));
+          return act(`/api/staff/${entry.id}/role`, {
+            method: "PUT", body: JSON.stringify({ role: roles[entry.username] ?? entry.roles?.[0] ?? "staff" }),
+          }, (state: string) => setRoleSaveState(value => ({ ...value, [entry.username]: state })));
+        }}>Save</button>
       </div>)}
     </div>}
 

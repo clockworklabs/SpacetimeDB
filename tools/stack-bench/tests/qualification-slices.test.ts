@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { buildRecipeQualificationDocuments } from '../src/composition/recipe-release.js';
 import { assertQualificationSliceCoverage, unchangedQualificationChecks,
@@ -89,7 +88,7 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   const plan: CalibrationPlan = saved.calibration;
   // Exercise this retained receipt against its retained controls, not today's
   // expanded defect set. Changed controls remain a separate rejection below.
-  const temporary = mkdtempSync(join(tmpdir(), 'stack-bench-slice-controls-'));
+  const temporary = mkdtempSync(join(STACK_BENCH_ROOT, 'tests', '.slice-controls-'));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const mutationPath = join(temporary, 'postgres.json');
   writeFileSync(mutationPath, JSON.stringify(saved.mutations.postgres));
@@ -121,7 +120,7 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   writeFileSync(reviewPath, JSON.stringify({ rationale: 'Catalog navigation is optional; fixed reference source is unchanged.' }));
   const reviewed = structuredClone(plan);
   reviewed.qualificationReuse!.rationale = 'Review only changed catalog interface wording.';
-  reviewed.qualificationReuse!.evidence = [{ path: reviewPath, sha256: sha256(readFileSync(reviewPath)) }];
+  reviewed.qualificationReuse!.evidence = [{ path: relative(STACK_BENCH_ROOT, reviewPath), sha256: sha256(readFileSync(reviewPath)) }];
   reviewed.qualificationReuse!.contractTextEquivalences = [{
     fromTaskSha256: taskHash(savedDocuments.meaning.task), toTaskSha256: taskHash(revised.meaning.task),
   }];
@@ -224,7 +223,7 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   const referenceReuse = referencePlan.qualificationReuse!;
   referenceReuse.referenceSourceEquivalences = [referenceReview];
   referenceReuse.rationale = 'Only support submission receipt UI changed; this review check is unchanged.';
-  referenceReuse.evidence = [{ path: reviewPath, sha256: sha256(readFileSync(reviewPath)) }];
+  referenceReuse.evidence = [{ path: relative(STACK_BENCH_ROOT, reviewPath), sha256: sha256(readFileSync(reviewPath)) }];
   const referenceContext = { ...context, calibration: referencePlan, references: referencePlan.references.entries };
   const referenceManifest = structuredClone(saved.mutations.postgres);
   referenceManifest.fixtureSha256 = referenceReview.toSourceSha256;

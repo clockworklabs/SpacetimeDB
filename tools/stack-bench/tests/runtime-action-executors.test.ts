@@ -412,6 +412,7 @@ test('lifecycle control failures are app failures only when the app is at fault'
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
   const waits: number[] = [];
   let stockSql = '';
+  let stockCommands = 0;
   const databaseLease = { resources: { database: 'bench',
     container: { name: 'leased-postgres', id: 'postgres-id' } } };
   const capability = createDatabaseWriteCapability({
@@ -420,8 +421,11 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     expand: value => value,
     exec: (_command, args, options) => {
       if (args[0] === 'inspect') return 'postgres-id\n';
-      stockSql = options.input ?? '';
-      return 'UPDATE 1\n';
+      if (++stockCommands === 1) {
+        stockSql = options.input ?? '';
+        return 'UPDATE 1\n';
+      }
+      return '{"items":1,"namedWarehouses":1,"warehouses":1,"quantities":[7]}\n';
     },
   });
   const passed = await run({ do: 'dbSetStock', item: "Kid's Keyboard", warehouse: 'Main',
@@ -431,6 +435,7 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     } }),
   });
   assert.equal(passed.status, 'passed');
+  assert.equal(stockCommands, 2, 'the update requires an independent stored quantity read');
   assert.match(stockSql, /Kid''s Keyboard/);
   assert.deepEqual(waits, [17]);
 

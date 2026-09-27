@@ -46,7 +46,7 @@ export function transportFrameText(payload: string | Buffer): string {
 export class ReceivedTransport {
   readonly chunks: string[] = [];
   private bytes = 0;
-  private readonly incompleteCounts = { byteLimit: 0, bodyReadFailures: 0, unsupportedStreams: 0 };
+  private readonly incompleteCounts = { byteLimit: 0, bodyReadFailures: 0, unsupportedStreams: 0, navigationInterrupted: 0 };
   incomplete = false;
   pending = 0;
   readonly pendingResponses = new Map<Response, { page: Page; startedAt: number }>();
