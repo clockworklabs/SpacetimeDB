@@ -55,7 +55,7 @@ test('transport absence cannot pass after truncation, eviction, or an unreadable
   assert.equal(bounded.contains('second-secret'), true);
   assert.throws(() => bounded.contains('first-secret'), /incomplete/);
   assert.deepEqual(captureFailure(bounded), {
-    byteLimit: 1, bodyReadFailures: 0, unsupportedStreams: 0, pendingBodies: 0, retainedBytes: 13,
+    byteLimit: 1, bodyReadFailures: 0, unsupportedStreams: 0, navigationInterrupted: 0, pendingBodies: 0, retainedBytes: 13,
   });
   const oversized = new ReceivedTransport(5);
   oversized.record('too-large');
@@ -88,7 +88,7 @@ test('capture failures identify body reads, declared body caps, and unsupported 
   assert.equal(captureFailure(received)?.pendingBodies, 1);
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.deepEqual(captureFailure(received), {
-    byteLimit: 0, bodyReadFailures: 1, unsupportedStreams: 0, pendingBodies: 0, retainedBytes: 0,
+    byteLimit: 0, bodyReadFailures: 1, unsupportedStreams: 0, navigationInterrupted: 0, pendingBodies: 0, retainedBytes: 0,
   });
   page.emit('response', {
     headers: () => ({ 'content-type': 'text/html', 'content-length': String(8 * 1024 * 1024 + 1) }),
@@ -96,7 +96,7 @@ test('capture failures identify body reads, declared body caps, and unsupported 
   });
   session.emit('Network.responseReceived', { response: { mimeType: 'text/event-stream' }, type: 'Fetch' });
   assert.deepEqual(captureFailure(received), {
-    byteLimit: 1, bodyReadFailures: 1, unsupportedStreams: 1, pendingBodies: 0, retainedBytes: 0,
+    byteLimit: 1, bodyReadFailures: 1, unsupportedStreams: 1, navigationInterrupted: 0, pendingBodies: 0, retainedBytes: 0,
   });
   received.record('observed-secret');
   assert.equal(received.contains('observed-secret'), true, 'A captured leak remains measurable');
@@ -142,7 +142,8 @@ test('body failure diagnostics use bounded categories without error text or URL 
     page.emit('response', {
       headers: () => ({ 'content-type': 'text/html' }), status: () => 200,
       url: () => 'https://assets.test/private-password?token=private-password',
-      request: () => ({ resourceType: () => 'font', failure: () => null }),
+      request: () => ({ url: () => 'https://assets.test/private-password?token=private-password',
+        method: () => 'GET', resourceType: () => 'font', failure: () => null }),
       text: async () => { throw error; },
     });
     await new Promise<void>(resolve => setImmediate(resolve));

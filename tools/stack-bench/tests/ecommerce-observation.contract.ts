@@ -16,19 +16,26 @@ test('selected privacy checks prove a working positive path without sibling crit
   assert(delivered >= 0 && absent > delivered);
   assert.equal(alerts[delivered]!.actor, 'subscriber-fresh');
   const promotions = read('progression-promotion-rules.json').features[0]!.criteria.find(c => c.id === '620b')!.steps;
-  const created = promotions.findIndex(s => s.do === 'expect' && s.testid === 'promotion-item' && s.contains === 'ACCESS10');
+  const promotionReload = promotions.findIndex(s => s.do === 'reload');
+  const created = promotions.findIndex((s, index) => index > promotionReload && s.do === 'expect' && s.testid === 'promotion-item' && s.contains === 'ACCESS10');
   assert(created > promotions.findIndex(s => s.testid === 'promotion-submit'));
   assert(created > promotions.findIndex(s => s.do === 'reload'));
   assert(created < promotions.findIndex(s => s.do === 'replayAs'));
   const roles = read('progression-staff-roles.json').features[0]!.criteria.find(c => c.id === '621b')!.steps;
-  assert(!roles.slice(0, roles.findIndex(s => s.do === 'fill' && s.text === 'staff'))
-    .some(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'inventory'),
-  'the role boundary check must establish its own role without requiring the prior inventory assignment');
-  const save = roles.findIndex(s => s.testid === 'staff-role-save');
-  const reload = roles.findIndex((s, index) => index > save && s.do === 'reload');
-  const saved = roles.findIndex(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'staff');
-  assert(reload > roles.findIndex(s => s.testid === 'staff-role-save'));
-  assert(saved > reload && saved < roles.findIndex(s => s.do === 'replayAs'));
+  const negative = roles.findIndex(s => s.do === 'replayAs' && s.actor === 'staff');
+  assert(negative >= 0);
+  for (const account of ['staff', 'staff2']) {
+    const target = `staff-role-account-${account}`;
+    const reset = roles.findIndex(s => s.do === 'replayAs' && s.actor === 'replayAdmin'
+      && (s.namedTarget as { testid: string }).testid === target
+      && Array.isArray(s.namedAction?.args) && s.namedAction.args[1] === 'staff');
+    const reload = roles.findIndex((s, index) => index > reset && s.do === 'reload' && s.actor === 'replayAdmin');
+    const saved = roles.findIndex((s, index) => index > reload && s.do === 'expect'
+      && s.testid === 'staff-role-select' && s.in?.testid === target && s.value === 'staff');
+    assert(reset >= 0 && reload > reset && saved > reload && saved < negative,
+      `${account} must have its own reset and fresh stored-state proof before the unauthorized write`);
+    assert(roles.slice(reset, reload).some(s => s.do === 'expectReplayCompleted' && s.requireAccepted === true));
+  }
 });
 
 test('order ownership switches the same browser and reconciles the next write under the new account', () => {
@@ -272,19 +279,19 @@ test('role revocation proves authorization before testing the same session after
     && ['signIn', 'ensureSignedIn', 'reload', 'freshClient', 'closeClient'].includes(s.do)));
   const calls = steps.filter(s => s.do === 'replayAs');
   assert.deepEqual(calls.map(s => [s.actor, Array.isArray(s.namedAction?.args) ? s.namedAction.args[1] : undefined]), [
-    ['roleAdmin', 'admin'], ['promotedStaff', 'admin'],
-    ['roleAdmin', 'staff'], ['promotedStaff', 'inventory'],
+    ['roleAdmin', 'admin'], ['promotedStaff', 'inventory'],
+    ['roleAdmin', 'staff'], ['roleAdmin', 'staff'], ['promotedStaff', 'inventory'],
   ]);
   const positive = steps.findIndex(s => s.do === 'expectReplayCompleted' && s.actor === 'promotedStaff');
   for (const call of calls.filter(s => s.actor === 'promotedStaff')) {
-    assert.equal((call.namedTarget as { testid: string }).testid, 'staff-role-account-admin');
+    assert.equal((call.namedTarget as { testid: string }).testid, 'staff-role-account-staff2');
   }
   const negative = steps.findIndex(s => s.do === 'expectReplayRejected' && s.actor === 'promotedStaff');
   assert(positive > login && negative > positive);
   assert.equal(steps[positive]!.requireAccepted, true);
   assert(steps.slice(positive, negative).some(s => s.do === 'expect' && s.value === 'staff'));
   assert.equal(steps[negative + 1]!.do, 'reload');
-  assert.equal(steps.at(-1)!.value, 'admin');
+  assert.equal(steps.at(-1)!.value, 'staff');
   assert.equal(steps.at(-1)!.actor, 'roleAdmin');
 });
 

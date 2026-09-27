@@ -14,27 +14,24 @@ import type { Browser } from 'playwright';
 
 test('staff and role navigation follows declared account and role entry controls', async t => {
   // Use the real scenarios. The HTTP fixture proves navigation, not database restart durability.
-  let layout = '', kind = '', assignedRole = 'staff';
+  let layout = '', kind = '', assignedRole = 'staff', secondRole = 'staff';
   const visits: string[] = [], accountVisitors: string[] = [], evidence: unknown[] = [];
   const roleWrites: { actor: string; role: string; status: number }[] = [];
   const server = createServer(async (request, response) => {
     const path = new URL(request.url!, 'http://fixture.test').pathname;
     visits.push(`${request.method} ${path}`);
     if (path === '/account') accountVisitors.push(new URL(request.url!, 'http://fixture.test').searchParams.get('user') ?? '');
-    if (path === '/api/staff/1/role' && request.method === 'PUT') {
+    if (['/api/staff/1/role', '/api/staff/2/role'].includes(path) && request.method === 'PUT') {
       let body = ''; for await (const chunk of request) body += String(chunk);
       const actor = (request.headers.authorization ?? '').replace('Bearer ', '');
       const role = JSON.parse(body).role;
       const status = actor === 'admin' ? 200 : 403;
-      if (status === 200 || layout === 'disabled-role-unsafe') assignedRole = role;
+      if ((status === 200 || layout === 'disabled-role-unsafe') && layout !== 'wrong-row') {
+        if (path === '/api/staff/2/role') secondRole = role; else assignedRole = role;
+      }
       roleWrites.push({ actor, role, status });
       response.writeHead(status, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify(status === 200 ? { ok: true } : { error: 'Administrator required' })); return;
-    }
-    if (path === '/save-role') {
-      let body = ''; for await (const chunk of request) body += String(chunk);
-      if (layout !== 'wrong-row') assignedRole = new URLSearchParams(body).get('role')!;
-      response.writeHead(303, { Location: '/roles' }); response.end(); return;
     }
     response.writeHead(200, { 'Content-Type': 'text/html' });
     response.end(`<!doctype html><main></main><script>
@@ -67,12 +64,20 @@ test('staff and role navigation follows declared account and role entry controls
           if (expose&&!area) main.innerHTML+='<a id="admin-link" href="/admin">Admin area</a>';
           if (area&&!rows&&layout!=='missing-tab') main.innerHTML+=layout==='broken-tab'
             ?'<button id="staff-roles-link">Users</button>':'<a id="staff-roles-link" href="/roles">Users</a>';
-          if (rows) main.innerHTML+='<form id="staff-role-account-staff" data-role="staff-role-row" action="/save-role" method="post">staff<select data-role="staff-role-select" name="role"><option>staff</option><option>inventory</option><option>admin</option></select><button data-role="staff-role-save">Save</button></form><div id="staff-role-account-admin"><select data-role="staff-role-select"><option>inventory</option></select></div>';
-          const select=document.querySelector('#staff-role-account-staff select');
-          if (select) select.value=${JSON.stringify(assignedRole)};
-          if (roleBoundary&&select) {
-            const form=select.closest('form'); form.dataset.accountId='1';
-            form.onsubmit=async event=>{event.preventDefault();await fetch('/api/staff/1/role',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+user},body:JSON.stringify({role:select.value})});};
+          if (rows) for (const [account, id, role] of [['staff','1',${JSON.stringify(assignedRole)}],['staff2','2',${JSON.stringify(secondRole)}]]) {
+            const form=document.createElement('form');
+            form.id='staff-role-account-'+account; form.dataset.role='staff-role-row';
+            form.dataset.accountId=id; form.dataset.submitState='idle';
+            form.innerHTML=account+'<select data-role="staff-role-select" name="role"><option>staff</option><option>inventory</option><option>admin</option></select><button data-role="staff-role-save">Save</button>';
+            const select=form.querySelector('select'); select.value=role;
+            form.onsubmit=async event=>{
+              event.preventDefault(); form.dataset.submitState='pending';
+              try {
+                const result=await fetch('/api/staff/'+id+'/role',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+user},body:JSON.stringify({role:select.value})});
+                await result.json(); form.dataset.submitState=result.ok?'succeeded':'failed';
+              } catch { form.dataset.submitState='failed'; }
+            };
+            main.appendChild(form);
           }
         } else if (roleBoundary&&user==='staff') {
           main.innerHTML+='<section id="staff-area"><select disabled><option>staff</option></select><button data-role="staff-role-save" disabled>Save</button></section>';
@@ -103,7 +108,7 @@ test('staff and role navigation follows declared account and role entry controls
       { kind: 'roles', layout: 'disabled-role-save', passed: true },
       { kind: 'roles', layout: 'disabled-role-unsafe', passed: false },
     ]) await t.test(`${fixture.kind}: ${fixture.layout}`, async () => {
-      ({ layout, kind } = fixture); assignedRole = 'staff'; visits.length = 0; accountVisitors.length = 0; roleWrites.length = 0;
+      ({ layout, kind } = fixture); assignedRole = 'staff'; secondRole = 'staff'; visits.length = 0; accountVisitors.length = 0; roleWrites.length = 0;
       const definition = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
         `tracks/ecommerce/scenarios/progression-staff-${kind === 'staff' ? 'access' : 'roles'}.json`), 'utf8'));
       const selected = definition.features[0];
@@ -121,12 +126,12 @@ test('staff and role navigation follows declared account and role entry controls
         { url, level: definition.level, headed: false, selectedCheckKeys: [], nullControl: false },
         { runId: `staff-navigation-${kind}-${layout}`, roomName: name => name, url, actions: [],
           spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 700 });
-      const row = { ...fixture, grade, visits: [...visits], accountVisitors: [...accountVisitors], assignedRole, roleWrites: [...roleWrites] };
+      const row = { ...fixture, grade, visits: [...visits], accountVisitors: [...accountVisitors], assignedRole, secondRole, roleWrites: [...roleWrites] };
       evidence.push(row);
       assert.equal(grade.criteria.every(criterion => criterion.evidence.status === 'passed'), fixture.passed, JSON.stringify(row));
       if (layout.startsWith('disabled-role-')) {
         assert.ok(roleWrites.some(write => write.actor === 'staff' && write.status === 403), 'reach the actual unauthorized write');
-        assert.equal(assignedRole, layout === 'disabled-role-unsafe' ? 'inventory' : 'staff');
+        assert.equal(secondRole, layout === 'disabled-role-unsafe' ? 'inventory' : 'staff');
       }
       if (layout === 'customer-leak') {
         assert.equal(grade.criteria.find(criterion => criterion.id === '601a')!.evidence.status, 'passed', 'prove the authorized route before testing denial');
@@ -298,17 +303,23 @@ test('signout supports a direct button and account dialog but rejects missing or
     'tracks/ecommerce/scenarios/01-account-signout.json'), 'utf8'))).features[0]!;
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage();
     for (const layout of ['direct', 'account-dialog', 'missing', 'broken', 'wrong-account']) {
-      await page.setContent(`
+      const page = await browser.newPage();
+      await page.route('http://signout.test/**', route => route.fulfill({ contentType: 'text/html', body: `
         <button id="current-user" onclick="document.querySelector('dialog').showModal()">ann</button>
         ${layout === 'direct' ? '<button id="signout">Sign out</button>' : ''}
         <dialog>${layout !== 'direct' && layout !== 'missing' ? '<button id="signout">Sign out</button>' : ''}</dialog>
         <form hidden><input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button></form>
         <script>(() => {
+          if (sessionStorage.getItem('user') === null) sessionStorage.setItem('user','ann');
           const out = document.querySelector('#signout');
+          const signedOut=sessionStorage.getItem('user')==='';
+          document.querySelector('#current-user').hidden=signedOut;
+          if(out) out.hidden=signedOut;
+          document.querySelector('form').hidden=!signedOut;
           if (out) out.onclick = () => {
             if ('${layout}' === 'broken') return;
+            sessionStorage.setItem('user','');
             document.querySelector('dialog').close();
             document.querySelector('#current-user').hidden = true;
             out.hidden = true; document.querySelector('form').hidden = false;
@@ -317,25 +328,30 @@ test('signout supports a direct button and account dialog but rejects missing or
             e.preventDefault();
             const current = document.querySelector('#current-user');
             current.textContent = '${layout}' === 'wrong-account' ? 'someone-else' : document.querySelector('#signin-username').value;
+            sessionStorage.setItem('user',current.textContent);
             current.hidden = false;
           };
-        })();</script>`);
+        })();</script>` }));
+      await page.goto('http://signout.test/');
       const actor = {page, loc: (id: string, options: {contains?: string} = {}) => {
         const loc = page.locator(stableElementSelector(id));
         return (options.contains ? loc.filter({hasText:options.contains}) : loc).first();
       }};
-      const service = {defaultWithin: 200, scopedUser: (name: string) => name, expand: (text: string) => text,
+      const service = {applicationUrl: 'http://signout.test/', defaultWithin: 200, scopedUser: (name: string) => name, expand: (text: string) => text,
         testId: stableElementSelector, sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 10)))};
       let status = 'passed';
+      const results = [];
       for (const step of feature.criteria[0]!.steps) {
         const result = await executeAction(ACTION_REGISTRY, step.do,
           {...step, ...(step.testid ? {within:200} : {})}, {
             capabilities: {actors:{get:()=>actor}, 'browser-interaction':service, 'browser-observation':service},
           });
+        results.push(result);
         status = result.status;
         if (status !== 'passed') break;
       }
-      assert.equal(status, ['direct','account-dialog'].includes(layout) ? 'passed' : 'failed', layout);
+      assert.equal(status, ['direct','account-dialog'].includes(layout) ? 'passed' : 'failed', JSON.stringify({ layout, results }));
+      await page.close();
     }
   } finally { await browser.close(); }
 });

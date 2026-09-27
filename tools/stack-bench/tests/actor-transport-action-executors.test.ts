@@ -840,7 +840,7 @@ test('account restoration does not accept the wrong signed-in user', async () =>
   };
   const result = await run({ do: 'ensureSignedIn', actor: 'a', name: 'alice' },
     services(new Map<string, unknown>([['a', actor]])));
-  assert.equal(result.status, 'harness_failure');
+  assert.equal(result.status, 'failed');
   assert.match(result.summary ?? '', /different account/);
 });
 
@@ -1616,7 +1616,7 @@ test('staff-role replay changes the role without changing the HTTP route or the 
   const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
     'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'));
   const steps = scenario.features[0].criteria.find((c: { id: string }) => c.id === '621b').steps;
-  const replay = steps.find((step: { do: string }) => step.do === 'replayAs');
+  const replay = steps.find((step: { do: string; actor: string }) => step.do === 'replayAs' && step.actor === 'staff');
   for (const backend of ['postgres', 'mongodb', 'spacetime']) {
     const requests: CapturedRequest[] = [];
     const source = { name: 'replayAdmin', received: [],
@@ -1637,7 +1637,7 @@ test('staff-role replay changes the role without changing the HTTP route or the 
       backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
       fetchImpl: async (url, options) => {
         requests.push({ url, options: options as unknown as UnknownRecord });
-        return namedResponse(530, false);
+        return namedResponse(403, false);
       },
     });
     assert.equal((await run({ ...replay, settleMs: 0 }, provided)).status, 'passed');
@@ -1646,7 +1646,7 @@ test('staff-role replay changes the role without changing the HTTP route or the 
       assert.equal(requests[0]!.options.body, '[42,"inventory"]');
     } else {
       assert.equal(requests[0]!.url, 'http://app.test/api/staff/42/role');
-      assert.equal(requests[0]!.options.data, '{"role":"inventory"}');
+      assert.equal(requests[0]!.options.body, '{"role":"inventory"}');
     }
     assert.equal((await run({ do: 'expectReplayRejected', actor: 'staff' }, provided)).status, 'passed');
   }
@@ -1654,7 +1654,7 @@ test('staff-role replay changes the role without changing the HTTP route or the 
   const after = steps.slice(rejected + 1);
   assert.equal(after[0].do, 'reload');
   assert.equal(after.at(-1).value, 'staff', 'a denied response must leave the persisted role unchanged');
-  assert.equal(after.at(-1).in.testid, 'staff-role-account-staff');
+  assert.equal(after.at(-1).in.testid, 'staff-role-account-staff2');
 });
 
 
@@ -1668,7 +1668,7 @@ test('role revocation uses declared transitions despite earlier captured role wr
     const actor = (name: string) => ({ name, received: [], writes: [{
       url: 'http://app.test/api/staff/42/role', method: 'PUT',
       headers: { authorization: `Bearer ${name}-token` }, body: { role: 'staff' },
-    }], loc: () => ({ waitFor: async () => undefined, getAttribute: async () => '42' }) });
+    }], loc: (id: string) => ({ waitFor: async () => undefined, getAttribute: async () => id === 'staff-role-account-staff2' ? '43' : '42' }) });
     const provided = services(new Map<string, unknown>([
       ['roleAdmin', actor('roleAdmin')], ['promotedStaff', actor('promotedStaff')],
     ]), { backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
@@ -1682,7 +1682,10 @@ test('role revocation uses declared transitions despite earlier captured role wr
     assert.deepEqual(requests.map(request => {
       const body = JSON.parse(String(request.options.body));
       return backend === 'spacetime' ? body[1] : body.role;
-    }), ['admin', 'admin', 'staff', 'inventory']);
+    }), ['admin', 'inventory', 'staff', 'staff', 'inventory']);
+    assert.deepEqual(requests.map(request => backend === 'spacetime'
+      ? JSON.parse(String(request.options.body))[0] : Number(request.url.match(/staff\/(\d+)\/role/)![1])),
+    [42, 43, 43, 42, 43], 'the other staff account is reset before the same-session negative write');
     assert.deepEqual(requests.map(request => record(request.options.headers).authorization
       ?? record(request.options.headers).Authorization), calls.map((step: { actor: string }) => `Bearer ${step.actor}-token`));
   }

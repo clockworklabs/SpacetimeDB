@@ -36,6 +36,10 @@ function missingNames(steps: readonly CompiledStep[], delivered: string,
   const missing = new Set<string>();
   const roleIds = new Set<string>();
   if (delivered.includes('`staff-role-account-`') && delivered.includes('`encodeURIComponent(username)`')) {
+    // Seeded accounts can be write targets without signing in during this check.
+    for (const match of delivered.matchAll(/account named `([^`]+)`/g)) {
+      roleIds.add(`staff-role-account-${encodeURIComponent(match[1]!)}`);
+    }
     for (const step of eachStep(steps)) {
       if (['signIn', 'ensureSignedIn'].includes(step.do) && step.exact === true && typeof step.name === 'string') {
         roleIds.add(`staff-role-account-${encodeURIComponent(step.name)}`);
