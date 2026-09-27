@@ -33,7 +33,6 @@ interface Locator {
   getAttribute(name: string): Promise<string | null>;
   getByRole(role: string, options: unknown): Locator;
   innerText(): Promise<string>;
-  inputValue(): Promise<string>;
   isDisabled(): Promise<boolean>;
   isVisible(): Promise<boolean>;
   locator(selector: string, options?: unknown): Locator;

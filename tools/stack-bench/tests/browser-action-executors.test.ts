@@ -232,7 +232,6 @@ test('UI failures retain bounded observations but exclude passwords and unproven
       services({ loc: () => ({ waitFor: async () => {},
         evaluate: async (read: (element: { tagName: string; value: string }) => unknown) =>
           read({ tagName: 'INPUT', value: password ? 'RAW_PASSWORD' : 'Pending' }),
-        inputValue: async () => password ? 'RAW_PASSWORD' : 'Pending',
         getAttribute: async () => password ? 'password' : 'text' }) }));
     assert.equal(result.finding?.kind, 'value-mismatch');
     if (password) assert.doesNotMatch(JSON.stringify(result.finding), /RAW_PASSWORD|Approved/);
@@ -467,8 +466,7 @@ test('missing values do not satisfy agreement across actors', async () => {
 
 test('expect can verify a persisted form value or an element attribute', async () => {
   const field = { waitFor: async () => {},
-    evaluate: async (read: (element: { tagName: string; value: string }) => unknown) => read({ tagName: 'INPUT', value: 'staff' }),
-    inputValue: async () => 'staff' };
+    evaluate: async (read: (element: { tagName: string; value: string }) => unknown) => read({ tagName: 'INPUT', value: 'staff' }) };
   const persisted = await run({ do: 'expect', actor: 'a', testid: 'support-assignee',
     value: 'staff' }, services({ loc: () => field }));
   assert.equal(persisted.status, 'passed');
