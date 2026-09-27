@@ -5,6 +5,7 @@ import type { Page, WebSocketRoute } from 'playwright';
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import type { LeasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import { inconclusive } from '../../actions/actor-action-runtime.js';
+import { withBrowserRequest } from '../../actions/browser-request.js';
 
 interface Reader { readonly offset: number; readonly remaining: number }
 interface Writer { getBuffer(): Uint8Array }
@@ -196,9 +197,10 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
   let schema: { reducers?: { name: string; params?: { elements?: { name?: { some?: string };
     algebraic_type?: Record<string, unknown> }[] } }[]; typespace?: { types?: Record<string, unknown>[] } };
   try {
-    const response = await capture.page.request.get(schemaUrl.href, { timeout: 10_000 });
-    if (!response.ok()) return { receipt: async () => undefined, dispose: () => {} };
-    schema = await response.json();
+    schema = await withBrowserRequest(capture.page.request, async api => {
+      const response = await api.get(schemaUrl.href, { timeout: 10_000 });
+      return response.ok() ? response.json() : null;
+    });
     if (!schema || typeof schema !== 'object') return { receipt: async () => undefined, dispose: () => {} };
   } catch { return { receipt: async () => undefined, dispose: () => {} }; }
   // Use SDK codecs for scalar values, options, and unit enums. Records and arrays
@@ -304,9 +306,11 @@ async function template(capture: Capture, match: string, control: string, signal
   if (cached?.value.socket === socket && cached.match === match && cached.control === control && cached.count === socket.calls.length) return cached.value;
   signal.throwIfAborted();
   url.pathname = `/v1/database/${target.mod}/schema`; url.search = '?version=9';
-  const response = await capture.page.request.get(url.href, { timeout: 10000 });
-  if (!response.ok()) return null;
-  const schema = await response.json();
+  const schema = await withBrowserRequest(capture.page.request, async api => {
+    const response = await api.get(url.href, { timeout: 10000 });
+    return response.ok() ? response.json() : null;
+  });
+  if (!schema) return null;
   // ponytail: scalar reducer parameters only; unsupported shapes retain UI setup.
   const scalars = new Set(['Bool', 'I8', 'U8', 'I16', 'U16', 'I32', 'U32', 'I64', 'U64', 'I128', 'U128', 'I256', 'U256', 'F32', 'F64', 'String']);
   const scalar = (raw: Record<string, unknown>, depth = 0): { tag: string } => {

@@ -32,6 +32,7 @@ import { capturedConvexMutation } from '../stacks/backends/convex-browser-sessio
 import { repeatSpacetimeWrite } from '../stacks/backends/spacetime-browser-session.js';
 import { isFinding } from './action-findings.js';
 import { isDeepStrictEqual } from 'node:util';
+import { withBrowserRequest } from './browser-request.js';
 
 export { createNamedActionsCapability } from './named-action-runtime.js';
 export type { ConcurrentCallResult } from './named-action-runtime.js';
@@ -162,9 +163,11 @@ async function repeatFormWrite({ input, capabilities, signal }:
       const reply = await named.fetch(request.url, { method: request.method ?? 'POST', ...bound, signal });
       response = { status: reply.status, text: await reply.text() };
     } else {
-      const reply = await actor.page.request.fetch(request.url, { method: request.method, headers: bound.headers,
-        data: bound.body, maxRetries: 0, maxRedirects: 0 });
-      response = { status: reply.status(), text: await reply.text!() };
+      response = await withBrowserRequest(actor.page.request, async api => {
+        const reply = await api.fetch(request.url!, { method: request.method, headers: bound.headers,
+          data: bound.body, maxRetries: 0, maxRedirects: 0 });
+        return { status: reply.status(), text: await reply.text!() };
+      });
     }
   } catch (error) {
     if (harnessBrowserFailure(error)) throw error;
@@ -366,12 +369,15 @@ async function forgeWrite({ input, capabilities, signal }: TransportArguments<Fo
   if (contentKey && input.text) body[contentKey] = input.text;
   let forgeResult: ForgeResult;
   try {
-    const response = await actor.page.request.fetch(write.url, {
-      method: write.method, headers: replayHeaders(write), data: JSON.stringify(envelope),
+    const response = await withBrowserRequest(actor.page.request, async api => {
+      const reply = await api.fetch(write.url, {
+        method: write.method, headers: replayHeaders(write), data: JSON.stringify(envelope),
+      });
+      return { status: reply.status(), text: reply.text ? await reply.text() : '' };
     });
     const classified = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, write,
-      { status: response.status(), text: response.text ? await response.text() : '' });
-    forgeResult = { ...classified, status: response.status(), accepted: classified.ok,
+      response);
+    forgeResult = { ...classified, status: response.status, accepted: classified.ok,
       tamperedField: key, reason: 'tampered request sent' };
   } catch (error) {
     if (harnessBrowserFailure(error)) throw error;
@@ -567,18 +573,21 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
   const responseContract = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, { url, method: write.method },
     { status: 0, text: '' }).responseContract;
   const bound = bindBrowserRequest(actor, { url, body: data, responseContract }, mine)(replayHeaders(write, credentials));
-  const response = await actor.page.request.fetch(url, {
-    method: write.method,
-    headers: bound.headers,
-    ...(bound.body === undefined ? {} : { data: bound.body }),
+  const response = await withBrowserRequest(actor.page.request, async api => {
+    const reply = await api.fetch(url, {
+      method: write.method,
+      headers: bound.headers,
+      ...(bound.body === undefined ? {} : { data: bound.body }),
+    });
+    return { status: reply.status(), text: reply.text ? await reply.text() : '' };
   }).catch(error => {
     if (harnessBrowserFailure(error)) throw error;
-    return { status: () => 0, ok: () => false, error: error.message };
+    return { status: 0, text: '' };
   });
   try {
     const classified = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, { url, method: write.method },
-      { status: response.status(), text: 'text' in response && response.text ? await response.text() : '' });
-    actor.replay = { ...classified, accepted: classified.ok, status: response.status(), url, method: write.method };
+      response);
+    actor.replay = { ...classified, accepted: classified.ok, status: response.status, url, method: write.method };
   } catch { actor.replay = { accepted: false, status: 0, complete: false, url, method: write.method }; }
   await transport.sleep(input.settleMs ?? 2000, signal);
   return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status };

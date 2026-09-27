@@ -18,6 +18,7 @@ import { evidenceDisposition } from '../evidence/check-evidence.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
+import { withBrowserRequest } from './browser-request.js';
 import { browserApplicationBoundary, numberMatches } from './browser-action-executors.js';
 import { harnessProcessFailure } from '../evidence/harness-errors.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
@@ -657,11 +658,14 @@ async function replayConcurrently(
       + 'this backend may not write over HTTP, or the request carried no JSON body' });
   }
   const replies = await Promise.all(pending.map(({ actor, write }) =>
-    actor.page.request.fetch(write.url, {
-      method: write.method,
-      headers: replayHeaders(write),
-      data: write.body === undefined || write.body === null ? undefined : JSON.stringify(write.body),
-    }).then(response => response.status(), error =>
+    withBrowserRequest(actor.page.request, async api => {
+      const response = await api.fetch(write.url, {
+        method: write.method,
+        headers: replayHeaders(write),
+        data: write.body === undefined || write.body === null ? undefined : JSON.stringify(write.body),
+      });
+      return response.status();
+    }).catch(error =>
       `error: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
   const answered = replies.filter(status => typeof status === 'number');
   if (answered.length < 2) {

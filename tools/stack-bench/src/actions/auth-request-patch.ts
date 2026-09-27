@@ -4,6 +4,7 @@ import { inconclusive } from './actor-action-runtime.js';
 import { ActionApplicationFailure } from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { startSpacetimeAuthPatch } from '../stacks/backends/spacetime-browser-session.js';
+import { withBrowserRequest } from './browser-request.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
@@ -175,10 +176,12 @@ async function callParameters(request: Request): Promise<CallParameter[] | undef
   const call = new URL(request.url()).pathname.match(/^\/v1\/database\/([^/]+)\/call\/([^/]+)$/);
   if (!call) return undefined;
   try {
-    const response = await request.frame().page().context().request.get(
-      new URL(`/v1/database/${call[1]}/schema?version=9`, request.url()).href,
-      { headers: request.headers().authorization ? { authorization: request.headers().authorization! } : {}, timeout: 10_000 });
-    if (!response.ok()) return undefined;
+    const schema = await withBrowserRequest(request.frame().page().request, async api => {
+      const response = await api.get(new URL(`/v1/database/${call[1]}/schema?version=9`, request.url()).href,
+        { headers: request.headers().authorization ? { authorization: request.headers().authorization! } : {}, timeout: 10_000 });
+      return response.ok() ? response.json() : null;
+    }) as { typespace?: { types?: unknown[] } } | null;
+    if (!schema) return undefined;
     const name = decodeURIComponent(call[2]!);
     const found: unknown[][] = [];
     const visit = (value: unknown): void => {
@@ -187,7 +190,6 @@ async function callParameters(request: Request): Promise<CallParameter[] | undef
       if (sameIdentifier(entry.name, name) && Array.isArray(entry.params?.elements)) found.push(entry.params.elements);
       for (const child of Object.values(value)) visit(child);
     };
-    const schema = await response.json() as { typespace?: { types?: unknown[] } };
     visit(schema);
     type Element = { name?: { some?: unknown }; algebraic_type?: unknown } | null;
     const names = (elements: unknown[]) => {
@@ -284,11 +286,13 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     const sent = (async () => {
       try {
         // Preserve the actual route, headers and native envelope. No retries or redirects.
-        const response = await route.fetch({ postData: changed.body, maxRedirects: 0, maxRetries: 0, timeout: 30_000 });
-        const { body: sentBody, ...described } = changed;
-        receipt = { ...described, status: response.status(),
-          bodySha256: createHash('sha256').update(sentBody).digest('hex') };
-        await route.fulfill({ response });
+        await withBrowserRequest(request.frame().page().request, async api => {
+          const response = await api.fetch(request, { data: changed.body, maxRedirects: 0, maxRetries: 0, timeout: 30_000 });
+          const { body: sentBody, ...described } = changed;
+          receipt = { ...described, status: response.status(),
+            bodySha256: createHash('sha256').update(sentBody).digest('hex') };
+          await route.fulfill({ response });
+        }, false);
       } catch { error = true; await route.abort().catch(() => {}); }
     })();
     pending.push(sent);

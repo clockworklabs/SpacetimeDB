@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import type { BrowserContext, BrowserContextOptions, Page, Request, WebSocket } from 'playwright';
 import { browserContainer } from '../../container/browser-pipe.js';
 import { compiledEntrypoint } from '../package-root.js';
+import { registerBrowserRequest } from './browser-request.js';
 
 // Offline emulation holds an open WebSocket's messages and releases them later,
 // and lets an HTTP request already in flight (a long poll, an event stream) keep
@@ -150,6 +151,7 @@ export async function startNetworkInterruption(observeHttp = false): Promise<Net
     },
     async attach(context, page) {
       if (!attachedContexts.has(context)) {
+        registerBrowserRequest(context, await page.evaluate(() => navigator.userAgent), () => cutting);
         attachedContexts.add(context);
         context.on('page', opened => { void track(context, opened).catch(error => { trackingFailure = error; }); });
         context.on('request', request => inFlight.add(request));

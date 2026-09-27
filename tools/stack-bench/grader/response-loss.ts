@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BrowserContext, WebSocketRoute } from 'playwright';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
+import { withBrowserRequest } from '../src/actions/browser-request.js';
 
 // Install before the actor opens its connection. This gate changes delivery,
 // never request contents, database state, or the application's retry policy.
@@ -30,12 +31,14 @@ export async function installResponseLoss(context: BrowserContext) {
       const path = new URL(route.request().url()).pathname;
       record('http-request', path, route.request().postDataBuffer() ?? Buffer.alloc(0));
       // No redirects or transport retries: one intercepted write remains one write.
-      const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 10_000 });
-      try {
-        record('http-response', path, undefined, response.status());
-        await released;
-        await route.abort('connectionreset');
-      } finally { await response.dispose(); }
+      await withBrowserRequest(context.request, async api => {
+        const response = await api.fetch(route.request(), { maxRedirects: 0, maxRetries: 0, timeout: 10_000 });
+        try {
+          record('http-response', path, undefined, response.status());
+          await released;
+          await route.abort('connectionreset');
+        } finally { await response.dispose(); }
+      }, false);
     })().catch(() => { errors.add('HTTP response interception failed'); });
     pending.add(task);
     void task.finally(() => pending.delete(task));
