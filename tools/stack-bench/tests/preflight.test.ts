@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
+import { runContainerSmoke } from '../src/runtime/container-smoke.js';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { parsePreflightArgs } from '../commands/preflight-cli.js';
@@ -20,6 +22,74 @@ import { SUPERVISOR_STATE_VERSION } from '../src/runtime/recovery.js';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
 const EXACT_IMAGE = `registry.example/stack-bench/build@${IMAGE_ID}`;
+
+test('preflight requires only the selected provider route and keeps its failures visible', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-provider-smoke-'));
+  try {
+    const authFile = join(root, 'auth.json');
+    writeFileSync(authFile, JSON.stringify({ auth_mode: 'chatgpt', tokens: {
+      account_id: 'synthetic-account', access_token: `test.${Buffer.from(JSON.stringify({ exp: 4102444800 })).toString('base64url')}.test`,
+    } }));
+    for (const [adapter, env, origin] of [
+      ['codex', { CODEX_AUTH_FILE: authFile }, 'https://chatgpt.com'],
+      ['codex', { OPENAI_API_KEY: 'synthetic-api-key' }, 'https://api.openai.com'],
+      ['claude-code', { ANTHROPIC_API_KEY: 'synthetic-api-key' }, 'https://api.anthropic.com'],
+      ['openrouter', { OPENROUTER_API_KEY: 'synthetic-api-key' }, 'https://openrouter.ai'],
+    ] as const) {
+      for (const unavailable of [false, true]) {
+        const report = runPreflight(request(root, ['--smoke', '--agent-adapter', adapter,
+          ...(adapter === 'openrouter' ? ['--provider-route', 'openai', '--max-output-tokens', '8192'] : [])]), {
+          env, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+          pidsOnPort: () => [], probePort: () => ({ free: true }),
+          run: (_file, args) => {
+            if (args[0] === 'info') return dockerInfo();
+            if (args[0] === 'compose') return '2.40.0';
+            if (args[0] === 'ps') return '';
+            if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : IMAGE_ID;
+            assert.equal(args[0], 'run');
+            const destinations = JSON.parse(requiredArgument(args, args.indexOf('-e') + 2)) as string[];
+            assert.deepEqual(destinations.sort(), [origin, 'https://registry.npmjs.org'].sort());
+            if (unavailable) throw new Error('selected endpoint unavailable');
+            writeFileSync(join(root, requiredArgument(args, args.length - 1)), 'container-write-ok');
+            return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
+              reached: destinations.map(url => ({ url, status: 403 })), tcpReached: [],
+              executables: Object.fromEntries((JSON.parse(requiredArgument(args, args.indexOf('-e') + 4)) as string[])
+                .map(name => [name, `/usr/bin/${name}`])), credentialStatus: 'not-checked', diskFreeBytes: 20 * 1024 ** 3 });
+          },
+        });
+        assert.equal(requiredCheck(report, 'smoke.container').status, unavailable ? 'fail' : 'pass',
+          JSON.stringify(requiredCheck(report, 'smoke.container')));
+        assert.doesNotMatch(JSON.stringify(report), /synthetic-api-key|synthetic-account/);
+      }
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('container smoke keeps safe transport causes without error bodies', async () => {
+  let script = '';
+  runContainerSmoke({ command: (_file, args) => { script = requiredArgument(args, args.indexOf('-e') + 1); return '{}'; },
+    imageId: IMAGE_ID, resultsDir: '/unused', destinations: [], tcpPorts: [], requiredExecutables: [],
+    credentialStatusCommand: null, credentialMount: null, credentialEnvironment: null, marker: 'unused', networkMode: 'host' });
+  for (const code of ['ENOTFOUND', 'CERT_HAS_EXPIRED', 'ECONNRESET', 'UND_ERR_CONNECT_TIMEOUT']) {
+    const failure = new Error('private response body', { cause: new AggregateError([
+      Object.assign(new Error('private credential'), { code, syscall: 'connect' }),
+    ], 'private aggregate') });
+    await assert.rejects(runInNewContext(script, { require: () => ({}), AbortSignal, URL,
+      process: { argv: ['node', '["https://provider.invalid"]', '[]', '[]', 'null', 'null', 'unused'], env: {} },
+      fetch: async () => { throw failure; },
+    }), error => {
+      const text = String(error);
+      assert.match(text, new RegExp(code));
+      assert.match(text, /AggregateError/);
+      assert.doesNotMatch(text, /private/);
+      return true;
+    });
+  }
+  await assert.rejects(runInNewContext(script, { require: () => ({}), AbortSignal, URL,
+    process: { argv: ['node', '["https://provider.invalid"]', '[]', '[]', 'null', 'null', 'unused'], env: {} },
+    fetch: async () => { throw Object.assign(new Error('private'), { name: 'TimeoutError' }); },
+  }), /TimeoutError/);
+});
 const progressionCampaign = join(STACK_BENCH_ROOT, 'appliance',
   'campaign.ecommerce-progression-reference.json');
 let progressionPlanCache: ReturnType<typeof compileCampaignFile> | null = null;

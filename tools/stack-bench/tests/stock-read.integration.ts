@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { getPostgresStock, setPostgresStock } from '../src/stacks/backends/postgres-operations.js';
 import { getMongoDbStock } from '../src/stacks/backends/mongodb-operations.js';
+import { writePostgresStock } from '../src/stacks/postgres-sql.js';
 
 const enabled = process.env.STACK_BENCH_STOCK_READ_DOCKER === '1';
 const docker = (args: string[], input?: string): string => execFileSync('docker', args,
@@ -57,11 +58,70 @@ INSERT INTO order_line VALUES (0, 1, 17);`);
         run('DELETE FROM warehouse WHERE id = 3;');
         run('INSERT INTO stock VALUES (0, 1, 2);');
         assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), /ambiguous/);
+        // The observable interface requires unambiguous links and committed
+        // writes, not a particular schema constraint or physical table layout.
+        // Failure cases: duplicate names/ids/holdings, dangling links, invalid
+        // quantities, read-only views, and acknowledged writes with no effect.
         run('DELETE FROM stock WHERE quantity = 2; ALTER TABLE stock DROP CONSTRAINT stock_warehouse_id_fkey;');
-        assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), /no stock data/);
-        assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 9, lease }),
-          /could not locate one relational stock row/);
-        assert.equal(run('SELECT quantity FROM stock WHERE warehouse_id = 1;'), '0');
+        assert.equal(getPostgresStock({ item: "Kid's Keyboard", lease }).quantity, -1);
+        setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 9, lease });
+        assert.equal(run('SELECT quantity FROM stock WHERE warehouse_id = 1;'), '9');
+        for (const quantity of [-1, 1.5, NaN, Infinity]) {
+          assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity, lease }));
+        }
+        assert.equal(run('SELECT quantity FROM stock WHERE warehouse_id = 1;'), '9');
+
+        run(`ALTER TABLE stock RENAME TO inventory;
+ALTER TABLE item RENAME TO products;
+ALTER TABLE warehouse RENAME TO locations;
+CREATE VIEW item AS SELECT id,name FROM products;
+CREATE VIEW warehouse AS SELECT id,name FROM locations;
+CREATE VIEW stock AS SELECT item_id,warehouse_id,quantity FROM inventory;`);
+        assert.equal(getPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', lease }).quantity, 9);
+        setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 7, lease });
+        assert.equal(run('SELECT quantity FROM inventory WHERE warehouse_id = 1;'), '7');
+        assert.equal(run('SELECT quantity FROM order_line;'), '17');
+        const quietWrite = (quantity: number) => writePostgresStock(source =>
+          docker(['exec', '-i', id, 'psql', '-U', 'appuser', '-d', 'bench', '-v', 'ON_ERROR_STOP=1', '-qAt'], source),
+        { backend: 'supabase', label: 'Supabase', quiet: true }, { item: "Kid's Keyboard", warehouse: 'East', quantity });
+        quietWrite(8);
+        assert.equal(run('SELECT quantity FROM inventory WHERE warehouse_id = 1;'), '8');
+        quietWrite(7);
+
+        const rejectInterface = (error: unknown) => error instanceof Error
+          && 'stockInterface' in error && error.stockInterface === true;
+        for (const [table, source] of [['item', 'products'], ['warehouse', 'locations']] as const) {
+          run(`DROP VIEW ${table}; CREATE VIEW ${table} AS SELECT id,name FROM ${source}
+UNION ALL SELECT id,'Different name' FROM ${source} WHERE id=${table === 'item' ? 0 : 1};`);
+          assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', lease }), rejectInterface);
+          assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 99, lease }), rejectInterface);
+          assert.equal(run('SELECT quantity FROM inventory WHERE warehouse_id = 1;'), '7');
+          run(`DROP VIEW ${table}; CREATE VIEW ${table} AS SELECT id,name FROM ${source};`);
+        }
+        run('INSERT INTO inventory VALUES (0, 99, 2);');
+        assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), rejectInterface);
+        run('DELETE FROM inventory WHERE warehouse_id=99; DROP VIEW stock; CREATE VIEW stock AS SELECT item_id,warehouse_id,quantity::numeric+0.5 AS quantity FROM inventory;');
+        assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), rejectInterface);
+        run('DROP VIEW stock; CREATE VIEW stock AS SELECT item_id,warehouse_id,sum(quantity)::integer AS quantity FROM inventory GROUP BY item_id,warehouse_id;');
+        assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 99, lease }), rejectInterface);
+        assert.throws(() => quietWrite(99), rejectInterface);
+        assert.equal(run('SELECT quantity FROM inventory WHERE warehouse_id = 1;'), '7');
+        run(`DROP VIEW stock; CREATE VIEW stock AS SELECT item_id,warehouse_id,quantity FROM inventory;
+CREATE FUNCTION ignore_stock_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE TRIGGER ignore_stock_write INSTEAD OF UPDATE ON stock FOR EACH ROW EXECUTE FUNCTION ignore_stock_write();`);
+        assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 99, lease }), rejectInterface);
+        assert.throws(() => quietWrite(99), rejectInterface);
+        assert.equal(run('SELECT quantity FROM inventory WHERE warehouse_id = 1;'), '7');
+        run('DROP TRIGGER ignore_stock_write ON stock; DROP VIEW stock;');
+        assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), rejectInterface);
+        assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 1, lease }), rejectInterface);
+        run('CREATE VIEW stock AS SELECT item_id,warehouse_id,quantity FROM inventory;');
+        const unavailable = (_command: string, args: readonly string[]): string => {
+          if (args[0] === 'inspect') return id;
+          throw new Error('database connection refused');
+        };
+        assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease, exec: unavailable }),
+          error => error instanceof Error && !('stockInterface' in error));
       } else {
         run(`const itemId = ObjectId('0123456789abcdef01234567');
 db.item.insertOne({_id:itemId, name:"Kid's Keyboard"});

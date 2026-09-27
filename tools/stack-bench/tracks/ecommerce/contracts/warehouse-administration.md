@@ -18,11 +18,14 @@ Use the same restock action as the visible control.
 
 ## Stock data interface
 
-Expose singular tables `item(id, name, price)`, `warehouse(id, name)`, and
+Expose singular native tables or views `item(id, name, price)`, `warehouse(id, name)`, and
 `stock(item_id, warehouse_id, quantity)` for direct database access.
 `stock.item_id` and `stock.warehouse_id` reference `item.id` and `warehouse.id`; in a document
-store they hold the referenced document's `id` value, or its `_id` when it has no `id`. Keep
-these tables readable and writable with the database's own tools.
+store they hold the referenced document's `id` value, or its `_id` when it has no `id`.
+Each item and warehouse must have a unique ID and name, with one stock holding per item and
+warehouse pair. Keep this interface readable with the database's own tools. Native updates to
+`stock.quantity` must change the same stock that the application uses. Physical foreign-key
+constraints are not required.
 
 <!-- interface:http -->
 Expose `POST /api/admin/restock`. The JSON body has the same fields as `data-restock-input`.

@@ -280,9 +280,15 @@ function responsesRequestFeature(payload: JsonRecord, model: string): UnpricedRe
     payload.prompt || payload.previous_response_id || payload.conversation ? 'stored-context' : null);
 }
 
+export function brokerHostname({ provider, mode }: Pick<BrokerConfig, 'provider' | 'mode'>): string {
+  if (!provider || provider === 'anthropic') return 'api.anthropic.com';
+  if (provider === 'openrouter') return 'openrouter.ai';
+  return mode === 'subscription-token' ? 'chatgpt.com' : 'api.openai.com';
+}
+
 export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
   if (!config.provider || config.provider === 'anthropic') return {
-    hostname: 'api.anthropic.com',
+    hostname: brokerHostname(config),
     allowedPaths: new Set(['/v1/messages', '/v1/messages/count_tokens']),
     upstreamPath: path => path,
     billable: path => path === '/v1/messages',
@@ -307,7 +313,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     : config.maxOutputTokens;
   if (!outputLimit) fail('OpenAI account model has no verified output-token bound');
   return {
-    hostname: router ? 'openrouter.ai' : account ? 'chatgpt.com' : 'api.openai.com',
+    hostname: brokerHostname(config),
     allowedPaths: new Set(['/v1/responses']),
     upstreamPath: () => router ? '/api/v1/responses' : account ? '/backend-api/codex/responses' : '/v1/responses',
     billable: () => true,

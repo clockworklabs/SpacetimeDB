@@ -3,7 +3,7 @@ import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { getMongoDbStock, setMongoDbStock } from '../src/stacks/backends/mongodb-operations.js';
 import { getSpacetimeStock } from '../src/stacks/backends/spacetime-operations.js';
-import { getSupabaseStock, setSupabaseStock } from '../src/stacks/backends/supabase-operations.js';
+import { getSupabaseStock } from '../src/stacks/backends/supabase-operations.js';
 import { supabaseAdapter } from '../src/stacks/backends/supabase-adapter.js';
 import { supabaseExec, supabaseLease } from './helpers/supabase-lease.js';
 
@@ -183,37 +183,6 @@ test('Supabase stock reads run the relational stock SQL as the privileged role',
   const missing = Object.assign(new Error('psql failed'), { stderr: 'ERROR:  relation "public.stock" does not exist' });
   assert.throws(() => getSupabaseStock({ item: 'Keyboard', lease,
     exec: supabaseExec(platform, () => { throw missing; }) }), interfaceFailure);
-});
-
-test('Supabase stock writes change one row under one named item and warehouse and name what is missing', () => {
-  const platform = supabaseLease();
-  const lease = supabaseAdapter.grading.databaseLease(platform);
-  const write = (output: unknown) => {
-    let sql = '';
-    const run = () => setSupabaseStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 3, lease,
-      exec: supabaseExec(platform, input => { sql = input; return `${JSON.stringify(output)}\n`; }) });
-    return { run, sql: () => sql };
-  };
-  const ok = write({ updated: 1, items: 1, warehouses: 1, stocks: 1 });
-  assert.deepEqual(ok.run(), { backend: 'supabase', item: "Kid's Keyboard", warehouse: 'East', quantity: 3 });
-  // Quiet psql prints no command tag, so the update reports its rows in its result.
-  assert.match(ok.sql(), /RETURNING 1\)\nSELECT json_build_object\('updated', \(SELECT count\(\*\) FROM updated\)/);
-  const stockError = (fields: { missingRow?: string; invalid?: boolean }) => (error: unknown): boolean =>
-    interfaceFailure(error) && (error as { missingRow?: unknown }).missingRow === fields.missingRow
-    && (error as { stockInterfaceInvalid?: unknown }).stockInterfaceInvalid === (fields.invalid === true);
-  for (const [counts, expected] of [
-    [{ items: 0, warehouses: 1, stocks: 0 }, { missingRow: 'item' }],
-    [{ items: 1, warehouses: 0, stocks: 0 }, { missingRow: 'warehouse' }],
-    [{ items: 2, warehouses: 1, stocks: 0 }, { invalid: true }],
-    [{ items: 1, warehouses: 1, stocks: 2 }, { invalid: true }],
-    [{ items: 1, warehouses: 1, stocks: 0 }, { missingRow: 'stock' }],
-  ] as const) {
-    assert.throws(write({ updated: 0, ...counts }).run, stockError(expected), JSON.stringify(counts));
-  }
-  for (const output of [{ items: 1, warehouses: 1, stocks: 1 }, 'UPDATE 1']) {
-    assert.throws(write(output).run, (error: unknown) => error instanceof Error
-      && !('stockInterface' in error) && /invalid result/.test(error.message));
-  }
 });
 
 test('Supabase observers refuse a replaced platform container', () => {

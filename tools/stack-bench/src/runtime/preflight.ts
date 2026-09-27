@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { resolveContainerAuth } from '../../container/container-auth.js';
+import { brokerHostname } from '../../container/broker-protocols.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../agents/agent-adapter-contract.js';
 import type { AgentAdapter } from '../agents/agent-adapter-contract.js';
 import { resolveDefaultGuidanceForStack } from '../campaigns/condition-compiler.js';
@@ -105,6 +106,7 @@ interface PreflightDependencies {
 
 interface CredentialStatus {
   ok: boolean;
+  mode?: 'api-key' | 'subscription-token';
   kind?: string;
   source?: string | null;
   reason?: string;
@@ -208,7 +210,7 @@ export function credentialReady(
       const auth = resolveContainerAuth({ provider: adapter.provider, env,
         apiKey: directKey ?? (keyFile ? readFileSync(keyFile, 'utf8').trim() : ''),
         exists: path => exists(String(path)) });
-      return { ok: true, kind: auth.mode === 'api-key' ? 'api-key' : 'account-token-snapshot',
+      return { ok: true, mode: auth.mode, kind: auth.mode === 'api-key' ? 'api-key' : 'account-token-snapshot',
         source: auth.mode === 'api-key' ? `selected:${environment}` : 'secret-file:CODEX_AUTH_FILE' };
     } catch (error) {
       return { ok: false, source: null, reason: error instanceof Error ? error.message : 'Invalid provider credentials' };
@@ -454,7 +456,7 @@ export function runPreflight(
       'Use a local Docker engine; bind mounts and host routing are part of the measured environment.');
   } else add('ambient.docker-host', 'pass', 'Docker endpoint is local/default');
 
-  const auth = request.modelFree ? { ok: true, source: 'model-free grading' }
+  const auth: CredentialStatus = request.modelFree ? { ok: true, source: 'model-free grading' }
     : agent ? credentialReady(agent, env, home, exists) : { ok: false };
   add('agent.credentials', auth.ok ? 'pass' : 'fail', auth.ok
     ? `Credential source available (${auth.source})`
@@ -462,7 +464,9 @@ export function runPreflight(
   auth.ok ? null : auth.reason
     ? 'Select exactly one credential mode.'
     : `Set ${[auth.environment, ...(auth.credentialEnvironments ?? [])].filter(Boolean).join(' or ')}`
-      + ` or install one of: ${(auth.files ?? []).join(', ')}`);
+      + ` or install one of: ${(auth.files ?? []).join(', ')}`,
+  auth.mode && (agent?.provider === 'openai' || agent?.provider === 'openrouter') ? { provider: agent.provider, mode: auth.mode,
+    origin: `https://${brokerHostname({ provider: agent.provider, mode: auth.mode })}` } : undefined);
 
   mkdirSync(request.resultsDir, { recursive: true });
   const hostMarker = `.preflight-host-${process.pid}-${Math.random().toString(16).slice(2)}`;
@@ -706,8 +710,10 @@ export function runPreflight(
 
   if (request.smoke && imageId) {
     const marker = `.preflight-container-${process.pid}-${Math.random().toString(16).slice(2)}`;
-    const destinations = [...new Set([...BUILD_OUTBOUND_DESTINATIONS,
-      ...(agent?.outboundDestinations ?? [])])].sort();
+    const providerDestinations = agent?.provider === 'openai'
+      ? auth.mode ? [`https://${brokerHostname({ provider: agent.provider, mode: auth.mode })}`] : []
+      : agent?.outboundDestinations ?? [];
+    const destinations = [...new Set([...BUILD_OUTBOUND_DESTINATIONS, ...providerDestinations])].sort();
     const tcpPorts = smokeLease ? (smokeLease.lease.backend === 'postgres' ? [5432]
       : smokeLease.lease.backend === 'mongodb' ? [27017]
         : [Number(new URL(smokeLease.lease.resources.serverUri!).port)])

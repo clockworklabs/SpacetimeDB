@@ -20,64 +20,51 @@ export const streams = (error: unknown, ...keys: readonly string[]): string =>
 // not providing the interface, not a harness fault.
 function stockFailure(error: unknown): unknown {
   const detail = streams(error, 'stdout', 'stderr', 'message');
+  if (/cannot update (?:view "stock"|column "quantity" of view "stock")/i.test(detail)) {
+    return stockInterfaceError('the stock interface does not support native quantity updates', { cause: error, invalid: true });
+  }
   return describesMissingStockInterface(detail) ? stockInterfaceError(detail.trim().slice(-300), { cause: error }) : error;
 }
 
-// Keep the declared foreign-key interface check; table and column names are fixed.
-const STOCK_INTERFACE_SQL = `
-WITH stock_interface AS (
-  SELECT count(*) = 2 AND count(DISTINCT source_column.attname) = 2 AS valid
-  FROM pg_constraint constraint_record
-  JOIN pg_attribute source_column ON source_column.attrelid = constraint_record.conrelid
-    AND source_column.attnum = constraint_record.conkey[1]
-  JOIN pg_attribute target_column ON target_column.attrelid = constraint_record.confrelid
-    AND target_column.attnum = constraint_record.confkey[1]
-  WHERE constraint_record.contype = 'f'
-    AND constraint_record.conrelid = 'public.stock'::regclass
-    AND cardinality(constraint_record.conkey) = 1
-    AND cardinality(constraint_record.confkey) = 1
-    AND target_column.attname = 'id'
-    AND ((source_column.attname = 'item_id' AND constraint_record.confrelid = 'public.item'::regclass)
-      OR (source_column.attname = 'warehouse_id' AND constraint_record.confrelid = 'public.warehouse'::regclass))
-)
-`;
+// Fixed native names can expose tables or writable views. Both the selected
+// name and its id must identify one parent, even without physical constraints.
+const parentCount = (table: 'item' | 'warehouse', name: string): string =>
+  `(SELECT count(*) FROM public.${table} WHERE name = ${sqlString(name)}
+    OR id IN (SELECT id FROM public.${table} WHERE name = ${sqlString(name)}))`;
 
 // The update applies only to one stock row under one named item and warehouse;
 // the counts that follow name what was missing or ambiguous when it did not.
 function stockUpdateSql(itemName: string, warehouseName: string, quantity: number, quiet: boolean): string {
   const item = sqlString(itemName), warehouse = sqlString(warehouseName);
-  const items = `(SELECT count(*) FROM public.item WHERE name = ${item})`;
-  const warehouses = `(SELECT count(*) FROM public.warehouse WHERE name = ${warehouse})`;
+  const items = parentCount('item', itemName);
+  const warehouses = parentCount('warehouse', warehouseName);
   const update = `UPDATE public.stock SET quantity = ${quantity}
 FROM public.item, public.warehouse
 WHERE stock.item_id = item.id AND stock.warehouse_id = warehouse.id
   AND item.name = ${item} AND warehouse.name = ${warehouse}
   AND ${items} = 1 AND ${warehouses} = 1
   AND (SELECT count(*) FROM public.stock linked
-    WHERE linked.item_id = item.id AND linked.warehouse_id = warehouse.id) = 1
-  AND (SELECT valid FROM stock_interface)`;
+    WHERE linked.item_id = item.id AND linked.warehouse_id = warehouse.id) = 1`;
   const counts = `'items', ${items}, 'warehouses', ${warehouses},
   'stocks', (SELECT count(*) FROM public.stock JOIN public.item ON stock.item_id = item.id
     JOIN public.warehouse ON stock.warehouse_id = warehouse.id
-    WHERE item.name = ${item} AND warehouse.name = ${warehouse} AND (SELECT valid FROM stock_interface)))::text;
+    WHERE item.name = ${item} AND warehouse.name = ${warehouse}))::text;
 `;
   return quiet
-    ? `${STOCK_INTERFACE_SQL.trimEnd()}, updated AS (\n${update}\nRETURNING 1)\n`
+    ? `WITH updated AS (\n${update}\nRETURNING 1)\n`
       + `SELECT json_build_object('updated', (SELECT count(*) FROM updated), ${counts}`
-    : `\n${STOCK_INTERFACE_SQL}\n${update};\n${STOCK_INTERFACE_SQL}\nSELECT json_build_object(${counts}`;
+    : `${update};\nSELECT json_build_object(${counts}`;
 }
 
 export function readPostgresStock(run: PsqlRunner, { backend, label }: PostgresStack, item: string, warehouse?: string):
   { backend: string; item: string; warehouse?: string; quantity: number } {
-  const sql = `${STOCK_INTERFACE_SQL}
-SELECT json_build_object(
-  'items', (SELECT count(*) FROM public.item WHERE name = ${sqlString(item)}),
-  'namedWarehouses', (SELECT count(*) FROM public.warehouse${warehouse === undefined ? '' : ` WHERE name = ${sqlString(warehouse)}`}),
+  const sql = `SELECT json_build_object(
+  'items', ${parentCount('item', item)},
+  'namedWarehouses', ${warehouse === undefined ? '(SELECT count(*) FROM public.warehouse)' : parentCount('warehouse', warehouse)},
   'warehouses', count(DISTINCT warehouse.id), 'quantities', COALESCE(json_agg(stock.quantity), '[]'::json))::text
 FROM public.stock JOIN public.item ON stock.item_id = item.id
 LEFT JOIN public.warehouse ON stock.warehouse_id = warehouse.id
-WHERE item.name = ${sqlString(item)} ${warehouse === undefined ? '' : `AND warehouse.name = ${sqlString(warehouse)}`}
-  AND (SELECT valid FROM stock_interface);`;
+WHERE item.name = ${sqlString(item)} ${warehouse === undefined ? '' : `AND warehouse.name = ${sqlString(warehouse)}`};`;
   let output: string;
   try {
     output = run(sql);
@@ -112,14 +99,22 @@ WHERE item.name = ${sqlString(item)} ${warehouse === undefined ? '' : `AND wareh
 export function writePostgresStock(run: PsqlRunner, { backend, label, quiet }: PostgresStack,
   { item, warehouse, quantity }: { item: string; warehouse: string; quantity: number }):
   { backend: string; item: string; warehouse: string; quantity: number } {
+  stockQuantity(quantity);
+  if (quantity < 0) throw stockInterfaceError('requested stock quantity must be nonnegative', { invalid: true });
   let output: string;
   try {
     output = run(stockUpdateSql(item, warehouse, quantity, quiet));
   } catch (error) {
     throw stockFailure(error);
   }
-  const written = { backend, item, warehouse, quantity };
-  if (!quiet && (output.match(/UPDATE 1\b/g) ?? []).length === 1) return written;
+  const verify = () => {
+    const observed = readPostgresStock(run, { backend, label, quiet }, item, warehouse);
+    if (observed.quantity !== quantity) {
+      throw stockInterfaceError('native stock update did not persist the requested quantity', { invalid: true });
+    }
+    return { backend, item, warehouse, quantity };
+  };
+  if (!quiet && (output.match(/UPDATE 1\b/g) ?? []).length === 1) return verify();
   const invalid = () => new Error(`${label} stock write returned an invalid result`);
   const rows = output.trim().split(/\r?\n/).filter(Boolean);
   let counts: unknown;
@@ -127,7 +122,7 @@ export function writePostgresStock(run: PsqlRunner, { backend, label, quiet }: P
   catch { throw invalid(); }
   const keys = [...(quiet ? ['updated'] : []), 'items', 'warehouses', 'stocks'];
   if (!record(counts) || !keys.every(key => Number.isSafeInteger(counts[key]))) throw invalid();
-  if (counts.updated === 1) return written;
+  if (counts.updated === 1) return verify();
   if (counts.items === 0) throw stockInterfaceError(`required item ${item} is absent`, { missingRow: 'item' });
   if (counts.warehouses === 0) throw stockInterfaceError(`required warehouse ${warehouse} is absent`, { missingRow: 'warehouse' });
   if (counts.items !== 1 || counts.warehouses !== 1 || (counts.stocks as number) > 1) {

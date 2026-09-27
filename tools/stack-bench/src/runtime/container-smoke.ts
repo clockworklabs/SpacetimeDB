@@ -10,7 +10,7 @@ export interface ContainerSmokeResult {
   platform: string;
   arch: string;
   node: string;
-  reached: Array<{ url: string; status: number }>;
+  reached: Array<{ url: string; status: number; elapsedMs?: number }>;
   tcpReached: number[];
   executables: Record<string, string>;
   credentialStatus: string;
@@ -57,8 +57,13 @@ export function runContainerSmoke({ command, imageId, resultsDir, destinations, 
     + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${hostAddress}',port});`
     + `const t=setTimeout(()=>s.destroy(new Error('timeout')),5000);s.once('connect',()=>{clearTimeout(t);s.end();ok()});`
     + `s.once('error',e=>{clearTimeout(t);fail(new Error('${hostAddress}:'+port+': '+e.message))})});`
-    + `const reached=[];for(const url of urls){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
-    + `reached.push({url,status:r.status})}catch(e){throw new Error(url+': '+e.message)}}`
+    + `const causeDetails=(e,depth=0)=>{if(!e||depth>3)return undefined;const detail={};`
+    + `for(const key of ['name','code','syscall'])if(typeof e[key]==='string'&&/^[A-Za-z0-9_ -]{1,64}$/.test(e[key]))detail[key]=e[key];`
+    + `if(e.cause)detail.cause=causeDetails(e.cause,depth+1);`
+    + `if(Array.isArray(e.errors))detail.errors=e.errors.slice(0,4).map(item=>causeDetails(item,depth+1));return detail};`
+    + `const reached=[];for(const url of urls){const started=Date.now();try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
+    + `reached.push({url,status:r.status,elapsedMs:Date.now()-started})}catch(e){throw new Error('Outbound probe failed: '+JSON.stringify({`
+    + `origin:new URL(url).origin,elapsedMs:Date.now()-started,error:causeDetails(e)}))}}`
     + `for(const port of ports){await reach(port);tcpReached.push(port)}`
     + `fs.writeFileSync('/results/'+process.argv[6],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
     + `process.stdout.write(JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,reached,`
