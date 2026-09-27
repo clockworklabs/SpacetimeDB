@@ -1150,12 +1150,12 @@
         "ecommerce.spec.state-durability.notification-preferences-reload.630a",
         "ecommerce.spec.access-control.notification-preferences-privacy.630b"
       ],
-      "desc": "Do not save notification preferences. It also breaks the owner's saved-choice positive control in 630b; that coupled failure is not evidence of a privacy defect.",
+      "desc": "Acknowledge notification saves without storing the choices. It also breaks the owner's saved-choice positive control in 630b; that coupled failure is not evidence of a privacy defect.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "app.put(\"/api/notifications/preferences\",",
-          "replace": "app.put(\"/api/mutation-disabled-notifications/preferences\","
+          "find": "await deps.pool.query(`UPDATE account SET notify_order = $1, notify_stock = $2 WHERE id = $3`,\n      [order, stock, req.account!.id]);",
+          "replace": "await deps.pool.query(`UPDATE account SET notify_order = $1, notify_stock = $2 WHERE id = $3 AND false`,\n      [order, stock, req.account!.id]);"
         }
       ]
     },
