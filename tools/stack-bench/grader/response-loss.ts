@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { BrowserContext, WebSocketRoute } from 'playwright';
+import { request, type BrowserContext, type WebSocketRoute } from 'playwright';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
-import { withBrowserRequest } from '../src/actions/browser-request.js';
 
 // Install before the actor opens its connection. This gate changes delivery,
 // never request contents, database state, or the application's retry policy.
@@ -31,14 +30,16 @@ export async function installResponseLoss(context: BrowserContext) {
       const path = new URL(route.request().url()).pathname;
       record('http-request', path, route.request().postDataBuffer() ?? Buffer.alloc(0));
       // No redirects or transport retries: one intercepted write remains one write.
-      await withBrowserRequest(context.request, async api => {
-        const response = await api.fetch(route.request(), { maxRedirects: 0, maxRetries: 0, timeout: 10_000 });
-        try {
-          record('http-response', path, undefined, response.status());
-          await released;
-          await route.abort('connectionreset');
-        } finally { await response.dispose(); }
-      }, false);
+      // A discarded reply must not update the browser's cookie jar. Forward the
+      // exact intercepted headers (including HttpOnly cookies) in a separate jar.
+      const api = await request.newContext();
+      try {
+        const response = await api.fetch(route.request(), { headers: await route.request().allHeaders(),
+          maxRedirects: 0, maxRetries: 0, timeout: 10_000 });
+        record('http-response', path, undefined, response.status());
+        await released;
+        await route.abort('connectionreset');
+      } finally { await api.dispose(); }
     })().catch(() => { errors.add('HTTP response interception failed'); });
     pending.add(task);
     void task.finally(() => pending.delete(task));

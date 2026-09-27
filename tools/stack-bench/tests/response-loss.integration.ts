@@ -1,22 +1,39 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
+import { writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { installResponseLoss } from '../grader/response-loss.js';
 
 test('a lost browser HTTP reply keeps its committed effect and does not change the write', async t => {
+  // A lost reply must not apply its Set-Cookie header, even after cleanup or retry.
+  // A normally delivered reply must apply it; the duplicate-write refusal sets no cookie.
+  const evidence: { loss: boolean; cookieBeforeFinish: string | null; cookieAfterFinish: string | null;
+    cookieAfterRetry: string | null; retryCookie: string | null; retryStatus: number }[] = [];
+  t.after(() => {
+    if (process.env.STACK_BENCH_RESPONSE_LOSS_EVIDENCE)
+      writeFileSync(process.env.STACK_BENCH_RESPONSE_LOSS_EVIDENCE, JSON.stringify(evidence, null, 2) + '\n');
+  });
   const carts = new Set<string>();
+  const retryCookies = new Map<string, string | null>();
   const server = createServer((req, res) => {
     if (req.url === '/checkout') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', () => {
         assert.equal(req.headers['x-application-header'], 'retained');
+        assert((req.headers.cookie ?? '').split('; ').includes('original-session=actor-original'),
+          'The intercepted request must retain its original HttpOnly session cookie');
         const cart = JSON.parse(body).cart as string;
-        if (carts.has(cart)) { res.writeHead(409); res.end('cart already consumed'); return; }
-        carts.add(cart); res.end(JSON.stringify({ order: carts.size }));
+        if (carts.has(cart)) {
+          retryCookies.set(cart, req.headers.cookie ?? null);
+          res.writeHead(409); res.end('cart already consumed'); return;
+        }
+        carts.add(cart);
+        res.setHeader('Set-Cookie', `checkout-session=${cart}; Path=/; HttpOnly; SameSite=Lax`);
+        res.end(JSON.stringify({ order: carts.size }));
       });
     } else if (req.url === '/state') res.end(JSON.stringify([...carts]));
     else res.end('<!doctype html><p id="result">ready</p>');
@@ -28,6 +45,7 @@ test('a lost browser HTTP reply keeps its committed effect and does not change t
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
   for (const lose of [false, true]) await t.test(`loss=${lose}`, async () => {
     const context = await browser.newContext();
+    await context.addCookies([{ name: 'original-session', value: 'actor-original', url, httpOnly: true, sameSite: 'Lax' }]);
     const gate = await installResponseLoss(context);
     try {
       const page = await context.newPage(); await page.goto(url);
@@ -52,13 +70,24 @@ test('a lost browser HTTP reply keeps its committed effect and does not change t
         const request = gate.evidence().events.find(e => e.kind === 'http-request')!;
         assert.equal(request.sha256, createHash('sha256').update(JSON.stringify({ cart })).digest('hex'));
       }
+      const sessionCookie = async () => (await context.cookies(url)).find(cookie => cookie.name === 'checkout-session')?.value ?? null;
+      const cookieBeforeFinish = await sessionCookie();
       await gate.finish();
       if (lose) await page.waitForFunction(() => document.querySelector('#result')!.textContent === 'unknown');
+      const cookieAfterFinish = await sessionCookie();
       const before = carts.size;
       const retry = await page.evaluate(async cart => (await fetch('/checkout', {
         method: 'POST', headers: { 'x-application-header': 'retained' }, body: JSON.stringify({ cart }),
       })).status, cart);
       assert.equal(retry, 409); assert.equal(carts.size, before);
+      const observed = { loss: lose, cookieBeforeFinish, cookieAfterFinish, cookieAfterRetry: await sessionCookie(),
+        retryCookie: retryCookies.get(cart) ?? null, retryStatus: retry };
+      evidence.push(observed);
+      assert.deepEqual([observed.cookieBeforeFinish, observed.cookieAfterFinish, observed.cookieAfterRetry],
+        [lose ? null : cart, lose ? null : cart, lose ? null : cart], 'Only a delivered reply may update the browser session cookie');
+      assert.deepEqual((observed.retryCookie ?? '').split('; ').sort(),
+        (lose ? ['original-session=actor-original'] : ['original-session=actor-original', `checkout-session=${cart}`]).sort(),
+        'Retry must not send a session cookie from the lost reply');
       assert.deepEqual(gate.evidence().errors, []); assert.equal(gate.evidence().truncated, false);
       assert.throws(() => gate.arm(), /only once/);
     } finally { await gate.finish(); await context.close(); }
