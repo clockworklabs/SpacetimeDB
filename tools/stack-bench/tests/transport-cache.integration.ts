@@ -103,7 +103,7 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
       else if (mode !== 'headers-stalled') respond();
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(`${mode === 'captured' ? 'private-body-canary' : ''}<span id="ready">${mode.startsWith('late-') || mode === 'headers-stalled' ? 'request started' : 'waiting'}</span><script>fetch('/private-route?token=private-query').then(() => {
+      res.end(`${mode === 'captured' ? 'private-body-canary' : ''}<span id="ready">${mode.startsWith('late-') || mode === 'headers-stalled' ? 'request started' : 'waiting'}</span><script>for(let n=0;n<${mode === 'headers-stalled' ? 10 : 1};n++)fetch('/private-route?token=private-query', {headers:{'X-Private':'private-header'}}).then(() => {
         document.querySelector('#ready').textContent='headers received'; });</script>`);
     }
   }).listen(0, '127.0.0.1');
@@ -134,10 +134,27 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
         { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
         { runId: 'body-completion', roomName: name => name, url, actions: [], spacetime: null,
           backend: 'postgres', nullControl: false, defaultWithin: 1000 });
-      evidence.push({ mode, result });
+      const diagnostics = stderr.mock.calls.map(call => String(call.arguments[0]));
+      evidence.push({ mode, result, diagnostics });
       assert.equal(result.criteria[0]!.evidence.status,
         mode.endsWith('clean') ? 'passed' : mode.endsWith('stalled') ? 'inconclusive' : 'failed', JSON.stringify(result));
       assert.equal(browser.contexts().length, 0);
+      if (mode === 'headers-stalled') {
+        // Requests with no response headers must leave bounded, safe diagnostics.
+        const lines = diagnostics.filter(line => line.startsWith('transport request pending '));
+        assert.equal(lines.length, 8, 'Only the first eight outstanding requests are logged');
+        for (const line of lines) {
+          const pending = JSON.parse(line.slice('transport request pending '.length)) as Record<string, unknown>;
+          assert.equal(pending.phase, 'absence');
+          assert.equal(pending.method, 'GET');
+          assert.equal(pending.resourceType, 'fetch');
+          assert.equal(pending.origin, url);
+          assert.equal(pending.pathSha256, createHash('sha256').update('/private-route').digest('hex'));
+          assert(typeof pending.elapsedMs === 'number' && pending.elapsedMs >= 0);
+          assert.deepEqual(Object.keys(pending).sort(), ['elapsedMs', 'method', 'origin', 'pathSha256', 'phase', 'resourceType']);
+          assert(!/private-route|private-query|private-header|private-body-canary/.test(line));
+        }
+      }
       if (mode === 'stalled') {
         const pending = stderr.mock.calls.map(call => String(call.arguments[0]))
           .find(line => line.startsWith('transport body pending '));
@@ -160,7 +177,7 @@ test('privacy reload preserves preceding read and write responses', async t => {
     if (req.url === '/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       res.write(`data: ${eventLeak ? 'private-save-canary' : 'public'}\n\n`);
-    } else if (req.url === '/api/profile') {
+    } else if (req.url === '/api/profile?token=private-query') {
       const start = () => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.write('{"value":"');
@@ -169,7 +186,7 @@ test('privacy reload preserves preceding read and write responses', async t => {
       if (delayedHeaders) setTimeout(start, 150); else start();
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(`${capturedLeak && pageLoads++ === 0 ? 'private-save-canary' : ''}${eventSource ? "<script>new EventSource('/events')</script>" : ''}<button id="profile-save" onclick="fetch('/api/profile', {method:'${method}'}).then(r=>r.json())">Save</button>`);
+      res.end(`${capturedLeak && pageLoads++ === 0 ? 'private-save-canary' : ''}${eventSource ? "<script>new EventSource('/events')</script>" : ''}<button id="profile-save" onclick="fetch('/api/profile?token=private-query', {method:'${method}',headers:{'X-Private':'private-header'}${method === 'PUT' ? ",body:'private-request-body'" : ''}}).then(r=>r.json())">Save</button>`);
     }
   }).listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -185,6 +202,7 @@ test('privacy reload preserves preceding read and write responses', async t => {
   // A captured disclosure is a failure even if another request never finishes.
   for (const requestMethod of ['PUT', 'GET']) for (const mode of ['clean', 'leak', 'late-clean', 'late-leak', 'stalled', 'captured-stalled', 'eventsource-clean', 'eventsource-leak']) {
     await t.test(`${requestMethod} ${mode}`, async () => {
+      const stderr = t.mock.method(process.stderr, 'write');
       method = requestMethod;
       pageLoads = 0;
       eventSource = mode.startsWith('eventsource'); eventLeak = mode === 'eventsource-leak';
@@ -201,9 +219,21 @@ test('privacy reload preserves preceding read and write responses', async t => {
         { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
         { runId: 'save-reload', roomName: name => name, url, actions: [], spacetime: null,
           backend: 'postgres', nullControl: false, defaultWithin: 1000 });
-      evidence.push({ method, mode, result });
+      const diagnostics = stderr.mock.calls.map(call => String(call.arguments[0]));
+      evidence.push({ method, mode, result, diagnostics });
       assert.equal(result.criteria[0]!.evidence.status, capturedLeak || leak || eventLeak ? 'failed' : stalled ? 'inconclusive' : 'passed', JSON.stringify(result));
       if (mode === 'stalled') {
+        const lines = diagnostics.filter(line => line.startsWith('transport request pending '));
+        assert.equal(lines.length, 1, 'The navigation deadline must identify the outstanding request');
+        const pending = JSON.parse(lines[0]!.slice('transport request pending '.length)) as Record<string, unknown>;
+        assert.equal(pending.phase, 'navigation');
+        assert.equal(pending.method, method);
+        assert.equal(pending.resourceType, 'fetch');
+        assert.equal(pending.origin, url);
+        assert.equal(pending.pathSha256, createHash('sha256').update('/api/profile').digest('hex'));
+        assert(typeof pending.elapsedMs === 'number' && pending.elapsedMs >= 1000);
+        assert.deepEqual(Object.keys(pending).sort(), ['elapsedMs', 'method', 'origin', 'pathSha256', 'phase', 'resourceType']);
+        assert(!/api\/profile|private-query|private-header|private-request-body|private-save-canary/.test(lines[0]!));
         // The interrupted read must retain its cause in both durable evidence layers.
         const persisted = JSON.parse(JSON.stringify(result)) as typeof result;
         const check = persisted.criteria[0]!.evidence;

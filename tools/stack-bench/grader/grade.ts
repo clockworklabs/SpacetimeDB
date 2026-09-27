@@ -4,7 +4,7 @@
 //
 import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page, Request } from 'playwright';
 import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
 import { inspectSavedDiagnostic } from '../src/runtime/saved-diagnostic.js';
 import { randomUUID } from 'node:crypto';
@@ -53,7 +53,7 @@ import { leaseFromEnv } from '../src/runtime/backend-lease.js';
 import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
-import { captureResponses, ReceivedTransport } from './transport-frames.js';
+import { captureResponses, ReceivedTransport, requestDiagnostic } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
 import type { PlatformAuthPatch } from '../src/actions/auth-request-patch.js';
@@ -297,7 +297,7 @@ export class Actor {
   page!: Page;
   readonly consoleErrors: string[];
   private readonly transport = new ReceivedTransport();
-  private readonly pendingRequests = new Set<Promise<boolean>>();
+  private readonly pendingRequests = new Map<Promise<boolean>, { request: Request; startedAt: number }>();
   readonly ready: Promise<void>;
   get received(): readonly string[] { return this.transport.chunks; }
   get pendingReceived(): number { return this.transport.pending + this.pendingRequests.size; }
@@ -367,7 +367,7 @@ export class Actor {
       const completed = req.response().then(async response =>
         response !== null && await response.finished() === null && response.ok()).catch(() => false);
       if (this.freshResponses) {
-        this.pendingRequests.add(completed);
+        this.pendingRequests.set(completed, { request: req, startedAt: Date.now() });
         void completed.finally(() => this.pendingRequests.delete(completed));
       }
       if (!isWrite) return;
@@ -409,6 +409,13 @@ export class Actor {
   record(payload: string | Buffer): void {
     this.transport.record(payload);
   }
+  private reportPendingRequests(phase: 'navigation' | 'absence'): void {
+    for (const { request, startedAt } of [...this.pendingRequests.values()].slice(0, 8)) {
+      try { process.stderr.write(`transport request pending ${JSON.stringify({
+        ...requestDiagnostic(request), phase, elapsedMs: Date.now() - startedAt,
+      })}\n`); } catch { /* Diagnostics must not change the verdict. */ }
+    }
+  }
   async prepareNavigation(within: number, signal: AbortSignal): Promise<void> {
     if (!this.freshResponses) return;
     // An ordinary reload must not abort the response this privacy observer is recording.
@@ -417,6 +424,7 @@ export class Actor {
     while (this.pendingRequests.size || this.transport.pending) {
       if (Date.now() >= deadline) {
         // Preserve a captured disclosure; incomplete capture only prevents proving absence.
+        this.reportPendingRequests('navigation');
         this.transport.markIncomplete('navigationInterrupted');
         return;
       }
@@ -426,6 +434,7 @@ export class Actor {
   wasSent(needle: string, requireComplete = true): boolean {
     const found = this.transport.contains(needle, requireComplete);
     if (!found && requireComplete && this.pendingRequests.size) {
+      this.reportPendingRequests('absence');
       inconclusive('transport-incomplete', {});
     }
     return found;

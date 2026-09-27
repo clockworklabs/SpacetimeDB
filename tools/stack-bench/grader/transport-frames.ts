@@ -1,15 +1,20 @@
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import type { Page, Response } from 'playwright';
+import type { Page, Request, Response } from 'playwright';
 import { inconclusive } from '../src/actions/actor-action-runtime.js';
 
 const MAX_RECEIVED_BYTES = 8 * 1024 * 1024;
 
-function responseDiagnostic(response: Response, page: Page) {
-  const url = new URL(response.url());
+export function requestDiagnostic(request: Request) {
+  const url = new URL(request.url());
   return { origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
+    method: request.method(), resourceType: request.resourceType() };
+}
+
+function responseDiagnostic(response: Response, page: Page) {
+  return { ...requestDiagnostic(response.request()),
     status: response.status(), contentType: response.headers()['content-type'] ?? '',
-    resourceType: response.request().resourceType(), pageClosed: page.isClosed(),
+    pageClosed: page.isClosed(),
     failure: response.request().failure()?.errorText ?? null };
 }
 
