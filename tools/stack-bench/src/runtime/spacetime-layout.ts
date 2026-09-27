@@ -131,8 +131,14 @@ function validateTarget(appRoot: string, target: ModuleTarget): Omit<SpacetimeMo
   if (!inside(appRoot, actual)) {
     fail(`SpacetimeDB module path resolves outside the application: ${unresolved}`);
   }
-  if (!existsSync(join(actual, 'package.json')) || !importsServerSdk(actual)) {
+  // The native compiler starts at src/index.ts and follows re-exports. SDK
+  // import syntax is a discovery hint, not a validity rule for a chosen target.
+  const entry = join(actual, 'src', 'index.ts');
+  if (!existsSync(join(actual, 'package.json')) || !existsSync(entry) || !lstatSync(entry).isFile()) {
     fail(`SpacetimeDB module directory is not a TypeScript module: ${relative(appRoot, actual) || '.'}`);
+  }
+  if (!inside(appRoot, realpathSync(entry))) {
+    fail(`SpacetimeDB module entry resolves outside the application: ${entry}`);
   }
   const moduleDirectory = relative(appRoot, actual).split(sep).join('/');
   return {

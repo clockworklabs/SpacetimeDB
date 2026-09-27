@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -384,6 +384,18 @@ test('Spacetime root target takes precedence over nested scaffolds and stays ins
     assert.equal(layout.moduleDirectory, 'backend/spacetimedb');
     assert.equal(layout.containerPath, '/app/backend/spacetimedb');
     assert.equal(layout.source, 'spacetime.json');
+    // A valid native entry can re-export code outside src. Discovery syntax
+    // must not reject it. Missing native files and escaping targets still fail.
+    const module = join(root, 'backend', 'spacetimedb');
+    writeFileSync(join(module, 'index.ts'), "import { schema } from 'spacetimedb/server';\nexport default schema({});\n");
+    writeFileSync(join(module, 'src', 'index.ts'), "export { default } from '../index';\n");
+    assert.equal(resolveSpacetimeModuleLayout(root).moduleDirectory, 'backend/spacetimedb');
+    rmSync(join(module, 'src', 'index.ts'));
+    assert.throws(() => resolveSpacetimeModuleLayout(root), GeneratedAppLayoutError);
+    writeModule(module);
+    rmSync(join(module, 'package.json'));
+    assert.throws(() => resolveSpacetimeModuleLayout(root), GeneratedAppLayoutError);
+    writeModule(module);
     writeFileSync(join(root, 'spacetime.json'), JSON.stringify({ 'module-path': '../outside' }));
     assert.throws(() => resolveSpacetimeModuleLayout(root), /escapes the application/);
     writeFileSync(join(root, 'spacetime.json'), JSON.stringify({ 'module-path': 'missing' }));
@@ -391,6 +403,15 @@ test('Spacetime root target takes precedence over nested scaffolds and stays ins
     const empty = join(root, 'empty-app');
     mkdirSync(empty);
     assert.throws(() => resolveSpacetimeModuleLayout(empty), GeneratedAppLayoutError);
+    symlinkSync(module, join(empty, 'outside'), 'junction');
+    writeFileSync(join(empty, 'spacetime.json'), JSON.stringify({ 'module-path': 'outside' }));
+    assert.throws(() => resolveSpacetimeModuleLayout(empty), GeneratedAppLayoutError);
+    const linkedEntryModule = join(empty, 'module');
+    mkdirSync(linkedEntryModule);
+    writeFileSync(join(linkedEntryModule, 'package.json'), '{}');
+    symlinkSync(join(module, 'src'), join(linkedEntryModule, 'src'), 'junction');
+    writeFileSync(join(empty, 'spacetime.json'), JSON.stringify({ 'module-path': 'module' }));
+    assert.throws(() => resolveSpacetimeModuleLayout(empty), /resolves outside the application/);
     const ambiguous = join(root, 'ambiguous-app');
     writeModule(join(ambiguous, 'one'));
     writeModule(join(ambiguous, 'two'));

@@ -7,3 +7,4 @@
 /tools/stack-bench/qualification-evidence/**/*.json -text whitespace=cr-at-eol
 /tools/stack-bench/qualification-evidence/ecommerce-l3-navigation-20260927/** -text -whitespace
 /tools/stack-bench/qualification-evidence/ecommerce-l3-readiness-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-module-layout-20260927/** -text -whitespace
