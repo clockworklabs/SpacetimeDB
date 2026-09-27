@@ -49,19 +49,23 @@ test('navigation timeout is inconclusive; connection refusal blocks setup and pr
     name: 'navigation', features: [{ id: 1, name: 'account', actors: ['buyer'], setup: [],
       criteria: [{ id: '1a', desc: 'account exists', points: 1,
         steps: [{ do: 'expect', actor: 'buyer', testid: 'current-user' }] }] }] }, { source: 'navigation.json' });
-  for (const [error, expected] of [
+  // Network codes must survive evidence serialization. Raw URLs, credentials,
+  // headers and browser messages must not enter the diagnostic observation.
+  for (const [error, expected, networkError] of [
     [new errors.TimeoutError('page.goto: Timeout 20000ms exceeded'), 'inconclusive'],
-    [new Error('page.goto: net::ERR_CONNECTION_REFUSED'), 'failed'],
-    [new Error('page.goto: net::ERR_CONNECTION_RESET'), 'inconclusive'],
-    [new Error('page.goto: net::ERR_NAME_NOT_RESOLVED'), 'inconclusive'],
+    [new Error('page.goto: net::ERR_CONNECTION_REFUSED'), 'failed', 'net::ERR_CONNECTION_REFUSED'],
+    [new Error('page.goto: net::ERR_CONNECTION_RESET at https://user:private-secret@failed.example/private-path?token=private-secret'),
+      'inconclusive', 'net::ERR_CONNECTION_RESET'],
+    [new Error('page.reload: net::ERR_ABORTED; Authorization: Bearer private-secret'), 'inconclusive', 'net::ERR_ABORTED'],
+    [new Error('page.goto: net::ERR_NAME_NOT_RESOLVED'), 'inconclusive', 'net::ERR_NAME_NOT_RESOLVED'],
     [new Error('page.goto: Protocol error: invalid parameters'), 'harness_failure'],
     [new Error('page.goto: Target crashed'), 'harness_failure'],
   ] as const) {
     let closed = false;
-    const context = { newPage: async () => page,
+    const context = Object.assign(new EventEmitter(), { newPage: async () => page, serviceWorkers: () => [],
       routeWebSocket: async () => {},
       newCDPSession: async () => ({ on() {}, async send() {} }),
-      close: async () => { closed = true; } };
+      close: async () => { closed = true; } });
     const page = Object.assign(new EventEmitter(), { setDefaultTimeout() {}, context: () => context,
       goto: async () => {
         page.emit('console', { type: () => 'error', text: () => 'password=private-secret failed' });
@@ -92,6 +96,8 @@ test('navigation timeout is inconclusive; connection refusal blocks setup and pr
       assert.deepEqual(result.setupEvidence.observation,
         { pendingResources: Array(20).fill('stylesheet https://fonts.example') });
     }
+    if (networkError) assert.deepEqual(JSON.parse(JSON.stringify(result.setupEvidence)).observation,
+      { networkError }, 'The saved observation must retain only the safe Chromium network code');
     assert.match(result.consoleErrors.join('\n'), /redacted credential/);
     assert.doesNotMatch(JSON.stringify([result.consoleErrors, result.setupEvidence.observation]),
       /private-secret|private-|finished.example|failed.example/);

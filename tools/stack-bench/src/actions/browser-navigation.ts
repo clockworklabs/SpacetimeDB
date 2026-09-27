@@ -32,12 +32,15 @@ export async function runApplicationNavigation(operation: () => Promise<unknown>
     if (error instanceof Error && /net::ERR_CONNECTION_REFUSED\b/.test(error.message)) {
       throw new ActionApplicationFailure('application refused the navigation connection', {
         expected: 'a reachable application page',
+        observation: { networkError: 'net::ERR_CONNECTION_REFUSED' },
       });
     }
-    if (error instanceof Error && /net::ERR_[A-Z_]+\b/.test(error.message)) {
+    const networkError = error instanceof Error ? error.message.match(/net::ERR_[A-Z_]+\b/)?.[0] : undefined;
+    if (networkError) {
       throw new ActionInconclusive('application navigation failed before the page was ready', {
         retryable: true,
         expected: 'a reachable application page',
+        observation: { networkError },
       });
     }
     throw error;
