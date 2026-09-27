@@ -156,6 +156,8 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
 // Renaming a reducer does not change its credential semantics; supported scalar
 // fields must preserve their values. Unknown schemas and wrong lease targets
 // remain unmeasured. No probe may replay a second request on another connection.
+// A completed HTTP or native login can reload and close its socket. That must
+// preserve its receipt; closing before a native reply must remain inconclusive.
 test('SpacetimeDB auth receipts remain valid only for one complete credential call', async t => {
   const codec = await import(new URL('../src/stacks/spacetime-wire-codec.js', import.meta.url).href);
   const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
@@ -174,7 +176,14 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
     } });
   };
   const server = createServer((req, res) => {
-    if (req.url?.includes('/schema')) {
+    if (req.url === '/authenticate') {
+      let body = '';
+      req.on('data', data => { body += String(data); });
+      req.on('end', () => {
+        received.push(JSON.parse(body));
+        res.setHeader('Content-Type', 'application/json'); res.end('true');
+      });
+    } else if (req.url?.includes('/schema')) {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ reducers: [{ name: mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up',
         params: { elements: types().map((tag, index) => ({ name: { some: ['username', 'password', 'is_admin', 'nonce'][index] },
@@ -186,7 +195,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   await once(server, 'listening');
   const port = (server.address() as { port: number }).port, url = `http://127.0.0.1:${port}`;
   const sockets = new wsServer({ server });
-  sockets.on('connection', (socket: { on(event: string, fn: (data: Buffer) => void): void; send(data: Buffer): void }) => {
+  sockets.on('connection', (socket: { on(event: string, fn: (data: Buffer) => void): void; send(data: Buffer): void; close(): void }) => {
     connections++;
     const send = (value: unknown) => socket.send(Buffer.concat([Buffer.from([0]), encode(codec.ServerMessage, value)]));
     send({ tag: 'InitialConnection', value: { identity: { __identity__: 1n }, connectionId: { __connection_id__: BigInt(connections) }, token: 'fixture-token' } });
@@ -197,6 +206,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
       if (message.tag !== 'CallReducer') return;
       const reader = new codec.BinaryReader(message.value.args);
       received.push(types().map(tag => codec.AlgebraicType.makeDeserializer({ tag })(reader)));
+      if (mode === 'lost-receipt') { socket.close(); return; }
       send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
         timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: mode === 'refused'
           ? { tag: 'Err', value: new Uint8Array() } : { tag: 'OkEmpty' } } });
@@ -207,7 +217,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
   const browser = await chromium.launch();
   try {
-    for (mode of ['accepted', 'refused', 'renamed', 'scalar-fields', 'missing-claim', 'second-after-receipt',
+    for (mode of ['accepted', 'refused', 'renamed', 'scalar-fields', 'missing-claim', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
       'second-then-submit-error', 'malformed-outbound', 'malformed-inbound', 'wrong-module', 'foreign-target', 'unsupported-protocol', 'unsupported-schema', 'app-proxy']) {
       await t.test(mode, async () => {
         received.length = 0; connections = 0;
@@ -233,31 +243,44 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
             outcome = await withAuthRequestPatch(page, 'customer', 'secret', patch, async () => {
               await page.evaluate(async ({ first, second, mode }) => {
                 const state = window as unknown as { socket: WebSocket; replies: number };
-                const reply = new Promise(resolve => state.socket.addEventListener('message', resolve, { once: true }));
-                state.socket.send(new Uint8Array(first)); await reply;
+                if (mode === 'http-reload') {
+                  await fetch('/authenticate', { method: 'POST', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(['customer', 'secret']) }).then(response => response.json());
+                } else {
+                  const reply = new Promise(resolve => state.socket.addEventListener(mode === 'lost-receipt' ? 'close' : 'message', resolve, { once: true }));
+                  state.socket.send(new Uint8Array(first)); await reply;
+                }
                 if (mode.startsWith('second-')) state.socket.send(new Uint8Array(second));
                 if (mode === 'malformed-outbound') state.socket.send(new Uint8Array([255]));
               }, { first: [...callBytes(1)], second: [...callBytes(2)], mode });
+              if (['reload-after-receipt', 'http-reload', 'reconnected-second'].includes(mode)) await page.reload();
+              if (mode === 'reconnected-second') await page.evaluate(async ({ socketUrl, second }) => {
+                const socket = new WebSocket(socketUrl, 'v3.bsatn.spacetimedb');
+                Object.assign(window, { socket });
+                await new Promise(resolve => socket.addEventListener('message', resolve, { once: true }));
+                socket.send(new Uint8Array(second));
+              }, { socketUrl, second: [...callBytes(2)] });
               // Let native socket events settle while the submission remains active.
               await page.waitForTimeout(100);
               if (mode === 'second-then-submit-error') throw new Error('Submission did not finish');
               return { submitted: true };
             });
           } catch (error) { outcome = error; }
-          const measured = ['accepted', 'refused', 'renamed', 'scalar-fields', 'missing-claim', 'app-proxy'].includes(mode);
+          const measured = ['accepted', 'refused', 'renamed', 'scalar-fields', 'missing-claim', 'reload-after-receipt', 'http-reload', 'app-proxy'].includes(mode);
           observations.push({ mode, measured, connections, received: structuredClone(received),
             outcome: outcome instanceof Error ? { name: outcome.name, message: outcome.message } : outcome });
           if (!measured) assert(outcome instanceof ActionInconclusive, `${mode}: ${JSON.stringify(observations.at(-1))}`);
           else {
             assert(!(outcome instanceof Error), `${mode}: ${String(outcome)}`);
-            const receipt = (outcome as { requestPatch: { transport: string; success: boolean; absentParameters?: string[] } }).requestPatch;
-            assert.equal(receipt.transport, 'spacetime-websocket'); assert.equal(receipt.success, mode !== 'refused');
+            const receipt = (outcome as { requestPatch: { transport?: string; success?: boolean; status?: number; absentParameters?: string[] } }).requestPatch;
+            if (mode === 'http-reload') assert.equal(receipt.status, 200);
+            else { assert.equal(receipt.transport, 'spacetime-websocket'); assert.equal(receipt.success, mode !== 'refused'); }
             assert.deepEqual(received, [scalarCase() ? ['customer', 'secret', true, 17]
               : mode === 'missing-claim' ? ['customer', 'secret'] : ['customer', 'modified']]);
             if (mode === 'missing-claim') assert.deepEqual(receipt.absentParameters, ['role']);
           }
-          assert.equal(connections, 1, 'the probe uses the existing connection');
-          if (mode.startsWith('second-') || mode === 'malformed-outbound') assert.equal(received.length, 1, 'ambiguous traffic must not be forwarded');
+          assert.equal(connections, mode === 'reconnected-second' ? 2 : 1, 'only the app can create connections');
+          if (mode.startsWith('second-') || mode === 'reconnected-second' || mode === 'malformed-outbound') assert.equal(received.length, 1, 'ambiguous traffic must not be forwarded');
         } finally { await context.close(); }
       });
     }

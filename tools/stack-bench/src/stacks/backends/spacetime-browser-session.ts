@@ -124,6 +124,12 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
       socket.authPending?.finish('unknown');
       capture.auth?.fail();
     };
+    const close = () => {
+      socket.closed = true;
+      socket.invalid = true;
+      socket.pending?.finish('unknown');
+      socket.authPending?.finish('unknown');
+    };
     client.onMessage(bytes => {
       let outbound = bytes;
       try {
@@ -171,8 +177,8 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
       } catch { invalidate(); }
       try { client.send(bytes); } catch { invalidate(); }
     });
-    client.onClose(async (code, reason) => { socket.closed = true; invalidate(); await server.close({ code, reason }).catch(invalidate); });
-    server.onClose(async (code, reason) => { socket.closed = true; invalidate(); await client.close({ code, reason }).catch(invalidate); });
+    client.onClose(async (code, reason) => { close(); await server.close({ code, reason }).catch(close); });
+    server.onClose(async (code, reason) => { close(); await client.close({ code, reason }).catch(close); });
   });
 }
 
@@ -229,11 +235,12 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       const values = declaration.read.map(read => read(reader));
       if (reader.remaining || values.filter(value => value === username).length !== 1
         || values.filter(value => value === password).length !== 1) return null;
+      if (matched) { fail(); throw new Error('Ambiguous credential call'); }
       if (!leasedSocket(capture, socket, target, true)) return null;
       const writer = new capture.codec.BinaryWriter(128);
       declaration.write.forEach((write, index) => write(writer, values[index]));
       if (!Buffer.from(writer.getBuffer()).equals(Buffer.from(message.value.args))
-        || matched || socket.authPending || socket.invalid) { fail(); throw new Error('Ambiguous credential call'); }
+        || socket.authPending || socket.invalid) { fail(); throw new Error('Ambiguous credential call'); }
       const changed = patch(values, declaration.names.map(name => ({ name })));
       if (!changed) return null;
       const args = JSON.parse(changed.body) as unknown[];
