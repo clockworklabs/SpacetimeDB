@@ -69,8 +69,9 @@ One word per thing. The CLI, dashboard, and artifacts use these.
   available as evidence.
 - **passed** and **failed** are measured outcomes; failed is the application's
   fault. **inconclusive** means the harness could not measure the check: no
-  credit, no blame, and the reason is recorded. **blocked** means a prerequisite
-  failed, so the check was not attempted.
+  credit, no blame, and the reason is recorded. **blocked** means no accepted
+  credit because a required feature failed or was blocked. The check may have
+  run and passed in the raw evidence; that does not override the prerequisite.
 - **harness failure** and **provider failure** mean the benchmark or the model
   provider broke; the attempt is **excluded** from comparison data, as is a
   **contaminated** attempt whose agent read grading material.

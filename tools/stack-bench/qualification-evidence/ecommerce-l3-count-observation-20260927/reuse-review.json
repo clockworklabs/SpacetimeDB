@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "f9d81006cb57196e3cf6e4dd49117bfb988132b7",
+  "change": "Poll the same exact visible count within the existing deadline, starting before visibility waiting. Selectors, values, absence behavior, prompts, scoring, fixtures and budgets are unchanged.",
+  "cause": "PG r1/r2 transfer count observed zero during a redraw just 37/21ms after initial visibility. A failure-first Chromium reproduction fails on the former single sample and passes on the bounded observation.",
+  "reuse": "22 selected checks contain43 count steps. Correct first counts take the same path. Missing, duplicate and late counts still fail. Fixed reference/mutation apps, scenarios, defect selections and grading contracts are unchanged. Shared closures change for all four stacks. Prior slices remain applicable with exact validated executable mappings. The null closure also changes: its empty app fails required visibility before the changed count branch, while absence uses an unchanged branch. No new null run is required. Prior reviews remain cumulative.",
+  "sources": [
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js",
+      "sha256": "bb443ed794648663340ebc4145991fa8415c61d7178ca52fe8046eac05814ec0"
+    }
+  ],
+  "validation": {
+    "expected": "Transient redraw within the original deadline passes; persistent missing, duplicate or late rows fail. Native transfers conserve stock; a source-only debit fails the intended stored-state assertion.",
+    "observed": "Real Chromium file passed35/35; no-emit typecheck passed. Saved PG r2 exact source passed3/3, East60 to50 and West40 to50. Correct PG reference passed5/5. Registered transfer defect caught at both intended dbExpectStock assertions, with no collateral, off-assertion, inconclusive or harness outcome. Native resources recovered; zero model calls.",
+    "rerun": "node --test dist/tests/browser-action-executors.test.js; normal run --grade-from saved execution --grade-level 3 --check ecommerce.inventory-operations.warehouse-transfer.2a --no-media; normal qualify-reference --backend postgres --track ecommerce --level 3 --recipe ecommerce.progression-catalog --feature-catalog progression/ecommerce.json --repetitions 1 --mutations --mutation-id transfer-debits-source-without-crediting-existing-destination.",
+    "controls": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/native-verification.json",
+        "sha256": "a8dad421d7999464c12faefcf257a97da44fc1aff7f25134cb9b06374690e50e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/control.json",
+        "sha256": "0eb9a1bac0235e06bc42797695f22a4eb192297ffa2c9e3af544f886f25d3644"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/control.inputs.json",
+        "sha256": "c82322c63ff0e28002d0a8f43e3e4aab4d7b10b926a2f1dc49c9d39df5d20bdc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/control-checkpoint.json",
+        "sha256": "578eb74179134642694af16492e9fa14bc91e2deaef323a235113a01bec4e386"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/replay.log",
+        "sha256": "e3a2ef2fea4040990f2e19a86a375f7b5a58c50ef812de33b238730317264a39"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/control.log",
+        "sha256": "84385235548a67ec8e5869644c6e4d8916c7ac5ca34394d3a87b7da424fd7989"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/scope-review.json",
+        "sha256": "dbfd6132807b4df72df8c63911a659b97fb3a95e85d9e38fe7bb168e27528620"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/browser-red.log",
+        "sha256": "eef0fd71b3d552d4241adebe79523cb489b2afccf0c964e1739327744461231c"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/browser-red.json",
+        "sha256": "c3dcd3431fe362ea79269e57f96f6e3a90bc5b9b519c4d952c0c5b1002fdac6a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/browser-green.log",
+        "sha256": "f14ab984a443a2f2cb645a09159263de60676f999a2b7fc3e42d652b7a97c848"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/browser-green.json",
+        "sha256": "d2981bbaeceb3aad639f632d6c402221b8a3580199093632af7690e5bb1c0bc7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/typecheck.log",
+        "sha256": "7538e9f2fba1450b11ebb2ab12652591ccd59a67f66d3045a30594e0a313807d"
+      }
+    ]
+  },
+  "limits": "Targeted proof plus validated reuse, not a new full qualification. Count matches need not remain stable after their first matching sample. Historical grades remain unchanged. Official immutable build and normal calibration validation remain required."
+}

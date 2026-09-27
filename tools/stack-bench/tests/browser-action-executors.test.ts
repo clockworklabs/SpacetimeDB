@@ -50,6 +50,64 @@ async function run(
   });
 }
 
+// A redraw can settle within the count deadline. Missing rows, lasting duplicates
+// and late results must fail; hidden rows and rows outside the scope do not count.
+test('count observations wait for a rendered list without accepting missing or duplicate rows', async t => {
+  const browser = await chromium.launch({ headless: true });
+  const observations: unknown[] = [];
+  t.after(async () => {
+    await browser.close();
+    if (process.env.STACK_BENCH_COUNT_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_COUNT_EVIDENCE,
+        JSON.stringify({ browser: browser.version(), observations }, null, 2));
+    }
+  });
+  for (const mode of ['delayed', 'missing', 'duplicates', 'late', 'scoped'] as const) {
+    await t.test(mode, async () => {
+      const page = await browser.newPage();
+      try {
+        await page.setContent(`<section data-testid="queue">Selected queue<div id="rows"><span data-testid="row">Keyboard</span></div>
+          <span data-testid="row" hidden>Keyboard hidden</span></section>
+          <section data-testid="queue">Other queue<span data-testid="row">Keyboard outside</span></section>`);
+        let redrawStarted = false;
+        const actor = { page, loc: () => {
+          const locator = page.locator('[data-testid="queue"]').filter({ hasText: 'Selected queue' })
+            .locator('[data-testid="row"]').filter({ visible: true }).first();
+          return new Proxy(locator, { get(target, key) {
+            if (key === 'waitFor') return async (options: Parameters<typeof locator.waitFor>[0]) => {
+              await target.waitFor(options);
+              if (redrawStarted) return;
+              redrawStarted = true;
+              // Place the real DOM redraw between visibility and observation deterministically.
+              await page.evaluate(mode => {
+                const rows = document.querySelector('#rows')!;
+                if (mode === 'scoped') return;
+                rows.innerHTML = mode === 'duplicates'
+                  ? '<span data-testid="row">Keyboard</span><span data-testid="row">Keyboard</span>' : '';
+                if (mode === 'delayed' || mode === 'late') setTimeout(() => {
+                  rows.innerHTML = '<span data-testid="row">Keyboard</span>';
+                }, mode === 'delayed' ? 100 : 1500);
+              }, mode);
+            };
+            const value = Reflect.get(target, key);
+            return typeof value === 'function' ? value.bind(target) : value;
+          } });
+        } };
+        const started = Date.now();
+        const result = await run({ do: 'expect', actor: 'a', testid: 'row', count: 1,
+          in: { testid: 'queue', contains: 'Selected queue' }, within: 600 }, services(actor, {
+          browser: { sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
+        }));
+        observations.push({ mode, elapsedMs: Date.now() - started, status: result.status,
+          finding: result.finding ?? null, summary: result.summary ?? null });
+        assert.equal(result.status, mode === 'delayed' || mode === 'scoped' ? 'passed' : 'failed', result.summary ?? mode);
+        if (mode === 'missing' || mode === 'duplicates' || mode === 'late') assert.equal(result.finding?.kind, 'count-mismatch');
+      } finally { await page.close(); }
+    });
+  }
+});
+
 test('script canary detects execution after DOM removal and rejects missing observers', async () => {
   const browser = await chromium.launch({ headless: true });
   try {

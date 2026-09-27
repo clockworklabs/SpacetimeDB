@@ -406,6 +406,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     return { absent: true };
   }
 
+  const countDeadline = Date.now() + within;
   const visible = await loc.waitFor({ state: 'visible', timeout: within })
     .then(() => true).catch(error => {
       if (errorField(error, 'name') !== 'TimeoutError') throw error;
@@ -424,8 +425,12 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       : (contains
         ? actor.page.locator(browser.testId(input.testid), { hasText: contains })
         : actor.page.locator(browser.testId(input.testid)));
-    const count = visible ? await all.filter({ visible: true }).count() : 0;
-    if (input.count !== undefined && count !== input.count) {
+    let count = await all.filter({ visible: true }).count();
+    while (count !== input.count && Date.now() < countDeadline) {
+      await browser.sleep(Math.min(250, countDeadline - Date.now()), signal);
+      count = await all.filter({ visible: true }).count();
+    }
+    if (count !== input.count) {
       fail('count-mismatch', { control: input.testid, expected: input.count, observed: count,
         ...(contains ? { matchingText: findingText(contains) } : {}) });
     }
