@@ -211,6 +211,93 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   changedReference.references.entries.find(item => item.backend === 'postgres')!.sourceSha256 = 'f'.repeat(64);
   assert.throws(() => validateQualificationSlice(artifact, entry,
     { ...context, calibration: changedReference }), /source references differs/);
+  // Failure cases before implementation: only an exact, evidenced reference
+  // source pair may reuse named unchanged checks. It cannot excuse a changed
+  // scenario, mutation, fixture, policy, or an unreviewed reference identity.
+  const sourceReference = plan.references.entries.find(item => item.backend === 'postgres')!;
+  const referenceReview = {
+    stack: 'postgres', referenceId: sourceReference.id,
+    fromSourceSha256: sourceReference.sourceSha256, toSourceSha256: 'f'.repeat(64),
+    checks: [...entry.slice!.checks],
+  };
+  const referencePlan = structuredClone(changedReference);
+  const referenceReuse = referencePlan.qualificationReuse!;
+  referenceReuse.referenceSourceEquivalences = [referenceReview];
+  referenceReuse.rationale = 'Only support submission receipt UI changed; this review check is unchanged.';
+  referenceReuse.evidence = [{ path: reviewPath, sha256: sha256(readFileSync(reviewPath)) }];
+  const referenceContext = { ...context, calibration: referencePlan, references: referencePlan.references.entries };
+  const referenceManifest = structuredClone(saved.mutations.postgres);
+  referenceManifest.fixtureSha256 = referenceReview.toSourceSha256;
+  writeFileSync(mutationPath, JSON.stringify(referenceManifest));
+  const referenceObservations: Array<{ case: string; outcome: string }> = [];
+  for (const [field, value] of [
+    ['stack', 'mongodb'], ['referenceId', 'different-reference'],
+    ['fromSourceSha256', 'e'.repeat(64)], ['toSourceSha256', 'e'.repeat(64)], ['checks', ['unreviewed']],
+  ] as const) {
+    const bad = structuredClone(referencePlan);
+    const review = bad.qualificationReuse!.referenceSourceEquivalences![0]!;
+    Object.assign(review, { [field]: value });
+    assert.throws(() => validateQualificationSlice(artifact, entry, { ...referenceContext, calibration: bad }), field);
+    referenceObservations.push({ case: `wrong ${field}`, outcome: 'rejected' });
+  }
+  for (const [name, change] of [
+    ['no review', (p: CalibrationPlan) => { delete p.qualificationReuse!.referenceSourceEquivalences; }],
+    ['no evidence', (p: CalibrationPlan) => { p.qualificationReuse!.evidence = []; }],
+    ['tampered evidence', (p: CalibrationPlan) => { p.qualificationReuse!.evidence[0]!.sha256 = 'e'.repeat(64); }],
+    ['empty rationale', (p: CalibrationPlan) => { p.qualificationReuse!.rationale = ''; }],
+    ['changed fixture', (p: CalibrationPlan) => { p.fixture.sourceSha256 = 'e'.repeat(64); }],
+    ['changed policy', (p: CalibrationPlan) => { p.qualification.referenceRepetitions += 1; }],
+    ['changed reference ID', (p: CalibrationPlan) => { p.references.entries.find(r => r.backend === 'postgres')!.id = 'other'; }],
+  ] as const) {
+    const bad = structuredClone(referencePlan); change(bad);
+    assert.throws(() => validateQualificationSlice(artifact, entry,
+      { ...referenceContext, calibration: bad, references: bad.references.entries }), name);
+    referenceObservations.push({ case: name, outcome: 'rejected' });
+  }
+  for (const field of ['setup', 'checkGroups']) {
+    const changed = structuredClone(savedDocuments);
+    const check = changed.release.checkCatalog.find(check => check.stableKey === entry.slice!.checks[0])!;
+    const execution = (changed.execution.execution as Array<Record<string, unknown>>).find(item => item.id === check.executionId)!;
+    execution[field] = [{ changed: true }];
+    assert.throws(() => validateQualificationSlice(artifact, entry,
+      { ...referenceContext, qualificationDocuments: changed }));
+    referenceObservations.push({ case: `changed ${field}`, outcome: 'rejected' });
+  }
+  for (const change of [
+    (m: typeof referenceManifest) => { m.fixtureSha256 = 'e'.repeat(64); },
+    (m: typeof referenceManifest) => { m.mutations = []; },
+  ]) {
+    const changed = structuredClone(referenceManifest); change(changed);
+    writeFileSync(mutationPath, JSON.stringify(changed));
+    assert.throws(() => validateQualificationSlice(artifact, entry, referenceContext));
+  }
+  writeFileSync(mutationPath, JSON.stringify(referenceManifest));
+  const originalArtifact = JSON.stringify(artifact);
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, referenceContext));
+  // Reference coverage may use the same measured positive baseline from this
+  // mutation receipt; both paths must retain the original fixture identity.
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, { ...entry, kind: 'reference' }, referenceContext));
+  assert.equal(JSON.stringify(artifact), originalArtifact);
+  referenceObservations.push({ case: 'exact source pair and unchanged check', outcome: 'accepted' });
+  const definition = JSON.parse(readFileSync(path, 'utf8'));
+  definition.qualificationReuse = referenceReuse;
+  assert.doesNotThrow(() => compileCalibrationDefinition(definition));
+  for (const change of [
+    (r: typeof referenceReview) => { r.checks = []; },
+    (r: typeof referenceReview) => { r.checks.push(r.checks[0]!); },
+    (r: typeof referenceReview) => { r.fromSourceSha256 = r.toSourceSha256; },
+    (r: typeof referenceReview) => { r.toSourceSha256 = 'invalid'; },
+  ]) {
+    const bad = structuredClone(definition); change(bad.qualificationReuse.referenceSourceEquivalences[0]);
+    assert.throws(() => compileCalibrationDefinition(bad));
+  }
+  if (process.env.STACK_BENCH_SLICE_EVIDENCE) {
+    const proof = JSON.parse(readFileSync(process.env.STACK_BENCH_SLICE_EVIDENCE, 'utf8'));
+    proof.referenceSourceReview = { review: referenceReview, observations: referenceObservations,
+      sourceArtifactUnchanged: sha256(originalArtifact) === sha256(JSON.stringify(artifact)) };
+    writeFileSync(process.env.STACK_BENCH_SLICE_EVIDENCE, JSON.stringify(proof, null, 2));
+  }
+  writeFileSync(mutationPath, JSON.stringify(saved.mutations.postgres));
   const unrelatedReference = structuredClone(plan);
   unrelatedReference.references.entries.find(item => item.backend === 'spacetime')!.sourceSha256 = 'f'.repeat(64);
   assert.doesNotThrow(() => validateQualificationSlice(artifact, entry,

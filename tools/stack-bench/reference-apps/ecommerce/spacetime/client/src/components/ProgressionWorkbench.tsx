@@ -67,6 +67,7 @@ export default function ProgressionWorkbench(props: Props) {
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSubmission, setSupportSubmission] = useState<{ subject: string; afterId: bigint } | null>(null);
   const [triageByTicket, setTriageByTicket] = useState<Record<string, { assignee: string; priority: string; status: string }>>({});
+  const [supportSubmitState, setSupportSubmitState] = useState<Record<string, string>>({});
   const [replyByTicket, setReplyByTicket] = useState<Record<string, string>>({});
   const [orderByTicket, setOrderByTicket] = useState<Record<string, string>>({});
   const [catalog, setCatalog] = useState({ name: '', category: '', price: '', variants: '' });
@@ -152,7 +153,7 @@ export default function ProgressionWorkbench(props: Props) {
             status: ticket.status,
           };
           return (
-            <article className="feature-row" data-role="support-ticket" data-entity-id={key} data-refund-input={actionInput} key={key}>
+            <article className="feature-row" data-role="support-ticket" data-submit-state={supportSubmitState[key] ?? 'idle'} data-entity-id={key} data-refund-input={actionInput} key={key}>
               <strong>{ticket.subject}</strong>
               <span>{ticket.reference}</span>
               <span data-role="support-status">{ticket.status}</span>
@@ -161,12 +162,21 @@ export default function ProgressionWorkbench(props: Props) {
                   <input data-role="support-assignee" value={triage.assignee} onChange={event => setTriageByTicket(current => ({ ...current, [key]: { ...triage, assignee: value(event) } }))} />
                   <input data-role="support-priority" value={triage.priority} onChange={event => setTriageByTicket(current => ({ ...current, [key]: { ...triage, priority: value(event) } }))} />
                   <input data-role="support-status-input" value={triage.status} onChange={event => setTriageByTicket(current => ({ ...current, [key]: { ...triage, status: value(event) } }))} />
-                  <button className="btn btn-ghost btn-sm" data-role="support-update" onClick={() => reducers?.triageSupport({
-                    ticketId: ticket.id,
-                    assigneeId: staffRoles.find(row => row.username === triage.assignee)?.accountId ?? 0n,
-                    priority: triage.priority,
-                    status: triage.status,
-                  })}>Update</button>
+                  <button className="btn btn-ghost btn-sm" data-role="support-update" disabled={supportSubmitState[key] === 'pending'} onClick={async () => {
+                    setSupportSubmitState(current => ({ ...current, [key]: 'pending' }));
+                    try {
+                      if (!reducers) throw new Error('Not connected');
+                      await reducers.triageSupport({
+                        ticketId: ticket.id,
+                        assigneeId: staffRoles.find(row => row.username === triage.assignee)?.accountId ?? 0n,
+                        priority: triage.priority,
+                        status: triage.status,
+                      });
+                      setSupportSubmitState(current => ({ ...current, [key]: 'succeeded' }));
+                    } catch {
+                      setSupportSubmitState(current => ({ ...current, [key]: 'failed' }));
+                    }
+                  }}>Update</button>
                 </>
               )}
               {isSignedIn && orders.map(order => (

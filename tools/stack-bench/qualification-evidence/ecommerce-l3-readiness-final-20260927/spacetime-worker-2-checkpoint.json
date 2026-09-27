@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T09-27-24-897Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T09-27-24-897Z",
+    "parentId": "ecommerce-spacetime-run61-20260927092649-b847faee"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T09:27:24.897Z",
+    "completedAt": "2026-09-27T09:29:41.892Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 136995,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-iei2f5/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-iei2f5/selected-mutations.json",
+    "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-stock-alerts.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 2,
+      "mutationIds": [
+        "stock-alert-is-sent-after-every-restock"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime-controls.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "6f8fff0f5a0d0a5166437693aabbf120e9dae3fb2433beac618876f67c30a584"
+      },
+      "total": 3,
+      "max": 3,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "identitySha256": "a34f0749b96e658695f42ea357dda86f9701b6efa31947a77d96090cdc6f9cb1",
+          "total": 3,
+          "max": 3
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "stock-alert-is-sent-after-every-restock",
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 631,
+            "criterion": "631a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "2 stock-alert-delivery entries shown, expected 1",
+            "failedAction": "expectElementCount",
+            "key": "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8",
+      "recipeSha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a",
+      "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+      "calibrationSha256": "4c43ef267f7e0c2dc4584ea7312133159bccea97ce546abbb5ee3caf50b74338",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 2,
+        "mutationIds": [
+          "stock-alert-is-sent-after-every-restock"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "scenarioSha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9",
+          "mutationSha256": "1049847bbe1d7fbea5a11c7d210ff531e38a05943eed167767ca9811670bfa5b",
+          "selectionSha256": "e5a777f4f07173d3eb5a140677d89b231e1031c327d31a7798c0d9f515eaf216",
+          "identitySha256": "a34f0749b96e658695f42ea357dda86f9701b6efa31947a77d96090cdc6f9cb1",
+          "mutationIds": [
+            "stock-alert-is-sent-after-every-restock"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 60,
+      "updatedAt": "2026-09-27T09:29:41.892Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "mutationId": "stock-alert-is-sent-after-every-restock",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-1Fu2Qi/grade.json",
+          "sha256": "23b0ca05328ee4fd341868a38128f61058946acff93b4b9a5458213a8f1c5382"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

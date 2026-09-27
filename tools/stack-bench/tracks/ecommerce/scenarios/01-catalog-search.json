@@ -10,7 +10,7 @@
       "name": "Public catalog search",
       "actors": ["visitor"],
       "setup": [
-        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "search-input" }
       ],
       "criteria": [
         {

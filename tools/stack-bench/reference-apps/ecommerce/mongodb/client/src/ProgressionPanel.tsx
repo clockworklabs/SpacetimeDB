@@ -63,13 +63,15 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const act = async (path: string, options: RequestInit = {}) => {
+  const act = async (path: string, options: RequestInit = {}, onComplete?: (state: "succeeded" | "failed") => void) => {
     setError("");
     try {
       const result = await request(path, token, options);
+      onComplete?.("succeeded");
       await refresh();
       return result;
     } catch (err: any) {
+      onComplete?.("failed");
       setError(err.message);
       return null;
     }
@@ -166,6 +168,7 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
 }
 
 function SupportTicket({ ticket, user, orders, act }: any) {
+  const [submitState, setSubmitState] = useState("idle");
   const [assignee, setAssignee] = useState(ticket.assignee || "");
   const [priority, setPriority] = useState(ticket.priority || "normal");
   const [status, setStatus] = useState(ticket.status || "new");
@@ -174,16 +177,19 @@ function SupportTicket({ ticket, user, orders, act }: any) {
   const staff = user?.isStaff || user?.isAdmin;
   const order = ticket.order;
   const actionInput = JSON.stringify({ caseId: ticket.id, orderId });
-  return <article data-role="support-ticket" data-entity-id={ticket.id} data-refund-input={JSON.stringify({caseId: ticket.id})} className="support-ticket">
+  return <article data-role="support-ticket" data-submit-state={submitState} data-entity-id={ticket.id} data-refund-input={JSON.stringify({caseId: ticket.id})} className="support-ticket">
     <strong>{ticket.subject}</strong> <span data-role="support-status">{ticket.status}</span>
     <span>{ticket.reference}</span>
     {staff && <>
       <input data-role="support-assignee" value={assignee} onChange={event => setAssignee(event.target.value)} placeholder="Assignee" />
       <input data-role="support-priority" value={priority} onChange={event => setPriority(event.target.value)} placeholder="Priority" />
       <input data-role="support-status-input" value={status} onChange={event => setStatus(event.target.value)} placeholder="Status" />
-      <button data-role="support-update" className="btn btn-ghost" onClick={() => act(`/api/progression/support/${ticket.id}`, {
-        method: "PATCH", body: JSON.stringify({ assignee, priority, status }),
-      })}>Update</button>
+      <button data-role="support-update" className="btn btn-ghost" disabled={submitState === "pending"} onClick={() => {
+        setSubmitState("pending");
+        void act(`/api/progression/support/${ticket.id}`, {
+          method: "PATCH", body: JSON.stringify({ assignee, priority, status }),
+        }, setSubmitState);
+      }}>Update</button>
     </>}
     {!order && !staff && <div>
       {(orders || []).map((entry: any) => <button key={entry.id} data-role="support-order-option"

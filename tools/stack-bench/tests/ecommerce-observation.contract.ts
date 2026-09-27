@@ -155,8 +155,12 @@ test('stock alerts use ready fresh account views after accepted restocks', () =>
       for (const [index, step] of criterion.steps.entries()) {
         if (step.testid !== 'notifications-toggle') continue;
         assert.equal(step.unlessVisible, 'notifications-panel');
-        assert.equal(criterion.steps[index - 2]!.do, 'freshClient');
-        assert.equal(criterion.steps[index - 1]!.do, 'signIn');
+        const before = criterion.steps.slice(0, index);
+        const fresh = before.findLastIndex(candidate => candidate.do === 'freshClient'
+          && `${candidate.actor}-fresh` === step.actor);
+        assert(fresh >= 0);
+        assert(before.slice(fresh + 1).some(candidate => candidate.do === 'signIn'
+          && candidate.actor === step.actor));
         assert.equal(criterion.steps[index + 1]!.attribute, 'aria-busy');
         assert.equal(criterion.steps[index + 1]!.value, 'false');
       }
@@ -269,18 +273,18 @@ test('role revocation proves authorization before testing the same session after
   const calls = steps.filter(s => s.do === 'replayAs');
   assert.deepEqual(calls.map(s => [s.actor, Array.isArray(s.namedAction?.args) ? s.namedAction.args[1] : undefined]), [
     ['roleAdmin', 'admin'], ['promotedStaff', 'admin'],
-    ['roleAdmin', 'staff'], ['promotedStaff', 'admin'],
+    ['roleAdmin', 'staff'], ['promotedStaff', 'inventory'],
   ]);
   const positive = steps.findIndex(s => s.do === 'expectReplayCompleted' && s.actor === 'promotedStaff');
   for (const call of calls.filter(s => s.actor === 'promotedStaff')) {
-    assert.equal((call.namedTarget as { testid: string }).testid, 'staff-role-account-staff');
+    assert.equal((call.namedTarget as { testid: string }).testid, 'staff-role-account-admin');
   }
   const negative = steps.findIndex(s => s.do === 'expectReplayRejected' && s.actor === 'promotedStaff');
   assert(positive > login && negative > positive);
   assert.equal(steps[positive]!.requireAccepted, true);
   assert(steps.slice(positive, negative).some(s => s.do === 'expect' && s.value === 'staff'));
   assert.equal(steps[negative + 1]!.do, 'reload');
-  assert.equal(steps.at(-1)!.value, 'staff');
+  assert.equal(steps.at(-1)!.value, 'admin');
   assert.equal(steps.at(-1)!.actor, 'roleAdmin');
 });
 

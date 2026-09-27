@@ -1,0 +1,291 @@
+{
+  "kind": "qualification_selection_plan",
+  "status": "not_executed",
+  "selectedKeys": [
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b"
+  ],
+  "rows": [
+    {
+      "stack": "spacetime",
+      "selectedKeys": [
+        "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+      ],
+      "controls": [
+        {
+          "id": "stock-alert-delivery-is-suppressed",
+          "targets": [
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+          ]
+        },
+        {
+          "id": "stock-alert-is-sent-after-every-restock",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+          ]
+        },
+        {
+          "id": "stock-alerts-are-visible-to-other-customers",
+          "targets": [
+            "ecommerce.spec.access-control.stock-alert-privacy.631b"
+          ]
+        }
+      ],
+      "count": 3
+    },
+    {
+      "stack": "postgres",
+      "selectedKeys": [
+        "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+        "ecommerce.spec.access-control.stock-alert-privacy.631b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "controls": [
+        {
+          "id": "unauthenticated-direct-purchase-uses-default-account",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "stock-alert-delivery-is-suppressed",
+          "targets": [
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+          ]
+        },
+        {
+          "id": "stock-alert-is-sent-after-every-restock",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+          ]
+        },
+        {
+          "id": "progression-stock-alerts-leak-across-accounts",
+          "targets": [
+            "ecommerce.spec.access-control.stock-alert-privacy.631b"
+          ]
+        },
+        {
+          "id": "tampered-session-can-purchase",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "purchase-trusts-cross-origin-cookie",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "signout-keeps-session",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "progression-revenue-double-counts-orders",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.books-balance.107a"
+          ]
+        },
+        {
+          "id": "revenue-aggregation-truncates-order-population",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.books-balance.107a"
+          ]
+        }
+      ],
+      "count": 11
+    },
+    {
+      "stack": "mongodb",
+      "selectedKeys": [
+        "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+        "ecommerce.spec.access-control.stock-alert-privacy.631b",
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "controls": [
+        {
+          "id": "unauthenticated-purchase-defaults-to-admin",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "stock-alert-delivery-is-suppressed",
+          "targets": [
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+          ]
+        },
+        {
+          "id": "stock-alert-repeats-while-in-stock",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+          ]
+        },
+        {
+          "id": "stock-alerts-are-not-owner-scoped",
+          "targets": [
+            "ecommerce.spec.access-control.stock-alert-privacy.631b"
+          ]
+        },
+        {
+          "id": "tampered-session-can-purchase",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "tampered-session-commits-then-refuses",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "signout-keeps-session",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        },
+        {
+          "id": "rejected-query-login-creates-order",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ]
+        }
+      ],
+      "count": 10
+    },
+    {
+      "stack": "convex",
+      "selectedKeys": [
+        "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+      ],
+      "controls": [
+        {
+          "id": "stock-alert-delivery-is-suppressed",
+          "targets": [
+            "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+          ]
+        },
+        {
+          "id": "stock-alerts-are-not-owner-scoped",
+          "targets": [
+            "ecommerce.spec.access-control.stock-alert-privacy.631b"
+          ]
+        },
+        {
+          "id": "stock-alert-repeats-while-in-stock",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+          ]
+        }
+      ],
+      "count": 3
+    }
+  ],
+  "totalRegisteredControls": 27,
+  "nullKeys": [
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b",
+    "ecommerce.spec.transactional-integrity.books-balance.107a"
+  ],
+  "unpromoted": [
+    "501a",
+    "501b"
+  ],
+  "sources": [
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sha256": "449f64edf3c987b2fbd300f2af82828c43a22da2bdfed0eac27a7cf2092c2626"
+    },
+    {
+      "path": "src/composition/definition-compiler.ts",
+      "sha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/accounts.md",
+      "sha256": "efb892a75a65debd138c329f61603fff564e9d056597ff11e2c7a354bc3ccfde"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/App.tsx",
+      "sha256": "496408166c715a9ac23aad94da6d657596d6477fbb6937397071e9499ef97c43"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/request.ts",
+      "sha256": "b03b4554b25d8e66cc03fdc4ea27aa6522ee37b5a52738fc0f7244a5396c28b5"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/App.tsx",
+      "sha256": "2cb7ff02d81e2c934c677be88fbf95f9b0bde2bb7d9d0eb552e1199696af0af9"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/request.ts",
+      "sha256": "c26ff6caa6598e929d88a1eab07493b4e8a822062fe7ec9bcd98c3d9e3af8a11"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "sha256": "b58c38ad7afd8c7ee984bdae953b26020c5189164e95c367e8a5301d03f56226"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "sha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9"
+    }
+  ],
+  "rationale": {
+    "notification": "Three promoted scenario checks changed. Qualify their positive baseline and all registered controls across four stacks, plus their three null checks. Delivery 501a/b remains outside the 112-key calibration.",
+    "auth": "Only PG/Mongo reference hook implementations changed. 101a exercises valid direct auth, refusal, tampering, logout and restored login; qualify these two references and every registered 101a defect. STDB/Convex hooks and shared credential code are unchanged.",
+    "body": "The four real HTTP helper tests cover complete JSON, complete empty/non-JSON, refusals and truncated bodies. Require green 20/20 after red 16/20. Normal reference execution above covers the root API paths; existing complete-response support/control artifacts may be reused after exact source review because completed response semantics and defect edits do not change.",
+    "reuse": "Retain unaffected exact scenario/check/setup/fixture/budget slices only through existing validator. Use exact PG/Mongo source pairs for helper/hook changes; preserve fresh catalog/support source snapshot and reports. All executable transitions need reviewed file-diff evidence, including null. Bind the new account interface text by exact task pairs for unchanged model-free behavior, not historical model-score equivalence.",
+    "browser": "Array unlessVisible is any-visible. Existing strings normalize to one entry and retain visibility, detached-read retry, click count and deadline behavior. Run existing browser/navigation tests and new inline/settings/missing/leak/duplicate controls; no separate broad qualification.",
+    "limits": "No blanket security or model cohort equivalence. Missing token hook remains an interface ambiguity in historical apps. Shared storage inference remains unchanged for chat. Supabase remains unqualified. The numeric-reader scope below is provisional until its failure-first browser controls pass and the final inputs are frozen."
+  },
+  "numericRead": {
+    "representativeKey": "ecommerce.spec.transactional-integrity.books-balance.107a",
+    "stack": "postgres",
+    "extraNativePurchases": 3000,
+    "setupPurchasesPerExecution": 1000,
+    "extraReferenceExecutions": 1,
+    "extraDefectExecutions": 2,
+    "nullKeys": [
+      "ecommerce.spec.transactional-integrity.books-balance.107a"
+    ],
+    "rationale": "107a compares actual revenue through expectNumber after 1000 accepted native purchases; its two mutants expose wrong numbers at this assertion. 107b first checks native warehouse effects, so its stock mutants do not directly qualify the changed reader. The shared reader is stack-neutral DOM code; real Chromium controls cover scoped redraw, deadline expiry, permanently wrong values, and text/input/select/textarea value forms. Reuse other exact scopes with reviewed executable mappings; do not rerun every numeric check.",
+    "scope": "Optional remaining timeout is supplied only by expectNumber. Other readValue callers retain default timeout and value semantics. Deadline covers initial visible wait plus value reads and polling, not one new budget per phase.",
+    "cost": "One extra full 1000-purchase positive plus two 1000-purchase deliberate defects; no model calls. No wall-time promise without current measurements."
+  }
+}

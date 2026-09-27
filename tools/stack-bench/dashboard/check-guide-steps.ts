@@ -23,7 +23,7 @@ const meanings: Record<string, (s: GuideStep) => string> = {
   signUp: s => `${actor(s)}register ${q(s.name)}${s.password ? ' with the specified test password' : ''}.`,
   signIn: s => `${actor(s)}sign in as ${q(s.name)}${s.exact ? ' using the exact seeded account name' : ''}.`,
   ensureSignedIn: s => `${actor(s)}keep the current session if it is ready; otherwise sign in as ${q(s.name)}.`,
-  click: s => `${actor(s)}click ${target(s)}${s.ifAvailable ? ' if available' : ''}${s.unlessVisible ? `, unless ${words(s.unlessVisible)} is already visible` : ''}.`,
+  click: s => `${actor(s)}click ${target(s)}${s.ifAvailable ? ' if available' : ''}${s.unlessVisible ? `, unless ${Array.isArray(s.unlessVisible) ? s.unlessVisible.map(words).join(' or ') : words(s.unlessVisible)} is already visible` : ''}.`,
   openItem: s => `${actor(s)}open the product ${q(s.item)}${s.unlessVisible ? ` unless ${words(s.unlessVisible)} is already visible` : ''}.`,
   fill: s => `${actor(s)}set ${target(s)} to ${q(s.text)}${s.enter ? ' and press Enter' : ''}.`,
   pressKey: s => `${actor(s)}press ${q(s.key)}.`,

@@ -5,6 +5,8 @@ import { BundlePanel } from "./BundlePanel";
 import { CreditPanel } from "./CreditPanel";
 import { SubscriptionPanel } from "./SubscriptionPanel";
 
+Object.assign(window, { getSessionToken: () => null });
+
 type Item = { id: number; name: string; price: number; stock: number; purchaseCount: number; category: string; variants?: string[] };
 type Account = { id: number; username: string; isAdmin: boolean; isStaff: boolean } | null;
 type CartLine = { isBundle?: boolean; itemId: number; name: string; price: number; quantity: number; lineTotal: number; expired?: boolean; reservationSeconds?: number };
@@ -39,9 +41,10 @@ async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
+  const text = await res.text();
   let body: any = null;
   try {
-    body = await res.json();
+    body = JSON.parse(text);
   } catch {
     body = null;
   }

@@ -44,7 +44,7 @@
           "actor": "visitor",
           "settleMs": 0
         },
-        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "minimum-price" },
         {
           "do": "fill",
           "actor": "visitor",

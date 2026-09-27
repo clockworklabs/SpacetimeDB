@@ -1,0 +1,421 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T08-49-27-275Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T08-49-27-275Z",
+    "parentId": "ecommerce-mongodb-run47-20260927084900-14bdb18a"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T08:49:27.276Z",
+    "completedAt": "2026-09-27T08:54:42.694Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a2df8bfcc481c060903ee29a325e5badf028f37c0778bc476188aea344552032"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "1ac64fea56d812e96e9063a79f3de12492be27bbad01c6566f51d4520e1ab241"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 315418,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-XSjDvB/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-XSjDvB/selected-mutations.json",
+    "fixtureSha256": "1ac64fea56d812e96e9063a79f3de12492be27bbad01c6566f51d4520e1ab241",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "../tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "../tracks/ecommerce/scenarios/progression-catalog-volume.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 2,
+      "mutationIds": [
+        "catalog-product-name-is-not-published",
+        "faceted-search-ignores-category",
+        "pagination-repeats-first-page",
+        "catalog-truncates-created-population",
+        "catalog-rejects-all-product-writes"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb-controls.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "6ad529de4c4ec45321bae94e636bdbd3d769dd4b954431459784d89e6664feaa"
+      },
+      "total": 11,
+      "max": 11,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-catalog-management.json",
+          "identitySha256": "38ab566df7426235833bcbfcc5554a4326e421114b375787ee0b8290a9190fa4",
+          "total": 4,
+          "max": 4
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-faceted-filters.json",
+          "identitySha256": "fd0f60518dcfdd8cb33e6b667cb3944a9263d0a3555b679dad221218c6bbd8cd",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+          "identitySha256": "cb62af0f8bc7b1d6cc8d2732c494bbf431c6f372e3b37561a7607f0d1f8c8e80",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-catalog-volume.json",
+          "identitySha256": "12e934a0fdcec750f3f6b684bb034038cfac08b4ed77ff39283e18a33bd0ce21",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 5,
+      "completed": 5,
+      "total": 5,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "catalog-product-name-is-not-published",
+        "scenario": "../tracks/ecommerce/scenarios/progression-catalog-management.json",
+        "targets": [
+          "ecommerce.progression.catalog-management.catalog-management.622a",
+          "ecommerce.progression.catalog-management.catalog-management.622b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.catalog-management.catalog-management.622a",
+          "ecommerce.progression.catalog-management.catalog-management.622b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 622,
+            "criterion": "622a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-card control matching \"Travel Mug\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.catalog-management.catalog-management.622a",
+            "expected": true
+          },
+          {
+            "feature": 622,
+            "criterion": "622b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-card control matching \"Travel Mug\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.catalog-management.catalog-management.622b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "faceted-search-ignores-category",
+        "scenario": "../tracks/ecommerce/scenarios/progression-faceted-filters.json",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.401a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.faceted-search.faceted-search.401a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 401,
+            "criterion": "401a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-card control inside the search-results control matching \"Gaming Mouse\" was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.faceted-search.faceted-search.401a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "pagination-repeats-first-page",
+        "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 402,
+            "criterion": "402a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.progression.faceted-search.faceted-search.402a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "catalog-truncates-created-population",
+        "scenario": "../tracks/ecommerce/scenarios/progression-catalog-volume.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 622,
+            "criterion": "622c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "catalog-rejects-all-product-writes",
+        "scenario": "../tracks/ecommerce/scenarios/progression-catalog-volume.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 622,
+            "criterion": "622c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored catalog entries for the created product control reads 0, expected exactly 1",
+            "failedAction": "dbExpectCatalogItem",
+            "key": "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "a2df8bfcc481c060903ee29a325e5badf028f37c0778bc476188aea344552032",
+      "recipeSha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20",
+      "fixtureSha256": "1ac64fea56d812e96e9063a79f3de12492be27bbad01c6566f51d4520e1ab241",
+      "calibrationSha256": "505ae536fffd3a619843dfda0ecdb6e782e08a7c33c8689a4387f71a16678b9d",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 2,
+        "mutationIds": [
+          "catalog-product-name-is-not-published",
+          "faceted-search-ignores-category",
+          "pagination-repeats-first-page",
+          "catalog-truncates-created-population",
+          "catalog-rejects-all-product-writes"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-catalog-management.json",
+          "scenarioSha256": "bb2e031664c6d2c65868ee92d91eef6cbdfc7c40ff2aa0cbcedcf079f7776c36",
+          "mutationSha256": "098509c6921f8447f9590c55dfcba2601012b7d0f2f83c51dcd84f3de3516cd5",
+          "selectionSha256": "7ee2c97174674352505b1e1e7316225d183a26fd90b03d72a7584fec71f1b237",
+          "identitySha256": "38ab566df7426235833bcbfcc5554a4326e421114b375787ee0b8290a9190fa4",
+          "mutationIds": [
+            "catalog-product-name-is-not-published"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-faceted-filters.json",
+          "scenarioSha256": "fcb915b4ff6594f2b4b90fbf684fc79bf3a8831bd3d79eebc2f5dfd3876dddc3",
+          "mutationSha256": "97b7085ede4f0b0ade528c02d055c29d1815e3475a849068f27477f5311a1784",
+          "selectionSha256": "9a4699e656bee1b1fe46093e13dacc5667a1c138296cef98b912aa13ea9172a0",
+          "identitySha256": "fd0f60518dcfdd8cb33e6b667cb3944a9263d0a3555b679dad221218c6bbd8cd",
+          "mutationIds": [
+            "faceted-search-ignores-category"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+          "scenarioSha256": "82d6b3bceca0d4d90671df4f3ad8b8c35ff9e247cb38ea34b5d63250bd2ef67b",
+          "mutationSha256": "6a4360b0d2150238c34674da54843f285d2a6e0296766574b09ddb8a59d09b70",
+          "selectionSha256": "19e283cd503dba6c6746a112bf504f066be0a7461a32854bac18be3aedc45f54",
+          "identitySha256": "cb62af0f8bc7b1d6cc8d2732c494bbf431c6f372e3b37561a7607f0d1f8c8e80",
+          "mutationIds": [
+            "pagination-repeats-first-page"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-catalog-volume.json",
+          "scenarioSha256": "9ccd8e21dbf9a635ce25c864d543f970f46d5088d063dc585a152fa1af654f12",
+          "mutationSha256": "4786e40331b84266b85121a45e2bf39002c38f0fa091032c8e5e764248b0ded2",
+          "selectionSha256": "1a29fbf15d65319a0c3db83b892a0bddc6c794db7cf1badc36267ff5e6615622",
+          "identitySha256": "12e934a0fdcec750f3f6b684bb034038cfac08b4ed77ff39283e18a33bd0ce21",
+          "mutationIds": [
+            "catalog-truncates-created-population",
+            "catalog-rejects-all-product-writes"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 60,
+      "updatedAt": "2026-09-27T08:54:42.694Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-catalog-management.json",
+        "mutationId": "catalog-product-name-is-not-published",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-C5semN/grade.json",
+          "sha256": "002c56b9a393f2f441508703fd2c33d7f0ef38ef1cb951580390675a56f3f973"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-faceted-filters.json",
+        "mutationId": "faceted-search-ignores-category",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-FdgoOr/grade.json",
+          "sha256": "3fc3efbb41b22c8057f6310cc7b38eb6f4648ae32349d2a15fe353194ecb6e60"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+        "mutationId": "pagination-repeats-first-page",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-5fINgy/grade.json",
+          "sha256": "ddb9189c9e6c3f9039981f3e2574a98a980df059a6cad36f862dd966f7ce8a9f"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-catalog-volume.json",
+        "mutationId": "catalog-truncates-created-population",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-kguYtB/grade.json",
+          "sha256": "74e10af51ea6751f45e837f8699d5f4ce099df2f8fed2907cf89a9b2b16b57d0"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-catalog-volume.json",
+        "mutationId": "catalog-rejects-all-product-writes",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-1z4baE/grade.json",
+          "sha256": "52af6de1fe52ce901fc76c17056d824af462de032aea83cc7a1ac1c73d334e7f"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

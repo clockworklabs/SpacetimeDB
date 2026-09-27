@@ -34,11 +34,23 @@ function* eachStep(steps: readonly CompiledStep[]): Generator<CompiledStep> {
 function missingNames(steps: readonly CompiledStep[], delivered: string,
   applicationInterface: string, track: Track): string[] {
   const missing = new Set<string>();
+  const roleIds = new Set<string>();
+  if (delivered.includes('`staff-role-account-`') && delivered.includes('`encodeURIComponent(username)`')) {
+    for (const step of eachStep(steps)) {
+      if (['signIn', 'ensureSignedIn'].includes(step.do) && step.exact === true && typeof step.name === 'string') {
+        roleIds.add(`staff-role-account-${encodeURIComponent(step.name)}`);
+      }
+    }
+  }
   const needs = (kind: string, name: string | undefined): void => {
-    if (name && !delivered.includes(name)) missing.add(`${kind} ${name}`);
+    if (name && !delivered.includes(name) && !(kind === 'control' && roleIds.has(name))) {
+      missing.add(`${kind} ${name}`);
+    }
   };
   for (const step of eachStep(steps)) {
-    for (const control of [step.testid, step.unlessVisible as string | undefined, step.in?.testid,
+    for (const control of [step.testid,
+      ...(Array.isArray(step.unlessVisible) ? step.unlessVisible as string[] : [step.unlessVisible as string | undefined]),
+      step.in?.testid,
       (step.namedTarget as { testid?: string } | undefined)?.testid,
       (step.input as { testid?: string } | undefined)?.testid]) needs('control', control);
     for (const attribute of [(step.input as { attribute?: string } | undefined)?.attribute,

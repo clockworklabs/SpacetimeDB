@@ -26,6 +26,7 @@ export function ProgressionPanel({
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "90" });
   const [reply, setReply] = useState<Record<number, string>>({});
   const [supportOrders, setSupportOrders] = useState<Record<number, number>>({});
+  const [supportSubmitState, setSupportSubmitState] = useState<Record<number, string>>({});
   const [triage, setTriage] = useState<Record<number, {
     assignee: string; priority: string; status: string;
   }>>({});
@@ -96,7 +97,7 @@ export function ProgressionPanel({
           const update = (field: keyof typeof draft, value: string) =>
             setTriage((current) => ({ ...current,
               [entry.id]: { ...draft, [field]: value } }));
-          return <div data-role="support-ticket" data-entity-id={entry.id} data-refund-input={JSON.stringify({caseId: entry.id})} key={entry.id}>
+          return <div data-role="support-ticket" data-submit-state={supportSubmitState[entry.id] ?? "idle"} data-entity-id={entry.id} data-refund-input={JSON.stringify({caseId: entry.id})} key={entry.id}>
           <strong data-role="support-reference">{entry.reference}</strong>
           <span>{entry.subject}</span>
           <span data-role="support-status">{entry.status}</span>
@@ -111,8 +112,18 @@ export function ProgressionPanel({
               onChange={(event) => update("status", event.target.value)}>
               <option>new</option><option>open</option><option>in progress</option><option>resolved</option>
             </select>
-            <button data-role="support-update" onClick={() => run(() =>
-              request(`/api/support/cases/${entry.id}`, "PUT", draft))}>Update</button>
+            <button data-role="support-update" disabled={supportSubmitState[entry.id] === "pending"} onClick={() => {
+              setSupportSubmitState(current => ({ ...current, [entry.id]: "pending" }));
+              void run(async () => {
+                try {
+                  await request(`/api/support/cases/${entry.id}`, "PUT", draft);
+                  setSupportSubmitState(current => ({ ...current, [entry.id]: "succeeded" }));
+                } catch (error) {
+                  setSupportSubmitState(current => ({ ...current, [entry.id]: "failed" }));
+                  throw error;
+                }
+              });
+            }}>Update</button>
           </>}
           {account && orders.map((order) => <button data-role="support-order-option" key={order.id}
             onClick={() => setSupportOrders({ ...supportOrders, [entry.id]: order.id })}>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
@@ -126,18 +126,28 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
     for (const [id, mode, layout, expectedFailure] of [
       ['631c', 'transition', 'inline', null],
       ['631c', 'transition', 'inline-loading', null],
+      ['631c', 'transition', 'inline-no-toggle', null],
       ['631c', 'transition', 'modal', null],
       ['631c', 'transition', 'page', null],
+      ['631c', 'transition', 'settings-page', null],
+      ['631c', 'transition', 'settings-toggle', null],
+      ['631c', 'transition', 'catalog-settings', null],
+      ['631c', 'transition', 'settings-noop', 'click/before-restock'],
+      ['631c', 'transition', 'no-controls', 'click/before-restock'],
       ['631c', 'pending', 'page', 'expect/after-restock'],
       ['631c', 'premature', 'page', 'expectElementCount/before-restock'],
       ['631a', 'transition', 'inline', null],
       ['631a', 'transition', 'modal', null],
       ['631a', 'transition', 'page', null],
+      ['631a', 'transition', 'settings-page', null],
       ['631a', 'pending', 'page', 'expectElementCount/before-restock'],
       ['631a', 'duplicate', 'page', 'expectElementCount/after-restock'],
+      ['631a', 'duplicate', 'settings-page', 'expectElementCount/after-restock'],
       ['631b', 'private', 'page', null],
+      ['631b', 'private', 'settings-page', null],
       ['631b', 'pending', 'page', 'expect/before-restock'],
       ['631b', 'leak', 'page', 'expect/before-restock'],
+      ['631b', 'leak', 'settings-page', 'expect/before-restock'],
     ] as const) {
       const contexts: BrowserContext[] = [];
       const deliveries = mode === 'premature' || id !== '631c' && mode !== 'pending' ? 1 : 0;
@@ -149,6 +159,8 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
       let readsAfterRestock = 0;
       let freshClients = 0;
       let waitMs = 0;
+      const navigation = { catalog: 0, settings: 0, toggle: 0 };
+      const observations: { action: string; actor?: string; control?: string; status: string; summary: string | null }[] = [];
       const actors = new Map<string, { name: string; page: Page; context: BrowserContext; record(): void;
         writes: { url: string; headers: { authorization: string } }[];
         loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string | RegExp } }) => ReturnType<Page['locator']> }>();
@@ -157,6 +169,7 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
           const context = await browser.newContext();
           contexts.push(context);
           const page = await context.newPage();
+          await page.exposeFunction('recordNavigation', (control: keyof typeof navigation) => { navigation[control]++; });
           await page.exposeFunction('readNotifications', async (user: string) => {
             assert.equal(pendingWrite, false, 'the driver must await the write before its fresh read');
             if (layout === 'inline-loading') await new Promise(resolve => setTimeout(resolve, 30));
@@ -167,7 +180,8 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
           await context.route('http://app.test/**', route => route.fulfill({ contentType: 'text/html', body: `<form id="signin">
             <input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button>
             </form><strong id="current-user" hidden></strong>
-            <button id="notifications-toggle">Notifications</button><button id="catalog-link">Catalog</button>
+            <button id="notifications-toggle" ${layout.startsWith('settings-') || ['catalog-settings', 'no-controls', 'inline-no-toggle'].includes(layout) ? 'hidden' : ''}>Notifications</button><button id="catalog-link">Catalog</button>
+            <button id="notification-settings" ${['catalog-settings', 'no-controls'].includes(layout) ? 'hidden' : ''}>Settings</button>
             ${layout === 'modal' ? '<button id="overlay-close" hidden>Close</button>' : ''}
             <section id="notifications" data-role="notifications-panel" aria-busy="true" style="min-height:24px" hidden>Loading</section>
             <div data-role="admin-location-row" data-restock-input='{"itemId":1,"warehouseId":2,"quantity":1}'>Air Purifier East</div>
@@ -187,17 +201,25 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
               }
               document.querySelector('#signin').onsubmit = async event => {
                 event.preventDefault(); current.textContent = document.querySelector('#signin-username').value;
-                if (${layout === 'inline'}) await open();
+                if (${layout === 'inline' || layout === 'inline-no-toggle'}) await open();
                 if (${layout === 'inline-loading'}) void open();
                 current.hidden = false;
               };
               document.querySelector('#notifications-toggle').onclick = () => {
+                window.recordNavigation('toggle');
                 document.body.dataset.toggleClicked = 'true';
                 if (panel.hidden) return open();
                 panel.hidden = true;
               };
               document.querySelector('#catalog-link').onclick = () => {
+                window.recordNavigation('catalog');
+                if (${layout === 'catalog-settings'}) document.querySelector('#notification-settings').hidden = false;
                 if (${!layout.startsWith('inline')}) panel.hidden = true;
+              };
+              document.querySelector('#notification-settings').onclick = () => {
+                window.recordNavigation('settings');
+                if (${layout === 'settings-toggle'}) document.querySelector('#notifications-toggle').hidden = false;
+                if (${layout === 'settings-page' || layout === 'catalog-settings'}) return open();
               };
               document.querySelector('#overlay-close')?.addEventListener('click', event => {
                 panel.hidden = true; event.target.hidden = true;
@@ -256,13 +278,27 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
           const input = ['expect', 'expectElementCount', 'click'].includes(step.do)
             ? { ...step, within: 500 } : step;
           const result = await executeAction(ACTION_REGISTRY, step.do, input, { capabilities });
+          observations.push({ action: step.do, actor: step.actor, control: step.testid,
+            status: result.status, summary: result.summary ?? null });
           if (result.status !== 'passed') {
             assert.equal(result.status, 'failed', result.summary ?? undefined);
             failed = `${step.do}/${restocked ? 'after-restock' : 'before-restock'}`;
             break;
           }
         }
+        const evidenceFile = process.env.STACK_BENCH_NOTIFICATION_NAVIGATION_EVIDENCE;
+        if (evidenceFile) {
+          mkdirSync(dirname(evidenceFile), { recursive: true });
+          const screenshot = join(dirname(evidenceFile), `${id}-${mode}-${layout}.png`);
+          await actors.get('subscriber-fresh')!.page.screenshot({ path: screenshot });
+          appendFileSync(evidenceFile, `${JSON.stringify({ id, mode, layout, scenario: name,
+            expectedFailure, failed, navigation, observations, screenshot })}\n`);
+        }
         assert.equal(failed, expectedFailure, `${id}: ${mode}/${layout}`);
+        if (['inline', 'inline-loading', 'inline-no-toggle', 'modal', 'page'].includes(layout)) {
+          assert.equal(navigation.catalog, 0, 'a visible notification destination needs no catalog navigation');
+          assert.equal(navigation.settings, 0, 'a visible notification destination needs no settings navigation');
+        }
         if (layout === 'inline-loading') {
           assert.equal(await actors.get('subscriber-fresh')!.page.locator('body')
             .getAttribute('data-toggle-clicked'), null, 'an open loading panel must not be toggled closed');

@@ -7,6 +7,10 @@ editable ticket controls are already shown.
 Use `support-ticket` for each ticket in the staff view. Within a ticket, use
 `support-assignee`, `support-priority`, and `support-status-input` for the editable fields.
 Use `support-update` to apply the changes. Use `support-status` to show the current status.
+On that `support-ticket`, expose `data-submit-state` for the latest update:
+`idle` initially, `pending` immediately when submitted, `succeeded` only after the server
+confirms success, or `failed` after rejection or transport failure. Keep the terminal state
+until the next submission. A new submission must replace the old state.
 `support-assignee` takes the assignee's username; if it is a select, its option values are the
 usernames. `support-priority` offers `low`, `normal`, and `high` as its option values.
 

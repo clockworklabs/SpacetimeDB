@@ -1,0 +1,17 @@
+TAP version 13
+1..0
+# Subtest: dist\\tests\\stock-alert-delivery.integration.js
+ok 1 - dist\\tests\\stock-alert-delivery.integration.js
+  ---
+  duration_ms: 667.5725
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 677.9408

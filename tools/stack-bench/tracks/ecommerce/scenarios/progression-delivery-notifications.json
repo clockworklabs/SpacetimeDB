@@ -25,6 +25,8 @@
         {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
         {"do":"reload","actor":"owner","settleMs":1000},
         {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+        {"do":"click","actor":"owner","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
         {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
         {"do":"expect","actor":"owner","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
         {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":0},
@@ -38,6 +40,8 @@
         {"do":"recordTime","as":"notification-shipped-accepted"},
         {"do":"reload","actor":"owner","settleMs":1000},
         {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+        {"do":"click","actor":"owner","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
         {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
         {"do":"expect","actor":"owner","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
         {"do":"expectElapsed","since":"notification-shipped","atMost":40000},
@@ -59,6 +63,8 @@
           "steps": [
             {"do":"reload","actor":"owner","settleMs":1000},
             {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"owner","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"owner","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":1,"within":10000}
@@ -73,8 +79,12 @@
           "steps": [
             {"do":"reload","actor":"owner","settleMs":1000},
             {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"owner","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":1,"within":10000},
+            {"do":"click","actor":"other","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"other","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"other","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"other","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expect","actor":"other","testid":"notification-item","contains":"Desk Lamp","absent":true}

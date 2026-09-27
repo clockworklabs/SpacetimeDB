@@ -1,12 +1,64 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { gradeFeature } from '../grader/grade.js';
+
+test('catalog search reaches its controls when the home page also has an item list', async () => {
+  let layout = '', routes: string[] = [];
+  const evidence: unknown[] = [];
+  const server = createServer((request, response) => {
+    routes.push(request.url ?? '');
+    const searchable = layout === 'direct' || request.url === '/catalog';
+    response.writeHead(200, { 'Content-Type': 'text/html' });
+    response.end(`<!doctype html>
+      ${layout === 'separate' && !searchable ? '<a id="catalog-link" href="/catalog">Browse catalog</a>' : ''}
+      <section id="item-list"><article data-role="item-card">Desk Lamp</article></section>
+      ${searchable ? `<input id="search-input"><section id="search-results"></section>
+      <script>document.querySelector('input').oninput = event => {
+        document.querySelector('#search-results').innerHTML = 'mirrorless camera'.includes(event.target.value.toLowerCase())
+          ? '<article data-role="item-card">Mirrorless Camera</article>' : '';
+      };</script>` : ''}`);
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  let result = 'failed';
+  try {
+    const definition = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+      'tracks/ecommerce/scenarios/01-catalog-search.json'), 'utf8'));
+    const feature = compileScenarioDefinition(definition).features[0]!;
+    for (layout of ['separate', 'direct', 'missing-link']) {
+      routes = [];
+      const grade = await gradeFeature(browser, feature,
+        { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
+        { runId: 'catalog-search-navigation', roomName: name => name, url, actions: [],
+          spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 1000 });
+      evidence.push({ layout, grade, routes: [...routes], setup: feature.setup, criteria: feature.criteria });
+      assert.equal(grade.criteria[0]!.evidence.status, layout === 'missing-link' ? 'failed' : 'passed',
+        JSON.stringify({ layout, grade, routes }));
+      assert.equal(routes.includes('/catalog'), layout === 'separate', JSON.stringify({ layout, routes }));
+    }
+    result = 'passed';
+  } finally {
+    await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_ITEM_NAVIGATION_EVIDENCE) {
+      const file = process.env.STACK_BENCH_ITEM_NAVIGATION_EVIDENCE;
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify({ result,
+        rerun: 'node --test dist/tests/item-navigation.integration.js', evidence }, null, 2));
+    }
+  }
+});
 
 test('filter setup supports automatic updates and an optional Apply control', async () => {
   const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,

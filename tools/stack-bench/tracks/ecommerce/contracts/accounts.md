@@ -28,9 +28,12 @@ No other navigation is required to reach sign-out.
 Accept any username of up to 48 characters made of letters, digits, and hyphens, and any
 password of up to 64 characters.
 
-For bearer-token authentication, expose `window.getSessionToken()` as a synchronous
-function that returns the caller's existing token used for application requests,
-or `null` when no such token exists. A database connection token can exist before
+Expose `window.getSessionToken()` as a synchronous function. For token-based
+authentication, return the caller's existing token accepted by the application's
+request transport, such as an HTTP header, native connection, or token argument.
+For cookie-only authentication, return `null`. Do not return a cookie value unless
+the application also accepts it through its token transport.
+Return `null` when no such token exists. A database connection token can exist before
 account login or after a rejected login. Return that token too; its presence does
 not mean the caller has an authenticated application account.
 This hook does not prescribe credential storage. Return the caller's real credential;

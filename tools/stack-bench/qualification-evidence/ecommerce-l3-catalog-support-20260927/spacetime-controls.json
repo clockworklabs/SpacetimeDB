@@ -1,0 +1,245 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260927084115-31",
+  "attempt": {
+    "id": "reference-live-spacetime-20260927084115-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T08:41:15.285Z",
+    "completedAt": "2026-09-27T09:08:33.064Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a2df8bfcc481c060903ee29a325e5badf028f37c0778bc476188aea344552032"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-spacetime",
+      "sha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "d68704b751883dd91b4cfcdf2030387a32209551ccbb475f4491318e9eeb6164"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-spacetime",
+    "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 34,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "dacff94c546a277dabfd9c4f800864624609eba03e50987e586e41f4aa91a0fc",
+      "executableSha256": "1f0545921fdd8e193175641155f990802ec5ecef338f93b80b41512df239f974",
+      "kind": "mutation",
+      "mutationSha256": "a2e9670424fcfd409bb124f1ccd0628667608b894fad861b6241b4ca8c3f6380",
+      "recipe": {
+        "contentSha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "spacetime",
+        "reference": {
+          "id": "ecommerce-reference-spacetime",
+          "sourceSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+        },
+        "version": "1.4.0"
+      },
+      "sha256": "e0bb056c71ba521591b4e1a611a5fb84b6b0dbc395618a908e3b262f02680911"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "spacetime-controls.runs/r1-workers",
+        "durationMs": 1636017,
+        "processError": null,
+        "harnessSha256Before": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "harnessSha256After": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-spacetime-20260927084115-31",
+        "score": "16/16",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 10,
+        "zeroPointCriteria": 0,
+        "fingerprint": "c2b8020e1ac0746252103f4712ce52e4eb856bf30ab59bd286d237d9f6242fd6",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "checkCount": 1,
+              "setupRuntimeMs": 233,
+              "criterionRuntimeMs": 1643,
+              "measuredRuntimeMs": 1876,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.catalog-management",
+              "checkCount": 2,
+              "setupRuntimeMs": 6984,
+              "criterionRuntimeMs": 59,
+              "measuredRuntimeMs": 7043,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.faceted-search",
+              "checkCount": 2,
+              "setupRuntimeMs": 45505,
+              "criterionRuntimeMs": 25767,
+              "measuredRuntimeMs": 71272,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 141000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-triage",
+              "checkCount": 3,
+              "setupRuntimeMs": 2713,
+              "criterionRuntimeMs": 7177,
+              "measuredRuntimeMs": 9890,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "checkCount": 1,
+              "setupRuntimeMs": 23935,
+              "criterionRuntimeMs": 5283,
+              "measuredRuntimeMs": 29218,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 2763,
+              "criterionRuntimeMs": 531630,
+              "measuredRuntimeMs": 534393,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 12,
+          "total": 12
+        },
+        "baselineDurationMs": 898291,
+        "baselineOutput": "spacetime-controls.runs/r1",
+        "baselineHarnessSha256Before": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "baselineHarnessSha256After": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 40,
+            "artifact": "spacetime-controls.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "catalog-search-ignores-the-query",
+              "catalog-variants-are-discarded",
+              "active-search-uses-purchase-ranking",
+              "support-assignment-is-discarded",
+              "support-status-is-discarded",
+              "catalog-discards-product-writes"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime-controls.runs/r1-workers/w1.stdout.log",
+              "stderr": "spacetime-controls.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 41,
+            "artifact": "spacetime-controls.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "catalog-product-is-not-published",
+              "faceted-search-ignores-category",
+              "faceted-search-next-page-does-not-advance",
+              "support-priority-is-discarded",
+              "catalog-truncates-created-population",
+              "catalog-rejects-all-product-writes"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime-controls.runs/r1-workers/w2.stdout.log",
+              "stderr": "spacetime-controls.runs/r1-workers/w2.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.progression.catalog-management.catalog-management.622a",
+      "ecommerce.progression.catalog-management.catalog-management.622b",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.progression.support-triage.support-assignment.611a",
+      "ecommerce.progression.support-triage.support-priority.611b",
+      "ecommerce.progression.support-triage.support-status.611c",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

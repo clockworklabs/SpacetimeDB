@@ -51,6 +51,8 @@
           "steps": [
             {"do":"freshClient","actor":"subscriber"},
             {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
+            {"do":"click","actor":"subscriber-fresh","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"subscriber-fresh","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expectElementCount","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","equals":1,"within":10000},
@@ -59,6 +61,8 @@
             {"do":"wait","actor":"admin","ms":10000},
             {"do":"freshClient","actor":"subscriber"},
             {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
+            {"do":"click","actor":"subscriber-fresh","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"subscriber-fresh","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expectElementCount","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","equals":1,"within":10000}
@@ -73,12 +77,16 @@
           "steps": [
             {"do":"freshClient","actor":"subscriber"},
             {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
+            {"do":"click","actor":"subscriber-fresh","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"subscriber-fresh","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":10000},
             {"do":"expect","actor":"subscriber-fresh","testid":"notification-item","contains":"Air Purifier","within":10000},
             {"do":"freshClient","actor":"other"},
             {"do":"signIn","actor":"other-fresh","name":"stock-other"},
+            {"do":"click","actor":"other-fresh","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
+            {"do":"click","actor":"other-fresh","testid":"notification-settings","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle"]},
             {"do":"click","actor":"other-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"other-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expect","actor":"other-fresh","testid":"notification-item","contains":"Air Purifier","absent":true}

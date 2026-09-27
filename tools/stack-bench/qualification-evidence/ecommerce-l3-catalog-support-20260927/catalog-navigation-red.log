@@ -1,0 +1,32 @@
+TAP version 13
+# Subtest: catalog search reaches its controls when the home page also has an item list
+not ok 1 - catalog search reaches its controls when the home page also has an item list
+  ---
+  duration_ms: 5454.8358
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\item-navigation.integration.js:14:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"layout":"separate","grade":{"id":2,"name":"Public catalog search","score":0,"max":1,"criteria":[{"id":"2d","desc":"case-insensitive partial search finds an item outside the storefront top ten","points":1,"evidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"assertion","actor":"visitor","summary":"the search-input control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"search-input","detail":"locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"search-input\"],#search-input').filter({ visible: true }).first() to be visible\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790497295165,"completedAtMs":1790497300180,"durationMs":5015},"actions":[{"actor":"visitor","evidence":{"schemaVersion":2,"action":{"id":"fill","version":"1.0.0"},"status":"failed","type":"browser-interaction-evidence","code":"application_failure","phase":"execute","summary":"the search-input control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"search-input","detail":"locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"search-input\"],#search-input').filter({ visible: true }).first() to be visible\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790497295165,"completedAtMs":1790497300179,"durationMs":5014,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}}],"attachments":[],"sensitivity":["user-content"]},"statedBy":"Search matches any part of an item name without regard to case across the full catalog"}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"setup","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790497295093,"completedAtMs":1790497295161,"durationMs":68},"actions":[{"actor":"visitor","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"catalog-link","visible":"item-list"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497295094,"completedAtMs":1790497295161,"durationMs":67,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}}],"attachments":[],"sensitivity":["user-content"]}},"routes":["/"]}
+    
+    'failed' !== 'passed'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'passed'
+  actual: 'failed'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/item-navigation.integration.js:42:20)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6485.8956

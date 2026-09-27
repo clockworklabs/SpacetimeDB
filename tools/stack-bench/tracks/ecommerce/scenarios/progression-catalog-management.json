@@ -17,7 +17,7 @@
         { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Black, Silver" },
         { "do": "click", "actor": "admin", "testid": "catalog-save" },
         { "do": "reload", "actor": "visitor", "settleMs": 2500 },
-        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "search-input" },
         { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Travel Mug", "enter": true }
       ],
       "criteria": [

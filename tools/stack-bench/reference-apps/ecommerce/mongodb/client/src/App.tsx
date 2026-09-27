@@ -6,6 +6,7 @@ import { CreditPanel } from "./CreditPanel";
 import { SubscriptionPanel } from "./SubscriptionPanel";
 
 const TOKEN_KEY = "mongodb_shop_token";
+Object.assign(window, { getSessionToken: () => localStorage.getItem(TOKEN_KEY) });
 const CATALOG_PAGE_SIZE = 10;
 
 interface ItemT {
@@ -133,7 +134,9 @@ async function apiFetch(path: string, token: string | null, options: RequestInit
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, { ...options, headers: { ...headers, ...(options.headers as any) } });
-  const data = await res.json().catch(() => ({}));
+  const text = await res.text();
+  let data: any = {};
+  try { data = JSON.parse(text); } catch { /* A complete non-JSON response has no fields. */ }
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }

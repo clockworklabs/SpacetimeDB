@@ -1,0 +1,193 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-convex-20260927092239-30",
+  "attempt": {
+    "id": "reference-live-convex-20260927092239-30",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T09:22:39.679Z",
+    "completedAt": "2026-09-27T09:29:34.215Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-convex",
+      "sha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "df4bfdc0eb89888aca4e300e1e062629fd561f3995292cb64f481b2b87ada435"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-convex",
+    "fixtureSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 22,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "3ee743e4a1ea2b417581e62d0c40c6386bbb691467047b4468bb913acc95d6cb",
+      "executableSha256": "a94eb7fe1415d45004c9a997775a0b2bd903929eb39afd86a97414b02a2f7c17",
+      "kind": "mutation",
+      "mutationSha256": "b1dd4d117f6817291adb9652303511e052937e937398dc8a6cc6ee2a589fff8d",
+      "recipe": {
+        "contentSha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "convex",
+        "reference": {
+          "id": "ecommerce-reference-convex",
+          "sourceSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c"
+        },
+        "version": "1.0.0"
+      },
+      "sha256": "9a04f6a80e5fcd8f94da24567795920a3d08355b6e4c0f83a450073b5474d691"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "convex-controls.runs/r1-workers",
+        "durationMs": 411975,
+        "processError": null,
+        "harnessSha256Before": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "harnessSha256After": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-convex-20260927092239-30",
+        "score": "4/4",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 3,
+        "zeroPointCriteria": 0,
+        "fingerprint": "1dc833b1d111abae2128f0621274e62ba3f3801f3b7a4206418943efa276a97b",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.progression.stock-alerts",
+              "checkCount": 1,
+              "setupRuntimeMs": 26315,
+              "criterionRuntimeMs": 11673,
+              "measuredRuntimeMs": 37988,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 1,
+              "setupRuntimeMs": 57986,
+              "criterionRuntimeMs": 6728,
+              "measuredRuntimeMs": 64714,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 57986,
+              "criterionRuntimeMs": 11591,
+              "measuredRuntimeMs": 69577,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 3,
+          "total": 3
+        },
+        "baselineDurationMs": 205124,
+        "baselineOutput": "convex-controls.runs/r1",
+        "baselineHarnessSha256Before": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "baselineHarnessSha256After": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 69,
+            "artifact": "convex-controls.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "stock-alert-delivery-is-suppressed",
+              "stock-alert-repeats-while-in-stock"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls.runs/r1-workers/w1.stdout.log",
+              "stderr": "convex-controls.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 70,
+            "artifact": "convex-controls.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "stock-alerts-are-not-owner-scoped"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls.runs/r1-workers/w2.stdout.log",
+              "stderr": "convex-controls.runs/r1-workers/w2.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+    "qualifiedCheckKeys": [
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

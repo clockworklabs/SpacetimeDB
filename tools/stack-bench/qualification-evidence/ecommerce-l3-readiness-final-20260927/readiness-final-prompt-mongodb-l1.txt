@@ -1,0 +1,294 @@
+Build the application described below and leave it running.
+
+After the web application is running, reply with DEPLOY_COMPLETE.
+
+Build a production-quality application suitable for real users, not a prototype or demo.
+
+Build the app in /app.
+
+The web application must listen on 0.0.0.0, not localhost, so it is reachable outside its process.
+The environment can run /app/start.sh again with APP_WARM_START=1. When dependencies are current, reuse them instead of installing them again.
+Startup must work with an empty database by creating the supplied starting data and accounts. On an existing database, preserve current quantities, prices, and user data. This applies after upgrades and repairs too.
+
+Chromium is installed at /usr/bin/chromium (CHROME_BIN). Use that executable with --no-sandbox in this isolated container; no browser download is needed. Puppeteer Core is installed at /opt/browser-tools/node_modules/puppeteer-core. In a .cjs script, use const puppeteer = require("/opt/browser-tools/node_modules/puppeteer-core"); then await puppeteer.launch({ executablePath: process.env.CHROME_BIN, args: ["--no-sandbox"] }).
+
+## Stack
+
+# MongoDB
+
+Use MongoDB for the application data. Choose the libraries, architecture, and
+project structure.
+
+## Connection
+
+| Setting | Value |
+|---|---|
+| `DATABASE_URL` | `mongodb://host.docker.internal:6537/app_ecom_run0?replicaSet=rs0&directConnection=true` |
+| Web application | `http://localhost:6723` |
+
+The MongoDB service is already running as a single-node replica set. Use the exact `DATABASE_URL`. Do not
+start another MongoDB server, connect to another instance, or create another
+database. Serve the complete application on `6723`.
+Read `DATABASE_URL` from the process environment at startup. It can change between
+launches; do not embed it in source or override it with a saved value.
+Create `/app/start.sh`. From a clean source checkout, it must install
+dependencies, build the complete application, and start it on `6723`.
+The script must not change source files. Leave the application running when the
+work is complete.
+
+
+## New application
+
+Build an ecommerce application from the product work below. Use `Storefront`
+as the visible page title. Use the application interface names where they are
+provided. Start with no orders or purchase history.
+
+## Accounts
+
+Visitors can create an account with a username and password. Returning users can sign in with
+those credentials, see which account is active, and sign out. Show a useful error for a taken
+username or an incorrect password.
+
+## Catalog items
+
+Show public catalog items. Each item shows its name, price, and total stock.
+
+## Staff access
+
+Staff and administrators can sign in and use staff areas.
+
+## Support intake
+
+Anyone can open a support ticket with contact details, a subject, and a message. Return a
+reference that the visitor can use to identify the ticket.
+
+
+## Starting catalog
+
+Use exactly this starting data:
+
+```json
+{
+  "warehouses": [
+    "East",
+    "West"
+  ],
+  "items": [
+    {
+      "name": "Air Purifier",
+      "price": "189.00",
+      "category": "Home",
+      "stock": {
+        "East": 60,
+        "West": 40
+      }
+    },
+    {
+      "name": "Bluetooth Speaker",
+      "price": "79.50",
+      "category": "Audio",
+      "stock": {
+        "East": 50,
+        "West": 50
+      }
+    },
+    {
+      "name": "Coffee Grinder",
+      "price": "64.00",
+      "category": "Home",
+      "stock": {
+        "East": 70,
+        "West": 30
+      }
+    },
+    {
+      "name": "Desk Lamp",
+      "price": "42.00",
+      "category": "Home",
+      "stock": {
+        "East": 55,
+        "West": 45
+      }
+    },
+    {
+      "name": "Espresso Machine",
+      "price": "449.00",
+      "category": "Home",
+      "stock": {
+        "East": 80,
+        "West": 20
+      }
+    },
+    {
+      "name": "Gaming Mouse",
+      "price": "59.00",
+      "category": "Computing",
+      "stock": {
+        "East": 50,
+        "West": 50
+      }
+    },
+    {
+      "name": "Headphones",
+      "price": "199.00",
+      "category": "Audio",
+      "stock": {
+        "East": 60,
+        "West": 40
+      }
+    },
+    {
+      "name": "Induction Cooktop",
+      "price": "329.00",
+      "category": "Home",
+      "stock": {
+        "East": 50,
+        "West": 50
+      }
+    },
+    {
+      "name": "Keyboard",
+      "price": "89.00",
+      "category": "Computing",
+      "stock": {
+        "East": 70,
+        "West": 30
+      }
+    },
+    {
+      "name": "Laptop Stand",
+      "price": "29.00",
+      "category": "Computing",
+      "stock": {
+        "East": 90,
+        "West": 10
+      }
+    },
+    {
+      "name": "Mirrorless Camera",
+      "price": "1299.00",
+      "category": "Photo",
+      "stock": {
+        "East": 2,
+        "West": 1
+      }
+    },
+    {
+      "name": "USB Cable",
+      "price": "65.00",
+      "category": "Home",
+      "stock": {
+        "East": 0,
+        "West": 0
+      }
+    },
+    {
+      "name": "Webcam",
+      "price": "69.00",
+      "category": "Computing",
+      "stock": {
+        "East": 60,
+        "West": 40
+      }
+    }
+  ]
+}
+```
+
+## Application interface
+
+# Application interface
+
+Use each interface name below as an exact HTML attribute value. Use `id` for
+a one-off element. Use `data-role` when the same interface can
+appear more than once. These attributes do not prescribe the layout, data
+model, libraries, or transport.
+
+Each exposed server operation completes every valid request, including requests that
+overlap, without relying on the browser to retry it. A business refusal, such as insufficient
+stock, still completes the request.
+
+For error responses, use HTTP 401 or 403 for access errors and 400, 409, or 422 for input errors.
+
+Human-readable status text is case-insensitive. Machine identifiers and protocol values keep their specified spelling.
+
+## Staff access controls
+
+Use the existing account sign-in controls. Use `staff-link` for the staff area and `admin-link`
+for the administrator area. Use `staff-area` for the staff tools, not for a loading or error message.
+
+Use these provided accounts:
+
+- staff: `staff` / `store-staff-2026`
+- administrator: `admin` / `store-admin-2026`
+- customer: `customer` / `store-customer-2026`
+
+# Catalog item application interface
+
+The public catalog may be on the first page or a separate page. If navigation is
+needed, expose `catalog-link` on the signed-out first page to open the catalog.
+
+| Element ID | Required element |
+| --- | --- |
+| `catalog-link` | Opens the public catalog; omit when the catalog is already visible. |
+| `item-list` | Contains the public catalog items. |
+| `item-card` | Shows one catalog item. |
+| `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |
+| `item-price` | Shows the numeric item price inside its `item-card`. |
+| `item-stock` | Shows total stock inside its `item-card`. |
+| `item-detail` | Contains the selected item's details. |
+
+# Account application interface
+
+Use these exact `id` attributes on the corresponding visible controls. They do not prescribe UI
+structure, data modeling, libraries, or implementation strategy.
+
+From the signed-out page, show the sign-up inputs, `signup-toggle`, or
+`signin-toggle`. If sign-up is inside the sign-in dialog, opening `signin-toggle`
+must reveal the sign-up inputs or `signup-toggle`. That control must reveal the
+sign-up form. No other navigation is required to reach it.
+Show the sign-in inputs or `signin-toggle` on the signed-out page.
+While signed in, show `signout` directly or reveal it by clicking `current-user`.
+No other navigation is required to reach sign-out.
+
+| Element ID | Observable element |
+|---|---|
+| `signup-username` | sign-up username input |
+| `signup-password` | sign-up password input |
+| `signup-submit` | sign-up submit control |
+| `signin-toggle` | control that reveals sign-in |
+| `signup-toggle` | reveals sign-up; available on the signed-out page or after opening `signin-toggle`; omit when sign-up inputs are already visible |
+| `signin-username` | sign-in username input |
+| `signin-password` | sign-in password input |
+| `signin-submit` | sign-in submit control |
+| `current-user` | Active account name, present only while signed in. Do not use this hook for a signed-out message. |
+| `signout` | sign-out control |
+| `auth-error` | visible account error |
+
+Accept any username of up to 48 characters made of letters, digits, and hyphens, and any
+password of up to 64 characters.
+
+Expose `window.getSessionToken()` as a synchronous function. For token-based
+authentication, return the caller's existing token accepted by the application's
+request transport, such as an HTTP header, native connection, or token argument.
+For cookie-only authentication, return `null`. Do not return a cookie value unless
+the application also accepts it through its token transport.
+Return `null` when no such token exists. A database connection token can exist before
+account login or after a rejected login. Return that token too; its presence does
+not mean the caller has an authenticated application account.
+This hook does not prescribe credential storage. Return the caller's real credential;
+do not create a separate identity.
+
+Account creation and login must use the application's real authentication path.
+The interface does not prescribe password-taking backend function names or routes.
+Keep credentials out of durable application logs. A failed registration or login
+must not give the caller an application session or access to protected operations.
+
+## Support intake controls
+
+Use `support-link` to open support. Use `support-email`, `support-subject`, and
+`support-message` for the ticket fields. Use `support-submit` to submit the ticket and
+`support-reference` to show its reference.
+
+An email address, a subject, and a message are sufficient to submit a ticket. Any
+additional fields must be optional.

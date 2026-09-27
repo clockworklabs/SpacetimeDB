@@ -108,6 +108,82 @@ test('count observations wait for a rendered list without accepting missing or d
   }
 });
 
+// Value reads must use the authored observation budget when a visible control redraws.
+// A value which arrives after that budget, or stays wrong, must not pass.
+test('number observations use the authored budget across a control redraw', async t => {
+  const browser = await chromium.launch({ headless: true });
+  const observations: unknown[] = [];
+  t.after(async () => {
+    await browser.close();
+    if (process.env.STACK_BENCH_NUMBER_READ_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_NUMBER_READ_EVIDENCE,
+        JSON.stringify({ browser: browser.version(), observations }, null, 2));
+    }
+  });
+  for (const mode of ['within-budget', 'after-budget', 'wrong-value', 'input', 'textarea', 'select'] as const) {
+    await t.test(mode, async () => {
+      const page = await browser.newPage();
+      try {
+        page.setDefaultTimeout(100);
+        await page.setContent('<section data-testid="warehouse">East<div id="value"><span data-testid="stock">0</span></div></section>'
+          + '<section data-testid="warehouse">West<span data-testid="stock">20</span></section>', { timeout: 5000 });
+        await page.evaluate(mode => {
+          const holder = document.querySelector('#value')!;
+          if (mode === 'input') holder.innerHTML = '<input data-testid="stock" value="20">';
+          if (mode === 'textarea') {
+            holder.innerHTML = '<textarea data-testid="stock">Old value</textarea>';
+            holder.querySelector('textarea')!.value = '20';
+          }
+          if (mode === 'select') holder.innerHTML = '<select data-testid="stock"><option value="20">Twenty</option></select>';
+        }, mode);
+        let redrawStarted = false;
+        const actor = { page, loc: () => {
+          const locator = page.locator('[data-testid="warehouse"]').filter({ hasText: 'East' })
+            .locator('[data-testid="stock"]').filter({ visible: true }).first();
+          return new Proxy(locator, { get(target, key) {
+            if (key === 'waitFor') return async (options: Parameters<typeof locator.waitFor>[0]) => {
+              await target.waitFor(options);
+              if (redrawStarted) return;
+              redrawStarted = true;
+              await page.evaluate(mode => {
+                const value = document.querySelector('#value')!;
+                if (mode !== 'within-budget' && mode !== 'after-budget') return;
+                value.innerHTML = '';
+                setTimeout(() => {
+                  value.innerHTML = '<span data-testid="stock">20</span>';
+                  value.setAttribute('data-restored-at', String(Date.now()));
+                },
+                  mode === 'within-budget' ? 350 : 1500);
+              }, mode);
+            };
+            const value = Reflect.get(target, key);
+            return typeof value === 'function' ? value.bind(target) : value;
+          } });
+        } };
+        const started = Date.now();
+        const result = await run({ do: 'expectNumber', actor: 'a', testid: 'stock', equals: 20,
+          in: { testid: 'warehouse', contains: 'East' }, within: 1000 }, services(actor, {
+          browser: { sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
+        }));
+        const elapsedMs = Date.now() - started;
+        // Independently witness restoration even if the grader has already failed early.
+        if (mode === 'within-budget') await page.locator('#value [data-testid="stock"]').waitFor({ timeout: 2000 });
+        const restoredAt = await page.locator('#value').getAttribute('data-restored-at', { timeout: 2000 });
+        const evidence = process.env.STACK_BENCH_NUMBER_READ_EVIDENCE;
+        if (evidence) await page.screenshot({ path: `${evidence}.${mode}.png`, timeout: 5000 });
+        observations.push({ mode, locatorTimeoutMs: 100, withinMs: 1000,
+          restoredAfterMs: mode === 'within-budget' ? 350 : mode === 'after-budget' ? 1500 : null,
+          observedRestoreAfterMs: restoredAt ? Number(restoredAt) - started : null,
+          elapsedMs, status: result.status, finding: result.finding ?? null, summary: result.summary ?? null });
+        if (mode === 'within-budget') assert(restoredAt && Number(restoredAt) - started < 1000);
+        assert.equal(result.status, mode === 'after-budget' || mode === 'wrong-value' ? 'failed' : 'passed', result.summary ?? mode);
+        if (mode === 'wrong-value') assert.equal(result.finding?.kind, 'number-mismatch');
+      } finally { await page.close(); }
+    });
+  }
+});
+
 test('script canary detects execution after DOM removal and rejects missing observers', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -136,7 +212,8 @@ test('UI failures retain bounded observations but exclude passwords and unproven
     const result = await run({ do: 'expectNumber', actor: 'a', testid: 'stock', equals: 99, within: 1,
       in: { testid: sensitive ? 'secret' : 'item-card', contains: 'Bluetooth Speaker' } },
     services({ page: { locator: () => ({ filter: () => ({ count: async () => 1 }) }) },
-      loc: () => ({ waitFor: async () => {}, evaluate: async () => 'DIV',
+      loc: () => ({ waitFor: async () => {},
+      evaluate: async (read: (element: { tagName: string; innerText: string }) => unknown) => read({ tagName: 'DIV', innerText: '100' }),
       innerText: async () => '100' }) }));
     assert.equal(result.finding?.kind, 'number-mismatch');
     if (sensitive) assert.doesNotMatch(result.summary ?? '', /Bluetooth Speaker/);
@@ -153,7 +230,9 @@ test('UI failures retain bounded observations but exclude passwords and unproven
   for (const password of [false, true]) {
     const result = await run({ do: 'expect', actor: 'a', testid: 'field', value: 'Approved', within: 1 },
       services({ loc: () => ({ waitFor: async () => {},
-        evaluate: async () => 'INPUT', inputValue: async () => password ? 'RAW_PASSWORD' : 'Pending',
+        evaluate: async (read: (element: { tagName: string; value: string }) => unknown) =>
+          read({ tagName: 'INPUT', value: password ? 'RAW_PASSWORD' : 'Pending' }),
+        inputValue: async () => password ? 'RAW_PASSWORD' : 'Pending',
         getAttribute: async () => password ? 'password' : 'text' }) }));
     assert.equal(result.finding?.kind, 'value-mismatch');
     if (password) assert.doesNotMatch(JSON.stringify(result.finding), /RAW_PASSWORD|Approved/);
@@ -289,7 +368,7 @@ test('stock observations accept an explicit zero-stock state without relaxing ot
   const locator = {
     waitFor: async () => {},
     isVisible: async () => true,
-    evaluate: async () => 'SPAN',
+    evaluate: async (read: (element: { tagName: string; innerText: string }) => unknown) => read({ tagName: 'SPAN', innerText: rendered }),
     innerText: async () => rendered,
   };
   const provided = services({ loc: () => locator });
@@ -325,7 +404,7 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
   let rendered = '   ';
   const locator = {
     waitFor: async () => {},
-    evaluate: async () => 'DIV',
+    evaluate: async (read: (element: { tagName: string; innerText: string }) => unknown) => read({ tagName: 'DIV', innerText: rendered }),
     innerText: async () => rendered,
   };
   const actor = { loc: () => locator };
@@ -387,7 +466,9 @@ test('missing values do not satisfy agreement across actors', async () => {
 });
 
 test('expect can verify a persisted form value or an element attribute', async () => {
-  const field = { waitFor: async () => {}, evaluate: async () => 'INPUT', inputValue: async () => 'staff' };
+  const field = { waitFor: async () => {},
+    evaluate: async (read: (element: { tagName: string; value: string }) => unknown) => read({ tagName: 'INPUT', value: 'staff' }),
+    inputValue: async () => 'staff' };
   const persisted = await run({ do: 'expect', actor: 'a', testid: 'support-assignee',
     value: 'staff' }, services({ loc: () => field }));
   assert.equal(persisted.status, 'passed');
@@ -510,7 +591,8 @@ test('relative number bounds use recorded values and report the resolved bound',
   assert.equal(parseRenderedNumber('none'), null);
   let value: number | string = 'Total: 1,024';
   const provided = services({ loc: () => ({ waitFor: async () => {},
-    evaluate: async () => 'SPAN', innerText: async () => String(value) }) });
+    evaluate: async (read: (element: { tagName: string; innerText: string }) => unknown) => read({ tagName: 'SPAN', innerText: String(value) }),
+    innerText: async () => String(value) }) });
   assert.equal((await run({ do: 'recordNumber', actor: 'a', testid: 'total', as: 'before' }, provided)).status, 'passed');
   assert.equal(provided.recorded.get('before'), 1024);
   value = 'Total: 1,027';
@@ -679,7 +761,10 @@ test('containsText polls the selected item without requiring an exact status val
     let ready = false;
     const provided = services({ loc: (_id: string, options: { contains: string }) => {
       assert.equal(options.contains, 'Keyboard');
-      return { waitFor: async () => {}, evaluate: async () => 'ARTICLE', getAttribute: async () => null,
+      return { waitFor: async () => {},
+        evaluate: async (read: (element: { tagName: string; innerText: string }) => unknown) =>
+          read({ tagName: 'ARTICLE', innerText: `Keyboard · shipped${ready && returned ? ' · Returned' : ''}` }),
+        getAttribute: async () => null,
         innerText: async () => `Keyboard · shipped${ready && returned ? ' · Returned' : ''}` };
     } }, { browser: { sleep: async () => { ready = true; } } });
     const result = await run(step, provided);

@@ -48,11 +48,14 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
   }), [token]);
 
 
-  const act = async (name: string, args: Record<string, unknown> = {}) => {
+  const act = async (name: string, args: Record<string, unknown> = {}, onComplete?: (state: "succeeded" | "failed") => void) => {
     setError("");
     try {
-      return await mutate(name, args);
+      const result = await mutate(name, args);
+      onComplete?.("succeeded");
+      return result;
     } catch (err: any) {
+      onComplete?.("failed");
       setError(err.message);
       return null;
     }
@@ -131,19 +134,23 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
 }
 
 function SupportTicket({ ticket, user, act }: any) {
+  const [submitState, setSubmitState] = useState("idle");
   const [assignee, setAssignee] = useState(ticket.assignee || "");
   const [priority, setPriority] = useState(ticket.priority || "normal");
   const [status, setStatus] = useState(ticket.status || "new");
   const [reply, setReply] = useState("");
   const staff = user?.isStaff || user?.isAdmin;
-  return <article data-role="support-ticket" data-entity-id={ticket.id} data-refund-input={JSON.stringify({caseId: ticket.id})} className="support-ticket">
+  return <article data-role="support-ticket" data-submit-state={submitState} data-entity-id={ticket.id} data-refund-input={JSON.stringify({caseId: ticket.id})} className="support-ticket">
     <strong>{ticket.subject}</strong> <span data-role="support-status">{ticket.status}</span>
     <span>{ticket.reference}</span>
     {staff && <>
       <input data-role="support-assignee" value={assignee} onChange={event => setAssignee(event.target.value)} placeholder="Assignee" />
       <input data-role="support-priority" value={priority} onChange={event => setPriority(event.target.value)} placeholder="Priority" />
       <input data-role="support-status-input" value={status} onChange={event => setStatus(event.target.value)} placeholder="Status" />
-      <button data-role="support-update" className="btn btn-ghost" onClick={() => act("update_support", { ticketId: ticket.id, assignee, priority, status })}>Update</button>
+      <button data-role="support-update" className="btn btn-ghost" disabled={submitState === "pending"} onClick={() => {
+        setSubmitState("pending");
+        void act("update_support", { ticketId: ticket.id, assignee, priority, status }, setSubmitState);
+      }}>Update</button>
     </>}
     {(ticket.replies || []).map((entry: any) => <div data-role="support-reply-item" key={entry.id || entry.createdAt}>{entry.username}: {entry.body}</div>)}
     <input data-role="support-reply" value={reply} onChange={event => setReply(event.target.value)} placeholder="Reply" />

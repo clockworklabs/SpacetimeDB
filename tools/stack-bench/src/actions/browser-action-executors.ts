@@ -13,6 +13,8 @@ import type { Page as PlaywrightPage } from 'playwright';
 
 interface ScrollTarget {
   readonly tagName: string;
+  readonly value?: string;
+  readonly innerText: string;
   readonly options?: ArrayLike<{ value: string; label: string }>;
   scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
   readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
@@ -23,7 +25,7 @@ interface ScrollTarget {
 interface Locator {
   click(options?: unknown): Promise<void>;
   count(): Promise<number>;
-  evaluate<Result>(callback: (element: ScrollTarget) => Result): Promise<Result>;
+  evaluate<Result>(callback: (element: ScrollTarget) => Result, arg?: undefined, options?: { timeout?: number }): Promise<Result>;
   evaluateAll<Result>(callback: (elements: ScrollTarget[]) => Result): Promise<Result>;
   fill(value: string): Promise<void>;
   filter(options: unknown): Locator;
@@ -176,12 +178,11 @@ function inputScope(browser: BrowserCapability, value: LocatorScope | undefined)
   return { testid: value.testid, contains: browser.expand(value.contains) };
 }
 
-async function readValue(loc: Locator): Promise<string> {
-  const tag = await loc.evaluate(element => element.tagName);
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-    return (await loc.inputValue()) || '';
-  }
-  return ((await loc.innerText()) || '').trim();
+async function readValue(loc: Locator, timeout?: number): Promise<string> {
+  return loc.evaluate(element => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)) return element.value || '';
+    return (element.innerText || '').trim();
+  }, undefined, { timeout });
 }
 
 export function parseRenderedNumber(text: string | null | undefined): number | null {
@@ -201,51 +202,62 @@ async function clearInput({ input, capabilities }: BrowserArguments<{ actor: str
 }
 
 async function click({ input, capabilities, signal }:
-    BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string }>) {
+    BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string | string[] }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   const deadline = Date.now() + (input.within ?? browser.defaultWithin);
+  const destinations = typeof input.unlessVisible === 'string'
+    ? [input.unlessVisible] : input.unlessVisible ?? [];
+  let visibleDestination: string | undefined;
   const destinationVisible = async (): Promise<boolean> => {
-    if (!input.unlessVisible) return false;
-    while (true) {
-      try {
-        const sentinel = actor.loc(input.unlessVisible);
-        if (!await sentinel.isVisible()) return false;
-        // Native scrolling does not wait for animation stability. A translated
-        // closed drawer remains offscreen; ordinary inline content becomes visible.
-        return await sentinel.evaluateAll(elements => {
-          // Resolve once. A destination removed by navigation is absent, not a timeout.
-          const element = elements[0];
-          if (!element) return false;
-          return new Promise<boolean>(resolve => {
-            element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-            const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
-              observer.disconnect();
-              resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+    visibleDestination = undefined;
+    for (const testid of destinations) {
+      while (true) {
+        try {
+          const sentinel = actor.loc(testid);
+          if (!await sentinel.isVisible()) break;
+          // Native scrolling does not wait for animation stability. A translated
+          // closed drawer remains offscreen; ordinary inline content becomes visible.
+          const visible = await sentinel.evaluateAll(elements => {
+            // Resolve once. A destination removed by navigation is absent, not a timeout.
+            const element = elements[0];
+            if (!element) return false;
+            return new Promise<boolean>(resolve => {
+              element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+              const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
+                observer.disconnect();
+                resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+              });
+              observer.observe(element);
             });
-            observer.observe(element);
           });
-        });
-      } catch (error) {
-        // An unreadable destination does not establish whether a toggle is open.
-        // Preserve that failure instead of clicking blindly and changing app state.
-        // A render can replace the destination between visibility and scrolling.
-        // Retry that read only; never repeat the navigation click.
-        if (!/Element is not attached to the DOM/i.test(String(error))
-          || Date.now() >= deadline || signal.aborted) throw error;
-        await browser.sleep(Math.min(100, deadline - Date.now()), signal);
+          if (visible) {
+            visibleDestination = testid;
+            return true;
+          }
+          break;
+        } catch (error) {
+          // An unreadable destination does not establish whether a toggle is open.
+          // Preserve that failure instead of clicking blindly and changing app state.
+          // A render can replace the destination between visibility and scrolling.
+          // Retry that read only; never repeat the navigation click.
+          if (!/Element is not attached to the DOM/i.test(String(error))
+            || Date.now() >= deadline || signal.aborted) throw error;
+          await browser.sleep(Math.min(100, deadline - Date.now()), signal);
+        }
       }
     }
+    return false;
   };
   if (await destinationVisible()) {
-    return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+    return { clicked: false, testid: input.testid, visible: visibleDestination };
   }
   const scope = inputScope(browser, input.in);
   const target = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
   if (input.ifAvailable) {
     while (!await target.isVisible() || await target.isDisabled()) {
       if (await destinationVisible()) {
-        return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+        return { clicked: false, testid: input.testid, visible: visibleDestination };
       }
       if (Date.now() >= deadline) return { clicked: false, testid: input.testid };
       await browser.sleep(Math.min(100, deadline - Date.now()), signal);
@@ -260,7 +272,7 @@ async function click({ input, capabilities, signal }:
       && /intercepts pointer events/i.test(String(error))
       && await Promise.race([destinationVisible(), browser.sleep(250, signal).then(() => false)])
       && !signal.aborted) {
-      return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+      return { clicked: false, testid: input.testid, visible: visibleDestination };
     }
     throw error;
   }
@@ -648,6 +660,7 @@ async function expectNumber({ input, capabilities, signal }:
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? browser.defaultWithin;
+  const deadline = Date.now() + within;
   const contains = browser.expand(input.contains);
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
@@ -670,13 +683,13 @@ async function expectNumber({ input, capabilities, signal }:
   };
   const matches = (number: number): boolean => numberMatches(number, expected);
 
-  const deadline = Date.now() + within;
   let last = null;
   for (;;) {
-    last = readControlNumber(await readValue(loc), input.testid);
-    if (last !== null && matches(last)) return { value: last };
+    if (Date.now() >= deadline) break;
+    last = readControlNumber(await readValue(loc, Math.max(1, deadline - Date.now())), input.testid);
     if (Date.now() > deadline) break;
-    await browser.sleep(250, signal);
+    if (last !== null && matches(last)) return { value: last };
+    await browser.sleep(Math.min(250, deadline - Date.now()), signal);
   }
   fail('number-mismatch', { control: input.testid, observed: last, expected,
     ...(scope?.contains && !/password|secret|token/i.test(scope.testid)

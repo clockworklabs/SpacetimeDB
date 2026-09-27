@@ -28,7 +28,8 @@
           "statedBy": "Staff can assign support tickets.",
           "steps": [
             { "do": "fill", "actor": "staff", "testid": "support-assignee", "in": { "testid": "support-ticket", "contains": "Missing item" }, "text": "staff" },
-            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" }, "settleMs": 1500 },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" } },
+            { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "Missing item", "attribute": "data-submit-state", "value": "succeeded" },
             { "do": "reload", "actor": "staff", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
             {"do":"click","actor":"staff","testid":"staff-link","ifAvailable":true,"unlessVisible":"support-assignee"},
@@ -44,7 +45,8 @@
           "statedBy": "Staff can set support ticket priority.",
           "steps": [
             { "do": "fill", "actor": "staff", "testid": "support-priority", "in": { "testid": "support-ticket", "contains": "Missing item" }, "text": "high" },
-            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" }, "settleMs": 1500 },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" } },
+            { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "Missing item", "attribute": "data-submit-state", "value": "succeeded" },
             { "do": "reload", "actor": "staff", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
             {"do":"click","actor":"staff","testid":"staff-link","ifAvailable":true,"unlessVisible":"support-assignee"},
@@ -60,7 +62,8 @@
           "statedBy": "Staff can change support ticket status.",
           "steps": [
             { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Missing item" }, "text": "in progress" },
-            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" }, "settleMs": 1500 },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" } },
+            { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "Missing item", "attribute": "data-submit-state", "value": "succeeded" },
             { "do": "expect", "actor": "staff", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Missing item" }, "contains": "in progress" }
           ]
         }

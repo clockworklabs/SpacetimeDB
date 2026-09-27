@@ -102,6 +102,9 @@ export interface CalibrationDefinition {
     sourceRecipe?: { id: string; contentSha256: string; executionSha256: string };
     sourceCalibration?: { id: string; contentSha256: string };
     contractTextEquivalences?: Array<{ fromTaskSha256: string; toTaskSha256: string }>;
+    referenceSourceEquivalences?: Array<{
+      stack: string; referenceId: string; fromSourceSha256: string; toSourceSha256: string; checks: string[];
+    }>;
     rationale: string;
     evidence: Array<{ path: string; sha256: string }>;
     scopes: Array<{
@@ -241,7 +244,8 @@ const EQUIVALENCE_FIELDS = new Set([
   'fromExecutionSha256', 'toExecutionSha256', 'rationale', 'evidence',
 ]);
 const QUALIFICATION_REUSE_FIELDS = new Set([
-  'sourceRecipe', 'sourceCalibration', 'contractTextEquivalences', 'rationale', 'evidence', 'scopes',
+  'sourceRecipe', 'sourceCalibration', 'contractTextEquivalences', 'referenceSourceEquivalences',
+  'rationale', 'evidence', 'scopes',
 ]);
 const QUALIFICATION_REUSE_RECIPE_FIELDS = new Set([
   'id', 'contentSha256', 'executionSha256',
@@ -473,6 +477,26 @@ export function compileCalibrationDefinition(input: unknown,
           fail(reviewAt, 'must compare unique, different task hashes');
         }
         pairs.add(pair);
+      });
+    }
+    if (reuse.referenceSourceEquivalences !== undefined) {
+      const reviews = array(reuse.referenceSourceEquivalences, `${at}.referenceSourceEquivalences`, { nonEmpty: true });
+      const pairs = new Set<string>();
+      reviews.forEach((review: unknown, index: number) => {
+        const reviewAt = `${at}.referenceSourceEquivalences[${index}]`;
+        strictObject(review, reviewAt, new Set(['stack', 'referenceId', 'fromSourceSha256', 'toSourceSha256', 'checks']));
+        exactId(review.stack, `${reviewAt}.stack`);
+        exactId(review.referenceId, `${reviewAt}.referenceId`);
+        exactHash(review.fromSourceSha256, `${reviewAt}.fromSourceSha256`);
+        exactHash(review.toSourceSha256, `${reviewAt}.toSourceSha256`);
+        const pair = `${review.stack}:${review.referenceId}:${review.fromSourceSha256}:${review.toSourceSha256}`;
+        if (review.fromSourceSha256 === review.toSourceSha256 || pairs.has(pair)) {
+          fail(reviewAt, 'must compare unique, different reference source hashes');
+        }
+        pairs.add(pair);
+        const checks = array(review.checks, `${reviewAt}.checks`, { nonEmpty: true });
+        checks.forEach((check, checkIndex) => string(check, `${reviewAt}.checks[${checkIndex}]`));
+        if (new Set(checks).size !== checks.length) fail(`${reviewAt}.checks`, 'duplicates checks');
       });
     }
     const reuseEvidence = array(reuse.evidence, `${at}.evidence`, { nonEmpty: true });
@@ -885,6 +909,12 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const source = validateQualificationDocuments(snapshot.documents);
   if (!isObject(snapshot.calibration)) evidenceFailure(at, 'has no source calibration');
   const sourceCalibration = snapshot.calibration as unknown as CalibrationPlan;
+  const reuse = calibration.qualificationReuse;
+  if (reuse?.contractTextEquivalences?.length || reuse?.referenceSourceEquivalences?.length) {
+    if (!reuse.rationale.trim() || !reuse.evidence.length) evidenceFailure(at,
+      'input equivalence requires a rationale and evidence');
+    verifyEvidence(reuse.evidence, stackBenchRoot, `${at}.inputEquivalences.evidence`);
+  }
   const sourceIdentity = calibrationQualificationIdentity(sourceCalibration);
   if (sourceCalibration.recipe.id !== source.release.id
     || sourceCalibration.recipe.contentSha256 !== source.release.contentSha256
@@ -904,8 +934,20 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const scopedReferences = (plan: Pick<CalibrationDefinition, 'references'>) => ({ ...plan.references,
     entries: plan.references.entries.filter(reference => entry.kind !== 'null'
       && reference.backend === entry.stack) });
+  const sourceReference = sourceCalibration.references.entries.find(reference => reference.backend === entry.stack);
+  const currentReference = calibration.references.entries.find(reference => reference.backend === entry.stack);
+  const reviewedReference = entry.kind !== 'null' && sourceReference && currentReference
+    && sourceReference.id === currentReference.id
+    && reuse?.referenceSourceEquivalences?.some(review => review.stack === entry.stack
+      && review.referenceId === sourceReference.id
+      && review.fromSourceSha256 === sourceReference.sourceSha256
+      && review.toSourceSha256 === currentReference.sourceSha256
+      && slice.checks.every(key => review.checks.includes(key)));
+  const currentReferences = scopedReferences(calibration);
+  if (reviewedReference) currentReferences.entries = currentReferences.entries.map(reference =>
+    ({ ...reference, sourceSha256: sourceReference.sourceSha256 }));
   if (canonicalDefinitionJson(scopedReferences(sourceCalibration))
-    !== canonicalDefinitionJson(scopedReferences(calibration))) {
+    !== canonicalDefinitionJson(currentReferences)) {
     evidenceFailure(at, 'source references differs');
   }
   const { evidence: _oldEvidence, buildImage: _oldImage, stacks: oldStacks,
@@ -924,12 +966,6 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const trackRoot = resolve(stackBenchRoot, 'tracks', release.track);
   const current = context.qualificationDocuments ?? validateQualificationDocuments(buildRecipeQualificationDocuments(
     resolve(trackRoot, calibration.recipe.path), { trackRoot }));
-  const reuse = calibration.qualificationReuse;
-  if (reuse?.contractTextEquivalences?.length) {
-    if (!reuse.rationale.trim() || !reuse.evidence.length) evidenceFailure(at,
-      'contract text equivalence requires a rationale and evidence');
-    verifyEvidence(reuse.evidence, stackBenchRoot, `${at}.contractTextEquivalences.evidence`);
-  }
   const unchanged = unchangedQualificationChecks(source, current, reuse?.contractTextEquivalences);
   if (slice.checks.some(key => !unchanged.has(key))) evidenceFailure(at,
     'claims a changed check, setup, or shared dependency');
@@ -975,8 +1011,14 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     if (mutationExecutionSha256(subset(oldManifest, sourceCalibration.qualification.checks!, source.release))
       !== oldMutation.executionSha256) evidenceFailure(at, 'mutation snapshot differs from source calibration');
     const currentManifest = readDefinitionJson(resolve(stackBenchRoot, newMutation.path), 'mutations');
+    // The source review covers only the fixture binding. Every selected defect
+    // edit and target must still be identical to the original control.
+    const comparableManifest = reviewedReference && isObject(currentManifest)
+      && read(oldManifest, 'fixtureSha256') === sourceReference.sourceSha256
+      && currentManifest.fixtureSha256 === currentReference!.sourceSha256
+      ? { ...currentManifest, fixtureSha256: sourceReference.sourceSha256 } : currentManifest;
     if (mutationExecutionSha256(subset(oldManifest, slice.checks, source.release))
-      !== mutationExecutionSha256(subset(currentManifest, slice.checks, current.release))) {
+      !== mutationExecutionSha256(subset(comparableManifest, slice.checks, current.release))) {
       evidenceFailure(at, 'slice mutation controls changed');
     }
     const selected = subset(oldManifest, sourceKeys as string[], source.release);
@@ -989,12 +1031,13 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   }
   validateQualificationEvidenceArtifact(artifact, { ...entry, kind: measuredKind }, {
     ...context, calibration: sourceCalibration, qualificationIdentity: sourceIdentity,
+    references: sourceCalibration.references.entries,
     ...sourceSelection, enforceQualificationScope: false, allowTargeted: true,
   });
   const actual = validateQualificationScopeIdentity(read(artifact, 'payload', 'qualificationScope'));
   const expected = qualificationScopeIdentity({ kind: measuredKind, release: sourceSelection.release,
     stack: entry.stack ?? null, reference: entry.kind === 'null' ? null
-      : context.references.find(reference => reference.backend === entry.stack),
+      : sourceReference,
     mutation: selectedMutation, stackBenchRoot });
   const { sha256: _actualSha, executableSha256: actualExecutable, ...actualInputs } = actual;
   const { sha256: _expectedSha, executableSha256: expectedExecutable, ...expectedInputs } = expected;
