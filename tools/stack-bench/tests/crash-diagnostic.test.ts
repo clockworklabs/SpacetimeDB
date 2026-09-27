@@ -374,6 +374,198 @@ test('crash verdict without a measured observation remains inconclusive', async 
   }
 });
 
+test('a bounded checkout burst requests the fault before fast calls drain', async () => {
+  const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100, cart: [],
+    stock: [{ warehouseId: 'w', quantity: 10 }], reservations: [], orders: [], payments: [], orphanOrderLines: 0 };
+  const prepared = structuredClone(before);
+  prepared.cart.push({ itemId: 'i', quantity: 1 });
+  const wrap = (state: CheckoutState) => ({ state: checkoutStateSchema.parse(state), schemaSha256: { schema: 'same' },
+    account: 'a', item: 'i', recordedAtMs: Date.now() });
+  const base = Date.now();
+  let clock = base, calls = 0, callsAtFault = 0;
+  const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+    do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+    requests: 16, offsetMs: 0, target: 'database',
+  }, { capabilities: {
+    actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] },
+      context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+    'named-actions': { now: () => clock, resolve: () => ({ id: 'checkout' }),
+      request: () => ({ url: 'http://app/checkout', responseContract: 'http' }),
+      fetch: async () => {
+        const index = ++calls;
+        return { status: 409, text: async () => { clock = base + (index === 16 ? 20 : index); return 'refused'; } };
+      } },
+    'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
+      markCheckoutUnsettled: () => {}, getCheckoutState: async () => wrap(prepared) },
+    'browser-observation': { recorded: new Map() },
+    'process-crash': { prepare: async () => ({ spacetime: null, close: async () => {},
+      crash: async () => {
+        callsAtFault = calls;
+        const killedAt = base + (calls === 1 ? 2 : 40);
+        return { backend: 'postgres', target: 'database', requestedAtMs: killedAt, completedAtMs: killedAt,
+          clockOffsetBeforeMs: 0, clockOffsetAfterMs: 0, signal: 'SIGKILL',
+          processEvidence: `KILLED 42 123 ${killedAt}\nQUIET\n` };
+      }, recover: async () => null }) },
+  } });
+  assert.equal(calls, 16);
+  assert.equal(result.status, 'passed', `${result.code} ${JSON.stringify(result.finding)}`);
+  const evidence = result.observation as { outstandingAtFault: number; outcomes: unknown[] };
+  assert.equal(evidence.outcomes.length, 16);
+  assert(evidence.outstandingAtFault > 0);
+  assert.equal(callsAtFault, 1);
+});
+
+test('a recovered replacement cannot stand in for a checkout acknowledged before the cut', async () => {
+  const prior = { id: 'prior', accountId: 'a', status: 'pending', totalMinor: 100,
+    lines: [{ itemId: 'i', quantity: 1, priceMinor: 100, allocations: [{ warehouseId: 'w', quantity: 1 }] }] };
+  const payment = { id: 'prior-payment', orderId: 'prior', amountMinor: 100, status: 'paid' };
+  for (const mode of ['masked', 'idempotent', 'clock-drift', 'no-precut-ack', 'lost-prior', 'partial', 'direct'] as const) {
+    const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100, cart: [],
+      stock: [{ warehouseId: 'w', quantity: 10 }], reservations: [], orders: [prior], payments: [payment],
+      orphanOrderLines: 0 };
+    const prepared = structuredClone(before);
+    prepared.cart.push({ itemId: 'i', quantity: 1 });
+    const after = structuredClone(before);
+    after.stock[0]!.quantity = mode === 'partial' ? 8 : 9;
+    if (mode === 'lost-prior') { after.orders = []; after.payments = []; }
+    after.orders.push({ ...prior, id: 'replacement' });
+    after.payments.push({ ...payment, id: 'replacement-payment', orderId: 'replacement' });
+    const wrap = (state: CheckoutState) => ({ state: checkoutStateSchema.parse(state),
+      schemaSha256: { schema: 'same' }, account: 'a', item: 'i', recordedAtMs: Date.now() });
+    const base = Date.now();
+    let clock = base, calls = 0;
+    let firstDone!: () => void, release!: () => void;
+    const first = new Promise<void>(resolve => { firstDone = resolve; });
+    const resumed = new Promise<void>(resolve => { release = resolve; });
+    const recorded = new Map<string, unknown>();
+    const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+      do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+      requests: 16, offsetMs: 0, target: 'database', ...(mode === 'direct' ? {} : { as: 'captured' }),
+    }, { capabilities: {
+      actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] },
+        context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+      'named-actions': { now: () => clock, resolve: () => ({ id: 'checkout' }),
+        request: () => ({ url: 'http://app/checkout', responseContract: 'http' }),
+        fetch: async () => {
+          const index = ++calls;
+          if (index !== 1 || mode === 'no-precut-ack') await resumed;
+          return { status: index <= (['masked', 'idempotent', 'clock-drift', 'direct'].includes(mode) ? 2 : 1) ? 200 : 409,
+            text: async () => {
+              if (index === 1 && mode !== 'no-precut-ack') { clock = base + (mode === 'clock-drift' ? 8 : 1); firstDone(); }
+              if (index !== 1 || mode === 'no-precut-ack') clock = base + 20;
+              return index <= (['masked', 'idempotent', 'clock-drift', 'direct'].includes(mode) ? 2 : 1) ? '{}' : 'refused';
+            } };
+        } },
+      'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
+        markCheckoutUnsettled: () => {}, getCheckoutState: async () => wrap(after) },
+      'browser-observation': { recorded },
+      'process-crash': { combinedBoundary: false, prepare: async () => ({ spacetime: null,
+        close: async () => {}, crash: async () => {
+          if (mode !== 'no-precut-ack') await first;
+          clock = base + 10;
+          return { backend: 'postgres', target: 'database', requestedAtMs: clock, completedAtMs: clock,
+            clockOffsetBeforeMs: mode === 'clock-drift' ? 4 : 0, clockOffsetAfterMs: 0, signal: 'SIGKILL',
+            processEvidence: `KILLED 42 123 ${clock}\nQUIET\n` };
+        }, recover: async () => { release(); return null; } }) },
+    } });
+    assert.equal(calls, 16, mode);
+    const expected = mode === 'direct' ? 'inconclusive' : 'passed';
+    assert.equal(result.status, expected, `${mode}: ${result.code} ${JSON.stringify(result.finding)}`);
+    if (mode === 'direct') continue;
+    const verdict = async (name: 'atomicity' | 'durability') => executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
+      do: 'expectCrashCheckout', from: 'captured', verdict: name,
+    }, { capabilities: { 'browser-observation': { recorded } } });
+    const atomicity = await verdict('atomicity'), durability = await verdict('durability');
+    assert.equal(atomicity.status, mode === 'partial' ? 'failed' : 'passed', mode);
+    assert.equal(durability.status, ['masked', 'idempotent', 'clock-drift', 'partial'].includes(mode) ? 'inconclusive'
+      : mode === 'lost-prior' ? 'failed' : 'passed', mode);
+  }
+});
+
+test('combined crash reuse keeps an inconclusive durability verdict', async () => {
+  const prior = { receipt: { backend: 'convex', target: 'database' },
+    verdicts: { atomicity: [], durability: [] },
+    unmeasuredVerdicts: { durability: 'acknowledged checkout cannot be linked to recovered order' } };
+  const recorded = new Map<string, unknown>([['database', prior]]);
+  const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+    do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+    requests: 16, offsetMs: 0, target: 'application', as: 'application', reuseCombinedFrom: 'database',
+  }, { capabilities: { actors: {}, 'named-actions': {}, 'database-read': {}, 'browser-observation': { recorded },
+    'process-crash': { combinedBoundary: true, prepare: () => assert.fail('must reuse the measured database boundary') } } });
+  assert.equal(result.status, 'passed');
+  assert.equal(recorded.get('application'), prior);
+  const verdict = await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
+    do: 'expectCrashCheckout', from: 'application', verdict: 'durability',
+  }, { capabilities: { 'browser-observation': { recorded } } });
+  assert.equal(verdict.status, 'inconclusive');
+});
+
+test('a correlated native refusal after the cut cannot replace a pre-cut acknowledgement', async t => {
+  const websocket = globalThis.WebSocket;
+  t.after(() => { globalThis.WebSocket = websocket; });
+  for (const secondCommitted of [false, true]) {
+  const base = Date.now();
+  let clock = base;
+  let firstDone!: () => void, secondDone!: () => void, releaseReplies!: () => void;
+  const first = new Promise<void>(resolve => { firstDone = resolve; });
+  const second = new Promise<void>(resolve => { secondDone = resolve; });
+  const resumed = new Promise<void>(resolve => { releaseReplies = resolve; });
+  globalThis.WebSocket = class extends Socket {
+    static OPEN = websocket.OPEN;
+    static CLOSED = websocket.CLOSED;
+    constructor() {
+      super();
+      queueMicrotask(() => this.message({ IdentityToken: { identity: { __identity__: `0x${'1'.repeat(64)}` },
+        connection_id: { __connection_id__: '224514910607798700000000000000000000001' } } }));
+    }
+    override send(value: string) {
+      super.send(value);
+      const id = this.sent.at(-1)!.CallReducer.request_id;
+      if (id === 1) queueMicrotask(() => { clock = base + 1; this.reply(id, { Committed: {} }); firstDone(); });
+      else if (id === 2 && secondCommitted) queueMicrotask(() => {
+        clock = base + 2; this.reply(id, { Committed: {} }); secondDone();
+      });
+      else void resumed.then(() => { clock = base + 20; this.reply(id, { Failed: 'empty cart' }); });
+    }
+  } as unknown as typeof WebSocket;
+  const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100, cart: [],
+    stock: [{ warehouseId: 'w', quantity: 10 }], reservations: [], orders: [], payments: [], orphanOrderLines: 0 };
+  const prepared = structuredClone(before); prepared.cart.push({ itemId: 'i', quantity: 1 });
+  const after = structuredClone(before); after.stock[0]!.quantity--;
+  after.orders.push({ id: 'order', accountId: 'a', status: 'pending', totalMinor: 100,
+    lines: [{ itemId: 'i', priceMinor: 100, quantity: 1, allocations: [{ warehouseId: 'w', quantity: 1 }] }] });
+  after.payments.push({ id: 'payment', orderId: 'order', amountMinor: 100, status: 'paid' });
+  const wrap = (state: CheckoutState) => ({ state, schemaSha256: { schema: 'same' },
+    account: 'a', item: 'i', recordedAtMs: Date.now() });
+  const recorded = new Map<string, unknown>();
+  const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+    do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+    requests: 16, offsetMs: 0, target: 'database', as: 'native',
+  }, { capabilities: {
+    actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] },
+      context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
+    'named-actions': { now: () => clock, spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+      resolve: () => ({ id: 'checkout', reducer: 'checkout' }),
+      request: () => ({ url: 'http://app/call/checkout', body: '[]' }),
+      fetch: async () => assert.fail('native checkout must use the confirmed socket') },
+    'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
+      markCheckoutUnsettled: () => {}, getCheckoutState: async () => wrap(after) },
+    'browser-observation': { recorded },
+    'process-crash': { combinedBoundary: true, prepare: async () => ({ combinedBoundary: true,
+      spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' }, close: async () => {},
+      crash: async () => { await (secondCommitted ? second : first); clock = base + 10; return { backend: 'spacetime', target: 'database',
+        requestedAtMs: clock, completedAtMs: clock, clockOffsetBeforeMs: 0, clockOffsetAfterMs: 0,
+        signal: 'SIGKILL', processEvidence: `KILLED 42 123 ${clock}\nQUIET\n` }; },
+      recover: async () => { releaseReplies(); return null; } }) },
+  } });
+  assert.equal(result.status, 'passed');
+  const verdict = await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
+    do: 'expectCrashCheckout', from: 'native', verdict: 'durability',
+  }, { capabilities: { 'browser-observation': { recorded } } });
+  assert.equal(verdict.status, secondCommitted ? 'inconclusive' : 'passed');
+  }
+});
+
 test('combined application boundary reuses only a measured database crash and retains its failures', async () => {
   for (const prior of [undefined, { receipt: { backend: 'postgres', target: 'database' }, verdicts: { atomicity: [], durability: [] } },
     ...['spacetime', 'convex'].map(backend => ({ receipt: { backend, target: 'database' }, verdicts: {

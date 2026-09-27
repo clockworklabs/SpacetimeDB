@@ -144,9 +144,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     }
     let receipt: ProcessCrashReceipt | undefined, faultError: unknown, recoveryError: unknown, recoveredAtMs: number | undefined;
     let databaseDrain: DatabaseDrainReceipt | null | undefined;
-    const pending = Array.from({ length: input.requests }, async (_, index) => ({
-      requestIndex: index + 1, ...await caller!.call(),
-    }));
+    const pending = [caller.call().then(outcome => ({ requestIndex: 1, ...outcome }))];
     const fault = (async () => {
       signal.throwIfAborted();
       if (input.offsetMs) await named.sleep(input.offsetMs, signal);
@@ -171,6 +169,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
         }
       }
     })().catch(error => { faultError ??= error; });
+    for (let index = 1; index < input.requests; index++) {
+      pending.push(caller.call().then(outcome => ({ requestIndex: index + 1, ...outcome })));
+    }
     const outcomes = await Promise.all(pending);
     const queued = outcomes.some(row => row.status === 202);
     // Killing the app cannot retract a commit already sent to its database.
@@ -214,7 +215,18 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const faultAtMs = Math.min(...signalTimes);
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
-    const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
+    // The caller has no stable order ID. Another request can replace a lost
+    // pre-cut acknowledged order while leaving the aggregate state unchanged.
+    // Both measured clock offsets bound acknowledgements near the kill.
+    const latestFaultEndMs = faultEndMs + Math.max(0,
+      receipt.clockOffsetBeforeMs - receipt.clockOffsetAfterMs);
+    const durabilityUnlinked = outcomes.some((ack, index) => ack.outcome === 'committed'
+      && ack.completedAtMs <= latestFaultEndMs && outcomes.some((other, otherIndex) => otherIndex !== index
+        && !(other.protocol === 'websocket-v1-confirmed' && other.responseFailed)));
+    const unmeasuredVerdicts = durabilityUnlinked
+      ? { durability: 'acknowledged checkout cannot be linked to the recovered order' } : undefined;
+    const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed,
+      faultAtMs, faultEndMs, outstandingAtFault, ...(unmeasuredVerdicts ? { unmeasuredVerdicts } : {}) };
     const unmeasured = prepared.state.reservations.length && evidenceNowMs() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window'
@@ -237,6 +249,10 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
       throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation: evidence });
     }
+    if (unmeasuredVerdicts) {
+      const value = finding('invalid-input', { detail: unmeasuredVerdicts.durability });
+      throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence });
+    }
     return evidence;
   } finally {
     if (unsettled) database.markCheckoutUnsettled();
@@ -250,7 +266,8 @@ export const expectCrashCheckout = actionImplementation(({ input, capabilities }
   capabilities: Pick<Capabilities, 'browser-observation'>;
 }) => {
   const observation = capabilities['browser-observation'].recorded.get(input.from) as
-    { verdicts: Record<'atomicity' | 'durability', ReturnType<typeof checkoutDifferences>> } | undefined;
+    { verdicts: Record<'atomicity' | 'durability', ReturnType<typeof checkoutDifferences>>;
+      unmeasuredVerdicts?: { durability?: string } } | undefined;
   if (!observation?.verdicts || !Array.isArray(observation.verdicts[input.verdict])) {
     inconclusive('assertion-without-action', { action: 'crashCheckout' });
   }
@@ -259,6 +276,10 @@ export const expectCrashCheckout = actionImplementation(({ input, capabilities }
     const { control, observed, expected } = difference;
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
     throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  if (input.verdict === 'durability' && observation.unmeasuredVerdicts?.durability) {
+    const value = finding('invalid-input', { detail: observation.unmeasuredVerdicts.durability });
+    throw new ActionInconclusive(renderFinding(value), { finding: value, observation });
   }
   return observation;
 });
