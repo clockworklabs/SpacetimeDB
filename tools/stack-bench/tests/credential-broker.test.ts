@@ -167,9 +167,8 @@ test('credential broker rejects unauthorized and unsupported requests before ups
   });
 });
 
-// Anthropic auto may choose Priority. A cap must request standard capacity;
-// explicit standard_only must work, and uncapped requests must keep their tier.
-test('Anthropic capped requests select standard capacity without changing uncapped requests', async () => {
+// A spend cap does not change the capacity tier requested by the agent.
+test('Anthropic requests preserve the selected capacity tier under a cap', async () => {
   for (const maxBudgetUsd of [1, null]) {
     for (const serviceTier of [undefined, 'auto', 'standard_only']) {
       await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
@@ -178,17 +177,15 @@ test('Anthropic capped requests select standard capacity without changing uncapp
         assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}` },
           body: JSON.stringify(request) })).status, 200);
         assert.equal(seen.length, 1);
-        assert.deepEqual(JSON.parse(seen[0]!.body), maxBudgetUsd === null
-          ? request : { ...request, service_tier: 'standard_only' });
+        assert.deepEqual(JSON.parse(seen[0]!.body), request);
       }, { maxBudgetUsd, pricingRates: PRICING_RATES,
         upstreamBody: JSON.stringify({ usage: { ...ONE_REQUEST_USAGE, service_tier: 'standard' } }) });
     }
   }
 });
 
-// Remote and file-backed content can be larger than its request bytes, including
-// inside tool results. Capped requests must refuse it; uncapped input stays intact.
-test('Anthropic caps refuse nested remote content before upstream', async t => {
+// Remote and file-backed content remains available; its extra input is unpriced.
+test('Anthropic forwards nested remote content and retains unpriced spend', async t => {
   for (const source of [{ type: 'url', url: 'https://example.test/content' },
     { type: 'file', file_id: 'file-content' }]) {
     for (const type of ['image', 'document']) {
@@ -203,15 +200,18 @@ test('Anthropic caps refuse nested remote content before upstream', async t => {
                   content: [{ type, source }] }] }] };
               const response = await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}` },
                 body: JSON.stringify(request) });
-              assert.equal(response.status, capped ? 402 : 200);
-              assert.equal(seen.length, capped ? 0 : 1);
+              assert.equal(response.status, 200);
+              assert.equal(seen.length, 1);
+              assert.deepEqual(JSON.parse(seen[0]!.body), request);
               const ledger = readCredentialBrokerLedger(ledgerPath);
               if (capped) {
-                assert.equal(ledger.spentUsd, 0);
-                assert.equal(ledger.billableRequests, 0);
-                assert.equal(ledger.providerFailure?.code, 'unbounded-request-cost');
-              } else assert.deepEqual(JSON.parse(seen[0]!.body), request);
-            }, { ledgerPath, maxBudgetUsd: capped ? 1 : null, pricingRates: PRICING_RATES });
+                assert.equal(ledger.billableRequests, 1);
+                assert.equal(ledger.unpricedBillableRequests, 1);
+                assert.equal(ledger.unpricedByReason['unpriced-input'], 1);
+                assert.equal(ledger.providerFailure, null);
+              }
+            }, { ledgerPath, maxBudgetUsd: capped ? 1 : null, pricingRates: PRICING_RATES,
+              upstreamBody: JSON.stringify({ usage: ONE_REQUEST_USAGE }) });
           } finally { rmSync(root, { recursive: true, force: true }); }
         });
       }
@@ -219,14 +219,20 @@ test('Anthropic caps refuse nested remote content before upstream', async t => {
   }
 });
 
-test('Anthropic capped requests refuse unbounded features before upstream', async () => {
+test('Anthropic broker forwards server-side features and marks spend it cannot price', async () => {
   const request = { model: 'test-model', max_tokens: 1, messages: [{ role: 'user', content: 'hello' }] };
   const webSearch = { tools: [{ type: 'web_search_20250305', name: 'web_search' }] };
   const usage = (extra: Record<string, unknown> = {}) => JSON.stringify({ usage: { ...ONE_REQUEST_USAGE, ...extra } });
-  const cases: Array<{ override: Record<string, unknown>; upstreamBody: string; reason: UnpricedReason | null }> = [
+  const cases: Array<{ override: Record<string, unknown>; upstreamBody: string; reason: UnpricedReason | null;
+    estimated?: boolean }> = [
     { override: webSearch, upstreamBody: usage({ server_tool_use: { web_search_requests: 2 } }), reason: 'server-tool' },
+    { override: webSearch, upstreamBody: usage({ server_tool_use: { web_search_requests: 0 } }), reason: null },
+    { override: webSearch, upstreamBody: usage(), reason: null },
+    { override: webSearch, upstreamBody: JSON.stringify({ content: [{ type: 'server_tool_use', name: 'web_search' }],
+      usage: ONE_REQUEST_USAGE }), reason: 'server-tool' },
     { override: { tools: [{ type: 'web_fetch_20250910', name: 'web_fetch' }] },
       upstreamBody: usage({ server_tool_use: { web_fetch_requests: 1 } }), reason: 'server-tool' },
+    { override: webSearch, upstreamBody: '{"ok":true}', reason: 'server-tool', estimated: true },
     { override: { mcp_servers: [{ type: 'url', url: 'https://mcp.example', name: 'remote' }] },
       upstreamBody: usage(), reason: 'mcp' },
     { override: { container: 'container-id' }, upstreamBody: usage(), reason: 'container' },
@@ -236,40 +242,32 @@ test('Anthropic capped requests refuse unbounded features before upstream', asyn
     { override: { tools: [{ name: 'Bash', description: 'Run a command', input_schema: { type: 'object' } },
       { type: 'custom', name: 'Edit', input_schema: { type: 'object' } }] }, upstreamBody: usage(), reason: null },
   ];
-  for (const { override, upstreamBody, reason } of cases) {
+  for (const { override, upstreamBody, reason, estimated = false } of cases) {
     const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-unpriced-'));
     const ledgerPath = join(root, 'ledger.json');
     try {
       await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
         const body = JSON.stringify({ ...request, ...override });
-        if (reason) {
-          assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}` }, body })).status, 402);
-          assert.equal(seen.length, 0, 'even an unused hosted tool needs a bound before admission');
-          const ledger = readCredentialBrokerLedger(ledgerPath);
-          assert.equal(ledger.spentUsd, 0);
-          assert.equal(ledger.billableRequests, 0);
-          assert.equal(ledger.providerFailure?.code, 'unbounded-request-cost');
-          return;
-        }
         assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}`,
           'content-type': 'application/json' }, body })).status, 200, body);
         assert.equal(seen.length, 1);
-        assert.deepEqual(JSON.parse(seen[0]!.body), { ...request, ...override, service_tier: 'standard_only' });
+        assert.deepEqual(JSON.parse(seen[0]!.body), { ...request, ...override });
         const ledger = readCredentialBrokerLedger(ledgerPath, { model: 'test-model', maxBudgetUsd: 1 });
         assert.equal(ledger.complete, true);
-        assert.equal(ledger.unpricedBillableRequests, 0, body);
-        assert.deepEqual(ledger.unpricedByReason, NO_UNPRICED);
-        assert.equal(ledger.estimatedBillableRequests, 0);
+        assert.equal(ledger.unpricedBillableRequests, reason ? 1 : 0, body);
+        assert.deepEqual(ledger.unpricedByReason, reason ? { ...NO_UNPRICED, [reason]: 1 } : NO_UNPRICED);
+        assert.equal(ledger.estimatedBillableRequests, estimated ? 1 : 0);
+        // The CLI can report server-tool fees above the broker's priced figure.
         const reconciled = reconcileCredentialBrokerReceipt({ ledger,
           cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0218,
-            usage: ONE_REQUEST_USAGE },
+            usage: estimated ? ZERO_RAW_USAGE : ONE_REQUEST_USAGE },
           model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
         assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
         const { receipt } = reconciled;
         assert.equal(receipt.reconciled, true);
         assert.equal(receipt.schemaVersion, 4);
-        assert.equal(receipt.exact, true);
-        assert.equal(receipt.unpricedRequests, 0);
+        assert.equal(receipt.exact, reason === null && !estimated);
+        assert.equal(receipt.unpricedRequests, reason ? 1 : 0);
         assert.deepEqual(receipt.unpricedByReason, ledger.unpricedByReason);
         assert.equal(receipt.costUsd, ledger.spentUsd);
         assert.equal(receipt.cliCostUsd, 0.0218);
@@ -279,8 +277,11 @@ test('Anthropic capped requests refuse unbounded features before upstream', asyn
           buildSessions: [{ costUsd: receipt.costUsd, costComplete: true, costReceipts: [{ invocation: 1, receipt }] }] }] };
         const cost = durableCostLedger(run);
         assert.equal(cost.complete, true);
-        assert.equal(cost.priced, true);
-        assert.deepEqual(runCostEvidence(run), { status: 'exact', costUsd: receipt.costUsd });
+        assert.equal(cost.priced, reason === null);
+        assert.deepEqual(runCostEvidence(run), reason === null
+          ? { status: estimated ? 'upper-bound' : 'exact', costUsd: receipt.costUsd }
+          : estimated ? { status: 'unknown', costUsd: null }
+            : { status: 'unknown', costUsd: null, lowerBoundUsd: receipt.costUsd });
       }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES, upstreamBody });
     } finally { rmSync(root, { recursive: true, force: true }); }
   }
@@ -1092,7 +1093,7 @@ test('OpenAI broker isolates credentials, bounds requests and reconciles cached 
       assert.equal(reconciled.receipt.cliCostUsd, null);
       assert.equal(reconciled.receipt.costUsd, 0.000189);
       assert.equal(reconciled.receipt.exact, true);
-      // A capped run must refuse charges it cannot bound before forwarding.
+      // Features whose charges or input the token rates do not cover are forwarded and marked.
       const unpriced: Array<[Record<string, unknown>, UnpricedReason]> = [
         [{ tools: [{ type: 'web_search' }] }, 'hosted-tool'],
         [{ input: [{ type: 'item_reference', id: 'hidden-input' }] }, 'unpriced-input'],
@@ -1106,25 +1107,26 @@ test('OpenAI broker isolates credentials, bounds requests and reconciles cached 
       ];
       for (const [override] of unpriced) {
         assert.equal((await send(brokerPort, { ...request,
-          body: JSON.stringify({ model: 'test-model', ...override }) })).status, 402, JSON.stringify(override));
-        assert.equal(seen.length, 1, 'an unsupported budget reservation must not reach upstream');
-        assert.equal(readCredentialBrokerLedger(ledgerPath).providerFailure?.code, 'unbounded-request-cost');
+          body: JSON.stringify({ model: 'test-model', ...override }) })).status, 200, JSON.stringify(override));
       }
       for (const override of [{ truncation: 'auto' }, { background: true }]) {
         assert.equal((await send(brokerPort, { ...request,
           body: JSON.stringify({ model: 'test-model', input: 'hello', ...override }) })).status, 200);
       }
-      assert.equal(seen.length, 3);
+      assert.equal(seen.length, unpriced.length + 3);
+      assert.equal(JSON.parse(seen.at(-3)!.body).service_tier, 'priority');
       const marked = readCredentialBrokerLedger(ledgerPath);
-      assert.equal(marked.unpricedBillableRequests, 0);
-      assert.deepEqual(marked.unpricedByReason, NO_UNPRICED);
+      const expected = noUnpriced();
+      for (const [, reason] of unpriced) expected[reason] += 1;
+      assert.equal(marked.unpricedBillableRequests, unpriced.length);
+      assert.deepEqual(marked.unpricedByReason, expected);
       const receipt = reconcileCredentialBrokerReceipt({ ledger: marked, provider: 'openai',
         cliResult: { usage: { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 80, cache_creation_input_tokens: 0 } },
         model: 'test-model', maxBudgetUsd: 10, pricingRates: rates });
       assert.equal(receipt.ok, true, receipt.receipt.error ?? undefined);
-      assert.equal(receipt.receipt.exact, true);
-      assert.equal(receipt.receipt.unpricedRequests, 0);
-      assert.equal(receipt.receipt.costUsd, 0.000567);
+      assert.equal(receipt.receipt.exact, false);
+      assert.equal(receipt.receipt.unpricedRequests, unpriced.length);
+      assert.equal(receipt.receipt.costUsd, 0.002268);
     }, { provider: 'openai', ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
       upstreamBody: `event: response.completed\ndata: ${JSON.stringify({ type: 'response.completed', response: { usage } })}\n\n` });
     await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen, stats }) => {
@@ -1218,32 +1220,27 @@ test('OpenRouter broker freezes routing and records reported cost, not reservati
       assert.equal(reconciled.receipt.calculatedCostUsd, null);
       assert.equal(reconciled.receipt.costUsd, 0.001);
       assert.equal(reconciled.receipt.exact, true);
-      // A reported cost cannot bound a hosted feature before it runs.
+      // Reported cost includes hosted features, so they stay priced.
       for (const override of [{ tools: [{ type: 'web_search' }] }, { previous_response_id: 'resp_1' },
-        { modalities: ['image'] }]) {
-        assert.equal((await send(brokerPort, { ...request, body: JSON.stringify({ model, input, ...override }) })).status, 402);
+        { modalities: ['image'] }, { truncation: 'auto' }]) {
+        assert.equal((await send(brokerPort, { ...request, body: JSON.stringify({ model, input, ...override }) })).status, 200);
       }
-      assert.equal(seen.length, 1);
-      assert.equal((await send(brokerPort, { ...request,
-        body: JSON.stringify({ model, input, truncation: 'auto' }) })).status, 200);
       const hosted = readCredentialBrokerLedger(ledgerPath);
       assert.equal(hosted.unpricedBillableRequests, 0);
-      assert.equal(hosted.spentUsd, 0.002);
+      assert.equal(hosted.spentUsd, 0.005);
       const hostedReceipt = reconcileCredentialBrokerReceipt({ ledger: hosted, provider: 'openrouter',
         cliResult: { usage: ZERO_RAW_USAGE }, model, maxBudgetUsd: 10, pricingRates: rates });
       assert.equal(hostedReceipt.ok, true, hostedReceipt.receipt.error ?? undefined);
       assert.equal(hostedReceipt.receipt.exact, true);
     }, { provider: 'openrouter', providerRoute: 'openai', model, ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
       upstreamBody: `data: ${JSON.stringify({ type: 'response.completed', response })}\n\n` });
-    // Unknown hosted fees must not use an ordinary token reservation.
+    // A hosted tool's reported fee can exceed a token reservation without failing routing integrity.
     await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
       const request = { path: '/v1/responses', headers: { authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({ model, input: 'hello', tools: [{ type: 'web_search' }] }) };
-      assert.equal((await send(brokerPort, request)).status, 402);
-      assert.equal((await send(brokerPort, request)).status, 402);
-      assert.equal(seen.length, 0);
-      assert.equal(readCredentialBrokerLedger(ledgerPath).spentUsd, 0);
-      assert.equal(readCredentialBrokerLedger(ledgerPath).providerFailure?.code, 'unbounded-request-cost');
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal(seen.length, 2);
       assert.equal(readCredentialBrokerLedger(ledgerPath).providerIntegrityError, undefined);
     }, { provider: 'openrouter', providerRoute: 'openai', model, ledgerPath, pricingRates: rates, maxBudgetUsd: 50,
       upstreamBody: JSON.stringify({ ...response, usage: { ...response.usage, cost: 11 } }) });
@@ -1295,68 +1292,31 @@ test('OpenAI inline screenshots retain input and reserve bounded vision tokens',
   assert.equal(unverified.requestPricing(inline).unpriced, 'unpriced-input');
 });
 
-// Failure cases: tiny encoded images under-reserve visual input; multiple images
-// must share one context ceiling; missing usage must retain the reservation;
-// unsupported features cannot bypass a cap, while uncapped traffic stays intact.
-test('Sol screenshot reservations bound the complete input context before upstream', async t => {
-  const root = mkdtempSync(join(tmpdir(), 'sol-context-budget-'));
+test('Sol screenshots under a priced-spend cap retain unpriced input without a full-context reservation', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'sol-priced-image-'));
   const ledgerPath = join(root, 'ledger.json');
-  const rates = { input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 2.5 };
-  const image = { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' };
-  const evidence: unknown[] = [];
-  const sources = {
-    model: 'https://developers.openai.com/api/docs/models/gpt-6-sol',
-    vision: 'https://developers.openai.com/api/docs/guides/images-vision',
-    checkedAt: '2026-09-27', contextTokens: 1_050_000, maxOutputTokens: 128_000,
-  };
+  const rates = { input: 2, output: 14, cacheRead: 0.2, cacheWrite5m: 0, cacheWrite1h: 0 };
+  const usage = { input_tokens: 1000, output_tokens: 100, input_tokens_details: { cached_tokens: 500 } };
   try {
-    for (const mode of ['insufficient-budget', 'multiple-images', 'missing-usage', 'uncapped-feature']) {
-      await t.test(mode, async () => {
-        const usage = { input_tokens: 1000, output_tokens: 100, input_tokens_details: { cached_tokens: 500 } };
-        await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen }) => {
-          const input = mode === 'multiple-images' ? [image, image, image] : [image];
-          const payload = { model: 'gpt-6-sol', input,
-            ...(mode === 'uncapped-feature' ? { tools: [{ type: 'web_search' }] } : {}) };
-          const response = await send(brokerPort, { path: '/v1/responses',
-            headers: { authorization: `Bearer ${sessionToken}` }, body: JSON.stringify(payload) });
-          const ledger = readCredentialBrokerLedger(ledgerPath);
-          evidence.push({ mode, response, ledger, forwarded: seen.length });
-          if (mode === 'insufficient-budget') {
-            assert.equal(response.status, 402, 'the full input and output ceiling exceeds $3');
-            assert.equal(seen.length, 0);
-            assert.equal(ledger.providerFailure?.code, 'reservation-exceeds-budget');
-            assert.equal(ledger.spentUsd, 0);
-            return;
-          }
-          assert.equal(response.status, 200);
-          assert.equal(seen.length, 1);
-          assert.deepEqual(JSON.parse(seen[0]!.body).input, input, 'preserve screenshot contents and detail');
-          if (mode === 'uncapped-feature') return;
-          assert.equal(ledger.complete, true);
-          assert.equal(ledger.unpricedBillableRequests, 0);
-          if (mode === 'missing-usage') {
-            assert.equal(ledger.estimatedBillableRequests, 1);
-            assert.ok(ledger.spentUsd >= 3.905 && ledger.spentUsd <= 3.905001,
-              'reserve the documented context once plus maximum output, rounded up by at most one microdollar');
-          } else {
-            const reconciled = reconcileCredentialBrokerReceipt({ ledger, provider: 'openai',
-              cliResult: { usage: { input_tokens: 500, output_tokens: 100, cache_read_input_tokens: 500,
-                cache_creation_input_tokens: 0 } }, model: 'gpt-6-sol', maxBudgetUsd: 4, pricingRates: rates });
-            assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
-            assert.equal(reconciled.receipt.exact, true);
-            assert.equal(reconciled.receipt.costUsd, 0.0021, 'completed usage replaces the conservative reservation');
-          }
-        }, { provider: 'openai', model: 'gpt-6-sol', accountId: 'test', ledgerPath, pricingRates: rates,
-          maxBudgetUsd: mode === 'uncapped-feature' ? null : mode === 'insufficient-budget' ? 3 : 4,
-          upstreamBody: mode === 'missing-usage' ? '{"ok":true}'
-            : JSON.stringify({ object: 'response', status: 'completed', usage }) });
-      });
-    }
-  } finally {
-    if (process.env.STACK_BENCH_BUDGET_EVIDENCE) writeFileSync(process.env.STACK_BENCH_BUDGET_EVIDENCE,
-      JSON.stringify({ sources, evidence, rerun: 'node --test --test-name-pattern="Sol screenshot reservations|OpenAI broker isolates" dist/tests/credential-broker.test.js' }, null, 2));
-    rmSync(root, { recursive: true, force: true });
-  }
+    await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen }) => {
+      const input = [{ type: 'custom_tool_call_output', output: [{ type: 'input_image',
+        image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' }] }];
+      const response = await send(brokerPort, { path: '/v1/responses',
+        headers: { authorization: `Bearer ${sessionToken}` }, body: JSON.stringify({ model: 'gpt-6-sol', input }) });
+      assert.equal(response.status, 200);
+      assert.deepEqual(JSON.parse(seen[0]!.body).input, input);
+      const ledger = readCredentialBrokerLedger(ledgerPath);
+      assert.equal(ledger.unpricedByReason['unpriced-input'], 1);
+      const reconciled = reconcileCredentialBrokerReceipt({ ledger, provider: 'openai',
+        cliResult: { usage: ZERO_RAW_USAGE }, model: 'gpt-6-sol', maxBudgetUsd: 2, pricingRates: rates });
+      assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
+      assert.equal(reconciled.receipt.exact, false);
+      assert.equal(reconciled.receipt.costUsd, 0.0025);
+      assert.equal(reconciled.receipt.unpricedRequests, 1);
+    }, { provider: 'openai', model: 'gpt-6-sol', accountId: 'test', ledgerPath,
+      pricingRates: rates, maxBudgetUsd: 2,
+      upstreamBody: JSON.stringify({ object: 'response', status: 'completed', usage }) });
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('output reservations honor API caps without assuming account endpoints enforce them', () => {

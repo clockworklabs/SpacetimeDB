@@ -429,6 +429,11 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
       break;
     }
     if (!error && result?.is_error === false) break;
+    if (maxBudgetUsd !== null && sessionResults.some(item =>
+      Number(item.stack_bench_cost_receipt?.unpricedRequests ?? 0) > 0)) {
+      spawnError = 'coding session includes unpriced provider spend; remaining budget is unknown and continuation is disabled';
+      break;
+    }
     const interruption = codingSessionInterruption(error, result);
     const receiptCostUsd = completeBrokerReceiptCost(result, model);
     const providerFailure = providerSessionFailure(result);

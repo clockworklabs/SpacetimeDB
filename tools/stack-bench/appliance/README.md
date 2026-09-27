@@ -108,13 +108,13 @@ After pasting the token and pressing Enter, close stdin with Ctrl+D in a POSIX
 terminal, or Ctrl+Z followed by Enter in Windows PowerShell.
 
 The credential broker checks model, output-token and request-size limits. Receipts
-price token usage at the plan's frozen rates. A capped session must also have a
-verified cost bound for each request before it reaches the provider. Requests with
-unbounded input or extra charges are refused. This includes unsupported server
-tools, service tiers, MCP servers and containers. Without a cap, these requests
-can proceed; receipts mark their cost as unknown and retain priced spend as a
-lower bound. An attempt with unknown prior spend cannot start a capped retry or
-continuation.
+price token usage at the plan's frozen rates. The cost limit covers priced spend,
+not a guaranteed maximum invoice. Server tools, service tiers, MCP servers,
+containers and other features still reach the provider unchanged when their
+charges are unknown. Receipts mark that spend as unknown and retain the priced
+amount as a lower bound. Neither automatic retries nor operator continuations
+can use a capped session's unknown remaining budget. Complete receipts remain
+saved, including those from a successful session with unpriced charges.
 
 Run the remaining commands from `tools/stack-bench`. Compose uses the state
 volume's results directory as its working directory, so `plans/...` and
@@ -144,10 +144,12 @@ OpenAI receipts use observed tokens and the plan's frozen rates. They are a
 comparison cost, not an account-plan invoice. Use rates that cover the selected
 model and context range. Hosted tools, a requested service tier, files, images
 without a verified token bound, non-text output, stored prompts and server-side
-conversation references can have unbounded cost. Capped sessions refuse them
-before forwarding. Uncapped sessions retain unknown-cost receipts. Sol inline
-screenshots reserve the documented full input context once per request, plus the
-output limit. Reported usage replaces that conservative reservation when available.
+conversation references are forwarded and marked unpriced. Inline image bytes
+are not counted as text tokens. Models with a verified image-token bound use it
+for reservation; other images, including Sol screenshots, retain unknown-cost
+receipts. The output bound and priced text reservation still apply. Provider
+usage records the observed normalized token cost without claiming to cover all
+unpriced charges.
 
 Rebuild the build image to include the pinned Codex CLI before using this adapter.
 The local mock check verified the CLI request and usage stream, not live account
@@ -271,14 +273,14 @@ The campaign file is the run authority. Store it below
 [`campaign.paid-l1.json`](campaign.paid-l1.json), binds it to the local controller
 and build image IDs, and freezes it for execution. It runs one fresh L1 build per stack,
 three in parallel, with no repairs or retries and a $10 limit per attempt
-($30 maximum across the three attempts). It uses Sonnet 5 and includes the
+($30 maximum priced spend across the three attempts). It uses Sonnet 5 and includes the
 SpacetimeDB skills. Its results are provisional. The example already sets
 `parallelism: 3`; change a draft and freeze it before execution if needed.
 Inspect its model, stacks, repetitions, spend limits, and pricing before launch.
 For a longer study, [`campaign.paid-l1-l3.json`](campaign.paid-l1-l3.json) is a
 draft three-stack progression pilot. It selects L1 through L3, six repairs total
 per attempt, no execution retries, a 120-minute attempt limit, and a $30
-per-attempt cap ($90 maximum). These are proposed limits, not a cost estimate.
+per-attempt cap ($90 maximum priced spend). These are proposed limits, not a cost estimate.
 It must be bound to the selected image identities, frozen, and installed under
 `plans/` before execution; setup does not install it automatically. Earlier
 levels must pass before later levels start. See the

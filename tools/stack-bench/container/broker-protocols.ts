@@ -12,10 +12,6 @@ const VERIFIED_ACCOUNT_OUTPUT_LIMITS: Readonly<Record<string, number>> = {
   'gpt-5.3-codex': 128_000, 'gpt-5.4': 128_000, 'gpt-5.4-2026-03-05': 128_000,
   'gpt-5.6-sol': 128_000, 'gpt-6-astra': 128_000, 'gpt-6-sol': 128_000,
 };
-// No Sol patch multiplier is documented. All image and text input must fit this
-// complete context: https://developers.openai.com/api/docs/models/gpt-6-sol
-// https://developers.openai.com/api/docs/guides/images-vision (checked 2026-09-27).
-const VERIFIED_IMAGE_CONTEXT_LIMITS: Readonly<Record<string, number>> = { 'gpt-6-sol': 1_050_000 };
 type JsonRecord = Record<string, unknown>;
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -49,12 +45,6 @@ function parseProviderRequest(body: Buffer, path: string, config: BrokerConfig):
       || payload.max_tokens > config.maxOutputTokens)) {
     fail(`max_tokens must be from 1 through ${config.maxOutputTokens}`);
   }
-  // Anthropic auto can select Priority capacity; only standard has bound rates.
-  // https://platform.claude.com/docs/en/api/service-tiers
-  if (path === '/v1/messages' && config.maxBudgetUsd != null
-    && (payload.service_tier === undefined || payload.service_tier === 'auto')) {
-    payload.service_tier = 'standard_only';
-  }
   return payload;
 }
 
@@ -74,7 +64,7 @@ function anthropicRequestPricing(payload: JsonRecord): RequestPricing {
     declared(payload.mcp_servers) ? 'mcp' : null,
     declared(payload.container) ? 'container' : null);
   return { unpriced, unlessUnused: serverTools ? 'server-tool' : null,
-    bounded: !serverTools && unpriced === null && payload.service_tier === 'standard_only' };
+    bounded: !serverTools && unpriced === null };
 }
 
 // Server tools run inside the provider and return these content blocks.
@@ -185,7 +175,6 @@ interface BrokerProtocol {
   parseRequest(body: Buffer, path: string): JsonRecord;
   requestPricing(payload: JsonRecord): RequestPricing;
   inputTokenAdjustment?(payload: JsonRecord): number;
-  inputTokenLimit?(payload: JsonRecord): number | undefined;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
 }
@@ -277,7 +266,11 @@ export function imageTokenAdjustment(value: unknown, model: string): number {
     // OpenAI vision: 30,000 patches maximum x 1.2 tokens, plus rounding.
     // https://developers.openai.com/api/docs/guides/images-vision
     // Replace base64 text bytes rather than charging for both representations.
-    return url === null ? sum : sum + 36_001 - Buffer.byteLength(url, 'utf8');
+    // An unpriced inline image is not text. Its visual tokens remain unknown;
+    // do not reserve its base64 bytes as if they were priced text tokens.
+    const inline = inlineImageUrl(image);
+    return url === null ? sum - (inline === null ? 0 : Buffer.byteLength(inline, 'utf8'))
+      : sum + 36_001 - Buffer.byteLength(url, 'utf8');
   }, 0);
 }
 
@@ -291,8 +284,7 @@ function responsesRequestFeature(payload: JsonRecord, model: string): UnpricedRe
     payload.tools !== undefined && (!Array.isArray(payload.tools)
       || payload.tools.some(tool => !isRecord(tool) || !['function', 'custom'].includes(String(tool.type))))
       ? 'hosted-tool' : null,
-    hasUnpricedInput(payload.input) || images(payload.input).some(image => boundedImageUrl(image, model) === null
-      && !(Object.hasOwn(VERIFIED_IMAGE_CONTEXT_LIMITS, model) && inlineImageUrl(image)))
+    hasUnpricedInput(payload.input) || images(payload.input).some(image => boundedImageUrl(image, model) === null)
       ? 'unpriced-input' : null,
     payload.image_config !== undefined || payload.audio !== undefined
       || (payload.modalities !== undefined && (!Array.isArray(payload.modalities)
@@ -378,8 +370,6 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
       return { unpriced: router ? null : feature, unlessUnused: null, bounded: feature === null };
     },
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
-    inputTokenLimit: payload => Object.hasOwn(VERIFIED_IMAGE_CONTEXT_LIMITS, config.model)
-      && images(payload.input).length > 0 ? VERIFIED_IMAGE_CONTEXT_LIMITS[config.model] : undefined,
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
   };

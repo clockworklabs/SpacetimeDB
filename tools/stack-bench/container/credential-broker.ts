@@ -192,17 +192,11 @@ export function createCredentialBroker(configInput: unknown, {
         return;
       }
       const billable = protocol.billable(path) && config.maxBudgetUsd != null;
+      // Preserve agent capabilities. This cap covers priced spend; receipts
+      // retain unpriced charges as unknown instead of refusing provider features.
       const pricing = protocol.requestPricing(payload);
-      if (billable && !pricing.bounded) {
-        recordFailure(requestOrdinal, { category: 'broker-budget', status: 402, code: 'unbounded-request-cost' });
-        recordLedger();
-        writeHead(402, { 'content-type': 'text/plain' });
-        endResponse('request features have no verified cost bound for this capped session');
-        return;
-      }
       const costCeiling = billable
-        ? reserveUsd(requestCostCeiling(protocol.inputTokenLimit?.(payload)
-          ?? received + (protocol.inputTokenAdjustment?.(payload) ?? 0), protocol.outputLimit(payload),
+        ? reserveUsd(requestCostCeiling(received + (protocol.inputTokenAdjustment?.(payload) ?? 0), protocol.outputLimit(payload),
           config.pricingRates as PricingRates)) : 0;
       const budget = config.maxBudgetUsd;
       if (billable && budget !== null && budget !== undefined

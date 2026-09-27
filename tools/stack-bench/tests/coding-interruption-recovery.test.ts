@@ -11,7 +11,7 @@ import { codingSessionInterruption,
   from '../src/agents/coding-session-retry.js';
 import { agentSessionFailure } from '../src/agents/agent-result-contract.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
-import { reconcileCredentialBrokerReceipt } from '../container/credential-broker-accounting.js';
+import { noUnpriced, reconcileCredentialBrokerReceipt } from '../container/credential-broker-accounting.js';
 import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
   from '../container/credential-broker-process.js';
 import { clearMissingBuildContainerLease,
@@ -93,6 +93,28 @@ test('provider connection failures resume the exact paid session', () => {
   assert.equal(coding.spawnError, null);
   assert.equal(calls.length, 2);
   assert.equal(required(calls[1], 'recovery invocation').resumeSession, sessionId);
+});
+
+test('unpriced receipts prevent capped automatic and operator continuations without losing spend', () => {
+  for (const throttleMaxWaitMs of [0, 60_000]) {
+    const receipt = { ...brokerReceipt(1.25), schemaVersion: 4, exact: false,
+      unpricedRequests: 1, unpricedByReason: { ...noUnpriced(), 'server-tool': 1 } };
+    let calls = 0, waits = 0;
+    const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model',
+      retryLimit: 1, maxBudgetUsd: 10, throttleMaxWaitMs, throttleJitterMs: 0, sleep: () => {},
+      waitForProvider: () => { waits++; return true; },
+      invoke: () => JSON.stringify(++calls === 1 ? { is_error: true, session_id: 'native-session',
+        terminal_reason: 'api_error', total_cost_usd: 1.25, stack_bench_cost_receipt: receipt,
+        stack_bench_provider_failure: { category: 'rate-limit', status: 429, code: 'rate_limit_error' } }
+        : { is_error: false, session_id: 'native-session', total_cost_usd: 0,
+          stack_bench_cost_receipt: brokerReceipt(0) }) });
+    assert.equal(calls, 1, 'unknown remaining spend must not fund another invocation');
+    assert.equal(waits, 0, 'operator waiting cannot authorize an unknown remaining budget');
+    assert.match(coding.spawnError!, /unpriced/);
+    assert.equal(coding.result.total_cost_usd, 1.25);
+    assert.equal(record(coding.result.stack_bench_cost_receipts[0]!.receipt,
+      'retained unpriced receipt').unpricedRequests, 1);
+  }
 });
 
 test('a refused local credential broker is a harness failure and cannot auto-retry unknown cost', () => {
