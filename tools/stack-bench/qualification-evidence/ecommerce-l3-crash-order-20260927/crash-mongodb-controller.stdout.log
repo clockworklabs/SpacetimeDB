@@ -1,0 +1,332 @@
+2026-09-27T22:56:43.978885326Z 
+2026-09-27T22:56:43.978943579Z qualifying ecommerce-reference-mongodb: clean run 1/1
+2026-09-27T22:56:45.880484865Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:56:47.318675958Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:57:02.094512205Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:57:02.095661021Z 
+2026-09-27T22:57:02.095684662Z ================ mongodb — level 3 ================
+2026-09-27T22:57:23.459012103Z   kept the unaided source at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1/first-build-l3
+2026-09-27T22:57:25.118526353Z 
+2026-09-27T22:57:25.118551384Z === mongodb-l3 (mongodb) ===
+2026-09-27T22:57:25.118715857Z   app: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-QiwP0C/app
+2026-09-27T22:57:25.118730018Z   url: http://localhost:6979
+2026-09-27T22:57:25.118732038Z   recipe: L3 -> ecommerce.progression-catalog (40e7aba3f559)
+2026-09-27T22:57:25.118733798Z   scope: 2 check(s), 2 point(s)
+2026-09-27T22:57:25.118735368Z     features: ecommerce.feature.accounts, ecommerce.feature.cart, ecommerce.feature.catalog-discovery, ecommerce.feature.catalog-items, ecommerce.feature.checkout, ecommerce.feature.purchasing, ecommerce.feature.reviews, ecommerce.feature.warehouse-admin, ecommerce.l2.inventory-dashboard, ecommerce.l2.order-cancellation-features, ecommerce.l2.recommendations, ecommerce.l2.sales-dashboard, ecommerce.l2.stock-transfers-features, ecommerce.l3.scheduled-restocks-features, ecommerce.progression.catalog-management, ecommerce.progression.customer-profile, ecommerce.progression.faceted-search, ecommerce.progression.fulfilment-queue, ecommerce.progression.managed-support, ecommerce.progression.notification-preferences, ecommerce.progression.promotion-rules, ecommerce.progression.staff-access, ecommerce.progression.staff-roles, ecommerce.progression.stock-alerts, ecommerce.progression.support-history, ecommerce.progression.support-intake, ecommerce.progression.support-triage
+2026-09-27T22:57:25.118742068Z     extra checks: ecommerce.spec.state-durability.checkout-crash-durability.910b, ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:57:25.121348703Z   code        ... 2320 server LOC in 12 files, 4360 total LOC, 9 runtime deps
+2026-09-27T22:57:25.121846142Z   database    ... leased database requires runtime marker verification
+2026-09-27T22:57:27.098969787Z   stop application ... ok
+2026-09-27T22:57:28.140596470Z   reset database ... ok
+2026-09-27T22:57:32.671270170Z   restart     ... ok
+2026-09-27T22:57:38.037396870Z   stop application ... ok
+2026-09-27T22:57:39.001613247Z   reset database ... ok
+2026-09-27T22:57:43.488482722Z   restart     ... ok
+2026-09-27T22:57:43.488519964Z   db runtime  ... the application marker exists in the leased MongoDB database
+2026-09-27T22:57:43.918501690Z   contract lint ... DEFERRED (31 interfaces checked during feature grading)
+2026-09-27T22:57:44.209687597Z   actions    ... all 6 present
+2026-09-27T22:57:45.011694958Z   selected-source-001 ... not selected
+2026-09-27T22:57:45.011734660Z   selected-source-002 ... not selected
+2026-09-27T22:57:45.011736180Z   selected-source-003 ... not selected
+2026-09-27T22:57:45.011737230Z   selected-source-004 ... not selected
+2026-09-27T22:57:45.011738110Z   selected-source-005 ... not selected
+2026-09-27T22:57:45.011738940Z   selected-source-006 ... not selected
+2026-09-27T22:57:45.011739610Z   selected-source-007 ... not selected
+2026-09-27T22:57:45.011740250Z   selected-source-008 ... not selected
+2026-09-27T22:57:45.011740910Z   selected-source-009 ... not selected
+2026-09-27T22:57:45.011741940Z   selected-source-010 ... not selected
+2026-09-27T22:57:45.011742590Z   selected-source-011 ... not selected
+2026-09-27T22:57:45.011743320Z   selected-source-012 ... not selected
+2026-09-27T22:57:45.011743970Z   selected-source-013 ... not selected
+2026-09-27T22:57:45.011744620Z   selected-source-014 ... not selected
+2026-09-27T22:57:45.011745280Z   selected-source-015 ... not selected
+2026-09-27T22:57:45.011745931Z   selected-source-016 ... not selected
+2026-09-27T22:57:45.011746591Z   selected-source-017 ... not selected
+2026-09-27T22:57:45.011747261Z   selected-source-018 ... not selected
+2026-09-27T22:57:45.011748311Z   selected-source-019 ... not selected
+2026-09-27T22:57:45.011749241Z   selected-source-020 ... not selected
+2026-09-27T22:57:45.011750171Z   selected-source-021 ... not selected
+2026-09-27T22:57:45.011751111Z   selected-source-022 ... not selected
+2026-09-27T22:57:45.011752051Z   selected-source-023 ... not selected
+2026-09-27T22:57:45.011753001Z   selected-source-024 ... not selected
+2026-09-27T22:57:45.011917949Z   selected-source-025 ... not selected
+2026-09-27T22:57:45.011934450Z   selected-source-026 ... not selected
+2026-09-27T22:57:45.011936500Z   selected-source-027 ... not selected
+2026-09-27T22:57:45.011937780Z   selected-source-028 ... not selected
+2026-09-27T22:57:45.011938990Z   selected-source-029 ... not selected
+2026-09-27T22:57:45.011940030Z   selected-source-030 ... not selected
+2026-09-27T22:57:45.011941070Z   selected-source-031 ... not selected
+2026-09-27T22:57:45.011942090Z   selected-source-032 ... not selected
+2026-09-27T22:57:45.011943140Z   selected-source-033 ... not selected
+2026-09-27T22:57:45.011944150Z   selected-source-034 ... not selected
+2026-09-27T22:57:45.011945200Z   selected-source-035 ... not selected
+2026-09-27T22:57:45.011946261Z   selected-source-036 ... not selected
+2026-09-27T22:57:45.011951201Z   selected-source-037 ... not selected
+2026-09-27T22:57:45.011964731Z   selected-source-038 ... not selected
+2026-09-27T22:57:45.011965791Z   selected-source-039 ... not selected
+2026-09-27T22:57:45.011966872Z   selected-source-040 ... not selected
+2026-09-27T22:57:45.011967852Z   selected-source-041 ... not selected
+2026-09-27T22:57:45.011968842Z   selected-source-042 ... not selected
+2026-09-27T22:57:45.011969922Z   selected-source-043 ... not selected
+2026-09-27T22:57:45.011970922Z   selected-source-044 ... not selected
+2026-09-27T22:57:45.011971952Z   selected-source-045 ... not selected
+2026-09-27T22:57:45.011972922Z   selected-source-046 ... not selected
+2026-09-27T22:57:45.011973942Z   selected-source-047 ... not selected
+2026-09-27T22:57:45.011974952Z   selected-source-048 ... not selected
+2026-09-27T22:57:45.011975972Z   selected-source-049 ... not selected
+2026-09-27T22:57:45.011977012Z   selected-source-050 ... not selected
+2026-09-27T22:57:45.011978142Z   selected-source-051 ... not selected
+2026-09-27T22:57:45.011979132Z   selected-source-052 ... not selected
+2026-09-27T22:57:45.011982222Z   selected-source-053 ... not selected
+2026-09-27T22:57:45.011997132Z   selected-source-054 ... not selected
+2026-09-27T22:57:45.012091937Z   selected-source-055 ... not selected
+2026-09-27T22:57:45.012099118Z   selected-source-056 ... not selected
+2026-09-27T22:57:45.012100788Z   selected-source-057 ... not selected
+2026-09-27T22:57:45.012102248Z   selected-source-058 ... not selected
+2026-09-27T22:57:45.012103308Z   selected-source-059 ... not selected
+2026-09-27T22:57:45.012104278Z   selected-source-060 ... not selected
+2026-09-27T22:57:45.012105298Z   selected-source-061 ... not selected
+2026-09-27T22:57:45.012111318Z   selected-source-062 ... not selected
+2026-09-27T22:57:45.012112928Z   selected-source-063 ... not selected
+2026-09-27T22:57:45.012113999Z   selected-source-064 ... not selected
+2026-09-27T22:57:45.012115049Z   selected-source-065 ... not selected
+2026-09-27T22:57:45.012115979Z   selected-source-066 ... not selected
+2026-09-27T22:57:45.012117069Z   selected-source-067 ... not selected
+2026-09-27T22:57:45.012118149Z   selected-source-068 ... not selected
+2026-09-27T22:57:45.012119109Z   selected-source-069 ... not selected
+2026-09-27T22:57:45.012120019Z   selected-source-070 ... not selected
+2026-09-27T22:57:45.012120999Z   selected-source-071 ... not selected
+2026-09-27T22:57:47.021167896Z   stop application ... ok
+2026-09-27T22:57:47.919687614Z   reset database ... ok
+2026-09-27T22:57:52.631322253Z   restart     ... ok
+2026-09-27T22:58:26.912427358Z   selected-source-072 ... 2/2
+2026-09-27T22:58:26.917352884Z   selected-source-073 ... not selected
+2026-09-27T22:58:26.917395106Z   selected-source-074 ... not selected
+2026-09-27T22:58:26.917397626Z   selected-source-075 ... not selected
+2026-09-27T22:58:26.917398916Z   selected-source-076 ... not selected
+2026-09-27T22:58:26.917442594Z   selected-source-077 ... not selected
+2026-09-27T22:58:26.917483751Z   selected-source-078 ... not selected
+2026-09-27T22:58:26.917491212Z   selected-source-079 ... not selected
+2026-09-27T22:58:26.917492722Z   selected-source-080 ... not selected
+2026-09-27T22:58:26.917493932Z   selected-source-081 ... not selected
+2026-09-27T22:58:26.917495022Z   selected-source-082 ... not selected
+2026-09-27T22:58:26.917662899Z   selected-source-083 ... not selected
+2026-09-27T22:58:26.917672439Z   selected-source-084 ... not selected
+2026-09-27T22:58:26.917673829Z   selected-source-085 ... not selected
+2026-09-27T22:58:26.917674939Z   selected-source-086 ... not selected
+2026-09-27T22:58:26.917676040Z   selected-source-087 ... not selected
+2026-09-27T22:58:26.917677110Z   selected-source-088 ... not selected
+2026-09-27T22:58:26.917678200Z   selected-source-089 ... not selected
+2026-09-27T22:58:26.917679170Z   selected-source-090 ... not selected
+2026-09-27T22:58:26.917680590Z   selected-source-091 ... not selected
+2026-09-27T22:58:26.917681640Z   selected-source-092 ... not selected
+2026-09-27T22:58:26.917682730Z   selected-source-093 ... not selected
+2026-09-27T22:58:26.917683800Z   selected-source-094 ... not selected
+2026-09-27T22:58:26.917684880Z   selected-source-095 ... not selected
+2026-09-27T22:58:26.917685820Z   selected-source-096 ... not selected
+2026-09-27T22:58:26.917686810Z   selected-source-097 ... not selected
+2026-09-27T22:58:26.917687780Z   selected-source-098 ... not selected
+2026-09-27T22:58:26.917688740Z   selected-source-099 ... not selected
+2026-09-27T22:58:26.917689740Z   selected-source-100 ... not selected
+2026-09-27T22:58:26.917690690Z   selected-source-101 ... not selected
+2026-09-27T22:58:26.917691620Z   selected-source-102 ... not selected
+2026-09-27T22:58:26.917692570Z   selected-source-103 ... not selected
+2026-09-27T22:58:26.917693460Z   selected-source-104 ... not selected
+2026-09-27T22:58:26.917694400Z   selected-source-105 ... not selected
+2026-09-27T22:58:26.917695420Z   selected-source-106 ... not selected
+2026-09-27T22:58:26.917696461Z   selected-source-107 ... not selected
+2026-09-27T22:58:26.917697451Z   selected-source-108 ... not selected
+2026-09-27T22:58:26.917698411Z   selected-source-109 ... not selected
+2026-09-27T22:58:26.917699661Z   selected-source-110 ... not selected
+2026-09-27T22:58:26.917710661Z   selected-source-111 ... not selected
+2026-09-27T22:58:26.917711681Z   selected-source-112 ... not selected
+2026-09-27T22:58:26.917714991Z   selected-source-113 ... not selected
+2026-09-27T22:58:26.917719182Z   selected-source-114 ... not selected
+2026-09-27T22:58:27.254623727Z   evidence write and source verification ... 89.4ms
+2026-09-27T22:58:27.254657948Z   TOTAL      ... 2/2
+2026-09-27T22:58:27.254662618Z   bundle: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-QiwP0C/app-grading/bundle.json
+2026-09-27T22:58:27.396427552Z   kept the unaided grading at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1/first-build-l3-grading
+2026-09-27T22:58:27.436844034Z   kept the L3 source checkpoint at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1/level-l3-source
+2026-09-27T22:58:27.447518157Z   mongodb-ecom-run256-ecommerce-mongodb-run256-20260927225645-67fa5eb0: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:58:27.492025796Z   source kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1/source
+2026-09-27T22:58:27.492071978Z   grading detail kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1/grading
+2026-09-27T22:58:27.509066623Z 
+2026-09-27T22:58:27.509101805Z ================ mongodb summary ================
+2026-09-27T22:58:27.509403929Z   L3: 2/2 unaided -> 2/2 | 0 repairs | $0.00 total ($0.00 repairs) | not needed | 85s
+2026-09-27T22:58:27.509473848Z   TOTAL 2/2  $0  0 repair(s)  85s
+2026-09-27T22:58:27.509577427Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1/run.json
+2026-09-27T22:58:27.984532864Z   removed the leased run container sb-80e5cadd6af7ac9e-browser
+2026-09-27T22:58:28.724129085Z   removed the leased run container sb-80e5cadd6af7ac9e-build
+2026-09-27T22:58:29.560764045Z   removed the leased run container sb-80e5cadd6af7ac9e-backend
+2026-09-27T22:58:35.999450139Z 
+2026-09-27T22:58:35.999486341Z qualifying ecommerce-reference-mongodb: clean run 1/1
+2026-09-27T22:58:35.999969770Z 
+2026-09-27T22:58:35.999989911Z qualifying ecommerce-reference-mongodb: clean run 1/1
+2026-09-27T22:58:35.999992231Z 
+2026-09-27T22:58:35.999993831Z qualifying ecommerce-reference-mongodb: clean run 1/1
+2026-09-27T22:58:37.364168483Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:37.376731249Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:37.399637735Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:39.838520130Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:58:39.921424810Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:58:39.928240629Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:58:54.649032076Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:58:54.650370905Z 
+2026-09-27T22:58:54.650400076Z ================ mongodb — level 3 ================
+2026-09-27T22:58:54.958130612Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:58:54.958790159Z 
+2026-09-27T22:58:54.958808460Z ================ mongodb — level 3 ================
+2026-09-27T22:58:55.051909763Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:58:55.055723024Z 
+2026-09-27T22:58:55.055748565Z ================ mongodb — level 3 ================
+2026-09-27T22:59:12.698204239Z 
+2026-09-27T22:59:12.698231711Z ================ mongodb mutation control ================
+2026-09-27T22:59:12.701273908Z 
+2026-09-27T22:59:12.701340571Z ================ mongodb mutation control ================
+2026-09-27T22:59:12.812929416Z 
+2026-09-27T22:59:12.812955977Z ================ mongodb mutation control ================
+2026-09-27T22:59:13.998213377Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:59:13.999043227Z   baseline: 2/2  F910:2
+2026-09-27T22:59:13.999061948Z 
+2026-09-27T22:59:14.026529049Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:59:14.031581049Z   baseline: 2/2  F910:2
+2026-09-27T22:59:14.031613440Z 
+2026-09-27T22:59:14.125240234Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:59:14.127652990Z   baseline: 2/2  F910:2
+2026-09-27T22:59:14.127674941Z 
+2026-09-27T23:00:11.614351248Z CAUGHT               checkout-crash-sibling-stock — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:11.614392760Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:12.469230078Z CAUGHT               checkout-crash-durability — expected ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T23:00:12.469466440Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T23:00:12.739760134Z CAUGHT               checkout-crash-integrity — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:12.739913132Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:20.849728090Z 
+2026-09-27T23:00:20.849775583Z 1/1 mutations cleanly caught
+2026-09-27T23:00:20.849783213Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json
+2026-09-27T23:00:20.849900674Z 
+2026-09-27T23:00:20.849911765Z 1/1 mutations cleanly caught
+2026-09-27T23:00:20.849913335Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json
+2026-09-27T23:00:20.892870492Z   mongodb-ecom-run257-ecommerce-mongodb-run257-20260927225837-09f31857: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:00:20.899925465Z   mongodb-ecom-run258-ecommerce-mongodb-run258-20260927225837-a6e22f7e: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:00:20.904793185Z 
+2026-09-27T23:00:20.904819097Z ================ mongodb summary ================
+2026-09-27T23:00:20.905229393Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 18s
+2026-09-27T23:00:20.905537359Z   TOTAL 0/0  $0  0 repair(s)  86s
+2026-09-27T23:00:20.905579737Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w2.runs/r1/run.json
+2026-09-27T23:00:20.910351867Z 
+2026-09-27T23:00:20.910375628Z ================ mongodb summary ================
+2026-09-27T23:00:20.910421410Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 18s
+2026-09-27T23:00:20.910633352Z   TOTAL 0/0  $0  0 repair(s)  86s
+2026-09-27T23:00:20.910735348Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w3.runs/r1/run.json
+2026-09-27T23:00:21.161532965Z 
+2026-09-27T23:00:21.161552836Z 1/1 mutations cleanly caught
+2026-09-27T23:00:21.161556726Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json
+2026-09-27T23:00:21.196583798Z   mongodb-ecom-run256-ecommerce-mongodb-run256-20260927225837-400080e9: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:00:21.215895007Z 
+2026-09-27T23:00:21.215922808Z ================ mongodb summary ================
+2026-09-27T23:00:21.215925069Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 18s
+2026-09-27T23:00:21.216543201Z   TOTAL 0/0  $0  0 repair(s)  86s
+2026-09-27T23:00:21.216869499Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w1.runs/r1/run.json
+2026-09-27T23:00:21.415514764Z   removed the leased run container sb-33dc8f88393a3f59-browser
+2026-09-27T23:00:21.542938852Z   removed the leased run container sb-08ad739b0fd78ca8-browser
+2026-09-27T23:00:21.727889676Z   removed the leased run container sb-f2bfb62de7be4e24-browser
+2026-09-27T23:00:22.209992486Z   removed the leased run container sb-33dc8f88393a3f59-build
+2026-09-27T23:00:22.562336814Z   removed the leased run container sb-08ad739b0fd78ca8-build
+2026-09-27T23:00:22.708345225Z   removed the leased run container sb-f2bfb62de7be4e24-build
+2026-09-27T23:00:23.377382871Z   removed the leased run container sb-33dc8f88393a3f59-backend
+2026-09-27T23:00:23.722645193Z   removed the leased run container sb-08ad739b0fd78ca8-backend
+2026-09-27T23:00:24.258081405Z   removed the leased run container sb-f2bfb62de7be4e24-backend
+2026-09-27T23:00:25.528343556Z {
+2026-09-27T23:00:25.528389018Z   "ok": true,
+2026-09-27T23:00:25.528391768Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w3.json",
+2026-09-27T23:00:25.528394168Z   "stable": true,
+2026-09-27T23:00:25.528395728Z   "sameImage": true,
+2026-09-27T23:00:25.528397668Z   "sameHarness": true,
+2026-09-27T23:00:25.528399398Z   "diagnostic": true,
+2026-09-27T23:00:25.528401059Z   "runs": [
+2026-09-27T23:00:25.528402639Z     {
+2026-09-27T23:00:25.528404209Z       "repetition": 1,
+2026-09-27T23:00:25.528405769Z       "ok": true,
+2026-09-27T23:00:25.528407279Z       "score": null,
+2026-09-27T23:00:25.528408799Z       "criteria": null,
+2026-09-27T23:00:25.528410459Z       "zeroPointCriteria": null,
+2026-09-27T23:00:25.528412009Z       "mutations": {
+2026-09-27T23:00:25.528413619Z         "caught": 1,
+2026-09-27T23:00:25.528415399Z         "completed": 1,
+2026-09-27T23:00:25.528417019Z         "total": 1,
+2026-09-27T23:00:25.528418529Z         "remaining": 0
+2026-09-27T23:00:25.528420130Z       },
+2026-09-27T23:00:25.528421690Z       "failures": []
+2026-09-27T23:00:25.528423290Z     }
+2026-09-27T23:00:25.528424950Z   ]
+2026-09-27T23:00:25.528426600Z }
+2026-09-27T23:00:25.872938054Z {
+2026-09-27T23:00:25.872978606Z   "ok": true,
+2026-09-27T23:00:25.872980866Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w2.json",
+2026-09-27T23:00:25.872982986Z   "stable": true,
+2026-09-27T23:00:25.872984566Z   "sameImage": true,
+2026-09-27T23:00:25.872986706Z   "sameHarness": true,
+2026-09-27T23:00:25.872989176Z   "diagnostic": true,
+2026-09-27T23:00:25.872990836Z   "runs": [
+2026-09-27T23:00:25.872992607Z     {
+2026-09-27T23:00:25.872994107Z       "repetition": 1,
+2026-09-27T23:00:25.872996457Z       "ok": true,
+2026-09-27T23:00:25.872998207Z       "score": null,
+2026-09-27T23:00:25.873017828Z       "criteria": null,
+2026-09-27T23:00:25.873019148Z       "zeroPointCriteria": null,
+2026-09-27T23:00:25.873020258Z       "mutations": {
+2026-09-27T23:00:25.873021168Z         "caught": 1,
+2026-09-27T23:00:25.873022208Z         "completed": 1,
+2026-09-27T23:00:25.873023148Z         "total": 1,
+2026-09-27T23:00:25.873024148Z         "remaining": 0
+2026-09-27T23:00:25.873025078Z       },
+2026-09-27T23:00:25.873026008Z       "failures": []
+2026-09-27T23:00:25.873026998Z     }
+2026-09-27T23:00:25.873027958Z   ]
+2026-09-27T23:00:25.873028948Z }
+2026-09-27T23:00:26.398128665Z {
+2026-09-27T23:00:26.398197548Z   "ok": true,
+2026-09-27T23:00:26.398201688Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.runs/r1-workers/w1.json",
+2026-09-27T23:00:26.398203439Z   "stable": true,
+2026-09-27T23:00:26.398204479Z   "sameImage": true,
+2026-09-27T23:00:26.398205539Z   "sameHarness": true,
+2026-09-27T23:00:26.398206479Z   "diagnostic": true,
+2026-09-27T23:00:26.398207489Z   "runs": [
+2026-09-27T23:00:26.398208509Z     {
+2026-09-27T23:00:26.398209449Z       "repetition": 1,
+2026-09-27T23:00:26.398210439Z       "ok": true,
+2026-09-27T23:00:26.398211459Z       "score": null,
+2026-09-27T23:00:26.398212399Z       "criteria": null,
+2026-09-27T23:00:26.398213359Z       "zeroPointCriteria": null,
+2026-09-27T23:00:26.398214349Z       "mutations": {
+2026-09-27T23:00:26.398215349Z         "caught": 1,
+2026-09-27T23:00:26.398216329Z         "completed": 1,
+2026-09-27T23:00:26.398217309Z         "total": 1,
+2026-09-27T23:00:26.398218259Z         "remaining": 0
+2026-09-27T23:00:26.398219269Z       },
+2026-09-27T23:00:26.398220209Z       "failures": []
+2026-09-27T23:00:26.398221189Z     }
+2026-09-27T23:00:26.398222119Z   ]
+2026-09-27T23:00:26.398223100Z }
+2026-09-27T23:00:26.804661639Z {
+2026-09-27T23:00:26.804699641Z   "ok": true,
+2026-09-27T23:00:26.804734553Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.json",
+2026-09-27T23:00:26.804737253Z   "stable": true,
+2026-09-27T23:00:26.804740413Z   "sameImage": true,
+2026-09-27T23:00:26.804744943Z   "sameHarness": true,
+2026-09-27T23:00:26.804746374Z   "diagnostic": true,
+2026-09-27T23:00:26.804757634Z   "runs": [
+2026-09-27T23:00:26.804758994Z     {
+2026-09-27T23:00:26.804760684Z       "repetition": 1,
+2026-09-27T23:00:26.804761744Z       "ok": true,
+2026-09-27T23:00:26.804762714Z       "score": "2/2",
+2026-09-27T23:00:26.804763794Z       "criteria": 2,
+2026-09-27T23:00:26.804764735Z       "zeroPointCriteria": 0,
+2026-09-27T23:00:26.804765725Z       "mutations": {
+2026-09-27T23:00:26.804766675Z         "caught": 3,
+2026-09-27T23:00:26.804767715Z         "total": 3
+2026-09-27T23:00:26.804768675Z       },
+2026-09-27T23:00:26.804769595Z       "failures": []
+2026-09-27T23:00:26.804770925Z     }
+2026-09-27T23:00:26.804771975Z   ]
+2026-09-27T23:00:26.804772895Z }

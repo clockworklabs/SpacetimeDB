@@ -1,0 +1,21 @@
+{
+  "candidate": "473ca5c2d6c96d2b0f712a859a5789a1c3255b59",
+  "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "baseImage": "sha256:b9ebee1bc06ffae01da326031f2913f928b9cd89e8db2142cd4450c4be69e17e",
+  "verifiedFiles": 1120,
+  "referenceAndManifestFiles": 5,
+  "checks": [
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+  ],
+  "mutations": {
+    "spacetime": 3,
+    "postgres": 3,
+    "mongodb": 3,
+    "convex": 3
+  },
+  "draftEvidenceEmpty": true,
+  "draftReuseAbsent": true,
+  "network": "none",
+  "accountMounts": false
+}
