@@ -65,10 +65,8 @@ pub trait NodeDelegate: Send + Sync {
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
 
     /// Whether `claim` names the currently assigned generation of a database's container.
-    /// Servers without container hosting reject every container credential.
-    async fn is_current_container(&self, _claim: &ContainerClaim) -> bool {
-        false
-    }
+    /// Servers without container hosting must return `false`.
+    async fn is_current_container(&self, claim: &ContainerClaim) -> bool;
 }
 
 /// Predicate on the [NodeDelegate::GetLeaderHostError].
