@@ -14,7 +14,7 @@
         {
           "id": "1a",
           "category": "feature",
-          "desc": "a visitor can create an account and is signed in as it",
+          "desc": "a visitor can create an account and sign in as it",
           "points": 1,
           "steps": [
             {"do":"signUp","actor":"shopper","name":"ann","awaitSignedIn":false},

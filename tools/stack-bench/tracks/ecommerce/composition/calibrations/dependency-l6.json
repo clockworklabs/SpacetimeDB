@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "34842c48f73d0b97195e2da8e23ddf3452dfd97295d3a4b00f30c5e836b71fce",
-    "executionSha256": "c36597214b249d659b321d59c8975cf2dcc86a68c58fbcc9e6e1b7506a3d8f33",
-    "contentSha256": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56"
+    "meaningSha256": "9fc0f6d198c231e2618c916dfae75b7b22b0eb8db10dc07e4b16eff582d5b981",
+    "executionSha256": "3a6d06c776ef932cbb1c98e6f1e97862fe4db7cb06a6c858e89c50af169c4d80",
+    "contentSha256": "f161f9ee7884c6cfde45d8e9378339062a6262c159452d488b5c74a8bd1a2eb7"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -45,7 +45,7 @@
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "559973417406fc50197bed508001fe966da92b652be031f1afe320ec5676f0f4",
+      "sha256": "c61da5c0bc48492239741cc34f277a75747210b9660495551a93324c00d0bfaf",
       "referenceId": "ecommerce-reference-postgres"
     },
     {

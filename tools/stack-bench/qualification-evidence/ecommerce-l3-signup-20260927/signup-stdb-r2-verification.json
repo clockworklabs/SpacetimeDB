@@ -1,0 +1,94 @@
+{
+  "at": "2026-09-27T07:40:39.909Z",
+  "outcome": {
+    "kind": "passed",
+    "phase": "grading",
+    "reason": null,
+    "appFailures": [],
+    "inconclusive": [],
+    "harnessFailures": []
+  },
+  "modelCalls": 0,
+  "additionalModelCostUsd": 0,
+  "source": {
+    "sha256": "7bbf6164b997d7c7458a387d8c2c76a0bd36f4024ca3cca118d21e93dd01720d"
+  },
+  "totals": {
+    "score": 1,
+    "max": 1,
+    "dirty": false,
+    "contractPass": true,
+    "regression": null
+  },
+  "provenance": {
+    "ok": true,
+    "reason": "leased database requires runtime marker verification",
+    "runtime": {
+      "ok": true,
+      "verified": true,
+      "matches": 2,
+      "reason": "the application marker exists in the leased SpacetimeDB module"
+    }
+  },
+  "bundleSha256": "7cb167a0e699477d0b82d51cb3a654c6997ee3039338a7c2d102b381f9279c19",
+  "regradeSha256": "708b59d0fd4622f5562e7c154270b5b1be2b0cf41015849a00dec5f906b33776",
+  "recovery": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-spacetime-run3-20260927073645-76042da9",
+    "backend": "spacetime",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "75fa4627757c4bda0bd301415b3e8d12957b5098417280b8d1d71a9915c26dbd",
+        "name": "sb-4f06ed926d0d45a5-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "listener:http://127.0.0.1:3213",
+          "released": true
+        },
+        {
+          "key": "port:3213",
+          "released": true
+        },
+        {
+          "key": "port:6476",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:spacetime:run3",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "7263ee6756a5df3293dec12156466d7e83b0adfeae9efc88f691edd34697b925"
+  },
+  "resources": [
+    {
+      "name": "sb-4f06ed926d0d45a5-backend",
+      "present": false
+    },
+    {
+      "name": "sb-4f06ed926d0d45a5-build",
+      "present": false
+    },
+    {
+      "name": "sb-4f06ed926d0d45a5-browser",
+      "present": false
+    }
+  ],
+  "networkAbsent": true,
+  "controller": "stack-bench-signup-stdb-r2-replay",
+  "qualified": false
+}

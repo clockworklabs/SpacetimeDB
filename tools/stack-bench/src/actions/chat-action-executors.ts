@@ -15,7 +15,7 @@ type ChatArguments<Input extends { readonly actor: string }> =
 
 interface AccountInput {
   readonly actor: string;
-  // False returns after submitting, so a following expect observes the signed-in view.
+  // False leaves the final session assertion to the next observation.
   readonly awaitSignedIn?: boolean;
   readonly exact?: boolean;
   readonly expectFailure?: boolean;
@@ -44,6 +44,25 @@ interface ManyMessagesInput {
   readonly prefix: string;
 }
 
+async function finishRegistration(args: ChatArguments<AccountInput>): Promise<void> {
+  const actor = actorFor(args.capabilities, args.input.actor);
+  const browser = browserFor(args.capabilities);
+  try {
+    // A visible sign-in form alone does not mean the signup request has finished.
+    await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+  } catch (error) {
+    if (args.signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+      || 'classification' in error || harnessBrowserFailure(error)) throw error;
+    // Registration need not create a session. Use the same credentials once;
+    // never retry registration or erase an explicit registration refusal.
+    if (await actor.loc('auth-error').isVisible()) return;
+    if (!(await actor.loc('signin-username').or(actor.loc('signin-toggle'))
+      .filter({ visible: true }).first().isVisible())) return;
+    await signIn({ ...args, input: { ...args.input, requestPatch: undefined, awaitSignedIn: false } }, true);
+  }
+}
+
 async function signUp({ input, capabilities, signal }: ChatArguments<AccountInput>): Promise<Record<string, unknown>> {
   const actor = actorFor(capabilities, input.actor);
   const browser = browserFor(capabilities);
@@ -54,6 +73,9 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
       user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
       browser.authRequestPatch);
+    if (result.requestPatch.success !== false && (result.requestPatch.status ?? 200) < 400) {
+      await finishRegistration({ input, capabilities, signal });
+    }
     await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
       .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
     return result;
@@ -85,6 +107,7 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     await browser.sleep(input.settleMs ?? 2000, signal);
     return { user, authenticationPath: 'local-form', expectedFailure: true };
   }
+  await finishRegistration({ input, capabilities, signal });
   if (input.awaitSignedIn === false) return { user, authenticationPath: 'local-form', submitted: true };
   await actor.page.locator(browser.testId('current-user')).first()
     .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });

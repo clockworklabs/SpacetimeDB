@@ -1,0 +1,65 @@
+{
+  "at": "2026-09-27T08:04:04.348Z",
+  "rows": [
+    {
+      "backend": "spacetime",
+      "recovery": "clean",
+      "locksReleased": true,
+      "remaining": "",
+      "networkAbsent": true,
+      "summary": {
+        "caught": 6,
+        "completed": 6,
+        "total": 6,
+        "remaining": 0
+      },
+      "ok": true,
+      "sha256": "04e1f6fcc6aae1c0f302d6d9b57583a3471dffb0861371020202857230115e56"
+    },
+    {
+      "backend": "postgres",
+      "recovery": "clean",
+      "locksReleased": true,
+      "remaining": "",
+      "networkAbsent": true,
+      "summary": {
+        "caught": 8,
+        "completed": 8,
+        "total": 8,
+        "remaining": 0
+      },
+      "ok": true,
+      "sha256": "2570a146dd44d55aab4250c50be0dc7ac1fb1e8f077ecdca8f36d06badaa5b99"
+    },
+    {
+      "backend": "mongodb",
+      "recovery": "clean",
+      "locksReleased": true,
+      "remaining": "",
+      "networkAbsent": true,
+      "summary": {
+        "caught": 6,
+        "completed": 6,
+        "total": 6,
+        "remaining": 0
+      },
+      "ok": true,
+      "sha256": "885621424fd2c633b49c70b97bf10cf549163ddaeff4b3a38849671b8fd379ae"
+    },
+    {
+      "backend": "convex",
+      "recovery": "clean",
+      "locksReleased": true,
+      "remaining": "",
+      "networkAbsent": true,
+      "summary": {
+        "caught": 6,
+        "completed": 6,
+        "total": 6,
+        "remaining": 0
+      },
+      "ok": true,
+      "sha256": "254df573258d713cb2e3249fd2e8e157d59d33cd8bf168c439c51765002b4e14"
+    }
+  ]
+}

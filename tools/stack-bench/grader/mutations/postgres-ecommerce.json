@@ -66,17 +66,17 @@
       ]
     },
     {
-      "id": "signup-ui-does-not-enter-created-account",
+      "id": "signup-shows-a-different-account",
       "scenario": "tracks/ecommerce/scenarios/01-account-create.json",
       "targets": [
         "ecommerce.feature.accounts.accounts.1a"
       ],
-      "desc": "Create the account successfully but discard the returned signed-in identity in the client.",
+      "desc": "Create the requested account but display a different signed-in account name.",
       "file": "client/src/App.tsx",
       "edits": [
         {
           "find": "      const r = await api<{ account: Account }>(\"/api/auth/signup\", {\n        method: \"POST\",\n        body: JSON.stringify({ username, password }),\n      });\n      setAccount(r.account);",
-          "replace": "      const r = await api<{ account: Account }>(\"/api/auth/signup\", {\n        method: \"POST\",\n        body: JSON.stringify({ username, password }),\n      });\n      void r;\n      setAccount(null);"
+          "replace": "      const r = await api<{ account: Account }>(\"/api/auth/signup\", {\n        method: \"POST\",\n        body: JSON.stringify({ username, password }),\n      });\n      setAccount(r.account ? { ...r.account, username: \"different-account\" } : null);"
         }
       ]
     },

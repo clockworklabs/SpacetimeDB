@@ -744,3 +744,162 @@ test('signup and signin reach hidden, direct and shared-dialog forms but reject 
     }
   } finally { await browser.close(); }
 });
+
+// Failure cases precede the signup-flow correction: registration need not create a session.
+// A later login must use the same saved credentials, and must not erase a refused signup.
+test('account creation accepts explicit login without masking refused or wrong-account signup', async () => {
+  const browser = await chromium.launch({ headless: true });
+  let mode = 'auto', signupPending = false;
+  const accounts = new Map<string, { password: string; role: string }>();
+  const requests: { path: string; username: string; role?: string; signupPending: boolean }[] = [];
+  const evidence: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    if (request.method === 'POST') {
+      let text = ''; for await (const chunk of request) text += String(chunk);
+      const body = JSON.parse(text) as { username: string; password: string; role?: string };
+      requests.push({ path: request.url!, username: body.username, role: body.role, signupPending });
+      if (request.url === '/signup') {
+        signupPending = true;
+        if (mode === 'delayed-manual') await new Promise(resolve => setTimeout(resolve, 150));
+        signupPending = false;
+        if (mode === 'patched-silent-refusal') { response.writeHead(409).end('{}'); return; }
+        if (mode === 'reject' || mode === 'rejected-observed' || mode === 'patched-reject' || accounts.has(body.username)) {
+          response.writeHead(409).end(JSON.stringify({ error: 'Registration refused' })); return;
+        }
+        if (mode === 'missing') { response.end('{}'); return; }
+        accounts.set(body.username, { password: body.password, role: body.role ?? 'customer' });
+        response.end(JSON.stringify(mode === 'auto' || mode === 'wrong-account'
+          ? { user: mode === 'wrong-account' ? 'other-account' : body.username }
+          : mode === 'missing-identity-observed' ? { activeWithoutIdentity: true } : {})); return;
+      }
+      if (request.url === '/signin') {
+        const account = accounts.get(body.username);
+        if (!account || account.password !== body.password) {
+          response.writeHead(401).end(JSON.stringify({ error: 'Invalid credentials' })); return;
+        }
+        response.end(JSON.stringify({ user: body.username })); return;
+      }
+      if (request.url === '/privileged') {
+        const account = accounts.get(body.username);
+        response.writeHead(account?.role === 'admin' ? 200 : 403).end('{}'); return;
+      }
+    }
+    response.setHeader('Content-Type', 'text/html');
+    response.end(`<form id="signup-form"><input id="signup-username"><input id="signup-password">
+      <button id="signup-submit">Create account</button></form>
+      <form id="signin-form"><input id="signin-username"><input id="signin-password">
+      <button id="signin-submit">Sign in</button></form>
+      <strong id="current-user" hidden></strong><span id="auth-error" hidden></span>
+      <script>
+      for (const action of ['signup','signin']) document.querySelector('#'+action+'-form').onsubmit = async event => {
+        event.preventDefault();
+        const response = await fetch('/'+action, {method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({username:document.querySelector('#'+action+'-username').value,
+            password:document.querySelector('#'+action+'-password').value})});
+        const data = await response.json();
+        if (data.activeWithoutIdentity) { document.querySelector('#signup-form').hidden=true; document.querySelector('#signin-form').hidden=true; }
+        if (data.error) { const error=document.querySelector('#auth-error'); error.textContent=data.error; error.hidden=false; }
+        if (data.user) { const user=document.querySelector('#current-user'); user.textContent=data.user; user.hidden=false; }
+      };
+      </script>`);
+  });
+  try {
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    for (mode of ['patched-silent-refusal', 'missing-identity-observed', 'auto', 'manual', 'delayed-manual', 'reject', 'missing', 'duplicate', 'wrong-account',
+      'manual-observed', 'rejected-observed', 'patched-manual', 'patched-reject']) {
+      accounts.clear(); requests.length = 0; signupPending = false;
+      if (mode === 'duplicate') accounts.set('Alice-scope', { password: 'fixture-password', role: 'customer' });
+      const page = await browser.newPage();
+      try {
+        await page.goto(url);
+        const actor = { page, loc: (id: string, options?: { contains?: string }) => {
+          const locator = page.locator(`#${id}`);
+          return options?.contains ? locator.filter({ hasText: options.contains }) : locator;
+        } };
+        const interaction = {
+          defaultWithin: 250, scopedUser: (name: string) => `${name}-scope`, testId: (id: string) => `#${id}`,
+          expand: (value: unknown) => value,
+          sleep: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)),
+        };
+        const capabilities = { actors: { get: () => actor }, 'browser-interaction': interaction,
+          'browser-observation': interaction };
+        const result = await executeAction(ACTION_REGISTRY, 'signUp', {
+          do: 'signUp', actor: 'shopper', name: 'Alice', password: 'fixture-password',
+          ...(mode === 'duplicate' ? { expectFailure: true } : {}),
+          ...(mode.endsWith('-observed') ? { awaitSignedIn: false } : {}),
+          ...(mode.startsWith('patched-') ? { requestPatch: { fields: { role: 'admin' } } } : {}),
+        }, { capabilities });
+        // expectFailure submits only; observe the actual refusal before reading server receipts.
+        if (mode === 'duplicate') await page.locator('#auth-error').waitFor({ state: 'visible', timeout: 1000 });
+        const loginRequests = requests.filter(r => r.path === '/signin');
+        const observation = { mode, result, requests: [...requests], accountCreated: accounts.has('Alice-scope'),
+          currentUser: await page.locator('#current-user').innerText(), privilegedStatus: null as number | null };
+        evidence.push(observation);
+        assert.equal(requests.filter(r => r.path === '/signup').length, 1, `${mode}: do not retry registration`);
+        assert.equal(loginRequests.some(r => r.signupPending), false, `${mode}: visible login form is not signup completion`);
+        if (mode === 'patched-silent-refusal') {
+          assert.equal(result.status, 'failed', 'a known rejected patch must not gain an error observation from a later login');
+          assert.equal(accounts.size, 0);
+          assert.equal(loginRequests.length, 0, 'never sign in after a proved HTTP registration refusal');
+          assert.equal(await page.locator('#auth-error').isVisible(), false);
+        } else if (mode === 'reject' || mode === 'missing') {
+          assert.equal(result.status, 'failed', `${mode}: ${JSON.stringify(result)}`);
+          assert.equal(accounts.size, 0);
+          assert.equal(loginRequests.length, mode === 'reject' ? 0 : 1);
+        } else if (mode === 'missing-identity-observed') {
+          assert.equal(result.status, 'passed', JSON.stringify(result));
+          assert.equal(accounts.get('Alice-scope')?.password, 'fixture-password');
+          assert.equal(loginRequests.length, 0, 'no sign-in navigation when the app exposes no sign-in control');
+          assert.equal(await page.locator('#signin-username').isVisible(), false);
+          const identity = await executeAction(ACTION_REGISTRY, 'expect', {
+            do: 'expect', actor: 'shopper', testid: 'current-user', contains: 'Alice-scope', within: 100,
+          }, { capabilities });
+          assert.equal(identity.status, 'failed', 'missing active identity must fail at the scored observation');
+        } else if (mode === 'rejected-observed') {
+          assert.equal(result.status, 'passed', JSON.stringify(result));
+          assert.equal(accounts.size, 0);
+          assert.equal(loginRequests.length, 0);
+          const identity = await executeAction(ACTION_REGISTRY, 'expect', {
+            do: 'expect', actor: 'shopper', testid: 'current-user', contains: 'Alice-scope', within: 100,
+          }, { capabilities });
+          assert.equal(identity.status, 'failed', 'signup refusal remains caught by the scored identity observation');
+        } else if (mode === 'duplicate' || mode === 'patched-reject') {
+          assert.equal(result.status, 'passed', `${mode}: ${JSON.stringify(result)}`);
+          assert.equal(loginRequests.length, 0, `${mode}: refusal must not be followed by login`);
+          assert.equal(await page.locator('#auth-error').isVisible(), true);
+          assert.equal(await page.locator('#current-user').isVisible(), false);
+          if (mode === 'patched-reject') assert.equal(accounts.size, 0);
+        } else {
+          assert.equal(result.status, 'passed', `${mode}: ${JSON.stringify(result)}`);
+          assert.equal(accounts.get('Alice-scope')?.password, 'fixture-password');
+          assert.equal(loginRequests.length, mode === 'auto' || mode === 'wrong-account' ? 0 : 1);
+          const identity = await executeAction(ACTION_REGISTRY, 'expect', {
+            do: 'expect', actor: 'shopper', testid: 'current-user', contains: 'Alice-scope', within: 100,
+          }, { capabilities });
+          assert.equal(identity.status, mode === 'wrong-account' ? 'failed' : 'passed', JSON.stringify(identity));
+          if (mode === 'patched-manual') {
+            assert.equal(requests.find(r => r.path === '/signup')?.role, 'admin');
+            assert.equal(loginRequests[0]?.role, undefined, 'patch must be removed before ordinary login');
+            assert.ok((result.observation as { requestPatch?: unknown }).requestPatch, 'retain original interception receipt');
+            observation.privilegedStatus = await page.evaluate(async () => (await fetch('/privileged', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'Alice-scope' }),
+            })).status);
+            assert.equal(observation.privilegedStatus, 200, 'a trusted signup role remains observable by the later authority probe');
+          }
+        }
+      } finally { await page.close(); }
+    }
+  } finally {
+    await browser.close();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_SIGNUP_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_SIGNUP_EVIDENCE, JSON.stringify({
+        rerun: 'STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern="account creation accepts explicit login" dist/tests/account-navigation.integration.js',
+        evidence,
+      }, null, 2));
+    }
+  }
+});
