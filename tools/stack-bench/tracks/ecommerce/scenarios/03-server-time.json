@@ -11,6 +11,7 @@
       "actors": ["admin", "watcher"],
       "setup": [
         {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {"do":"click","actor":"admin","testid":"admin-link"},
         {"do":"click","actor":"admin","testid":"restocks-link","ifAvailable":true,"within":1000},
         {"do":"dbRecordStock","item":"Espresso Machine","as":"before"},
@@ -27,6 +28,7 @@
         {"do":"reload","actor":"watcher","settleMs":3000},
         {"do":"reload","actor":"admin","settleMs":3000},
         {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
         {"do":"click","actor":"admin","testid":"restocks-link","ifAvailable":true,"within":1000},
         {"do":"expect","actor":"admin","testid":"schedule-restock-submit"}
@@ -49,6 +51,7 @@
             {"do":"dbExpectStock","item":"Espresso Machine","relativeTo":"before","plus":4,"within":10000},
             {"do":"reload","actor":"admin","settleMs":2000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
             {"do":"click","actor":"admin","testid":"restocks-link","ifAvailable":true,"within":1000},
             {"do":"expect","actor":"admin","testid":"schedule-restock-submit"},

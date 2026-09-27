@@ -543,6 +543,7 @@
           "name": "books"
         },
         { "do": "signIn", "actor": "customer2", "name": "books" },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {
           "do": "click",
           "actor": "admin",
@@ -563,9 +564,11 @@
             {"do":"reload","actor":"admin","settleMs":1000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
             {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-revenue"]},
             {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"rev-start","plus":42,"within":10000},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true,"within":10000},
             {"do":"dbRecordCheckout","account":"{user:books}","item":"Desk Lamp","as":"cancel-before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
@@ -575,6 +578,7 @@
             {"do":"reload","actor":"admin","settleMs":1000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
             {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-revenue"]},
             {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"rev-start","plus":0,"within":10000}
           ],

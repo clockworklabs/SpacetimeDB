@@ -1,6 +1,8 @@
 # Purchasing application interface
 
 Use `catalog-link` to return to the catalog. Use `buy-now` inside an `item-card` to buy one unit. Use `orders-toggle` to open order history.
+While signed in, show `orders-toggle` directly or reveal it by clicking `current-user`.
+No other navigation is required to reach it.
 If an overlay blocks catalog navigation, expose a visible `overlay-close` control
 that dismisses it before `catalog-link` is used. Screens without a blocking
 overlay need no such control. Dialogs, panels, and ordinary page layouts are all allowed.

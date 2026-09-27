@@ -22,10 +22,13 @@
           "points": 1,
           "statedBy": "Customers cannot open the fulfilment area",
           "steps": [
+            {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link"]},
             { "do": "click", "actor": "staff", "testid": "staff-link" },
             { "do": "expect", "actor": "staff", "testid": "fulfilment-panel" },
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link"]},
             { "do": "click", "actor": "admin", "testid": "staff-link" },
             { "do": "expect", "actor": "admin", "testid": "fulfilment-panel" },
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link"]},
             { "do": "click", "actor": "customer", "testid": "staff-link", "ifAvailable": true, "settleMs": 1500 },
             { "do": "expect", "actor": "customer", "testid": "fulfilment-panel", "absent": true }
           ]

@@ -108,6 +108,7 @@
               "within": 1000
             },
             { "do": "click", "actor": "buyer-fresh", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "buyer-fresh", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
               "actor": "buyer-fresh",

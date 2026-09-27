@@ -16,6 +16,7 @@
         { "do": "click", "actor": "visitor", "testid": "support-submit" },
         { "do": "expect", "actor": "visitor", "testid": "support-reference", "nonEmpty": true },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link", "support-assignee"]},
         {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
         {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
       ],
@@ -32,6 +33,7 @@
             { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "Missing item", "attribute": "data-submit-state", "value": "succeeded" },
             { "do": "reload", "actor": "staff", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link", "support-assignee"]},
             {"do":"click","actor":"staff","testid":"staff-link","ifAvailable":true,"unlessVisible":"support-assignee"},
             {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
             { "do": "expect", "actor": "staff", "testid": "support-assignee", "in": { "testid": "support-ticket", "contains": "Missing item" }, "value": "staff" }
@@ -49,6 +51,7 @@
             { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "Missing item", "attribute": "data-submit-state", "value": "succeeded" },
             { "do": "reload", "actor": "staff", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link", "support-assignee"]},
             {"do":"click","actor":"staff","testid":"staff-link","ifAvailable":true,"unlessVisible":"support-assignee"},
             {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
             { "do": "expect", "actor": "staff", "testid": "support-priority", "in": { "testid": "support-ticket", "contains": "Missing item" }, "value": "high" }

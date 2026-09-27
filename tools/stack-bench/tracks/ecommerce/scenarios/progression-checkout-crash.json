@@ -204,6 +204,7 @@
           "within": 1000
         },
         { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        {"do": "click", "actor": "a", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
         {
           "do": "click",
           "actor": "a",
@@ -430,6 +431,7 @@
           "within": 1000
         },
         { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        {"do": "click", "actor": "b", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
         {
           "do": "click",
           "actor": "b",
@@ -525,6 +527,7 @@
             "warehouses": "if-requested"
           }
         },
+        {"do": "click", "actor": "c", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
         {
           "do": "click",
           "actor": "c",

@@ -12,6 +12,7 @@
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "signUp", "actor": "customer", "name": "category-totals" },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
@@ -29,6 +30,7 @@
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
             { "do": "reload", "actor": "admin", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             { "do": "click", "actor": "admin", "testid": "admin-link" },
             {"do":"click","actor":"admin","testid":"sales-link","unlessVisible":"category-row","ifAvailable":true},
             { "do": "expectNumber", "actor": "admin", "testid": "category-units", "in": { "testid": "category-row", "contains": "Audio" }, "relativeTo": "audio-core-units", "plus": 1 },

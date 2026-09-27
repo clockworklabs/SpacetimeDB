@@ -5,7 +5,9 @@
     "id": 622, "name": "Catalog management", "actors": ["admin","visitor"],
     "setup": [
       {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
-      {"do":"click","actor":"admin","testid":"admin-link"}
+      {"do":"click","actor":"admin","testid":"current-user","ifAvailable":true,"unlessVisible":["admin-link","catalog-management-link","catalog-name"]},
+      {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":["catalog-management-link","catalog-name"]},
+      {"do":"click","actor":"admin","testid":"catalog-management-link","ifAvailable":true,"unlessVisible":"catalog-name"}
     ],
     "criteria": [{
       "id": "622c",

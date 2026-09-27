@@ -1,6 +1,8 @@
 # Staff role application interface
 
 Put role management in the administrator area opened by `admin-link`.
+If the role controls are on a separate tab or screen within it, expose `staff-roles-link`
+there to open them. Omit this control when the role controls are already shown.
 Use `staff-role-row` for each staff account and set `data-account-id` to that account's server
 identifier. Put `staff-role-select` and `staff-role-save` inside the row.
 Also set the row's HTML `id` to `staff-role-account-` followed by

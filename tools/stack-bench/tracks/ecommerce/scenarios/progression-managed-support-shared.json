@@ -10,6 +10,7 @@
       "actors": ["owner", "staff"],
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "managed-shared-owner" },
+        {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["support-link"]},
         { "do": "click", "actor": "owner", "testid": "support-link" },
         { "do": "fill", "actor": "owner", "testid": "support-email", "text": "managed-shared@example.com" },
         { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Shared managed case" },
@@ -17,6 +18,7 @@
         { "do": "click", "actor": "owner", "testid": "support-submit" },
         { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link", "support-assignee"]},
         {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
         {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
       ],
@@ -34,6 +36,7 @@
             { "do": "click", "actor": "staff", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
             { "do": "reload", "actor": "owner", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "owner", "name": "managed-shared-owner", "readyTestid": "current-user" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["support-link"]},
             { "do": "click", "actor": "owner", "testid": "support-link" },
             { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "in progress" },
             { "do": "expect", "actor": "owner", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Case received." },
@@ -41,6 +44,7 @@
             { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link", "support-assignee"]},
             {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
             {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
             { "do": "expect", "actor": "staff", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Thank you." }
@@ -58,6 +62,7 @@
             { "do": "expect", "actor": "staff", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "open" },
             { "do": "reload", "actor": "owner", "settleMs": 1000 },
             { "do": "ensureSignedIn", "actor": "owner", "name": "managed-shared-owner", "readyTestid": "current-user" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["support-link", "support-ticket"]},
             { "do": "click", "actor": "owner", "testid": "support-link", "unlessVisible": "support-ticket" },
             { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "open" },
             { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "in progress" },

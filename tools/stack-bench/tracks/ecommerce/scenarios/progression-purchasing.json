@@ -22,6 +22,7 @@
           "steps": [
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             {"do":"click","actor":"buyer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "buyer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "buyer", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Coffee Grinder" },
             { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "equals": 64 }

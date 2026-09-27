@@ -14,6 +14,7 @@
         { "do": "click", "actor": "buyer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
         {"do":"click","actor":"buyer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {"do": "click", "actor": "buyer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
         { "do": "click", "actor": "buyer", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 }
       ],

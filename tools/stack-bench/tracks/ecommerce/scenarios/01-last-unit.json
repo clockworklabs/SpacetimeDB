@@ -18,6 +18,7 @@
           "password": "stackbench-admin-2026",
           "exact": true
         },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         {
           "do": "recordNumber",
@@ -91,6 +92,7 @@
             {"do":"reload","actor":"admin","settleMs":1000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
             {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-revenue"]},
             {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before-last-unit","plus":567,"within":10000}
           ],
@@ -104,16 +106,22 @@
           "steps": [
             { "do": "dbExpectPurchases", "before": { "a": "buy-a", "b": "buy-b", "c": "buy-c", "d": "buy-d", "e": "buy-e", "f": "buy-f" }, "purchases": 3 },
             {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "a", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "a", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "b", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "b", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {"do":"click","actor":"c","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "c", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "c", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {"do":"click","actor":"d","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "d", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "d", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {"do":"click","actor":"e","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "e", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "e", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {"do":"click","actor":"f","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "f", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "f", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {
               "do": "expectActorsWith",

@@ -11,6 +11,7 @@
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         { "do": "click", "actor": "admin", "testid": "admin-link" }
       ],
       "criteria": [
@@ -22,6 +23,7 @@
           "statedBy": "Administrators can open the administration area; other staff cannot.",
           "steps": [
             {"do": "expect", "actor": "admin", "testid": "admin-item-row"},
+            {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {"do": "click", "actor": "staff", "testid": "admin-link", "ifAvailable": true, "settleMs": 1500},
             {"do": "expect", "actor": "staff", "testid": "admin-item-row", "absent": true}
           ]

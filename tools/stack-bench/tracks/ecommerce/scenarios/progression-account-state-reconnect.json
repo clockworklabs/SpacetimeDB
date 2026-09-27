@@ -13,6 +13,7 @@
         { "do": "signIn", "actor": "peer", "name": "pat" },
         { "do": "click", "actor": "shopper", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        {"do": "click", "actor": "shopper", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
         { "do": "click", "actor": "shopper", "testid": "cart-toggle", "unlessVisible": "cart-total" },
         { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
         { "do": "click", "actor": "peer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
@@ -29,6 +30,7 @@
             { "do": "click", "actor": "peer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "setOffline", "actor": "shopper", "offline": false, "settleMs": 6000 },
             { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
+            {"do": "click", "actor": "shopper", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
             { "do": "click", "actor": "shopper", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Headphones" }

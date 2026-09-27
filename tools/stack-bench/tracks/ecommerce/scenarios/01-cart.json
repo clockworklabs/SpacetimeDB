@@ -39,12 +39,14 @@
           "points": 1,
           "steps": [
             { "do": "click", "actor": "reload", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+            {"do": "click", "actor": "reload", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
             { "do": "click", "actor": "reload", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "reload", "testid": "cart-item", "contains": "Laptop Stand", "within": 10000 },
             { "do": "reload", "actor": "reload", "settleMs": 3000 },
             { "do": "ensureSignedIn", "actor": "reload", "name": "omar", "readyTestid": "current-user" },
             { "do": "click", "actor": "reload", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
             { "do": "click", "actor": "reload", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "reload", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
             { "do": "click", "actor": "reload", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "reload", "testid": "cart-item", "contains": "Laptop Stand" }
           ],
@@ -58,6 +60,7 @@
           "steps": [
             { "do": "signIn", "actor": "live2", "name": "pia" },
             { "do": "click", "actor": "live2", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "live2", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["cart-toggle", "cart-total"]},
             { "do": "click", "actor": "live2", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "click", "actor": "live1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
             { "do": "expect", "actor": "live2", "testid": "cart-item", "contains": "Induction Cooktop", "within": 10000 }

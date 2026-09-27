@@ -27,6 +27,7 @@
 
             { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "owner", "testid": "order-item", "contains": "Air Purifier" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },

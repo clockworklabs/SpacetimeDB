@@ -19,6 +19,7 @@
         {"do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true},
         {"do": "dbSetStock", "item": "Laptop Stand", "warehouse": "East", "quantity": 1020, "settleMs": 0},
         {"do": "dbSetStock", "item": "Laptop Stand", "warehouse": "West", "quantity": 0, "settleMs": 0},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {"do": "click", "actor": "admin", "testid": "admin-link"},
         {"do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before"},
         {"do": "dbRecordStock", "item": "Laptop Stand", "as": "stand-before"},
@@ -50,6 +51,7 @@
             {"do": "reload", "actor": "admin", "settleMs": 1000},
             {"do": "ensureSignedIn", "actor": "admin", "name": "admin", "readyTestid": "current-user", "password": "stackbench-admin-2026", "exact": true},
             {"do": "click", "actor": "admin", "testid": "overlay-close", "ifAvailable": true, "within": 1000},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-revenue"]},
             {"do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": "admin-revenue"},
             {"do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 29000, "within": 10000}
           ]
@@ -64,6 +66,7 @@
             {"do": "dbExpectPurchaseCount", "before": ["stock-buyer", "stock-other"], "purchasesEach": 500},
             {"do": "reload", "actor": "admin", "settleMs": 2000},
             {"do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user"},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {"do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true},
             {"do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": {"testid": "admin-item-row", "contains": "Laptop Stand"}, "relativeTo": "stand-before", "plus": -1000},
             {"do": "freshClient", "actor": "buyer"},

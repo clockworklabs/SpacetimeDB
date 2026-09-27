@@ -36,10 +36,12 @@
             },
             {"do":"expectActionOutcome","actor":"attacker","outcome":"accepted"},
             {"do":"click","actor":"victim","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "victim", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"victim","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"victim","testid":"order-item","contains":"Coffee Grinder","count":1},
             {"do":"expect","actor":"victim","testid":"order-item","contains":"Desk Lamp","absent":true},
             {"do":"click","actor":"attacker","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "attacker", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"attacker","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"attacker","testid":"order-item","contains":"Desk Lamp","count":1}
           ],

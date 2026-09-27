@@ -13,6 +13,7 @@
         { "do": "signUp", "actor": "other", "name": "notification-other" },
         { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
         { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
         { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
         { "do": "click", "actor": "owner", "testid": "notification-order" },
         { "do": "click", "actor": "owner", "testid": "notification-save" }
@@ -27,6 +28,7 @@
           "steps": [
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
             { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" }
           ]
@@ -42,12 +44,14 @@
             { "do": "ensureSignedIn", "actor": "owner", "name": "notification-owner", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
             { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" },
             { "do": "restartBackend", "settleMs": 1000 },
             { "do": "freshClient", "actor": "owner" },
             { "do": "signIn", "actor": "owner-fresh", "name": "notification-owner" },
             { "do": "click", "actor": "owner-fresh", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "owner-fresh", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
             { "do": "click", "actor": "owner-fresh", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "owner-fresh", "testid": "notification-order", "attribute": "data-state", "value": "on" }
           ]
@@ -63,11 +67,13 @@
             { "do": "ensureSignedIn", "actor": "owner", "name": "notification-owner", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
             { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" },
             { "do": "reload", "actor": "other", "settleMs": 3000 },
             { "do": "ensureSignedIn", "actor": "other", "name": "notification-other", "readyTestid": "current-user" },
             { "do": "click", "actor": "other", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "other", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notification-settings", "notification-order"]},
             { "do": "click", "actor": "other", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "other", "testid": "notification-order", "attribute": "data-state", "value": "off" }
           ]

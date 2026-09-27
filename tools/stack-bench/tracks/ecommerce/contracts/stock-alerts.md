@@ -2,6 +2,9 @@
 
 Use `stock-alert` inside an unavailable `item-card` to request an alert. Use
 `notifications-toggle` to open notifications and `notification-item` for each alert.
+While signed in on the catalog, show `notifications-toggle` directly, reveal it by clicking
+`current-user`, or make it available in the settings opened by `notification-settings`.
+No other navigation is required. An already open `notifications-panel` needs no toggle.
 On that `item-card`, expose `data-submit-state` for the latest stock-alert request:
 `idle` initially, `pending` immediately when submitted, `succeeded` only after the server
 confirms success, or `failed` after rejection or transport failure. Keep the terminal state

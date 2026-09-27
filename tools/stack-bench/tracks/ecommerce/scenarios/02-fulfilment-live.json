@@ -12,6 +12,7 @@
       "setup": [
         { "do": "signUp", "actor": "customer", "name": "fq-live" },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["staff-link"]},
         { "do": "click", "actor": "staff", "testid": "staff-link" },
         { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],

@@ -18,6 +18,7 @@
         { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Laptop Stand"},"settleMs":2000},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
         {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" }
       ],
       "criteria": [
@@ -32,6 +33,7 @@
             {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true,"within":1000},
             {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"},"settleMs":2000},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"customer","testid":"order-item","contains":"Coffee Grinder","count":1,"within":10000},
             {"do":"callAction","actor":"staff","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"settleMs":2000,"from":"customer"},
@@ -40,6 +42,7 @@
             {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"shipped", "ignoreCase": true,"within":10000},
             {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":2000},
@@ -48,6 +51,7 @@
             {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"pending", "ignoreCase": true},
             {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0,"staff"],"params":[{"name":"orderId","in":"body","wireType":"u64"},{"name":"role","in":"body"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":0},
@@ -56,6 +60,7 @@
             {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"pending","ignoreCase":true},
             {"do":"expectActionOutcome","actor":"customer","outcome":"application-refused","routeProvenBy":"staff"},
@@ -65,6 +70,7 @@
             {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"shipped","ignoreCase":true,"within":10000}
           ]
@@ -78,6 +84,7 @@
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "signUp", "actor": "customer", "name": "direct-conserve" },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         { "do": "click", "actor": "admin", "testid": "admin-link" }
       ],
       "criteria": [
@@ -93,6 +100,7 @@
             {"do":"dbRecordStock","item":"Headphones","as":"direct-race-stock-before"},
             {"do":"reload","actor":"admin","settleMs":2000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
@@ -105,6 +113,7 @@
             {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
             {"do":"reload","actor":"admin","settleMs":2000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
             {"do":"expectNumber","actor":"admin","testid":"admin-stock","in":{"testid":"admin-item-row","contains":"Headphones"},"relativeTo":"direct-race-stock-before","plus":-1,"within":12000},
             {"do":"reload","actor":"customer","settleMs":2000},
@@ -116,9 +125,11 @@
             {"do":"dbExpectStock","item":"Headphones","warehouse":"West","atLeast":64,"atMost":65},
             {"do":"dbExpectStock","item":"Headphones","relativeTo":"direct-race-stock-before","plus":-1},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"customer","testid":"order-item","contains":"Headphones","count":1,"within":10000},
             {"do":"signIn","actor":"reverseAdmin","name":"admin","password":"stackbench-admin-2026","exact":true},
+            {"do": "click", "actor": "reverseAdmin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {"do":"click","actor":"reverseAdmin","testid":"admin-link"},
             {"do":"fill","actor":"admin","testid":"transfer-from","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
             {"do":"fill","actor":"admin","testid":"transfer-to","text":"West","in":{"testid":"admin-item-row","contains":"Headphones"}},
@@ -161,6 +172,7 @@
 
         { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
         {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
         { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" }
       ],
       "criteria": [
@@ -179,6 +191,7 @@
             {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","exact":true,"readyTestid":"current-user"},
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true},
             {"do":"callAction","actor":"other","from":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0,"direct-owner"],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"},{"name":"username","in":"body"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":0},
@@ -187,6 +200,7 @@
             {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","exact":true,"readyTestid":"current-user"},
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true},
             {"do":"expectActionOutcome","actor":"other","outcome":"application-refused","routeProvenBy":"owner"},
@@ -196,6 +210,7 @@
             {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","exact":true,"readyTestid":"current-user"},
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"cancelled","ignoreCase":true}
           ]

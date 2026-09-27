@@ -4,11 +4,92 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { executeAction } from '../src/actions/action-contract.js';
+import { executeAction, type ActionEvidence } from '../src/actions/action-contract.js';
 import { createNamedActionsCapability } from '../src/actions/actor-transport-action-executors.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { createServer } from 'node:http';
+import { gradeFeature } from '../grader/grade.js';
+
+test('promotion access measures denied management and writes rather than link visibility', async t => {
+  // Failure first: a visible denied link is valid; a write is forbidden even if its response says 403.
+  let mode = '', codes: string[] = [];
+  const requests: Array<{ code: string; authorized: boolean; status: number; committed: boolean }> = [];
+  const evidence: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    if (request.url === '/api/promotions' && request.method === 'POST') {
+      let body = ''; for await (const chunk of request) body += String(chunk);
+      const { code } = JSON.parse(body);
+      const authorized = request.headers.authorization === 'Bearer staff';
+      const committed = authorized || mode !== 'denied';
+      const status = authorized || mode === 'accepted-write' ? 200 : 403;
+      if (committed) codes.push(code);
+      requests.push({ code, authorized, status, committed });
+      response.writeHead(status, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ ok: status === 200 })); return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html' });
+    response.end(`<!doctype html><main></main><script>
+      const user=sessionStorage.getItem('user'), main=document.querySelector('main');
+      window.getSessionToken=()=>sessionStorage.getItem('user');
+      if (!user) {
+        main.innerHTML=['signin','signup'].map(kind=>'<form data-kind="'+kind+'"><input id="'+kind+'-username"><input id="'+kind+'-password" type="password"><button id="'+kind+'-submit">Continue</button></form>').join('');
+        for (const form of main.querySelectorAll('form')) form.onsubmit=event=>{
+          event.preventDefault();sessionStorage.setItem('user',document.querySelector('#'+form.dataset.kind+'-username').value);location.href='/';
+        };
+      } else {
+        main.innerHTML='<span id="current-user">'+user+'</span><a id="promotions-link" href="/promotions">Promotions</a>';
+        if (user==='staff') {
+          main.innerHTML+='<a id="staff-link" href="/promotions">Staff</a><section id="staff-area"><form id="promotion-form"><input id="promotion-code"><input id="promotion-discount"><input id="promotion-start"><input id="promotion-end"><input id="promotion-limit"><button id="promotion-submit">Save</button></form><section id="rules"></section></section>';
+          document.querySelector('#rules').innerHTML=${JSON.stringify(codes)}.map(code=>'<div data-role="promotion-item">'+code+'</div>').join('');
+          document.querySelector('#promotion-form').onsubmit=async event=>{
+            event.preventDefault();const input=id=>document.querySelector('#promotion-'+id).value;
+            await fetch('/api/promotions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+user},body:JSON.stringify({code:input('code'),discountPercent:Number(input('discount')),startMicros:4070908800000000,endMicros:4102444740000000,usageLimit:Number(input('limit'))})});
+            location.href='/promotions';
+          };
+        } else main.innerHTML+='<p>Promotion management requires staff access.</p>';
+      }
+    </script>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (mode of ['denied', 'accepted-write', 'write-then-deny']) await t.test(mode, async () => {
+      codes = []; requests.length = 0;
+      const definition = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+        'tracks/ecommerce/scenarios/progression-promotion-rules.json'), 'utf8'));
+      const selected = definition.features[0];
+      selected.criteria = selected.criteria.filter((criterion: { id: string }) => criterion.id === '620b');
+      for (const step of [...selected.setup, ...selected.criteria[0].steps]) {
+        if ('within' in step) step.within = 700;
+        if ('settleMs' in step) step.settleMs = 0;
+      }
+      const grade = await gradeFeature(browser, compileScenarioDefinition(definition).features[0]!,
+        { url, level: definition.level, headed: false, selectedCheckKeys: [], nullControl: false },
+        { runId: `promotion-access-${mode}`, roomName: name => name, url, actions: [],
+          spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 700 });
+      const row = { mode, grade, requests: [...requests], codes: [...codes] }; evidence.push(row);
+      assert.equal(grade.setupEvidence.status, 'passed', JSON.stringify(row));
+      assert.equal(grade.criteria[0]!.evidence.status, mode === 'denied' ? 'passed' : 'failed', JSON.stringify(row));
+      assert.equal(requests.filter(request => request.authorized && request.code === 'ACCESS10').length, 1);
+      assert.equal(requests.filter(request => !request.authorized && request.code === 'HACK10').length, 1,
+        'the customer replay must reach the real endpoint; a link-only failure is not the boundary test');
+      assert.equal(codes.includes('HACK10'), mode !== 'denied');
+      if (mode === 'write-then-deny') assert.equal((grade.criteria[0]!.evidence.actions.at(-1)?.evidence as ActionEvidence | undefined)?.action.id, 'expect');
+    });
+  } finally {
+    await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_PROMOTION_ACCESS_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_PROMOTION_ACCESS_EVIDENCE, JSON.stringify({
+        rerun: 'STACK_BENCH_PROMOTION_ACCESS_EVIDENCE=<file> node --test --test-name-pattern="promotion access measures" dist/tests/stock-alert-delivery.integration.js', evidence,
+      }, null, 2));
+    }
+  }
+});
 
 test('promotion and role access controls reject optimistic writes that disappear on reload', async () => {
   const browser = await chromium.launch({ headless: true });
@@ -132,6 +213,11 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
       ['631c', 'transition', 'settings-page', null],
       ['631c', 'transition', 'settings-toggle', null],
       ['631c', 'transition', 'catalog-settings', null],
+      ['631c', 'transition', 'menu-toggle', null],
+      ['631c', 'transition', 'menu-settings', null],
+      ['631c', 'transition', 'inline-menu', null],
+      ['631c', 'transition', 'menu-broken', 'click/before-restock'],
+      ['631c', 'transition', 'menu-missing', 'click/before-restock'],
       ['631c', 'transition', 'settings-noop', 'click/before-restock'],
       ['631c', 'transition', 'no-controls', 'click/before-restock'],
       ['631c', 'pending', 'page', 'expect/after-restock'],
@@ -140,11 +226,13 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
       ['631a', 'transition', 'modal', null],
       ['631a', 'transition', 'page', null],
       ['631a', 'transition', 'settings-page', null],
+      ['631a', 'transition', 'menu-toggle', null],
       ['631a', 'pending', 'page', 'expectElementCount/before-restock'],
       ['631a', 'duplicate', 'page', 'expectElementCount/after-restock'],
       ['631a', 'duplicate', 'settings-page', 'expectElementCount/after-restock'],
       ['631b', 'private', 'page', null],
       ['631b', 'private', 'settings-page', null],
+      ['631b', 'private', 'menu-settings', null],
       ['631b', 'pending', 'page', 'expect/before-restock'],
       ['631b', 'leak', 'page', 'expect/before-restock'],
       ['631b', 'leak', 'settings-page', 'expect/before-restock'],
@@ -159,7 +247,7 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
       let readsAfterRestock = 0;
       let freshClients = 0;
       let waitMs = 0;
-      const navigation = { catalog: 0, settings: 0, toggle: 0 };
+      const navigation = { catalog: 0, settings: 0, toggle: 0, account: 0 };
       const observations: { action: string; actor?: string; control?: string; status: string; summary: string | null }[] = [];
       const actors = new Map<string, { name: string; page: Page; context: BrowserContext; record(): void;
         writes: { url: string; headers: { authorization: string } }[];
@@ -180,8 +268,8 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
           await context.route('http://app.test/**', route => route.fulfill({ contentType: 'text/html', body: `<form id="signin">
             <input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button>
             </form><strong id="current-user" hidden></strong>
-            <button id="notifications-toggle" ${layout.startsWith('settings-') || ['catalog-settings', 'no-controls', 'inline-no-toggle'].includes(layout) ? 'hidden' : ''}>Notifications</button><button id="catalog-link">Catalog</button>
-            <button id="notification-settings" ${['catalog-settings', 'no-controls'].includes(layout) ? 'hidden' : ''}>Settings</button>
+            <button id="notifications-toggle" ${layout.startsWith('settings-') || layout.startsWith('menu-') || ['catalog-settings', 'no-controls', 'inline-no-toggle', 'inline-menu'].includes(layout) ? 'hidden' : ''}>Notifications</button><button id="catalog-link">Catalog</button>
+            <button id="notification-settings" ${layout.startsWith('menu-') || ['catalog-settings', 'no-controls', 'inline-menu'].includes(layout) ? 'hidden' : ''}>Settings</button>
             ${layout === 'modal' ? '<button id="overlay-close" hidden>Close</button>' : ''}
             <section id="notifications" data-role="notifications-panel" aria-busy="true" style="min-height:24px" hidden>Loading</section>
             <div data-role="admin-location-row" data-restock-input='{"itemId":1,"warehouseId":2,"quantity":1}'>Air Purifier East</div>
@@ -201,9 +289,15 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
               }
               document.querySelector('#signin').onsubmit = async event => {
                 event.preventDefault(); current.textContent = document.querySelector('#signin-username').value;
-                if (${layout === 'inline' || layout === 'inline-no-toggle'}) await open();
+                if (${layout === 'inline' || layout === 'inline-no-toggle' || layout === 'inline-menu'}) await open();
                 if (${layout === 'inline-loading'}) void open();
                 current.hidden = false;
+              };
+              current.onclick = () => {
+                window.recordNavigation('account');
+                if (${layout === 'menu-toggle' || layout === 'inline-menu'}) document.querySelector('#notifications-toggle').hidden = false;
+                if (${layout === 'menu-settings'}) document.querySelector('#notification-settings').hidden = false;
+                if (${layout === 'menu-missing'}) current.textContent += ' Menu';
               };
               document.querySelector('#notifications-toggle').onclick = () => {
                 window.recordNavigation('toggle');
@@ -219,7 +313,7 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
               document.querySelector('#notification-settings').onclick = () => {
                 window.recordNavigation('settings');
                 if (${layout === 'settings-toggle'}) document.querySelector('#notifications-toggle').hidden = false;
-                if (${layout === 'settings-page' || layout === 'catalog-settings'}) return open();
+                if (${layout === 'settings-page' || layout === 'catalog-settings' || layout === 'menu-settings'}) return open();
               };
               document.querySelector('#overlay-close')?.addEventListener('click', event => {
                 panel.hidden = true; event.target.hidden = true;
@@ -295,10 +389,12 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
             expectedFailure, failed, navigation, observations, screenshot })}\n`);
         }
         assert.equal(failed, expectedFailure, `${id}: ${mode}/${layout}`);
-        if (['inline', 'inline-loading', 'inline-no-toggle', 'modal', 'page'].includes(layout)) {
+        if (['inline', 'inline-loading', 'inline-no-toggle', 'inline-menu', 'modal', 'page'].includes(layout)) {
           assert.equal(navigation.catalog, 0, 'a visible notification destination needs no catalog navigation');
           assert.equal(navigation.settings, 0, 'a visible notification destination needs no settings navigation');
+          assert.equal(navigation.account, 0, 'a visible feed or opener needs no account navigation');
         }
+        if (['menu-toggle', 'menu-settings'].includes(layout)) assert.ok(navigation.account > 0, 'reach the feed through the account menu');
         if (layout === 'inline-loading') {
           assert.equal(await actors.get('subscriber-fresh')!.page.locator('body')
             .getAttribute('data-toggle-clicked'), null, 'an open loading panel must not be toggled closed');

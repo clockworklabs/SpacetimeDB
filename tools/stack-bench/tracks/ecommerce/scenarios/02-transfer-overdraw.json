@@ -20,6 +20,7 @@
           "password": "stackbench-admin-2026",
           "exact": true
         },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {
           "do": "click",
           "actor": "admin",

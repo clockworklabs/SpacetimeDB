@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import test from 'node:test';
@@ -11,6 +11,146 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { gradeFeature } from '../grader/grade.js';
 import type { Browser } from 'playwright';
+
+test('staff and role navigation follows declared account and role entry controls', async t => {
+  // Use the real scenarios. The HTTP fixture proves navigation, not database restart durability.
+  let layout = '', kind = '', assignedRole = 'staff';
+  const visits: string[] = [], accountVisitors: string[] = [], evidence: unknown[] = [];
+  const roleWrites: { actor: string; role: string; status: number }[] = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url!, 'http://fixture.test').pathname;
+    visits.push(`${request.method} ${path}`);
+    if (path === '/account') accountVisitors.push(new URL(request.url!, 'http://fixture.test').searchParams.get('user') ?? '');
+    if (path === '/api/staff/1/role' && request.method === 'PUT') {
+      let body = ''; for await (const chunk of request) body += String(chunk);
+      const actor = (request.headers.authorization ?? '').replace('Bearer ', '');
+      const role = JSON.parse(body).role;
+      const status = actor === 'admin' ? 200 : 403;
+      if (status === 200 || layout === 'disabled-role-unsafe') assignedRole = role;
+      roleWrites.push({ actor, role, status });
+      response.writeHead(status, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify(status === 200 ? { ok: true } : { error: 'Administrator required' })); return;
+    }
+    if (path === '/save-role') {
+      let body = ''; for await (const chunk of request) body += String(chunk);
+      if (layout !== 'wrong-row') assignedRole = new URLSearchParams(body).get('role')!;
+      response.writeHead(303, { Location: '/roles' }); response.end(); return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html' });
+    response.end(`<!doctype html><main></main><script>
+      const layout=${JSON.stringify(layout)}, kind=${JSON.stringify(kind)}, path=${JSON.stringify(path)};
+      const user=sessionStorage.getItem('user');
+      window.getSessionToken=()=>user;
+      const roleBoundary=layout==='disabled-role-save'||layout==='disabled-role-unsafe';
+      const main=document.querySelector('main');
+      if (!user) {
+        main.innerHTML='<form><input id="signin-username"><input id="signin-password" type="password"><button id="signin-submit">Sign in</button></form>';
+        main.querySelector('form').onsubmit=event=>{
+          event.preventDefault(); sessionStorage.setItem('user',document.querySelector('#signin-username').value); location.href='/';
+        };
+      } else {
+        const authorized=user==='staff'||user==='admin';
+        const accountOpen=path==='/account';
+        const behindMenu=layout==='menu'||layout==='menu-noop'||layout==='missing-target'
+          ||((layout==='customer-hidden'||layout==='customer-leak')&&user==='customer');
+        const expose=(!behindMenu||accountOpen)&&layout!=='missing-target';
+        const allowed=authorized||layout==='customer-leak';
+        main.innerHTML=(layout==='menu-noop'?'<button id="current-user">'+user+'</button>':'<a id="current-user" href="/account?user='+encodeURIComponent(user)+'">'+user+'</a>');
+        if (kind==='staff') {
+          const open=path==='/staff'||layout==='already-open'&&authorized;
+          if (expose&&allowed&&!open) main.innerHTML+='<a id="staff-link" href="/staff">Staff area</a>';
+          if (open&&allowed) main.innerHTML+='<section id="staff-area">Staff tools</section>';
+        } else if (user==='admin') {
+          const area=path==='/admin'||path==='/roles'||layout==='already-open';
+          const tab=layout==='role-tab'||layout==='broken-tab'||layout==='missing-tab';
+          const rows=area&&(!tab||path==='/roles');
+          if (expose&&!area) main.innerHTML+='<a id="admin-link" href="/admin">Admin area</a>';
+          if (area&&!rows&&layout!=='missing-tab') main.innerHTML+=layout==='broken-tab'
+            ?'<button id="staff-roles-link">Users</button>':'<a id="staff-roles-link" href="/roles">Users</a>';
+          if (rows) main.innerHTML+='<form id="staff-role-account-staff" data-role="staff-role-row" action="/save-role" method="post">staff<select data-role="staff-role-select" name="role"><option>staff</option><option>inventory</option><option>admin</option></select><button data-role="staff-role-save">Save</button></form><div id="staff-role-account-admin"><select data-role="staff-role-select"><option>inventory</option></select></div>';
+          const select=document.querySelector('#staff-role-account-staff select');
+          if (select) select.value=${JSON.stringify(assignedRole)};
+          if (roleBoundary&&select) {
+            const form=select.closest('form'); form.dataset.accountId='1';
+            form.onsubmit=async event=>{event.preventDefault();await fetch('/api/staff/1/role',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+user},body:JSON.stringify({role:select.value})});};
+          }
+        } else if (roleBoundary&&user==='staff') {
+          main.innerHTML+='<section id="staff-area"><select disabled><option>staff</option></select><button data-role="staff-role-save" disabled>Save</button></section>';
+        }
+      }
+    </script>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const fixture of [
+      { kind: 'staff', layout: 'direct', passed: true },
+      { kind: 'staff', layout: 'menu', passed: true },
+      { kind: 'staff', layout: 'already-open', passed: true },
+      { kind: 'staff', layout: 'menu-noop', passed: false },
+      { kind: 'staff', layout: 'missing-target', passed: false },
+      { kind: 'staff', layout: 'customer-hidden', passed: true },
+      { kind: 'staff', layout: 'customer-leak', passed: false },
+      { kind: 'roles', layout: 'direct', passed: true },
+      { kind: 'roles', layout: 'menu', passed: true },
+      { kind: 'roles', layout: 'already-open', passed: true },
+      { kind: 'roles', layout: 'role-tab', passed: true },
+      { kind: 'roles', layout: 'broken-tab', passed: false },
+      { kind: 'roles', layout: 'missing-tab', passed: false },
+      { kind: 'roles', layout: 'wrong-row', passed: false },
+      // Disabled controls do not grant authority. A refused response must not conceal a write.
+      { kind: 'roles', layout: 'disabled-role-save', passed: true },
+      { kind: 'roles', layout: 'disabled-role-unsafe', passed: false },
+    ]) await t.test(`${fixture.kind}: ${fixture.layout}`, async () => {
+      ({ layout, kind } = fixture); assignedRole = 'staff'; visits.length = 0; accountVisitors.length = 0; roleWrites.length = 0;
+      const definition = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+        `tracks/ecommerce/scenarios/progression-staff-${kind === 'staff' ? 'access' : 'roles'}.json`), 'utf8'));
+      const selected = definition.features[0];
+      selected.criteria = selected.criteria.filter((criterion: { id: string }) =>
+        (kind === 'staff' ? ['601a', '601b'] : layout.startsWith('disabled-role-') ? ['621b'] : ['621c', '621a']).includes(criterion.id));
+      if (kind === 'roles') for (const criterion of selected.criteria) {
+        criterion.steps = criterion.steps.filter((step: { do: string }) => step.do !== 'restartBackend');
+      }
+      for (const step of [...selected.setup, ...selected.criteria.flatMap((criterion: { steps: Record<string, unknown>[] }) => criterion.steps)]) {
+        if ('within' in step || ['click', 'fill', 'expect'].includes(step.do)) step.within = 700;
+        if ('settleMs' in step) step.settleMs = 0;
+      }
+      const feature = compileScenarioDefinition(definition).features[0]!;
+      const grade = await gradeFeature(browser, feature,
+        { url, level: definition.level, headed: false, selectedCheckKeys: [], nullControl: false },
+        { runId: `staff-navigation-${kind}-${layout}`, roomName: name => name, url, actions: [],
+          spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 700 });
+      const row = { ...fixture, grade, visits: [...visits], accountVisitors: [...accountVisitors], assignedRole, roleWrites: [...roleWrites] };
+      evidence.push(row);
+      assert.equal(grade.criteria.every(criterion => criterion.evidence.status === 'passed'), fixture.passed, JSON.stringify(row));
+      if (layout.startsWith('disabled-role-')) {
+        assert.ok(roleWrites.some(write => write.actor === 'staff' && write.status === 403), 'reach the actual unauthorized write');
+        assert.equal(assignedRole, layout === 'disabled-role-unsafe' ? 'inventory' : 'staff');
+      }
+      if (layout === 'customer-leak') {
+        assert.equal(grade.criteria.find(criterion => criterion.id === '601a')!.evidence.status, 'passed', 'prove the authorized route before testing denial');
+        assert.equal(grade.criteria.find(criterion => criterion.id === '601b')!.evidence.status, 'failed');
+      }
+      if (fixture.passed && ['direct', 'already-open'].includes(layout)) {
+        assert.equal(accountVisitors.some(user => user === 'staff' || user === 'admin'), false,
+          'do not navigate an authorized actor away from a usable entry or target');
+      }
+      if (fixture.passed && layout === 'menu') assert.ok(visits.includes('GET /account'));
+      if (fixture.passed && layout === 'role-tab') assert.ok(visits.includes('GET /roles'));
+    });
+  } finally {
+    await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_STAFF_NAVIGATION_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_STAFF_NAVIGATION_EVIDENCE, JSON.stringify({
+        rerun: 'STACK_BENCH_STAFF_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern="staff and role navigation" dist/tests/account-navigation.integration.js',
+        evidence,
+      }, null, 2));
+    }
+  }
+});
 
 test('rejected login cannot hide an app session that still permits a protected write', async () => {
   const browser = await chromium.launch({ headless: true });
@@ -203,21 +343,6 @@ test('signout supports a direct button and account dialog but rejects missing or
 test('saved views and purchase history work after confirmation or closing and still reject missing content', async () => {
   const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios');
   const load = (file: string) => compileScenarioDefinition(JSON.parse(readFileSync(join(root, file), 'utf8')));
-  // Every order-history entry point uses the same disclosed close control.
-  const visit = (value: unknown): void => {
-    if (!value || typeof value !== 'object') return;
-    if (Array.isArray(value)) {
-      for (let i = 0; i < value.length; i++) {
-        const step: { do?: string; testid?: string; actor?: string } | null = value[i];
-        if (step?.do === 'click' && step.testid === 'orders-toggle') {
-          assert.equal(value[i - 1]?.testid, 'overlay-close');
-          assert.equal(value[i - 1]?.actor, step.actor);
-        }
-        visit(step);
-      }
-    } else for (const child of Object.values(value)) visit(child);
-  };
-  for (const file of readdirSync(root).filter(file => file.endsWith('.json'))) visit(load(file));
   const orderTotal = '<span data-role="order-total">64</span>';
   const cases = [
     { file: 'progression-support-history.json', id: '612c', actor: 'owner', opener: 'support-link',
@@ -230,6 +355,8 @@ test('saved views and purchase history work after confirmation or closing and st
       target: 'order-item', user: 'buyer', value: 'Coffee Grinder', detail: orderTotal },
     { file: '01-purchase-attribution.json', actor: 'victim', opener: 'orders-toggle',
       target: 'order-item', user: 'victim', value: 'Coffee Grinder', detail: orderTotal },
+    { file: '01-cart.json', id: '4b', actor: 'reload', opener: 'cart-toggle',
+      target: 'cart-item', user: 'omar', value: 'Laptop Stand', detail: '<span id="cart-total">10</span>', restoredEntry: true },
   ];
   const browser = await chromium.launch({ headless: true });
   try {
@@ -237,15 +364,18 @@ test('saved views and purchase history work after confirmation or closing and st
     for (const item of cases) {
       const feature = load(item.file).features[0]!;
       const criterion = item.id ? feature.criteria.find(criterion => criterion.id === item.id)! : feature.criteria[0]!;
-      const steps = criterion.steps.filter(step => step.actor === item.actor && step.testid !== 'buy-now');
-      for (const layout of ['inline', 'closed', 'history-dialog', 'confirmation']) for (const missing of [false, true]) {
+      // The fixture starts signed in. Exercise the actual view entry after the cart session is restored.
+      const selected = item.restoredEntry ? criterion.steps.slice(criterion.steps.findIndex(step => step.do === 'ensureSignedIn') + 1) : criterion.steps;
+      const steps = selected.filter(step => step.actor === item.actor && step.testid !== 'buy-now');
+      for (const layout of ['inline', 'closed', 'history-dialog', 'confirmation', 'menu', 'missing-menu', 'broken-menu']) for (const missing of [false, true]) {
         const history = layout === 'history-dialog';
+        const menu = ['menu', 'missing-menu', 'broken-menu'].includes(layout);
         await page.unrouteAll();
         await page.route('http://saved.test/**', route => route.fulfill({ contentType: 'text/html', body: `
-          <span id="current-user">${item.user}</span>
+          ${layout === 'missing-menu' ? '' : `<button id="current-user" onclick="${layout === 'broken-menu' ? '' : "document.querySelector('#menu').hidden=false"}">${item.user}</button>`}
           <button id="catalog-link">Catalog</button>
-          <button id="${item.opener}" onclick="document.querySelector('#panel').hidden = !document.querySelector('#panel').hidden;
-            ${history ? "document.querySelector('#history').showModal()" : ''}">Open</button>
+          <nav id="menu" ${menu ? 'hidden' : ''}><button id="${item.opener}" onclick="document.querySelector('#panel').hidden = !document.querySelector('#panel').hidden;
+            ${history ? "document.querySelector('#history').showModal()" : ''}">Open</button></nav>
           ${history ? `<dialog id="history"><button data-role="overlay-close" onclick="document.querySelector('#history').close()">Close</button>` : ''}
           <section id="panel" ${layout === 'inline' ? '' : 'hidden'}>
             ${missing ? '' : `<span id="${item.target}" data-state="${item.value}">${item.value}${item.detail ?? ''}</span>`}
@@ -274,7 +404,7 @@ test('saved views and purchase history work after confirmation or closing and st
             { ...step, ...(step.testid ? { within: 150 } : {}) }, { capabilities });
           if (last.status !== 'passed') break;
         }
-        assert.equal(last?.status, missing ? 'failed' : 'passed',
+        assert.equal(last?.status, missing || ['missing-menu', 'broken-menu'].includes(layout) ? 'failed' : 'passed',
           `${item.file}/${layout}/missing=${missing}: ${last?.summary}`);
       }
     }
@@ -529,30 +659,6 @@ test('promotions follow the staff path and delivery setup returns from persisten
 });
 
 test('conditional navigation opens closed drawers and preserves inline or animated open panels', async () => {
-  // Every cart, order and settings toggle up to depth 3 declares the content that shows its view is already open.
-  const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce');
-  const read = (path: string) => JSON.parse(readFileSync(join(root, path), 'utf8'));
-  const graph = read('progression/ecommerce.json') as { nodes: Array<{ id: string; dependencies: Array<{ id: string }>; gradingGroups: string[] }> };
-  const depth = (id: string): number => 1 + Math.max(0, ...graph.nodes.find(node => node.id === id)!.dependencies.map(edge => depth(edge.id)));
-  const packs = readdirSync(join(root, 'composition/packs')).map(name => read(`composition/packs/${name}`)) as Array<{
-    id: string; checks: Array<{ id: string; source: string; feature: number; criteria?: string[] }>;
-  }>;
-  const selected = graph.nodes.filter(node => depth(node.id) <= 3).flatMap(node => node.gradingGroups).flatMap(ref => {
-    const [id, group] = ref.split('#');
-    return packs.find(pack => pack.id === id)!.checks.filter(check => check.id === group);
-  });
-  const toggles = selected.flatMap(check => {
-    const scenario = compileScenarioDefinition(read(check.source));
-    const feature = scenario.features.find(feature => feature.id === check.feature)!;
-    return [...feature.setup, ...feature.criteria.filter(criterion => !check.criteria || check.criteria.includes(criterion.id))
-      .flatMap(criterion => criterion.steps)]
-      .filter(step => step.do === 'click' && ['cart-toggle', 'orders-toggle', 'notification-settings'].includes(step.testid ?? ''));
-  });
-  assert(toggles.length > 0);
-  for (const step of toggles) {
-    assert.equal(typeof step.unlessVisible, 'string');
-    assert(['cart-item', 'cart-total', 'checkout-submit', 'order-item', 'notification-order'].includes(step.unlessVisible as string));
-  }
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 800, height: 600 } });

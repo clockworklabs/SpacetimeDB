@@ -1,7 +1,7 @@
 # Catalog item application interface
 
 The public catalog may be on the first page or a separate page. If navigation is
-needed, expose `catalog-link` on the signed-out first page to open the catalog.
+needed, show `catalog-link` directly on the signed-out first page to open the catalog.
 
 | Element ID | Required element |
 | --- | --- |

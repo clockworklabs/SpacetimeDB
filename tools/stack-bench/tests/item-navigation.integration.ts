@@ -12,6 +12,76 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { gradeFeature } from '../grader/grade.js';
 
+test('catalog management reaches a declared inner tab and verifies the created product', async t => {
+  // Failure first: a valid inner tab must work; broken navigation and missing fields must not pass.
+  let layout = '', products: Array<{ name: string; variants: string[] }> = [];
+  const visits: string[] = [], evidence: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url!, 'http://fixture.test').pathname;
+    visits.push(`${request.method} ${path}`);
+    if (path === '/save') {
+      let body = ''; for await (const chunk of request) body += String(chunk);
+      const form = new URLSearchParams(body);
+      products.push({ name: form.get('name')!, variants: form.get('variants')!.split(',').map(v => v.trim()) });
+      response.writeHead(303, { Location: '/admin/catalog' }); response.end(); return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html' });
+    response.end(`<!doctype html><main></main><script>
+      const layout=${JSON.stringify(layout)}, path=${JSON.stringify(path)}, products=${JSON.stringify(products)};
+      const user=sessionStorage.getItem('user'), main=document.querySelector('main');
+      main.innerHTML='<input id="search-input"><section id="item-list">'+products.map(p=>'<article data-role="item-card"><span data-role="item-name">'+p.name+'</span>'+p.variants.map(v=>'<span data-role="item-variant">'+v+'</span>').join('')+'</article>').join('')+'</section>';
+      if (!user) {
+        main.innerHTML+='<form id="login"><input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button></form>';
+        document.querySelector('#login').onsubmit=e=>{e.preventDefault();sessionStorage.setItem('user',document.querySelector('#signin-username').value);location.href='/';};
+      } else {
+        main.innerHTML+='<a id="current-user" href="/account">'+user+'</a>';
+        const area=path.startsWith('/admin')||layout==='already-open';
+        if (!area&&(layout!=='menu-tab'||path==='/account')) main.innerHTML+='<a id="admin-link" href="/admin">Admin</a>';
+        const tab=['menu-tab','broken-tab','missing-tab'].includes(layout);
+        if (area&&tab&&path!=='/admin/catalog'&&layout!=='missing-tab') main.innerHTML+=layout==='broken-tab'
+          ?'<button id="catalog-management-link">Products</button>':'<a id="catalog-management-link" href="/admin/catalog">Products</a>';
+        if (area&&(!tab||path==='/admin/catalog')) main.innerHTML+='<form method="post" action="/save"><input id="catalog-name" name="name"><input id="catalog-category" name="category">'+(layout==='missing-field'?'':'<input id="catalog-price" name="price">')+'<input id="catalog-variants" name="variants"><button id="catalog-save">Save</button></form>';
+      }
+    </script>`);
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (layout of ['direct', 'menu-tab', 'already-open', 'broken-tab', 'missing-tab', 'missing-field']) {
+      await t.test(layout, async () => {
+        products = []; visits.length = 0;
+        const definition = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+          'tracks/ecommerce/scenarios/progression-catalog-management.json'), 'utf8'));
+        const selected = definition.features[0];
+        for (const step of [...selected.setup, ...selected.criteria.flatMap((c: { steps: Record<string, unknown>[] }) => c.steps)]) {
+          if ('within' in step || ['click', 'fill', 'expect'].includes(step.do)) step.within = 700;
+          if ('settleMs' in step) step.settleMs = 0;
+        }
+        const grade = await gradeFeature(browser, compileScenarioDefinition(definition).features[0]!,
+          { url, level: definition.level, headed: false, selectedCheckKeys: [], nullControl: false },
+          { runId: `catalog-management-${layout}`, roomName: name => name, url, actions: [],
+            spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 700 });
+        const passed = ['direct', 'menu-tab', 'already-open'].includes(layout);
+        const row = { layout, grade, visits: [...visits], products: [...products] }; evidence.push(row);
+        assert.equal(grade.criteria.every(c => c.evidence.status === 'passed'), passed, JSON.stringify(row));
+        assert.equal(products.length, passed ? 1 : 0, 'navigation must not add or repeat product writes');
+        if (passed) assert.deepEqual(products[0], { name: 'Travel Mug', variants: ['Black', 'Silver'] });
+        if (layout === 'menu-tab') assert.ok(visits.includes('GET /account') && visits.includes('GET /admin/catalog'));
+        if (['direct', 'already-open'].includes(layout)) assert.equal(visits.includes('GET /account'), false);
+      });
+    }
+  } finally {
+    await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_CATALOG_MANAGEMENT_EVIDENCE) {
+      writeFileSync(process.env.STACK_BENCH_CATALOG_MANAGEMENT_EVIDENCE, JSON.stringify({
+        rerun: 'STACK_BENCH_CATALOG_MANAGEMENT_EVIDENCE=<file> node --test --test-name-pattern="catalog management reaches" dist/tests/item-navigation.integration.js', evidence,
+      }, null, 2));
+    }
+  }
+});
+
 test('catalog search reaches its controls when the home page also has an item list', async () => {
   let layout = '', routes: string[] = [];
   const evidence: unknown[] = [];

@@ -23,6 +23,7 @@
           "password": "stackbench-admin-2026",
           "exact": true
         },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {
           "do": "click",
           "actor": "admin",
@@ -66,6 +67,7 @@
           "unlessVisible": "order-item",
           "within": 1000
         },
+        {"do": "click", "actor": "a", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
         {
           "do": "click",
           "actor": "a",
@@ -110,6 +112,7 @@
           "exact": true,
           "readyTestid": "current-user"
         },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {
           "do": "click",
           "actor": "admin",
@@ -196,6 +199,7 @@
           "exact": true,
           "readyTestid": "current-user"
         },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
         {
           "do": "click",
           "actor": "admin",
@@ -381,6 +385,7 @@
               "within": 1000
             },
             { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "a", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
               "actor": "a",
@@ -415,6 +420,7 @@
               "within": 1000
             },
             { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "b", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
               "actor": "b",
@@ -449,6 +455,7 @@
               "within": 1000
             },
             { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            {"do": "click", "actor": "c", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
               "actor": "c",
@@ -476,6 +483,7 @@
               "exact": true,
               "readyTestid": "current-user"
             },
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
             {
               "do": "click",
               "actor": "admin",

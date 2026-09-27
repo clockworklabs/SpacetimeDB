@@ -1,0 +1,113 @@
+TAP version 13
+# Subtest: staff and role navigation follows declared account and role entry controls
+    # Subtest: staff: direct
+    ok 1 - staff: direct
+      ---
+      duration_ms: 2361.7161
+      type: 'test'
+      ...
+    # Subtest: staff: menu
+    ok 2 - staff: menu
+      ---
+      duration_ms: 2520.9757
+      type: 'test'
+      ...
+    # Subtest: staff: already-open
+    ok 3 - staff: already-open
+      ---
+      duration_ms: 2195.9516
+      type: 'test'
+      ...
+    # Subtest: staff: menu-noop
+    ok 4 - staff: menu-noop
+      ---
+      duration_ms: 2569.1981
+      type: 'test'
+      ...
+    # Subtest: staff: missing-target
+    ok 5 - staff: missing-target
+      ---
+      duration_ms: 2633.732
+      type: 'test'
+      ...
+    # Subtest: staff: customer-hidden
+    ok 6 - staff: customer-hidden
+      ---
+      duration_ms: 2279.3101
+      type: 'test'
+      ...
+    # Subtest: staff: customer-leak
+    ok 7 - staff: customer-leak
+      ---
+      duration_ms: 924.8904
+      type: 'test'
+      ...
+    # Subtest: roles: direct
+    ok 8 - roles: direct
+      ---
+      duration_ms: 903.6425
+      type: 'test'
+      ...
+    # Subtest: roles: menu
+    ok 9 - roles: menu
+      ---
+      duration_ms: 978.6875
+      type: 'test'
+      ...
+    # Subtest: roles: already-open
+    ok 10 - roles: already-open
+      ---
+      duration_ms: 815.8122
+      type: 'test'
+      ...
+    # Subtest: roles: role-tab
+    ok 11 - roles: role-tab
+      ---
+      duration_ms: 962.0023
+      type: 'test'
+      ...
+    # Subtest: roles: broken-tab
+    ok 12 - roles: broken-tab
+      ---
+      duration_ms: 1227.8421
+      type: 'test'
+      ...
+    # Subtest: roles: missing-tab
+    ok 13 - roles: missing-tab
+      ---
+      duration_ms: 1879.8119
+      type: 'test'
+      ...
+    # Subtest: roles: wrong-row
+    ok 14 - roles: wrong-row
+      ---
+      duration_ms: 2247.0562
+      type: 'test'
+      ...
+    # Subtest: roles: disabled-role-save
+    ok 15 - roles: disabled-role-save
+      ---
+      duration_ms: 945.2412
+      type: 'test'
+      ...
+    # Subtest: roles: disabled-role-unsafe
+    ok 16 - roles: disabled-role-unsafe
+      ---
+      duration_ms: 1805.54
+      type: 'test'
+      ...
+    1..16
+ok 1 - staff and role navigation follows declared account and role entry controls
+  ---
+  duration_ms: 27415.7375
+  type: 'test'
+  ...
+1..1
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 27933.5849
