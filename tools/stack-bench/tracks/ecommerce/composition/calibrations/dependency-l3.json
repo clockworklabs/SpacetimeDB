@@ -1870,7 +1870,7 @@
     ]
   },
   "qualificationReuse": {
-    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration. The notification review replaces all three affected checks and validates unchanged capture outcomes with safer diagnostics. The capture review replaces nine affected checks and preserves unchanged outcomes for the bounded body-drain and safe diagnostic changes. The role-check review replaces affected role checks and both changed reference sources; no prompt change. Reviewed catalog-only contract clarification and GET ordinary-reload capture; affected catalog and Mongo profile controls replaced. Exact task-text mappings do not excuse changed scenarios. The navigation review replaces 79 changed checks and retains 33 unchanged checks; runtime equivalence is limited to safe receipt propagation.",
+    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration. The notification review replaces all three affected checks and validates unchanged capture outcomes with safer diagnostics. The capture review replaces nine affected checks and preserves unchanged outcomes for the bounded body-drain and safe diagnostic changes. The role-check review replaces affected role checks and both changed reference sources; no prompt change. Reviewed catalog-only contract clarification and GET ordinary-reload capture; affected catalog and Mongo profile controls replaced. Exact task-text mappings do not excuse changed scenarios. The navigation review replaces 79 changed checks and retains 33 unchanged checks; runtime equivalence is limited to safe receipt propagation. The native-auth proxy review retains unchanged registered paths and adds positive, defective and saved-app evidence for arbitrary same-origin proxy prefixes; only SpacetimeDB executable targets change.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
@@ -1915,6 +1915,10 @@
       {
         "path": "qualification-evidence/ecommerce-l3-navigation-20260927/reuse-review.json",
         "sha256": "7644993c32de6e345f35e3e5d70a2c9ddb1236e95be4f334112a83b6a2bb7612"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/reuse-review.json",
+        "sha256": "605b1ae602a553b22424a359f140114b8927e53aa1f223817e785cd7a128772f"
       }
     ],
     "scopes": [
@@ -1934,13 +1938,13 @@
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3"
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
-        "toExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3"
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       },
       {
         "kind": "null",
@@ -1951,7 +1955,7 @@
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "1542f81f8eb9cb769b3f600f9892908fd432663971a0270d76e8823d9154a690",
-        "toExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3"
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       },
       {
         "kind": "mutation",
@@ -1968,7 +1972,7 @@
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "1e122f697ab77bd45ee13576cb61776a2ae3f3ba90fef034d8d512de17588d1c",
-        "toExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3"
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       },
       {
         "kind": "mutation",
@@ -2003,7 +2007,7 @@
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "886fac0911a8f4b872a1d4d2ca4582141105fe826c66619c0e6043e2e475c52f",
-        "toExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3"
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       },
       {
         "kind": "mutation",
@@ -2044,13 +2048,19 @@
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "64dfee08694ec2e452b9369c6b01080cbf13bbfdf7fee4ecc9a3e1758dd7ef6c",
-        "toExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3"
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       },
       {
         "kind": "reference",
         "stack": "convex",
         "fromExecutableSha256": "2fc1f1f000b256663c621b5c9a71069bed9672b3d90e9df9e6fcc56c6e194bc6",
         "toExecutableSha256": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3",
+        "toExecutableSha256": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91"
       }
     ],
     "contractTextEquivalences": [

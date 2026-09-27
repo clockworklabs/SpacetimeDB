@@ -84,8 +84,9 @@ function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeT
   const direct = url.pathname === path && url.protocol === targetUrl.protocol && url.port === targetUrl.port
     && (url.hostname === targetUrl.hostname
       || url.hostname === 'localhost' && targetUrl.hostname === '127.0.0.1');
+  // The app chooses its proxy prefix. Keep the exact leased database suffix.
   const appProxy = allowAppProxy && url.origin === new URL(capture.page.url()).origin
-    && (url.pathname === path || url.pathname === `/db${path}`);
+    && url.pathname.endsWith(path);
   return !socket.closed && !socket.invalid && socket.identified
     && (direct || appProxy)
     && handshakes.length === 1
