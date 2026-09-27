@@ -24,7 +24,7 @@ const endToEnd = (headers: IncomingHttpHeaders) =>
   Object.fromEntries(Object.entries(headers).filter(([key]) => !HOP.has(key)));
 
 // A Vite reload socket carries the token its own client module embeds.
-function viteToken(authority: string, token: string): Promise<boolean> {
+export function viteToken(authority: string, token: string): Promise<boolean> {
   return new Promise(done => {
     let settled = false;
     const finish = (valid: boolean) => {

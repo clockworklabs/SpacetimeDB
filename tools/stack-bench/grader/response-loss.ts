@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { request, type BrowserContext, type WebSocketRoute } from 'playwright';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
+import { viteToken } from '../container/browser-network-proxy.js';
 
 // Install before the actor opens its connection. This gate changes delivery,
 // never request contents, database state, or the application's retry policy.
@@ -45,7 +46,11 @@ export async function installResponseLoss(context: BrowserContext) {
     void task.finally(() => pending.delete(task));
     return task;
   });
-  await context.routeWebSocket('**/*', page => {
+  await context.routeWebSocket('**/*', async page => {
+    const url = new URL(page.url()), token = url.searchParams.get('token');
+    // Closing Vite's verified tooling connection reloads the document. It is
+    // not an application reply; unknown tokens still take the fault path.
+    if (token && await viteToken(url.host, token)) { page.connectToServer(); return; }
     const server = page.connectToServer(), pair = { page, server };
     sockets.add(pair);
     const path = new URL(page.url()).pathname;

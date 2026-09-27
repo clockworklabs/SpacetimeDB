@@ -95,8 +95,16 @@ test('a lost browser HTTP reply keeps its committed effect and does not change t
 });
 
 test('native text and binary WebSocket replies are dropped without changing requests or subprotocol', async t => {
+  // A verified dev socket must survive the fault. A root-path application socket
+  // with a different token, or a failed client-module lookup, must not be exempt.
   const received: Buffer[] = [];
-  const server = createServer((_req, res) => res.end('<!doctype html><p id="result">ready</p>'));
+  let lookupFails = false;
+  const server = createServer((req, res) => {
+    if (req.url === '/@vite/client') {
+      res.writeHead(lookupFails ? 404 : 200, { 'Content-Type': 'text/javascript' });
+      res.end('const wsToken = "verified-dev";');
+    } else res.end('<!doctype html><p id="result">ready</p>');
+  });
   server.on('upgrade', (req, socket) => {
     assert.equal(req.headers['sec-websocket-protocol'], 'gate.test');
     const accept = createHash('sha1').update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
@@ -127,17 +135,28 @@ test('native text and binary WebSocket replies are dropped without changing requ
   const address = server.address(); assert(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}`, wsUrl = `ws://127.0.0.1:${address.port}`;
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
-  for (const binary of [false, true]) for (const lose of [false, true]) await t.test(`binary=${binary}, loss=${lose}`, async () => {
+  const cases = [
+    { binary: false, lose: false, failedLookup: false },
+    { binary: false, lose: true, failedLookup: false },
+    { binary: true, lose: false, failedLookup: false },
+    { binary: true, lose: true, failedLookup: false },
+    { binary: false, lose: true, failedLookup: true },
+  ];
+  for (const { binary, lose, failedLookup } of cases) await t.test(`binary=${binary}, loss=${lose}, lookup failure=${failedLookup}`, async () => {
+    lookupFails = failedLookup;
     const context = await browser.newContext();
     const gate = await installResponseLoss(context);
     try {
       const page = await context.newPage(); await page.goto(url);
       await page.evaluate(async wsUrl => {
-        const socket = new WebSocket(`${wsUrl}/native`, 'gate.test'); socket.binaryType = 'arraybuffer';
-        Object.assign(window, { socket });
+        const socket = new WebSocket(`${wsUrl}/?token=application-session`, 'gate.test'); socket.binaryType = 'arraybuffer';
+        const dev = new WebSocket(`${wsUrl}/?token=verified-dev`, 'gate.test');
+        const devReceived: string[] = [];
+        Object.assign(window, { socket, dev, devReceived });
+        dev.onmessage = event => devReceived.push(event.data);
         socket.onmessage = event => { document.querySelector('#result')!.textContent =
           typeof event.data === 'string' ? event.data : [...new Uint8Array(event.data)].join(','); };
-        await new Promise<void>(resolve => { socket.onopen = () => resolve(); });
+        await Promise.all([socket, dev].map(ws => new Promise<void>(resolve => { ws.onopen = () => resolve(); })));
       }, wsUrl);
       if (lose) gate.arm();
       const count = received.length;
@@ -154,7 +173,17 @@ test('native text and binary WebSocket replies are dropped without changing requ
       assert.deepEqual(received[count], binary ? Buffer.from([0, 128, 255, 42]) : Buffer.from('checkout'));
       assert.equal(gate.evidence().events.filter(e => e.kind === 'ws-drop').length, lose ? 1 : 0);
       assert.equal(await page.locator('#result').innerText(), lose ? 'ready' : binary ? '0,128,255,42' : 'checkout');
+      await page.evaluate(() => (window as unknown as { dev: WebSocket }).dev.send('tooling-update'));
+      for (let n = 0; n < 200; n++) {
+        if (failedLookup && lose ? gate.evidence().events.filter(e => e.kind === 'ws-drop').length === 2
+          : await page.evaluate(() => (window as unknown as { devReceived: string[] }).devReceived.length === 1)) break;
+        await delay(10);
+      }
+      assert.deepEqual(await page.evaluate(() => (window as unknown as { devReceived: string[] }).devReceived),
+        failedLookup && lose ? [] : ['tooling-update'], 'Only positively verified tooling may bypass response loss');
       await gate.finish();
+      await page.waitForFunction(expected => (window as unknown as { dev: WebSocket }).dev.readyState === expected,
+        failedLookup ? 3 : 1, { timeout: 1000 });
       assert.deepEqual(gate.evidence().errors, []); assert.equal(gate.evidence().truncated, false);
     } finally { await gate.finish(); await context.close(); }
   });
