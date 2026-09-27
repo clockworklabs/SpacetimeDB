@@ -154,7 +154,9 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
 
 // Failure cases: a receipt cannot hide a later ambiguous call or decode failure.
 // Renaming a reducer does not change its credential semantics; supported scalar
-// fields must preserve their values. Unknown schemas and wrong lease targets
+// fields, 64-bit integers, optional values, and enums must preserve their values.
+// An exact localhost alias is valid; wrong ports, type changes, and nonmatching
+// credentials must not earn a receipt. Unknown schemas and wrong lease targets
 // remain unmeasured. No probe may replay a second request on another connection.
 // A completed HTTP or native login can reload and close its socket. That must
 // preserve its receipt; closing before a native reply must remain inconclusive.
@@ -167,10 +169,47 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   let mode = '', connections = 0;
   const received: unknown[][] = [], observations: unknown[] = [];
   const scalarCase = () => mode === 'scalar-fields';
-  const types = () => scalarCase() ? ['String', 'String', 'Bool', 'U32'] : ['String', 'String'];
+  const integerCase = () => ['u64-fields', 'type-changing-fields'].includes(mode);
+  const optionCase = () => mode.startsWith('optional-');
+  const types = (): { tag: string; value?: unknown }[] => {
+    const base = [{ tag: 'String' }, { tag: 'String' }];
+    if (scalarCase()) return [...base, { tag: 'Bool' }, { tag: 'U32' }];
+    if (integerCase()) return [...base, { tag: 'U64' }];
+    if (optionCase()) return [...base, { tag: 'Sum', value: { variants: [
+      { name: 'some', algebraicType: { tag: 'Bool' } },
+      { name: 'none', algebraicType: { tag: 'Product', value: { elements: [] } } },
+    ] } }];
+    if (mode === 'enum-fields') return [...base, { tag: 'Sum', value: { variants: [
+      { name: 'Customer', algebraicType: { tag: 'Product', value: { elements: [] } } },
+      { name: 'Staff', algebraicType: { tag: 'Product', value: { elements: [] } } },
+    ] } }];
+    return base;
+  };
+  const values = (): unknown[] => {
+    const base = [mode === 'nonmatching-credentials' ? 'different-customer' : 'customer', 'secret'];
+    return scalarCase() ? [...base, false, 17] : integerCase() ? [...base, 9007199254740993n]
+      : optionCase() ? [...base, mode === 'optional-some' ? false : undefined]
+        : mode === 'enum-fields' ? [...base, { tag: 'Customer', value: {} }] : base;
+  };
+  const rawTypes = (): unknown[] => {
+    const base = [{ String: [] }, { String: [] }];
+    if (scalarCase()) return [...base, { Bool: [] }, { U32: [] }];
+    if (integerCase()) return [...base, { U64: [] }];
+    if (optionCase()) return [...base, { Sum: { variants: [
+      { name: { some: 'some' }, algebraic_type: { Bool: [] } },
+      { name: { some: 'none' }, algebraic_type: { Product: { elements: [] } } },
+    ] } }];
+    if (mode === 'enum-fields') return [...base, { Sum: { variants: [
+      { name: { some: 'Customer' }, algebraic_type: { Product: { elements: [] } } },
+      { name: { some: 'Staff' }, algebraic_type: { Product: { elements: [] } } },
+    ] } }];
+    return base;
+  };
+  const evidenceJson = (value: unknown) => JSON.stringify(value,
+    (_key, entry) => typeof entry === 'bigint' ? { bigint: String(entry) } : entry, 2);
   const callBytes = (id: number) => {
-    const writer = new codec.BinaryWriter(128), values = scalarCase() ? ['customer', 'secret', false, 17] : ['customer', 'secret'];
-    types().forEach((tag, index) => codec.AlgebraicType.makeSerializer({ tag })(writer, values[index]));
+    const writer = new codec.BinaryWriter(128), args = values();
+    types().forEach((type, index) => codec.AlgebraicType.makeSerializer(type)(writer, args[index]));
     return encode(codec.ClientMessage, { tag: 'CallReducer', value: {
       reducer: mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up', requestId: id, flags: 0, args: writer.getBuffer(),
     } });
@@ -186,8 +225,8 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
     } else if (req.url?.includes('/schema')) {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ reducers: [{ name: mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up',
-        params: { elements: types().map((tag, index) => ({ name: { some: ['username', 'password', 'is_admin', 'nonce'][index] },
-          algebraic_type: mode === 'unsupported-schema' && index === 1 ? { Array: { U8: [] } } : { [tag]: [] } })) } }] }));
+        params: { elements: rawTypes().map((raw, index) => ({ name: { some: ['username', 'password', integerCase() ? 'nonce' : 'is_admin', 'nonce'][index] },
+          algebraic_type: mode === 'unsupported-schema' && index === 1 ? { Array: { U8: [] } } : raw })) } }] }));
     } else {
       res.setHeader('Content-Type', 'text/html'); res.end('<body>Native auth form</body>');
     }
@@ -205,7 +244,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
       const message = codec.ClientMessage.deserialize(new codec.BinaryReader(data));
       if (message.tag !== 'CallReducer') return;
       const reader = new codec.BinaryReader(message.value.args);
-      received.push(types().map(tag => codec.AlgebraicType.makeDeserializer({ tag })(reader)));
+      received.push(types().map(type => codec.AlgebraicType.makeDeserializer(type)(reader)));
       if (mode === 'lost-receipt') { socket.close(); return; }
       send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
         timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: mode === 'refused'
@@ -217,7 +256,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
   const browser = await chromium.launch();
   try {
-    for (mode of ['accepted', 'refused', 'renamed', 'scalar-fields', 'missing-claim', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
+    for (mode of ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'type-changing-fields', 'nonmatching-credentials', 'missing-claim', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
       'second-then-submit-error', 'malformed-outbound', 'malformed-inbound', 'wrong-module', 'foreign-target', 'unsupported-protocol', 'unsupported-schema', 'app-proxy']) {
       await t.test(mode, async () => {
         received.length = 0; connections = 0;
@@ -229,7 +268,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
         const context = await browser.newContext();
         try {
           const page = await context.newPage(); await installSpacetimeWriteCapture(page); await page.goto(url);
-          const socketUrl = (mode === 'foreign-target' ? url.replace('127.0.0.1', 'localhost') : url).replace('http:', 'ws:')
+          const socketUrl = (['foreign-target', 'localhost'].includes(mode) ? url.replace('127.0.0.1', 'localhost') : url).replace('http:', 'ws:')
             + (mode === 'app-proxy' ? '/proxy' : '') + '/v1/database/auth/subscribe';
           await page.evaluate(async ({ socketUrl, protocol }) => {
             const socket = new WebSocket(socketUrl, protocol); socket.binaryType = 'arraybuffer';
@@ -237,7 +276,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
             socket.addEventListener('message', () => (window as unknown as { replies: number }).replies++);
             await new Promise(resolve => socket.addEventListener('message', resolve, { once: true }));
           }, { socketUrl, protocol: mode === 'unsupported-protocol' ? 'unsupported' : 'v3.bsatn.spacetimedb' });
-          const patch = scalarCase() ? { fields: { isAdmin: true } } : mode === 'missing-claim' ? { fields: { role: 'admin' } } : { password: 'modified' };
+          const patch = mode === 'type-changing-fields' ? { fields: { nonce: 'wrong-type' } } : scalarCase() ? { fields: { isAdmin: true } } : mode === 'missing-claim' ? { fields: { role: 'admin' } } : { password: 'modified' };
           let outcome: unknown;
           try {
             outcome = await withAuthRequestPatch(page, 'customer', 'secret', patch, async () => {
@@ -248,7 +287,9 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
                     body: JSON.stringify(['customer', 'secret']) }).then(response => response.json());
                 } else {
                   const reply = new Promise(resolve => state.socket.addEventListener(mode === 'lost-receipt' ? 'close' : 'message', resolve, { once: true }));
-                  state.socket.send(new Uint8Array(first)); await reply;
+                  state.socket.send(new Uint8Array(first));
+                  if (mode === 'type-changing-fields') await Promise.race([reply, new Promise(resolve => setTimeout(resolve, 500))]);
+                  else await reply;
                 }
                 if (mode.startsWith('second-')) state.socket.send(new Uint8Array(second));
                 if (mode === 'malformed-outbound') state.socket.send(new Uint8Array([255]));
@@ -266,17 +307,19 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
               return { submitted: true };
             });
           } catch (error) { outcome = error; }
-          const measured = ['accepted', 'refused', 'renamed', 'scalar-fields', 'missing-claim', 'reload-after-receipt', 'http-reload', 'app-proxy'].includes(mode);
+          const measured = ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'missing-claim', 'reload-after-receipt', 'http-reload', 'app-proxy'].includes(mode);
           observations.push({ mode, measured, connections, received: structuredClone(received),
             outcome: outcome instanceof Error ? { name: outcome.name, message: outcome.message } : outcome });
-          if (!measured) assert(outcome instanceof ActionInconclusive, `${mode}: ${JSON.stringify(observations.at(-1))}`);
+          if (!measured) assert(outcome instanceof ActionInconclusive, `${mode}: ${evidenceJson(observations.at(-1))}`);
           else {
             assert(!(outcome instanceof Error), `${mode}: ${String(outcome)}`);
             const receipt = (outcome as { requestPatch: { transport?: string; success?: boolean; status?: number; absentParameters?: string[] } }).requestPatch;
             if (mode === 'http-reload') assert.equal(receipt.status, 200);
             else { assert.equal(receipt.transport, 'spacetime-websocket'); assert.equal(receipt.success, mode !== 'refused'); }
-            assert.deepEqual(received, [scalarCase() ? ['customer', 'secret', true, 17]
-              : mode === 'missing-claim' ? ['customer', 'secret'] : ['customer', 'modified']]);
+            const expected = values();
+            if (scalarCase()) expected[2] = true;
+            else if (mode !== 'missing-claim') expected[1] = 'modified';
+            assert.deepEqual(received, [expected], 'only the intended credential or claim changes');
             if (mode === 'missing-claim') assert.deepEqual(receipt.absentParameters, ['role']);
           }
           assert.equal(connections, mode === 'reconnected-second' ? 2 : 1, 'only the app can create connections');
@@ -291,8 +334,8 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
     rmSync(root, { recursive: true, force: true });
     if (process.env.STACK_BENCH_REPLAY_EVIDENCE) {
       mkdirSync(process.env.STACK_BENCH_REPLAY_EVIDENCE, { recursive: true });
-      writeFileSync(join(process.env.STACK_BENCH_REPLAY_EVIDENCE, 'spacetime-auth-receipt.json'), JSON.stringify({ observations,
-        rerun: 'node --test --test-name-pattern="SpacetimeDB auth receipts" dist/tests/spacetime-captured-replay.integration.js' }, null, 2));
+      writeFileSync(join(process.env.STACK_BENCH_REPLAY_EVIDENCE, 'spacetime-auth-receipt.json'), evidenceJson({ observations,
+        rerun: 'node --test --test-name-pattern="SpacetimeDB auth receipts" dist/tests/spacetime-captured-replay.integration.js' }));
     }
   }
 });

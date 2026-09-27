@@ -93,6 +93,14 @@ export type CallParameter = { readonly name: string; readonly fields?: readonly 
 // hide it leaves the location unknown.
 export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch,
   parameters?: readonly CallParameter[]) {
+  const changed = patchAuthValues(body, username, password, patch, parameters);
+  if (!changed) return null;
+  const { value, ...receipt } = changed;
+  return { body: JSON.stringify(value), ...receipt };
+}
+
+function patchAuthValues(body: unknown, username: string, password: string, patch: AuthRequestPatch,
+  parameters?: readonly CallParameter[]) {
   const fields = requestedChange(patch);
   const copy = structuredClone(body);
   const matches: { container: Record<string, unknown> | unknown[]; passwordKey: string }[] = [];
@@ -145,7 +153,7 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
   } else for (const [key, value] of Object.entries(fields)) {
     Object.defineProperty(container, key, { value, enumerable: true, writable: true, configurable: true });
   }
-  return { body: JSON.stringify(copy), shape: Array.isArray(container) ? 'positional' : 'object',
+  return { value: copy, shape: Array.isArray(container) ? 'positional' : 'object',
     ...(absentParameters.length ? { absentParameters } : {}) };
 }
 
@@ -249,7 +257,7 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
   let spacetime: Awaited<ReturnType<typeof startSpacetimeAuthPatch>>;
   try {
     spacetime = await startSpacetimeAuthPatch(page, username, password, (args, parameters) => {
-      const changed = patchAuthRequest(args, username, password, patch, parameters);
+      const changed = patchAuthValues(args, username, password, patch, parameters);
       if (changed && ++matches !== 1) throw new Error('Multiple credential requests');
       return changed;
     }, () => { error = true; });

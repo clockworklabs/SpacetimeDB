@@ -186,7 +186,7 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
 // declared reducer parameters are the only authority for locating extra fields.
 export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
   patch: (args: unknown[], parameters: readonly { name: string }[]) =>
-    { body: string; shape: string; absentParameters?: string[] } | null,
+    { value: unknown; shape: string; absentParameters?: string[] } | null,
   onFailure: () => void) {
   const capture = captures.get(page);
   if (!capture) return null;
@@ -201,18 +201,37 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
     schema = await response.json();
     if (!schema || typeof schema !== 'object') return { receipt: async () => undefined, dispose: () => {} };
   } catch { return { receipt: async () => undefined, dispose: () => {} }; }
-  const scalarType = (raw: Record<string, unknown> | undefined, depth = 0): { tag: string } | undefined => {
+  // Use SDK codecs for scalar values, options, and unit enums. Records and arrays
+  // need additional claim-location metadata; never report their fields absent.
+  const argumentType = (raw: Record<string, unknown> | undefined, depth = 0):
+    { tag: string; value?: unknown } | undefined => {
     if (!raw || depth > 8) return undefined;
-    if (typeof raw.Ref === 'number') return scalarType(schema.typespace?.types?.[raw.Ref], depth + 1);
     const tags = Object.keys(raw);
-    return tags.length === 1 && ['String', 'Bool', 'U32'].includes(tags[0]!) ? { tag: tags[0]! } : undefined;
+    if (tags.length !== 1) return undefined;
+    if (typeof raw.Ref === 'number') return argumentType(schema.typespace?.types?.[raw.Ref], depth + 1);
+    if (['String', 'Bool', 'I8', 'U8', 'I16', 'U16', 'I32', 'U32', 'I64', 'U64',
+      'I128', 'U128', 'I256', 'U256', 'F32', 'F64'].includes(tags[0]!)) return { tag: tags[0]! };
+    const product = raw.Product as { elements?: unknown[] } | undefined;
+    if (Array.isArray(product?.elements) && product.elements.length === 0) {
+      return { tag: 'Product', value: { elements: [] } };
+    }
+    const sum = raw.Sum as { variants?: { name?: { some?: string }; algebraic_type?: Record<string, unknown> }[] } | undefined;
+    if (!Array.isArray(sum?.variants) || !sum.variants.length || sum.variants.length > 256) return undefined;
+    const variants = sum.variants.map(variant => ({ name: variant.name?.some,
+      algebraicType: argumentType(variant.algebraic_type, depth + 1) }));
+    if (variants.some(variant => typeof variant.name !== 'string' || !variant.algebraicType)
+      || new Set(variants.map(variant => variant.name)).size !== variants.length) return undefined;
+    const optional = variants.length === 2 && variants[0]!.name === 'some' && variants[1]!.name === 'none'
+      && variants[1]!.algebraicType!.tag === 'Product';
+    if (!optional && variants.some(variant => variant.algebraicType!.tag !== 'Product')) return undefined;
+    return { tag: 'Sum', value: { variants } };
   };
   const declarations = new Map<string, { names: string[]; read: ((reader: Reader) => unknown)[];
     write: ((writer: Writer, value: unknown) => void)[] }>();
   for (const reducer of schema.reducers ?? []) {
     const fields = reducer.params?.elements;
     if (!fields?.length || !fields.every(field => typeof field.name?.some === 'string')) continue;
-    const types = fields.map(field => scalarType(field.algebraic_type));
+    const types = fields.map(field => argumentType(field.algebraic_type));
     if (types.some(type => !type)) continue;
     declarations.set(reducer.name, {
       names: fields.map(field => field.name!.some!),
@@ -243,7 +262,7 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
         || socket.authPending || socket.invalid) { fail(); throw new Error('Ambiguous credential call'); }
       const changed = patch(values, declaration.names.map(name => ({ name })));
       if (!changed) return null;
-      const args = JSON.parse(changed.body) as unknown[];
+      const args = changed.value;
       if (!Array.isArray(args) || args.length !== values.length) {
         fail(); throw new Error('Unsupported credential arguments');
       }
