@@ -2318,7 +2318,7 @@
         {
           "file": "convex/auth.js",
           "find": "if (params.flow === 'signUp') {",
-          "replace": "if (params.flow === 'signUp') {\n        if (!['admin', 'staff', 'customer'].includes(params.username)) throw new ConvexError('Registration disabled');"
+          "replace": "if (params.flow === 'signUp') {\n        if (!['admin', 'staff', 'staff2', 'customer'].includes(params.username)) throw new ConvexError('Registration disabled');"
         }
       ]
     }
