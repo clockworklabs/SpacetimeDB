@@ -91,7 +91,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/spacetime",
-        "sourceSha256": "f38d9274708f70bb282c52609afc7a3ac5c7d488b9b9a6dd8f463a23d6030405"
+        "sourceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
       },
       "mutationManifests": [
         "grader/mutations/spacetime-ecommerce.json"

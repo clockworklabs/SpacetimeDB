@@ -402,7 +402,7 @@ export const init = spacetimedb.init((ctx) => {
       isAdmin: false,
       isStaff: true,
     });
-    ctx.db.staffRole.insert({ accountId: staffAccount.id, role: 'operations' });
+    ctx.db.staffRole.insert({ accountId: staffAccount.id, role: 'staff' });
   }
 
   if (!ctx.db.account.username.find('customer')) {
