@@ -229,12 +229,10 @@ export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
 /** Builder class to configure a new database connection to the remote SpacetimeDB instance. */
 export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
-export interface DbConnection {
-  db: DbView;
-}
-
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
+  declare db: DbView;
+
   constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {
     super(config);
     this.db = __withTableAccessorAliases(this.db) as DbView;

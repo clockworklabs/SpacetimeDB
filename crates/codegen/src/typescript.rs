@@ -754,16 +754,6 @@ impl Lang for TypeScript {
         );
 
         writeln!(out);
-        if has_table_accessor_aliases {
-            // Narrow `db` by merging an interface into the class rather than with a
-            // `declare` field, which Babel (React Native, Expo) rejects by default.
-            writeln!(out, "export interface DbConnection {{");
-            out.indent(1);
-            writeln!(out, "db: DbView;");
-            out.dedent(1);
-            writeln!(out, "}}");
-            writeln!(out);
-        }
         writeln!(out, "/** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */");
         writeln!(
             out,
@@ -771,6 +761,9 @@ impl Lang for TypeScript {
         );
         out.indent(1);
         if has_table_accessor_aliases {
+            writeln!(out, "declare db: DbView;");
+
+            writeln!(out);
             writeln!(
                 out,
                 "constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {{"
