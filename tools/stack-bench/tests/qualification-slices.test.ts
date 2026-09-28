@@ -6,8 +6,10 @@ import { buildRecipeQualificationDocuments } from '../src/composition/recipe-rel
 import { assertQualificationSliceCoverage, unchangedQualificationChecks,
   validateQualificationDocuments } from '../src/composition/qualification-slices.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { calibrationQualificationIdentity, calibrationQualificationRelease, compileCalibrationDefinition,
+import { calibrationQualificationIdentity, calibrationQualificationRelease, compileCalibrationDefinition, mutationExecutionSha256,
   validateQualificationSlice } from '../src/composition/calibration-compiler.js';
+import { mutationForRecipe, mutationTargetKeys } from '../src/evidence/mutation-analysis.js';
+import type { MutationDefinition } from '../src/evidence/mutation-analysis.js';
 import type { CalibrationEvidence, CalibrationPlan } from '../src/composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
@@ -108,6 +110,36 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
     ...selected, stackBenchRoot: STACK_BENCH_ROOT, references: plan.references.entries,
     qualificationDocuments: savedDocuments };
   assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, context));
+  // An omitted source selection means all recipe checks. Build a test-only
+  // snapshot and receipt for that policy; never modify the retained fixture.
+  const implicitSource = structuredClone(saved);
+  delete implicitSource.calibration.qualification.checks;
+  delete implicitSource.calibration.qualification.featureCatalog;
+  const allKeys = new Set(savedDocuments.release.checkCatalog.map(check => check.stableKey));
+  const allMutations = implicitSource.mutations.postgres.mutations
+    .map((mutation: MutationDefinition) => mutationForRecipe(mutation, savedDocuments.release))
+    .filter((mutation: MutationDefinition) => mutationTargetKeys(mutation).some(key => allKeys.has(key)));
+  implicitSource.calibration.mutations.find((m: { backend: string }) => m.backend === 'postgres').executionSha256
+    = mutationExecutionSha256({ ...implicitSource.mutations.postgres, mutations: allMutations });
+  const implicitSourcePlan = structuredClone(implicitSource.calibration) as CalibrationPlan;
+  implicitSourcePlan.mutations.find(m => m.backend === 'postgres')!.path = mutationPath;
+  implicitSourcePlan.qualificationReuse = structuredClone(plan.qualificationReuse);
+  const implicitArtifact = structuredClone(artifact);
+  const implicitIdentity = calibrationQualificationIdentity(implicitSource.calibration);
+  implicitArtifact.identities.calibration = { id: implicitIdentity.id, sha256: implicitIdentity.contentSha256 };
+  const implicitSnapshotPath = join(temporary, 'implicit-inputs.json');
+  const implicitArtifactPath = join(temporary, 'implicit-artifact.json');
+  writeFileSync(implicitSnapshotPath, JSON.stringify(implicitSource));
+  writeFileSync(implicitArtifactPath, JSON.stringify(implicitArtifact));
+  const implicitEntry: CalibrationEvidence = { ...entry, path: relative(STACK_BENCH_ROOT, implicitArtifactPath),
+    sha256: sha256(readFileSync(implicitArtifactPath)), slice: { checks: [...entry.slice!.checks],
+      snapshot: { path: relative(STACK_BENCH_ROOT, implicitSnapshotPath), sha256: sha256(readFileSync(implicitSnapshotPath)) } } };
+  assert.doesNotThrow(() => validateQualificationSlice(implicitArtifact, implicitEntry,
+    { ...context, calibration: implicitSourcePlan }));
+  const wrongImplicitArtifact = structuredClone(implicitArtifact);
+  wrongImplicitArtifact.identities.calibration.sha256 = 'f'.repeat(64);
+  assert.throws(() => validateQualificationSlice(wrongImplicitArtifact, implicitEntry,
+    { ...context, calibration: implicitSourcePlan }), /mismatched recipe or calibration identities/);
   // A fixed reference does not rebuild from graph prompts. Rekeying a different
   // independent scenario must not discard this unchanged, measured slice.
   const rekeyed = structuredClone(savedDocuments);

@@ -1023,7 +1023,7 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     const oldMutation = sourceCalibration.mutations.find(item => item.backend === entry.stack);
     const newMutation = calibration.mutations.find(item => item.backend === entry.stack);
     if (!oldMutation || !newMutation) evidenceFailure(at, 'missing stack mutation definition');
-    if (mutationExecutionSha256(subset(oldManifest, sourceCalibration.qualification.checks!, source.release))
+    if (mutationExecutionSha256(subset(oldManifest, [...sourcePopulation], source.release))
       !== oldMutation.executionSha256) evidenceFailure(at, 'mutation snapshot differs from source calibration');
     const currentManifest = readDefinitionJson(resolve(stackBenchRoot, newMutation.path), 'mutations');
     // The source review covers only the fixture binding. Every selected defect
