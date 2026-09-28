@@ -15,6 +15,7 @@
           "desc": "Compiles one representative of every registered action",
           "points": 0,
           "steps": [
+            { "do": "probeSignupClaims", "actor": "a", "name": "claimant", "fields": { "role": "admin" }, "branches": [[{ "do": "expect", "actor": "a", "testid": "current-user" }]] },
             { "do": "armScriptCanary", "actor": "a" },
             { "do": "expectNoScriptExecution", "actor": "a" },
             { "do": "confirmCheckout", "actor": "a" },

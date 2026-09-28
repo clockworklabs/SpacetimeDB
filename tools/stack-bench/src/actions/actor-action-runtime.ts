@@ -116,6 +116,7 @@ export interface Actor {
 export interface BrowserCapability {
   // The stack's own password endpoints, when its platform serves accounts.
   readonly authRequestPatch?: PlatformAuthPatch | null;
+  readonly authReadEndpoints?: readonly string[];
   readonly defaultWithin: number;
   roomName(value: string): string;
   scopedUser(value: string): string;

@@ -84,6 +84,49 @@ function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>
   };
 }
 
+test('compiled UI checkout waits for complete stored effects and preserves defects and reader failures', async t => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-cart-checkout.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+  const step = scenario.features[0]!.criteria.find(check => check.id === '4d')!.steps
+    .find(step => step.do === 'dbExpectCheckout' && step.before === 'normal-before')!;
+  let now = 0;
+  t.mock.method(Date, 'now', () => now);
+  for (const mode of ['delayed', 'reject-all', 'missing-line', 'wrong-total', 'duplicate', 'retained-cart',
+    'reader-error', 'late-read', 'late-retry', 'late-wake']) {
+    now = 0;
+    const raw = data();
+    raw.item = [{ id: '2', name: 'Desk Lamp', price: 19.99 }, { id: '4', name: 'Coffee Grinder', price: 3.25 }];
+    const storage = { kind: 'order-data' as const, cart: true, warehouses: false };
+    const read = () => ({ ...readOrderDataSnapshot(raw, 'buyer', 'Desk Lamp', storage), account: 'buyer', item: 'Desk Lamp' });
+    const before = read();
+    raw.order_cart = [{ account_id: '1', item_id: '2', quantity: 1 }, { account_id: '1', item_id: '4', quantity: 1 }];
+    const prepared = read();
+    let reads = 0;
+    const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: {
+      actors: { get: () => undefined },
+      clock: { sleep: async (ms: number) => { now += mode === 'late-wake' ? 10001 : ms; } },
+      'database-read': { checkoutSnapshots: new Map([['normal-before', before], ['normal-prepared', prepared]]),
+        getCheckoutState: () => {
+          reads++;
+          if (reads > 1 && mode === 'reader-error') throw new Error('database unavailable');
+          if (mode === 'late-read' || (mode === 'late-retry' && reads > 1)) now += 10001;
+          if (now >= 2000 && mode !== 'reject-all') {
+            raw.order_header = [{ id: 'new', account_id: '1', total: mode === 'wrong-total' ? 1 : 23.24, refunded: 0, status: 'pending' }];
+            raw.order_line = [{ id: 'one', order_id: 'new', item_id: '2', quantity: 1, unit_price: 19.99 },
+              { id: 'two', order_id: 'new', item_id: '4', quantity: 1, unit_price: 3.25 }];
+            if (mode === 'missing-line') raw.order_line.pop();
+            if (mode === 'duplicate') raw.order_header.push({ ...raw.order_header[0]!, id: 'extra' });
+            if (mode !== 'retained-cart') raw.order_cart = [];
+          }
+          return read();
+        } },
+    } });
+    assert.equal(result.status, mode === 'delayed' ? 'passed' : mode === 'reader-error' ? 'harness_failure'
+      : ['late-read', 'late-retry'].includes(mode) ? 'inconclusive' : 'failed', `${mode}: ${JSON.stringify(result)}`);
+    if (mode === 'late-wake') assert.equal(reads, 1, 'do not start another read after the deadline');
+  }
+});
+
 test('multi-item checkout reconciles every cart line, stored price and selected warehouse effect, including refused writes', async () => {
   for (const lazy of [false, true]) for (const warehouses of [false, true]) for (const reserved of warehouses ? [false, true] : [false]) for (const mode of ['accepted', 'refused', 'missing-line', 'wrong-price', 'wrong-total', 'swapped-quantity',
     'extra-line', 'retained-cart', 'duplicate-order', 'refused-cart-change', 'committed-refusal', 'reject-all',
@@ -135,6 +178,7 @@ test('multi-item checkout reconciles every cart line, stored price and selected 
       ...(mode !== 'reject-all' ? { actor: 'buyer' } : {}),
     }, { capabilities: {
       actors: { get: () => ({ actionCall: { action: 'checkout', accepted: !refused, status: refused ? 400 : 200 } }) },
+      clock: { sleep: async () => {} },
       'database-read': { ...createDatabaseReadCapability({ expand: value => value,
         checkoutSnapshots: new Map([['before', before], ['prepared', prepared]]) }), getCheckoutState: read },
     } });
@@ -208,7 +252,8 @@ test('compiled duplicate checkout reconciles real order effects without requesti
         return JSON.stringify(Object.fromEntries(tables.map(table => [table, { inserts: raw[table as keyof typeof raw], deletes: [] }])));
       } });
     for (const [index, step] of steps.entries()) {
-      const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability, actors: { get: () => undefined } } });
+      const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability,
+        actors: { get: () => undefined }, clock: { sleep: async () => {} } } });
       assert.equal(result.status, index < 2 || ['none', 'placed', 'completed'].includes(defect) ? 'passed' : 'failed', defect);
     }
   }

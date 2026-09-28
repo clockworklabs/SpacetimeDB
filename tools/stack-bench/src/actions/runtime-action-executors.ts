@@ -69,7 +69,7 @@ interface ActionStep extends UnknownRecord {
   readonly do: string;
 }
 
-interface ConcurrencyCapability {
+export interface ConcurrencyCapability {
   readonly defaultWithin: number;
   dispatch(step: ActionStep, signal: AbortSignal): Promise<unknown>;
   expand(value: string | undefined): string | undefined;
@@ -259,39 +259,52 @@ export function checkoutExpectation(quantity: CheckoutQuantity, snapshots: reado
 }
 
 async function dbExpectCheckout({ input, capabilities, signal }: ActionArguments<{ before: string; prepared: string;
-  quantity: CheckoutQuantity; actor?: string; alongsideAdd?: string }>) {
+  quantity: CheckoutQuantity; actor?: string; alongsideAdd?: string; within?: number }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   const prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
   if (before.account !== prepared.account || before.item !== prepared.item) throw new Error('checkout snapshots select different data');
-  const after = await database.getCheckoutState(before, signal);
-  if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
-    || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
-  if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
-  if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
-  const quantity = checkoutExpectation(input.quantity, [before, prepared, after]);
-  if (input.alongsideAdd && (before.scope !== 'orders' || typeof quantity === 'number' || input.actor)) {
-    throw new Error('overlapping cart add requires native item-line expectations and separately verified accepted calls');
+  const read = async () => {
+    const after = await database.getCheckoutState(before, signal);
+    if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
+      || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
+    if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
+    if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
+    const quantity = checkoutExpectation(input.quantity, [before, prepared, after]);
+    if (input.alongsideAdd && (before.scope !== 'orders' || typeof quantity === 'number' || input.actor)) {
+      throw new Error('overlapping cart add requires native item-line expectations and separately verified accepted calls');
+    }
+    const response = input.actor ? actorFor(capabilities, input.actor).actionCall : undefined;
+    if (input.actor && !response) inconclusive('assertion-without-action', { action: 'callAction' });
+    if (response && (response.complete === false || !response.status)) inconclusive('transport-incomplete', {});
+    if (response && response.action !== 'checkout') throw new Error('checkout reconciliation requires a checkout response');
+    const refused = response !== undefined && !response.accepted;
+    const compareState = refused ? prepared.state : after.state;
+    const differences = input.alongsideAdd
+      ? orderCheckoutWithAddDifferences(before.state, prepared.state, after.state,
+        quantity as Exclude<typeof quantity, number>,
+        (checkoutExpectation([{ item: input.alongsideAdd, quantity: 1 }], [before, prepared, after]) as Exclude<typeof quantity, number>)[0]!,
+        before.storage?.warehouses ?? true)
+      : before.scope === 'orders'
+      ? orderCheckoutDifferences(before.state, prepared.state, compareState, quantity, refused, before.storage?.warehouses ?? true)
+      : checkoutDifferences(before.state, prepared.state, compareState, quantity as number, refused);
+    if (refused) differences.push(...(before.scope === 'orders'
+      ? orderPurchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map(), before.storage?.warehouses ?? true)
+      : purchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map())));
+    return { ...after, differences, before: input.before, prepared: input.prepared, ...(response ? { response } : {}) };
+  };
+  const deadline = Date.now() + (input.within ?? 0);
+  let observation = await read();
+  if (input.within && Date.now() > deadline) inconclusive('observation-window-missed', {});
+  while (observation.differences.length && Date.now() < deadline) {
+    await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
+    if (Date.now() >= deadline) break;
+    const next = await read();
+    if (Date.now() > deadline) inconclusive('observation-window-missed', {});
+    observation = next;
   }
-  const response = input.actor ? actorFor(capabilities, input.actor).actionCall : undefined;
-  if (input.actor && !response) inconclusive('assertion-without-action', { action: 'callAction' });
-  if (response && (response.complete === false || !response.status)) inconclusive('transport-incomplete', {});
-  if (response && response.action !== 'checkout') throw new Error('checkout reconciliation requires a checkout response');
-  const refused = response !== undefined && !response.accepted;
-  const compareState = refused ? prepared.state : after.state;
-  const differences = input.alongsideAdd
-    ? orderCheckoutWithAddDifferences(before.state, prepared.state, after.state,
-      quantity as Exclude<typeof quantity, number>,
-      (checkoutExpectation([{ item: input.alongsideAdd, quantity: 1 }], [before, prepared, after]) as Exclude<typeof quantity, number>)[0]!,
-      before.storage?.warehouses ?? true)
-    : before.scope === 'orders'
-    ? orderCheckoutDifferences(before.state, prepared.state, compareState, quantity, refused, before.storage?.warehouses ?? true)
-    : checkoutDifferences(before.state, prepared.state, compareState, quantity as number, refused);
-  if (refused) differences.push(...(before.scope === 'orders'
-    ? orderPurchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map(), before.storage?.warehouses ?? true)
-    : purchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map())));
-  const observation = { ...after, differences, before: input.before, prepared: input.prepared, ...(response ? { response } : {}) };
+  const { differences } = observation;
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
@@ -549,9 +562,13 @@ async function dbExpectStock({ input, capabilities, signal }: ActionArguments<Re
   }
   const deadline = Date.now() + (input.within ?? 0);
   let value = await capabilities['database-read'].getStock(input);
+  if (input.within && Date.now() > deadline) inconclusive('observation-window-missed', {});
   while (!numberMatches(value.quantity, expected) && Date.now() < deadline) {
     await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
-    value = await capabilities['database-read'].getStock(input);
+    if (Date.now() >= deadline) break;
+    const next = await capabilities['database-read'].getStock(input);
+    if (Date.now() > deadline) inconclusive('observation-window-missed', {});
+    value = next;
   }
   if (!numberMatches(value.quantity, expected)) fail('number-mismatch', {
     control: `stored stock for ${input.item}${input.warehouse ? ` in ${input.warehouse}` : ''}`,
@@ -596,7 +613,7 @@ export function databaseWriteFailureDetail(error: unknown): string {
   return redactCredentials([...new Set(details)].join(' | ')).slice(-600) || 'unknown database-write failure';
 }
 
-async function dispatchNested(
+export async function dispatchNested(
   concurrency: ConcurrencyCapability,
   step: ActionStep,
   signal: AbortSignal,
@@ -609,15 +626,15 @@ async function dispatchNested(
     const disposition = typeof status === 'string'
       ? evidenceDisposition(status as CheckEvidenceStatus)
       : null;
-    // A nested step's own finding is the finding; the wrapper adds nothing.
+    // Retain the exact child evidence so classification can follow the cause.
     const nested = isFinding(evidence?.finding) ? evidence.finding : null;
     if (disposition?.applicationFailure) {
       throw new ActionApplicationFailure(evidence?.summary ?? `${step.do} failed`,
-        { finding: nested ?? finding('action-failed', { action: step.do }) });
+        { finding: nested ?? finding('action-failed', { action: step.do }), observation: { nestedAction: evidence } });
     }
     if (disposition?.outcomeKind === 'inconclusive') {
       throw new ActionInconclusive(evidence?.summary ?? `${step.do} was inconclusive`,
-        { finding: nested ?? finding('invalid-input', { detail: `${step.do} was inconclusive` }) });
+        { finding: nested ?? finding('invalid-input', { detail: `${step.do} was inconclusive` }), observation: { nestedAction: evidence } });
     }
     throw error;
   }

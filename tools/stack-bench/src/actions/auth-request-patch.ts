@@ -3,12 +3,60 @@ import type { Page, Request, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
 import { ActionApplicationFailure } from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
-import { startSpacetimeAuthPatch } from '../stacks/backends/spacetime-browser-session.js';
+import { startSpacetimeAuthPatch, startSpacetimeAuthWriteCapture } from '../stacks/backends/spacetime-browser-session.js';
 import { withBrowserRequest } from './browser-request.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
   readonly password?: unknown;
+}
+
+// These identities describe a submitted write without retaining credentials in
+// action evidence. Selection means "this write in the flow", never "the signup".
+export interface AuthWrite {
+  readonly transport: 'http' | 'spacetime-websocket' | 'convex-websocket';
+  readonly destination: string;
+  readonly shape: string;
+}
+export interface AuthWriteTarget {
+  readonly writes: readonly AuthWrite[];
+  readonly index: number;
+  readonly readEndpoints?: readonly string[];
+}
+const writeTargets = new WeakMap<object, AuthWriteTarget>();
+const writeStops = new WeakMap<object, () => void>();
+export const hasAuthWriteTarget = (page: object): boolean => writeTargets.has(page);
+export const stopAuthWriteInventory = (page: object): void => writeStops.get(page)?.();
+
+export async function withAuthWriteTarget<T>(page: object, target: AuthWriteTarget, submit: () => Promise<T>): Promise<T> {
+  if (writeTargets.has(page)) throw new Error('Authentication write target is already active');
+  writeTargets.set(page, target);
+  try { return await submit(); } finally { writeTargets.delete(page); }
+}
+
+const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+function valueShape(value: unknown): unknown {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return value.map(valueShape);
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, child]) => [key, valueShape(child)]));
+  return typeof value;
+}
+
+// The fields-only path already knows its exact write. Credential equality cannot
+// identify a bodyless finalizer or a form that derives its password in the browser.
+function patchWriteFields(body: unknown, patch: AuthRequestPatch, parameters?: readonly CallParameter[]) {
+  const fields = requestedChange(patch);
+  if (Object.hasOwn(patch, 'password')) throw new Error('A write target only supports authority fields');
+  if (!Array.isArray(body)) {
+    if (body !== null && (typeof body !== 'object' || !body)) throw new Error('Unsupported write body');
+    if (body && Object.values(body).some(value => value !== null && typeof value === 'object')) {
+      throw new Error('Authority field location is unproved');
+    }
+    return { value: { ...body as Record<string, unknown> | null, ...fields }, shape: body === null ? 'bodyless' : 'object' };
+  }
+  const value = structuredClone(body);
+  return { value, ...putFields(value, fields, parameters) };
 }
 
 // A platform's own password endpoints, supplied by its stack adapter. The
@@ -23,6 +71,8 @@ type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha
   transport?: 'convex-websocket' | 'spacetime-websocket';
   absentParameters?: string[] };
 type SocketPatch = {
+  captureAll?: boolean;
+  nativeCapture?: boolean;
   change(body: unknown): ReturnType<typeof patchAuthRequest>;
   receipt(value: PatchReceipt): void;
   fail(): void;
@@ -34,6 +84,11 @@ const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
 export async function installAuthWebSocketCapture(page: Page): Promise<void> {
   const state: { active?: SocketPatch } = {};
   socketPatches.set(page, state);
+  page.on('websocket', socket => socket.on('framesent', () => {
+    const owner = state.active;
+    if (owner?.captureAll && !/\/api\/[^/]+\/sync(?:\?|$)/.test(socket.url())
+      && !(owner.nativeCapture && /\/v1\/database\/[^/]+\/subscribe(?:\?|$)/.test(socket.url()))) owner.fail();
+  }));
   await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
     const server = client.connectToServer();
     let awaiting: { owner: SocketPatch; id: number; type: string; changed: NonNullable<ReturnType<typeof patchAuthRequest>> } | undefined;
@@ -44,10 +99,11 @@ export async function installAuthWebSocketCapture(page: Page): Promise<void> {
       if (owner && message && ['Mutation', 'Action'].includes(String(message.type))) {
         try {
           const changed = owner.change(message);
-          if (changed) {
+          if (changed || owner.captureAll) {
             if (!Number.isSafeInteger(message.requestId) || awaiting) { owner.fail(); return; }
-            awaiting = { owner, id: message.requestId as number, type: `${message.type}Response`, changed };
-            server.send(changed.body);
+            awaiting = { owner, id: message.requestId as number, type: `${message.type}Response`,
+              changed: changed ?? { body: String(data), shape: 'captured' } };
+            server.send(changed?.body ?? data);
             return;
           }
         } catch { owner.fail(); return; }
@@ -128,6 +184,11 @@ function patchAuthValues(body: unknown, username: string, password: string | und
     Object.defineProperty(container, passwordKey!,
       { value: patch.password, enumerable: true, writable: true, configurable: true });
   }
+  return { value: copy, ...putFields(container, fields, parameters) };
+}
+
+function putFields(container: Record<string, unknown> | unknown[], fields: Readonly<Record<string, unknown>>,
+  parameters?: readonly CallParameter[]) {
   const absentParameters: string[] = [];
   if (Array.isArray(container)) {
     if (Object.keys(fields).length && parameters?.length !== container.length) {
@@ -157,7 +218,7 @@ function patchAuthValues(body: unknown, username: string, password: string | und
   } else for (const [key, value] of Object.entries(fields)) {
     Object.defineProperty(container, key, { value, enumerable: true, writable: true, configurable: true });
   }
-  return { value: copy, shape: Array.isArray(container) ? 'positional' : 'object',
+  return { shape: Array.isArray(container) ? 'positional' : 'object',
     ...(absentParameters.length ? { absentParameters } : {}) };
 }
 
@@ -237,9 +298,184 @@ async function callParameters(request: Request): Promise<CallParameter[] | undef
   } catch { return undefined; }
 }
 
+export async function withAuthWriteInventory<T>(page: Page, submit: () => Promise<T>, readEndpoints: readonly string[] = []) {
+  const { result, writes } = await captureAuthWrites(page, submit, undefined, readEndpoints);
+  return { result, writes };
+}
+
+interface WriteProbe { target: AuthWriteTarget; patch: AuthRequestPatch; username: string; password: string;
+  platformPatch?: PlatformAuthPatch | null; complete?: (receipt: PatchReceipt) => Promise<void> }
+
+async function withAuthWriteProbe<T>(page: Page, submit: () => Promise<T>, probe: WriteProbe) {
+  const { result, requestPatch } = await captureAuthWrites(page, submit, probe, probe.target.readEndpoints);
+  if (!requestPatch) inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'The selected signup write has no terminal receipt' });
+  return { ...result, requestPatch };
+}
+
+async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
+  probe?: WriteProbe, readEndpoints: readonly string[] = []) {
+  const writes: AuthWrite[] = [], pending: Promise<void>[] = [];
+  let failed = false, stopped = false, requestPatch: PatchReceipt | undefined, selected = 0;
+  let finishTarget!: () => void;
+  const targetReady = new Promise<void>(resolve => { finishTarget = resolve; });
+  const fail = () => { failed = true; finishTarget(); };
+  const recordPatch = (receipt: PatchReceipt) => { requestPatch = receipt; finishTarget(); };
+  if (page.context().serviceWorkers().length) fail();
+  if (probe && (!Number.isSafeInteger(probe.target.index) || probe.target.index < 0
+    || probe.target.index >= probe.target.writes.length || Object.hasOwn(probe.patch, 'password'))) fail();
+  const visit = (write: AuthWrite): boolean => {
+    if (stopped) return false;
+    const index = writes.length;
+    writes.push(write);
+    if (writes.length > 200) fail();
+    if (!probe) return false;
+    if (failed) return false;
+    const expected = probe.target.writes[index];
+    if (!expected || expected.transport !== write.transport || expected.destination !== write.destination || expected.shape !== write.shape) {
+      fail(); return false;
+    }
+    return index === probe.target.index && ++selected === 1;
+  };
+  const native = await startSpacetimeAuthWriteCapture(page, (route, args) => {
+    const url = new URL(route.url);
+    // Socket authentication tokens vary between fresh accounts. The leased
+    // database, origin, operation, flags and argument schema identify the write.
+    return visit({ transport: 'spacetime-websocket',
+      destination: hash(JSON.stringify([url.origin, url.pathname, route.reducer, route.flags])),
+      shape: hash(JSON.stringify([route.parameters, valueShape(args)])) })
+      ? patchWriteFields(args, probe!.patch, route.parameters.map(name => ({ name }))) : null;
+  }, (receipt, changed) => { if (changed) recordPatch(receipt); }, fail);
+  const sockets = socketPatches.get(page);
+  if (sockets?.active) { native?.dispose(); throw new Error('Authentication request capture is already active'); }
+  let socketFinish: (() => void) | undefined, socketTimer: ReturnType<typeof setTimeout> | undefined;
+  let socketChanged = false;
+  if (sockets) sockets.active = {
+    captureAll: true, nativeCapture: Boolean(native),
+    change(body) {
+      if (stopped) return null;
+      const message = body as { type?: unknown; udfPath?: unknown; args?: unknown };
+      const args = message.args;
+      const target = visit({ transport: 'convex-websocket',
+        destination: hash(JSON.stringify([message.type, message.udfPath])), shape: hash(JSON.stringify(valueShape(args))) });
+      pending.push(new Promise<void>(resolve => {
+        socketFinish = resolve; socketTimer = setTimeout(() => { fail(); resolve(); }, 10_000);
+      }));
+      socketChanged = target;
+      if (!target) return null;
+      const located = patchAuthRequest(body, probe!.username, probe!.password, probe!.patch);
+      if (located) return located;
+      if (!Array.isArray(args) || args.length !== 1 || !args[0] || Array.isArray(args[0]) || typeof args[0] !== 'object') {
+        fail(); throw new Error('Unsupported native authority field location');
+      }
+      const changed = patchWriteFields(args[0], probe!.patch);
+      return { body: JSON.stringify({ ...message, args: [changed.value] }), shape: 'convex-args-object' };
+    },
+    receipt(value) { if (socketChanged) recordPatch(value); clearTimeout(socketTimer); socketFinish?.(); },
+    fail() { fail(); clearTimeout(socketTimer); socketFinish?.(); },
+  };
+  if (writeStops.has(page)) { native?.dispose(); throw new Error('Authentication write inventory is already active'); }
+  writeStops.set(page, () => {
+    stopped = true; native?.stop();
+    if (sockets?.active) sockets.active.captureAll = false;
+  });
+  const handler = async (route: Route) => {
+    if (stopped) return route.fallback();
+    const request = route.request();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.fallback();
+    // Only the adapter's exact leased endpoint carries a platform read guarantee.
+    // An app proxy with the same path can still perform its own writes.
+    if (request.method() === 'POST' && readEndpoints.includes(request.url())) return route.fallback();
+    const raw = request.postData();
+    let body: unknown = null;
+    const contentType = request.headers()['content-type']?.split(';')[0]?.trim();
+    try {
+      if (raw) {
+        if (!contentType || !/^application\/(?:[\w.-]+\+)?json$/i.test(contentType)) throw new Error('Opaque write body');
+        body = request.postDataJSON();
+      }
+    } catch { fail(); return route.fallback(); }
+    const target = visit({ transport: 'http', destination: hash(JSON.stringify([request.method(), request.url()])),
+      shape: hash(JSON.stringify(valueShape(body))) });
+    if (!target) {
+      pending.push(request.response().then(async response => {
+        if (!response) { fail(); return; }
+        const headers = response.headers();
+        // Chromium can leave finished() pending for a zero-length response.
+        // Its complete headers prove the empty body without waiting for bytes.
+        const empty = headers['content-length'] === '0' && !headers['transfer-encoding'];
+        if (!empty && await response.finished() !== null || response.status() >= 300 && response.status() < 400) fail();
+      }).catch(fail));
+      return route.fallback();
+    }
+    try {
+      const parameters = Array.isArray(body) ? await callParameters(request) : undefined;
+      requestedChange(probe!.patch);
+      const platform = probe!.platformPatch?.(request.url(), body, probe!.patch);
+      const located = platform === undefined
+        ? patchAuthRequest(body, probe!.username, probe!.password, probe!.patch, parameters) : platform;
+      if (platform === null) throw new Error('Platform write holds no credential');
+      const changed = located ? { ...located, value: JSON.parse(located.body) as unknown }
+        : patchWriteFields(body, probe!.patch, parameters);
+      const sentBody = JSON.stringify(changed.value);
+      const sent = withBrowserRequest(page.request, async api => {
+        const response = await api.fetch(request, { data: sentBody,
+          headers: { ...request.headers(), ...(!raw ? { 'content-type': 'application/json' } : {}) },
+          maxRedirects: 0, maxRetries: 0, timeout: 10_000 });
+        if (response.status() >= 300 && response.status() < 400) fail();
+        recordPatch({ shape: changed.shape, status: response.status(), bodySha256: hash(sentBody),
+          ...('absentParameters' in changed && changed.absentParameters ? { absentParameters: changed.absentParameters } : {}) });
+        await route.fulfill({ response });
+      }, false).catch(async () => { fail(); await route.abort().catch(() => {}); });
+      pending.push(sent); await sent;
+    } catch { fail(); await route.abort().catch(() => {}); }
+  };
+  try {
+    await page.route('**/*', handler);
+    let result: T | undefined, submissionFailure: unknown;
+    try { result = await browserApplicationBoundary(submit)(undefined); } catch (error) { submissionFailure = error; }
+    if (probe && !requestPatch && !failed) {
+      let targetTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([targetReady, new Promise<void>(resolve => {
+          targetTimer = setTimeout(() => { fail(); resolve(); }, 10_000);
+        })]);
+      } finally { clearTimeout(targetTimer); }
+    }
+    const drain = async () => {
+      let drainTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([Promise.all([...pending, native?.finish()]), new Promise<void>(resolve => {
+          drainTimer = setTimeout(() => { fail(); resolve(); }, 10_000);
+        })]);
+      } finally { clearTimeout(drainTimer); }
+    };
+    await drain();
+    if (!failed && !submissionFailure && requestPatch && probe?.complete) {
+      try { await probe.complete(requestPatch); } catch (error) { submissionFailure = error; }
+      await drain();
+    }
+    const refused = requestPatch?.success === false || (requestPatch?.status ?? 0) >= 400;
+    if (!probe && !failed && submissionFailure) throw submissionFailure;
+    if (failed || !writes.length || probe && (selected !== 1 || !requestPatch
+      || writes.length !== probe.target.writes.length && !refused)) {
+      inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove the signup write sequence and one complete target request' });
+    }
+    if (submissionFailure) throw submissionFailure;
+    return { result: result as T, writes, requestPatch };
+  } finally {
+    clearTimeout(socketTimer);
+    writeStops.delete(page);
+    if (sockets) sockets.active = undefined;
+    native?.dispose();
+    await page.unroute('**/*', handler);
+  }
+}
+
 export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unroute'>,
   username: string, password: string, patch: AuthRequestPatch, submit: () => Promise<T>,
-  platformPatch?: PlatformAuthPatch | null, nativeKind?: 'signup' | 'signin') {
+  platformPatch?: PlatformAuthPatch | null, nativeKind?: 'signup' | 'signin', target = writeTargets.get(page),
+  complete?: (receipt: PatchReceipt) => Promise<void>) {
+  if (target) return withAuthWriteProbe(page as Page, submit, { target, patch, username, password, platformPatch, complete });
   let matches = 0, error = false;
   const pending: Promise<void>[] = [];
   let receipt: PatchReceipt | undefined;

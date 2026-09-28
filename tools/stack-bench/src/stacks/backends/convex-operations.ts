@@ -13,6 +13,13 @@ const TIMEOUT = 30_000;
 const record = z.record(z.string(), z.unknown());
 interface NativeInput { lease?: BackendLease; exec?: TextCommandExecutor }
 
+export function convexAuthReadEndpoints(lease: BackendLease): readonly string[] {
+  if (lease.backend !== 'convex' || lease.state !== 'active' || !lease.resources.serverUri) {
+    throw new Error('Convex query capture requires its active backend lease');
+  }
+  return [new URL('/api/query', loopbackHttpUri(lease.resources.serverUri)).href];
+}
+
 function target(input: NativeInput) {
   const lease = input.lease ?? leaseFromEnv(process.env, { backend: 'convex', active: true }).lease;
   if (lease.backend !== 'convex' || !lease.resources.serverUri || !lease.resources.container) {

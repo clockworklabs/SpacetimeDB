@@ -173,7 +173,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
     priceMinor: value => Number.isSafeInteger(value) && Number(value) >= 0 },
     { within: value => positiveNumber(value) && Number(value) <= 80000 }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString,
-    quantity: checkoutQuantity }, { actor: nonEmptyString, alongsideAdd: nonEmptyString }),
+    quantity: checkoutQuantity }, { actor: nonEmptyString, alongsideAdd: nonEmptyString,
+      within: value => positiveNumber(value) && Number(value) <= 80000 }),
   dbExpectOperation: fields({ before: nonEmptyString, otherBefore: nonEmptyString, actor: nonEmptyString,
     operation: value => typeof value === 'string' && ['buy', 'cart-add', 'cart-update', 'checkout', 'cancel', 'restock', 'transfer', 'reconnect'].includes(value) }),
   dbExpectCancellation: fields({ before: nonEmptyString },
@@ -247,6 +248,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { unlessVisible: nonEmptyString, ...within, ...settle }),
   pressKey: fields({ ...actor, key: nonEmptyString }, settle),
   race: fields({ branches: anyArray, settleMs: nonNegativeNumber }),
+  probeSignupClaims: fields({ ...actor, name: nonEmptyString, fields: object, branches: anyArray }),
   recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString },
     { count: boolean, ...locator, ...within }),
   reload: fields({ ...actor, settleMs: number }, { application: boolean }),
@@ -537,10 +539,10 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
       fail(`${at}.actors`, 'must contain at least two distinct actors');
     }
   }
-  if (step.do === 'race') {
+  if (step.do === 'race' || step.do === 'probeSignupClaims') {
     const branches = step.branches;
-    if (!array(branches) || branches.length < 2) {
-      fail(`${at}.branches`, 'must contain at least two branches');
+    if (!array(branches) || (step.do === 'race' ? branches.length < 2 : branches.length !== 1)) {
+      fail(`${at}.branches`, step.do === 'race' ? 'must contain at least two branches' : 'must contain one observation branch');
     }
     branches.forEach((branch, branchIndex) => {
       if (!array(branch) || branch.length === 0) {

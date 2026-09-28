@@ -257,7 +257,8 @@ function semanticStep(step: CompiledStep): unknown {
   return Object.fromEntries(Object.entries(step)
     .filter(([key]) => !EXECUTION_ONLY_STEP_FIELDS.has(key)
       && (key !== 'contains' || ASSERTION_CONTAINS_ACTIONS.has(step.do)))
-    .map(([key, value]) => [key, canonicalizeDefinition(value)]));
+    .map(([key, value]) => [key, key === 'branches' && step.branches
+      ? step.branches.map(branch => branch.map(semanticStep)) : canonicalizeDefinition(value)]));
 }
 
 function taskDocuments(plan: CompiledRecipePlan): RecipeTaskDocuments {

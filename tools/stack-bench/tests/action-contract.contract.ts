@@ -44,7 +44,7 @@ function steps(value: FixtureDefinition): FixtureStep[] {
   const out: FixtureStep[] = [];
   const visit = (step: FixtureStep): void => {
     out.push(step);
-    if (step.do === 'race') (step.branches ?? []).flat().forEach(visit);
+    (step.branches ?? []).flat().forEach(visit);
   };
   for (const feature of value.features) {
     [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)].forEach(visit);

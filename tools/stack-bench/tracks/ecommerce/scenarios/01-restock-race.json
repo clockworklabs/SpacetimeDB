@@ -338,12 +338,13 @@
                   }
                 ]
               ],
-              "settleMs": 6000
+              "settleMs": 0
             },
             {
               "do": "dbExpectStock",
               "item": "Bluetooth Speaker",
               "relativeTo": "stored-before-rush",
+              "within": 10000,
               "plus": 2
             },
             { "do": "dbExpectStock", "item": "Bluetooth Speaker", "warehouse": "East", "atLeast": 0 },

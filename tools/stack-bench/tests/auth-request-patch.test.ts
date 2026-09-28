@@ -3,13 +3,266 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
-import { installAuthWebSocketCapture, patchAuthRequest, withAuthRequestPatch } from '../src/actions/auth-request-patch.js';
-import { createBackendLease } from '../src/runtime/backend-lease.js';
+import { installAuthWebSocketCapture, patchAuthRequest, withAuthRequestPatch, withAuthWriteInventory,
+  withAuthWriteTarget, stopAuthWriteInventory, type AuthWrite } from '../src/actions/auth-request-patch.js';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
 import { supabaseAuthRequestPatch } from '../src/stacks/backends/supabase-operations.js';
+import { convexAuthReadEndpoints } from '../src/stacks/backends/convex-operations.js';
 import { ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 import { installResponseLoss } from '../grader/response-loss.js';
+
+// Only the exact authenticated backend endpoint has Convex's read semantics.
+// A same-named app route, another origin/port, query suffix, or method must remain
+// in the inventory and receive its own probe instead of inheriting an exemption.
+test('signup inventory excludes only the exact leased Convex query POST', async () => {
+  const received: { url: string; method: string; role: unknown }[] = [];
+  const serve = () => createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, PUT');
+    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+    if (req.method === 'GET') { res.end('<body>signup</body>'); return; }
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    received.push({ url: req.url!, method: req.method!, role: raw ? JSON.parse(raw).role : null });
+    res.end('ok');
+  }).listen(0, '127.0.0.1');
+  const backend = serve(), app = serve();
+  await Promise.all([once(backend, 'listening'), once(app, 'listening')]);
+  const origin = (server: typeof app) => `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const lease = createBackendLease({ runId: 'convex-query-capture', backend: 'convex', track: 'ecommerce',
+    runIndex: 0, serverUri: origin(backend) });
+  lease.state = 'active';
+  const endpoints = convexAuthReadEndpoints(lease);
+  assert.deepEqual(endpoints, [`${origin(backend)}/api/query`]);
+  assert.throws(() => convexAuthReadEndpoints({ ...lease, state: 'released' }), /lease/i);
+  assert.throws(() => convexAuthReadEndpoints({ ...lease, backend: 'postgres' }), /lease/i);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const [url, method, exempt] of [
+      [`${origin(backend)}/api/query`, 'POST', true],
+      [`${origin(app)}/api/query`, 'POST', false],
+      [`${origin(backend).replace('127.0.0.1', 'localhost')}/api/query`, 'POST', false],
+      [`${origin(backend)}/api/query?write=true`, 'POST', false],
+      [`${origin(backend)}/nested/api/query`, 'POST', false],
+      [`${origin(backend)}/api/query`, 'PUT', false],
+    ] as const) {
+      const context = await browser.newContext(), page = await context.newPage(); await page.goto(origin(app));
+      const submit = () => page.evaluate(async ({ url, method }) => {
+        await fetch('/signup', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username: 'ordinary', password: 'fixture-password' }) });
+        await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: '{}' });
+      }, { url, method });
+      const baseline: { writes: readonly AuthWrite[] } = await withAuthWriteInventory(page, submit, endpoints);
+      assert.equal(baseline.writes.length, exempt ? 1 : 2, `${method} ${url}`);
+      received.length = 0;
+      const index = exempt ? 0 : 1;
+      await withAuthRequestPatch(page, 'ordinary', 'fixture-password', { fields: { role: 'admin' } }, submit,
+        undefined, 'signup', { writes: baseline.writes, index, readEndpoints: endpoints });
+      assert.deepEqual(received.map(request => request.role), exempt ? ['admin', undefined] : [undefined, 'admin']);
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+    await Promise.all([backend, app].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+  }
+});
+
+// Failure cases fixed before implementation: an unrelated profile write must not
+// hide a bodyless account finalizer, and a missing/changed target is unmeasured.
+test('each signup write is patched once, including a bodyless account finalizer', async () => {
+  const accounts = new Map<string, string>(), calls: { path: string; role?: string }[] = [];
+  let defective = false, stock = 10;
+  const server = createServer(async (req, res) => {
+    if (req.method !== 'POST') { res.end('<body>accounts</body>'); return; }
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : {};
+    const user = /user=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? '';
+    calls.push({ path: req.url!, ...(body.role ? { role: body.role } : {}) });
+    if (req.url === '/nested/stdb/v1/identity/websocket-token') accounts.set(user, defective ? body.role ?? 'customer' : 'customer');
+    if (req.url === '/restock') {
+      if (accounts.get(user) !== 'admin') { res.writeHead(403).end(); return; }
+      stock++;
+    }
+    res.end('ok');
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const fresh = async (user: string) => {
+      const context = await browser.newContext(), page = await context.newPage();
+      await page.goto(url); await page.evaluate(user => { document.cookie = `user=${user}`; }, user);
+      return page;
+    };
+    const submit = (page: Awaited<ReturnType<typeof fresh>>, mode = 'normal') => page.evaluate(async mode => {
+      await fetch('/profile', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ opaquePassword: 'fixture-derived-secret', role: 'customer' }) });
+      if (mode === 'missing') return;
+      if (mode === 'extra') await fetch('/profile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await fetch(mode === 'changed' ? '/other-finalizer' : '/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
+      if (mode === 'duplicate') await fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
+    }, mode);
+    const baselinePage = await fresh('ordinary');
+    const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage));
+    assert.equal(baseline.writes.length, 2);
+    assert(!JSON.stringify(baseline).includes('fixture-derived-secret'));
+    const restock = (page: typeof baselinePage) => page.evaluate(async () => (await fetch('/restock', { method: 'POST' })).status);
+    assert.equal(await restock(baselinePage), 403);
+    accounts.set('admin', 'admin'); assert.equal(await restock(await fresh('admin')), 200);
+    for (defective of [false, true]) for (const index of [0, 1]) {
+      const page = await fresh(`probe-${defective}-${index}`), before = stock;
+      calls.length = 0;
+      const result = await withAuthRequestPatch(page, 'unused', 'unused', { fields: { role: 'admin' } },
+        () => submit(page), undefined, 'signup', { writes: baseline.writes, index });
+      assert.equal(result.requestPatch.status, 200);
+      assert.deepEqual(calls.map(call => call.role), index === 0 ? ['admin', undefined] : ['customer', 'admin']);
+      assert.equal(await restock(page), defective && index === 1 ? 200 : 403);
+      assert.equal(stock - before, defective && index === 1 ? 1 : 0);
+      await page.context().close();
+    }
+    for (const mode of ['missing', 'changed', 'extra', 'duplicate']) {
+      const page = await fresh(mode);
+      await assert.rejects(withAuthRequestPatch(page, 'unused', 'unused', { fields: { role: 'admin' } },
+        () => submit(page, mode), undefined, 'signup', { writes: baseline.writes, index: 1 }), ActionInconclusive);
+      await page.context().close();
+    }
+    const completing = await fresh('completing');
+    await withAuthWriteTarget(completing, { writes: baseline.writes, index: 0 }, () =>
+      withAuthRequestPatch(completing, 'unused', 'unused', { fields: { role: 'admin' } },
+        () => submit(completing, 'missing'), undefined, 'signup', undefined, async () => {
+          await completing.evaluate(() => fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' }).then(() => {}));
+          stopAuthWriteInventory(completing);
+          await completing.evaluate(() => fetch('/separate-signin', { method: 'POST' }).then(() => {}));
+        }));
+    await completing.context().close();
+    const delayed = await fresh('delayed');
+    const delayedResult = await withAuthRequestPatch(delayed, 'unused', 'unused', { fields: { role: 'admin' } }, async () => {
+      await submit(delayed, 'missing');
+      await delayed.evaluate(() => { setTimeout(() => { void fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' }); }, 30); });
+    }, undefined, 'signup', { writes: baseline.writes, index: 1 });
+    assert.equal(delayedResult.requestPatch.status, 200, 'capture must stay active for the selected later write');
+    await delayed.context().close();
+  } finally { await browser.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test('mixed native and HTTP signup probes expose either source of authority', async () => {
+  const codec = await import(new URL('../src/stacks/spacetime-wire-codec.js', import.meta.url).href);
+  const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
+  const encode = (type: { serialize(writer: unknown, value: unknown): void }, value: unknown) => {
+    const writer = new codec.BinaryWriter(128); type.serialize(writer, value); return Buffer.from(writer.getBuffer());
+  };
+  const readString = codec.AlgebraicType.makeDeserializer({ tag: 'String' });
+  const writeString = codec.AlgebraicType.makeSerializer({ tag: 'String' });
+  const accounts = new Map<string, string>(), profiles = new Map<string, string>();
+  let mode = 'correct', stock = 10;
+  const calls: { transport: string; role: string }[] = [];
+  const server = createServer(async (req, res) => {
+    if (req.url?.startsWith('/v1/database/auth/schema')) {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ reducers: [{ name: 'profile_save', params: { elements:
+        ['name', 'digest', 'role'].map(name => ({ name: { some: name }, algebraic_type: { String: [] } })) } }] })); return;
+    }
+    if (req.method !== 'POST') { res.end('<body>accounts</body>'); return; }
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const user = /user=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? '';
+    if (req.url === '/restock') {
+      if (accounts.get(user) !== 'admin') { res.writeHead(403).end(); return; }
+      stock++; res.end(); return;
+    }
+    const role = raw ? JSON.parse(raw).role : 'customer';
+    calls.push({ transport: 'http', role });
+    accounts.set(user, mode === 'http-defect' ? role : mode === 'native-defect' ? profiles.get(user)! : 'customer');
+    res.end();
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets = new wsServer({ server });
+  sockets.on('connection', (socket: { on(event: string, fn: (raw: Buffer) => void): void; send(data: Buffer): void; close(): void }) => {
+    const send = (value: unknown) => socket.send(Buffer.concat([Buffer.from([0]), encode(codec.ServerMessage, value)]));
+    send({ tag: 'InitialConnection', value: { identity: { __identity__: 1n }, connectionId: { __connection_id__: 1n }, token: 'fixture-token' } });
+    socket.on('message', raw => {
+      const message = codec.ClientMessage.deserialize(new codec.BinaryReader(raw));
+      const reader = new codec.BinaryReader(message.value.args);
+      const [user, , role] = [readString(reader), readString(reader), readString(reader)];
+      calls.push({ transport: 'native', role }); profiles.set(user, role);
+      if (mode === 'missing-terminal') { socket.close(); return; }
+      send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
+        timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: { tag: 'OkEmpty' } } });
+    });
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'auth-write-probe-')), leasePath = join(dir, 'lease.json');
+  const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
+  const lease = createBackendLease({ runId: 'auth-write-probe', backend: 'spacetime', track: 'ecommerce', runIndex: 0,
+    serverUri: url, module: 'auth', dataDir: join(dir, 'data') });
+  lease.state = 'active'; writeBackendLease(leasePath, lease);
+  process.env.STACK_BENCH_LEASE = leasePath; process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const fresh = async (user: string) => {
+      const context = await browser.newContext(), page = await context.newPage();
+      await installAuthWebSocketCapture(page); await installSpacetimeWriteCapture(page); await page.goto(url);
+      await page.evaluate(async ({ url, user }) => {
+        document.cookie = `user=${user}`;
+        const socket = new WebSocket(`${url.replace('http:', 'ws:')}/nested/v1/database/auth/subscribe`, 'v3.bsatn.spacetimedb');
+        Object.assign(window, { fixtureSocket: socket });
+        await new Promise(resolve => socket.addEventListener('message', resolve, { once: true }));
+      }, { url, user });
+      return page;
+    };
+    const submit = async (page: Awaited<ReturnType<typeof fresh>>, user: string, omitFinalizer = false) => {
+      const writer = new codec.BinaryWriter(128);
+      for (const value of [user, 'opaque-derived-password', 'customer']) writeString(writer, value);
+      const bytes = encode(codec.ClientMessage, { tag: mode === 'procedure' ? 'CallProcedure' : 'CallReducer', value: {
+        ...(mode === 'procedure' ? { procedure: 'profile_save' } : { reducer: 'profile_save' }),
+        requestId: 1, flags: 0, args: writer.getBuffer() } });
+      return page.evaluate(async ({ bytes, omitFinalizer }) => {
+        const socket = (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket;
+        const reply = new Promise(resolve => {
+          socket.addEventListener('message', resolve, { once: true }); socket.addEventListener('close', resolve, { once: true });
+        });
+        socket.send(new Uint8Array(bytes)); await reply;
+        if (!omitFinalizer) await fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
+      }, { bytes: [...bytes], omitFinalizer });
+    };
+    const baselinePage = await fresh('baseline');
+    const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage, 'baseline'));
+    assert.deepEqual(baseline.writes.map(write => write.transport), ['spacetime-websocket', 'http']);
+    assert(!JSON.stringify(baseline).includes('opaque-derived-password'));
+    const restock = (page: typeof baselinePage) => page.evaluate(async () => (await fetch('/restock', { method: 'POST' })).status);
+    assert.equal(await restock(baselinePage), 403);
+    accounts.set('admin', 'admin'); assert.equal(await restock(await fresh('admin')), 200);
+    for (mode of ['correct', 'http-defect', 'native-defect']) for (const index of [0, 1]) {
+      const user = `${mode}-${index}`, page = await fresh(user), before = stock; calls.length = 0;
+      const result = await withAuthRequestPatch(page, user, 'unsubmitted-password', { fields: { role: 'admin' } },
+        () => submit(page, user), undefined, 'signup', { writes: baseline.writes, index });
+      assert.equal(result.requestPatch.transport, index === 0 ? 'spacetime-websocket' : undefined);
+      assert.deepEqual(calls.map(call => call.role), index === 0 ? ['admin', 'customer'] : ['customer', 'admin']);
+      const elevated = mode === 'http-defect' && index === 1 || mode === 'native-defect' && index === 0;
+      assert.equal(await restock(page), elevated ? 200 : 403); assert.equal(stock - before, elevated ? 1 : 0);
+      await page.context().close();
+    }
+    for (mode of ['unreached', 'missing-terminal', 'procedure']) {
+      const page = await fresh(mode);
+      await assert.rejects(withAuthRequestPatch(page, mode, 'unused', { fields: { role: 'admin' } },
+        () => submit(page, mode, true), undefined, 'signup', { writes: baseline.writes, index: 1 }), ActionInconclusive);
+      await page.context().close();
+    }
+    mode = 'procedure';
+    const procedure = await fresh(mode);
+    await assert.rejects(withAuthWriteInventory(procedure, () => submit(procedure, mode)), ActionInconclusive);
+  } finally {
+    await browser.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve()));
+    if (previous.path === undefined) delete process.env.STACK_BENCH_LEASE; else process.env.STACK_BENCH_LEASE = previous.path;
+    if (previous.token === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN; else process.env.STACK_BENCH_LEASE_TOKEN = previous.token;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('credential patches preserve native envelopes and reject ambiguous matches', () => {
   const credentials = { username: 'customer', password: 'secret' };

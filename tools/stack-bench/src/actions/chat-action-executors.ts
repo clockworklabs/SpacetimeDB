@@ -8,7 +8,7 @@ import {
 } from './actor-action-runtime.js';
 import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
-import { withAuthRequestPatch, type AuthRequestPatch } from './auth-request-patch.js';
+import { hasAuthWriteTarget, stopAuthWriteInventory, withAuthRequestPatch, type AuthRequestPatch } from './auth-request-patch.js';
 import { beginSpacetimeAuthObservation, confirmSpacetimeSignup } from '../stacks/backends/spacetime-browser-session.js';
 
 type ChatArguments<Input extends { readonly actor: string }> =
@@ -73,14 +73,18 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   const password = input.password ?? `pw-${user}`;
   if (input.requestPatch) {
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
+    const targeted = hasAuthWriteTarget(actor.page);
+    const complete = async (receipt: { success?: boolean; status?: number }) => {
+      if (receipt.success !== false && (receipt.status ?? 200) < 400) {
+        await finishRegistration({ input, capabilities, signal }, () => stopAuthWriteInventory(actor.page));
+      }
+      await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    };
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
       user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
-      browser.authRequestPatch, 'signup');
-    if (result.requestPatch.success !== false && (result.requestPatch.status ?? 200) < 400) {
-      await finishRegistration({ input, capabilities, signal });
-    }
-    await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
-      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+      browser.authRequestPatch, 'signup', undefined, targeted ? complete : undefined);
+    if (!targeted) await complete(result.requestPatch);
     return result;
   }
   const username = actor.page.locator(browser.testId('signup-username')).first();
@@ -116,6 +120,7 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     await finishRegistration({ input, capabilities, signal }, () => {
       usedFallback = true;
       observation?.stop();
+      stopAuthWriteInventory(actor.page);
     });
     observation?.stop();
     if (input.awaitSignedIn === false) {

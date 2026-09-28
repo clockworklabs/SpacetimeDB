@@ -132,6 +132,7 @@ type GradeRunContext = {
   mongoOrderReader?: ReturnType<typeof createMongoDbOrderDataReader>;
   convexOrderReader?: ReturnType<typeof createConvexOrderDataReader>;
   authRequestPatch?: PlatformAuthPatch | null;
+  authReadEndpoints?: readonly string[];
   applicationWriteEndpoints?: readonly string[];
   actionCancellation?: { reason: string | null };
   runId: string;
@@ -568,6 +569,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   const runtimeValues = Object.freeze({
     applicationUrl: ctx.url,
     authRequestPatch: ctx.authRequestPatch ?? null,
+    authReadEndpoints: ctx.authReadEndpoints ?? [],
     defaultWithin,
     expand: (value: unknown) => expand(value, ctx),
     hyphenatedScopedUser: (name: string) => `${name}-${ctx.scope}`,
@@ -976,7 +978,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       .filter(step => step.do === 'setOffline').map(step => step.actor));
     // Routing replaces native WebSocket delivery. Only credential probes need it;
     // passive transport observation must not pay for forwarding every live update.
-    const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined
+    const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined || step.do === 'probeSignupClaims'
       || Boolean(step.branches?.some(branch => branch.some(needsAuthPatch)));
     const patchAuthentication = steps.some(needsAuthPatch);
     const privacyActors = new Set<string>();
@@ -1249,6 +1251,8 @@ async function main(): Promise<void> {
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease, authRequestPatch: args.backend ? platformAuthPatch(args.backend) : null,
+    authReadEndpoints: args.backend && STACK_ADAPTER_REGISTRY.get(args.backend).grading.authReadEndpoints
+      ? STACK_ADAPTER_REGISTRY.get(args.backend).grading.authReadEndpoints!(leaseFromEnv(process.env, { backend: args.backend, active: true }).lease) : [],
     applicationWriteEndpoints: args.backend ? applicationWrites(args.backend) : [],
     nullControl: args.nullControl,
     contractIds: selectedTask?.task.contractIds,

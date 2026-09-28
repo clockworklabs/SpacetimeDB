@@ -32,8 +32,8 @@ const nestedSteps = (feature: CompiledFeature): CompiledStep[] =>
   [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)].flatMap(flatten);
 
 function flatten(step: CompiledStep): CompiledStep[] {
-  if (step.do !== 'race') return [step];
-  if (!Array.isArray(step.branches)) throw new Error('race step must have branches');
+  if (!step.branches) return [step];
+  if (!Array.isArray(step.branches)) throw new Error('nested step must have branches');
   return [step, ...step.branches.flatMap(branch => branch.flatMap(flatten))];
 }
 

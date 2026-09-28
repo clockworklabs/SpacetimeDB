@@ -262,6 +262,34 @@ test('only unusable mutation results are retried', () => {
   }
 });
 
+test('nested failure attribution requires the exact recorded child within its wrapper', () => {
+  for (const mode of ['verified', 'unrelated', 'changed-copy', 'different-status', 'different-finding',
+    'outside-wrapper', 'unrecorded']) {
+    const child = failedStep('expectNumber'), wrapper = failedStep('probeSignupClaims');
+    child.evidence.timing = { startedAtMs: 2, completedAtMs: 3, durationMs: 1, deadlineMs: 100 };
+    wrapper.evidence.timing = { startedAtMs: 1, completedAtMs: 4, durationMs: 3, deadlineMs: 100 };
+    if (mode === 'outside-wrapper') wrapper.evidence.timing = {
+      startedAtMs: 3, completedAtMs: 4, durationMs: 1, deadlineMs: 100,
+    };
+    if (mode === 'different-status') child.evidence.status = 'passed';
+    if (mode === 'different-finding') wrapper.evidence.finding = {
+      kind: 'action-failed', fields: { action: 'probeSignupClaims' },
+    };
+    const nestedAction = structuredClone(child.evidence);
+    if (mode === 'changed-copy') nestedAction.code = 'other_failure';
+    wrapper.evidence.observation = mode === 'unrelated' ? null : { nestedAction };
+    const cleanup = failedStep('closeClient'); cleanup.evidence.status = 'passed';
+    const mutant = report({ a: true, b: false });
+    mutant.features[0]!.criteria[1]!.evidence.actions = [
+      ...(mode === 'unrecorded' ? [] : [child]), cleanup, wrapper,
+    ];
+    const result = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
+    assert.equal(result.status, mode === 'verified' ? 'CAUGHT' : 'CAUGHT_OFF_ASSERTION', mode);
+    assert.equal(indexMutationReport(mutant).criteria.get('check.b')!.failedAction,
+      mode === 'verified' ? 'expectNumber' : 'probeSignupClaims', mode);
+  }
+});
+
 test('only a conclusive failure of the declared criterion is a clean kill', () => {
   const harnessFailure = (summary: string) => createCheckEvidence({ status: 'harness_failure',
     code: 'browser_failure', phase: 'assertion', summary, startedAtMs: 1, completedAtMs: 2 });

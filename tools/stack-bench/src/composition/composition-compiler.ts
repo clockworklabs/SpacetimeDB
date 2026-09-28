@@ -888,7 +888,7 @@ export function compileRecipeFile(recipePath: string,
     const actions: string[] = [];
     for (const step of steps) {
       actions.push(step.do);
-      if (step.do === 'race') {
+      if (step.branches) {
         const branches = step.branches;
         if (Array.isArray(branches)) {
           for (const branch of branches) actions.push(...actionsForSteps(branch));

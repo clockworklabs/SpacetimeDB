@@ -52,6 +52,8 @@ interface Capture {
   handshakes: Map<string, { url: string; protocol?: string }>;
   template?: { match: string; control: string; count: number; value: Template };
   auth?: { change(message: Message, socket: Socket): Message | null; fail(): void };
+  authResult?: (socket: Socket, id: number, result: string) => void;
+  authProcedure?: () => void;
   authObservation?: AuthObservation;
   authWitnesses: AuthWitness[];
   authUnproved: Set<AuthKind>;
@@ -181,6 +183,7 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
         let changedFrame = false;
         const messages = decode(wire, wire.ClientMessage, bytes);
         for (const message of messages) {
+          if (message.tag === 'CallProcedure') capture.authProcedure?.();
           const id = message.value?.requestId;
           if (id !== undefined) {
             if (socket.ids.has(id) || socket.ids.size >= 10000) invalidate();
@@ -222,6 +225,7 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
           }
           if (message.tag === 'ReducerResult') {
             const { requestId, result } = message.value;
+            capture.authResult?.(socket, requestId, result.tag);
             for (const item of socket.calls) if (item.call.requestId === requestId) {
               item.committed = result.tag === 'Ok' || result.tag === 'OkEmpty';
               item.result = result.tag;
@@ -299,15 +303,7 @@ export function confirmSpacetimeSignup(page: object, user: string): void {
   }
 }
 
-// Patch the app's own credential reducer call on its existing socket. The
-// declared reducer parameters are the only authority for locating extra fields.
-export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
-  patch: (args: unknown[], parameters: readonly { name: string }[], observedPassword?: string | null) =>
-    { value: unknown; shape: string; absentParameters?: string[] } | null,
-  onFailure: () => void, kind?: AuthKind, fieldsOnly = false) {
-  const capture = captures.get(page);
-  if (!capture) return null;
-  if (capture.auth) throw new Error('Authentication request patch is already active');
+async function authDeclarations(capture: Capture) {
   const target = leasedSpacetimeTarget();
   const schemaUrl = new URL(`/v1/database/${target.mod}/schema?version=9`, target.uri);
   let schema: { reducers?: { name: string; params?: { elements?: { name?: { some?: string };
@@ -317,8 +313,8 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       const response = await api.get(schemaUrl.href, { timeout: 10_000 });
       return response.ok() ? response.json() : null;
     });
-    if (!schema || typeof schema !== 'object') return { receipt: async () => undefined, dispose: () => {} };
-  } catch { return { receipt: async () => undefined, dispose: () => {} }; }
+    if (!schema || typeof schema !== 'object') return null;
+  } catch { return null; }
   // Use SDK codecs for scalar values, options, and unit enums. Records and arrays
   // need additional claim-location metadata; never report their fields absent.
   const argumentType = (raw: Record<string, unknown> | undefined, depth = 0):
@@ -357,6 +353,91 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       write: types.map(type => capture.codec.AlgebraicType.makeSerializer(type!)),
     });
   }
+  return declarations;
+}
+
+// A submit can contain several writes. This path captures each real reducer
+// call; it does not infer which call creates an account from a later sign-in.
+export async function startSpacetimeAuthWriteCapture(page: object,
+  visit: (route: { url: string; reducer: string; flags: number; parameters: readonly string[] }, args: unknown[]) =>
+    { value: unknown; shape: string; absentParameters?: string[] } | null,
+  receipt: (value: AuthReceipt, changed: boolean) => void, onFailure: () => void) {
+  const capture = captures.get(page);
+  if (!capture) return null;
+  if (capture.auth) throw new Error('Authentication request capture is already active');
+  const declarations = await authDeclarations(capture), target = leasedSpacetimeTarget();
+  const waiting: { socket: Socket; id: number; finish(result: string): void }[] = [];
+  const pending: Promise<void>[] = [];
+  let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
+  const fail = () => { onFailure(); for (const item of waiting.splice(0)) item.finish('unknown'); };
+  capture.auth = {
+    fail,
+    change(message, socket) {
+      if (stopped) return null;
+      const declaration = declarations?.get(message.value.reducer);
+      if (!declaration || !leasedSocket(capture, socket, target, true, true)) {
+        fail(); throw new Error('Unproved native signup write');
+      }
+      const reader = new capture.codec.BinaryReader(message.value.args);
+      const args = declaration.read.map(read => read(reader));
+      const encodeArgs = (values: unknown[]) => {
+        const writer = new capture.codec.BinaryWriter(128);
+        declaration.write.forEach((write, index) => write(writer, values[index]));
+        return writer.getBuffer();
+      };
+      if (reader.remaining || !Buffer.from(encodeArgs(args)).equals(Buffer.from(message.value.args))) {
+        fail(); throw new Error('Native write did not round trip');
+      }
+      const changed = visit({ url: socket.url, reducer: message.value.reducer,
+        flags: message.value.flags, parameters: declaration.names }, args);
+      const values = changed?.value ?? args;
+      if (!Array.isArray(values) || values.length !== args.length) { fail(); throw new Error('Invalid native write patch'); }
+      const encoded = encodeArgs(values), check = new capture.codec.BinaryReader(encoded);
+      if (!isDeepStrictEqual(declaration.read.map(read => read(check)), values) || check.remaining) {
+        fail(); throw new Error('Native write patch changed type');
+      }
+      const sent = { ...message, value: { ...message.value, args: encoded } };
+      const bodySha256 = createHash('sha256').update(encode(capture.codec, capture.codec.ClientMessage, sent)).digest('hex');
+      pending.push(new Promise<void>(resolve => waiting.push({ socket, id: message.value.requestId, finish(result) {
+        if (!['Ok', 'OkEmpty', 'Err'].includes(result)) onFailure();
+        else receipt({ shape: changed?.shape ?? 'captured', success: result !== 'Err',
+          transport: 'spacetime-websocket', bodySha256,
+          ...(changed?.absentParameters ? { absentParameters: changed.absentParameters } : {}) }, Boolean(changed));
+        resolve();
+      } })));
+      return changed ? sent : null;
+    },
+  };
+  capture.authResult = (socket, id, result) => {
+    const index = waiting.findIndex(item => item.socket === socket && item.id === id);
+    if (index >= 0) waiting.splice(index, 1)[0]!.finish(result);
+  };
+  capture.authProcedure = () => { if (!stopped) fail(); };
+  return {
+    stop: () => { stopped = true; },
+    finish: async () => {
+      timer = setTimeout(fail, 10_000);
+      try { await Promise.all(pending); } finally { clearTimeout(timer); }
+    },
+    dispose: () => {
+      clearTimeout(timer); capture.auth = undefined; capture.authResult = undefined; capture.authProcedure = undefined;
+      if (waiting.length) fail();
+    },
+  };
+}
+
+// Patch the app's own credential reducer call on its existing socket. The
+// declared reducer parameters are the only authority for locating extra fields.
+export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
+  patch: (args: unknown[], parameters: readonly { name: string }[], observedPassword?: string | null) =>
+    { value: unknown; shape: string; absentParameters?: string[] } | null,
+  onFailure: () => void, kind?: AuthKind, fieldsOnly = false) {
+  const capture = captures.get(page);
+  if (!capture) return null;
+  if (capture.auth) throw new Error('Authentication request patch is already active');
+  const target = leasedSpacetimeTarget();
+  const declarations = await authDeclarations(capture);
+  if (!declarations) return { receipt: async () => undefined, dispose: () => {} };
   const observed = kind ? capture.authWitnesses.filter(witness => witness.kind === kind) : [];
   const witnessValues = (witness: AuthWitness) => {
     const declaration = declarations.get(witness.item.call.reducer);

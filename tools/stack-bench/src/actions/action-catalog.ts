@@ -6,6 +6,7 @@ import { BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { RUNTIME_ACTION_IMPLEMENTATIONS } from './runtime-action-executors.js';
 import { confirmCheckout, crashCheckout, expectCrashCheckout } from './crash-action-executors.js';
 import { prepareResponseLoss, loseCheckoutResponse } from './response-loss-action-executors.js';
+import { probeSignupClaims } from './signup-claim-action-executors.js';
 import { ACTION_DEFINITIONS, ACTION_IDS,
   compileActionInput } from '../composition/definition-compiler.js';
 import type { ActionId } from '../composition/definition-compiler.js';
@@ -63,6 +64,7 @@ const ACTION_CATEGORY = {
   openItem: 'browser-interaction',
   pressKey: 'browser-interaction',
   race: 'concurrency',
+  probeSignupClaims: 'transport',
   recordNumber: 'browser-observation',
   recordTime: 'timing',
   expectElapsed: 'timing',
@@ -117,7 +119,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   dbRecordStock: ['database-read', 'browser-observation'],
   dbRecordCheckout: ['database-read'],
   dbExpectCatalogItem: ['database-read', 'clock'],
-  dbExpectCheckout: ['database-read', 'actors'],
+  dbExpectCheckout: ['database-read', 'actors', 'clock'],
   dbExpectOperation: ['database-read', 'named-actions'],
   dbExpectCancellation: ['database-read'],
   dbExpectNoPurchase: ['database-read'],
@@ -138,6 +140,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   expectCallOutcomes: ['actors', 'named-actions'],
   replayAs: ['actors', 'named-actions', 'transport-observation'],
   repeatFormWrite: ['actors', 'named-actions', 'transport-observation', 'browser-interaction'],
+  probeSignupClaims: ['actors', 'concurrency', 'browser-interaction'],
   forgeWrite: ['actors', 'named-actions', 'transport-observation'],
   startAppServer: ['application-lifecycle'],
   stopAppServer: ['application-lifecycle'],
@@ -147,9 +150,11 @@ const ACTION_SENSITIVITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>>
   ensureSignedIn: ['credential'],
   signIn: ['credential'],
   signUp: ['credential'],
+  probeSignupClaims: ['credential'],
 };
 
 export const ACTION_IMPLEMENTATIONS = Object.freeze({
+  probeSignupClaims,
   confirmCheckout,
   prepareResponseLoss,
   loseCheckoutResponse,
@@ -176,7 +181,7 @@ export function actionPlugin(id: string): ActionPlugin {
       compileActionInput(input, { source: `action:${id}`, expectedAction: id }),
     capabilities,
     // The setup fallback performs the four catalog fills and one submit.
-    timeoutMs: actionId === 'repeatFormWrite' ? 300_000 : policy.timeoutMs,
+    timeoutMs: actionId === 'repeatFormWrite' || actionId === 'probeSignupClaims' ? 300_000 : policy.timeoutMs,
     // Recovery may be inside an existing 120-second synchronous Docker call.
     ...(actionId === 'crashCheckout' ? { cancellationDrainMs: 150_000 } : {}),
     sensitivity: [...(sensitivity ?? []), ...policy.sensitivity],

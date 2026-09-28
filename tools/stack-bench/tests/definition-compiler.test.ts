@@ -103,7 +103,7 @@ test('authored waits and observation windows fit inside their action deadlines',
       assert(typeof step.within === 'number', `${source}: within must be a number`);
       assert(deadline > step.within, `${source}: ${step.do} ${step.within}ms exceeds its deadline`);
     }
-    if (step.do === 'race') {
+    if (step.branches) {
       assert(Array.isArray(step.branches), `${source}: race must have branches`);
       for (const branch of step.branches) {
         assert(Array.isArray(branch), `${source}: each race branch must be an array`);

@@ -24,6 +24,8 @@ export interface StackGradingSupport {
   writeEndpoints?(lease: BackendLease): readonly string[];
   // How the platform's own password requests are changed, for a platform that serves accounts itself.
   authRequestPatch?(lease: BackendLease): PlatformAuthPatch;
+  // Exact platform POST endpoints whose implementation cannot perform writes.
+  authReadEndpoints?(lease: BackendLease): readonly string[];
 }
 
 export interface NamedActionProbe { ok: boolean; status: number; note: string }

@@ -520,7 +520,7 @@ test('checkout actions retain a failed reconciliation and treat reader failures 
     const snapshots = states();
     const queue = [snapshots.before, snapshots.prepared, snapshots.prepared];
     const checkoutSnapshots = new Map();
-    const capabilities = () => ({ actors: { get: () => undefined }, 'database-read': {
+    const capabilities = () => ({ actors: { get: () => undefined }, clock: { sleep: async () => {} }, 'database-read': {
       ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
       getCheckoutState: () => {
         if (failedRead) throw new Error('database unavailable');
@@ -570,6 +570,7 @@ test('checkout response reconciliation requires the stored effect to match accep
         action: mode === 'wrong-action' ? 'buy' : 'checkout', accepted: !refused,
         complete: mode !== 'incomplete', status: refused ? 400 : 200,
       } }) },
+      clock: { sleep: async () => {} },
       'database-read': {
         ...createDatabaseReadCapability({ expand: value => value,
           checkoutSnapshots: new Map([['before', snapshot(before)], ['prepared', snapshot(prepared)]]) }),

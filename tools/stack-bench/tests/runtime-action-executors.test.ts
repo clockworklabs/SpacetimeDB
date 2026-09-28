@@ -170,13 +170,15 @@ test('transfer conservation rejects moving the wrong product despite correct war
   }
 });
 
-test('bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes', async () => {
+test('bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes', async t => {
+  let now = 0;
+  t.mock.method(Date, 'now', () => now);
   for (const [values, status] of [[[100, 105], 'passed'], [[100], 'failed'], [[110], 'failed']] as const) {
     let reads = 0;
-    const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 20 }, {
+    const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 1000 }, {
       'browser-observation': { recorded: new Map() },
       'database-read': { getStock: async () => ({ quantity: values[Math.min(reads++, values.length - 1)] }) },
-      clock: { sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
+      clock: { sleep: async (ms: number) => { now += ms; } },
     });
     assert.equal(result.status, status);
   }
@@ -186,6 +188,38 @@ test('bounded stock reads observe deferred writes and reject missing, repeated, 
     clock: { sleep },
   });
   assert.equal(result.status, 'harness_failure');
+  for (const mode of ['late-read', 'late-retry', 'late-wake']) {
+    let reads = 0;
+    const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 1000 }, {
+      'browser-observation': { recorded: new Map() },
+      'database-read': { getStock: async () => {
+        reads++;
+        if (mode === 'late-read' || (mode === 'late-retry' && reads > 1)) now += 1001;
+        return { quantity: mode === 'late-read' || reads > 1 ? 105 : 100 };
+      } },
+      clock: { sleep: async () => { now += mode === 'late-retry' ? 250 : 1001; } },
+    });
+    assert.equal(result.status, mode === 'late-wake' ? 'failed' : 'inconclusive', mode);
+    assert.equal(reads, mode === 'late-retry' ? 2 : 1);
+  }
+});
+
+test('compiled restock race waits for the stored total and rejects missing effects', async t => {
+  let now = 0;
+  t.mock.method(Date, 'now', () => now);
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-restock-race.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+  const step = scenario.features.flatMap(feature => feature.criteria).find(check => check.id === '202a')!.steps
+    .find(step => step.do === 'dbExpectStock' && !step.warehouse)!;
+  for (const correct of [true, false]) {
+    now = 0;
+    const result = await run(step, {
+      'browser-observation': { recorded: new Map([['stored-before-rush', 100]]) },
+      'database-read': { getStock: async () => ({ quantity: now >= 6500 && correct ? 102 : 100 }) },
+      clock: { sleep: async (ms: number) => { now += ms; } },
+    });
+    assert.equal(result.status, correct ? 'passed' : 'failed', `delayed restock: ${correct}`);
+  }
 });
 
 test('cancellation probes reject a refund to the wrong warehouse even when total stock is restored', async () => {

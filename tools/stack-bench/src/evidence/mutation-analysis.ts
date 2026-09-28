@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { criterionEvidence, evidenceDisposition } from './check-evidence.js';
-import type { CheckEvidenceStatus, CheckOutcomeKind } from './check-evidence.js';
+import type { CheckEvidence, CheckEvidenceStatus, CheckOutcomeKind } from './check-evidence.js';
+import type { ActionEvidence } from '../actions/action-contract.js';
 import type { RecipeRelease } from '../composition/recipe-release.js';
 import { STACK_BENCH_ROOT } from '../package-root.js';
 
@@ -386,6 +388,27 @@ export function validateMutationDefinitions(
   return { ok: issues.length === 0, issues };
 }
 
+function failedAction(actions: CheckEvidence['actions']): string | null {
+  // criterionEvidence validated these records. Follow an explicit cause only;
+  // an unrelated earlier assertion must not turn a setup failure into a kill.
+  const recorded = actions.map(entry => entry.evidence as ActionEvidence);
+  let index = recorded.length - 1;
+  let current = recorded[index];
+  if (!current || current.status === 'passed') return null;
+  while (object(current.observation) && object(current.observation.nestedAction)) {
+    const parent = current, cause = current.observation.nestedAction;
+    const child = recorded.findIndex((candidate, at) => at < index
+      && candidate.status === parent.status && isDeepStrictEqual(candidate.finding, parent.finding)
+      && candidate.timing.startedAtMs >= parent.timing.startedAtMs
+      && candidate.timing.completedAtMs <= parent.timing.completedAtMs
+      && isDeepStrictEqual(candidate, cause));
+    if (child < 0) break;
+    index = child;
+    current = recorded[index]!;
+  }
+  return current.action.id;
+}
+
 export function indexMutationReport(report: MutationReport | null | undefined): IndexedMutationReport {
   const criteria = new Map<string, IndexedCriterion>();
   const setupFailures = new Map<string, SetupFailure>();
@@ -397,8 +420,6 @@ export function indexMutationReport(report: MutationReport | null | undefined): 
         setupFailures.set(featureKey(feature.id), { feature: feature.id, detail: evidence.summary,
           status: evidence.status, outcomeKind: disposition.outcomeKind, code: evidence.code });
       }
-      // Validated action evidence; the last entry is the failing step only when it did not pass.
-      const last = evidence.actions.at(-1)?.evidence as { status: string; action: { id: string } } | undefined;
       const key = typeof criterion.stableKey === 'string' && criterion.stableKey
         ? criterion.stableKey : criterionKey(feature.id, criterion.id);
       if (criteria.has(key)) throw new Error(`duplicate mutation criterion identity: ${key}`);
@@ -412,7 +433,7 @@ export function indexMutationReport(report: MutationReport | null | undefined): 
         status: evidence.status,
         phase: evidence.phase,
         detail: evidence.summary,
-        failedAction: last && last.status !== 'passed' ? last.action.id : null,
+        failedAction: failedAction(evidence.actions),
       });
     }
   }
