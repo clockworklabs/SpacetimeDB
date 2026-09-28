@@ -81,8 +81,17 @@ SPACETIMEDB_HTTP_HANDLER(teapot, HandlerContext ctx, HttpRequest request) {
     return text_response(418, "teapot");
 }
 
+SPACETIMEDB_HTTP_HANDLER(tx_auth, HandlerContext ctx, HttpRequest request) {
+    std::string auth = ctx.with_tx([](TxContext& tx) -> std::string {
+        return std::string("internal=") + (tx.sender_auth().is_internal() ? "true" : "false") +
+               " jwt=" + (tx.sender_auth().has_jwt() ? "true" : "false");
+    });
+    return text_response(200, auth);
+}
+
 SPACETIMEDB_HTTP_ROUTER(router) {
     return Router()
+        .get("/tx-auth", tx_auth)
         .get("/get", get_simple)
         .post("/post", post_insert)
         .get("/count", get_count)
@@ -383,8 +392,15 @@ export const teapot = spacetimedb.httpHandler((_ctx, _req) =>
   new SyncResponse("teapot", { status: 418 })
 );
 
+export const tx_auth = spacetimedb.httpHandler((ctx, _req) =>
+  new SyncResponse(
+    ctx.withTx(tx => `internal=${tx.senderAuth.isInternal} jwt=${tx.senderAuth.hasJWT}`)
+  )
+);
+
 export const router = spacetimedb.httpRouter(
   new Router()
+    .get("/tx-auth", tx_auth)
     .get("/get", get_simple)
     .post("/post", post_insert)
     .get("/count", get_count)
@@ -608,7 +624,7 @@ public static partial class Module
     public static HttpResponse TxAuth(HandlerContext ctx, HttpRequest request)
     {
         var auth = ctx.WithTx((HandlerTxContext tx) =>
-            $"internal={tx.SenderAuth.IsInternal} jwt={tx.SenderAuth.HasJwt}"
+            $"internal={tx.SenderAuth.IsInternal.ToString().ToLowerInvariant()} jwt={tx.SenderAuth.HasJwt.ToString().ToLowerInvariant()}"
         );
         return TextResponse(200, auth);
     }
@@ -916,6 +932,13 @@ fn route_base(server_url: &str, identity: &str) -> String {
     format!("{server_url}/v1/database/{identity}/route")
 }
 
+/// Handler transactions are external callers without a JWT, even though they have no connection ID.
+fn assert_handler_tx_is_external(server_url: &str, identity: &str) {
+    let resp = reqwest::blocking::get(format!("{}/tx-auth", route_base(server_url, identity))).expect("tx-auth failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("tx-auth body"), "internal=false jwt=false");
+}
+
 fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
     let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
@@ -1138,6 +1161,7 @@ fn assert_handle_request_body(server_url: &str, identity: &str) {
 fn http_routes_end_to_end() {
     let (test, identity) = rust_http_test("http-routes");
     assert_http_routes_end_to_end(&test.server_url, &identity);
+    assert_handler_tx_is_external(&test.server_url, &identity);
 }
 
 #[test]
@@ -1174,12 +1198,14 @@ fn handle_request_body() {
 fn cpp_http_routes_end_to_end() {
     let (test, identity) = cpp_http_test("http-routes-cpp-basic", CPP_MODULE_CODE);
     assert_http_routes_end_to_end(&test.server_url, &identity);
+    assert_handler_tx_is_external(&test.server_url, &identity);
 }
 
 #[test]
 fn typescript_http_routes_end_to_end() {
     let (test, identity) = typescript_http_test("http-routes-typescript-basic", TS_MODULE_CODE);
     assert_http_routes_end_to_end(&test.server_url, &identity);
+    assert_handler_tx_is_external(&test.server_url, &identity);
 }
 
 #[test]
@@ -1187,12 +1213,7 @@ fn csharp_http_routes_end_to_end() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-basic", CS_MODULE_CODE);
     assert_http_routes_end_to_end(&test.server_url, &identity);
-
-    // Handler transactions are external callers, even with the handler's zero sender.
-    let resp =
-        reqwest::blocking::get(format!("{}/tx-auth", route_base(&test.server_url, &identity))).expect("tx-auth failed");
-    assert!(resp.status().is_success());
-    assert_eq!(resp.text().expect("tx-auth body"), "internal=False jwt=False");
+    assert_handler_tx_is_external(&test.server_url, &identity);
 }
 
 #[test]
