@@ -269,7 +269,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
   const browser = await chromium.launch();
   try {
-    for (mode of ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'type-changing-fields', 'nonmatching-credentials', 'missing-claim', 'opaque-hash-login', 'opaque-delayed-login', 'opaque-ok-denial', 'opaque-completed-reload', 'opaque-hash-signup', 'opaque-delayed-signup', 'deferred-reject-login', 'deferred-reject-signup', 'opaque-salted-signup', 'opaque-http-signup-profile', 'opaque-ambiguous-witness', 'opaque-unrelated-witness', 'opaque-closed-witness', 'opaque-abandoned-witness', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
+    for (mode of ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'type-changing-fields', 'nonmatching-credentials', 'missing-claim', 'opaque-hash-login', 'opaque-delayed-login', 'opaque-ok-denial', 'opaque-completed-reload', 'opaque-token-competing-call', 'opaque-token-lookalike', 'opaque-token-query', 'opaque-token-body', 'opaque-token-wrong-target', 'opaque-hash-signup', 'opaque-delayed-signup', 'deferred-reject-login', 'deferred-reject-signup', 'opaque-salted-signup', 'opaque-http-signup-profile', 'opaque-ambiguous-witness', 'opaque-unrelated-witness', 'opaque-closed-witness', 'opaque-abandoned-witness', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
       'second-then-submit-error', 'malformed-outbound', 'malformed-inbound', 'wrong-module', 'foreign-target', 'unsupported-protocol', 'unsupported-schema', 'app-proxy']) {
       await t.test(mode, async () => {
         received.length = 0; connections = 0;
@@ -349,6 +349,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
                 socket.send(new Uint8Array(call)); await reply;
               }, [...callBytes(index + 31, 'customer', credential)]);
               if (index === 0) {
+                await page.evaluate(async () => { await fetch('/v1/identity/websocket-token', { method: 'POST' }); });
                 await page.reload();
                 await page.evaluate(async socketUrl => {
                   const socket = new WebSocket(socketUrl, 'v3.bsatn.spacetimedb');
@@ -361,6 +362,26 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
                 'completed native receipt survives normal navigation before account UI appears');
             }
             received.length = 0;
+          }
+          if (['opaque-token-competing-call', 'opaque-token-lookalike', 'opaque-token-query', 'opaque-token-body', 'opaque-token-wrong-target'].includes(mode)) {
+            const observation = beginSpacetimeAuthObservation(page, 'signin', 'customer');
+            await page.evaluate(async call => {
+              const socket = (window as unknown as { socket: WebSocket }).socket;
+              const reply = new Promise(resolve => socket.addEventListener('message', resolve, { once: true }));
+              socket.send(new Uint8Array(call)); await reply;
+            }, [...callBytes(31, 'customer', 'hash-correct')]);
+            const target = mode === 'opaque-token-competing-call' ? '/v1/database/auth/call/sign_in'
+              : mode === 'opaque-token-lookalike' ? '/prefix/v1/identity/websocket-token'
+                : mode === 'opaque-token-query' ? '/v1/identity/websocket-token?extra=1'
+                  : mode === 'opaque-token-wrong-target' ? `http://127.0.0.1:${port + 1}/v1/identity/websocket-token`
+                    : '/v1/identity/websocket-token';
+            await page.evaluate(async ({ target, body }) => {
+              await fetch(target, { method: 'POST', ...(body ? { body: 'probe' } : {}) }).catch(() => {});
+            }, { target, body: ['opaque-token-competing-call', 'opaque-token-body'].includes(mode) });
+            observation?.stop();
+            assert.equal(await observation?.finish(true), false, `${mode}: a competing POST must invalidate the witness`);
+            observations.push({ mode, rejectedCompetingWrite: true });
+            return;
           }
           if (mode === 'opaque-delayed-login' || mode === 'opaque-ok-denial') {
             await page.evaluate(calls => {

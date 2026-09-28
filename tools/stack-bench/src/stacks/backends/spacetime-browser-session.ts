@@ -126,6 +126,15 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
   page.on('request', request => {
     const observation = capture.authObservation;
     if (observation && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) {
+      // SDK reconnect only re-signs an existing identity for its WebSocket.
+      let transportToken = false;
+      try {
+        const target = new URL(leasedSpacetimeTarget().uri), url = new URL(request.url());
+        transportToken = request.method() === 'POST' && url.pathname === '/v1/identity/websocket-token'
+          && !url.search && !request.postData() && url.protocol === target.protocol && url.port === target.port
+          && (url.hostname === target.hostname || url.hostname === 'localhost' && target.hostname === '127.0.0.1');
+      } catch { /* An unproved request remains a competing write. */ }
+      if (transportToken) return;
       observation.failed = true;
       observation.finishWait();
     }
