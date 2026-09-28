@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createHmac } from 'node:crypto';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { chromium } from 'playwright';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
@@ -20,6 +22,7 @@ type Calls = ReturnType<NamedOptions['lastCalls']['get']>;
 type Verification = readonly ['structural' | 'unverified' | 'verified', string];
 
 interface ServiceOverrides {
+  readonly url?: string;
   readonly actions?: NamedOptions['actions'];
   readonly appRoot?: string | null;
   readonly backend?: string;
@@ -80,7 +83,7 @@ function services(
   const named = createNamedActionsCapability({
     actions: overrides.actions ?? [{ id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }],
     backend: overrides.backend ?? 'postgres',
-    url: 'http://app.test',
+    url: overrides.url ?? 'http://app.test',
     spacetime: overrides.spacetime,
     lastCalls: { get: () => calls, set: value => { calls = value; } },
     sleep,
@@ -233,6 +236,82 @@ test('session tampering reaches the server, preserves context, requires a valid 
   for (const status of [401, 403]) {
     const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: 'unauthorized' });
     assert.equal(classified.refusalKind, 'access'); assert.equal(classified.ok, false);
+  }
+});
+
+// Failure cases: normal dotted names and encoded signed cookies must reach the
+// server, while extra cookies and CSRF context must not become forged-session proof.
+test('browser session cookies preserve format, prove controls and refuse forged values', async t => {
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  for (const mode of ['dotted-name', 'signed-value', 'dotted-signed', 'accept-forgery', 'extra-cookie', 'csrf-header']) {
+    await t.test(mode, async () => {
+      const name = mode === 'signed-value' ? 'sid' : 'storefront.sid';
+      const session = 'server-issued-session';
+      const signed = `s:${session}.${createHmac('sha256', 'test-session-secret').update(session).digest('base64')}`;
+      const value = mode === 'dotted-name' ? session : encodeURIComponent(signed);
+      const observed: string[] = [];
+      let purchases = 0;
+      const server = createServer((req, res) => {
+        if (req.method === 'GET') {
+          res.setHeader('Set-Cookie', [`${name}=${value}; HttpOnly; Path=/; SameSite=Lax`,
+            ...(mode === 'extra-cookie' ? ['locale=en; Path=/'] : [])]);
+          res.setHeader('Content-Type', 'text/html');
+          res.end('<script>window.getSessionToken=()=>null</script>'); return;
+        }
+        const cookie = req.headers.cookie ?? '';
+        observed.push(cookie);
+        const current = cookie.split('; ').find(pair => pair.startsWith(`${name}=`))?.slice(name.length + 1);
+        const accepted = current !== undefined && (mode === 'accept-forgery' || decodeURIComponent(current) ===
+          (mode === 'dotted-name' ? session : signed));
+        if (accepted) purchases++;
+        res.writeHead(accepted ? 201 : 401).end('{}');
+      }).listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const context = await browser.newContext();
+      try {
+        const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+        const page = await context.newPage();
+        await page.goto(`${url}/login`);
+        const original = await context.cookies(url);
+        assert.equal(original.find(cookie => cookie.name === name)?.value, value);
+        const actor = { name: 'buyer', context, page, writes: [{ url: `${url}/buy`, headers: {
+          Origin: url, Referer: `${url}/`, ...(mode === 'csrf-header' ? { 'x-csrf-token': 'unchanged-context' } : {}),
+        } }] };
+        const provided = services(new Map([['buyer', actor]]), { url, fetchImpl: fetch });
+        const input = { do: 'callAction', actor: 'buyer', action: 'buy', settleMs: 0,
+          namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } };
+        const control = { ...input, authentication: 'session-control' };
+        const attack = { ...input, authentication: 'tampered-session' };
+        assert.equal((await run(control, provided)).status, 'inconclusive');
+        assert.equal(observed.length, 0, 'a valid prior request is required');
+        assert.equal((await run(input, provided)).status, 'passed');
+        assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'accepted' }, provided)).status, 'passed');
+        const isolated = await run(control, provided);
+        if (mode === 'extra-cookie' || mode === 'csrf-header') {
+          assert.equal(isolated.status, 'inconclusive');
+          assert.equal((await run(attack, provided)).status, 'inconclusive');
+          assert.equal(observed.length, 1, 'ambiguous credentials must not be altered or sent');
+          assert.equal(purchases, 1); return;
+        }
+        assert.equal(isolated.status, 'passed', JSON.stringify(isolated));
+        assert.equal(purchases, 2);
+        assert.equal((await run(attack, provided)).status, 'passed');
+        assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, provided)).status,
+          mode === 'accept-forgery' ? 'failed' : 'passed');
+        assert.equal(purchases, mode === 'accept-forgery' ? 3 : 2,
+          'stored effects distinguish a vulnerable cookie app from a refused forgery');
+        assert(observed[2]!.startsWith(`${name}=`), 'the cookie name must not change');
+        assert.notEqual(observed[2], observed[1], 'the altered value must reach the server');
+        assert.equal((await run(input, provided)).status, 'passed');
+        assert.equal(purchases, mode === 'accept-forgery' ? 4 : 3);
+        assert.deepEqual(await context.cookies(url), original, 'the browser retains its original session');
+        assert.equal(observed[3], observed[0]);
+      } finally {
+        await context.close();
+        server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+    });
   }
 });
 

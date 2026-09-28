@@ -173,7 +173,8 @@ export function tamperedSessionCredentials(headers: HeaderRecord, actor: string)
   const auth = Object.entries(headers).filter(([key]) => AUTH_HEADER.test(key) || /^cookie$/i.test(key));
   const [key, value] = auth[0] ?? [];
   const bearer = key?.toLowerCase() === 'authorization' && /^Bearer [A-Za-z0-9._~-]+$/i.test(value ?? '');
-  const cookie = key?.toLowerCase() === 'cookie' && /^[A-Za-z0-9_-]+=[A-Za-z0-9._~-]+$/.test(value ?? '')
+  // RFC 6265 token name and unquoted cookie-octets; no separators or empty credential.
+  const cookie = key?.toLowerCase() === 'cookie' && /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+=[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]+$/.test(value ?? '')
     && !Object.keys(headers).some(name => /csrf|xsrf/i.test(name)) && !/csrf|xsrf/i.test(value!.split('=')[0]!);
   if (auth.length !== 1 || (!bearer && !cookie)) {
     inconclusive('replay-unavailable', { actor, detail: 'tampering requires one bearer token or one session cookie without CSRF ambiguity' });
