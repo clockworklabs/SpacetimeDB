@@ -545,6 +545,26 @@ pub trait TableColumn {
 }
 impl<T: SpacetimeType> TableColumn for T {}
 
+/// Assert that an outbox targets a reducer.
+pub const fn outbox_reducer_typecheck<I>()
+where
+    I: FnInfo<FnKind = FnKindReducer>,
+{
+}
+
+/// Assert that an outbox result callback is a reducer.
+pub const fn outbox_callback_typecheck<I>()
+where
+    I: FnInfo<FnKind = FnKindReducer>,
+{
+}
+
+/// Assert that the id column of an outbox table is a u64.
+pub const fn assert_outbox_id_column<T: OutboxIdColumn>() {}
+
+/// Assert that the target column of an outbox table is an Identity.
+pub const fn assert_outbox_target_column<T: OutboxTargetColumn>() {}
+
 /// Assert that the primary_key column of a scheduled table is a u64.
 pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
 
@@ -558,6 +578,21 @@ mod sealed {
 pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
 impl sealed::Sealed for u64 {}
 impl ScheduledTablePrimaryKey for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table id column must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait OutboxIdColumn: sealed::Sealed {}
+impl OutboxIdColumn for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table target column must be `spacetimedb::Identity`",
+    label = "should be `spacetimedb::Identity`, not `{Self}`"
+)]
+pub trait OutboxTargetColumn: sealed::Sealed {}
+impl sealed::Sealed for crate::Identity {}
+impl OutboxTargetColumn for crate::Identity {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -750,6 +785,11 @@ pub fn register_table<T: Table>() {
                 schedule.scheduled_at_column,
                 schedule.reducer_or_procedure_name,
             );
+        }
+        if let Some(outbox) = T::OUTBOX {
+            module
+                .inner
+                .add_outbox(T::TABLE_NAME, outbox.remote_reducer_name, outbox.on_result_reducer_name);
         }
 
         let mut table = module

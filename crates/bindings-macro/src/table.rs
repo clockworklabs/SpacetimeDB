@@ -19,6 +19,7 @@ pub(crate) struct TableArgs {
     access: Option<TableAccess>,
     name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
+    outbox: Option<OutboxArg>,
     accessor: Ident,
     indices: Vec<IndexArg>,
     event: Option<Span>,
@@ -45,6 +46,12 @@ struct ScheduledArg {
     span: Span,
     reducer_or_procedure: Path,
     at: Option<Ident>,
+}
+
+struct OutboxArg {
+    span: Span,
+    remote_reducer: Path,
+    on_result: Option<Path>,
 }
 
 struct IndexArg {
@@ -78,6 +85,7 @@ impl TableArgs {
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
+        let mut outbox = None;
         let mut accessor = None;
         let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
@@ -145,6 +153,10 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor 
                     check_duplicate(&scheduled, &meta)?;
                     scheduled = Some(ScheduledArg::parse_meta(meta)?);
                 }
+                sym::outbox => {
+                    check_duplicate(&outbox, &meta)?;
+                    outbox = Some(OutboxArg::parse_meta(meta)?);
+                }
                 sym::event => {
                     check_duplicate(&event, &meta)?;
                     event = Some(meta.path.span());
@@ -184,6 +196,7 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
         Ok(TableArgs {
             access,
             scheduled,
+            outbox,
             accessor,
             indices,
             name,
@@ -227,6 +240,37 @@ impl ScheduledArg {
             span,
             reducer_or_procedure,
             at,
+        })
+    }
+}
+
+impl OutboxArg {
+    fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
+        let span = meta.path.span();
+        let mut remote_reducer = None;
+        let mut on_result = None;
+
+        meta.parse_nested_meta(|meta| {
+            if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                match_meta!(match meta {
+                    sym::on_result => {
+                        check_duplicate(&on_result, &meta)?;
+                        on_result = Some(meta.value()?.parse()?);
+                    }
+                })
+            } else {
+                check_duplicate_msg(&remote_reducer, &meta, "can only specify one remote reducer")?;
+                remote_reducer = Some(meta.path);
+            }
+            Ok(())
+        })?;
+
+        let remote_reducer = remote_reducer
+            .ok_or_else(|| meta.error("must specify remote reducer associated with the table: outbox(reducer_name)"))?;
+        Ok(Self {
+            span,
+            remote_reducer,
+            on_result,
         })
     }
 }
@@ -1100,7 +1144,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                              `scheduled(my_reducer, at = custom_scheduled_at)`",
                 )
             })?;
-            let primary_key_column = primary_key_column.ok_or_else(|| {
+            let primary_key_column = primary_key_column.clone().ok_or_else(|| {
                 syn::Error::new(
                     sched.span,
                     "scheduled tables must have a `#[primary_key] #[auto_inc] scheduled_id: u64` column",
@@ -1130,6 +1174,74 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .transpose()?
         .unzip();
     let schedule = schedule.into_iter();
+
+    let (outbox, outbox_typecheck) = args
+        .outbox
+        .as_ref()
+        .map(|outbox| {
+            let id_column = columns.first().ok_or_else(|| {
+                syn::Error::new(
+                    outbox.span,
+                    "outbox tables must have a `#[primary_key] #[auto_inc]` `u64` column at position 0",
+                )
+            })?;
+            let target_column = columns.get(1).ok_or_else(|| {
+                syn::Error::new(
+                    outbox.span,
+                    "outbox tables must have a target `spacetimedb::Identity` column at position 1",
+                )
+            })?;
+            let primary_key_column = primary_key_column.clone().ok_or_else(|| {
+                syn::Error::new(
+                    outbox.span,
+                    "outbox tables must have a `#[primary_key] #[auto_inc]` `u64` column at position 0",
+                )
+            })?;
+
+            let id_column_ty = id_column.ty;
+            let id_column_ident = id_column.ident;
+            let primary_key_ident = primary_key_column.ident;
+            if id_column_ident != primary_key_ident {
+                return Err(syn::Error::new(
+                    outbox.span,
+                    "outbox tables must use the position 0 column as the primary key",
+                ));
+            }
+            if !sequenced_columns.iter().any(|col| col.ident == id_column_ident) {
+                return Err(syn::Error::new(
+                    outbox.span,
+                    "outbox tables must use an `#[auto_inc]` column at position 0",
+                ));
+            }
+
+            let target_column_ty = target_column.ty;
+            let remote_reducer = &outbox.remote_reducer;
+            let on_result_name = match &outbox.on_result {
+                Some(on_result) => quote!(Some(<#on_result as spacetimedb::rt::FnInfo>::NAME)),
+                None => quote!(None),
+            };
+            let desc = quote!(spacetimedb::table::OutboxDesc {
+                remote_reducer_name: <#remote_reducer as spacetimedb::rt::FnInfo>::NAME,
+                on_result_reducer_name: #on_result_name,
+            });
+
+            let on_result_typecheck = outbox.on_result.as_ref().map(|on_result| {
+                quote! {
+                    spacetimedb::rt::outbox_callback_typecheck::<#on_result>();
+                }
+            });
+            let typecheck = quote! {
+                spacetimedb::rt::outbox_reducer_typecheck::<#remote_reducer>();
+                #on_result_typecheck
+                spacetimedb::rt::assert_outbox_id_column::<#id_column_ty>();
+                spacetimedb::rt::assert_outbox_target_column::<#target_column_ty>();
+            };
+
+            Ok((desc, typecheck))
+        })
+        .transpose()?
+        .unzip();
+    let outbox = outbox.into_iter();
 
     let unique_err = if !unique_columns.is_empty() {
         quote!(spacetimedb::UniqueConstraintViolation)
@@ -1164,6 +1276,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
             const SEQUENCES: &'static [u16] = &[#(#sequence_col_ids),*];
             #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
+            #(const OUTBOX: Option<spacetimedb::table::OutboxDesc<'static>> = Some(#outbox);)*
 
             #table_id_from_name_func
             #default_fn
@@ -1315,6 +1428,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         const _: () = {
             #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
             #schedule_typecheck
+            #outbox_typecheck
             #default_type_check
         };
 
