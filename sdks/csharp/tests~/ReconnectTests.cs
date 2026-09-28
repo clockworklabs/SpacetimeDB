@@ -400,7 +400,7 @@ public partial class ReconnectTests
         Assert.Equal(2, first.Applied);
         Assert.Equal(2, second.Applied);
         ((IDbConnection)conn).Unsubscribe(second.Id);
-        conn.Socket.Receive(new ServerMessage.UnsubscribeApplied(new(0, second.Id, Query("keyed", new Row { Id = 1, Value = "same" })))) ;
+        conn.Socket.Receive(new ServerMessage.UnsubscribeApplied(new(0, second.Id, Query("keyed", new Row { Id = 1, Value = "same" }))));
         Pump(conn, () => second.Ended == 1);
         Assert.Equal(3, conn.Db.Keyed.Count);
     }
