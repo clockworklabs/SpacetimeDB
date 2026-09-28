@@ -130,6 +130,24 @@ pub struct DmlOnView {
     pub view_name: TableName,
 }
 
+#[derive(Debug, Error)]
+pub enum InvalidViewArgs {
+    #[error("`{name}` is a table, not a view; it does not take arguments")]
+    ArgsOnTable { name: TableName },
+    #[error("View `{name}` takes {expected} argument(s), but {found} were given")]
+    Arity {
+        name: TableName,
+        expected: usize,
+        found: usize,
+    },
+    #[error("Parameter `{param}` of view `{name}` has type {ty}, which cannot be passed from SQL")]
+    UnsupportedParamType {
+        name: TableName,
+        param: Box<str>,
+        ty: Box<str>,
+    },
+}
+
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]
@@ -147,6 +165,8 @@ pub enum TypingError {
 
     #[error(transparent)]
     DmlOnView(#[from] DmlOnView),
+    #[error(transparent)]
+    ViewArgs(#[from] InvalidViewArgs),
     #[error(transparent)]
     InvalidOp(#[from] InvalidOp),
     #[error(transparent)]

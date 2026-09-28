@@ -1,23 +1,24 @@
 use crate::expr::LeftDeepJoin;
-use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
+use crate::expr::{Expr, ProjectList, ProjectName, Relvar, ViewArgs};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::AlgebraicType;
+use spacetimedb_lib::{AlgebraicType, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
-    ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
+    ast::{sub::SqlSelect, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral},
     parser::sub::parse_subscription,
 };
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use super::{
-    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
+    errors::{DuplicateName, InvalidViewArgs, TypingError, Unresolved, Unsupported},
     expr::RelExpr,
-    type_expr, type_proj, type_select,
+    is_sql_literal_type, type_expr, type_proj, type_select,
 };
 
 /// The result of type checking and name resolution
@@ -60,29 +61,32 @@ pub trait TypeChecker {
 
     fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match from {
-            SqlFrom::Expr(SqlIdent(name), SqlIdent(alias)) => {
+            SqlFrom::Expr(SqlIdent(name), SqlIdent(alias), args) => {
                 let schema = Self::type_relvar(tx, &name)?;
+                let view_args = type_view_args(&schema, args)?;
                 vars.insert(alias.clone(), schema.clone());
                 Ok(RelExpr::RelVar(Relvar {
                     schema,
                     alias,
                     delta: None,
-                    view_args: None,
+                    view_args,
                 }))
             }
-            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
+            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), args, joins) => {
                 let schema = Self::type_relvar(tx, &name)?;
+                let view_args = type_view_args(&schema, args)?;
                 vars.insert(alias.clone(), schema.clone());
                 let mut join = RelExpr::RelVar(Relvar {
                     schema,
                     alias,
                     delta: None,
-                    view_args: None,
+                    view_args,
                 });
 
                 for SqlJoin {
                     var: SqlIdent(name),
                     alias: SqlIdent(alias),
+                    args,
                     on,
                 } in joins
                 {
@@ -92,11 +96,13 @@ pub trait TypeChecker {
                     }
 
                     let lhs = Box::new(join);
+                    let schema = Self::type_relvar(tx, &name)?;
+                    let view_args = type_view_args(&schema, args)?;
                     let rhs = Relvar {
-                        schema: Self::type_relvar(tx, &name)?,
+                        schema,
                         alias,
                         delta: None,
-                        view_args: None,
+                        view_args,
                     };
 
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
@@ -124,6 +130,48 @@ pub trait TypeChecker {
             .ok_or_else(|| Unresolved::table(name))
             .map_err(TypingError::from)
     }
+}
+
+/// Type checks the arguments of a relvar against its view's parameters, positionally.
+/// Returns `None` for a table, and for a view without parameters.
+fn type_view_args(schema: &TableOrViewSchema, args: Vec<SqlLiteral>) -> TypingResult<Option<ViewArgs>> {
+    let name = || schema.table_name.clone();
+    let params = match &schema.view_info {
+        None if args.is_empty() => return Ok(None),
+        None => return Err(InvalidViewArgs::ArgsOnTable { name: name() }.into()),
+        Some(info) => &info.params,
+    };
+    if args.len() != params.elements.len() {
+        return Err(InvalidViewArgs::Arity {
+            name: name(),
+            expected: params.elements.len(),
+            found: args.len(),
+        }
+        .into());
+    }
+    if args.is_empty() {
+        return Ok(None);
+    }
+    let args = args
+        .into_iter()
+        .zip(params.elements.iter())
+        .map(|(lit, param)| {
+            let ty = &param.algebraic_type;
+            if !is_sql_literal_type(ty) {
+                return Err(InvalidViewArgs::UnsupportedParamType {
+                    name: name(),
+                    param: param.name().map(|name| name.to_string()).unwrap_or_default().into(),
+                    ty: fmt_algebraic_type(ty).to_string().into(),
+                }
+                .into());
+            }
+            match type_expr(&Relvars::default(), SqlExpr::Lit(lit), Some(ty))? {
+                Expr::Value(value, _) => Ok(value),
+                _ => unreachable!("a literal is typed as a value"),
+            }
+        })
+        .collect::<TypingResult<ProductValue>>()?;
+    Ok(Some(ViewArgs { args, arg_hash: None }))
 }
 
 /// Type checker for subscriptions
@@ -178,7 +226,8 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
 }
 
 pub mod test_utils {
-    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
+    use spacetimedb_lib::db::raw_def::{v10::RawModuleDefV10Builder, v9::TableAccess};
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, AlgebraicType, ProductType};
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::{
@@ -197,13 +246,56 @@ pub mod test_utils {
         builder.finish().try_into().expect("failed to generate module def")
     }
 
+    /// Builds a module with public tables, and public anonymous views given as `(name, params, row)`.
+    pub fn build_module_def_with_views(
+        tables: Vec<(&str, ProductType)>,
+        views: Vec<(&str, ProductType, ProductType)>,
+    ) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        for (name, ty) in tables {
+            builder
+                .build_table_with_new_type(RawIdentifier::new(name), ty, true)
+                .with_access(TableAccess::Public)
+                .finish();
+        }
+        for (index, (name, params, row)) in views.into_iter().enumerate() {
+            let row = builder.add_algebraic_type([], format!("{name}_row"), AlgebraicType::Product(row), true);
+            builder.add_view(
+                RawIdentifier::new(name),
+                index,
+                true,
+                true,
+                params,
+                AlgebraicType::array(AlgebraicType::Ref(row)),
+            );
+        }
+        builder.finish().try_into().expect("failed to generate module def")
+    }
+
     pub struct SchemaViewer(pub ModuleDef);
+
+    impl SchemaViewer {
+        /// The schema of view `v` or `w`, if the module defines it.
+        fn view_schema(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
+            let name = match table_id.idx() {
+                2 => "v",
+                3 => "w",
+                _ => return None,
+            };
+            let def = self.0.view(name)?;
+            let mut schema = TableSchema::from_view_def_for_datastore(&self.0, def);
+            schema.table_id = table_id;
+            Some(Arc::new(TableOrViewSchema::from(Arc::new(schema))))
+        }
+    }
 
     impl SchemaView for SchemaViewer {
         fn table_id(&self, name: &str) -> Option<TableId> {
             match name {
                 "t" => Some(TableId(0)),
                 "s" => Some(TableId(1)),
+                "v" => Some(TableId(2)),
+                "w" => Some(TableId(3)),
                 _ => None,
             }
         }
@@ -221,6 +313,7 @@ pub mod test_utils {
                     .map(TableOrViewSchema::from)
                     .map(Arc::new)
             })
+            .or_else(|| self.view_schema(table_id))
         }
 
         fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
@@ -232,10 +325,10 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        check::test_utils::{build_module_def, SchemaViewer},
-        expr::ProjectName,
+        check::test_utils::{build_module_def, build_module_def_with_views, SchemaViewer},
+        expr::{LeftDeepJoin, ProjectName, RelExpr},
     };
-    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, AlgebraicValue, Identity, ProductType, ProductValue};
     use spacetimedb_schema::def::ModuleDef;
 
     use super::{SchemaView, TypingResult};
@@ -275,6 +368,22 @@ mod tests {
                 ]),
             ),
         ])
+    }
+
+    /// A table, a view `v(id: u32)`, and a view `w(ids: [u32])` whose parameter SQL can't express.
+    fn module_def_with_views() -> ModuleDef {
+        let row = || ProductType::from([("x", AlgebraicType::U32)]);
+        build_module_def_with_views(
+            vec![("t", ProductType::from([("u32", AlgebraicType::U32)]))],
+            vec![
+                ("v", ProductType::from([("id", AlgebraicType::U32)]), row()),
+                (
+                    "w",
+                    ProductType::from([("ids", AlgebraicType::array(AlgebraicType::U32))]),
+                    row(),
+                ),
+            ],
+        )
     }
 
     /// A wrapper around [super::parse_and_type_sub] that takes a dummy [AuthCtx]
@@ -536,6 +645,101 @@ mod tests {
             TestCase {
                 sql: "select t.* from t join s on t.u32 = s.u32 where bytes = 0xABCD",
                 msg: "Columns must be qualified in join expressions",
+            },
+        ] {
+            let result = parse_and_type_sub(sql, &tx);
+            assert!(result.is_err(), "{msg}");
+        }
+    }
+
+    #[test]
+    fn valid_view_args() {
+        let tx = SchemaViewer(module_def_with_views());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from v(42)",
+                msg: "Positional literal",
+            },
+            TestCase {
+                sql: "select * from v(4294967295)",
+                msg: "Max u32",
+            },
+            TestCase {
+                sql: "select t.* from t join v(42) on t.u32 = v.x",
+                msg: "View call on the rhs of a join",
+            },
+            TestCase {
+                sql: "select * from t()",
+                msg: "No args on a table",
+            },
+        ] {
+            let result = parse_and_type_sub(sql, &tx);
+            assert!(result.is_ok(), "{msg}: {result:?}");
+        }
+
+        // The typed args are carried on the relvar, including the rhs of a join,
+        // and binding sets the rhs's hash too.
+        let args = ProductValue::from_iter([AlgebraicValue::U32(42)]);
+        let Ok(ProjectName::Some(RelExpr::EqJoin(LeftDeepJoin { rhs, .. }, ..), _)) =
+            parse_and_type_sub("select t.* from t join v(42) on t.u32 = v.x", &tx).map(|mut expr| {
+                expr.bind_view_arg_hashes(Identity::ONE);
+                expr
+            })
+        else {
+            panic!("expected a join");
+        };
+        let view_args = rhs.view_args.expect("rhs should be a view call");
+        assert_eq!(view_args.args, args);
+        assert!(view_args.arg_hash.is_some());
+    }
+
+    #[test]
+    fn invalid_view_args() {
+        let tx = SchemaViewer(module_def_with_views());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from v",
+                msg: "Missing args",
+            },
+            TestCase {
+                sql: "select * from v()",
+                msg: "Missing args",
+            },
+            TestCase {
+                sql: "select * from v(1, 2)",
+                msg: "Too many args",
+            },
+            TestCase {
+                sql: "select * from v('a')",
+                msg: "String for a u32 param",
+            },
+            TestCase {
+                sql: "select * from v(-1)",
+                msg: "Negative integer for a u32 param",
+            },
+            TestCase {
+                sql: "select * from v(4294967296)",
+                msg: "Out of bounds for a u32 param",
+            },
+            TestCase {
+                sql: "select * from t(1)",
+                msg: "Args on a table",
+            },
+            TestCase {
+                sql: "select * from w(1)",
+                msg: "Param type SQL can't express",
             },
         ] {
             let result = parse_and_type_sub(sql, &tx);

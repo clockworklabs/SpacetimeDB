@@ -1623,7 +1623,7 @@ mod tests {
     use spacetimedb_data_structures::map::HashSet;
     use spacetimedb_expr::{
         check::{SchemaView, TypingResult},
-        expr::{CollectViews, ProjectName, RelExpr, ViewArgs, ViewCall},
+        expr::{CollectViews, ProjectName, ViewCall},
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
@@ -2443,16 +2443,7 @@ mod tests {
                 schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
             };
 
-            // The SQL parser can't produce view args yet, so set them on the relvar directly.
-            let mut lp = parse_and_type_sub("select * from v", &db).unwrap();
-            let (ProjectName::None(RelExpr::RelVar(relvar)) | ProjectName::Some(RelExpr::RelVar(relvar), _)) = &mut lp
-            else {
-                panic!("expected a single relvar");
-            };
-            relvar.view_args = Some(ViewArgs {
-                args: args.clone(),
-                arg_hash: None,
-            });
+            let mut lp = parse_and_type_sub("select * from v(42)", &db).unwrap();
             lp.bind_view_arg_hashes(caller);
             let pp = compile_select(lp);
 

@@ -6,17 +6,20 @@ use std::fmt::{Display, Formatter};
 pub mod sql;
 pub mod sub;
 
-/// The FROM clause is either a relvar or a JOIN
+/// The FROM clause is either a relvar or a JOIN.
+///
+/// Each relvar carries its view call arguments, e.g. `42` in `FROM v(42)`.
+/// These are empty for a table, or for a view referenced without arguments.
 #[derive(Debug)]
 pub enum SqlFrom {
-    Expr(SqlIdent, SqlIdent),
-    Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
+    Expr(SqlIdent, SqlIdent, Vec<SqlLiteral>),
+    Join(SqlIdent, SqlIdent, Vec<SqlLiteral>, Vec<SqlJoin>),
 }
 
 impl SqlFrom {
     pub fn has_unqualified_vars(&self) -> bool {
         match self {
-            Self::Join(_, _, joins) => joins.iter().any(|join| join.has_unqualified_vars()),
+            Self::Join(_, _, _, joins) => joins.iter().any(|join| join.has_unqualified_vars()),
             _ => false,
         }
     }
@@ -27,6 +30,7 @@ impl SqlFrom {
 pub struct SqlJoin {
     pub var: SqlIdent,
     pub alias: SqlIdent,
+    pub args: Vec<SqlLiteral>,
     pub on: Option<SqlExpr>,
 }
 
