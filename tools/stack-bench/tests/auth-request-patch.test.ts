@@ -17,6 +17,176 @@ import { convexAuthReadEndpoints } from '../src/stacks/backends/convex-operation
 import { ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 import { installResponseLoss } from '../grader/response-loss.js';
 
+// Signup reconnects can carry authority in Socket.IO CONNECT data. Heartbeats
+// are transport traffic; an application event without an acknowledgement is not.
+test('signup reconnect probes include Socket.IO CONNECT claims and exclude heartbeat traffic', async t => {
+  const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
+  const accounts = new Map<string, string>();
+  const polls = new Map<string, string[]>();
+  const connects = new Map<string, number>();
+  let defective = false, stock = 0;
+  const connect = (user: string, frame: string) => {
+    const claims = frame.length > 2 ? JSON.parse(frame.slice(2)) : {};
+    if (accounts.has(user) && defective && claims.role === 'admin') accounts.set(user, 'admin');
+    return `40${JSON.stringify({ sid: `namespace-${user}` })}`;
+  };
+  const server = createServer(async (req, res) => {
+    const user = /user=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? '';
+    const address = new URL(req.url!, 'http://fixture.test');
+    if (address.searchParams.get('transport') === 'polling') {
+      const sid = address.searchParams.get('sid');
+      res.setHeader('content-type', 'text/plain');
+      if (!sid) {
+        const id = `poll-${user}`; polls.set(id, []);
+        res.end(`0${JSON.stringify({ sid: id, upgrades: ['websocket'], pingInterval: 25000, pingTimeout: 20000, maxPayload: 1000000 })}`); return;
+      }
+      if (req.method === 'POST') {
+        let body = ''; for await (const chunk of req) body += chunk;
+        for (const frame of body.split('\x1e')) if (frame.startsWith('40')) polls.get(sid)!.push(connect(user, frame), '2');
+        res.end('ok'); return;
+      }
+      res.end(polls.get(sid)!.splice(0).join('\x1e') || '6'); return;
+    }
+    if (req.url === '/signup') {
+      for await (const _chunk of req) { /* Consume the ordinary registration. */ }
+      accounts.set(user, 'customer'); res.end('ok'); return;
+    }
+    if (req.url === '/restock') {
+      if (accounts.get(user) !== 'admin') { res.writeHead(403).end(); return; }
+      stock++; res.end('ok'); return;
+    }
+    res.end('<body>signup</body>');
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets = new wsServer({ server });
+  sockets.on('connection', (socket: { on(event: string, fn: (raw: Buffer) => void): void; send(data: string): void },
+    request: { url: string; headers: { cookie?: string } }) => {
+    const user = /user=([^;]+)/.exec(request.headers.cookie ?? '')?.[1] ?? '';
+    if (!new URL(request.url, url).searchParams.has('sid')) {
+      socket.send(`0${JSON.stringify({ sid: user, upgrades: [], pingInterval: 25000, pingTimeout: 20000, maxPayload: 1000000 })}`);
+    }
+    socket.on('message', raw => {
+      const frame = String(raw);
+      if (frame.startsWith('40')) {
+        connects.set(user, (connects.get(user) ?? 0) + 1);
+        if (user === 'overlap' && connects.get(user) === 1) { socket.send('6'); return; }
+        if (user === 'missing-ack' && connects.get(user)! > 1) { socket.send('6'); return; }
+        socket.send(connect(user, frame));
+        socket.send('2');
+      } else if (frame === '2probe') socket.send('3probe');
+      else if (frame === '5') socket.send('2');
+      else if (frame === '3' || frame.startsWith('42')) socket.send('6');
+    });
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const fresh = async (user: string, query = '') => {
+      const context = await browser.newContext(), page = await context.newPage();
+      await installAuthWebSocketCapture(page); await page.goto(url);
+      await page.evaluate(async ({ url, user, query }) => {
+        document.cookie = `user=${user}`;
+        const socket = new WebSocket(`${url.replace('http:', 'ws:')}/socket.io/?EIO=4&transport=websocket${query}`);
+        Object.assign(window, { fixtureSocket: socket });
+        await new Promise<void>(resolve => socket.addEventListener('message', event => {
+          if (String(event.data).startsWith('0')) socket.send('40');
+          if (event.data === '2') socket.send('3');
+          if (event.data === '6') resolve();
+        }));
+      }, { url, user, query });
+      return page;
+    };
+    const submit = (page: Awaited<ReturnType<typeof fresh>>, auth: boolean, unknownEvent = false, polling = false) => page.evaluate(async ({ auth, unknownEvent, polling }) => {
+      const socket = (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket;
+      await fetch('/signup', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'customer', password: 'fixture-password' }) });
+      if (polling) {
+        socket.send('41'); socket.close();
+        const base = '/socket.io/?EIO=4&transport=polling';
+        const open = JSON.parse((await (await fetch(base)).text()).slice(1));
+        const path = `${base}&sid=${open.sid}`;
+        await fetch(path, { method: 'POST', body: auth ? '40{"token":"fixture-session"}' : '40' });
+        const reply = await (await fetch(path)).text();
+        if (!reply.startsWith('40')) throw new Error('Missing CONNECT receipt');
+        await fetch(path, { method: 'POST', body: '3' });
+        const upgrade = new WebSocket(`${location.origin.replace('http:', 'ws:')}/socket.io/?EIO=4&transport=websocket&sid=${open.sid}`);
+        await new Promise<void>(resolve => {
+          upgrade.addEventListener('open', () => upgrade.send('2probe'));
+          upgrade.addEventListener('message', event => {
+            if (event.data === '3probe') upgrade.send('5');
+            if (event.data === '2') upgrade.send('3');
+            if (event.data === '6') resolve();
+          });
+        });
+        return;
+      }
+      const reply = new Promise<void>(resolve => {
+        const listener = (event: MessageEvent) => { if (event.data === '6') { socket.removeEventListener('message', listener); resolve(); } };
+        socket.addEventListener('message', listener);
+      });
+      if (unknownEvent) socket.send('42["finish",{"role":"customer"}]');
+      else { socket.send('41'); socket.send(auth ? '40{"token":"fixture-session"}' : '40'); }
+      await reply;
+    }, { auth, unknownEvent, polling });
+    let lastWrites: readonly AuthWrite[] = [];
+    for (const polling of [false, true]) for (const auth of [false, true]) await t.test(`${polling ? 'polling upgrade' : 'websocket'} ${auth ? 'token' : 'empty'} CONNECT`, async () => {
+      const ordinary = await fresh(`ordinary-${polling}-${auth}`);
+      const baseline = await withAuthWriteInventory(ordinary, () => submit(ordinary, auth, false, polling));
+      lastWrites = baseline.writes;
+      assert.equal(baseline.writes.length, 2, 'the HTTP write and CONNECT are targets; disconnect and heartbeat are not');
+      assert(!JSON.stringify(baseline).includes('fixture-session'));
+      for (defective of [false, true]) for (const index of [0, 1]) {
+        const page = await fresh(`probe-${polling}-${auth}-${defective}-${index}`), before = stock;
+        const result = await withAuthRequestPatch(page, 'customer', 'fixture-password', { fields: { role: 'admin' } },
+          () => submit(page, auth, false, polling), undefined, 'signup', { writes: baseline.writes, index });
+        assert(result.requestPatch.status === 200 || result.requestPatch.success === true);
+        const status = await page.evaluate(async () => (await fetch('/restock', { method: 'POST' })).status);
+        assert.equal(status, defective && index === 1 ? 200 : 403);
+        assert.equal(stock - before, defective && index === 1 ? 1 : 0);
+        await page.context().close();
+      }
+      await ordinary.context().close();
+    });
+    const crossTransport = await fresh('cross-transport');
+    await withAuthRequestPatch(crossTransport, 'customer', 'fixture-password', { fields: { role: 'admin' } },
+      () => submit(crossTransport, true), undefined, 'signup', { writes: lastWrites, index: 1 });
+    const overlap = await fresh('overlap');
+    await assert.rejects(withAuthWriteInventory(overlap, () => overlap.evaluate(async () => {
+      await fetch('/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const socket = (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket;
+      await new Promise<void>(resolve => {
+        socket.addEventListener('message', event => { if (event.data === '6') resolve(); });
+        socket.send('40');
+      });
+    })), ActionInconclusive, 'a delayed pre-capture receipt must not prove a later overlapping CONNECT');
+    const changedRoute = await fresh('changed-route', '&mode=promote');
+    await assert.rejects(withAuthRequestPatch(changedRoute, 'customer', 'fixture-password', { fields: { role: 'admin' } },
+      () => submit(changedRoute, true), undefined, 'signup', { writes: lastWrites, index: 1 }), ActionInconclusive);
+    const unacknowledged = await fresh('unacknowledged');
+    await assert.rejects(withAuthWriteInventory(unacknowledged, () => submit(unacknowledged, false, true)), ActionInconclusive);
+    const missingAck = await fresh('missing-ack');
+    await assert.rejects(withAuthWriteInventory(missingAck, () => submit(missingAck, false)), ActionInconclusive);
+    const duplicate = await fresh('duplicate');
+    await assert.rejects(withAuthWriteInventory(duplicate, () => duplicate.evaluate(async () => {
+      const socket = (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket;
+      await new Promise<void>(resolve => {
+        socket.addEventListener('message', event => { if (event.data === '6') resolve(); });
+        socket.send('41'); socket.send('40'); socket.send('40');
+      });
+    })), ActionInconclusive);
+    const unknownSid = await fresh('unknown-sid');
+    await assert.rejects(withAuthWriteInventory(unknownSid, () => unknownSid.evaluate(async () => {
+      const socket = new WebSocket(`${location.origin.replace('http:', 'ws:')}/socket.io/?EIO=4&transport=websocket&sid=unknown`);
+      await new Promise<void>(resolve => {
+        socket.addEventListener('open', () => socket.send('2probe'));
+        socket.addEventListener('message', () => resolve());
+      });
+    })), ActionInconclusive);
+  } finally {
+    await browser.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 // Only the exact authenticated backend endpoint has Convex's read semantics.
 // A same-named app route, another origin/port, query suffix, or method must remain
 // in the inventory and receive its own probe instead of inheriting an exemption.

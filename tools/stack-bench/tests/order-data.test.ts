@@ -92,7 +92,7 @@ test('compiled UI checkout waits for complete stored effects and preserves defec
   let now = 0;
   t.mock.method(Date, 'now', () => now);
   for (const mode of ['delayed', 'reject-all', 'missing-line', 'wrong-total', 'duplicate', 'retained-cart',
-    'reader-error', 'late-read', 'late-retry', 'late-wake']) {
+    'reader-error', 'late-read', 'late-retry', 'late-wake', 'slow-missing-line', 'slow-wrong-total', 'late-reader-error']) await t.test(mode, async () => {
     now = 0;
     const raw = data();
     raw.item = [{ id: '2', name: 'Desk Lamp', price: 19.99 }, { id: '4', name: 'Coffee Grinder', price: 3.25 }];
@@ -108,23 +108,29 @@ test('compiled UI checkout waits for complete stored effects and preserves defec
       'database-read': { checkoutSnapshots: new Map([['normal-before', before], ['normal-prepared', prepared]]),
         getCheckoutState: () => {
           reads++;
-          if (reads > 1 && mode === 'reader-error') throw new Error('database unavailable');
+          assert(now < 10000, 'no checkout read starts after the retry deadline');
+          if (mode.startsWith('slow-') || mode === 'late-reader-error') now += 450;
+          if (reads > 1 && mode === 'reader-error' || mode === 'late-reader-error' && now > 10000) throw new Error('database unavailable');
           if (mode === 'late-read' || (mode === 'late-retry' && reads > 1)) now += 10001;
-          if (now >= 2000 && mode !== 'reject-all') {
-            raw.order_header = [{ id: 'new', account_id: '1', total: mode === 'wrong-total' ? 1 : 23.24, refunded: 0, status: 'pending' }];
+          if (now >= 2000 && !['reject-all', 'late-reader-error'].includes(mode)) {
+            raw.order_header = [{ id: 'new', account_id: '1', total: ['wrong-total', 'slow-wrong-total'].includes(mode) ? 1 : 23.24, refunded: 0, status: 'pending' }];
             raw.order_line = [{ id: 'one', order_id: 'new', item_id: '2', quantity: 1, unit_price: 19.99 },
               { id: 'two', order_id: 'new', item_id: '4', quantity: 1, unit_price: 3.25 }];
-            if (mode === 'missing-line') raw.order_line.pop();
+            if (['missing-line', 'slow-missing-line'].includes(mode)) raw.order_line.pop();
             if (mode === 'duplicate') raw.order_header.push({ ...raw.order_header[0]!, id: 'extra' });
             if (mode !== 'retained-cart') raw.order_cart = [];
           }
           return read();
         } },
     } });
-    assert.equal(result.status, mode === 'delayed' ? 'passed' : mode === 'reader-error' ? 'harness_failure'
-      : ['late-read', 'late-retry'].includes(mode) ? 'inconclusive' : 'failed', `${mode}: ${JSON.stringify(result)}`);
+    assert.equal(result.status, ['delayed', 'late-read', 'late-retry'].includes(mode) ? 'passed'
+      : ['reader-error', 'late-reader-error'].includes(mode) ? 'harness_failure' : 'failed', `${mode}: ${JSON.stringify(result)}`);
+    if (mode.startsWith('slow-')) {
+      assert(now > 10000, 'the final native read completes after the retry deadline');
+      assert.equal(result.finding?.kind, 'number-mismatch');
+    }
     if (mode === 'late-wake') assert.equal(reads, 1, 'do not start another read after the deadline');
-  }
+  });
 });
 
 test('multi-item checkout reconciles every cart line, stored price and selected warehouse effect, including refused writes', async () => {

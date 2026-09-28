@@ -115,7 +115,9 @@ export function stepsText(steps: GuideStep[], depth = 0): string[] {
     if (s.provenBy) lines.push(`${pad}  This check uses proof recorded by ${q(s.provenBy)}.`);
     if (s.reuseCombinedFrom) lines.push(`${pad}  If application and database are the same process, reuse ${q(s.reuseCombinedFrom)} rather than counting another crash.`);
     for (const group of s.alongside ?? []) lines.push(`${pad}  At the same time: ${meanings.callConcurrently!(group)}`);
-    if (s.within !== undefined) lines.push(`${pad}  Observation deadline: ${seconds(s.within)}${s.absent || s.do === 'expectNotReceived' ? '; this includes an absence observation window' : '; normally completes sooner if the condition is met'}.`);
+    if (s.within !== undefined) lines.push(s.do === 'dbExpectStock' || s.do === 'dbExpectCheckout'
+      ? `${pad}  Retry window: ${seconds(s.within)}; a started read may finish later.`
+      : `${pad}  Observation deadline: ${seconds(s.within)}${s.absent || s.do === 'expectNotReceived' ? '; this includes an absence observation window' : '; normally completes sooner if the condition is met'}.`);
     if (s.settleMs) lines.push(`${pad}  Always wait another ${seconds(s.settleMs)} after this action.`);
 
   }

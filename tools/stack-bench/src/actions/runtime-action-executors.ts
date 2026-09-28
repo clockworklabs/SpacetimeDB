@@ -295,14 +295,12 @@ async function dbExpectCheckout({ input, capabilities, signal }: ActionArguments
     return { ...after, differences, before: input.before, prepared: input.prepared, ...(response ? { response } : {}) };
   };
   const deadline = Date.now() + (input.within ?? 0);
+  // within limits retry starts; each native read has its own transport bound.
   let observation = await read();
-  if (input.within && Date.now() > deadline) inconclusive('observation-window-missed', {});
   while (observation.differences.length && Date.now() < deadline) {
     await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
     if (Date.now() >= deadline) break;
-    const next = await read();
-    if (Date.now() > deadline) inconclusive('observation-window-missed', {});
-    observation = next;
+    observation = await read();
   }
   const { differences } = observation;
   if (differences[0]) {
@@ -561,14 +559,12 @@ async function dbExpectStock({ input, capabilities, signal }: ActionArguments<Re
     throw new Error('expected stock is not an exact integer');
   }
   const deadline = Date.now() + (input.within ?? 0);
+  // within limits retry starts; each native read has its own transport bound.
   let value = await capabilities['database-read'].getStock(input);
-  if (input.within && Date.now() > deadline) inconclusive('observation-window-missed', {});
   while (!numberMatches(value.quantity, expected) && Date.now() < deadline) {
     await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
     if (Date.now() >= deadline) break;
-    const next = await capabilities['database-read'].getStock(input);
-    if (Date.now() > deadline) inconclusive('observation-window-missed', {});
-    value = next;
+    value = await capabilities['database-read'].getStock(input);
   }
   if (!numberMatches(value.quantity, expected)) fail('number-mismatch', {
     control: `stored stock for ${input.item}${input.warehouse ? ` in ${input.warehouse}` : ''}`,

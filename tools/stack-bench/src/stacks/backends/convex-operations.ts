@@ -8,6 +8,7 @@ import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderData
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import type { NamedAction } from '../../composition/tracks.js';
 import { convexFunctionRequest, classifyConvexFunctionResponse } from './convex-protocol.js';
+import type { PlatformAuthPatch } from '../../actions/auth-request-patch.js';
 
 const TIMEOUT = 30_000;
 const record = z.record(z.string(), z.unknown());
@@ -18,6 +19,23 @@ export function convexAuthReadEndpoints(lease: BackendLease): readonly string[] 
     throw new Error('Convex query capture requires its active backend lease');
   }
   return [new URL('/api/query', loopbackHttpUri(lease.resources.serverUri)).href];
+}
+
+export function convexAuthRequestPatch(lease: BackendLease): PlatformAuthPatch {
+  const origin = new URL(convexAuthReadEndpoints(lease)[0]!).origin;
+  return (url, body, patch) => {
+    if (url !== `${origin}/api/action` || Object.hasOwn(patch, 'password')) return undefined;
+    const envelope = record.safeParse(body);
+    if (!envelope.success || envelope.data.format !== 'convex_encoded_json'
+      || typeof envelope.data.path !== 'string' || !envelope.data.path
+      || !Array.isArray(envelope.data.args) || envelope.data.args.length !== 1) return undefined;
+    const args = record.safeParse(envelope.data.args[0]);
+    // Keep nested password-provider params on the credential-matching path.
+    // Token refresh has a flat native argument object but no typed credentials.
+    if (!args.success || Object.values(args.data).some(value => value !== null && typeof value === 'object')) return undefined;
+    return { body: JSON.stringify({ ...envelope.data, args: [{ ...args.data, ...patch.fields }] }),
+      shape: 'convex-args-object' };
+  };
 }
 
 function target(input: NativeInput) {

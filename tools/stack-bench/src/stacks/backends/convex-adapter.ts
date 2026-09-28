@@ -9,7 +9,7 @@ import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { activateConvex, controlConvexApplication, resetConvex } from './convex-lifecycle.js';
 import { convexApplicationEnvironment, convexNamedActionRequest, probeConvexNamedAction, proveConvexUse,
-  setConvexStock, getConvexStock, getConvexCheckoutState, convexAuthReadEndpoints } from './convex-operations.js';
+  setConvexStock, getConvexStock, getConvexCheckoutState, convexAuthReadEndpoints, convexAuthRequestPatch } from './convex-operations.js';
 import { CONVEX_ADAPTER_VERSION } from './convex-identity.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
 
@@ -28,7 +28,8 @@ export const convexAdapter = defineStackAdapter('convex', {
   databaseRead: { getStock: getConvexStock, getCheckoutState: getConvexCheckoutState },
   diagnostics: { capture: captureHostedDiagnostics },
   database: { proveUse: proveConvexUse },
-  grading: { context: createHttpGradingContext, transport: 'convex', capabilities, authReadEndpoints: convexAuthReadEndpoints },
+  grading: { context: createHttpGradingContext, transport: 'convex', capabilities,
+    authReadEndpoints: convexAuthReadEndpoints, authRequestPatch: convexAuthRequestPatch },
   namedAction: { request: convexNamedActionRequest, browserAccounts: ['signUp', 'signIn'], probe: probeConvexNamedAction },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,

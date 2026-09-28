@@ -188,7 +188,7 @@ test('bounded stock reads observe deferred writes and reject missing, repeated, 
     clock: { sleep },
   });
   assert.equal(result.status, 'harness_failure');
-  for (const mode of ['late-read', 'late-retry', 'late-wake']) {
+  for (const mode of ['late-read', 'late-retry', 'late-wake']) await t.test(mode, async () => {
     let reads = 0;
     const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 1000 }, {
       'browser-observation': { recorded: new Map() },
@@ -199,9 +199,9 @@ test('bounded stock reads observe deferred writes and reject missing, repeated, 
       } },
       clock: { sleep: async () => { now += mode === 'late-retry' ? 250 : 1001; } },
     });
-    assert.equal(result.status, mode === 'late-wake' ? 'failed' : 'inconclusive', mode);
+    assert.equal(result.status, mode === 'late-wake' ? 'failed' : 'passed', mode);
     assert.equal(reads, mode === 'late-retry' ? 2 : 1);
-  }
+  });
 });
 
 test('compiled restock race waits for the stored total and rejects missing effects', async t => {
@@ -211,15 +211,26 @@ test('compiled restock race waits for the stored total and rejects missing effec
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
   const step = scenario.features.flatMap(feature => feature.criteria).find(check => check.id === '202a')!.steps
     .find(step => step.do === 'dbExpectStock' && !step.warehouse)!;
-  for (const correct of [true, false]) {
+  for (const mode of ['delayed', 'missing', 'slow-missing', 'slow-repeated', 'late-reader-error']) await t.test(mode, async () => {
     now = 0;
+    const readStarts: number[] = [];
     const result = await run(step, {
       'browser-observation': { recorded: new Map([['stored-before-rush', 100]]) },
-      'database-read': { getStock: async () => ({ quantity: now >= 6500 && correct ? 102 : 100 }) },
+      'database-read': { getStock: async () => {
+        readStarts.push(now);
+        if (mode.startsWith('slow-') || mode === 'late-reader-error') now += 450;
+        if (mode === 'late-reader-error' && now > 10000) throw new Error('database unavailable');
+        return { quantity: mode === 'slow-repeated' ? 104 : now >= 6500 && mode === 'delayed' ? 102 : 100 };
+      } },
       clock: { sleep: async (ms: number) => { now += ms; } },
     });
-    assert.equal(result.status, correct ? 'passed' : 'failed', `delayed restock: ${correct}`);
-  }
+    assert.equal(result.status, mode === 'delayed' ? 'passed' : mode === 'late-reader-error' ? 'harness_failure' : 'failed', mode);
+    assert(readStarts.every(start => start < 10000), 'no stock read starts after the retry deadline');
+    if (mode.startsWith('slow-')) {
+      assert(now > 10000, 'the final native read completes after the retry deadline');
+      assert.equal(result.finding?.kind, 'number-mismatch');
+    }
+  });
 });
 
 test('cancellation probes reject a refund to the wrong warehouse even when total stock is restored', async () => {

@@ -5,6 +5,7 @@ import { ActionApplicationFailure } from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { startSpacetimeAuthPatch, startSpacetimeAuthWriteCapture } from '../stacks/backends/spacetime-browser-session.js';
 import { withBrowserRequest } from './browser-request.js';
+import { installSocketIoAuthCapture, socketIoAuthCapture, socketIoTransport } from './socketio-auth-capture.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
@@ -14,7 +15,7 @@ export interface AuthRequestPatch {
 // These identities describe a submitted write without retaining credentials in
 // action evidence. Selection means "this write in the flow", never "the signup".
 export interface AuthWrite {
-  readonly transport: 'http' | 'spacetime-websocket' | 'convex-websocket';
+  readonly transport: 'http' | 'spacetime-websocket' | 'convex-websocket' | 'socketio';
   readonly destination: string;
   readonly shape: string;
 }
@@ -68,7 +69,7 @@ export type PlatformAuthPatch = (url: string, body: unknown, patch: AuthRequestP
   => { body: string; shape: string } | null | undefined;
 
 type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string;
-  transport?: 'convex-websocket' | 'spacetime-websocket';
+  transport?: 'convex-websocket' | 'spacetime-websocket' | 'socketio';
   absentParameters?: string[] };
 type SocketPatch = {
   captureAll?: boolean;
@@ -84,9 +85,11 @@ const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
 export async function installAuthWebSocketCapture(page: Page): Promise<void> {
   const state: { active?: SocketPatch } = {};
   socketPatches.set(page, state);
+  await installSocketIoAuthCapture(page);
   page.on('websocket', socket => socket.on('framesent', () => {
     const owner = state.active;
     if (owner?.captureAll && !/\/api\/[^/]+\/sync(?:\?|$)/.test(socket.url())
+      && !socketIoTransport(socket.url(), 'websocket')
       && !(owner.nativeCapture && /\/v1\/database\/[^/]+\/subscribe(?:\?|$)/.test(socket.url()))) owner.fail();
   }));
   await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
@@ -374,13 +377,29 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     fail() { fail(); clearTimeout(socketTimer); socketFinish?.(); },
   };
   if (writeStops.has(page)) { native?.dispose(); throw new Error('Authentication write inventory is already active'); }
+  const socketIo = socketIoAuthCapture(page)?.activate({
+    connect(endpoint, body, packet) {
+      const target = visit({ transport: 'socketio', destination: hash(endpoint), shape: hash(JSON.stringify(valueShape(body))) });
+      const changed = target ? patchWriteFields(body, probe!.patch) : null;
+      const sent = changed ? `40${JSON.stringify(changed.value)}` : packet;
+      let finish!: () => void;
+      pending.push(new Promise<void>(resolve => { finish = resolve; }));
+      return { packet: sent, finish(success) {
+        if (success === null) fail();
+        else if (target) recordPatch({ shape: changed!.shape, success, transport: 'socketio', bodySha256: hash(sent) });
+        finish();
+      } };
+    },
+    fail,
+  });
   writeStops.set(page, () => {
-    stopped = true; native?.stop();
+    stopped = true; native?.stop(); socketIo?.stop();
     if (sockets?.active) sockets.active.captureAll = false;
   });
   const handler = async (route: Route) => {
     if (stopped) return route.fallback();
     const request = route.request();
+    if (socketIo && socketIoTransport(request.url(), 'polling')) return route.fallback();
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.fallback();
     // Only the adapter's exact leased endpoint carries a platform read guarantee.
     // An app proxy with the same path can still perform its own writes.
@@ -467,6 +486,7 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     writeStops.delete(page);
     if (sockets) sockets.active = undefined;
     native?.dispose();
+    socketIo?.dispose();
     await page.unroute('**/*', handler);
   }
 }
