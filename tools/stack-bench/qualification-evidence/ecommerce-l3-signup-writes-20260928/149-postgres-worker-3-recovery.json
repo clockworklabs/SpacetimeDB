@@ -1,0 +1,71 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "recovery",
+  "id": "ecommerce-postgres-run410-20260928045831-6672aa21-recovery",
+  "attempt": {
+    "id": "ecommerce-postgres-run410-20260928045831-6672aa21-recovery",
+    "parentId": "ecommerce-postgres-run410-20260928045831-6672aa21"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:06:30.265Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-postgres-run410-20260928045831-6672aa21",
+    "backend": "postgres",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "56524bd68220ac96e7c8f7bf8fc1f53e818f740d661084d6168d09bdeeb779ce",
+        "name": "sb-5bc8103f80ad2470-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "port:6711",
+          "released": true
+        },
+        {
+          "key": "port:6983",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:postgres:run410",
+          "released": true
+        },
+        {
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-WJl0ay/app",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "478d563a2c18424ee048caf0b940959439394c87681968f84bd3aa616c8f48bd"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+  "name": "/stack-bench-combined11-mongodb-149fecf8b",
+  "state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-28T04:50:18.044822771Z",
+    "FinishedAt": "2026-09-28T05:07:01.290664142Z"
+  }
+}

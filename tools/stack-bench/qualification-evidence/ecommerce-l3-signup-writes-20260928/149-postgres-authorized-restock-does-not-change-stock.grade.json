@@ -1,0 +1,2835 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "grade",
+  "id": "grade-770c0592-b49e-49",
+  "attempt": {
+    "id": "grade-770c0592-b49e-49",
+    "parentId": "mutation-2026-09-28T04-58-54-366Z"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:02:28.117Z",
+    "completedAt": "2026-09-28T05:03:05.278Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+    },
+    "fixture": {
+      "id": "ecommerce.operations",
+      "sha256": "d06444b72dc94fe1ef5e08867d875e1f3bbaa5cd82c35a3558f399c1fcb5ceae"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "ae3a0b216bc06c917b0a3489993a2f1ea2362dbec2c1a754cfb2119fd4f3d5e4"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": [
+      {
+        "id": "ecommerce.feature.accounts",
+        "sha256": "df539bbe2bec914c98dc3fc47552b98daece8ea63613948012506a50508b9744"
+      },
+      {
+        "id": "ecommerce.feature.bundle-checkout",
+        "sha256": "2905f7ee7d8ae6d1086d2194649242b68ef871d10ec60e1bc0382baf5cb6e7df"
+      },
+      {
+        "id": "ecommerce.feature.bundle-returns",
+        "sha256": "c0f9424066d11efd12bf2c88ec3607ac1152ba5b1e34d7fe598529c03035e352"
+      },
+      {
+        "id": "ecommerce.feature.cart",
+        "sha256": "217d2a7af92bc0551e17c12376b15668431619cc42f919f9d5a0a709f11eba78"
+      },
+      {
+        "id": "ecommerce.feature.catalog-discovery",
+        "sha256": "9aeea0db86cdacc386e5a26fed12b5604d674047c57c792e9aac3a5eabf14b42"
+      },
+      {
+        "id": "ecommerce.feature.catalog-items",
+        "sha256": "fce1929f7932d508f463793be463896fbb13ad6da2b7c57e0838188579f7a95f"
+      },
+      {
+        "id": "ecommerce.feature.checkout",
+        "sha256": "660aaf39db20b4fd6e405948b45f816c6733a2be37b8190b989a4d18c59eb214"
+      },
+      {
+        "id": "ecommerce.feature.product-bundles",
+        "sha256": "e768568827d4febae15fe2ec1d25410d86f78ada77debf9cb047d70fe3fdb12c"
+      },
+      {
+        "id": "ecommerce.feature.purchasing",
+        "sha256": "d21746b5e7246b1771ee9f72d0cc66ef2c2cc9573485ffc839f6ca4b1b01ddff"
+      },
+      {
+        "id": "ecommerce.feature.reviews",
+        "sha256": "385771e4c68dbc7afbc0d68af897d698a66f744f50e4f580a813db580cf4615c"
+      },
+      {
+        "id": "ecommerce.feature.split-tender-refunds",
+        "sha256": "8d12162887644dc6bca1fbcccfd06ebd679bd8017b9234cc5632e6a1f508eba8"
+      },
+      {
+        "id": "ecommerce.feature.store-credit",
+        "sha256": "f252e74cb95d87a6a7cec629d59bc7a37cac133e6abee255738ff9a1fca50fcd"
+      },
+      {
+        "id": "ecommerce.feature.subscriptions",
+        "sha256": "31bbe7f11ac99af6eeeeadcd62c49bc635bb20384a6b5e3724b8ba9124530799"
+      },
+      {
+        "id": "ecommerce.feature.warehouse-admin",
+        "sha256": "9230ca4ddfe048fd3903f3b90aee16a4711c6d53fbe37478917b16a6e550d66d"
+      },
+      {
+        "id": "ecommerce.l2.inventory-dashboard",
+        "sha256": "98d6ac14b32e61e976377df4687a13d6a780a0e96d2e49a05ce2a386e4588778"
+      },
+      {
+        "id": "ecommerce.l2.order-cancellation-features",
+        "sha256": "21f8663b36ea0871493903776ed32fae619183dc5fc0f74a8c1a5e8bc932f561"
+      },
+      {
+        "id": "ecommerce.l2.price-history-features",
+        "sha256": "786b9f48b9670aa9cb02a439b7eda2feff11c5163a4d49939c892d604206e924"
+      },
+      {
+        "id": "ecommerce.l2.recommendations",
+        "sha256": "a21e16ece7b0c4c6e2f0871428af4e4311ae5a91c46174a7ad644b6b93f2c18b"
+      },
+      {
+        "id": "ecommerce.l2.sales-dashboard",
+        "sha256": "5e9b1693dcea799edd672e276257a87ad6d7d88099d60be072e952e22e75ca77"
+      },
+      {
+        "id": "ecommerce.l2.stock-transfers-features",
+        "sha256": "fa9514e71b90d38623ede3aa4108cb8a53ca72ed95fc69858733ad38da7235ad"
+      },
+      {
+        "id": "ecommerce.l3.cart-expiration-features",
+        "sha256": "38029c5ea6d34974b155ef66c311dc500fcece1f82746cffa57ec5f0695f6a5d"
+      },
+      {
+        "id": "ecommerce.l3.deferred-access-specifications",
+        "sha256": "cc47732a893439472253b8e209d653959966ca7be20ef0616ab24f8695096814"
+      },
+      {
+        "id": "ecommerce.l3.deferred-durability-specifications",
+        "sha256": "e12ab68b5d10e4860fec384d8365054f178a67124423ec69eb10d59b956e6e7e"
+      },
+      {
+        "id": "ecommerce.l3.deferred-integrity-specifications",
+        "sha256": "1a3d27f25be0b41f87afff3412b6f2c93617a68306309f471e0120d1ea359056"
+      },
+      {
+        "id": "ecommerce.l3.order-delivery-features",
+        "sha256": "7f86ba1b2a2791ba38ba6abeeee6078b061bdf03ea951647d79a74f6fe435b95"
+      },
+      {
+        "id": "ecommerce.l3.order-returns-features",
+        "sha256": "cd5dc23d3c7514df91d0a54d92d97e7604e6828b1a287d0c79c714724cdc2206"
+      },
+      {
+        "id": "ecommerce.l3.reservations-features",
+        "sha256": "972b14948d5dea26cadab3567fc5bbd2c42d4feed5c428c004117b723acecd12"
+      },
+      {
+        "id": "ecommerce.l3.scheduled-restocks-features",
+        "sha256": "305c2cf78bc84c63b20cb3e5531760174355128332a365d741dbbd0d64c938cb"
+      },
+      {
+        "id": "ecommerce.l3.server-time-specifications",
+        "sha256": "75ad830a0023bf1fe8022695f0776854d75cdbd87f5120a25312c7de33bf57c9"
+      },
+      {
+        "id": "ecommerce.progression.automatic-reorder",
+        "sha256": "a1d14fcb9cd6c9e96b71d2bacdd4865badaeda913ba9cb3cb5fab8f1eb8497e7"
+      },
+      {
+        "id": "ecommerce.progression.cancellation-accounting-specifications",
+        "sha256": "29b290a1356e63a9d2e937c7f92ad540403b27ebcef94df15451d12e59ac86cc"
+      },
+      {
+        "id": "ecommerce.progression.cancellation-queue-specifications",
+        "sha256": "cf3f68e3ba88bf533f3c315671f1bb0917a0dc745306f9046a9a2f4a52621e35"
+      },
+      {
+        "id": "ecommerce.progression.cart-recovery",
+        "sha256": "ca6d95040f5b81478546b9afedcc428114e795ced11b8364eb2542c258aec794"
+      },
+      {
+        "id": "ecommerce.progression.catalog-management",
+        "sha256": "f12e7e37d031f470683ff74671b22c1de08eb8f7fe0e9cf03cbcfb4604dd2f06"
+      },
+      {
+        "id": "ecommerce.progression.customer-profile",
+        "sha256": "731eeced13c1053432560d4149d2de29fa2cd2b0051759d705cb36e92ad16bb3"
+      },
+      {
+        "id": "ecommerce.progression.delivery-notifications",
+        "sha256": "60b58c4327d74f710f94ffc0deae1b51ef40ca1d2146e45b8e02d1b28e1146bc"
+      },
+      {
+        "id": "ecommerce.progression.faceted-search",
+        "sha256": "5a967859348f967bdc43e0e2490289a859f568e4e8d809c21d5f4404d85e4dd7"
+      },
+      {
+        "id": "ecommerce.progression.fulfilment-queue",
+        "sha256": "811eeb166f261e32b5338e118b0851aa1ffeb06b3107dafb6861057e11004db4"
+      },
+      {
+        "id": "ecommerce.progression.inventory-conservation-specifications",
+        "sha256": "039e62b9d4dd69f2ba4f1b9eebee58e54d0aa141e65da440d789a2e5a4b652e7"
+      },
+      {
+        "id": "ecommerce.progression.managed-support",
+        "sha256": "6546f37be296605cad2e06bbe71d0cf014d1025a5a4b3b8997f4c38cf6329841"
+      },
+      {
+        "id": "ecommerce.progression.notification-preferences",
+        "sha256": "e8423fe1a2a615a1f2b5bd7073e9cc7040c8d2e2eadc0ef466d50e5d21aaf134"
+      },
+      {
+        "id": "ecommerce.progression.operations-access-specifications",
+        "sha256": "9a425f56c33b27a08bec1c0ea24f168408352f540e8e4dda5bbe9d25dd0ac288"
+      },
+      {
+        "id": "ecommerce.progression.order-support",
+        "sha256": "1e1a1722adc4c72fdbf31aa34261b73975df53ffab27b28134d71b09ada1b27f"
+      },
+      {
+        "id": "ecommerce.progression.payment-records",
+        "sha256": "f9203b2def92ee787077b88ae9e31425c03cff7b43a039823c160bc69303cc3f"
+      },
+      {
+        "id": "ecommerce.progression.personalized-recommendations",
+        "sha256": "fafda848a453566e61af3513659a8884979ae49218e490830774bb4c25f7b383"
+      },
+      {
+        "id": "ecommerce.progression.price-accounting-specifications",
+        "sha256": "f49fa571d5e63617537742620e92e95a9671ee87f52fd1abc15c2daaf2a6a195"
+      },
+      {
+        "id": "ecommerce.progression.price-history-specifications",
+        "sha256": "5882d2b0daee49ff6f3b8b6aace9fd63f6dca52b18f4dc72f8329e59ffcb9664"
+      },
+      {
+        "id": "ecommerce.progression.promotion-checkout",
+        "sha256": "ead1c8b0ab75a29bc55eaf71ceb216f881655ce20321dc0e36ee8e72271383a9"
+      },
+      {
+        "id": "ecommerce.progression.promotion-reporting",
+        "sha256": "a0c28a936e0929584ccf418dbbe5f53ba6b6beccd33a5a8255bbfb334a3ddca8"
+      },
+      {
+        "id": "ecommerce.progression.promotion-rules",
+        "sha256": "4275d81b85379c0030abd92208b732f616a53a2bad8054e0ee6c7f745488105c"
+      },
+      {
+        "id": "ecommerce.progression.recommendation-feedback",
+        "sha256": "e7e703471cb30e8caf6acf89e3a0ad089dcde8d9320ceaf4fba7132add4007e5"
+      },
+      {
+        "id": "ecommerce.progression.review-access-specifications",
+        "sha256": "d89b6e559244faed30648f2ebdb462913c0b882c614ffe51821c1eb446e66d55"
+      },
+      {
+        "id": "ecommerce.progression.staff-access",
+        "sha256": "440a036f482be11c4954abbb478693a995aea0fe0843f1959a641f3ab6733539"
+      },
+      {
+        "id": "ecommerce.progression.staff-activity",
+        "sha256": "129e48d11c4b24ae94d45350ffc93e190265dd69eb7948fc34c24c49b438db2e"
+      },
+      {
+        "id": "ecommerce.progression.staff-roles",
+        "sha256": "341efe45e33b4e2fd94a19036034963393b6f9d3749c63faf0bbff0415d0ead8"
+      },
+      {
+        "id": "ecommerce.progression.stock-alerts",
+        "sha256": "837f8fcb2c0c023704372810efdc8532246df2b795b94b8503f9d17dae415db9"
+      },
+      {
+        "id": "ecommerce.progression.support-history",
+        "sha256": "23d9dd3e5132a88f3ed0d1c65afac0f6ca769f886b6fb531718831358699b90a"
+      },
+      {
+        "id": "ecommerce.progression.support-intake",
+        "sha256": "6458979c3421deb9916903854a1889580b122813500e3437c475fd3bf73d7721"
+      },
+      {
+        "id": "ecommerce.progression.support-refunds",
+        "sha256": "fd05f39442798d4bae9e96c65230268bd80be46f40a57007ede06d02d5a28e7c"
+      },
+      {
+        "id": "ecommerce.progression.support-triage",
+        "sha256": "2c90c09870de8922db55a9fd8a1b07553c60fd3aebc679f3e4ff1649c752df85"
+      },
+      {
+        "id": "ecommerce.spec.access-control",
+        "sha256": "a2eef326cd1e28ecb5e96970ba1afcff8b3a62dfbf90f5986c59e4ff380d01f4"
+      },
+      {
+        "id": "ecommerce.spec.bundle-integrity",
+        "sha256": "e0ca540f434e643c5ddbe7fb204fe1edad39376c719d48d4d544caef559595f9"
+      },
+      {
+        "id": "ecommerce.spec.concurrency-safety",
+        "sha256": "60c1b80d464438e20fb7c379cde3de09cae5810230c77195b21c01c78626f91d"
+      },
+      {
+        "id": "ecommerce.spec.external-data-sync",
+        "sha256": "505b40f2e652dbe2d230e6f73b4892c1d01c69f9a12eea865be33676b93fb7b2"
+      },
+      {
+        "id": "ecommerce.spec.live-state",
+        "sha256": "3a309333b465eaa377a324bf214c6cf33733ace855570d1ad5ee01300d588596"
+      },
+      {
+        "id": "ecommerce.spec.search-ordering",
+        "sha256": "f33275ca6a9593135c94170bd262203eaf65d980e6f810c393f6d07a28bffa50"
+      },
+      {
+        "id": "ecommerce.spec.split-tender-refunds",
+        "sha256": "91ca0be0e80ea7d001cdd9a2959c7b2c00be3b87aeb5dc06c7db8b9d179ead8c"
+      },
+      {
+        "id": "ecommerce.spec.state-durability",
+        "sha256": "df7c5808d25201493e6eafd46e37091a5f3b9d8f70f2c6ac708d59395137019d"
+      },
+      {
+        "id": "ecommerce.spec.store-credit",
+        "sha256": "4d858d568aabb314ad118b3e2b5003e43710585fdbf4a85b71b9971ca636843c"
+      },
+      {
+        "id": "ecommerce.spec.subscriptions",
+        "sha256": "7dac820cfeec043b619d468be0c6b0d7e022093851e7884ad573a80aeeb468f2"
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity",
+        "sha256": "71c8b69723a3e4e9c6ae023674535eb9675b1c008b264a453019d0bcdf9af146"
+      }
+    ]
+  },
+  "payload": {
+    "definitionSchemaVersion": 1,
+    "recipeRelease": {
+      "checks": [
+        {
+          "category": "feature",
+          "checkGroupId": "admin-write",
+          "criterionId": "103a",
+          "description": "an administrator can restock a warehouse",
+          "executionId": "selected-source-007",
+          "featureId": 103,
+          "packId": "ecommerce.feature.warehouse-admin",
+          "points": 1,
+          "role": "feature",
+          "source": "scenarios/01-admin-write-staff.json",
+          "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a"
+        },
+        {
+          "category": "production",
+          "checkGroupId": "warehouse-write-boundary",
+          "criterionId": "103b",
+          "description": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+          "executionId": "selected-source-007",
+          "featureId": 103,
+          "observations": [
+            "requested",
+            "unmentioned"
+          ],
+          "packId": "ecommerce.spec.access-control",
+          "points": 2,
+          "requiresFeatures": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.warehouse-admin"
+          ],
+          "role": "guarantee",
+          "source": "scenarios/01-admin-write-staff.json",
+          "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        }
+      ],
+      "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474",
+      "executionId": "selected-source-007",
+      "executionSha256": "163f9b95837b275a6a39307ec3a7a4dcb88ec468020f9b28907f5a9fad4991ac",
+      "id": "ecommerce.progression-catalog",
+      "meaningSha256": "c756119732d718f92aed1c55e8e9716954b548e7bf02b4354bddd119da87bdf9",
+      "recipeReleaseSchemaVersion": 3,
+      "selection": {
+        "alias": "L3",
+        "selection": {
+          "path": "composition/dependency.json",
+          "sha256": "e73002df8a7a42e612f2bd1ee5de1f9db2d6c13cb9c819e405a5f2512eca3048"
+        }
+      },
+      "sourceManifestSha256": "58bb88632677560533b8d098828b44c06dfc39f5c78f8b3da1e7bbb8d9286b91",
+      "track": "ecommerce"
+    },
+    "recipeTask": {
+      "schemaVersion": 3,
+      "recipe": {
+        "id": "ecommerce.progression-catalog",
+        "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+      },
+      "selection": {
+        "sha256": "7e9ec560f41c518c9b42fff7440a393478268c8adda7801748c88e188a0a0f55",
+        "requested": {
+          "features": [],
+          "specifications": {
+            "requested": [],
+            "expected": [],
+            "observed": []
+          },
+          "checks": []
+        },
+        "promptPacks": [
+          "ecommerce.feature.accounts",
+          "ecommerce.feature.bundle-checkout",
+          "ecommerce.feature.bundle-returns",
+          "ecommerce.feature.cart",
+          "ecommerce.feature.catalog-discovery",
+          "ecommerce.feature.catalog-items",
+          "ecommerce.feature.checkout",
+          "ecommerce.feature.product-bundles",
+          "ecommerce.feature.purchasing",
+          "ecommerce.feature.reviews",
+          "ecommerce.feature.split-tender-refunds",
+          "ecommerce.feature.store-credit",
+          "ecommerce.feature.subscriptions",
+          "ecommerce.feature.warehouse-admin",
+          "ecommerce.l2.inventory-dashboard",
+          "ecommerce.l2.order-cancellation-features",
+          "ecommerce.l2.price-history-features",
+          "ecommerce.l2.recommendations",
+          "ecommerce.l2.sales-dashboard",
+          "ecommerce.l2.stock-transfers-features",
+          "ecommerce.l3.cart-expiration-features",
+          "ecommerce.l3.order-delivery-features",
+          "ecommerce.l3.order-returns-features",
+          "ecommerce.l3.reservations-features",
+          "ecommerce.l3.scheduled-restocks-features",
+          "ecommerce.progression.automatic-reorder",
+          "ecommerce.progression.cart-recovery",
+          "ecommerce.progression.catalog-management",
+          "ecommerce.progression.customer-profile",
+          "ecommerce.progression.delivery-notifications",
+          "ecommerce.progression.faceted-search",
+          "ecommerce.progression.fulfilment-queue",
+          "ecommerce.progression.managed-support",
+          "ecommerce.progression.notification-preferences",
+          "ecommerce.progression.order-support",
+          "ecommerce.progression.payment-records",
+          "ecommerce.progression.personalized-recommendations",
+          "ecommerce.progression.promotion-checkout",
+          "ecommerce.progression.promotion-reporting",
+          "ecommerce.progression.promotion-rules",
+          "ecommerce.progression.recommendation-feedback",
+          "ecommerce.progression.staff-access",
+          "ecommerce.progression.staff-activity",
+          "ecommerce.progression.staff-roles",
+          "ecommerce.progression.stock-alerts",
+          "ecommerce.progression.support-history",
+          "ecommerce.progression.support-intake",
+          "ecommerce.progression.support-refunds",
+          "ecommerce.progression.support-triage"
+        ],
+        "resolved": {
+          "features": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.bundle-checkout",
+            "ecommerce.feature.bundle-returns",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.product-bundles",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.split-tender-refunds",
+            "ecommerce.feature.store-credit",
+            "ecommerce.feature.subscriptions",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.price-history-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.cart-expiration-features",
+            "ecommerce.l3.order-delivery-features",
+            "ecommerce.l3.order-returns-features",
+            "ecommerce.l3.reservations-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.automatic-reorder",
+            "ecommerce.progression.cart-recovery",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.delivery-notifications",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.order-support",
+            "ecommerce.progression.payment-records",
+            "ecommerce.progression.personalized-recommendations",
+            "ecommerce.progression.promotion-checkout",
+            "ecommerce.progression.promotion-reporting",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.recommendation-feedback",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-activity",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-refunds",
+            "ecommerce.progression.support-triage"
+          ],
+          "specifications": {
+            "requested": [],
+            "expected": [],
+            "observed": []
+          },
+          "promptPacks": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.bundle-checkout",
+            "ecommerce.feature.bundle-returns",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.product-bundles",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.split-tender-refunds",
+            "ecommerce.feature.store-credit",
+            "ecommerce.feature.subscriptions",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.price-history-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.cart-expiration-features",
+            "ecommerce.l3.order-delivery-features",
+            "ecommerce.l3.order-returns-features",
+            "ecommerce.l3.reservations-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.automatic-reorder",
+            "ecommerce.progression.cart-recovery",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.delivery-notifications",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.order-support",
+            "ecommerce.progression.payment-records",
+            "ecommerce.progression.personalized-recommendations",
+            "ecommerce.progression.promotion-checkout",
+            "ecommerce.progression.promotion-reporting",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.recommendation-feedback",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-activity",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-refunds",
+            "ecommerce.progression.support-triage"
+          ],
+          "taskSelectionSha256": "781cd68262ef8863cecd099df39b31a34cf674c33c729daab5d2700ffcf429eb"
+        },
+        "scoredChecks": [
+          "ecommerce.feature.accounts.accounts.1a",
+          "ecommerce.feature.accounts.accounts.1b",
+          "ecommerce.feature.accounts.accounts.1c",
+          "ecommerce.feature.accounts.accounts.1d",
+          "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "ecommerce.feature.catalog.catalog-ranking.2b",
+          "ecommerce.feature.catalog.catalog-search.2d",
+          "ecommerce.feature.catalog.catalog-values.2a",
+          "ecommerce.feature.reviews.reviews.6a",
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+          "ecommerce.operations-access.fulfilment-queue.1c",
+          "ecommerce.returns-pricing.price-history.4b",
+          "ecommerce.inventory-operations.operational-views.5e",
+          "ecommerce.inventory-operations.operational-views.5d",
+          "ecommerce.inventory-operations.operational-views.5f",
+          "ecommerce.inventory-operations.operational-views.5c",
+          "ecommerce.returns-pricing.cancellation-and-return.3a",
+          "ecommerce.returns-pricing.cancellation-and-return.3b",
+          "ecommerce.operations-access.fulfilment-queue.1b",
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.l3.cart-expiration.cart-expiration.304a",
+          "ecommerce.l3.order-delivery.order-delivery.303a",
+          "ecommerce.l3.order-delivery.order-delivery.305a",
+          "ecommerce.l3.reservations.reservations.301a",
+          "ecommerce.l3.reservations.reservations.305a",
+          "ecommerce.l3.reservations.reservations.306a",
+          "ecommerce.l3.reservations.reservations.307a",
+          "ecommerce.l3.reservations.reservations.308a",
+          "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+          "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+          "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+          "ecommerce.progression.automatic-reorder.automatic-reorder.502a",
+          "ecommerce.feature.bundle-checkout.bundle-checkout.741a",
+          "ecommerce.feature.bundle-returns.bundle-returns.742a",
+          "ecommerce.feature.cart-checkout.cart.4a",
+          "ecommerce.feature.cart-checkout.cart.4d",
+          "ecommerce.progression.cart-recovery.cart-recovery.503a",
+          "ecommerce.progression.cart-recovery.cart-recovery.503b",
+          "ecommerce.progression.catalog-management.catalog-management.622a",
+          "ecommerce.progression.catalog-management.catalog-management.622b",
+          "ecommerce.progression.payment-records.payment-records.623a",
+          "ecommerce.progression.customer-profile.customer-profile.620c",
+          "ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a",
+          "ecommerce.progression.faceted-search.faceted-search.401a",
+          "ecommerce.progression.faceted-search.faceted-search.402a",
+          "ecommerce.progression.managed-support.managed-support.613c",
+          "ecommerce.progression.notification-preferences.notification-preferences.630c",
+          "ecommerce.returns-pricing.cancellation-and-return.3e",
+          "ecommerce.returns-pricing.cancellation-and-return.3f",
+          "ecommerce.returns-pricing.cancellation-and-return.3c",
+          "ecommerce.progression.order-support.order-support-owned.614a",
+          "ecommerce.progression.personalized-recommendations.personalized-recommendations.403a",
+          "ecommerce.feature.product-bundles.product-bundles.740a",
+          "ecommerce.progression.promotion-checkout.promotion-checkout-active.621a",
+          "ecommerce.progression.promotion-checkout.promotion-checkout-expired.621b",
+          "ecommerce.progression.promotion-checkout.promotion-checkout-exhausted.621c",
+          "ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a",
+          "ecommerce.progression.promotion-reporting.promotion-report-revenue.622b",
+          "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+          "ecommerce.feature.purchasing.purchase-order.3c",
+          "ecommerce.progression.recommendation-feedback.recommendation-feedback.504a",
+          "ecommerce.feature.split-tender-refunds.split-tender-refunds-751.751a",
+          "ecommerce.progression.staff-access.staff-access.601a",
+          "ecommerce.progression.staff-activity.staff-activity.624a",
+          "ecommerce.progression.staff-roles.staff-roles.621c",
+          "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+          "ecommerce.feature.store-credit.store-credit-750.750a",
+          "ecommerce.feature.subscriptions.subscriptions-760.760a",
+          "ecommerce.progression.support-history.support-history.612c",
+          "ecommerce.progression.support-intake.support-intake.610a",
+          "ecommerce.progression.support-refunds.support-refunds-resolution.615a",
+          "ecommerce.feature.split-tender-refunds.return-refund-interaction.757a",
+          "ecommerce.feature.split-tender-refunds.return-refund-interaction.757b",
+          "ecommerce.progression.support-triage.support-assignment.611a",
+          "ecommerce.progression.support-triage.support-priority.611b",
+          "ecommerce.progression.support-triage.support-status.611c"
+        ],
+        "observedChecks": []
+      },
+      "task": {
+        "mode": "fresh",
+        "sha256": "aa0a4209ad4c19f9a4a2fab1c1e26922b10797df290188de11e2ce710e0e9e5e",
+        "requirementSha256": "057631f5a6c136f07c95d7c4e2992fddb4185c21e853ad9bc4d6499ada31619c",
+        "contractSha256": "e35683d5df6b9848bf26c8763bca01addf20aba4ddeef3df90ac6d0b51f0a10a"
+      }
+    },
+    "label": null,
+    "url": "http://localhost:6983",
+    "level": 3,
+    "runId": "770c0592-b49e-49",
+    "total": 0,
+    "max": 3,
+    "features": [
+      {
+        "id": 103,
+        "name": "Only an administrator can restock",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "103a",
+            "desc": "an administrator can restock a warehouse",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "staff",
+              "summary": "the item-stock control reads 100, expected exactly 101 in the entry matching \"Air Purifier\"",
+              "finding": {
+                "kind": "number-mismatch",
+                "fields": {
+                  "control": "item-stock",
+                  "observed": 100,
+                  "expected": {
+                    "equals": 101
+                  },
+                  "scopeText": "Air Purifier"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790571753697,
+                "completedAtMs": 1790571762917,
+                "durationMs": 9220
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "recordNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "key": "purifier-before-control",
+                      "value": 100
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571753698,
+                      "completedAtMs": 1790571753740,
+                      "durationMs": 42,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "http",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571753741,
+                      "completedAtMs": 1790571755793,
+                      "durationMs": 2052,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571755794,
+                      "completedAtMs": 1790571755794,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571755794,
+                      "completedAtMs": 1790571757841,
+                      "durationMs": 2047,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "staff"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571757842,
+                      "completedAtMs": 1790571757873,
+                      "durationMs": 31,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571757873,
+                      "completedAtMs": 1790571757913,
+                      "durationMs": 40,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the item-stock control reads 100, expected exactly 101 in the entry matching \"Air Purifier\"",
+                    "finding": {
+                      "kind": "number-mismatch",
+                      "fields": {
+                        "control": "item-stock",
+                        "observed": 100,
+                        "expected": {
+                          "equals": 101
+                        },
+                        "scopeText": "Air Purifier"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571757913,
+                      "completedAtMs": 1790571762915,
+                      "durationMs": 5002,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "network-address",
+                "user-content"
+              ]
+            },
+            "statedBy": "An administrator can add units to a selected item and warehouse.",
+            "serverCheck": "verified",
+            "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a"
+          },
+          {
+            "id": "103b",
+            "desc": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "admin",
+              "summary": "the stored stock for Air Purifier control reads 100, expected exactly 101",
+              "finding": {
+                "kind": "number-mismatch",
+                "fields": {
+                  "control": "stored stock for Air Purifier",
+                  "observed": 100,
+                  "expected": {
+                    "equals": 101
+                  }
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790571762917,
+                "completedAtMs": 1790571785054,
+                "durationMs": 22137
+              },
+              "actions": [
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "http",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571762917,
+                      "completedAtMs": 1790571764948,
+                      "durationMs": 2031,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571764948,
+                      "completedAtMs": 1790571764949,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571764949,
+                      "completedAtMs": 1790571766986,
+                      "durationMs": 2037,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "staff"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571766987,
+                      "completedAtMs": 1790571767024,
+                      "durationMs": 37,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571767024,
+                      "completedAtMs": 1790571767061,
+                      "durationMs": 37,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "recordNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "key": "purifier-before-refusal",
+                      "value": 100
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571767061,
+                      "completedAtMs": 1790571767102,
+                      "durationMs": 41,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": false,
+                      "status": 403,
+                      "responseContract": "http",
+                      "refusalKind": "access",
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571767102,
+                      "completedAtMs": 1790571769136,
+                      "durationMs": 2034,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "refused",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571769137,
+                      "completedAtMs": 1790571769137,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571769137,
+                      "completedAtMs": 1790571771183,
+                      "durationMs": 2046,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "staff"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571771183,
+                      "completedAtMs": 1790571771217,
+                      "durationMs": 34,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571771217,
+                      "completedAtMs": 1790571771248,
+                      "durationMs": 31,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "value": 100
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571771248,
+                      "completedAtMs": 1790571771270,
+                      "durationMs": 22,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "postgres",
+                      "item": "Air Purifier",
+                      "quantity": 100,
+                      "key": "before-admin-claim"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571771270,
+                      "completedAtMs": 1790571771393,
+                      "durationMs": 123,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": false,
+                      "status": 403,
+                      "responseContract": "http",
+                      "refusalKind": "access",
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571771393,
+                      "completedAtMs": 1790571772417,
+                      "durationMs": 1024,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "completed",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571772417,
+                      "completedAtMs": 1790571772417,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "postgres",
+                      "item": "Air Purifier",
+                      "quantity": 100,
+                      "expected": {
+                        "equals": 100
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571772417,
+                      "completedAtMs": 1790571772573,
+                      "durationMs": 156,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "application-refused",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571772573,
+                      "completedAtMs": 1790571772573,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571774639,
+                      "completedAtMs": 1790571774647,
+                      "durationMs": 8,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signUp",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "claimant-ordinary770c0592-b49e-49f103",
+                      "authenticationPath": "local-form",
+                      "submitted": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571772573,
+                      "completedAtMs": 1790571774648,
+                      "durationMs": 2075,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "signout"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571774648,
+                      "completedAtMs": 1790571774680,
+                      "durationMs": 32,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "signout"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571774680,
+                      "completedAtMs": 1790571774728,
+                      "durationMs": 48,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "waitUntilAbsent",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571774728,
+                      "completedAtMs": 1790571774757,
+                      "durationMs": 29,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "claimant-ordinary770c0592-b49e-49f103",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571774757,
+                      "completedAtMs": 1790571775239,
+                      "durationMs": 482,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571775239,
+                      "completedAtMs": 1790571775246,
+                      "durationMs": 7,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": false,
+                      "status": 403,
+                      "responseContract": "http",
+                      "refusalKind": "access",
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571775246,
+                      "completedAtMs": 1790571776269,
+                      "durationMs": 1023,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "completed",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571776269,
+                      "completedAtMs": 1790571776269,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "postgres",
+                      "item": "Air Purifier",
+                      "quantity": 100,
+                      "expected": {
+                        "equals": 100
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571776269,
+                      "completedAtMs": 1790571776443,
+                      "durationMs": 174,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "application-refused",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571776443,
+                      "completedAtMs": 1790571776443,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "freshClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "actor": "claimant-fresh"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571776443,
+                      "completedAtMs": 1790571776660,
+                      "durationMs": 217,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signUp",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "claimant-0770c0592-b49e-49f103",
+                      "authenticationPath": "local-form",
+                      "expectedFailure": true,
+                      "requestPatch": {
+                        "shape": "object",
+                        "status": 200,
+                        "bodySha256": "479b190f04142d3fec64980d21a23662802685211697438c2ce23ab59cd99e20"
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571776660,
+                      "completedAtMs": 1790571778971,
+                      "durationMs": 2311,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": false,
+                      "status": 403,
+                      "responseContract": "http",
+                      "refusalKind": "access",
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571778971,
+                      "completedAtMs": 1790571779993,
+                      "durationMs": 1022,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "completed",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571779993,
+                      "completedAtMs": 1790571779993,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "postgres",
+                      "item": "Air Purifier",
+                      "quantity": 100,
+                      "expected": {
+                        "equals": 100
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571779993,
+                      "completedAtMs": 1790571780155,
+                      "durationMs": 162,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "claimant-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "application-refused",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571780155,
+                      "completedAtMs": 1790571780155,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "closeClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "closed": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571780156,
+                      "completedAtMs": 1790571780163,
+                      "durationMs": 7,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "freshClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "actor": "claimant-fresh-fresh"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571780163,
+                      "completedAtMs": 1790571780387,
+                      "durationMs": 224,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signUp",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "claimant-1770c0592-b49e-49f103",
+                      "authenticationPath": "local-form",
+                      "expectedFailure": true,
+                      "requestPatch": {
+                        "shape": "bodyless",
+                        "success": true,
+                        "transport": "socketio",
+                        "bodySha256": "33e88d463a19a758ae6146f6117e760dd1258dc07c061fa8443df4d6cf403573"
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571780387,
+                      "completedAtMs": 1790571782713,
+                      "durationMs": 2326,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": false,
+                      "status": 403,
+                      "responseContract": "http",
+                      "refusalKind": "access",
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571782713,
+                      "completedAtMs": 1790571783734,
+                      "durationMs": 1021,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "completed",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571783734,
+                      "completedAtMs": 1790571783734,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "postgres",
+                      "item": "Air Purifier",
+                      "quantity": 100,
+                      "expected": {
+                        "equals": 100
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571783734,
+                      "completedAtMs": 1790571783880,
+                      "durationMs": 146,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "claimant-fresh-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "application-refused",
+                      "status": 403,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571783881,
+                      "completedAtMs": 1790571783881,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant-fresh-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "closeClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "closed": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571783881,
+                      "completedAtMs": 1790571783886,
+                      "durationMs": 5,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "claimant",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "probeSignupClaims",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "writes": [
+                        {
+                          "transport": "http",
+                          "destination": "be0bb79bc1c8b4676cec751cda3a20b6f24dc45fd5b6e4855dff2107d0c8de2d",
+                          "shape": "4e25c743974c4371cc582b547038c489bd7e9a2ffa631d5578b10a825f98c3c7"
+                        },
+                        {
+                          "transport": "socketio",
+                          "destination": "f1c3b15c88c2027d0d5673c0413719a15ca2eb10ce28791fbf86a3615f8f1295",
+                          "shape": "f072cbec3bf8841871d4284230c5e983dc211a56837aed862487148f947d1a1f"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "index": 0,
+                          "write": {
+                            "transport": "http",
+                            "destination": "be0bb79bc1c8b4676cec751cda3a20b6f24dc45fd5b6e4855dff2107d0c8de2d",
+                            "shape": "4e25c743974c4371cc582b547038c489bd7e9a2ffa631d5578b10a825f98c3c7"
+                          },
+                          "result": {
+                            "user": "claimant-0770c0592-b49e-49f103",
+                            "authenticationPath": "local-form",
+                            "expectedFailure": true,
+                            "requestPatch": {
+                              "shape": "object",
+                              "status": 200,
+                              "bodySha256": "479b190f04142d3fec64980d21a23662802685211697438c2ce23ab59cd99e20"
+                            }
+                          }
+                        },
+                        {
+                          "index": 1,
+                          "write": {
+                            "transport": "socketio",
+                            "destination": "f1c3b15c88c2027d0d5673c0413719a15ca2eb10ce28791fbf86a3615f8f1295",
+                            "shape": "f072cbec3bf8841871d4284230c5e983dc211a56837aed862487148f947d1a1f"
+                          },
+                          "result": {
+                            "user": "claimant-1770c0592-b49e-49f103",
+                            "authenticationPath": "local-form",
+                            "expectedFailure": true,
+                            "requestPatch": {
+                              "shape": "bodyless",
+                              "success": true,
+                              "transport": "socketio",
+                              "bodySha256": "33e88d463a19a758ae6146f6117e760dd1258dc07c061fa8443df4d6cf403573"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571772573,
+                      "completedAtMs": 1790571783887,
+                      "durationMs": 11314,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "http",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571783887,
+                      "completedAtMs": 1790571784918,
+                      "durationMs": 1031,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "restock",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571784918,
+                      "completedAtMs": 1790571784918,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "database-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the stored stock for Air Purifier control reads 100, expected exactly 101",
+                    "finding": {
+                      "kind": "number-mismatch",
+                      "fields": {
+                        "control": "stored stock for Air Purifier",
+                        "observed": 100,
+                        "expected": {
+                          "equals": 101
+                        }
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571784918,
+                      "completedAtMs": 1790571785054,
+                      "durationMs": 136,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "network-address",
+                "user-content"
+              ]
+            },
+            "statedBy": "Only administrators can change warehouse stock.",
+            "serverCheck": "verified",
+            "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790571751733,
+            "completedAtMs": 1790571753692,
+            "durationMs": 1959
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571751734,
+                  "completedAtMs": 1790571752947,
+                  "durationMs": 1213,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "staff",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "staff",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571752947,
+                  "completedAtMs": 1790571753541,
+                  "durationMs": 594,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "current-user",
+                  "visible": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571753542,
+                  "completedAtMs": 1790571753578,
+                  "durationMs": 36,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571753579,
+                  "completedAtMs": 1790571753653,
+                  "durationMs": 74,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "staff",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571753654,
+                  "completedAtMs": 1790571753692,
+                  "durationMs": 38,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        "verified": [
+          "admin: server accepted action \"restock\" (HTTP 200)",
+          "admin: server accepted action \"restock\" (HTTP 200)",
+          "staff: server refused action \"restock\" (HTTP 403)",
+          "staff: server refused action \"restock\" (HTTP 403)",
+          "staff: server refused action \"restock\" (HTTP 403)",
+          "claimant: server refused action \"restock\" (HTTP 403)",
+          "claimant: server refused action \"restock\" (HTTP 403)",
+          "claimant-fresh: server refused action \"restock\" (HTTP 403)",
+          "claimant-fresh: server refused action \"restock\" (HTTP 403)",
+          "claimant-fresh-fresh: server refused action \"restock\" (HTTP 403)",
+          "claimant-fresh-fresh: server refused action \"restock\" (HTTP 403)",
+          "admin: server accepted action \"restock\" (HTTP 200)"
+        ]
+      }
+    ],
+    "selection": {
+      "sha256": "bd93e0f7ed3cbc398e8633c33bd54bd305e73fd7fc95cf7da498a89402d1e772",
+      "checks": [
+        {
+          "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "packId": "ecommerce.feature.warehouse-admin",
+          "checkGroupId": "admin-write",
+          "featureId": 103,
+          "criterionId": "103a",
+          "description": "an administrator can restock a warehouse",
+          "points": 1
+        },
+        {
+          "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+          "packId": "ecommerce.spec.access-control",
+          "checkGroupId": "warehouse-write-boundary",
+          "featureId": 103,
+          "criterionId": "103b",
+          "description": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+          "points": 2
+        }
+      ]
+    },
+    "packRuntime": {
+      "schemaVersion": 1,
+      "metric": "pack-check-wall-clock-sum-v1",
+      "packs": [
+        {
+          "id": "ecommerce.feature.warehouse-admin",
+          "checkCount": 1,
+          "setupRuntimeMs": 1959,
+          "criterionRuntimeMs": 9220,
+          "measuredRuntimeMs": 11179
+        },
+        {
+          "id": "ecommerce.spec.access-control",
+          "checkCount": 1,
+          "setupRuntimeMs": 1959,
+          "criterionRuntimeMs": 22137,
+          "measuredRuntimeMs": 24096
+        }
+      ]
+    },
+    "inconclusive": []
+  }
+}

@@ -1,0 +1,33 @@
+# Qualification reuse review for 8b202ce2d — draft
+
+The proposed reuse covers 101 of the 112 selected dependency-L3 checks at commit `8b202ce2d19c05e08f8689eec1e9e9530f41f085`. The frozen diagnostic image is `sha256:034df0006916e600e19f21e30a17743625f8bab43a4aec3acb7499f4cc5e6766`. This is not qualification approval. The owner reports fresh 103b baseline inconclusive on PostgreSQL, MongoDB, and Convex. Keep all 11 replacement keys pending. Do not change production calibration from this proposal.
+
+## Evidence and exact scope
+
+`prepare-8b202-reuse.mjs` adapts the existing `prepare-54ff1-reuse.mjs`. It verifies clean HEAD, frozen source/output bytes, original artifact and snapshot hashes, existing review hashes, current control manifests, full scenario execution equivalence, reference-source reviews, and selected mutation execution identity. It removes all 11 replacement keys, including keys whose polling dependency or shared mutation requires fresh evidence even when their scenario text is unchanged. No mutation may cross a retained slice boundary.
+
+The proposal retains 92 artifact chains and 12 source snapshots. All 101 retained keys have reference and defect coverage on all four stacks plus null coverage. There are 49 exact old-to-current executable pairs. Each pair is recomputed with the saved release, reference, and mutation identities; non-executable scope fields must remain equal. Original hashes remain in place. Existing contract-text and reference-source equivalences retain their original scope. No old image hash becomes new evidence.
+
+## Source review since 54ff1b6b
+
+`8b202-caller-audit.json` records exact changed source paths and hashes, current selected callers, and saved race controls.
+
+- `runtime-action-executors.ts`: timed stock reads now reject a late observation as inconclusive. Every selected caller with `within` is in the 11-key fresh scope. Checkout adds optional bounded polling. The 10 retained calls in duplicate-checkout.203b and crash 910a/910b have no `within`: one read, the same schema/scope checks, accepted/refused response checks, and full comparator. The real grader already supplies clock. No additional stock or checkout key needs fresh controls.
+- `checkout-state.ts` is unchanged. Normal 4d retains all order, line, price, owner, total, cart-empty, and history checks. Its previous warehouse-storage exclusion and visible stock-99 assertions remain. Submitted-price and overlapping cart-add cases are unchanged. Only the normal checkout observation replaces its fixed sleep with bounded full-state reads.
+- `auth-request-patch.ts`, `chat-action-executors.ts`, and `spacetime-browser-session.ts`: capture-all HTTP/native-write inventory and target selection activate only through the new probe. The old request-patch path remains when no WeakMap target exists. Shared positional field assignment and native schema loading are extracted with their old value/receipt behavior. New native callbacks are optional. Inventory-stop calls are no-ops without inventory. Ordinary signup and signin keep their existing completion paths.
+- `signup-claim-action-executors.ts` adds the new probe. `action-catalog.ts`, `definition-compiler.ts`, and `composition-compiler.ts` register it and validate its one observation branch. Existing race branch validation stays unchanged. Checkout gains the optional within field and clock capability. `dashboard/check-guide-steps.ts` explains per-write observations; it does not execute a check.
+- `grader/grade.ts`, `actor-action-runtime.ts`, `stack-adapter-contract.ts`, `convex-adapter.ts`, and `convex-operations.ts` supply `authReadEndpoints`. Only the new probe consumes it. Convex derives one exact leased `/api/query` URL from an active backend lease. It does not allow application proxy writes. Grader startup now computes this value; it has no effect on retained action dispatch. New failures at this lease check would be harness failures and must not be waived.
+- `recipe-release.ts` applies semantic field filtering recursively to branch steps. This can change a meaning hash for existing races, but does not change execution. The existing unchanged-slice validator accepts all 101 retained checks. Execution documents, not a hash substitution, support this conclusion.
+- The only changed scenarios are admin-write-staff, restock-race, and progression-cart-checkout. Their affected checks and scenario/defect closure are excluded from reuse.
+
+## Nested mutation classification
+
+`dispatchNested` now stores the exact failed child. `mutation-analysis.ts` follows it only if an earlier action record is deeply equal, has matching status/finding, and lies within the parent timing interval. Without that link, the old last-action result is unchanged. This review does not rerun or reclassify unavailable external raw grades.
+
+The only retained nested action is stock-conservation.202d. Its race branches each contain only `callAction`. Both `race` and `callAction` are non-assertions, so a nested driver failure remains CAUGHT_OFF_ASSERTION. A later `expectNumber` or native assertion remains an assertion failure. All 12 saved registered 202d control results across nine checkpoint artifacts and four stacks are CAUGHT at assertion actions. Their paths, hashes, IDs, and failed actions are recorded in the caller audit. There are no selected `sendConcurrently` callers. Thus the verified cause change does not require fresh 202d controls. A nested assertion would require separate review; none is present in retained scope.
+
+## Earlier reviewed changes and limits
+
+The frozen image also includes changes already reviewed before 54ff1: the numeric final-TimeoutError rule, generated Convex root `.env.local` handling, deferred native signup witness, and exact leased token-renewal allowance. Preserve `9b7acb-reuse-review.md`, `deferred-auth-reuse-review-draft.md`, and `token-renewal-reuse-review-draft.md` with their boundary evidence and limits. The first two extra executable paths, `browser-action-executors.ts` and `source-snapshot.ts`, are unchanged since 54ff1. The 22 existing calibration reuse reviews remain hash-checked. Their existence alone does not validate the failing fresh auth probe.
+
+No extra selected key was found that needs a run from this source review. After the auth failure is fixed, freeze and review the new candidate delta; regenerate these exact mappings and replacement scope. Only successful fresh reference, defect, and null evidence may replace the 11 keys. Then apply the normal calibration validator and qualification-status gates. No builds, Docker calls, app runs, or production edits were done for this review.

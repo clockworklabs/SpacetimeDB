@@ -1,0 +1,698 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-postgres-run408-20260928045831-d7d92fb4",
+  "attempt": {
+    "id": "ecommerce-postgres-run408-20260928045831-d7d92fb4",
+    "parentId": "reference-live-postgres-20260928045829-9130"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:58:39.054Z",
+    "completedAt": "2026-09-28T05:05:05.841Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null,
+      "version": "1.6.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "postgres",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-postgres-run408-20260928045831-d7d92fb4",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "runIndex": 408,
+      "ownerPid": 9239,
+      "createdAt": "2026-09-28T04:58:31.045Z",
+      "state": "released",
+      "resources": {
+        "serverUri": null,
+        "database": "app_ecom_run408",
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-3e5fc14ea9314967-backend",
+          "id": "92a5b00a039e30f1e0694da56872012bc33e6a3b896f39b298e2e0f61fd307c4",
+          "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+          "owned": true,
+          "networkMode": "852ecc32656dbd1c0f06fe77593b683c948d538f1bbc4e53d6fdf1f82309740b",
+          "running": false,
+          "removedAt": "2026-09-28T05:05:07.835Z"
+        },
+        "buildContainer": {
+          "name": "sb-3e5fc14ea9314967-build",
+          "id": "0c87c22dd2dd37e4156180257cff578b1ab427216645e8e38a3ec0d1a0a366d8",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:92a5b00a039e30f1e0694da56872012bc33e6a3b896f39b298e2e0f61fd307c4",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T05:05:06.726Z",
+          "removedAt": "2026-09-28T05:05:06.957Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/efc85bef0665305617e44e4ba6566f4eb04139e23ea57112c343ed5486d0bf4a.lock.json",
+            "key": "port:6709",
+            "digest": "efc85bef0665305617e44e4ba6566f4eb04139e23ea57112c343ed5486d0bf4a",
+            "acquiredAt": "2026-09-28T04:58:31.107Z",
+            "releasedAt": "2026-09-28T05:05:08.743Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/7304da4d66a1fd3f7fb290973d6c4130bbe1303ccfc51f562b3ca092ca9f0105.lock.json",
+            "key": "port:6981",
+            "digest": "7304da4d66a1fd3f7fb290973d6c4130bbe1303ccfc51f562b3ca092ca9f0105",
+            "acquiredAt": "2026-09-28T04:58:31.107Z",
+            "releasedAt": "2026-09-28T05:05:08.743Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/49bedd298fa208df25daf0dbf150cf1f380952f81186917b9340ce8a163c93c0.lock.json",
+            "key": "slot:ecommerce:postgres:run408",
+            "digest": "49bedd298fa208df25daf0dbf150cf1f380952f81186917b9340ce8a163c93c0",
+            "acquiredAt": "2026-09-28T04:58:31.107Z",
+            "releasedAt": "2026-09-28T05:05:08.743Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/26876140dde863ac32eb996acb42d593fb7ea2bd859ed8218bd610b6c74e089d.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-6b4Syn/app",
+            "digest": "26876140dde863ac32eb996acb42d593fb7ea2bd859ed8218bd610b6c74e089d",
+            "acquiredAt": "2026-09-28T04:58:31.107Z",
+            "releasedAt": "2026-09-28T05:05:08.743Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-3e5fc14ea9314967-network",
+          "id": "852ecc32656dbd1c0f06fe77593b683c948d538f1bbc4e53d6fdf1f82309740b",
+          "namespaceContainerId": "92a5b00a039e30f1e0694da56872012bc33e6a3b896f39b298e2e0f61fd307c4",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.17",
+            "10.0.0.1",
+            "10.0.0.33",
+            "10.0.0.41"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.35",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "dc1f0be7e14f7e19aed914309ab187feb08e7b23b26d625280d68ebbe8bbe073",
+          "firewallInstalledAt": "2026-09-28T04:58:34.483Z",
+          "ownAddresses": [
+            "10.0.0.34"
+          ],
+          "namespaceStartedAt": "2026-09-28T04:58:33.067054762Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-3e5fc14ea9314967-browser",
+          "id": "e3af312a337dca34e567430a896b25c1960964a21c36b9afa3f234515c72a36a",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:92a5b00a039e30f1e0694da56872012bc33e6a3b896f39b298e2e0f61fd307c4",
+          "running": false,
+          "removedAt": "2026-09-28T05:05:06.191Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T05:05:08.683Z",
+      "releasedAt": "2026-09-28T05:05:08.743Z",
+      "ownership": {
+        "markerSha256": "69b5743a8806a6c711dbf75f56a3f857467b11552947555d3be6752c0ba63473"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/postgres.runs/r1-workers/w1.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "score": null,
+        "max": null,
+        "graded": false,
+        "contractPass": null,
+        "selection": null,
+        "outcome": {
+          "kind": "ungraded",
+          "phase": "reference-mutation-only",
+          "reason": "the parent qualification owns the full clean grade",
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "buildSessions": [
+          {
+            "sessionId": "reference-postgres-1790571534015",
+            "costUsd": 0,
+            "durationMs": 14748,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-postgres-1790571534015"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "buildCostUsd": 0,
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 14748,
+          "activeDurationMs": 14748,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "costUsd": 0,
+        "durationMs": 14999
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "mutationControl": {
+      "ok": true,
+      "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/postgres.runs/r1-workers/w1.runs/r1/mutation-control.json",
+      "processError": null,
+      "summary": {
+        "caught": 10,
+        "completed": 10,
+        "total": 10,
+        "remaining": 0
+      },
+      "outcome": null,
+      "results": [
+        {
+          "id": "restock-race-records-wrong-order-total",
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "targets": [
+            "ecommerce.spec.concurrency-safety.restock-race.202a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.concurrency-safety.restock-race.202a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 202,
+              "criterion": "202a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase order total control reads 8050, expected exactly 7950",
+              "failedAction": "dbExpectPurchases",
+              "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "operator-authorization-allows-customer-transfer",
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.operations-access.operator-authorization.201a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 201,
+              "criterion": "201a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the transfer action was accepted for customer, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.operations-access.operator-authorization.201a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "progression-cart-line-does-not-increment",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the cart-quantity control reads 1, expected exactly 2 in the entry matching \"Headphones\"",
+              "failedAction": "expectNumber",
+              "key": "ecommerce.feature.cart-checkout.cart.4a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "progression-restock-does-not-survive-restart",
+          "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+          "targets": [
+            "ecommerce.l3.server-time.server-time.312a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.l3.server-time.server-time.312a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 312,
+              "criterion": "312a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the pending-restock-item control did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.l3.server-time.server-time.312a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "transfer-overdraft-guard-skips-bulk-transfers",
+          "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 2,
+              "criterion": "2c",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the order-error control did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "restock-trusts-submitted-admin-role",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "checkout-trusts-submitted-price",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4d",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the checkout order total in minor units control reads 100, expected exactly 10600",
+              "failedAction": "dbExpectCheckout",
+              "key": "ecommerce.feature.cart-checkout.cart.4d",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "checkout-missing-sibling-line",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4d",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the checkout order quantity control reads 1, expected exactly 2",
+              "failedAction": "dbExpectCheckout",
+              "key": "ecommerce.feature.cart-checkout.cart.4d",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-trusts-cross-origin-cookie",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kimf7415d7f-f37b-4ff101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"kim3cb3f1f7-d592-44f101\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        }
+      ]
+    },
+    "totals": {
+      "score": 0,
+      "max": 0,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 14748,
+      "durationSec": 387,
+      "ungraded": [
+        3
+      ]
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "mutation-control",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.concurrency-safety.restock-race.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a",
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+        "ecommerce.l3.deferred-integrity.exactly-once.311a",
+        "ecommerce.l3.server-time.server-time.312a",
+        "ecommerce.feature.cart-checkout.cart.4a",
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:6981"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}
