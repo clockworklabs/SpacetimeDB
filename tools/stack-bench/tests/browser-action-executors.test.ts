@@ -591,6 +591,90 @@ test('a click that removes its target before timing out is inconclusive and is n
   } finally { await browser.close(); }
 });
 
+test('a hit-target interceptor that prevents the click is blocked-control evidence', async () => {
+  const browser = await chromium.launch({ headless: true });
+  let observation: unknown;
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<button id="submit" style="position:absolute;left:200px;top:200px"
+      onpointerover="document.querySelector('#cover').hidden=false"
+      onpointerdown="document.body.dataset.down='1'"
+      onclick="document.body.dataset.clicks='1'">Submit</button>
+      <div id="cover" hidden style="position:fixed;inset:0;background:gray;z-index:10"></div>`);
+    let calls = 0;
+    let detail = '';
+    const result = await run({ do: 'click', actor: 'a', testid: 'submit', within: 1000 },
+      services({ loc: () => ({ click: async (options: Parameters<ReturnType<typeof page.locator>['click']>[0]) => {
+        calls += 1;
+        try { await page.locator('#submit').click(options); }
+        catch (error) { detail = String(error); throw error; }
+      } }) }));
+    const delivered = await page.locator('body').evaluate(body => ({
+      pointerdown: body.dataset.down ?? null, click: body.dataset.clicks ?? null,
+    }));
+    observation = { fixture: 'cover appears on pointerover, after the initial hit-target check',
+      expected: 'failed/control-blocked with no delivered pointerdown or click',
+      result, calls, detail, delivered };
+    assert.match(detail, /performing click action/);
+    assert.match(detail, /intercepts pointer events/);
+    assert.doesNotMatch(detail, /click action done/);
+    assert.deepEqual(delivered, { pointerdown: null, click: null });
+    assert.equal(calls, 1);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.finding?.kind, 'control-blocked');
+  } finally {
+    if (process.env.STACK_BENCH_CLICK_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_CLICK_EVIDENCE, JSON.stringify({
+        command: 'node --test --test-name-pattern="a hit-target interceptor|a click that removes" dist/tests/browser-action-executors.test.js',
+        browser: browser.version(), observation,
+      }, null, 2));
+    }
+    await browser.close();
+  }
+});
+
+test('an intercepted attempt cannot erase a later delivered click timeout', async () => {
+  const browser = await chromium.launch({ headless: true });
+  let observation: unknown;
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<button id="submit" style="position:absolute;left:200px;top:200px"
+      onpointerover="if(!this.dataset.covered){this.dataset.covered='1';
+        document.querySelector('#cover').hidden=false;
+        setTimeout(()=>document.querySelector('#cover').hidden=true,300)}"
+      onclick="this.remove();document.body.dataset.clicks='1';
+        const until=Date.now()+3000;while(Date.now()<until){}">Submit</button>
+      <div id="cover" hidden style="position:fixed;inset:0;background:gray;z-index:10"></div>`);
+    let calls = 0;
+    let detail = '';
+    const result = await run({ do: 'click', actor: 'a', testid: 'submit', within: 2000 },
+      services({ loc: () => ({ click: async (options: Parameters<ReturnType<typeof page.locator>['click']>[0]) => {
+        calls += 1;
+        try { await page.locator('#submit').click(options); }
+        catch (error) { detail = String(error); throw error; }
+      } }) }));
+    const delivered = await page.locator('body').getAttribute('data-clicks');
+    observation = { fixture: 'one transient pointerover cover, then a delivered click blocks its completion',
+      expected: 'inconclusive with exactly one delivered click and one locator invocation',
+      result, calls, detail, delivered };
+    assert.match(detail, /performing click action[\s\S]*intercepts pointer events[\s\S]*performing click action/);
+    assert.equal(delivered, '1');
+    assert.equal(await page.locator('#submit').count(), 0);
+    assert.equal(calls, 1);
+    assert.equal(result.status, 'inconclusive');
+  } finally {
+    if (process.env.STACK_BENCH_CLICK_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(`${process.env.STACK_BENCH_CLICK_EVIDENCE}.mixed.json`, JSON.stringify({
+        command: 'node --test --test-name-pattern="an intercepted attempt" dist/tests/browser-action-executors.test.js',
+        browser: browser.version(), observation,
+      }, null, 2));
+    }
+    await browser.close();
+  }
+});
+
 
 test('relative number bounds use recorded values and report the resolved bound', async () => {
   assert.equal(parseRenderedNumber('Stock: 1,024 left'), 1024);

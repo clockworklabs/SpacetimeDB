@@ -997,6 +997,24 @@ export function pageFailure(message: string, scope?: string): ActionApplicationF
   return new ActionApplicationFailure(renderFinding(value), { finding: value });
 }
 
+function clickMayHaveDispatched(message: string): boolean {
+  let pending = false;
+  for (const line of stripVTControlCharacters(message).split('\n')) {
+    if (/^\s*- click action done\s*$/.test(line)) return true;
+    if (/^\s*- performing click action\s*$/.test(line)) {
+      if (pending) return true;
+      pending = true;
+    } else if (/intercepts pointer events\s*$/.test(line)) {
+      // Playwright's first-event hit-target interceptor blocks this attempt.
+      pending = false;
+    } else if (/retrying click action/.test(line) && pending) {
+      // A later blocked attempt cannot disprove an earlier unresolved delivery.
+      return true;
+    }
+  }
+  return pending;
+}
+
 export function browserApplicationBoundary<Arguments, Result>(
   implementation: (arguments_: Arguments) => Result | Promise<Result>,
   scopeOf?: (arguments_: Arguments) => string | undefined,
@@ -1008,10 +1026,10 @@ export function browserApplicationBoundary<Arguments, Result>(
       if (errorField(error, 'classification') || harnessBrowserFailure(error)) throw error;
       const message = String(errorField(error, 'message') ?? error);
       // Playwright can time out after delivering the input (for example, while
-      // a close handler removes the target). Its call log proves dispatch began,
-      // not whether the action completed. Do not score a defect or repeat input.
+      // a close handler removes the target). Only an explicit interception
+      // disproves delivery. Do not score or repeat an unresolved input.
       if (errorField(error, 'name') === 'TimeoutError' && /^locator\.click:/.test(message)
-        && /^\s*- (?:performing click action|click action done)\s*$/m.test(stripVTControlCharacters(message))) {
+        && clickMayHaveDispatched(message)) {
         throw new ActionInconclusive('browser click timed out after input dispatch began', {
           observation: { detail: message }, expected: 'confirmed completion of the browser click',
         });
