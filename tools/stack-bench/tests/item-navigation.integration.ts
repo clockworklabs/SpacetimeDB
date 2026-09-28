@@ -12,6 +12,54 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { gradeFeature } from '../grader/grade.js';
 
+test('catalog ranking distinguishes exact name hooks from surrounding decoration', async () => {
+  // Failure cases: outside icons must pass; inside text, wrong order, missing,
+  // duplicate and changed names must fail the explicit name-only interface.
+  const names = ['Air Purifier', 'Bluetooth Speaker', 'Coffee Grinder', 'Desk Lamp',
+    'Espresso Machine', 'Gaming Mouse', 'Headphones', 'Induction Cooktop', 'Keyboard', 'Laptop Stand'];
+  const scenario = readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/01-catalog-ranking.json'), 'utf8');
+  const feature = compileScenarioDefinition(JSON.parse(scenario)).features[0]!;
+  let mode = 'plain';
+  const evidence: unknown[] = [];
+  const server = createServer((_request, response) => {
+    const rows = [...names];
+    if (mode === 'wrong-order') [rows[0], rows[1]] = [rows[1]!, rows[0]!];
+    if (mode === 'missing') rows.pop();
+    if (mode === 'duplicate') rows[9] = rows[0]!;
+    if (mode === 'changed-name') rows[0] = 'Air Purifier Pro';
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    response.end(`<section id="item-list">${rows.map(name =>
+      `<article data-role="item-card"><button><span data-role="item-name">${name}${mode === 'inside-icon' ? ' ↗' : ''}</span>${mode === 'outside-icon' ? '<span aria-hidden="true"> ↗</span>' : ''}</button></article>`
+    ).join('')}</section>`);
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (mode of ['plain', 'outside-icon', 'inside-icon', 'wrong-order', 'missing', 'duplicate', 'changed-name']) {
+      const expected = mode === 'plain' || mode === 'outside-icon' ? 'passed' : 'failed';
+      const grade = await gradeFeature(browser, feature,
+        { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
+        { runId: 'catalog-name-contract', roomName: name => name, url, actions: [],
+          spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 250 });
+      evidence.push({ mode, expected, grade });
+      assert.equal(grade.criteria[0]!.evidence.status, expected, JSON.stringify(evidence.at(-1)));
+    }
+  } finally {
+    await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_ITEM_NAVIGATION_EVIDENCE) {
+      const file = process.env.STACK_BENCH_ITEM_NAVIGATION_EVIDENCE;
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify({
+        rerun: 'STACK_BENCH_ITEM_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern="catalog ranking distinguishes" dist/tests/item-navigation.integration.js',
+        browserVersion: browser.version(), names, scenario: JSON.parse(scenario), evidence,
+      }, null, 2));
+    }
+  }
+});
+
 test('restock race accepts an open catalog and still requires catalog contents', async () => {
   const definition = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
     'tracks/ecommerce/scenarios/01-restock-race.json'), 'utf8')));

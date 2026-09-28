@@ -7,6 +7,6 @@ When adding this feature to an existing app, preserve purchases made through the
 | --- | --- |
 | `item-list` | Contains exactly the ten ranked storefront items. |
 | `item-card` | Shows one storefront or search result. |
-| `item-name` | Shows the item name inside its `item-card`. |
+| `item-name` | Shows exactly the item name inside its `item-card`. Put icons, badges, and other text outside this element. |
 | `search-input` | Searches the full catalog as the visitor types or when they press Enter; no separate control runs the search. |
 | `search-results` | Contains matching `item-card` results. |
