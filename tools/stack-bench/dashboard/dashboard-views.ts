@@ -30,6 +30,7 @@ import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { readProgressionState } from '../src/progression/progression-state.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { CHECK_EVIDENCE_STATUSES, evidenceDisposition, type CheckEvidence } from '../src/evidence/check-evidence.js';
+import { renderFinding } from '../src/actions/action-findings.js';
 import { repairBudgetLimit, type RepairBudget } from '../src/progression/repair-plan.js';
 import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail, attemptPause,
   walkPublicExecutionArtifacts } from './dashboard-model.js';
@@ -624,7 +625,8 @@ export interface AttemptCheck {
   outcome: string;
   regressed: boolean;
   history: string[];
-  observations: Array<{ status: string; summary: string | null; expected: string | null; actual: string | null } | null>;
+  observations: Array<{ status: string; summary: string | null; expected: string | null; actual: string | null;
+    context?: string } | null>;
 }
 
 export interface AttemptChecks {
@@ -653,7 +655,20 @@ function checkObservation(value: unknown): AttemptCheck['observations'][number] 
     const result = redactCredentials(typeof item === 'string' ? item : JSON.stringify(item, null, 2));
     return result.length <= 12_000 ? result : `${result.slice(0, 12_000)}\n[Truncated. Full evidence is in Files.]`;
   };
-  return { status, summary: text(evidence.summary), expected: text(evidence.expected), actual: text(evidence.observation) };
+  const last = evidence.actions?.at(-1)?.evidence as {
+    status?: string; action?: { id?: string }; sensitivity?: string[];
+  } | undefined;
+  const failedStep = last?.status && last.status !== 'passed' && !last.sensitivity?.length ? last.action?.id : null;
+  const interfaceFailure = evidence.status === 'failed' && evidence.finding
+    && ['interface-missing', 'interface-invalid', 'stock-interface-missing'].includes(evidence.finding.kind);
+  const context = [
+    interfaceFailure ? 'Interface failure; remaining steps were not reached. This does not prove the intended guarantee failed.'
+      : evidence.status === 'blocked' ? 'A prerequisite failed; the target check was not reached.' : null,
+    failedStep ? `Stopped at ${failedStep}.` : null,
+    evidence.finding ? renderFinding(evidence.finding) : null,
+  ].filter(Boolean).join(' ');
+  return { status, summary: text(evidence.summary), expected: text(evidence.expected), actual: text(evidence.observation),
+    ...(context ? { context: text(context)! } : {}) };
 }
 
 function gradeDirectories(executionDirectory: string): AttemptCheckGrade[] {

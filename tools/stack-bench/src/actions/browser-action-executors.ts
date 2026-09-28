@@ -735,19 +735,18 @@ async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserC
           getBoundingClientRect(): { width: number; height: number };
           ownerDocument: { defaultView: { getComputedStyle(node: Node): { display: string; visibility: string } } };
         }
-        const rowSelector = ['admin-item-row', 'admin-warehouse-item', 'admin-location-row']
-          .map(id => selectors[id]).join(',');
         const visible = (node: Node): boolean => {
           const box = node.getBoundingClientRect();
           return !!(box.width || box.height) && node.ownerDocument.defaultView.getComputedStyle(node).visibility === 'visible';
         };
-        // A nested row owns its text and numbers; it cannot fill an empty parent row.
-        const ownText = (node: Node, root: Node): string => {
+        // Marked labels can be nested. Same-role rows and child holdings own
+        // their text so an empty parent cannot borrow a complete child's identity.
+        const ownText = (node: Node, root: Node, excludedRows: string): string => {
           if (node.nodeType === 3) return node.textContent ?? '';
-          if (node.nodeType !== 1 || node !== root && node.matches(rowSelector)) return '';
+          if (node.nodeType !== 1 || node !== root && node.matches(excludedRows)) return '';
           const style = node.ownerDocument.defaultView.getComputedStyle(node);
           if (style.display === 'none' || style.visibility !== 'visible') return '';
-          const text = Array.from(node.childNodes, child => ownText(child, root)).join('');
+          const text = Array.from(node.childNodes, child => ownText(child, root, excludedRows)).join('');
           return node.tagName === 'BR' || !style.display.startsWith('inline') && style.display !== 'contents'
             ? ` ${text} ` : text;
         };
@@ -757,12 +756,13 @@ async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserC
             .find(id => row.matches(selectors[id]!))!;
           const numeric = control === 'admin-item-row' ? 'admin-stock'
             : control === 'admin-warehouse-item' ? 'warehouse-total' : 'admin-location-qty';
-          const owner = control === 'admin-warehouse-item' ? selectors['admin-warehouse-item']! : rowSelector;
+          const owner = selectors[control]!;
           const values = Array.from(row.querySelectorAll(selectors[numeric]!))
               .filter(child => child.closest(owner) === row && visible(child))
               .map(child => ['INPUT', 'TEXTAREA', 'SELECT'].includes(child.tagName)
                 ? child.value ?? '' : child.innerText);
-          return { control, text: ownText(row, row).replace(/\s+/g, ' ').trim(), values };
+          const excludedRows = [owner, selectors['admin-location-row']!].join(',');
+          return { control, text: ownText(row, row, excludedRows).replace(/\s+/g, ' ').trim(), values };
         });
       }, selectors);
 }

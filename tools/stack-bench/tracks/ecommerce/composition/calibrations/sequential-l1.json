@@ -83,7 +83,7 @@
     "checks": [
       "ecommerce.feature.accounts.accounts.1a",
       "ecommerce.feature.accounts.accounts.1b",
-      "ecommerce.feature.accounts.accounts.1c",
+      "ecommerce.spec.access-control.account-password.1c",
       "ecommerce.spec.state-durability.session-reload.1e",
       "ecommerce.feature.accounts.accounts.1d",
       "ecommerce.feature.warehouse-admin.admin-write.103a",

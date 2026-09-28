@@ -97,7 +97,6 @@
       "includeCheckGroups": [
         "account-create",
         "account-duplicate",
-        "account-password",
         "account-signout"
       ]
     },
@@ -180,6 +179,7 @@
         "guarantee"
       ],
       "includeCheckGroups": [
+        "account-password",
         "signed-out-purchase",
         "purchase-session",
         "purchase-attribution",
@@ -266,7 +266,7 @@
     "weights": {
       "ecommerce.feature.accounts.accounts.1a": 1,
       "ecommerce.feature.accounts.accounts.1b": 1,
-      "ecommerce.feature.accounts.accounts.1c": 1,
+      "ecommerce.spec.access-control.account-password.1c": 1,
       "ecommerce.feature.accounts.accounts.1d": 1,
       "ecommerce.spec.state-durability.session-reload.1e": 1,
       "ecommerce.feature.catalog.catalog-values.2a": 1,

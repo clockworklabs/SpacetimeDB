@@ -17,6 +17,21 @@ owns category and point metadata; this document does not maintain a second count
 
 A mixed criterion is production when passing it requires a production property. For example, a refund check that also tests duplicate refusal is production. This coarse label does not separate which assertion failed. Split such a criterion only through a reviewed definition change with new qualification evidence.
 
+Read the failed step and structured finding before assigning a cause. Check
+details identify a missing or invalid named-action or stock interface and state
+that later steps were not reached. A recorded failure still earns no credit.
+It does not establish that a later ownership, conservation, or durability
+assertion failed. Several checks can stop at the same missing interface; do not
+count them as independent application defects. Other control failures still
+need review: a missing error marker does not prove that a refused write occurred.
+
+Password security remains a required account guarantee. Normal account creation,
+duplicate-account refusal, and sign-out/sign-in control access to dependent
+features. A failed password guarantee prevents full account completion, but does
+not stop otherwise usable accounts from opening later work. This policy applies
+to newly compiled dependency campaigns. It does not change frozen campaigns or
+provide scores for features that an earlier agent was never asked to build.
+
 Categories do not prove that a guarantee was supplied without being asked. That requires an audit of the exact delivered request, contracts, and selected skills against the [request boundaries](prompting.md#request-boundaries). A production requirement can still be explicitly disclosed.
 
 Feature completion counts only fully passed dependency nodes. A node with passing feature checks but unfinished guarantees is not complete. Check completion counts accepted positive-point criteria. Both use the full selected target, including blocked and unmeasured work.

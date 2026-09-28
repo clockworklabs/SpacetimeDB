@@ -58,6 +58,7 @@ function checksTable(checks: AttemptChecks | null): string {
           const grade = checks.grades[index];
           const label = `Grade ${index + 1}${grade?.level == null ? '' : ` · L${grade.level}`}`;
           return `<section><strong>${esc(label)} · ${esc(observation?.status ?? 'NO RESULT')}</strong>`
+            + (observation?.context ? `<p><strong>${esc(observation.context)}</strong></p>` : '')
             + (observation?.summary ? `<p>${esc(observation.summary)}</p>` : '')
             + (observation?.expected != null ? `<div>Expected</div><pre>${esc(observation.expected)}</pre>` : '')
             + (observation?.actual != null ? `<div>Observed</div><pre>${esc(observation.actual)}</pre>` : '')
@@ -73,7 +74,7 @@ function checksTable(checks: AttemptChecks | null): string {
   }).join('');
   return errors + '<div class="grade-key">Recorded grades, oldest first. Expand a check for evidence. '
     + '<span class="p">✓ Pass</span><span class="f">✕ Fail</span>'
-    + '<span class="x">· No pass/fail result</span></div>'
+    + '<span class="x">· No pass/fail result</span> Categories name the intended property. Failed checks can share one cause.</div>'
     + '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Requirement</th><th>Category</th>'
     + `<th>Grades</th></tr></thead><tbody>${groups}</tbody></table></div>`;
 }

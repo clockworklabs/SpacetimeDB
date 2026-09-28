@@ -632,8 +632,8 @@ async function expectReplayRejected({ input, capabilities }:
   }
   const replayStatus = replay.status;
   const httpRefusal = !replay.responseContract?.startsWith('convex-')
-    && (replayStatus === 401 || replayStatus === 403 || (replayStatus === 404 && input.allowNotFound === true));
-  if (!httpRefusal && replay.refusalKind !== 'access' && replay.applicationRejected !== true) {
+    && ([400, 401, 403, 409, 422].includes(replayStatus ?? 0) || (replayStatus === 404 && input.allowNotFound === true));
+  if (!httpRefusal && replay.refusalKind !== 'access' && replay.refusalKind !== 'validation' && replay.applicationRejected !== true) {
     fail('replay-error', { status: replay.status ?? null, ...named });
   }
   transport.verification.verified(

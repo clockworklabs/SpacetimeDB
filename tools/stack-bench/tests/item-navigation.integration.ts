@@ -35,6 +35,13 @@ test('warehouse inventory accepts consistent views and rejects missing or confli
     { mode: 'block-separated-name', expected: 'passed' },
     { mode: 'duplicate-items', expected: 'passed' },
     { mode: 'duplicate-locations', expected: 'passed' },
+    { mode: 'nested-warehouse-label', expected: 'passed' },
+    { mode: 'nested-holding-label', expected: 'passed' },
+    { mode: 'nested-item-label', expected: 'passed' },
+    { mode: 'nested-label-quantity', expected: 'passed' },
+    { mode: 'nested-label-wrong-quantity', expected: 'failed' },
+    { mode: 'nested-label-wrong-warehouse', expected: 'failed' },
+    { mode: 'nested-holding-number-only', expected: 'failed' },
     { mode: 'missing-item-equal-count', expected: 'failed' },
     { mode: 'wrong-non-mouse-total', expected: 'failed' },
     { mode: 'wrong-item-copy-first', expected: 'failed' },
@@ -109,6 +116,18 @@ test('warehouse inventory accepts consistent views and rejects missing or confli
     if (mode === 'nested-number-only') html = html.replace('<span data-role="admin-stock">100</span>',
       '<article data-role="admin-item-row">Air Purifier<span data-role="admin-stock">100</span></article>');
     if (mode === 'hidden-number') html = html.replace('<span data-role="admin-stock">100</span>', '<span data-role="admin-stock" hidden>100</span>');
+    if (mode === 'nested-item-label') html = html.replace('<strong>Air Purifier</strong>', '<span data-role="admin-warehouse-item">Air Purifier · East</span>');
+    if (mode.startsWith('nested-') && mode !== 'nested-number-only') {
+      html = html.replace(/(<article data-role="admin-location-row">)([^<]+) · (East|West)(\s*)(<span data-role="admin-location-qty">\d+<\/span>)/g,
+        (_match, opening, item, warehouse, spacing, quantity) => {
+          if (mode === 'nested-holding-number-only') return `${opening}<article data-role="admin-location-row">${item} · ${warehouse}${quantity}</article>`;
+          const label = mode === 'nested-holding-label' ? `${item} · ${warehouse}` : warehouse;
+          const prefix = mode === 'nested-holding-label' ? '' : `${item} · `;
+          return `${opening}${prefix}<span data-role="admin-warehouse-item">${label}${mode === 'nested-label-quantity' ? ` ${quantity}` : ''}</span>${spacing}${mode === 'nested-label-quantity' ? '' : quantity}`;
+        });
+      if (mode === 'nested-label-wrong-quantity') html = html.replace('<span data-role="admin-location-qty">60</span>', '<span data-role="admin-location-qty">61</span>');
+      if (mode === 'nested-label-wrong-warehouse') html = html.replace('<span data-role="admin-warehouse-item">East</span>', '<span data-role="admin-warehouse-item">West</span>');
+    }
     if (mode === 'late-snapshot') html += `<script>
       const control = document.querySelector('[data-role="admin-stock"]');
       const measure = control.getBoundingClientRect.bind(control);

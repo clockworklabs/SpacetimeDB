@@ -10,7 +10,9 @@ overlap, without relying on the browser to retry it. A business refusal, such as
 stock, still completes the request.
 
 <!-- interface:http -->
-For error responses, use HTTP 401 or 403 for access errors and 400, 409, or 422 for input errors.
+For expected refusals, use HTTP 400, 401, 403, 409, or 422. Prefer 401 or 403 for
+access errors and 400, 409, or 422 for input or business-rule errors.
+An existing operation may return 404 to conceal a resource from an unauthorized user.
 <!-- /interface -->
 
 <!-- interface:reducer -->

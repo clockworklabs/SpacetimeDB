@@ -124,7 +124,7 @@
       "id": "signin-does-not-verify-the-password",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Accept a known username without comparing the supplied password hash.",
       "file": "backend/spacetimedb/src/auth.ts",
@@ -2676,7 +2676,7 @@
       "id": "password-verification-truncates-utf8",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Hash and verify only the first 72 UTF-8 bytes, accepting a different password suffix.",
       "file": "backend/spacetimedb/src/auth.ts",
@@ -2691,7 +2691,7 @@
       "id": "password-verification-rejects-every-login",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Refuse even a correct password; refusal alone must not earn credit.",
       "file": "backend/spacetimedb/src/auth.ts",

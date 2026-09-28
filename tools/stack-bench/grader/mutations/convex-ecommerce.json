@@ -642,7 +642,7 @@
       "id": "signin-skips-password-verification",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Signin accepts an existing account without requiring its password to match.",
       "file": "convex/auth.js",

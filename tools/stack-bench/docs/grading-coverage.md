@@ -169,6 +169,29 @@ score “production readiness”: these checks cover the declared product behavi
 not all security, accessibility, operational, or performance requirements of a
 deployed service.
 
+Live-state checks measure a selected capability, not a universal requirement for
+every production shop. Catalog ranking, stock, prices, and review ratings keep
+open buying views current. Shared carts keep one account's tabs in agreement.
+Staff stock, fulfilment, inventory, sales, and support views keep colleagues
+working from current information. Reconnect checks ask whether those views
+recover after a connection loss. A stale view is not proof of lost stored data.
+Use the `requested` treatment when these are product requirements. Use
+`observed` when they are diagnostic only. The `expected` treatment measures how
+often agents supply them without a direct request; disclose that choice and do
+not describe its failures as proof that an application is unfit for production.
+
+Order-owner check `204a` measures refusal, unchanged protected order state, and
+successful owner cancellation. It accepts an expected native rejection or HTTP
+400/401/403/409/422; a private 404 needs a successful call to the same operation.
+An error after a write fails the state check. A missing route, server error, or
+incomplete response cannot prove authorization. Exact HTTP status conformance
+is not a separate score in this check. Named-operation and replay refusal
+assertions accept these expected application errors across transports. Their
+scenarios must still prove the authorized path and protected state; response
+classification alone does not establish an access boundary. Native protocol
+envelopes must still identify a real application rejection. Generic native
+transport errors do not qualify just because their HTTP status is 4xx.
+
 Concurrent requests need classified outcomes. Keep adversarial values in
 scenarios, not product interfaces. For authenticated idempotent replay, verify
 unchanged totals and one business record through a fresh authoritative read.

@@ -14,6 +14,98 @@ import { compiledEntrypoint, STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const GRADER = compiledEntrypoint('grader', 'grade.js');
 
+test('order ownership measures state and useful access across refusal formats', async t => {
+  // Failure cases: a safe conflict or private 404 is a refusal; writing then
+  // refusing, refusing every caller, a missing route, and a server crash are not
+  // valid ownership protection. Exercise the authored check, not a copied probe.
+  const root = join(STACK_BENCH_ROOT, 'results', 'diagnostics', `ownership-refusal-${Date.now()}`);
+  mkdirSync(root, { recursive: true });
+  t.diagnostic(`Evidence: ${root}; repeat: node --test --test-name-pattern="order ownership measures" dist/tests/selected-grade.integration.js`);
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 2, { id: 'ecommerce.progression-catalog' });
+  const check = binding.release.checkCatalog.find(c => c.criterionId === '204a');
+  assert(check?.source);
+  const selection = resolveRecipeSelection(binding.release, { checkKeys: [check.stableKey] });
+  for (const fixture of [
+    { name: 'safe-forbidden', status: 403, expected: 'passed' },
+    { name: 'safe-conflict', status: 409, expected: 'passed' },
+    { name: 'safe-private-not-found', status: 404, expected: 'passed' },
+    { name: 'write-then-refuse', status: 409, expected: 'failed' },
+    { name: 'reject-all', status: 403, expected: 'failed' },
+    { name: 'missing-route', status: 404, expected: 'failed' },
+    { name: 'server-error', status: 500, expected: 'failed' },
+  ]) await t.test(fixture.name, async () => {
+    const app = join(root, fixture.name); mkdirSync(app);
+    const orders: Array<{ id: number; item: string; owner: string; status: string }> = [];
+    const requests: Array<{ caller: string; order: number; status: number }> = [];
+    const html = `<!doctype html>
+      <input id="signup-username"><input id="signup-password"><button id="signup-submit">Sign up</button>
+      <input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button>
+      <span id="current-user" hidden></span><div id="item-list">
+      ${['Desk Lamp', 'Keyboard'].map((item, id) => `<article data-role="item-card" data-buy-input='{"itemId":${id}}'>${item}</article>`).join('')}
+      </div><button id="orders-toggle">Orders</button><div id="orders"></div>
+      <script>
+        const current=document.querySelector('#current-user');
+        if(sessionStorage.user){current.textContent=sessionStorage.user;current.hidden=false;}
+        for(const action of ['signup','signin'])document.querySelector('#'+action+'-submit').onclick=async()=>{
+          const name=document.querySelector('#'+action+'-username').value;
+          await fetch('/session',{method:'POST',body:name});sessionStorage.user=name;current.textContent=name;current.hidden=false;
+        };
+        document.querySelector('#orders-toggle').onclick=async()=>{
+          const rows=await (await fetch('/orders')).json();
+          document.querySelector('#orders').replaceChildren(...rows.map(o=>{
+            const row=document.createElement('div');row.dataset.role='order-item';row.dataset.cancelInput=JSON.stringify({orderId:o.id});row.textContent=o.item;
+            const status=document.createElement('span');status.dataset.role='order-status';status.textContent=o.status;row.append(status);return row;
+          }));
+        };
+      </script>`;
+    const server = createServer((req, res) => {
+      const caller = decodeURIComponent((req.headers.cookie ?? '').replace(/^user=/, ''));
+      res.setHeader('cache-control', 'no-store');
+      if (req.url === '/session') {
+        let name = ''; req.on('data', chunk => { name += chunk; });
+        req.on('end', () => { res.setHeader('set-cookie', `user=${encodeURIComponent(name)}; Path=/`); res.end('{}'); });
+      } else if (req.url === '/orders') {
+        res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(orders.filter(o => o.owner === caller)));
+      } else if (req.url?.endsWith('/buy')) {
+        const id = Number(req.url.split('/')[3]);
+        orders.push({ id: orders.length + 1, item: ['Desk Lamp', 'Keyboard'][id]!, owner: caller, status: 'pending' });
+        res.setHeader('content-type', 'application/json'); res.end('{}');
+      } else if (req.url?.endsWith('/cancel')) {
+        const order = orders.find(o => o.id === Number(req.url!.split('/')[3]));
+        const allowed = order?.owner === caller && !['reject-all', 'missing-route'].includes(fixture.name);
+        if (order && (allowed || fixture.name === 'write-then-refuse')) order.status = 'cancelled';
+        res.statusCode = allowed ? 200 : fixture.status;
+        requests.push({ caller, order: order?.id ?? 0, status: res.statusCode });
+        res.setHeader('content-type', 'application/json'); res.end('{}');
+      } else { res.setHeader('content-type', 'text/html'); res.end(html); }
+    });
+    writeFileSync(join(app, 'index.html'), html);
+    writeFileSync(join(app, 'expected.json'), JSON.stringify(fixture));
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address(); assert(address && typeof address !== 'string');
+      const out = join(app, 'grade.json');
+      const execution = await run(GRADER, ['--url', `http://127.0.0.1:${address.port}`, '--level', '2', '--track', 'ecommerce',
+        '--backend', 'postgres', '--app', app, '--spec', join(track.dir, check.source!), '--out', out,
+        '--recipe', binding.release.id, '--selected-check', check.stableKey,
+        '--expected-recipe-sha256', binding.release.contentSha256, '--selection-sha256', selection.sha256]);
+      writeFileSync(join(app, 'stdout.log'), execution.stdout); writeFileSync(join(app, 'stderr.log'), execution.stderr);
+      writeFileSync(join(app, 'effects.json'), JSON.stringify({ orders, requests }, null, 2));
+      const criterion = first(first(readGradeArtifactPayload(out).features).criteria);
+      assert.equal(criterion.evidence.status, fixture.expected);
+      assert(requests.length > 0, 'the check must reach the cancel endpoint');
+      if (fixture.expected === 'passed') assert.equal(requests.length, 4, 'both caller attacks and both owner controls must execute');
+      if (fixture.name === 'write-then-refuse') assert.equal(criterion.evidence.finding?.kind, 'value-mismatch');
+    } catch (error) {
+      writeFileSync(join(app, 'failure.txt'), String(error)); throw error;
+    } finally {
+      server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+      writeFileSync(join(app, 'cleanup.json'), JSON.stringify({ serverClosed: !server.listening }));
+    }
+  });
+});
+
 const first = <Value>(values: readonly Value[]): Value => {
   const value = values[0];
   assert(value);

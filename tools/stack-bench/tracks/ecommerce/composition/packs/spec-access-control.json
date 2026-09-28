@@ -175,6 +175,15 @@
   },
   "checks": [
     {
+      "id": "account-password",
+      "source": "scenarios/01-account-password.json",
+      "feature": 1,
+      "criteria": ["1c"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.feature.accounts"]
+    },
+    {
       "id": "signed-out-purchase",
       "source": "scenarios/progression-signed-out-purchase.json",
       "feature": 3,

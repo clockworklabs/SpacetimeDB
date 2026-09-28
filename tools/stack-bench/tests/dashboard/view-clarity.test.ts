@@ -88,7 +88,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     checks: { attemptId: attempt.id, stack: 'spacetime', grades: [], checks: [{ id: 'p', key: 'p', description: 'Durable', feature: 'Orders', points: 1,
       category: 'production', outcome: 'pass', regressed: false, history: ['fail', 'not-run', 'pass'],
       observations: [
-        { status: 'FAIL', summary: '<script>Two orders for one cart</script>', expected: '1 order', actual: '2 orders' },
+        { status: 'FAIL', summary: '<script>Two orders for one cart</script>', expected: '1 order', actual: '2 orders', context: 'Stopped at <callAction>.' },
         { status: 'INCONCLUSIVE', summary: 'Reader timed out', expected: null, actual: null },
         { status: 'PASS', summary: null, expected: null, actual: null },
       ] }] } });
@@ -100,6 +100,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(categorized, /Grade 3 · PASS/);
   assert.match(categorized, /No observation details were recorded/);
   assert.match(categorized, /&lt;script&gt;Two orders/);
+  assert.match(categorized, /Stopped at &lt;callAction&gt;/);
   assert.doesNotMatch(categorized, /<script>|check-evidence[^>]* open/);
   const missing = attemptPage({ sheet, attemptId: attempt.id, tab: 'checks', evidence: null, log: '',
     checks: { attemptId: attempt.id, stack: 'spacetime', checks: [],

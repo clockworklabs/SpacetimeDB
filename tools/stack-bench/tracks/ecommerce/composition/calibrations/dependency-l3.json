@@ -79,7 +79,7 @@
     "checks": [
       "ecommerce.feature.accounts.accounts.1a",
       "ecommerce.feature.accounts.accounts.1b",
-      "ecommerce.feature.accounts.accounts.1c",
+      "ecommerce.spec.access-control.account-password.1c",
       "ecommerce.feature.accounts.accounts.1d",
       "ecommerce.feature.cart-checkout.cart.4a",
       "ecommerce.feature.cart-checkout.cart.4d",

@@ -12,11 +12,37 @@ import { progressionEngine, type ProgressionWorkAction }
   from '../src/progression/progression-engine.js';
 import type { CheckCategory } from '../src/composition/definition-compiler.js';
 import type { ProgressionState } from '../src/progression/progression-state.js';
+import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
+import { loadTrack } from '../src/composition/tracks.js';
+import { dependencyRuntimeDefinition } from '../src/progression/progression-definition.js';
 import type { RepairPlan } from '../src/progression/repair-plan.js';
 
 type RepairPlanInput = Pick<RepairPlan, 'selection' | 'budget'> & { order?: RepairPlan['order'] };
 type Outcome = 'pass' | 'fail' | 'blocked' | 'not-run';
 type Outcomes = Record<string, Outcome | Record<string, Outcome>>;
+
+test('ecommerce password security stays required without blocking working account descendants', () => {
+  // Failure cases: dropping the password check would inflate completion;
+  // retaining it as a capability gate would hide later behavior; broken normal
+  // sign-in must still block account-dependent work.
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', loadTrack('ecommerce'));
+  const policy = compileDependencyPolicyInput({ selection: 'feature', budget: { total: 0 } }, catalog,
+    { selectedLevels: [1, 2, 3] });
+  const definition = dependencyRuntimeDefinition(catalog, policy);
+  for (const failed of ['1c', '1d']) {
+    let state = progressionEngine.initialize(definition);
+    const accounts = definition.nodes.find(node => node.id === 'accounts')!;
+    const check = accounts.gradingChecks.find(check => check.id.endsWith(`.${failed}`));
+    assert(check, `${failed} must remain scored`);
+    state = progressionEngine.recordResult(state, grade(state, failed, { accounts: { [check.id]: 'fail' } }));
+    const dependent = definition.nodes.find(node => node.dependencies.length === 1 && node.dependencies[0] === 'accounts');
+    assert(dependent);
+    assert.equal(state.nodes.accounts!.status, failed === '1c' ? 'working' : 'failed');
+    assert.equal(prompt(state).nodeIds.includes(dependent.id), failed === '1c');
+    const score = progressionEngine.score(state) as DependencyScore;
+    assert(score.completion.failed > 0, 'a security failure must not earn full completion');
+  }
+});
 
 interface FixtureNode {
   id: string;

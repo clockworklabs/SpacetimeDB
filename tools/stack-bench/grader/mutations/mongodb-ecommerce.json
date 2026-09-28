@@ -99,7 +99,7 @@
       "id": "signin-skips-password-verification",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Signin accepts an existing account without requiring its password to match.",
       "file": "server/src/index.ts",
@@ -2600,7 +2600,7 @@
       "id": "password-verification-truncates-utf8",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Hash and verify only the first 72 UTF-8 bytes, accepting a different password suffix.",
       "file": "server/src/auth.ts",
@@ -2615,7 +2615,7 @@
       "id": "password-verification-rejects-every-login",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "Refuse even a correct password; refusal alone must not earn credit.",
       "file": "server/src/auth.ts",

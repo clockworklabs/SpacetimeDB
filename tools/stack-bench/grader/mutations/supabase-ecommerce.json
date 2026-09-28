@@ -112,7 +112,7 @@
       "id": "signin-skips-password-verification",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
-        "ecommerce.feature.accounts.accounts.1c"
+        "ecommerce.spec.access-control.account-password.1c"
       ],
       "desc": "The client derives the Auth password without the typed password, so any password signs in to an account created through the storefront.",
       "file": "client/src/request.ts",

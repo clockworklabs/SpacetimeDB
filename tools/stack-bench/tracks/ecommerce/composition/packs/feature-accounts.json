@@ -63,16 +63,6 @@
       "role": "feature"
     },
     {
-      "id": "account-password",
-      "stableId": "accounts",
-      "source": "scenarios/01-account-password.json",
-      "feature": 1,
-      "criteria": [
-        "1c"
-      ],
-      "role": "feature"
-    },
-    {
       "id": "account-signout",
       "stableId": "accounts",
       "source": "scenarios/01-account-signout.json",

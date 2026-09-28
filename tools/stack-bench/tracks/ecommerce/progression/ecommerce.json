@@ -14,7 +14,7 @@
       "gradingGroups": [
         "ecommerce.feature.accounts#account-create",
         "ecommerce.feature.accounts#account-duplicate",
-        "ecommerce.feature.accounts#account-password",
+        "ecommerce.spec.access-control#account-password",
         "ecommerce.feature.accounts#account-signout",
         "ecommerce.spec.access-control#account-disclosure",
         "ecommerce.spec.state-durability#session-reload"

@@ -138,6 +138,13 @@ Neutral requests do not state atomicity, conservation, exactly-once, no-reload,
 or cross-account isolation instructions. Those belong to specification packs and
 enter the request only when a study selects them as `requested`.
 
+These properties do not all have the same justification. Ownership and correct
+acknowledged writes protect the meaning of an operation. Automatic updates in
+another open tab are a chosen product capability. An `expected` live-state
+score measures that selected capability without a direct request. It does not
+establish a general production-readiness standard. Select `requested` to make
+it part of the product brief, or `observed` to exclude it from the main score.
+
 The **Production-quality app** option adds one line to the request: “Build a
 production-quality application suitable for real users, not a prototype or
 demo.” It is on by default and recorded with the run. It changes the request,

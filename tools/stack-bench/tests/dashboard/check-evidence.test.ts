@@ -49,6 +49,27 @@ test('check details retain measured and unmeasured evidence without leaking cred
   const large = read().checks[0]?.observations[0]?.actual;
   assert.ok(large && large.length < 13_000);
   assert.match(large, /Truncated. Full evidence is in Files/);
+  // An interface prerequisite is a measured omission, not evidence that the
+  // later integrity assertion failed. Do not infer that for a generic mismatch.
+  criterion.evidence = createCheckEvidence({ status: 'failed', code: 'test.interface',
+    phase: 'assertion', startedAtMs: 1, completedAtMs: 2,
+    finding: { kind: 'interface-missing', fields: { action: 'transfer', control: 'admin-item-row', attribute: 'data-transfer-input' } },
+    actions: [{ actor: 'admin', evidence: { schemaVersion: 2, action: { id: 'callAction', version: '1' },
+      status: 'failed', type: 'action', code: 'test.interface', phase: 'execution', summary: null, finding: null,
+      observation: null, expected: null, retryable: false, attachments: [], sensitivity: [],
+      timing: { startedAtMs: 1, completedAtMs: 2, durationMs: 1, deadlineMs: 100 } } }] });
+  writeArtifact(bundlePath, bundle);
+  const missing = read().checks[0]!.observations[0]!;
+  assert.match(missing.context ?? '', /Interface failure.*remaining steps were not reached/);
+  assert.match(missing.context ?? '', /callAction/);
+  assert.match(missing.context ?? '', /data-transfer-input/);
+  assert.equal(missing.status, 'FAIL', 'reporting must not change the recorded outcome');
+  criterion.evidence.finding = { kind: 'value-mismatch', fields: { control: 'order-status', observed: 'cancelled', expected: 'pending' } };
+  writeArtifact(bundlePath, bundle);
+  assert.doesNotMatch(read().checks[0]!.observations[0]!.context ?? '', /Interface failure|not reached/);
+  criterion.evidence.actions[0].evidence.sensitivity = ['credentials'];
+  writeArtifact(bundlePath, bundle);
+  assert.doesNotMatch(JSON.stringify(read().checks[0]!.observations[0]), /callAction/);
   // A missing later grade must not erase earlier evidence or become a pass.
   writeArtifact(join(output, 'l1-fix1-grading', 'bundle.json'), bundle);
   rmSync(join(output, 'l1-fix1-grading', 'bundle.json'));

@@ -4,7 +4,7 @@
   "id": "ecommerce.spec.live-state",
   "title": "Live state",
   "moduleType": "specification",
-  "description": "Cross-client updates and reconnect convergence without reload.",
+  "description": "Selected live-view capability: keep open buying views, one account's carts, and staff operational views current across clients. This is not a universal production-readiness requirement; select requested for a product requirement or observed for an unscored diagnostic.",
   "requiresPacks": [],
   "conflictsWith": [],
   "capabilities": [

@@ -260,18 +260,18 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
   const status = call.status || null;
   if (call.complete === false) inconclusive('transport-incomplete', {});
   const http = !call.responseContract?.startsWith('convex-');
-  if (input.outcome === 'completed' || input.outcome === 'application-refused') {
+  if (input.outcome === 'completed' || input.outcome === 'application-refused' || input.outcome === 'refused') {
     const proof = input.routeProvenBy === undefined ? null
       : actorFor(capabilities, input.routeProvenBy).actionCall;
     const deliberateRefusal = call.refusalKind === 'access' || (http && [400, 401, 403, 409, 422].includes(call.status))
       || (http && call.status === 404 && proof?.accepted === true && proof.action === call.action)
       || call.applicationRejected === true || call.refusalKind === 'validation';
-    if (call.accepted && input.outcome === 'application-refused') {
+    if (call.accepted && input.outcome !== 'completed') {
       fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'refused' });
     }
     if (!call.accepted && !deliberateRefusal) {
       fail('call-error', { action: call.action, actor: actor.name, status,
-        required: 'validation-refused', operation: missingOperation(call) });
+        required: input.outcome === 'refused' ? 'refused' : 'validation-refused', operation: missingOperation(call) });
     }
   } else if (input.outcome === 'accepted') {
     if (!call.accepted) {
@@ -285,20 +285,6 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
     if (!(http && [400, 409, 422].includes(call.status)) && call.applicationRejected !== true && call.refusalKind !== 'validation') {
       fail('call-error', { action: call.action, actor: actor.name, status,
         required: 'validation-refused', operation: missingOperation(call) });
-    }
-  } else {
-    if (call.accepted) {
-      fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'refused' });
-    }
-    const routeProof = input.routeProvenBy === undefined ? null
-      : actorFor(capabilities, input.routeProvenBy).actionCall;
-    const provenPrivateNotFound = http && call.status === 404 && routeProof?.accepted === true
-      && routeProof.action === call.action;
-    const deliberateRefusal = call.refusalKind === 'access' || (http && (call.status === 401 || call.status === 403))
-      || provenPrivateNotFound || call.applicationRejected === true;
-    if (!deliberateRefusal) {
-      fail('call-error', { action: call.action, actor: actor.name, status,
-        required: 'refused', operation: missingOperation(call) });
     }
   }
   transport.verification.verified(
