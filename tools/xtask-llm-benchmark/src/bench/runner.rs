@@ -71,10 +71,10 @@ pub async fn ensure_goldens_built_once(
 
 fn with_build_cleanup<T>(project: &Path, lang: Lang, publish: impl FnOnce() -> Result<T>) -> Result<T> {
     let result = publish();
-    // Only task-local outputs: never follow the shared Cargo target override or package caches.
+    // Only task-local outputs: never follow the shared Cargo target override or shared caches.
     let directories: &[&str] = match lang {
         Lang::Rust => &["target"],
-        Lang::CSharp => &["bin", "obj"],
+        Lang::CSharp => &["bin", "obj", ".nuget"],
         Lang::TypeScript => &["node_modules", "dist"],
     };
     for directory in directories {
@@ -1386,7 +1386,7 @@ mod build_cleanup_tests {
         let root = std::env::temp_dir().join(format!("llm-build-cleanup-{}", std::process::id()));
         for (lang, directories) in [
             (Lang::Rust, vec!["target"]),
-            (Lang::CSharp, vec!["bin", "obj"]),
+            (Lang::CSharp, vec!["bin", "obj", ".nuget"]),
             (Lang::TypeScript, vec!["node_modules", "dist"]),
         ] {
             for succeeds in [true, false] {
