@@ -91,10 +91,10 @@ pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
 
 /// The static ID of the table that tracks the last inbound msg id per sender database.
-pub const ST_INBOUND_MSG_ID: TableId = TableId(21);
+pub const ST_INBOUND_MSG_ID: TableId = TableId(22);
 
 /// The static ID of the table that tracks outbound inter-database messages.
-pub const ST_OUTBOUND_MSG_ID: TableId = TableId(22);
+pub const ST_OUTBOUND_MSG_ID: TableId = TableId(23);
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -194,6 +194,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
         ST_TABLE_ACCESSOR_ID
         | ST_INDEX_ACCESSOR_ID
         | ST_COLUMN_ACCESSOR_ID
+        | ST_ENV_ID
         | ST_INBOUND_MSG_ID
         | ST_OUTBOUND_MSG_ID => false,
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
@@ -243,9 +244,9 @@ pub fn system_tables() -> [TableSchema; 23] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_env_schema(),
         st_inbound_msg_schema(),
         st_outbound_schema(),
-        st_env_schema(),
     ]
 }
 
@@ -294,9 +295,9 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
-pub(crate) const ST_INBOUND_MSG_IDX: usize = 20;
-pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 21;
-pub(crate) const ST_ENV_IDX: usize = 22;
+pub(crate) const ST_ENV_IDX: usize = 20;
+pub(crate) const ST_INBOUND_MSG_IDX: usize = 21;
+pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 22;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -804,9 +805,9 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
-        m.insert("st_inbound_msg_database_identity_key", ConstraintId(26));
-        m.insert("st_outbound_msg_msg_id_key", ConstraintId(27));
-        m.insert("st_env_key_key", ConstraintId(28));
+        m.insert("st_env_key_key", ConstraintId(26));
+        m.insert("st_inbound_msg_database_identity_key", ConstraintId(27));
+        m.insert("st_outbound_msg_msg_id_key", ConstraintId(28));
         m
     };
 }
@@ -845,9 +846,9 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
-        m.insert("st_inbound_msg_database_identity_idx_btree", IndexId(30));
-        m.insert("st_outbound_msg_msg_id_idx_btree", IndexId(31));
-        m.insert("st_env_key_idx_btree", IndexId(32));
+        m.insert("st_env_key_idx_btree", IndexId(30));
+        m.insert("st_inbound_msg_database_identity_idx_btree", IndexId(31));
+        m.insert("st_outbound_msg_msg_id_idx_btree", IndexId(32));
         m
     };
 }

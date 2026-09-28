@@ -1,6 +1,6 @@
 //! Private database environment state. Values follow ordinary table durability.
 use super::*;
-pub const ST_ENV_ID: TableId = TableId(23);
+pub const ST_ENV_ID: TableId = TableId(21);
 pub const ST_ENV_NAME: &str = "st_env";
 st_fields_enum!(enum StEnvFields { "key", Key = 0, "value", Value = 1, });
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
@@ -38,5 +38,5 @@ pub fn is_module_restricted_table(table: TableId) -> bool {
     table == ST_ENV_ID
 }
 pub fn is_module_restricted_index(index: IndexId) -> bool {
-    index == IndexId(32)
+    index == IndexId(30)
 }
