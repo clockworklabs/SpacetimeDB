@@ -19,7 +19,6 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
-    Event, ReducerEvent, Status,
     __codegen::{InternalError, Reducer},
     callbacks::{
         CallbackId, DbCallbacks, ProcedureCallback, ProcedureCallbacks, ReducerCallback, ReducerCallbacks, RowCallback,
@@ -29,6 +28,7 @@ use crate::{
     spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
     subscription::{PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager},
     websocket::{WsConnection, WsParams},
+    Event, ReducerEvent, Status,
 };
 use bytes::Bytes;
 use futures::StreamExt;

@@ -2,6 +2,7 @@ import type { ProductType } from '../lib/algebraic_type';
 import type { ReducerSchema } from '../lib/reducer_schema';
 import type { ParamsObj } from '../lib/reducers';
 import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders';
+import type { CamelCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
 import type { SubscriptionEventContextInterface } from './event_context';
 import type { UntypedRemoteModule } from './spacetime_module';
@@ -53,7 +54,7 @@ export type UntypedReducersDef = {
 class Reducers<ReducersDef extends UntypedReducersDef> {
   reducersType: ReducersDef;
 
-  constructor(handles: readonly ReducerSchema<any, any>[]) {
+  constructor(handles: readonly ReducerSchema<any, any, any>[]) {
     this.reducersType = reducersToSchema(handles) as ReducersDef;
   }
 }
@@ -61,7 +62,7 @@ class Reducers<ReducersDef extends UntypedReducersDef> {
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
-type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
+type ReducersToSchema<T extends readonly ReducerSchema<any, any, any>[]> = {
   reducers: {
     /** @type {UntypedReducerDef} */
     readonly [i in keyof T]: {
@@ -74,7 +75,7 @@ type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
 };
 
 export function reducersToSchema<
-  const T extends readonly ReducerSchema<any, any>[],
+  const T extends readonly ReducerSchema<any, any, any>[],
 >(reducers: T): ReducersToSchema<T> {
   const mapped = reducers.map(r => {
     const paramsRow = r.params.row;
@@ -111,22 +112,22 @@ export function reducersToSchema<
  * });
  * ```
  */
-export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
-  ...handles: H
-): Reducers<ReducersToSchema<H>>;
+export function reducers<
+  const H extends readonly ReducerSchema<any, any, any>[],
+>(...handles: H): Reducers<ReducersToSchema<H>>;
 
 /**
  * Creates a schema from table definitions (array overload)
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
  */
-export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
-  handles: H
-): Reducers<ReducersToSchema<H>>;
+export function reducers<
+  const H extends readonly ReducerSchema<any, any, any>[],
+>(handles: H): Reducers<ReducersToSchema<H>>;
 
-export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
-  ...args: [H] | H
-): Reducers<ReducersToSchema<H>> {
+export function reducers<
+  const H extends readonly ReducerSchema<any, any, any>[],
+>(...args: [H] | H): Reducers<ReducersToSchema<H>> {
   const handles = (
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args
   ) as H;
@@ -136,7 +137,12 @@ export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
 export function reducerSchema<
   ReducerName extends string,
   Params extends ParamsObj,
->(name: ReducerName, params: Params): ReducerSchema<ReducerName, Params> {
+  AccessorName extends string = CamelCase<ReducerName>,
+>(
+  name: ReducerName,
+  params: Params,
+  accessorName?: AccessorName
+): ReducerSchema<ReducerName, Params, AccessorName> {
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -146,7 +152,7 @@ export function reducerSchema<
   };
   return {
     reducerName: name,
-    accessorName: toCamelCase(name),
+    accessorName: accessorName ?? (toCamelCase(name) as AccessorName),
     params: new RowBuilder<Params>(params),
     paramsSpacetimeType: paramType,
     reducerDef: {

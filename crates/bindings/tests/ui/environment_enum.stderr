@@ -46,13 +46,13 @@ error: expected string literal
 38 |     #[env(value = 1)]
    |                   ^
 
-error[E0277]: the trait bound `Option<Mode>: RequiredEnvironmentValue` is not satisfied
+error[E0277]: the trait bound `Option<Mode>: spacetimedb::rt::RequiredEnvironmentValue` is not satisfied
   --> tests/ui/environment_enum.rs:51:17
    |
 51 |     pub NESTED: Option<Option<Mode>>,
-   |                 ^^^^^^^^^^^^^^^^^^^^ the trait `RequiredEnvironmentValue` is not implemented for `Option<Mode>`
+   |                 ^^^^^^^^^^^^^^^^^^^^ the trait `spacetimedb::rt::RequiredEnvironmentValue` is not implemented for `Option<Mode>`
    |
-help: the following other types implement trait `RequiredEnvironmentValue`
+help: the following other types implement trait `spacetimedb::rt::RequiredEnvironmentValue`
   --> tests/ui/environment_enum.rs:42:10
    |
 42 | #[derive(spacetimedb::EnvironmentValue)]
@@ -62,7 +62,7 @@ help: the following other types implement trait `RequiredEnvironmentValue`
    |
    | impl RequiredEnvironmentValue for String {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
-   = note: required for `Option<Option<Mode>>` to implement `EnvironmentValue`
+   = note: required for `Option<Option<Mode>>` to implement `spacetimedb::rt::EnvironmentValue`
    = note: this error originates in the derive macro `spacetimedb::EnvironmentValue` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `#[env(values(...))]` requires `String` or `Option<String>`; map enum variants with `#[env(value = "...")]` instead
@@ -71,12 +71,12 @@ error[E0277]: `#[env(values(...))]` requires `String` or `Option<String>`; map e
 50 |     pub MODE: Mode,
    |               ^^^^ unsatisfied trait bound
    |
-help: the trait `StringEnvironmentValue` is not implemented for `Mode`
+help: the trait `spacetimedb::rt::StringEnvironmentValue` is not implemented for `Mode`
   --> tests/ui/environment_enum.rs:43:1
    |
 43 | pub enum Mode {
    | ^^^^^^^^^^^^^
-help: the following other types implement trait `StringEnvironmentValue`
+help: the following other types implement trait `spacetimedb::rt::StringEnvironmentValue`
   --> src/rt.rs
    |
    | impl StringEnvironmentValue for String {}
