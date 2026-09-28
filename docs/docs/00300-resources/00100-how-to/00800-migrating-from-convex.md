@@ -1,6 +1,7 @@
 ---
 title: Migrating from Convex
 slug: /migrating-from-convex
+description: A guide for teams moving an application backend from Convex to a SpacetimeDB module, mapping Convex queries, mutations and actions onto SpacetimeDB subscriptions, reducers and procedures.
 ---
 
 # Migrating from Convex
