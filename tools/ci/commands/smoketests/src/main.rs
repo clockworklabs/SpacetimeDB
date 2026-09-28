@@ -3,6 +3,7 @@ use anyhow::{bail, ensure, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
+use spacetimedb_smoketests::prepare::{dotnet_prepared, prepare_modules};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -73,7 +74,7 @@ impl SmoketestSuite {
 
 #[derive(Subcommand)]
 enum SmoketestCmd {
-    /// Local helper: only build binaries without running tests.
+    /// Local helper: build binaries and module fixtures without running tests.
     ///
     /// Use this before running `cargo test --all` to ensure binaries are built.
     Prepare,
@@ -103,11 +104,15 @@ fn main() -> Result<()> {
         Some(SmoketestCmd::Prepare) => {
             build_cli()?;
             build_standalone()?;
-            eprintln!("Binaries ready. You can now run `cargo test --all`.");
+            build_precompiled_modules(args.dotnet, false)?;
+            eprintln!("Binaries and available module fixtures ready. You can now run `cargo test --all`.");
             Ok(())
         }
-        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file, args.suite),
-        Some(SmoketestCmd::RunArchive { archive_file, args }) => run_smoketest_archive(&archive_file, args),
+        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file, args.suite, args.dotnet),
+        Some(SmoketestCmd::RunArchive {
+            archive_file,
+            args: runner_args,
+        }) => run_smoketest_archive(&archive_file, args.dotnet, runner_args),
         None => run_smoketest(
             args.server,
             args.dotnet,
@@ -164,7 +169,7 @@ fn run_binary_build(mut cmd: Command, failure_message: &str) -> Result<()> {
     Ok(())
 }
 
-fn build_precompiled_modules() -> Result<()> {
+fn build_precompiled_modules(dotnet: bool, require_toolchains: bool) -> Result<()> {
     let workspace_root = env::current_dir()?;
     let modules_dir = workspace_root.join("crates/smoketests/modules");
 
@@ -189,12 +194,13 @@ fn build_precompiled_modules() -> Result<()> {
         .status()?;
 
     ensure!(status.success(), "Failed to build pre-compiled modules");
+    prepare_modules(&ensure_binaries_built(), dotnet, require_toolchains)?;
     eprintln!("Pre-compiled modules built.\n");
     Ok(())
 }
 
-fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> {
-    build_precompiled_modules()?;
+fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite, dotnet: bool) -> Result<()> {
+    build_precompiled_modules(dotnet, true)?;
 
     let status = Command::new("cargo")
         .args(["nextest", "archive", "--timings", "-p", "spacetimedb-smoketests"])
@@ -208,7 +214,7 @@ fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> 
 
 // TODO: Share smoketest setup and cleanup with `run_smoketest` so the archive
 // and local execution paths cannot drift.
-fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
+fn run_smoketest_archive(archive_file: &Path, dotnet: bool, args: Vec<String>) -> Result<()> {
     let workspace_root = env::current_dir()?;
     let archive_file = if archive_file.is_absolute() {
         archive_file.to_path_buf()
@@ -222,7 +228,7 @@ fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
     let base_config_path = base_config_dir.path().join("config.toml");
 
     let mut cmd = Command::new("cargo");
-    set_env(&mut cmd, None, true, false, &base_config_path);
+    set_env(&mut cmd, None, dotnet && dotnet_prepared(), false, &base_config_path);
     cmd.args(["nextest", "run", "--archive-file"])
         .arg(archive_file)
         .args(["--workspace-remap"])
@@ -264,7 +270,7 @@ fn run_smoketest(
     }
 
     // 2. Build pre-compiled modules (this also warms the WASM dependency cache)
-    build_precompiled_modules()?;
+    build_precompiled_modules(dotnet, false)?;
 
     let cli_path = ensure_binaries_built();
     let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), auth_host)?;

@@ -1,5 +1,21 @@
 use spacetimedb_smoketests::Smoketest;
 
+#[test]
+fn test_default_noop_is_precompiled() {
+    let test = Smoketest::builder().build();
+    assert!(!test.project_dir.path().join("Cargo.toml").exists());
+    test.call("noop", &[]).unwrap();
+}
+
+#[test]
+fn test_default_noop_can_be_published_later() {
+    let mut test = Smoketest::builder().autopublish(false).build();
+    assert!(test.database_identity.is_none());
+    test.publish().run().unwrap();
+    assert!(!test.project_dir.path().join("Cargo.toml").exists());
+    test.call("noop", &[]).unwrap();
+}
+
 /// Test publishing a module without the --delete-data option
 #[test]
 fn test_module_update() {

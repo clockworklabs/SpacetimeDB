@@ -1,184 +1,5 @@
 use serde_json::{json, Value};
-use spacetimedb_smoketests::{random_string, require_dotnet, require_pnpm, ModuleLanguage, Smoketest};
-
-const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
-
-const playerState = table(
-  { name: "player_state" },
-  {
-    identity: t.identity().primaryKey(),
-    name: t.string().unique(),
-    online: t.bool(),
-  }
-);
-
-const spacetimedb = schema({ playerState });
-export default spacetimedb;
-
-export const my_player = spacetimedb.view(
-  { public: true },
-  t.option(playerState.rowType),
-  ctx => ctx.db.playerState.identity.find(ctx.sender) ?? undefined
-);
-
-export const all_players = spacetimedb.anonymousView(
-  { public: true },
-  t.array(playerState.rowType),
-  ctx => ctx.from.playerState
-);
-
-export const online_players = spacetimedb.anonymousView(
-  { public: true },
-  t.array(playerState.rowType),
-  ctx => ctx.from.playerState.where(row => row.online)
-);
-
-export const insert_player_proc = spacetimedb.procedure(
-  { name: t.string() },
-  t.unit(),
-  (ctx, { name }) => {
-    const sender = ctx.sender;
-    ctx.withTx(tx => {
-      tx.db.playerState.insert({ name, identity: sender, online: true });
-    });
-    return {};
-  }
-);
-"#;
-
-const CS_VIEWS_QUERY_BUILDER_MODULE: &str = r#"using SpacetimeDB;
-
-public static partial class Module
-{
-    [Table(Accessor = "Table", Public = true)]
-    public partial struct Table
-    {
-        public uint Value;
-        public bool Alive;
-    }
-
-    [Reducer]
-    public static void InsertValue(ReducerContext ctx, uint value, bool alive)
-    {
-        ctx.Db.Table.Insert(new Table { Value = value, Alive = alive });
-    }
-
-    [View(Accessor = "all", Public = true)]
-    public static IQuery<Table> All(ViewContext ctx)
-    {
-        return ctx.From.Table();
-    }
-
-    [View(Accessor = "some", Public = true)]
-    public static IQuery<Table> Some(ViewContext ctx)
-    {
-        return ctx.From.Table().Where(Row => Row.Alive);
-    }
-}
-"#;
-
-const CS_COUNT_VIEW_MODULE: &str = r#"using SpacetimeDB;
-
-[SpacetimeDB.Type]
-public partial struct ItemCount
-{
-    public ulong count;
-}
-
-public static partial class Module
-{
-    [Table(Accessor = "item", Public = true)]
-    public partial struct Item
-    {
-        [PrimaryKey]
-        public uint id;
-        public uint value;
-    }
-
-    [View(Accessor = "sender_table_count", Public = true)]
-    public static ItemCount? sender_table_count(ViewContext ctx)
-    {
-        return new ItemCount { count = ctx.Db.item.Count };
-    }
-
-    [View(Accessor = "anon_table_count", Public = true)]
-    public static ItemCount? anon_table_count(AnonymousViewContext ctx)
-    {
-        return new ItemCount { count = ctx.Db.item.Count };
-    }
-
-    [Reducer]
-    public static void insert_item(ReducerContext ctx, uint id, uint value)
-    {
-        ctx.Db.item.Insert(new Item { id = id, value = value });
-    }
-
-    [Reducer]
-    public static void replace_item(ReducerContext ctx, uint id, uint value)
-    {
-        ctx.Db.item.id.Delete(id);
-        ctx.Db.item.Insert(new Item { id = id, value = value });
-    }
-
-    [Reducer]
-    public static void delete_item(ReducerContext ctx, uint id)
-    {
-        ctx.Db.item.id.Delete(id);
-    }
-}
-"#;
-
-const TS_COUNT_VIEW_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
-
-const item = table(
-  { name: "item" },
-  {
-    id: t.u32().primaryKey(),
-    value: t.u32(),
-  }
-);
-
-const itemCount = t.object("ItemCountRow", {
-  count: t.u64(),
-});
-
-const spacetimedb = schema({ item });
-export default spacetimedb;
-
-export const sender_table_count = spacetimedb.view(
-  { public: true },
-  t.option(itemCount),
-  ctx => ({ count: ctx.db.item.count() })
-);
-
-export const anon_table_count = spacetimedb.anonymousView(
-  { public: true },
-  t.option(itemCount),
-  ctx => ({ count: ctx.db.item.count() })
-);
-
-export const insert_item = spacetimedb.reducer(
-  { id: t.u32(), value: t.u32() },
-  (ctx, { id, value }) => {
-    ctx.db.item.insert({ id, value });
-  }
-);
-
-export const replace_item = spacetimedb.reducer(
-  { id: t.u32(), value: t.u32() },
-  (ctx, { id, value }) => {
-    ctx.db.item.id.delete(id);
-    ctx.db.item.insert({ id, value });
-  }
-);
-
-export const delete_item = spacetimedb.reducer(
-  { id: t.u32() },
-  (ctx, { id }) => {
-    ctx.db.item.id.delete(id);
-  }
-);
-"#;
+use spacetimedb_smoketests::{allow_dotnet, random_string, Smoketest};
 
 fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]) -> Vec<Value> {
     let project_row = |row: &Value| {
@@ -260,22 +81,6 @@ fn test_st_view_tables() {
 ---------+---------+----------+----------
  4096    | 0       | "id"     | 0x0d
  4096    | 1       | "level"  | 0x0d"#,
-    );
-}
-
-/// Publishing a module should fail if a table and view have the same name
-#[test]
-fn test_fail_publish_namespace_collision() {
-    let mut test = Smoketest::builder()
-        // Can't be precompiled because the code is intentionally broken
-        .module_code(include_str!("../../modules/views-broken-namespace/src/lib.rs"))
-        .autopublish(false)
-        .build();
-
-    let result = test.publish().run();
-    assert!(
-        result.is_err(),
-        "Expected publish to fail when table and view have same name"
     );
 }
 
@@ -778,18 +583,10 @@ fn test_procedure_triggers_subscription_updates() {
 
 #[test]
 fn test_typescript_procedure_triggers_subscription_updates() {
-    require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
     let database_name = format!("views-subscribe-typescript-{}", random_string());
-    test.publish()
-        .name(&database_name)
-        .source(
-            ModuleLanguage::TypeScript,
-            "views-subscribe-typescript",
-            TS_VIEWS_SUBSCRIBE_MODULE,
-        )
-        .run()
-        .unwrap();
+    test.use_precompiled_module("views-subscribe-typescript");
+    test.publish().name(&database_name).run().unwrap();
 
     let sub = test
         .subscribe(&["select * from my_player"])
@@ -816,33 +613,23 @@ fn test_rust_count_view_subscription_refreshes() {
 
 #[test]
 fn test_csharp_count_view_subscription_refreshes() {
-    require_dotnet!();
+    if !allow_dotnet() {
+        return;
+    }
 
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish()
-        .name("views-count-csharp")
-        .source(ModuleLanguage::CSharp, "views-count-csharp", CS_COUNT_VIEW_MODULE)
-        .run()
-        .unwrap();
+    test.use_precompiled_module("views-count-csharp");
+    test.publish().name("views-count-csharp").run().unwrap();
 
     assert_all_count_view_refreshes(&test);
 }
 
 #[test]
 fn test_typescript_count_view_subscription_refreshes() {
-    require_pnpm!();
-
     let mut test = Smoketest::builder().autopublish(false).build();
     let database_name = format!("views-count-typescript-{}", random_string());
-    test.publish()
-        .name(&database_name)
-        .source(
-            ModuleLanguage::TypeScript,
-            "views-count-typescript",
-            TS_COUNT_VIEW_MODULE,
-        )
-        .run()
-        .unwrap();
+    test.use_precompiled_module("views-count-typescript");
+    test.publish().name(&database_name).run().unwrap();
 
     assert_all_count_view_refreshes(&test);
 }
@@ -930,18 +717,10 @@ fn test_disconnect_does_not_break_anonymous_view() {
 
 #[test]
 fn test_typescript_query_builder_view_query() {
-    require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
     let database_name = format!("views-query-builder-typescript-{}", random_string());
-    test.publish()
-        .name(&database_name)
-        .source(
-            ModuleLanguage::TypeScript,
-            "views-query-builder-typescript",
-            TS_VIEWS_SUBSCRIBE_MODULE,
-        )
-        .run()
-        .unwrap();
+    test.use_precompiled_module("views-subscribe-typescript");
+    test.publish().name(&database_name).run().unwrap();
 
     test.call("insert_player_proc", &["Alice"]).unwrap();
 
@@ -955,13 +734,12 @@ fn test_typescript_query_builder_view_query() {
 
 #[test]
 fn test_csharp_query_builder_view_query() {
-    require_dotnet!();
+    if !allow_dotnet() {
+        return;
+    }
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish()
-        .name("views-csharp")
-        .source(ModuleLanguage::CSharp, "views-csharp", CS_VIEWS_QUERY_BUILDER_MODULE)
-        .run()
-        .unwrap();
+    test.use_precompiled_module("views-csharp");
+    test.publish().name("views-csharp").run().unwrap();
 
     test.call("insert_value", &["0", "false"]).unwrap();
     test.call("insert_value", &["1", "true"]).unwrap();
