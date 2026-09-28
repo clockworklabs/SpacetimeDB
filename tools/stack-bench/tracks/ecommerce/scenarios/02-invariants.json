@@ -543,11 +543,12 @@
           "name": "books"
         },
         { "do": "signIn", "actor": "customer2", "name": "books" },
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
         {
           "do": "click",
           "actor": "admin",
-          "testid": "admin-link"
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
         },
         { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],

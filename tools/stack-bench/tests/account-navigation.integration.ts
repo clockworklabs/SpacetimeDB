@@ -6,6 +6,7 @@ import test from 'node:test';
 import { chromium } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
+import type { ActionEvidence } from '../src/actions/action-contract.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -356,13 +357,17 @@ test('signout supports a direct button and account dialog but rejects missing or
   } finally { await browser.close(); }
 });
 
-test('saved views and purchase history work after confirmation or closing and still reject missing content', async () => {
+test('saved views and purchase history work after confirmation or closing and still reject missing content', async t => {
   const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios');
   const load = (file: string) => compileScenarioDefinition(JSON.parse(readFileSync(join(root, file), 'utf8')));
   const orderTotal = '<span data-role="order-total">64</span>';
   const cases = [
     { file: 'progression-support-history.json', id: '612c', actor: 'owner', opener: 'support-link',
       target: 'support-ticket', user: 'support-owner', value: 'Owner ticket {user:ticketmarker}' },
+    { file: 'progression-managed-support-privacy.json', id: '613b', actor: 'owner', opener: 'support-link',
+      target: 'support-ticket', user: 'managed-private-owner', value: 'Private managed case {user:casemarker}', navigationOnly: true },
+    { file: 'progression-managed-support-shared.json', id: '613c', actor: 'owner', opener: 'support-link',
+      target: 'support-status', user: 'managed-shared-owner', value: 'in progress', ticket: 'Shared managed case', navigationOnly: true },
     { file: 'progression-customer-profile.json', id: '620c', actor: 'owner', opener: 'profile-link',
       target: 'profile-address-summary', user: 'profile-owner', value: '14 Market Street {user:profilemarker}' },
     { file: 'progression-notification-preferences.json', id: '630c', actor: 'owner', opener: 'notification-settings',
@@ -377,26 +382,36 @@ test('saved views and purchase history work after confirmation or closing and st
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    for (const item of cases) {
+    for (const item of cases) await t.test(item.file, async () => {
       const feature = load(item.file).features[0]!;
       const criterion = item.id ? feature.criteria.find(criterion => criterion.id === item.id)! : feature.criteria[0]!;
       // The fixture starts signed in. Exercise the actual view entry after the cart session is restored.
       const selected = item.restoredEntry ? criterion.steps.slice(criterion.steps.findIndex(step => step.do === 'ensureSignedIn') + 1) : criterion.steps;
-      const steps = selected.filter(step => step.actor === item.actor && step.testid !== 'buy-now');
-      for (const layout of ['inline', 'closed', 'history-dialog', 'confirmation', 'menu', 'missing-menu', 'broken-menu']) for (const missing of [false, true]) {
-        const history = layout === 'history-dialog';
+      const actorSteps = selected.filter(step => step.actor === item.actor && step.testid !== 'buy-now');
+      // Managed cases prove only entry through the first content assertion here;
+      // registered backend controls retain responsibility for writes and privacy.
+      const steps = item.navigationOnly ? actorSteps.slice(0, actorSteps.findIndex(step => step.do === 'expect') + 1) : actorSteps;
+      const support = item.opener === 'support-link';
+      for (const layout of ['inline', 'closed', 'history-dialog', 'confirmation', 'menu', 'missing-menu', 'broken-menu',
+        ...(support ? ['restored-dialog'] : [])]) for (const missing of [false, true]) {
+        const history = ['history-dialog', 'restored-dialog'].includes(layout);
         const menu = ['menu', 'missing-menu', 'broken-menu'].includes(layout);
         await page.unrouteAll();
         await page.route('http://saved.test/**', route => route.fulfill({ contentType: 'text/html', body: `
           ${layout === 'missing-menu' ? '' : `<button id="current-user" onclick="${layout === 'broken-menu' ? '' : "document.querySelector('#menu').hidden=false"}">${item.user}</button>`}
           <button id="catalog-link">Catalog</button>
-          <nav id="menu" ${menu ? 'hidden' : ''}><button id="${item.opener}" onclick="document.querySelector('#panel').hidden = !document.querySelector('#panel').hidden;
+          <nav id="menu" ${menu ? 'hidden' : ''}><button id="${item.opener}" onclick="document.querySelector('#panel').hidden = ${history ? 'false' : "!document.querySelector('#panel').hidden"};
             ${history ? "document.querySelector('#history').showModal()" : ''}">Open</button></nav>
           ${history ? `<dialog id="history"><button data-role="overlay-close" onclick="document.querySelector('#history').close()">Close</button>` : ''}
-          <section id="panel" ${layout === 'inline' ? '' : 'hidden'}>
+          <section id="panel" ${['inline', 'restored-dialog'].includes(layout) || support && layout === 'confirmation' ? '' : 'hidden'}>
+            ${support ? '<input id="support-email">' : ''}
+            ${item.ticket ? `<div data-role="support-ticket">${item.ticket}` : ''}
             ${missing ? '' : `<span id="${item.target}" data-state="${item.value}">${item.value}${item.detail ?? ''}</span>`}
+            ${item.ticket ? '</div>' : ''}
           </section>${history ? '</dialog>' : ''}<dialog id="confirmation"><p id="support-reference">Saved reference</p>
-            <button id="overlay-close" onclick="document.querySelector('#confirmation').close()">Close</button></dialog>` }));
+            <button id="overlay-close" onclick="document.querySelector('#confirmation').close()">Close</button></dialog>
+          ${layout === 'restored-dialog' ? '<script>document.querySelector("#history").showModal()</script>' : ''}
+          ${support && layout === 'confirmation' ? '<script>document.querySelector("#confirmation").showModal()</script>' : ''}` }));
         await page.goto('http://saved.test/');
         if (layout === 'confirmation') {
           await page.locator('#confirmation').evaluate(dialog => (dialog as HTMLDialogElement).showModal());
@@ -422,9 +437,114 @@ test('saved views and purchase history work after confirmation or closing and st
         }
         assert.equal(last?.status, missing || ['missing-menu', 'broken-menu'].includes(layout) ? 'failed' : 'passed',
           `${item.file}/${layout}/missing=${missing}: ${last?.summary}`);
+        if (support && missing && !['missing-menu', 'broken-menu'].includes(layout)) {
+          assert.equal(last?.action.id, 'expect', `${item.file}/${layout}: missing content must reach its assertion`);
+        }
       }
-    }
+    });
   } finally { await browser.close(); }
+});
+
+test('support history reaches persistence and privacy checks through restored support dialogs', async t => {
+  // Failure cases: restored dialogs must reach assertions; missing history, another
+  // account's tickets, retained logout access, and rejected intake must still fail.
+  // This HTTP fixture omits restartBackend; it does not prove database durability.
+  let mode = '';
+  const tickets: { user: string; subject: string }[] = [], evidence: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    const address = new URL(request.url!, 'http://fixture.test');
+    if (address.pathname === '/history') {
+      const user = address.searchParams.get('user') ?? '';
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify(mode === 'lost-history' ? [] : tickets.filter(ticket =>
+        ticket.user === user || mode === 'private-leak' && user.includes('support-other')
+          || mode === 'logout-leak' && !user))); return;
+    }
+    if (address.pathname === '/ticket' && request.method === 'POST') {
+      let body = ''; for await (const chunk of request) body += String(chunk);
+      if (mode !== 'reject-all') tickets.push(JSON.parse(body));
+      response.writeHead(mode === 'reject-all' ? 403 : 200, { 'Content-Type': 'application/json' });
+      response.end('{}'); return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html' });
+    response.end(`<!doctype html><main></main><script>
+      const mode=${JSON.stringify(mode)}, main=document.querySelector('main');
+      const user=localStorage.getItem('user')||'';
+      main.innerHTML=user
+        ? '<button id="current-user">'+(mode==='wrong-account'&&location.hash?'someone-else':user)+'</button><nav '+(mode==='menu'?'hidden':'')+'><button id="signout">Sign out</button><button id="support-link">Support</button></nav>'
+        : '<input id="signup-username"><input id="signup-password"><button id="signup-submit">Register</button><input id="signin-username"><input id="signin-password"><button id="signin-submit">Login</button><button id="support-link">Support</button>';
+      main.innerHTML+='${mode === 'confirmation' ? '<section id="support-surface" hidden>' : '<dialog><button id="overlay-close">Close</button>'}<input id="support-email"><input id="support-subject"><textarea id="support-message"></textarea><button id="support-submit">Send</button><span id="support-reference"></span><section id="history"></section>${mode === 'confirmation' ? '</section><dialog><p>Saved</p><button id="overlay-close">Close</button></dialog>' : '</dialog>'}';
+      const dialog=document.querySelector('dialog');
+      const refresh=async()=>{
+        const rows=await (await fetch('/history?user='+encodeURIComponent(user))).json();
+        document.querySelector('#history').replaceChildren(...rows.map(row=>{
+          const node=document.createElement('div'); node.dataset.role='support-ticket'; node.textContent=row.subject; return node;
+        }));
+      };
+      const open=()=>{if(mode==='confirmation')document.querySelector('#support-surface').hidden=false;else dialog.showModal();location.hash='support';void refresh();};
+      document.querySelector('#support-link').onclick=open;
+      document.querySelector('#overlay-close').onclick=()=>{dialog.close();history.replaceState(null,'','/');};
+      document.querySelector('#support-submit').onclick=async()=>{
+        const result=await fetch('/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user,subject:document.querySelector('#support-subject').value})});
+        await result.json();
+        if(result.ok){document.querySelector('#support-reference').textContent='Saved';await refresh();}
+      };
+      if(user){
+        document.querySelector('#current-user').onclick=()=>document.querySelector('nav').hidden=false;
+        document.querySelector('#signout').onclick=()=>{localStorage.removeItem('user');location.reload();};
+      }else for(const kind of ['signup','signin']) document.querySelector('#'+kind+'-submit').onclick=()=>{
+        localStorage.setItem('user',document.querySelector('#'+kind+'-username').value);location.reload();
+      };
+      if(location.hash==='#support'&&mode!=='direct'&&mode!=='menu'){open();if(mode==='confirmation')dialog.showModal();}
+    </script>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const fixture of ['direct', 'menu', 'restored-dialog', 'confirmation', 'lost-history', 'private-leak', 'logout-leak', 'wrong-account', 'reject-all']) {
+      await t.test(fixture, async () => {
+        mode = fixture; tickets.length = 0;
+        const definition = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+          'tracks/ecommerce/scenarios/progression-support-history.json'), 'utf8'));
+        const selected = definition.features[0];
+        for (const criterion of selected.criteria) {
+          criterion.steps = criterion.steps.filter((step: { do: string }) => step.do !== 'restartBackend');
+        }
+        for (const step of [...selected.setup, ...selected.criteria.flatMap((criterion: { steps: Record<string, unknown>[] }) => criterion.steps)]) {
+          if ('within' in step || ['click', 'fill', 'expect', 'expectNotReceived'].includes(step.do)) step.within = 500;
+          if ('settleMs' in step) step.settleMs = 0;
+        }
+        const grade = await gradeFeature(browser, compileScenarioDefinition(definition).features[0]!,
+          { url, level: 2, headed: false, selectedCheckKeys: [], nullControl: false },
+          { runId: `support-navigation-${fixture}`, roomName: name => name, url, actions: [],
+            spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 500 });
+        evidence.push({ fixture, grade, tickets: [...tickets] });
+        assert.equal(grade.setupEvidence.status, fixture === 'reject-all' ? 'failed' : 'passed', JSON.stringify(grade));
+        if (fixture === 'reject-all') {
+          assert.equal((grade.setupEvidence.actions.at(-1)?.evidence as ActionEvidence).action.id, 'expect');
+          assert.ok(grade.criteria.every(criterion => criterion.evidence.status === 'blocked'));
+        } else if (['direct', 'menu', 'restored-dialog', 'confirmation'].includes(fixture)) {
+          assert.ok(grade.criteria.every(criterion => criterion.evidence.status === 'passed'), JSON.stringify(grade));
+        } else {
+          const id = fixture === 'private-leak' ? '612b' : fixture === 'logout-leak' ? '612d' : '612c';
+          const result = grade.criteria.find(criterion => criterion.id === id)!.evidence;
+          assert.equal(result.status, 'failed', JSON.stringify(grade));
+          assert.equal((result.actions.at(-1)?.evidence as ActionEvidence).action.id, fixture === 'wrong-account' ? 'ensureSignedIn' : 'expect', JSON.stringify(result));
+        }
+      });
+    }
+  } finally {
+    await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (process.env.STACK_BENCH_SUPPORT_NAVIGATION_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_SUPPORT_NAVIGATION_EVIDENCE, JSON.stringify({
+        rerun: 'node --test --test-name-pattern="support history reaches" dist/tests/account-navigation.integration.js',
+        limitation: 'restartBackend omitted; real backend durability requires registered qualification controls', evidence,
+      }, null, 2));
+    }
+  }
 });
 
 test('managed support live status observes a distinct change without reopening the observer', async () => {
@@ -446,7 +566,7 @@ test('managed support live status observes a distinct change without reopening t
         ownerLoads++;
         return route.fulfill({ contentType: 'text/html', body: `<span id="current-user">managed-shared-owner</span>
           <button id="support-link" onclick="document.querySelector('#case').hidden=false">Support</button>
-          <section id="case" data-role="support-ticket" hidden>Shared managed case<span id="support-status">${savedStatus}</span></section>` });
+          <section id="case" hidden><input id="support-email"><div data-role="support-ticket">Shared managed case<span id="support-status">${savedStatus}</span></div></section>` });
       });
       await staff.exposeFunction('saveStatus', async (status: string) => {
         savedStatus = status;
@@ -1034,6 +1154,98 @@ test('account creation accepts explicit login without masking refused or wrong-a
       writeFileSync(process.env.STACK_BENCH_SIGNUP_EVIDENCE, JSON.stringify({
         rerun: 'STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern="account creation accepts explicit login" dist/tests/account-navigation.integration.js',
         evidence,
+      }, null, 2));
+    }
+  }
+});
+
+test('restored operational dialogs reach the stored value and order assertions', async t => {
+  const browser = await chromium.launch({ headless: true });
+  const evidence: unknown[] = [];
+  try {
+    for (const kind of ['admin', 'staff', 'orders'] as const) {
+      const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios',
+        kind === 'admin' ? '01-restock-race.json' : '02-fulfilment-ship.json');
+      const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;
+      const all = kind === 'admin' ? feature.setup! : feature.criteria[0]!.steps;
+      const actorName = kind === 'orders' ? 'customer' : kind;
+      const start = all.findIndex(step => step.do === 'reload' && step.actor === actorName);
+      const observation = kind === 'admin' ? 'admin-stock' : kind === 'staff' ? 'queue-item' : 'order-status';
+      const end = all.findIndex((step, index) => index > start && step.actor === actorName && step.testid === observation);
+      assert.ok(start >= 0 && end > start, 'the real scenario must contain the reload and readback');
+      const reloadSteps = all.slice(start, end + 1).filter(step => step.actor === actorName);
+      const initial = feature.setup.filter(step => step.actor === actorName);
+      const signedIn = initial.findIndex(step => step.do === 'signIn');
+      const opened = initial.findIndex((step, index) => index > signedIn
+        && step.do === 'click' && step.testid === `${kind}-link`);
+      for (const phase of kind === 'orders' ? ['reload'] : ['reload', 'sign-in-result']) {
+        // Sign-in may render the destination directly. Exercise its actual setup
+        // entry pair, then the same real readback used by the reload case.
+        const steps = phase === 'reload' ? reloadSteps
+          : [...initial.slice(signedIn + 1, opened + 1), all[end]!];
+        if (phase !== 'reload') assert.ok(signedIn >= 0 && opened > signedIn);
+        for (const defective of [false, true]) await t.test(`${kind}/${phase}: ${defective ? 'wrong stored value' : 'correct restored dialog'}`, async () => {
+          const page = await browser.newPage();
+          const actions: ActionEvidence[] = [];
+          try {
+            // The route restores an open native dialog. Required entry links and the
+            // account are still present behind it; the target surface is ready inside.
+            const content = kind === 'admin'
+              ? `<section id="admin-panel"><div id="admin-item-row">Bluetooth Speaker<span id="admin-stock">${defective ? 100 : 99}</span></div></section>`
+              : kind === 'staff'
+                ? `<section id="fulfilment-panel"><div id="queue-item">${defective ? 'Different item' : 'Keyboard'}</div></section>`
+                : `<section id="order-list"><div id="order-item">Keyboard<span id="order-status">${defective ? 'pending' : 'shipped'}</span></div></section>`;
+            await page.route('http://restored-tools.test/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+              <button id="current-user">${kind === 'orders' ? 'fq-ship' : kind}</button>
+              <button id="admin-link">Admin</button><button id="staff-link">Staff</button>
+              <button id="catalog-link">Catalog</button><button id="orders-toggle">Orders</button>
+              <dialog><button id="overlay-close" onclick="document.querySelector('dialog').close()">Close</button>${content}</dialog>
+              <script>document.querySelector('dialog').showModal()</script>` }));
+            await page.goto('http://restored-tools.test/');
+            const actor = { page, name: actorName,
+              loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string } }) => {
+                const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid))
+                  .filter({ hasText: options.scope.contains }).first() : page;
+                const loc = root.locator(stableElementSelector(id)).filter({ visible: true });
+                return (options?.contains ? loc.filter({ hasText: options.contains }) : loc).first();
+              } };
+            const capability = { defaultWithin: 200, testId: stableElementSelector,
+              scopedUser: (name: string) => name, expand: (value: string) => value,
+              recorded: new Map([['stored-before-serial-purchase', 100]]),
+              sleep: async () => {} };
+            const capabilities = { actors: { get: () => actor },
+              'browser-interaction': capability, 'browser-observation': capability };
+            let last: ActionEvidence | undefined;
+            for (const [index, step] of steps.entries()) {
+              last = await executeAction(ACTION_REGISTRY, step.do,
+                { ...step, ...(step.testid ? { within: 200 } : {}) }, { capabilities });
+              actions.push(last);
+              if (index < steps.length - 1) assert.equal(last.status, 'passed',
+                `${kind} must reach its readback; ${step.do}/${step.testid ?? ''}: ${last.summary}`);
+              if (last.status !== 'passed') break;
+            }
+            assert.equal(last?.status, defective ? 'failed' : 'passed', last?.summary ?? undefined);
+          } finally {
+            await page.close();
+            const { createHash } = await import('node:crypto');
+            evidence.push({ kind, phase, defective, source, sourceSha256: createHash('sha256')
+              .update(readFileSync(source)).digest('hex'), steps, expected: defective ? 'failed' : 'passed',
+            actions, pageClosed: page.isClosed() });
+          }
+        });
+      }
+    }
+  } finally {
+    await browser.close();
+    if (process.env.STACK_BENCH_OPERATIONAL_NAVIGATION_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      const { createHash } = await import('node:crypto');
+      writeFileSync(process.env.STACK_BENCH_OPERATIONAL_NAVIGATION_EVIDENCE, JSON.stringify({
+        rerun: 'STACK_BENCH_OPERATIONAL_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern="restored operational dialogs" dist/tests/account-navigation.integration.js',
+        fixture: 'Native restored dialog; admin stock 99/100, fulfilment Keyboard/Different item, order shipped/pending',
+        testSha256: createHash('sha256').update(readFileSync(new URL(import.meta.url))).digest('hex'),
+        driverSha256: createHash('sha256').update(readFileSync(new URL('../src/actions/browser-action-executors.js', import.meta.url))).digest('hex'),
+        browserClosed: !browser.isConnected(), evidence,
       }, null, 2));
     }
   }

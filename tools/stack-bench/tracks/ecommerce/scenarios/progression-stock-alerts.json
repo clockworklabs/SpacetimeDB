@@ -39,8 +39,8 @@
         { "do": "click", "actor": "subscriber", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {"do":"click","actor":"subscriber","testid":"stock-alert","in":{"testid":"item-card","contains":"Air Purifier"}},
         {"do":"expect","actor":"subscriber","testid":"item-card","contains":"Air Purifier","attribute":"data-submit-state","value":"succeeded","within":10000},
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
-        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
+        {"do":"click","actor":"admin","testid":"admin-link", "unlessVisible": "admin-panel"},
         {"do":"callAction","actor":"admin","action":"restock","namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Air Purifier","attribute":"data-restock-input"},"settleMs":0},
         {"do":"expectActionOutcome","actor":"admin","outcome":"accepted"},
         {"do":"wait","actor":"admin","ms":10000}

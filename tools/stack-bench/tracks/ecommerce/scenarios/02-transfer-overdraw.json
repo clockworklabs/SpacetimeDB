@@ -20,11 +20,12 @@
           "password": "stackbench-admin-2026",
           "exact": true
         },
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
         {
           "do": "click",
           "actor": "admin",
-          "testid": "admin-link"
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
         },
         { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],

@@ -18,9 +18,9 @@
         { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
         { "do": "reload", "actor": "customer", "settleMs": 1000 },
         { "do": "ensureSignedIn", "actor": "customer", "name": "low-stock-focused", "readyTestid": "current-user" },
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
-        { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "click", "actor": "admin", "testid": "low-stock-link", "ifAvailable": true, "unlessVisible": "low-stock-item", "within": 10000 },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel", "low-stock-list"]},
+        { "do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": ["admin-panel", "low-stock-list"]},
+        { "do": "click", "actor": "admin", "testid": "low-stock-link", "ifAvailable": true, "unlessVisible": "low-stock-list", "within": 10000 },
         { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
       "criteria": [
@@ -43,8 +43,8 @@
           "steps": [
             { "do": "expect", "actor": "admin", "testid": "low-stock-item", "contains": "Air Purifier", "within": 8000 },
             { "do": "signIn", "actor": "restocker", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-            {"do": "click", "actor": "restocker", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
-            { "do": "click", "actor": "restocker", "testid": "admin-link" },
+            {"do": "click", "actor": "restocker", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
+            { "do": "click", "actor": "restocker", "testid": "admin-link", "unlessVisible": "admin-panel" },
             { "do": "fill", "actor": "restocker", "testid": "restock-input", "text": "8", "in": { "testid": "admin-location-row", "contains": "Air Purifier" } },
             { "do": "click", "actor": "restocker", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Air Purifier" } },
             { "do": "waitUntilAbsent", "actor": "admin", "testid": "low-stock-item", "contains": "Air Purifier", "within": 10000 },

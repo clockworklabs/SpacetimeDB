@@ -40,7 +40,7 @@
             {"do":"signIn","actor":"two","name":"quin"},
             {"do":"expect","actor":"two","testid":"current-user","contains":"quin"},
             {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
-            { "do": "click", "actor": "two", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            { "do": "click", "actor": "two", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "two", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"two","testid":"orders-toggle","unlessVisible":"order-item"},
             {"do":"expect","actor":"two","testid":"order-item","contains":"Coffee Grinder","count":1},

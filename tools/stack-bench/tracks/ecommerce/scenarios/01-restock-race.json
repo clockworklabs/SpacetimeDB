@@ -23,11 +23,12 @@
           "password": "stackbench-admin-2026",
           "exact": true
         },
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
         {
           "do": "click",
           "actor": "admin",
-          "testid": "admin-link"
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
         },
         {
           "do": "signUp",
@@ -112,11 +113,12 @@
           "exact": true,
           "readyTestid": "current-user"
         },
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
         {
           "do": "click",
           "actor": "admin",
-          "testid": "admin-link"
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
         },
         {
           "do": "expectNumber",
@@ -199,11 +201,12 @@
           "exact": true,
           "readyTestid": "current-user"
         },
-        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
         {
           "do": "click",
           "actor": "admin",
-          "testid": "admin-link"
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
         },
         {
           "do": "expectNumber",
@@ -385,7 +388,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
-            { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "a", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
@@ -420,7 +423,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
-            { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "b", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
@@ -455,7 +458,7 @@
               "unlessVisible": "order-item",
               "within": 1000
             },
-            { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+            { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "c", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {
               "do": "click",
@@ -484,12 +487,13 @@
               "exact": true,
               "readyTestid": "current-user"
             },
-            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+            {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
             {
               "do": "click",
               "actor": "admin",
               "testid": "admin-link",
-              "ifAvailable": true
+              "ifAvailable": true,
+              "unlessVisible": "admin-panel"
             },
             {
               "do": "expectNumber",

@@ -76,8 +76,8 @@ Rules:
 | `queue-warehouse` | the warehouse a queued order's item will ship from, inside its queue-item |
 | `queue-depth` | how many orders are waiting, as a number |
 | `ship-submit` | button on a queued order that marks it shipped |
-| `transfer-from` | the control choosing the warehouse a transfer takes stock from, inside the item's admin row |
-| `transfer-to` | the control choosing the warehouse a transfer sends stock to, inside the same row |
+| `transfer-from` | the control choosing the warehouse a transfer takes stock from, inside the item's admin row; for a `select`, each warehouse has exactly one option whose value or label is its exact name; the other field may include extra display text or use the warehouse ID |
+| `transfer-to` | the control choosing the warehouse a transfer sends stock to, inside the same row; for a `select`, each warehouse has exactly one option whose value or label is its exact name; the other field may include extra display text or use the warehouse ID |
 | `transfer-qty` | how many units to transfer |
 | `transfer-submit` | button that performs the transfer |
 | `price-input` | the input for an item's new price, inside its admin row |

@@ -4,6 +4,10 @@ Put `transfer-from`, `transfer-to`, `transfer-qty`, and `transfer-submit` inside
 `admin-item-row`. Use `warehouse-total` inside each `admin-warehouse-item` for its numeric stock
 total. Show `order-error` when a transfer is refused.
 
+For a `select` used by `transfer-from` or `transfer-to`, each warehouse must have exactly one
+option whose value or label is the exact warehouse name. The other field may include extra
+display text or use the warehouse ID.
+
 Put `data-transfer-input` on each `admin-item-row`. Its value is a JSON object with exactly
 `itemId`, `fromWarehouseId`, and `toWarehouseId` for the currently selected source and destination.
 Identifiers can be JSON numbers or strings.
