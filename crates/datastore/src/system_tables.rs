@@ -477,9 +477,10 @@ st_fields_enum!(enum StColumnAccessorFields {
 
 st_fields_enum!(enum StInboundMsgFields {
     "database_identity", DatabaseIdentity = 0,
-    "last_outbound_msg", LastMsgId = 1,
-    "result_status", ResultStatus = 2,
-    "result_payload", ResultPayload = 3,
+    "target_reducer", TargetReducer = 1,
+    "last_outbound_msg", LastMsgId = 2,
+    "result_status", ResultStatus = 3,
+    "result_payload", ResultPayload = 4,
 });
 
 st_fields_enum!(enum StOutboundMsgFields {
@@ -806,7 +807,7 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
         m.insert("st_env_key_key", ConstraintId(26));
-        m.insert("st_inbound_msg_database_identity_key", ConstraintId(27));
+        m.insert("st_inbound_msg_database_identity_target_reducer_key", ConstraintId(27));
         m.insert("st_outbound_msg_msg_id_key", ConstraintId(28));
         m
     };
@@ -847,7 +848,7 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
         m.insert("st_env_key_idx_btree", IndexId(30));
-        m.insert("st_inbound_msg_database_identity_idx_btree", IndexId(31));
+        m.insert("st_inbound_msg_database_identity_target_reducer_idx_btree", IndexId(31));
         m.insert("st_outbound_msg_msg_id_idx_btree", IndexId(32));
         m
     };
@@ -1994,6 +1995,7 @@ impl_serialize!([] StInboundMsgResultStatus, (self, ser) => u8::from(*self).seri
 #[sats(crate = spacetimedb_lib)]
 pub struct StInboundMsgRow {
     pub database_identity: IdentityViaU256,
+    pub target_reducer: String,
     pub last_outbound_msg: u64,
     pub result_status: StInboundMsgResultStatus,
     /// Reducer return payload encoded as raw bytes.
@@ -2006,6 +2008,12 @@ impl TryFrom<RowRef<'_>> for StInboundMsgRow {
     type Error = DatastoreError;
     fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
+    }
+}
+
+impl From<StInboundMsgRow> for ProductValue {
+    fn from(row: StInboundMsgRow) -> Self {
+        to_product_value(&row)
     }
 }
 

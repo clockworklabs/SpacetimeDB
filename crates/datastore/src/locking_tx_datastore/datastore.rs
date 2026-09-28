@@ -1632,9 +1632,10 @@ pub(crate) mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
 
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 0, name: "database_identity", ty: AlgebraicType::U256 },
-            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "last_outbound_msg", ty: AlgebraicType::U64 },
-            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "result_status", ty: AlgebraicType::U8 },
-            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_payload", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "target_reducer", ty: AlgebraicType::String },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "last_outbound_msg", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_status", ty: AlgebraicType::U8 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 4, name: "result_payload", ty: AlgebraicType::bytes() },
 
             ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 0, name: "msg_id", ty: AlgebraicType::U64 },
             ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 1, name: "outbox_table_id", ty: TableId::get_type() },
@@ -1675,7 +1676,7 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
-            IndexRow { id: 31, table: ST_INBOUND_MSG_ID.into(), col: col(0), name: "st_inbound_msg_database_identity_idx_btree", },
+            IndexRow { id: 31, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_inbound_msg_database_identity_target_reducer_idx_btree", },
             IndexRow { id: 32, table: ST_OUTBOUND_MSG_ID.into(), col: col(0), name: "st_outbound_msg_msg_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
@@ -1724,7 +1725,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
             ConstraintRow { constraint_id: 26, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
-            ConstraintRow { constraint_id: 27, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col(0), constraint_name: "st_inbound_msg_database_identity_key", },
+            ConstraintRow { constraint_id: 27, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_inbound_msg_database_identity_target_reducer_key", },
             ConstraintRow { constraint_id: 28, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_msg_msg_id_key", },
             ]));
 
@@ -2191,7 +2192,7 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
-            IndexRow { id: 31, table: ST_INBOUND_MSG_ID.into(), col: col(0), name: "st_inbound_msg_database_identity_idx_btree", },
+            IndexRow { id: 31, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_inbound_msg_database_identity_target_reducer_idx_btree", },
             IndexRow { id: 32,  table: ST_OUTBOUND_MSG_ID.into(), col: col(0), name: "st_outbound_msg_msg_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },

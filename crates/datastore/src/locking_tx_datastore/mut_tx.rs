@@ -3279,39 +3279,57 @@ impl MutTxId {
         .map(|row| row.pointer())
     }
 
-    /// Look up the inbound dedup record for `sender_identity` in `st_inbound_msg`.
+    /// Look up the inbound dedup record for (`sender_identity`, `target_reducer`) in `st_inbound_msg`.
     ///
-    /// Returns `None` if no entry exists for this sender (i.e., no message has been delivered yet).
-    pub fn get_inbound_msg_row(&self, sender_identity: Identity) -> Option<StInboundMsgRow> {
+    /// Returns `None` if no entry exists for this stream (i.e., no message has been delivered yet).
+    pub fn get_inbound_msg_row(&self, sender_identity: Identity, target_reducer: &str) -> Option<StInboundMsgRow> {
         self.iter_by_col_eq(
             ST_INBOUND_MSG_ID,
             StInboundMsgFields::DatabaseIdentity.col_id(),
             &IdentityViaU256::from(sender_identity).into(),
         )
         .expect("failed to read from st_inbound_msg system table")
-        .next()
-        .and_then(|row_ref| StInboundMsgRow::try_from(row_ref).ok())
+        .filter_map(|row_ref| StInboundMsgRow::try_from(row_ref).ok())
+        .find(|row| row.target_reducer == target_reducer)
     }
 
-    /// Update the last delivered msg_id for `sender_identity` in `st_inbound_msg`.
+    fn delete_inbound_msg_row(&mut self, sender_identity: Identity, target_reducer: &str) -> Result<()> {
+        let rows: Vec<_> = self
+            .iter_by_col_eq(
+                ST_INBOUND_MSG_ID,
+                StInboundMsgFields::DatabaseIdentity.col_id(),
+                &IdentityViaU256::from(sender_identity).into(),
+            )
+            .expect("failed to read from st_inbound_msg system table")
+            .filter_map(|row_ref| {
+                let row = StInboundMsgRow::try_from(row_ref).ok()?;
+                (row.target_reducer == target_reducer).then_some(row)
+            })
+            .collect();
+
+        for row in rows {
+            self.delete_by_row_value(ST_INBOUND_MSG_ID, &ProductValue::from(row))?;
+        }
+        Ok(())
+    }
+
+    /// Update the last delivered msg_id for (`sender_identity`, `target_reducer`) in `st_inbound_msg`.
     ///
     /// If an entry already exists, it is replaced; otherwise a new entry is inserted.
     /// `result_status` and `result_payload` store the outcome of the reducer call.
     pub fn upsert_inbound_last_msg(
         &mut self,
         sender_identity: Identity,
+        target_reducer: &str,
         last_outbound_msg: u64,
         result_status: crate::system_tables::StInboundMsgResultStatus,
         result_payload: Bytes,
     ) -> Result<()> {
         // Delete the existing row if present.
-        self.delete_col_eq(
-            ST_INBOUND_MSG_ID,
-            StInboundMsgFields::DatabaseIdentity.col_id(),
-            &IdentityViaU256::from(sender_identity).into(),
-        )?;
+        self.delete_inbound_msg_row(sender_identity, target_reducer)?;
         let row = StInboundMsgRow {
             database_identity: sender_identity.into(),
+            target_reducer: target_reducer.to_owned(),
             last_outbound_msg,
             result_status,
             result_payload,
