@@ -3,12 +3,12 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
+    __codegen::InternalError,
     callbacks::DbCallbacks,
     client_cache::ClientCache,
     db_connection::DbContextImpl,
     subscription::{OnEndedCallback, SubscriptionHandleImpl},
     Event, ReducerEvent,
-    __codegen::InternalError,
 };
 use bytes::Bytes;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::RowListLen as _, v2::BsatnRowList};

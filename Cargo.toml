@@ -93,6 +93,7 @@ members = [
   "tools/ci/commands/workflow-watch",
   "tools/ci/commands/check-release-deps",
   "tools/ci/commands/llm-benchmark-summary",
+  "tools/ci/commands/cache-warm",
   "tools/ci/common",
   "tools/keynote-bench-harness",
   "tools/license-check",
@@ -149,7 +150,7 @@ debug = true
 version = "2.11.0"
 edition = "2024"
 # update rust-toolchain.toml too!
-rust-version = "1.93.0"
+rust-version = "1.96.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "=2.11.0" }
