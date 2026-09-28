@@ -141,6 +141,7 @@ pub trait TableInternal: Sized {
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
+    const OUTBOX: Option<OutboxDesc<'static>> = None;
     const IS_EVENT: bool = false;
 
     /// Returns the ID of this table.
@@ -167,6 +168,11 @@ pub enum IndexAlgo<'a> {
 pub struct ScheduleDesc<'a> {
     pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
+}
+
+pub struct OutboxDesc<'a> {
+    pub remote_reducer_name: &'a str,
+    pub on_result_reducer_name: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]

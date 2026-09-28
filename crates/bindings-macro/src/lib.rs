@@ -153,6 +153,8 @@ mod sym {
     symbol!(index);
     symbol!(init);
     symbol!(name);
+    symbol!(on_result);
+    symbol!(outbox);
     symbol!(primary_key);
     symbol!(private);
     symbol!(public);
