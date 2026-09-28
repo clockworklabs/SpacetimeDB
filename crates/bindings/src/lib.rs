@@ -870,6 +870,12 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     })
 /// }
 ///
+/// // An example of a parameterized view
+/// #[view(accessor = players_at_level, public)]
+/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+///     ctx.db.player().level().filter(level).collect()
+/// }
+///
 /// // An example that is analogous to a semijoin in sql
 /// #[view(accessor = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
