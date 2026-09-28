@@ -63,6 +63,22 @@ static DEFAULT_ROUTES: LazyLock<Vec<ModelRoute>> = LazyLock::new(|| {
 });
 
 impl ModelRoute {
+    /// Stable result key shared by direct and OpenRouter routes, independent of display labels.
+    pub fn model_id(&self) -> String {
+        if let Some(id) = &self.openrouter_model {
+            return id.clone();
+        }
+        if self.api_model.contains('/') {
+            return self.api_model.clone();
+        }
+        let prefix = match self.vendor {
+            Vendor::Xai => "x-ai",
+            Vendor::Meta | Vendor::OpenRouter => return self.api_model.clone(),
+            vendor => vendor.slug(),
+        };
+        format!("{prefix}/{}", self.api_model)
+    }
+
     pub fn new(display_name: &str, vendor: Vendor, api_model: &str, openrouter_model: Option<&str>) -> Self {
         Self {
             display_name: display_name.to_string(),
@@ -75,4 +91,36 @@ impl ModelRoute {
 
 pub fn default_model_routes() -> &'static [ModelRoute] {
     &DEFAULT_ROUTES
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_identity_is_independent_of_labels_and_route_source() {
+        let mut routes = vec![
+            ModelRoute::new("GPT-5.5", Vendor::OpenAi, "gpt-5.5", Some("openai/gpt-5.5")),
+            ModelRoute::new("openai/gpt-5.5", Vendor::OpenRouter, "openai/gpt-5.5", None),
+            ModelRoute::new("OpenAI: GPT-5.5", Vendor::OpenRouter, "openai/gpt-5.5", None),
+            ModelRoute::new("Direct model", Vendor::OpenAi, "gpt-5.5", None),
+        ];
+        for route in &mut routes {
+            assert_eq!(route.model_id(), "openai/gpt-5.5");
+            route.display_name = "Changed label".into();
+            assert_eq!(route.model_id(), "openai/gpt-5.5");
+        }
+        assert_ne!(
+            ModelRoute::new("Same label", Vendor::OpenAi, "test", None).model_id(),
+            ModelRoute::new("Same label", Vendor::Anthropic, "test", None).model_id(),
+        );
+        assert_eq!(
+            ModelRoute::new("Grok", Vendor::Xai, "grok-test", None).model_id(),
+            "x-ai/grok-test"
+        );
+        assert_eq!(
+            ModelRoute::new("Llama", Vendor::Meta, "meta-llama/test", None).model_id(),
+            "meta-llama/test"
+        );
+    }
 }
