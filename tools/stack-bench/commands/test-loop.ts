@@ -127,8 +127,6 @@ const bundleArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.gradeBundle)
   { expectedKind: 'grade_bundle' });
 const lintArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.contractLint),
   { expectedKind: 'contract_lint' });
-const actionArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.actions),
-  { expectedKind: 'action_check' });
 const gradeArtifact = readArtifact<GradePayload>(join(evidenceDir, 'grading-features.json'), { expectedKind: 'grade' });
 const leaseArtifact = readArtifact<PublicBackendLease>(join(WORK, ARTIFACT_FILE.backendLease),
   { expectedKind: 'backend_lease_evidence' });
@@ -155,9 +153,12 @@ check('level source checkpoint is hash-bound and linked to the run',
     && /^[a-f0-9]{64}$/.test(level.checkpoint.sha256)
     && existsSync(join(WORK, level.checkpoint.directory)),
   JSON.stringify(level?.checkpoint));
-check('lint, action, and grade evidence are children of the bundle',
-  [lintArtifact, actionArtifact, gradeArtifact]
+check('lint and grade evidence are children of the bundle',
+  [lintArtifact, gradeArtifact]
     .every(artifact => artifact.attempt.parentId === bundleArtifact.attempt.id));
+check('suite did not emit an unsolicited action probe',
+  !existsSync(join(evidenceDir, ARTIFACT_FILE.actions))
+    && !Object.hasOwn(bundleArtifact.payload, 'actions'));
 const gradedFeatures = gradeArtifact.payload?.features ?? [];
 check('grade artifacts retain typed setup, criterion, and action evidence',
   gradedFeatures.length > 0
@@ -169,7 +170,7 @@ check('grade artifacts retain typed setup, criterion, and action evidence',
     criteria: feature.criteria?.map(criterion => criterion.evidence?.status) }))));
 const publicJson = [runPath, join(WORK, ARTIFACT_FILE.backendLease),
   join(evidenceDir, ARTIFACT_FILE.gradeBundle), join(evidenceDir, ARTIFACT_FILE.contractLint),
-  join(evidenceDir, ARTIFACT_FILE.actions), join(evidenceDir, 'grading-features.json')]
+  join(evidenceDir, 'grading-features.json')]
   .map(path => readFileSync(path, 'utf8')).join('\n');
 check('public envelopes contain no secret or lease-token fields',
   !/"(?:apiKey|leaseToken|ownershipToken|password|secret)"\s*:/i.test(publicJson));

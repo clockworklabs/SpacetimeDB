@@ -97,7 +97,6 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
   'src/references/reference-live.ts': ['src/references/reference-agent.ts'],
   'src/references/reference-agent.ts': ['container/run-build.ts'],
   'commands/run-suite.ts': [
-    'commands/check-actions.ts',
     'commands/reset-backend.ts',
     'grader/grade.ts',
     'linter/lint.ts',

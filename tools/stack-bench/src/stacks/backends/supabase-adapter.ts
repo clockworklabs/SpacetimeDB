@@ -35,7 +35,7 @@ export const supabaseAdapter = defineStackAdapter('supabase', {
   grading: { context: createHttpGradingContext, transport: 'http', capabilities, namedActionBinding: 'reducer',
     databaseLease: (lease: BackendLease) => { requireLeasedDatabase(lease); return lease as BackendLease & LeasedDatabase; },
     writeEndpoints: supabaseWriteEndpoints, authRequestPatch: supabaseAuthRequestPatch },
-  namedAction: { request: supabaseNamedActionRequest, browserAccounts: ['signUp', 'signIn'] },
+  namedAction: { request: supabaseNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,
     supervisorEnvironment: (_input: { spacetimePort: number | null }) => ({}) },

@@ -265,14 +265,3 @@ export function convexNamedActionRequest({ action, input, url }: { action: Named
   return { ...request, responseContract: 'convex-mutation' as const,
     ...(url ? { applicationOrigin: new URL(url).origin } : {}) };
 }
-
-// Same native metadata owner as the vendor `convex function-spec` command.
-// Presence is a diagnostic only; this does not establish a successful effect.
-export function probeConvexNamedAction(action: NamedAction, input: NativeInput = {}) {
-  const functions = z.array(record).parse(admin(input).call('query', '_system/cli/modules:apiSpec', {}));
-  const found = functions.filter(fn => fn.identifier === `api.js:${action.reducer}`
-    && fn.functionType === 'Mutation' && (fn.visibility as { kind?: unknown } | undefined)?.kind === 'public');
-  return { ok: found.length === 1, status: 0,
-    note: found.length === 1 ? 'declared public native mutation exists; behavior is checked separately'
-      : `missing public native mutation api:${action.reducer}` };
-}

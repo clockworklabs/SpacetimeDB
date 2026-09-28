@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BackendLease } from '../src/runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
-import { getConvexStock, setConvexStock, getConvexCheckoutState, readConvexTables, probeConvexNamedAction } from '../src/stacks/backends/convex-operations.js';
+import { getConvexStock, setConvexStock, getConvexCheckoutState, readConvexTables } from '../src/stacks/backends/convex-operations.js';
 import { classifyResponseContract } from '../src/actions/named-action-runtime.js';
 
 const lease = { backend: 'convex', resources: { serverUri: 'http://127.0.0.1:13210',
@@ -29,11 +29,6 @@ function native(data: Record<string, Record<string, unknown>[]>, options: { stal
     calls.push(body);
     if (body.path === '_system/cli/tables') return JSON.stringify({ status: 'success', value: {
       page: Object.keys(data).map(name => ({ name })), isDone: true } });
-    if (body.path === '_system/cli/modules:apiSpec') return JSON.stringify({ status: 'success', value: [
-      { identifier: 'api.js:checkout', functionType: 'Mutation', visibility: { kind: 'public' } },
-      { identifier: 'api.js:private', functionType: 'Mutation', visibility: { kind: 'internal' } },
-      { identifier: 'api.js:query', functionType: 'Query', visibility: { kind: 'public' } },
-    ] });
     if (body.path === '_system/frontend/patchDocumentsFields') {
       assert.deepEqual(body.args, { table: 'stock', ids: ['stock-native'], fields: { quantity: 17 }, componentId: null });
       data.stock![0]!.quantity = 17;
@@ -101,14 +96,4 @@ test('native envelopes preserve HTTP status semantics without turning errors int
   assert.equal(classifyResponseContract(request, { status: 200, text: '{}' }).complete, true);
   assert.equal(classifyResponseContract(request, { status: 200, text: '{}' }).ok, false);
   assert.equal(classifyResponseContract(request, { status: 200, text: '{"status":"success","value":null}' }).ok, true);
-});
-
-
-test('native presence diagnostic uses vendor metadata and cannot treat a private, query or missing export as a mutation', () => {
-  const client = native(rows());
-  for (const reducer of ['checkout', 'private', 'query', 'missing']) {
-    const result = probeConvexNamedAction({ reducer }, { lease, exec: client.exec });
-    assert.equal(result.ok, reducer === 'checkout');
-  }
-  assert(client.calls.every(call => call.path === '_system/cli/modules:apiSpec'));
 });

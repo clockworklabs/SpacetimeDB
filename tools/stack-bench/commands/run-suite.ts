@@ -107,7 +107,6 @@ type LintPayload = {
   pass: boolean;
   counts: { pass: number; fail: number; blocked: number; scenario: number };
 };
-type ActionsPayload = { missing: string[]; results: unknown[] };
 type RuntimeProvenance = { ok: boolean | null; verified: boolean; reason: string };
 type ApplicationProbeResult = { ok: boolean; detail: string | null; timedOut?: true };
 type ResetOutcome = { kind: string; phase: string; appFailures?: string[] };
@@ -140,7 +139,6 @@ type Bundle = {
   error?: string;
   outcome?: { kind: string; phase: string; reason?: string; appFailures?: string[] };
   provenance?: DatabaseProvenance & { runtime?: RuntimeProvenance };
-  actions?: ActionsPayload | null;
   packRuntime?: AggregatedPackRuntimeEvidence;
   phaseTimings: PhaseTiming[];
 };
@@ -692,24 +690,6 @@ function lint(args: RunArguments, selectedTask: BoundRecipeTaskRequestResult | n
   return r;
 }
 
-// Named write actions let concurrency checks issue authenticated operations
-// without prescribing one transport. Missing actions are reported explicitly.
-function checkActions(args: RunArguments): ActionsPayload | null {
-  process.stdout.write(`  ${'actions'.padEnd(10)} ... `);
-  const out = join(args.out, ARTIFACT_FILE.actions);
-  rmSync(out, { force: true });
-  try {
-    run('node', [compiledEntrypoint('commands', 'check-actions.js'), '--backend', args.backend,
-      '--url', args.url, '--track', args.track, '--out', out, '--quiet',
-      '--parent-attempt-id', args.bundleArtifactId]);
-  } catch { /* non-zero exit means something is missing; the report still lands */ }
-  if (!existsSync(out)) { console.log('NO REPORT'); return null; }
-  const r = readArtifactPayload<ActionsPayload>(out, { expectedKind: 'action_check' });
-  if (!r.missing.length) { console.log(`all ${r.results.length} present`); return r; }
-  console.log(`${r.missing.length} MISSING — ${r.missing.join(', ')}`);
-  return r;
-}
-
 export function suiteMayRetry(grade: GradePayload): boolean {
   if (grade.cleanupEvidence?.status === 'harness_failure') return false;
   if (grade.features.some(feature => feature.cleanupEvidence?.status === 'harness_failure'
@@ -1153,7 +1133,6 @@ async function main() {
       console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);
     }
-    bundle.actions = checkActions(args);
   }
 
   // Keep current-level score separate from earlier guarantee regressions.

@@ -8,7 +8,7 @@ import { convexOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { activateConvex, controlConvexApplication, resetConvex } from './convex-lifecycle.js';
-import { convexApplicationEnvironment, convexNamedActionRequest, probeConvexNamedAction, proveConvexUse,
+import { convexApplicationEnvironment, convexNamedActionRequest, proveConvexUse,
   setConvexStock, getConvexStock, getConvexCheckoutState, convexAuthReadEndpoints, convexAuthRequestPatch } from './convex-operations.js';
 import { CONVEX_ADAPTER_VERSION } from './convex-identity.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
@@ -30,7 +30,7 @@ export const convexAdapter = defineStackAdapter('convex', {
   database: { proveUse: proveConvexUse },
   grading: { context: createHttpGradingContext, transport: 'convex', capabilities,
     authReadEndpoints: convexAuthReadEndpoints, authRequestPatch: convexAuthRequestPatch },
-  namedAction: { request: convexNamedActionRequest, browserAccounts: ['signUp', 'signIn'], probe: probeConvexNamedAction },
+  namedAction: { request: convexNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,
     supervisorEnvironment: (_input: { spacetimePort: number | null }) => ({}) },

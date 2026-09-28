@@ -3,7 +3,6 @@ import type { TextCommandExecutor } from '../runtime/command-executor.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 import type { GradingCapabilityId } from '../actions/action-contract.js';
 import type { PlatformAuthPatch } from '../actions/auth-request-patch.js';
-import type { NamedAction } from '../composition/tracks.js';
 import type { LeasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 import type { LeasedDatabase } from './backend-reset-guard.js';
 import type { CheckoutState } from './checkout-state.js';
@@ -28,8 +27,6 @@ export interface StackGradingSupport {
   authReadEndpoints?(lease: BackendLease): readonly string[];
 }
 
-export interface NamedActionProbe { ok: boolean; status: number; note: string }
-
 // A stack's operator-reviewed reader for a saved application, bound to its source.
 // `lease` is the grading database lease; a stack that declares none ignores it.
 export interface SavedCheckoutRead {
@@ -41,12 +38,6 @@ export interface SavedCheckoutRead {
 // Optional members any adapter may declare; shared code reads them from every adapter.
 export interface StackAdapterOptions {
   readonly grading: StackGradingSupport;
-  readonly namedAction: {
-    // Account actions checked through browser sign-up and sign-in, not password mutations.
-    readonly browserAccounts?: readonly string[];
-    // Checks a named action from native function metadata instead of issuing it.
-    probe?(action: NamedAction): NamedActionProbe | Promise<NamedActionProbe>;
-  };
   readonly runtime?: StackDatabaseRuntime;
 }
 

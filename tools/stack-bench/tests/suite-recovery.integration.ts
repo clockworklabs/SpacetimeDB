@@ -22,8 +22,13 @@ for (const mode of ['persistent', 'once'] as const) test(`isolated recovery pres
     ? join(process.env.STACK_BENCH_RECOVERY_EVIDENCE_DIR, mode) : undefined;
   const walkDirectory = join(STACK_BENCH_ROOT, 'dist', 'tracks', basename(root));
   let stallRequests = 0;
+  let unselectedWrites = 0;
   const visits: Record<string, number> = {};
   const server = createServer((request, response) => {
+    if (request.url === '/record/unselected' && request.method === 'POST') {
+      unselectedWrites++;
+      response.end('written'); return;
+    }
     if (request.url?.startsWith('/record/')) {
       const name = request.url.slice('/record/'.length);
       visits[name] = (visits[name] ?? 0) + 1;
@@ -54,7 +59,8 @@ for (const mode of ['persistent', 'once'] as const) test(`isolated recovery pres
     writeFileSync(join(root, 'track.json'), JSON.stringify({ schemaVersion: 1, title: 'Recovery fixture',
       slug: 'recovery-test', internal: true, validatedThrough: 1, plannedThrough: 1,
       portOffset: 600, restartProbe: '/', suites: { '1': ['good', 'bad', 'stall'].map(id => ({
-        id, inherit: 'none', spec: `scenarios/${id}.json` })) } }));
+        id, inherit: 'none', spec: `scenarios/${id}.json` })) },
+      actions: [{ id: 'unselected', path: '/record/unselected', reducer: 'unselected', args: [] }] }));
     for (const name of ['good', 'bad', 'stall']) {
       writeFileSync(join(root, 'scenarios', `${name}.json`), JSON.stringify({ schemaVersion: 1, level: 1,
         features: [{ id: 1, name, actors: ['viewer'], setup: [], criteria: [{ id: name, desc: name, points: 1,
@@ -76,6 +82,7 @@ for (const mode of ['persistent', 'once'] as const) test(`isolated recovery pres
     const bundle = readArtifactPayload<GradeBundlePayload>(join(root, 'results', 'bundle.json'), { expectedKind: 'grade_bundle' });
     receipt.bundle = bundle;
     assert.deepEqual(visits, { good: 1, bad: 1, stall: 2 });
+    assert.equal(unselectedWrites, 0, 'unselected actions must not write to the app');
     assert.equal(stallRequests, 2);
     assert.equal(classifyBundle(bundle).kind, mode === 'persistent' ? 'inconclusive' : 'app_failure');
     assert.equal(bundle.suites?.good?.total, 1);
@@ -97,6 +104,7 @@ for (const mode of ['persistent', 'once'] as const) test(`isolated recovery pres
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
     receipt.visits = visits;
+    receipt.unselectedWrites = unselectedWrites;
     receipt.stallRequests = stallRequests;
     if (evidence) {
       mkdirSync(evidence, { recursive: true });

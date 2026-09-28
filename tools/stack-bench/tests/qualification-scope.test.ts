@@ -78,7 +78,7 @@ function write(root: string, path: string, source = ''): void {
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-qualification-scope-'));
   for (const path of [
-    'commands/run-suite.ts', 'commands/check-actions.ts', 'commands/reset-backend.ts',
+    'commands/run-suite.ts', 'commands/reset-backend.ts',
     'commands/bench.ts',
     'commands/null-control.ts', 'src/references/reference-live.ts',
     'src/references/reference-agent.ts', 'container/run-build.ts', 'grader/grade.ts',
