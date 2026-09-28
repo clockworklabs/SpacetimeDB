@@ -1,0 +1,692 @@
+{
+  "schemaVersion": 1,
+  "qualified": false,
+  "candidate": "6d560ca871dc3f1b340cf16fbbd497429f4ebd8d",
+  "base": "194a4aaaab68388f9e5e75396cb1899e1a9e6950",
+  "baseImage": "sha256:17fdb37e26f0b524ced482de316f151489c0bf1e928c1b950c074abfe3209966",
+  "dependencyVolume": "stack-bench-release-deps-194a4aaaab",
+  "preparationScriptSha256": "324d85ca6256c99ffbfb29d84f0472f247b0922f2c5181370553f20aa69b68a9",
+  "launcherSha256": "c4f7dff0e4a2dce0d6ffd047ba82b178983efae50859ddc90b39a5bdd1f9ffca",
+  "reviewedScopeSha256": "1f0b8e839ae2e5f2414060e0c3071e6b0751bc89e6752e05652ec7b900dc87d8",
+  "scopeSha256": "b8e299e6585128d591b4afbf84e1a6547aa72b6030cf780a166b764cd0469ac7",
+  "recipe": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+  "changes": [
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/account-navigation.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/contracts/appendix-02.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/contracts/stock-transfers.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/contracts/support-intake.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-admin-write-staff.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-last-unit.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-order-ownership.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-restock-race.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-server-price.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-warehouse-admin-staff.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-fulfilment-live.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-fulfilment-ship.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-invariants.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-low-stock.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-operational-category-totals.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-core.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-queue-warehouse.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-server-actions.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-strengthened.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-transfer-overdraw.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/03-deferred-access.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/03-deferred-integrity.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/03-scheduled-restock-apply.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/03-scheduled-restocks.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/03-server-time.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/mixed-operation-history.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-books-balance.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-managed-support-privacy.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-managed-support-shared.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-shipping-accounting.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-stock-alerts.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-support-history.json"
+    }
+  ],
+  "files": [
+    {
+      "path": "tracks/ecommerce/contracts/appendix-02.md",
+      "sourceSha256": "65a8946be075051b8a75241069fba46027a879c456a46ab3145834471697c52a",
+      "sha256": "65a8946be075051b8a75241069fba46027a879c456a46ab3145834471697c52a"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/stock-transfers.md",
+      "sourceSha256": "239ca922f3aca9978bd95320de6c5fd91db8201efdb013ef243ef2a7e5f058ba",
+      "sha256": "239ca922f3aca9978bd95320de6c5fd91db8201efdb013ef243ef2a7e5f058ba"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-intake.md",
+      "sourceSha256": "5c43cefdb0dd345a2562192f7756a27fcf67325652b04cc5c27e5903008b8d82",
+      "sha256": "5c43cefdb0dd345a2562192f7756a27fcf67325652b04cc5c27e5903008b8d82"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "sourceSha256": "b9436a48793f73a071ce7f1f857501a1f8cd17d8e6b76f08d73419ffaee38fc0",
+      "sha256": "b9436a48793f73a071ce7f1f857501a1f8cd17d8e6b76f08d73419ffaee38fc0"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "sourceSha256": "30ee02a5a7dd20d074145977154b5251fbe19efd0738423c578210a35128488c",
+      "sha256": "30ee02a5a7dd20d074145977154b5251fbe19efd0738423c578210a35128488c"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "sourceSha256": "9acda0b055710da41ab49ed05729623f7be35db634690b0fb973d711c12c4c4a",
+      "sha256": "9acda0b055710da41ab49ed05729623f7be35db634690b0fb973d711c12c4c4a"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "sourceSha256": "58b0a81d8b11bae096be3afcc8357bf9f38ea3a4ae9db4b109fcdc65220dee5d",
+      "sha256": "bf9d2f1740365f651cec193396067c1977f80c51e586fc19786de7e31f60fe2f"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-server-price.json",
+      "sourceSha256": "790848ef3273d23d7f90aa4f68ae6b82bd781c1d64318ca08aa9c50f7dd2206e",
+      "sha256": "790848ef3273d23d7f90aa4f68ae6b82bd781c1d64318ca08aa9c50f7dd2206e"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "sourceSha256": "64374b56758727a658a2e20953492d805bd13f0bd90748e1f741b83ce732324c",
+      "sha256": "ad75388a01a6a7a6a14af6182783b11abcb74cd2e0250bbb7a6df6c9dd614a4b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
+      "sourceSha256": "f6175fbfd8463d9f4478eaa6a40ebf3ca3b83a39bd5fa5ab809359c32853b3d2",
+      "sha256": "d99930385fa8a83e56d761c618245a1eb9e6ccc3ec5fef96572326b021cee265"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-fulfilment-live.json",
+      "sourceSha256": "fb9b23ced84ff2322803415086ca3997f4dd9015f88f5db5251f5fc69eeeb9bf",
+      "sha256": "a17d9f2edb2056c8e62f8175104ac328617c4602745bf5e7f816f7a214147c94"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "sha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-invariants.json",
+      "sourceSha256": "6159426724d9146e06d4a3e1e341635ee4390e4dbae0eb7d3215ab15b392cebe",
+      "sha256": "6159426724d9146e06d4a3e1e341635ee4390e4dbae0eb7d3215ab15b392cebe"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-low-stock.json",
+      "sourceSha256": "6aae971d71e6644c90ea2a79cacd2198cfd7c6de79a711db05ca361c9c457ac4",
+      "sha256": "bb5242a777689a29c95a548cd9932d2aad8fdd7de716a222a5e15a2c4339d3bb"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "sourceSha256": "b3231fae702062ca9da975dda3f54912fb33e4bb11a6260cb2c9c17a4b08737e",
+      "sha256": "785d2649d8d72fb99ea7c5577fd87d6ba361c0c00dd1ce92d05942af740ebc00"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "sourceSha256": "ff502d4b0112bbdb5b3a28f4788af2fd928092f08abff47488b1b9aec057bbb5",
+      "sha256": "f4923e57f47905a4da04f7665aa1e5d620ea88cc759c930aa417da2a0c0943b7"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-queue-warehouse.json",
+      "sourceSha256": "9078f519b6578e0a08c639ce6e6aa8ee9f8f5fe8574e1aaf3c9c2c070ae83920",
+      "sha256": "d557850827a4087a05df75b8e6f74b07f8d6605a6c6e0675d310285cb5113984"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "sourceSha256": "452698d51d79c646d6e62413033b118abfff1f7342aaf937caac91e658d517e0",
+      "sha256": "452698d51d79c646d6e62413033b118abfff1f7342aaf937caac91e658d517e0"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "sourceSha256": "b79c87ea6e68b95408dc903f7716e511b3bdc4cc8248d62136cb16b5707b6fba",
+      "sha256": "b79c87ea6e68b95408dc903f7716e511b3bdc4cc8248d62136cb16b5707b6fba"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+      "sourceSha256": "4fe9dd3ee1577773535ae51e00df43128a3975529fe24559878f8077a96a9c17",
+      "sha256": "4fe9dd3ee1577773535ae51e00df43128a3975529fe24559878f8077a96a9c17"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-deferred-access.json",
+      "sourceSha256": "b4d07b676e31316a212694cb3c0b90d169f3acb5927334dfec588fd3214cbb3c",
+      "sha256": "8189c39dfda7658a649d310cb1678d09d7848fd8d2cbfd85dee5bba0d3f275b7"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "sourceSha256": "d91932de08694d9dc1ac22ad3c598d518935a16bc7f6b9c3152e0f764be12083",
+      "sha256": "d91932de08694d9dc1ac22ad3c598d518935a16bc7f6b9c3152e0f764be12083"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
+      "sourceSha256": "dbfba264edfb92da87a432f3624b13f74658feadb1ebce93e4814f23008ca49f",
+      "sha256": "dbfba264edfb92da87a432f3624b13f74658feadb1ebce93e4814f23008ca49f"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
+      "sourceSha256": "fbd4738f53e9c0590c6de8b473999013a7720a2448cfef1e07a864db1628d938",
+      "sha256": "fbd4738f53e9c0590c6de8b473999013a7720a2448cfef1e07a864db1628d938"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "sourceSha256": "21dd65af29baaa39ffc9773c9b27426105028e90c6b72d88d2f820f086733dad",
+      "sha256": "21dd65af29baaa39ffc9773c9b27426105028e90c6b72d88d2f820f086733dad"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-server-time.json",
+      "sourceSha256": "62a112f4ad8b572aeb94f75fdfd9116f5a530c29719bf7aaaf07a693ea51399f",
+      "sha256": "62a112f4ad8b572aeb94f75fdfd9116f5a530c29719bf7aaaf07a693ea51399f"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "sourceSha256": "3fd6dee369a5cdebafa0f8164d656957c6d7e0654c59df3481ba50eb623e5a7a",
+      "sha256": "3fd6dee369a5cdebafa0f8164d656957c6d7e0654c59df3481ba50eb623e5a7a"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "sourceSha256": "13c77fb2f36faa59c1200e56e7b139502dcb9b42e3d58b8e2661397d628d5805",
+      "sha256": "121d5c37e079c8d778ea4652d28def226fdc3f38f2477953b00446cc46d87f4c"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "sourceSha256": "ac8a6dbdc68695fd796119a2dc0524de5bf36611b5aa0f4f6203259d82691a29",
+      "sha256": "ac8a6dbdc68695fd796119a2dc0524de5bf36611b5aa0f4f6203259d82691a29"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "sourceSha256": "f6dcabce890ea5d3b0a3355677a1be8ba989f4fca9cc4cfc69ea454e84fdbce5",
+      "sha256": "05ae6466ddfbfc271ebd1dd620095339f40b6504c897ab58de905814d42ecc2b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "sourceSha256": "53d24b162c72419660c8470e3b739031cdf21e2a721bdbeea3de2b73f8a89b7d",
+      "sha256": "53d24b162c72419660c8470e3b739031cdf21e2a721bdbeea3de2b73f8a89b7d"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "sourceSha256": "49b78f27337d116827d7a3fb0f9439c30b36add986b233e71f4aa2b1f7306487",
+      "sha256": "49b78f27337d116827d7a3fb0f9439c30b36add986b233e71f4aa2b1f7306487"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "sourceSha256": "b964c97e7f9e93e053cd2ff9bba003b749f10861049b3ade879f358b06831e86",
+      "sha256": "626d421c8dc830b9b2f63e98c316f55bfa6f85ecba793cf97b5a06188adcbefb"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sourceSha256": "75b46e9800aea9cdff01f576a24102b2e319ffffd55137ee0daa79101aeb5321",
+      "sha256": "2f21c86af677a2bd66c2855d5358c65ac3bd85c6dd74ceaac372adee11539e11"
+    }
+  ],
+  "image": "sha256:c8f2c7a8d3d8a7b208b94e8c3df7751248f30e32c04faa0db285f4addc2da3f1",
+  "inputsSha256": "7810510ed47f6bfde0528a605e360cadea9a528fe98e3ca701ca6cc784cddb01",
+  "launchScope": {
+    "track": "ecommerce",
+    "level": 3,
+    "recipe": "ecommerce.progression-catalog",
+    "featureCatalog": "progression/ecommerce.json",
+    "checks": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.operational-views.5e",
+      "ecommerce.inventory-operations.operational-views.5f",
+      "ecommerce.inventory-operations.shipping-accounting.202e",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.stock-conservation.202f",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.l3.deferred-integrity.exactly-once.311a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+      "ecommerce.l3.server-time.server-time.312a",
+      "ecommerce.operations-access.fulfilment-queue.1b",
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.managed-support.managed-support.613c",
+      "ecommerce.progression.support-history.support-history.612c",
+      "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "ecommerce.returns-pricing.refund-accounting.203a",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.access-control.support-history-logout.612d",
+      "ecommerce.spec.access-control.support-history-privacy.612b",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.live-state.fulfilment-queue.1a",
+      "ecommerce.spec.live-state.inventory-dashboard.5a",
+      "ecommerce.spec.live-state.managed-support.613a",
+      "ecommerce.spec.live-state.sales-dashboard.5b",
+      "ecommerce.spec.live-state.warehouse-stock.7c",
+      "ecommerce.spec.state-durability.support-history-reload.612a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "mutationWorkers": 3,
+    "repetitions": 1,
+    "slots": {
+      "spacetime": 400,
+      "postgres": 408,
+      "mongodb": 416,
+      "convex": 424
+    },
+    "ports": [
+      3710,
+      3711,
+      3712,
+      6709,
+      6710,
+      6711,
+      6817,
+      6818,
+      6819,
+      6873,
+      6874,
+      6875,
+      6981,
+      6982,
+      6983,
+      7139,
+      7140,
+      7141,
+      7347,
+      7348,
+      7349,
+      7425,
+      7426,
+      7427,
+      13634,
+      13635,
+      13636
+    ],
+    "mutations": {
+      "spacetime": [
+        "shipping-counts-sale-twice",
+        "restock-client-snapshot-overwrites-concurrent-purchases",
+        "restock-race-records-wrong-order-total",
+        "every-signed-in-customer-is-treated-as-an-admin",
+        "warehouse-view-omits-west",
+        "direct-restock-does-not-require-an-admin",
+        "direct-purchase-ignores-the-stored-price",
+        "order-views-return-every-customers-orders",
+        "admin-revenue-double-counts-every-order",
+        "purchases-do-not-leave-the-warehouses",
+        "purchase-does-not-reserve-stock-last-unit",
+        "cancel-does-not-restore-stock-feature",
+        "cancellation-accounting-loses-stock-restoration",
+        "cancelled-order-remains-in-revenue-feature",
+        "cancelled-order-remains-in-revenue-invariant",
+        "operator-authorization-allows-customer-transfer",
+        "customer-can-ship-order-direct-1-1",
+        "customer-can-cancel-foreign-order-1-1",
+        "ship-acknowledges-without-changing-status",
+        "operator-authorization-allows-customer-shipping",
+        "transfer-debits-source-without-crediting-existing-destination",
+        "queue-warehouse-reports-west",
+        "transfer-creates-stock-during-race",
+        "admin-total-stock-is-not-rendered",
+        "customers-can-schedule-restocks",
+        "scheduled-restock-execution-queue-is-process-local",
+        "completed-restock-remains-pending",
+        "pending-restock-timer-is-static",
+        "due-restock-omits-ledger-entry",
+        "cancelled-restock-remains-pending",
+        "restart-restock-runs-early",
+        "managed-support-leaks-and-accepts-cross-account-replies",
+        "managed-support-replies-are-empty",
+        "managed-support-live-replies-stay-at-initial-snapshot",
+        "stock-alert-is-sent-after-every-restock",
+        "stock-alerts-are-visible-to-other-customers",
+        "support-history-is-lost-on-fresh-account-login",
+        "support-history-leaks-across-customers",
+        "admin-restock-preserves-existing-stock",
+        "support-history-rows-are-hidden",
+        "authorized-restock-does-not-change-stock",
+        "low-stock-threshold-is-two-units",
+        "category-totals-count-only-since-the-dashboard-opened",
+        "stored-support-replies-are-hidden-after-reload",
+        "fulfilment-queue-is-frozen-at-page-load",
+        "low-stock-list-is-frozen-at-page-load",
+        "category-totals-are-frozen-at-page-load",
+        "warehouse-totals-are-frozen-at-page-load",
+        "transfer-skips-the-source-holding-check",
+        "support-history-leaks-to-signed-out-visitors",
+        "order-cache-survives-account-switch",
+        "opposing-transfer-ignored",
+        "opposing-transfer-rejected",
+        "mixed-history-lost-transfer",
+        "mixed-history-wrong-price",
+        "mixed-history-ignored-write",
+        "mixed-history-reject-valid-write",
+        "mixed-history-repeat-cancel",
+        "mixed-history-wrong-owner",
+        "revenue-aggregation-truncates-order-population",
+        "shipping-rejects-every-request",
+        "cancel-rejects-every-request",
+        "signup-accepts-admin-claim",
+        "signup-accepts-optional-admin-claim",
+        "admin-boundary-rejects-all-signups"
+      ],
+      "postgres": [
+        "shipping-counts-sale-twice",
+        "restock-race-records-wrong-order-total",
+        "admin-warehouse-view-drops-one-location",
+        "direct-purchase-uses-constant-price",
+        "purchase-does-not-decrement-warehouse-stock",
+        "oversell-no-row-lock",
+        "purchase-read-write-loses-concurrent-stock",
+        "cancel-does-not-restore-stock-feature",
+        "cancellation-accounting-loses-stock-restoration",
+        "operator-authorization-allows-customer-transfer",
+        "customer-can-ship-order-direct-1-1",
+        "customer-can-cancel-foreign-order-1-1",
+        "transfer-debits-source-without-crediting-existing-destination",
+        "queue-warehouse-reports-west",
+        "transfer-overwrites-concurrent-purchase-with-stale-stock",
+        "progression-support-history-is-not-persisted",
+        "progression-support-history-leaks",
+        "progression-managed-support-is-not-shared",
+        "progression-managed-support-leaks",
+        "stock-alert-is-sent-after-every-restock",
+        "progression-stock-alerts-leak-across-accounts",
+        "progression-restock-countdown-is-fixed",
+        "progression-due-restock-does-not-run",
+        "progression-cancelled-restock-still-runs",
+        "progression-restart-timer-never-runs",
+        "progression-order-history-ignores-owner",
+        "progression-revenue-double-counts-orders",
+        "progression-cancelled-orders-remain-in-revenue",
+        "progression-shipping-keeps-order-pending",
+        "progression-staff-sees-admin-navigation",
+        "progression-staff-can-restock-directly",
+        "progression-restock-adds-wrong-quantity",
+        "progression-customers-can-manage-scheduled-work",
+        "progression-restock-does-not-survive-restart",
+        "progression-restock-can-apply-more-than-once",
+        "restock-overwrites-instead-of-increments",
+        "support-history-rows-are-hidden",
+        "authorized-restock-does-not-change-stock",
+        "low-stock-threshold-is-two-units",
+        "category-totals-render-as-session-deltas",
+        "support-first-reply-is-hidden",
+        "purchase-does-not-broadcast-fulfilment-queue",
+        "admin-state-change-is-not-broadcast",
+        "admin-sockets-do-not-join-admin-room",
+        "transfer-overdraft-guard-skips-bulk-transfers",
+        "transfer-does-not-publish-warehouse-totals",
+        "progression-support-history-anonymous-leak",
+        "restock-trusts-submitted-admin-role",
+        "restock-admin-claim-commits-then-refuses",
+        "restock-rejects-administrator-control",
+        "direct-purchase-trusts-submitted-price",
+        "direct-purchase-price-commits-then-refuses",
+        "direct-purchase-rejects-all",
+        "order-cache-survives-account-switch",
+        "order-history-is-always-empty",
+        "opposing-transfer-ignored",
+        "opposing-transfer-rejected",
+        "mixed-history-lost-transfer",
+        "mixed-history-wrong-price",
+        "mixed-history-ignored-write",
+        "mixed-history-reject-valid-write",
+        "mixed-history-repeat-cancel",
+        "mixed-history-wrong-owner",
+        "revenue-aggregation-truncates-order-population",
+        "shipping-trusts-submitted-staff-role",
+        "shipping-claim-commits-then-refuses",
+        "shipping-rejects-every-request",
+        "cancel-trusts-submitted-owner",
+        "cancel-claim-commits-then-refuses",
+        "cancel-rejects-every-request",
+        "signup-accepts-admin-claim",
+        "admin-boundary-rejects-all-signups"
+      ],
+      "mongodb": [
+        "shipping-counts-sale-twice",
+        "restock-race-records-wrong-order-total",
+        "warehouse-view-omits-one-location",
+        "direct-purchase-total-ignores-store-price",
+        "order-history-is-not-owner-scoped",
+        "revenue-aggregation-ignores-order-totals",
+        "cancel-does-not-restore-stock-feature",
+        "cancellation-accounting-loses-stock-restoration",
+        "cancelled-order-remains-in-revenue-feature",
+        "cancelled-order-remains-in-revenue-invariant",
+        "operator-authorization-allows-customer-transfer",
+        "customer-can-ship-order-direct-1-1",
+        "customer-can-cancel-foreign-order-1-1",
+        "ship-acknowledges-without-changing-status",
+        "transfer-debits-source-without-crediting-existing-destination",
+        "queue-warehouse-reports-west",
+        "staff-can-see-admin-navigation",
+        "staff-can-use-direct-restock",
+        "restock-adds-the-wrong-quantity",
+        "transfer-creates-stock-during-race",
+        "customer-can-cancel-scheduled-restock",
+        "scheduled-restock-never-becomes-due-after-restart",
+        "completed-restock-is-replayed",
+        "scheduled-restock-countdown-is-fixed",
+        "due-restock-does-not-change-stock",
+        "cancelled-restock-remains-pending",
+        "server-time-restock-never-completes",
+        "managed-support-live-refresh-keeps-stale-tickets",
+        "managed-support-allows-another-customer",
+        "stock-alert-repeats-while-in-stock",
+        "stock-alerts-are-not-owner-scoped",
+        "support-history-is-lost-on-server-restart",
+        "support-history-is-not-owner-scoped",
+        "last-unit-allows-negative-stock",
+        "purchase-read-write-loses-concurrent-stock",
+        "purchase-does-not-reduce-warehouse-stock",
+        "restock-does-not-increase-stock",
+        "support-history-rows-are-hidden",
+        "authorized-restock-does-not-change-stock",
+        "initial-dashboard-load-omits-low-stock",
+        "category-totals-skip-the-newest-order",
+        "support-replies-present-at-open-are-hidden",
+        "queue-ignores-live-fulfilment-updates",
+        "low-stock-boundary-excludes-ten-live",
+        "live-admin-updates-keep-stale-category-totals",
+        "overdraw-transfer-is-accepted",
+        "support-history-leaks-to-signed-out-visitors",
+        "restock-trusts-submitted-admin-role",
+        "direct-purchase-trusts-submitted-price",
+        "order-cache-survives-account-switch",
+        "opposing-transfer-ignored",
+        "opposing-transfer-rejected",
+        "mixed-history-lost-transfer",
+        "mixed-history-wrong-price",
+        "mixed-history-ignored-write",
+        "mixed-history-reject-valid-write",
+        "mixed-history-repeat-cancel",
+        "mixed-history-wrong-owner",
+        "revenue-aggregation-truncates-order-population",
+        "shipping-trusts-submitted-staff-role",
+        "shipping-rejects-every-request",
+        "cancel-trusts-submitted-owner",
+        "cancel-rejects-every-request",
+        "signup-accepts-admin-claim",
+        "admin-boundary-rejects-all-signups"
+      ],
+      "convex": [
+        "warehouse-view-omits-one-location",
+        "queue-warehouse-reports-west",
+        "scheduled-restock-countdown-is-fixed",
+        "support-history-rows-are-hidden",
+        "support-replies-present-at-open-are-hidden",
+        "shipping-counts-sale-twice",
+        "purchases-do-not-decrement-stock",
+        "purchase-rejects-every-request",
+        "order-history-not-owner-scoped",
+        "support-read-not-owner-scoped",
+        "support-reply-not-owner-scoped",
+        "authorized-restock-does-not-change-stock",
+        "initial-dashboard-load-omits-low-stock",
+        "category-totals-skip-the-newest-order",
+        "transfer-debits-source-without-crediting-existing-destination",
+        "transfer-creates-stock-during-race",
+        "customer-can-cancel-scheduled-restock",
+        "completed-restock-is-replayed",
+        "due-restock-does-not-change-stock",
+        "cancelled-restock-remains-pending",
+        "server-time-restock-never-completes",
+        "ship-acknowledges-without-changing-status",
+        "customer-can-ship-order-direct-1-1",
+        "customer-can-cancel-foreign-order-1-1",
+        "cancel-does-not-restore-stock-feature",
+        "cancellation-accounting-loses-stock-restoration",
+        "stock-alerts-are-not-owner-scoped",
+        "staff-can-use-direct-restock",
+        "restock-race-records-wrong-order-total",
+        "queue-ignores-live-fulfilment-updates",
+        "managed-support-live-refresh-keeps-stale-tickets",
+        "live-admin-updates-keep-stale-category-totals",
+        "restock-does-not-increase-stock",
+        "revenue-aggregation-ignores-order-totals",
+        "purchase-does-not-reduce-warehouse-stock",
+        "direct-purchase-total-ignores-store-price",
+        "overdraw-transfer-is-accepted",
+        "staff-can-see-admin-navigation",
+        "stock-alert-repeats-while-in-stock",
+        "last-unit-allows-negative-stock",
+        "scheduled-restock-never-becomes-due-after-restart",
+        "restock-trusts-submitted-admin-role",
+        "direct-purchase-trusts-submitted-price",
+        "order-cache-survives-account-switch",
+        "opposing-transfer-ignored",
+        "opposing-transfer-rejected",
+        "mixed-history-lost-transfer",
+        "mixed-history-wrong-price",
+        "mixed-history-ignored-write",
+        "mixed-history-reject-valid-write",
+        "mixed-history-repeat-cancel",
+        "mixed-history-wrong-owner",
+        "revenue-aggregation-truncates-order-population",
+        "shipping-trusts-submitted-staff-role",
+        "shipping-rejects-every-request",
+        "cancel-trusts-submitted-owner",
+        "cancel-rejects-every-request",
+        "signup-accepts-admin-claim",
+        "admin-boundary-rejects-all-signups"
+      ]
+    },
+    "mutationManifestSha256": {
+      "spacetime": "e5fd8b8752cc89f12c019b72df9959b3632c2abedcf08a5dc5de943a0b3c67f0",
+      "postgres": "2c757bf0ededa88d5b8d4d078ed74dc16bea090e9ce688f10d7e1ba71bd87155",
+      "mongodb": "255140a2cc0c4ffcdd026cc25418c1bda80f15e4eb7829bbca43d06206ebc07d",
+      "convex": "f08b9fd2ae3e6f9ebe60908110861e188bede3e639c7264a45f7e41c6d1a313e"
+    }
+  }
+}

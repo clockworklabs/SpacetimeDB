@@ -1,0 +1,77 @@
+TAP version 13
+# Subtest: restored operational dialogs reach the stored value and order assertions
+    # Subtest: admin/reload: correct restored dialog
+    ok 1 - admin/reload: correct restored dialog
+      ---
+      duration_ms: 223.6199
+      type: 'test'
+      ...
+    # Subtest: admin/reload: wrong stored value
+    ok 2 - admin/reload: wrong stored value
+      ---
+      duration_ms: 319.3963
+      type: 'test'
+      ...
+    # Subtest: admin/sign-in-result: correct restored dialog
+    ok 3 - admin/sign-in-result: correct restored dialog
+      ---
+      duration_ms: 106.6053
+      type: 'test'
+      ...
+    # Subtest: admin/sign-in-result: wrong stored value
+    ok 4 - admin/sign-in-result: wrong stored value
+      ---
+      duration_ms: 290.6615
+      type: 'test'
+      ...
+    # Subtest: staff/reload: correct restored dialog
+    ok 5 - staff/reload: correct restored dialog
+      ---
+      duration_ms: 118.2648
+      type: 'test'
+      ...
+    # Subtest: staff/reload: wrong stored value
+    ok 6 - staff/reload: wrong stored value
+      ---
+      duration_ms: 301.8044
+      type: 'test'
+      ...
+    # Subtest: staff/sign-in-result: correct restored dialog
+    ok 7 - staff/sign-in-result: correct restored dialog
+      ---
+      duration_ms: 98.9217
+      type: 'test'
+      ...
+    # Subtest: staff/sign-in-result: wrong stored value
+    ok 8 - staff/sign-in-result: wrong stored value
+      ---
+      duration_ms: 301.911
+      type: 'test'
+      ...
+    # Subtest: orders/reload: correct restored dialog
+    ok 9 - orders/reload: correct restored dialog
+      ---
+      duration_ms: 150.1801
+      type: 'test'
+      ...
+    # Subtest: orders/reload: wrong stored value
+    ok 10 - orders/reload: wrong stored value
+      ---
+      duration_ms: 349.5716
+      type: 'test'
+      ...
+    1..10
+ok 1 - restored operational dialogs reach the stored value and order assertions
+  ---
+  duration_ms: 2467.3491
+  type: 'test'
+  ...
+1..1
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2907.1276

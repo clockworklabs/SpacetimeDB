@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "194a4aaaab68388f9e5e75396cb1899e1a9e6950",
+  "candidateCommit": "6d560ca871dc3f1b340cf16fbbd497429f4ebd8d",
+  "image": "sha256:c8f2c7a8d3d8a7b208b94e8c3df7751248f30e32c04faa0db285f4addc2da3f1",
+  "replacedChecks": [
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.operational-views.5e",
+    "ecommerce.inventory-operations.operational-views.5f",
+    "ecommerce.inventory-operations.shipping-accounting.202e",
+    "ecommerce.inventory-operations.stock-conservation.202d",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+    "ecommerce.l3.deferred-integrity.exactly-once.311a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+    "ecommerce.l3.server-time.server-time.312a",
+    "ecommerce.operations-access.fulfilment-queue.1b",
+    "ecommerce.operations-access.fulfilment-queue.1c",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.operations-access.operator-authorization.201c",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.progression.managed-support.managed-support.613c",
+    "ecommerce.progression.support-history.support-history.612c",
+    "ecommerce.returns-pricing.cancellation-and-return.3a",
+    "ecommerce.returns-pricing.refund-accounting.203a",
+    "ecommerce.spec.access-control.managed-support-privacy.613b",
+    "ecommerce.spec.access-control.order-ownership.106a",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b",
+    "ecommerce.spec.access-control.support-history-logout.612d",
+    "ecommerce.spec.access-control.support-history-privacy.612b",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+    "ecommerce.spec.concurrency-safety.last-unit.201a",
+    "ecommerce.spec.concurrency-safety.last-unit.201b",
+    "ecommerce.spec.concurrency-safety.last-unit.201c",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.live-state.fulfilment-queue.1a",
+    "ecommerce.spec.live-state.inventory-dashboard.5a",
+    "ecommerce.spec.live-state.managed-support.613a",
+    "ecommerce.spec.live-state.sales-dashboard.5b",
+    "ecommerce.spec.live-state.warehouse-stock.7c",
+    "ecommerce.spec.state-durability.support-history-reload.612a",
+    "ecommerce.spec.transactional-integrity.books-balance.107a",
+    "ecommerce.spec.transactional-integrity.books-balance.107b",
+    "ecommerce.spec.transactional-integrity.server-price.104a",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "reusedChecks": [
+    "ecommerce.feature.accounts.accounts.1a",
+    "ecommerce.feature.accounts.accounts.1b",
+    "ecommerce.feature.accounts.accounts.1c",
+    "ecommerce.feature.accounts.accounts.1d",
+    "ecommerce.feature.cart-checkout.cart.4a",
+    "ecommerce.feature.cart-checkout.cart.4d",
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.feature.catalog.catalog-search.2d",
+    "ecommerce.feature.catalog.catalog-values.2a",
+    "ecommerce.feature.purchasing.purchase-order.3c",
+    "ecommerce.feature.reviews.reviews.6a",
+    "ecommerce.inventory-operations.operational-views.5c",
+    "ecommerce.inventory-operations.operational-views.5d",
+    "ecommerce.inventory-operations.stock-conservation.202b",
+    "ecommerce.progression.catalog-management.catalog-management.622a",
+    "ecommerce.progression.catalog-management.catalog-management.622b",
+    "ecommerce.progression.customer-profile.customer-profile.620c",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.progression.notification-preferences.notification-preferences.630c",
+    "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+    "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+    "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+    "ecommerce.progression.staff-access.staff-access.601a",
+    "ecommerce.progression.staff-roles.staff-roles.621c",
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "ecommerce.progression.support-intake.support-intake.610a",
+    "ecommerce.progression.support-triage.support-assignment.611a",
+    "ecommerce.progression.support-triage.support-priority.611b",
+    "ecommerce.progression.support-triage.support-status.611c",
+    "ecommerce.returns-pricing.cancellation-and-return.3b",
+    "ecommerce.spec.access-control.account-disclosure.110a",
+    "ecommerce.spec.access-control.cart-boundary.109a",
+    "ecommerce.spec.access-control.cart-boundary.109b",
+    "ecommerce.spec.access-control.customer-profile-privacy.620b",
+    "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+    "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+    "ecommerce.spec.access-control.promotion-management-boundary.620b",
+    "ecommerce.spec.access-control.purchase-attribution.102a",
+    "ecommerce.spec.access-control.purchase-session.101a",
+    "ecommerce.spec.access-control.review-eligibility.108a",
+    "ecommerce.spec.access-control.review-eligibility.108b",
+    "ecommerce.spec.access-control.signed-out-purchase.3a",
+    "ecommerce.spec.access-control.staff-area-boundary.601b",
+    "ecommerce.spec.access-control.staff-role-boundary.621b",
+    "ecommerce.spec.access-control.staff-role-revocation.621d",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.external-data-sync.external-stock.901a",
+    "ecommerce.spec.external-data-sync.external-stock.901d",
+    "ecommerce.spec.live-state.open-list.902a",
+    "ecommerce.spec.live-state.purchase-stock.3b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.live-state.rating.6c",
+    "ecommerce.spec.live-state.shared-cart.4c",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.account-state-recovery.105a",
+    "ecommerce.spec.state-durability.account-state-recovery.105b",
+    "ecommerce.spec.state-durability.cart-reload.4b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.state-durability.customer-profile-reload.620a",
+    "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+    "ecommerce.spec.state-durability.session-reload.1e",
+    "ecommerce.spec.state-durability.staff-role-reload.621a",
+    "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+    "ecommerce.spec.transactional-integrity.unique-review.6b"
+  ],
+  "contractTextEquivalences": [
+    {
+      "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "7bf9bc25b7a7e52449c380b51be539f6db344f4904f26d9c1424fed136384234",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "4373d05c598352b585c93cf44003904e320fdf6772ea75b5d77b24d49430017e",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "fceac36a2300719e7ffc43fb4ec4965fbb3303c2190d27c9a0e18bc66d775c24",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    }
+  ],
+  "changes": "Destination guards preserve ready admin, fulfilment, support, and order views. Declared support-close controls dismiss blocking confirmation dialogs before navigation or form use. Transfer labels are explicit. Required behavior and all value/security/database assertions remain.",
+  "executableReview": "No runtime, action schema, reference implementation, fixture, mutation, budget, or policy change. Older per-entry executable equivalences are retained only when their target still matches.",
+  "validation": {
+    "positiveChecksPerStack": 45,
+    "mutations": {
+      "spacetime": 65,
+      "postgres": 72,
+      "mongodb": 65,
+      "convex": 59
+    },
+    "caughtOnAssertion": 261,
+    "nullExpectedFailures": 45,
+    "retainedChecks": 67,
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/operational-navigation-final.json",
+        "sha256": "06c1c4e9bbe3063d673571c8c227376f2088b77d4452da77e968eab15139077e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/operational-navigation-final.log",
+        "sha256": "21f605a4ed6087b1805031915dc54782337c72500b5999e1fab9508996bbfb3a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/support-navigation-green.json",
+        "sha256": "37cffd6104b7987140de1e5ac25edfd730930ea4844b81895cd1f36b33cf69d5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/support-navigation-green.log",
+        "sha256": "9fc0566c6ef470651e4cf6e470584b0696c100c08ff0e907d23b3ae94f224149"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/support-navigation-render.json",
+        "sha256": "5cdce443f1b3abc8d0f7226a6f45891cb706a4fb0ad16dacac2975a93bf88db8"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/navigation-qualification-scope.json",
+        "sha256": "1f0b8e839ae2e5f2414060e0c3071e6b0751bc89e6752e05652ec7b900dc87d8"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/render-final-request-v2.json",
+        "sha256": "671473fa149023c77f8e40536b1743565dcffec5836393e0cd0fb9ee5a74ad14"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/render-final-request-v2.mjs",
+        "sha256": "73d0fcf552990ae52fab9f67b6251c43a0244c42051da817476976b7cac05e48"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/reuse-peer-review.json",
+        "sha256": "c7c2ca8b8d8849dc53a0c89b571625a79f66e6bedb6c439d5f1bc7e7b13c1ab4"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/navigation-6d560ca87-launch.json",
+        "sha256": "3b79f9424772e5abdba8517d86901694160718b6a2e5ce85ead86ac715d59186"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/navigation-6d560ca87-frozen.json",
+        "sha256": "6d033f406fd961d8b8f8a30f1225168ec27b4585a6c5bc6de3983766ad1b1ea7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/baseline-calibration.json",
+        "sha256": "75b46e9800aea9cdff01f576a24102b2e319ffffd55137ee0daa79101aeb5321"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/spacetime-worker-1-checkpoint.json",
+        "sha256": "ab0fd1a3c5bb67eb23e760ba9d098d145f8e50e0ed87fb6e826ab5fd4cd68163"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/spacetime-worker-2-checkpoint.json",
+        "sha256": "6030bab39fd22ed8e723875889845eb81415eb1613fd58d3d6170cf40253fec8"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/spacetime-worker-3-checkpoint.json",
+        "sha256": "68673663d04999ffcc623fddc138dc25da4be2d784137d0862dbc44629232851"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/spacetime.json",
+        "sha256": "4209a76841f5f49d9148193e7d7fb4167456f959a2bac3cc0b1c7b7807bc4d1f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/inputs-a55a2eb2b767.json",
+        "sha256": "a55a2eb2b76769a6635eb8e60b388f9e03ff41c17189c0e653a22bc161886815"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/postgres-worker-1-checkpoint.json",
+        "sha256": "d6b24a4d54d0dba039f74c76fc75e9937c40ea9ec7ef25c70fa73ced72eda0a5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/postgres-worker-2-checkpoint.json",
+        "sha256": "d14546a5c6fbcef60487c9eacff19f215ff89d669612ca63217d8191a5611774"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/postgres-worker-3-checkpoint.json",
+        "sha256": "54c078f18e066d8f5af601e5ce9a6364a8f442e8ae0a4a35fce455d11bfb6494"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/postgres.json",
+        "sha256": "5dd91f6da23103d7d3f9db7f65fbdabe0348e5ec7ea93795ec5bbf1622751633"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/mongodb-worker-1-checkpoint.json",
+        "sha256": "9304b5de47cc63dc29b6330921186ea796c6b5d3374ec242ce847ef808ee08eb"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/mongodb-worker-2-checkpoint.json",
+        "sha256": "f9c4a28f2966d7b46602cd24235563d5abfee35ebde2eaecae1fb065e3722df7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/mongodb-worker-3-checkpoint.json",
+        "sha256": "9f6a238d48229ee252aaa1ec64d1aed4c9465f075d5bd985b458476b391975d8"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/mongodb.json",
+        "sha256": "96e3daedd3f32185df9fdc5f9e5e85a814345f2736566b0003cf4678a0e30c89"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/convex-worker-1-checkpoint.json",
+        "sha256": "b26dc825262d916e5e848fe44d01eb0890e583018968e2ff2814504b34d7655f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/convex-worker-2-checkpoint.json",
+        "sha256": "6c33eeb72af57d6b6327aec39255a3fdac7093a31ee7094bf38aba8bcf198cae"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/convex-worker-3-checkpoint.json",
+        "sha256": "0684b6143c8e5266b6ca4f3101c349e3806b980924fbda6d44d429ea5303e902"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/convex.json",
+        "sha256": "cac9d56d2db15010f6026eac152d4509869aba436b6db936c692b2c96f3cf87e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/null.json",
+        "sha256": "0d71f88e4a2f552bba64dbc91845131ac60adeb6418cfa2cb4dbea5a27df0039"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/cleanup-verification.json",
+        "sha256": "1fb3020605c1b3df4b95f8f8a9df1d3c0c29b794a7fe763094ba2dd7fe0e5ac5"
+      }
+    ]
+  },
+  "limits": "Prospective prompt clarification; fixed-reference reuse is not historical model-score equivalence. Normal check-calibration and qualification-status must pass after application."
+}

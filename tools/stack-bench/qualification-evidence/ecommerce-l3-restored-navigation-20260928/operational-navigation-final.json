@@ -1,0 +1,1871 @@
+{
+  "rerun": "STACK_BENCH_OPERATIONAL_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern=\"restored operational dialogs\" dist/tests/account-navigation.integration.js",
+  "fixture": "Native restored dialog; admin stock 99/100, fulfilment Keyboard/Different item, order shipped/pending",
+  "testSha256": "c63eefba55cf55fca0714f74519f7d986d8b289a4442110ffc3cae83ca40978a",
+  "driverSha256": "0f6a8ed72b5805e7cd8b9da5bf4f4971432e32f25fc5dd23c1e704d880587a84",
+  "browserClosed": true,
+  "evidence": [
+    {
+      "kind": "admin",
+      "phase": "reload",
+      "defective": false,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\01-restock-race.json",
+      "sourceSha256": "58b0a81d8b11bae096be3afcc8357bf9f38ea3a4ae9db4b109fcdc65220dee5d",
+      "steps": [
+        {
+          "do": "reload",
+          "actor": "admin",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "admin-link",
+            "admin-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1,
+          "within": 10000
+        }
+      ],
+      "expected": "passed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "reload",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "reloaded": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254808,
+            "completedAtMs": 1790584254818,
+            "durationMs": 10,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "ensureSignedIn",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "restored": false,
+            "user": "admin"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254819,
+            "completedAtMs": 1790584254850,
+            "durationMs": 31,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "admin-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254850,
+            "completedAtMs": 1790584254883,
+            "durationMs": 33,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "admin-link",
+            "visible": "admin-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254883,
+            "completedAtMs": 1790584254899,
+            "durationMs": 16,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expectNumber",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-observation-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "value": 99
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254899,
+            "completedAtMs": 1790584254913,
+            "durationMs": 14,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "admin",
+      "phase": "reload",
+      "defective": true,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\01-restock-race.json",
+      "sourceSha256": "58b0a81d8b11bae096be3afcc8357bf9f38ea3a4ae9db4b109fcdc65220dee5d",
+      "steps": [
+        {
+          "do": "reload",
+          "actor": "admin",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "admin-link",
+            "admin-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1,
+          "within": 10000
+        }
+      ],
+      "expected": "failed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "reload",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "reloaded": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254986,
+            "completedAtMs": 1790584254994,
+            "durationMs": 8,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "ensureSignedIn",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "restored": false,
+            "user": "admin"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584254994,
+            "completedAtMs": 1790584255009,
+            "durationMs": 15,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "admin-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255009,
+            "completedAtMs": 1790584255022,
+            "durationMs": 13,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "admin-link",
+            "visible": "admin-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255022,
+            "completedAtMs": 1790584255032,
+            "durationMs": 10,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expectNumber",
+            "version": "1.0.0"
+          },
+          "status": "failed",
+          "type": "browser-observation-evidence",
+          "code": "application_failure",
+          "phase": "execute",
+          "summary": "the admin-stock control reads 100, expected exactly 99 in the entry matching \"Bluetooth Speaker\"",
+          "finding": {
+            "kind": "number-mismatch",
+            "fields": {
+              "control": "admin-stock",
+              "observed": 100,
+              "expected": {
+                "equals": 99
+              },
+              "scopeText": "Bluetooth Speaker"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255032,
+            "completedAtMs": 1790584255233,
+            "durationMs": 201,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "admin",
+      "phase": "sign-in-result",
+      "defective": false,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\01-restock-race.json",
+      "sourceSha256": "58b0a81d8b11bae096be3afcc8357bf9f38ea3a4ae9db4b109fcdc65220dee5d",
+      "steps": [
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "admin-link",
+            "admin-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1,
+          "within": 10000
+        }
+      ],
+      "expected": "passed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "admin-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255291,
+            "completedAtMs": 1790584255315,
+            "durationMs": 24,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "admin-link",
+            "visible": "admin-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255315,
+            "completedAtMs": 1790584255332,
+            "durationMs": 17,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expectNumber",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-observation-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "value": 99
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255332,
+            "completedAtMs": 1790584255342,
+            "durationMs": 10,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "admin",
+      "phase": "sign-in-result",
+      "defective": true,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\01-restock-race.json",
+      "sourceSha256": "58b0a81d8b11bae096be3afcc8357bf9f38ea3a4ae9db4b109fcdc65220dee5d",
+      "steps": [
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "admin-link",
+            "admin-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "unlessVisible": "admin-panel"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1,
+          "within": 10000
+        }
+      ],
+      "expected": "failed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "admin-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255394,
+            "completedAtMs": 1790584255416,
+            "durationMs": 22,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "admin-link",
+            "visible": "admin-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255416,
+            "completedAtMs": 1790584255432,
+            "durationMs": 16,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expectNumber",
+            "version": "1.0.0"
+          },
+          "status": "failed",
+          "type": "browser-observation-evidence",
+          "code": "application_failure",
+          "phase": "execute",
+          "summary": "the admin-stock control reads 100, expected exactly 99 in the entry matching \"Bluetooth Speaker\"",
+          "finding": {
+            "kind": "number-mismatch",
+            "fields": {
+              "control": "admin-stock",
+              "observed": 100,
+              "expected": {
+                "equals": 99
+              },
+              "scopeText": "Bluetooth Speaker"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255432,
+            "completedAtMs": 1790584255633,
+            "durationMs": 201,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "staff",
+      "phase": "reload",
+      "defective": false,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "steps": [
+        {
+          "do": "reload",
+          "actor": "staff",
+          "settleMs": 2000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "staff-link",
+            "fulfilment-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "ifAvailable": true,
+          "unlessVisible": "fulfilment-panel"
+        },
+        {
+          "do": "expect",
+          "actor": "staff",
+          "testid": "queue-item",
+          "contains": "Keyboard",
+          "within": 10000
+        }
+      ],
+      "expected": "passed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "reload",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "reloaded": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255690,
+            "completedAtMs": 1790584255698,
+            "durationMs": 8,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "ensureSignedIn",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "restored": false,
+            "user": "staff"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255698,
+            "completedAtMs": 1790584255712,
+            "durationMs": 14,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "staff-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255712,
+            "completedAtMs": 1790584255732,
+            "durationMs": 20,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "staff-link",
+            "visible": "fulfilment-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255732,
+            "completedAtMs": 1790584255748,
+            "durationMs": 16,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expect",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-observation-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "visible": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255748,
+            "completedAtMs": 1790584255752,
+            "durationMs": 4,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "staff",
+      "phase": "reload",
+      "defective": true,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "steps": [
+        {
+          "do": "reload",
+          "actor": "staff",
+          "settleMs": 2000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "staff-link",
+            "fulfilment-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "ifAvailable": true,
+          "unlessVisible": "fulfilment-panel"
+        },
+        {
+          "do": "expect",
+          "actor": "staff",
+          "testid": "queue-item",
+          "contains": "Keyboard",
+          "within": 10000
+        }
+      ],
+      "expected": "failed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "reload",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "reloaded": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255805,
+            "completedAtMs": 1790584255812,
+            "durationMs": 7,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "ensureSignedIn",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "restored": false,
+            "user": "staff"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255812,
+            "completedAtMs": 1790584255824,
+            "durationMs": 12,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "staff-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255824,
+            "completedAtMs": 1790584255835,
+            "durationMs": 11,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "staff-link",
+            "visible": "fulfilment-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255835,
+            "completedAtMs": 1790584255848,
+            "durationMs": 13,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expect",
+            "version": "1.0.0"
+          },
+          "status": "failed",
+          "type": "browser-observation-evidence",
+          "code": "application_failure",
+          "phase": "execute",
+          "summary": "the queue-item control matching \"Keyboard\" did not appear",
+          "finding": {
+            "kind": "control-missing",
+            "fields": {
+              "control": "queue-item",
+              "matchingText": "Keyboard",
+              "filtered": true
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584255848,
+            "completedAtMs": 1790584256053,
+            "durationMs": 205,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "staff",
+      "phase": "sign-in-result",
+      "defective": false,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "steps": [
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "staff-link",
+            "fulfilment-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "unlessVisible": "fulfilment-panel"
+        },
+        {
+          "do": "expect",
+          "actor": "staff",
+          "testid": "queue-item",
+          "contains": "Keyboard",
+          "within": 10000
+        }
+      ],
+      "expected": "passed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "staff-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256107,
+            "completedAtMs": 1790584256132,
+            "durationMs": 25,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "staff-link",
+            "visible": "fulfilment-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256132,
+            "completedAtMs": 1790584256150,
+            "durationMs": 18,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expect",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-observation-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "visible": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256150,
+            "completedAtMs": 1790584256153,
+            "durationMs": 3,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "staff",
+      "phase": "sign-in-result",
+      "defective": true,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "steps": [
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "staff-link",
+            "fulfilment-panel"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "unlessVisible": "fulfilment-panel"
+        },
+        {
+          "do": "expect",
+          "actor": "staff",
+          "testid": "queue-item",
+          "contains": "Keyboard",
+          "within": 10000
+        }
+      ],
+      "expected": "failed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "staff-link"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256204,
+            "completedAtMs": 1790584256232,
+            "durationMs": 28,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "staff-link",
+            "visible": "fulfilment-panel"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256232,
+            "completedAtMs": 1790584256249,
+            "durationMs": 17,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expect",
+            "version": "1.0.0"
+          },
+          "status": "failed",
+          "type": "browser-observation-evidence",
+          "code": "application_failure",
+          "phase": "execute",
+          "summary": "the queue-item control matching \"Keyboard\" did not appear",
+          "finding": {
+            "kind": "control-missing",
+            "fields": {
+              "control": "queue-item",
+              "matchingText": "Keyboard",
+              "filtered": true
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256249,
+            "completedAtMs": 1790584256455,
+            "durationMs": 206,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "orders",
+      "phase": "reload",
+      "defective": false,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "steps": [
+        {
+          "do": "reload",
+          "actor": "customer",
+          "settleMs": 2000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "customer",
+          "name": "fq-ship",
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "unlessVisible": "order-item",
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "item-list",
+            "order-item"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "orders-toggle",
+            "order-item"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "orders-toggle",
+          "unlessVisible": "order-item"
+        },
+        {
+          "do": "expect",
+          "actor": "customer",
+          "testid": "order-status",
+          "in": {
+            "testid": "order-item",
+            "contains": "Keyboard"
+          },
+          "value": "shipped",
+          "ignoreCase": true,
+          "within": 10000
+        }
+      ],
+      "expected": "passed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "reload",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "reloaded": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256508,
+            "completedAtMs": 1790584256515,
+            "durationMs": 7,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "ensureSignedIn",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "restored": false,
+            "user": "fq-ship"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256515,
+            "completedAtMs": 1790584256528,
+            "durationMs": 13,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "overlay-close",
+            "visible": "order-item"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256528,
+            "completedAtMs": 1790584256549,
+            "durationMs": 21,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "catalog-link",
+            "visible": "order-item"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256549,
+            "completedAtMs": 1790584256565,
+            "durationMs": 16,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "orders-toggle"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256565,
+            "completedAtMs": 1790584256581,
+            "durationMs": 16,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "orders-toggle",
+            "visible": "order-item"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256582,
+            "completedAtMs": 1790584256599,
+            "durationMs": 17,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expect",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-observation-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "visible": true,
+            "value": "shipped"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256599,
+            "completedAtMs": 1790584256606,
+            "durationMs": 7,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    },
+    {
+      "kind": "orders",
+      "phase": "reload",
+      "defective": true,
+      "source": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\ecommerce\\scenarios\\02-fulfilment-ship.json",
+      "sourceSha256": "c5f75e21e6ece9c6bbeb1492c0b5abab2e0d089024fcaca5a265af2cb33ed039",
+      "steps": [
+        {
+          "do": "reload",
+          "actor": "customer",
+          "settleMs": 2000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "customer",
+          "name": "fq-ship",
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "unlessVisible": "order-item",
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "item-list",
+            "order-item"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "orders-toggle",
+            "order-item"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "customer",
+          "testid": "orders-toggle",
+          "unlessVisible": "order-item"
+        },
+        {
+          "do": "expect",
+          "actor": "customer",
+          "testid": "order-status",
+          "in": {
+            "testid": "order-item",
+            "contains": "Keyboard"
+          },
+          "value": "shipped",
+          "ignoreCase": true,
+          "within": 10000
+        }
+      ],
+      "expected": "failed",
+      "actions": [
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "reload",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "reloaded": true
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256658,
+            "completedAtMs": 1790584256664,
+            "durationMs": 6,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "ensureSignedIn",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "restored": false,
+            "user": "fq-ship"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256664,
+            "completedAtMs": 1790584256675,
+            "durationMs": 11,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "overlay-close",
+            "visible": "order-item"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256676,
+            "completedAtMs": 1790584256698,
+            "durationMs": 22,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "catalog-link",
+            "visible": "order-item"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256698,
+            "completedAtMs": 1790584256715,
+            "durationMs": 17,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "current-user",
+            "visible": "orders-toggle"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256715,
+            "completedAtMs": 1790584256731,
+            "durationMs": 16,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "click",
+            "version": "1.0.0"
+          },
+          "status": "passed",
+          "type": "browser-interaction-evidence",
+          "code": "completed",
+          "phase": "execute",
+          "summary": null,
+          "finding": null,
+          "observation": {
+            "clicked": false,
+            "testid": "orders-toggle",
+            "visible": "order-item"
+          },
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256731,
+            "completedAtMs": 1790584256749,
+            "durationMs": 18,
+            "deadlineMs": 60000
+          },
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        },
+        {
+          "schemaVersion": 2,
+          "action": {
+            "id": "expect",
+            "version": "1.0.0"
+          },
+          "status": "failed",
+          "type": "browser-observation-evidence",
+          "code": "application_failure",
+          "phase": "execute",
+          "summary": "the order-status control shows \"pending\", expected \"shipped\"",
+          "finding": {
+            "kind": "value-mismatch",
+            "fields": {
+              "control": "order-status",
+              "observed": "pending",
+              "expected": "shipped"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790584256749,
+            "completedAtMs": 1790584256955,
+            "durationMs": 206,
+            "deadlineMs": 300000
+          },
+          "attachments": [],
+          "sensitivity": []
+        }
+      ],
+      "pageClosed": true
+    }
+  ]
+}
