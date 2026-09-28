@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "c756119732d718f92aed1c55e8e9716954b548e7bf02b4354bddd119da87bdf9",
+    "meaningSha256": "e2b100d2ba291c2f2dd788fa6f8f05a6025ad21dea19dd48b4b38fa0ae2c46c9",
     "executionSha256": "163f9b95837b275a6a39307ec3a7a4dcb88ec468020f9b28907f5a9fad4991ac",
-    "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+    "contentSha256": "8d24d56d1b34ccda448f4018859c84dfe4d15745257a668b1de173e22b68e044"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -2794,7 +2794,7 @@
     ]
   },
   "qualificationReuse": {
-    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration. The notification review replaces all three affected checks and validates unchanged capture outcomes with safer diagnostics. The capture review replaces nine affected checks and preserves unchanged outcomes for the bounded body-drain and safe diagnostic changes. The role-check review replaces affected role checks and both changed reference sources; no prompt change. Reviewed catalog-only contract clarification and GET ordinary-reload capture; affected catalog and Mongo profile controls replaced. Exact task-text mappings do not excuse changed scenarios. The navigation review replaces 79 changed checks and retains 33 unchanged checks; runtime equivalence is limited to safe receipt propagation. The native-auth proxy review retains unchanged registered paths and adds positive, defective and saved-app evidence for arbitrary same-origin proxy prefixes; only SpacetimeDB executable targets change. The readiness review replaces the PostgreSQL external-stock control, validates native interface layouts and selected-route preflight, and maps the two reviewed contract clarifications to unchanged fixed-app scenarios. Module-layout review proves the corrected native re-export admission through saved-source reset/account grading, preserves rejected malformed layouts, and retains unchanged fixed-app checks. Count-observation review proves bounded redraw tolerance, retained missing/duplicate/late rejection, native saved-app conservation, and intended defect catches. Null visibility behavior is unchanged despite the changed shared executable closure. Signup review replaces all three affected keys and validates one separate sign-in without retrying registration or concealing refusal. Retained reference/mutation/null paths use exact executable mappings and unchanged source-slice validation. Catalog/support review replaces ten affected checks. Exact source mappings retain only 102 unchanged keys after reviewed support-only reference edits. The new support receipt is an explicit future grading interface, not a historical score equivalence. Notification/auth/body/number review replaces three changed notification scenarios plus selected PG/Mongo credential and PG numeric controls. Exact source and task transitions preserve only unchanged model-free behavior; the account hook requirement applies prospectively. Entry-navigation review replaces90 changed checks (86 original navigation slices plus4 corrected staff-role slices) and retains22 unchanged fixed-reference checks with exact reviewed task-text pairs. Existing executable mappings remain unchanged; future requests are not historical score equivalents. Passing0fc privacy9 and null9 retain their original identity because finalea80500 changes the uncalled response-loss gate, exports the unchanged proxy verifier, and adds only safe navigation error observations. Finalea80500203b positives, all20 defects and null1 replace the response-loss evidence. Earlier failed loss runs remain excluded. Retained16 slices come from wholly successful27e STDB/Mongo and75f PG/Convex25-key reports, preserving full original measurement identities. Original704f null25 supplies16 checks. Native five groups retain27e/8ab identity because their scenarios install neither privacy nor offline proxies and use the original unregistered request object. Historical86 retain exact unchanged scenarios/mutations and manually reviewed reference/runtime transitions. No failed aggregate is reused. All112 checks require normal validation. Checkout interface clarification changes only prompt text; the fixed reference checkout routes and all selected executable/scenario inputs remain unchanged. Exact old/new task mappings and retained checkout controls are reviewed in the checkout-interface evidence. Unused local Locator member removal changes source closure hashes only; rebuilt production JavaScript is byte-identical and42 existing browser action cases pass. Crash-order review retains 110 unchanged checks under exact reviewed executable mappings and replaces both 910 checks with fresh positive, registered defect, and null controls. Exact 149fec source reuse review and completed replacement controls.",
+    "rationale": "The retained reviews cover reconnect, authentication, model selection, stock-view classification, and stack isolation. The candidate review limits reuse to unchanged four-stack behavior and records focused controls for changed port admission, native authentication, contract lint, and transport diagnostics. Supabase remains outside this calibration. The notification review replaces all three affected checks and validates unchanged capture outcomes with safer diagnostics. The capture review replaces nine affected checks and preserves unchanged outcomes for the bounded body-drain and safe diagnostic changes. The role-check review replaces affected role checks and both changed reference sources; no prompt change. Reviewed catalog-only contract clarification and GET ordinary-reload capture; affected catalog and Mongo profile controls replaced. Exact task-text mappings do not excuse changed scenarios. The navigation review replaces 79 changed checks and retains 33 unchanged checks; runtime equivalence is limited to safe receipt propagation. The native-auth proxy review retains unchanged registered paths and adds positive, defective and saved-app evidence for arbitrary same-origin proxy prefixes; only SpacetimeDB executable targets change. The readiness review replaces the PostgreSQL external-stock control, validates native interface layouts and selected-route preflight, and maps the two reviewed contract clarifications to unchanged fixed-app scenarios. Module-layout review proves the corrected native re-export admission through saved-source reset/account grading, preserves rejected malformed layouts, and retains unchanged fixed-app checks. Count-observation review proves bounded redraw tolerance, retained missing/duplicate/late rejection, native saved-app conservation, and intended defect catches. Null visibility behavior is unchanged despite the changed shared executable closure. Signup review replaces all three affected keys and validates one separate sign-in without retrying registration or concealing refusal. Retained reference/mutation/null paths use exact executable mappings and unchanged source-slice validation. Catalog/support review replaces ten affected checks. Exact source mappings retain only 102 unchanged keys after reviewed support-only reference edits. The new support receipt is an explicit future grading interface, not a historical score equivalence. Notification/auth/body/number review replaces three changed notification scenarios plus selected PG/Mongo credential and PG numeric controls. Exact source and task transitions preserve only unchanged model-free behavior; the account hook requirement applies prospectively. Entry-navigation review replaces90 changed checks (86 original navigation slices plus4 corrected staff-role slices) and retains22 unchanged fixed-reference checks with exact reviewed task-text pairs. Existing executable mappings remain unchanged; future requests are not historical score equivalents. Passing0fc privacy9 and null9 retain their original identity because finalea80500 changes the uncalled response-loss gate, exports the unchanged proxy verifier, and adds only safe navigation error observations. Finalea80500203b positives, all20 defects and null1 replace the response-loss evidence. Earlier failed loss runs remain excluded. Retained16 slices come from wholly successful27e STDB/Mongo and75f PG/Convex25-key reports, preserving full original measurement identities. Original704f null25 supplies16 checks. Native five groups retain27e/8ab identity because their scenarios install neither privacy nor offline proxies and use the original unregistered request object. Historical86 retain exact unchanged scenarios/mutations and manually reviewed reference/runtime transitions. No failed aggregate is reused. All112 checks require normal validation. Checkout interface clarification changes only prompt text; the fixed reference checkout routes and all selected executable/scenario inputs remain unchanged. Exact old/new task mappings and retained checkout controls are reviewed in the checkout-interface evidence. Unused local Locator member removal changes source closure hashes only; rebuilt production JavaScript is byte-identical and42 existing browser action cases pass. Crash-order review retains 110 unchanged checks under exact reviewed executable mappings and replaces both 910 checks with fresh positive, registered defect, and null controls. Exact 149fec source reuse review and completed replacement controls. Exact item-name wording review preserves all fixed-app qualification checks; historical model grades are not relabeled.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
@@ -2911,6 +2911,10 @@
       {
         "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/completion.json",
         "sha256": "12f43e5b95f7b6720d3ebf8d160095913482ac5ec8410b84f407519516b690ea"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/reuse-review.json",
+        "sha256": "66ace66d9211c7d442a9a3549c0a6928db61af94ad182c290aed60c5d15435e1"
       }
     ],
     "scopes": [
@@ -3220,31 +3224,35 @@
     "contractTextEquivalences": [
       {
         "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       },
       {
         "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       },
       {
         "fromTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       },
       {
         "fromTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       },
       {
         "fromTaskSha256": "7bf9bc25b7a7e52449c380b51be539f6db344f4904f26d9c1424fed136384234",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       },
       {
         "fromTaskSha256": "4373d05c598352b585c93cf44003904e320fdf6772ea75b5d77b24d49430017e",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       },
       {
         "fromTaskSha256": "fceac36a2300719e7ffc43fb4ec4965fbb3303c2190d27c9a0e18bc66d775c24",
-        "toTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e"
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+      },
+      {
+        "fromTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e",
+        "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
       }
     ],
     "referenceSourceEquivalences": [
