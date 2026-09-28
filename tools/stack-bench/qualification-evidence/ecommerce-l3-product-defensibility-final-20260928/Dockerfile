@@ -1,0 +1,3 @@
+FROM sha256:0103aa732cf7e2064bf3e6744842aad751543fe83b0f565ecb5398b1f4a68979
+LABEL stack-bench.diagnostic="unqualified-product-defensibility" stack-bench.candidate="3926fa8ae1ac948b61f2320c8cd7ae462f991a93" stack-bench.inputs="c3759ab3e7674fc9fb8016be29e0eda72431192527fa22bd8361923af05563ba"
+COPY overlay/ /opt/stack-bench/
