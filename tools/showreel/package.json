@@ -4,7 +4,7 @@
   "description": "Procedural motion-graphics promo video for SpacetimeDB (canvas renderer + synthesized soundtrack).",
   "scripts": {
     "audio": "node audio.js",
-    "video": "nice -n 19 node render.js --samples 5",
+    "video": "node render.js --samples 5",
     "mux": "./mux.sh",
     "build": "npm run audio && npm run video && npm run mux",
     "stills": "node render.js --still"
@@ -12,7 +12,7 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/source-code-pro": "^5.2.7",
-    "@napi-rs/canvas": "^0.1.80",
+    "@napi-rs/canvas": "1.0.9",
     "geist": "^1.5.1"
   }
 }

@@ -10,7 +10,7 @@ Requirements: Node 22+, `ffmpeg` with `libx264`. Run from this directory:
 
 ```sh
 npm install
-npm run build          # audio → video (parallel, motion-blurred) → mux  ≈ 6–8 min with the default 8 jobs on 24 cores
+npm run build          # audio → video (parallel, motion-blurred) → mux  ≈ 2–3 min on 24 cores
 # output: ./spacetimedb-showreel.mp4   (gitignored; ~45 MB)
 ```
 
@@ -19,7 +19,7 @@ Individual steps:
 | Command | What it does |
 |---|---|
 | `npm run audio` | Synthesizes `out/reel.wav` (120 BPM, A minor) from `audio.js` |
-| `npm run video` | Renders all frames in parallel workers into `out/seg_*.mp4` at low priority. Defaults to a third of the CPU cores; `--jobs N` overrides. **Don't set jobs near the core count: 22 jobs on 24 cores froze the machine.** `--samples S` = motion-blur subframes |
+| `npm run video` | Renders frames into `out/seg_*.mp4` in short chunks (`--chunk`, default 90 frames) with `--jobs` parallel workers (default: cores − 2). Each worker exits after its chunk. `--samples S` = motion-blur subframes. See *Resource limits* below. |
 | `npm run mux` | Concatenates segments, adds audio + light film grain → `spacetimedb-showreel.mp4` |
 | `npm run stills -- 12.5 42 80 --samples 1` | Renders PNG stills at given times to `out/still_<t>.png` (fast way to review a change) |
 | `./sheet.sh out.png a.png b.png c.png d.png` | 2×2 contact sheet of four stills |
@@ -85,6 +85,14 @@ Designer's brand rules (applied in `lib.js`/`scenes.js`):
 - Maincloud (fully managed, serverless, scales to zero, handles scaling/replication/backups, `spacetime publish --server maincloud`, free tier): `docs/docs/00300-resources/00100-how-to/00100-deploy/00100-maincloud.md`, https://spacetimedb.com/pricing. Note: the pricing page lists replication and backups under Pro and above.
 - Code: Rust module syntax from `skills/rust-server/SKILL.md`; TS client from `skills/typescript-client/SKILL.md` (2.0 APIs).
 - AI: https://spacetimedb.com/agent-setup.md and the skills index at https://spacetimedb.com/.well-known/agent-skills/index.json (these agent-only files are listed in the sitemap); agents-at-runtime line from essay 07.
+
+## Resource limits (read before changing render settings)
+
+- `@napi-rs/canvas` is pinned to **1.0.9**. The 0.1.x line leaks ~10 MB per drawn frame.
+- `getImageData()` hands back native buffers that are only freed when the event loop turns *and* GC runs. Workers run with `--expose-gc` and call `gc()` + `setImmediate` after every frame. Without it a worker grows ~500 MB/s.
+- There is still a slow residual growth (~1.5 MB/frame), so workers only render short chunks and exit. Measured: 90 frames → 524 MB peak, 300 frames → 807 MB.
+- Each segment encoder is capped at `-threads 4` (x264's default of ~36 threads per 1080p encoder, ×22 encoders, costs ~10 GB extra). Measured full build: 22 jobs, 100 s, peak ≈ 11.8 GB.
+- An earlier setup (22 workers, one long segment each, leaking library) filled RAM + swap and froze the machine; memory was the problem, not CPU. Peak memory is now ≈ jobs × 600 MB. `memtest.js` runs one guarded worker and kills it above a memory cap if you need to re-check after changing the renderer or upgrading the canvas library.
 
 ## Known limitations
 

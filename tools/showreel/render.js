@@ -14,6 +14,11 @@ const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const SAMPLES = +opt('--samples', 5);
 const SHUTTER = 0.5; // 180°
+// getImageData() returns ~8 MB of native memory per call that V8 doesn't account for,
+// so without explicit collection each worker grows by ~500 MB/s. Workers run with
+// --expose-gc and collect after every frame.
+const gc = global.gc || (() => {});
+let OUTBUF = null;
 
 function renderMB(ctx, t, acc) {
   if (SAMPLES <= 1) { frame(ctx, t); return ctx.getImageData(0, 0, W, H).data; }
@@ -24,7 +29,7 @@ function renderMB(ctx, t, acc) {
     const d = ctx.getImageData(0, 0, W, H).data;
     for (let i = 0; i < d.length; i++) acc[i] += d[i];
   }
-  const out = new Uint8ClampedArray(W * H * 4);
+  const out = OUTBUF || (OUTBUF = new Uint8ClampedArray(W * H * 4));
   const inv = 1 / SAMPLES;
   for (let i = 0; i < out.length; i++) out[i] = acc[i] * inv + 0.5;
   return out;
@@ -55,11 +60,13 @@ function renderMB(ctx, t, acc) {
   if (argv[0] === '--worker') {
     const a = +argv[1], b = +argv[2], seg = argv[3];
     const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '8', '-threads', '1', '-pix_fmt', 'yuv420p', seg], { stdio: ['pipe', 'inherit', 'inherit'] });
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '8', '-threads', '4', '-pix_fmt', 'yuv420p', seg], { stdio: ['pipe', 'inherit', 'inherit'] });
     for (let f = a; f < b; f++) {
       const px = renderMB(ctx, f / FPS, acc);
       const buf = Buffer.from(px.buffer, px.byteOffset, px.byteLength);
       if (!ff.stdin.write(buf)) await new Promise(r => ff.stdin.once('drain', r));
+      else await new Promise(r => setImmediate(r));
+      gc();
       if (process.send && (f - a) % 10 === 0) process.send({ done: f - a });
     }
     ff.stdin.end();
@@ -69,28 +76,31 @@ function renderMB(ctx, t, acc) {
   }
 
   // orchestrate
-  // Keep the machine usable: default to a third of the cores, run workers at low priority.
-  const JOBS = +opt('--jobs', Math.max(1, Math.floor(require('os').cpus().length / 3)));
+  // Workers render short chunks and then exit, so any native memory the canvas library
+  // leaks is returned to the OS. Memory per worker stays under ~600 MB; peak ≈ JOBS × 600 MB.
+  const JOBS = +opt('--jobs', Math.max(1, require('os').cpus().length - 2));
+  const CHUNK = +opt('--chunk', 90);
   const total = Math.round(DUR * FPS);
-  const per = Math.ceil(total / JOBS);
-  const segs = [];
+  const chunks = [];
+  for (let a = 0; a < total; a += CHUNK) chunks.push([a, Math.min(total, a + CHUNK)]);
+  const segs = chunks.map((_, j) => path.join(OUT, `seg_${String(j).padStart(3, '0')}.mp4`));
   const t0 = Date.now();
-  const prog = new Array(JOBS).fill(0);
-  await Promise.all(Array.from({ length: JOBS }, (_, j) => new Promise((res, rej) => {
-    const a = j * per, b = Math.min(total, a + per);
-    const seg = path.join(OUT, `seg_${String(j).padStart(2, '0')}.mp4`);
-    segs.push(seg);
-    const { fork } = require('child_process');
-    const w = fork(__filename, ['--worker', a, b, seg, '--samples', SAMPLES]);
-    try { require('os').setPriority(w.pid, 19); } catch (e) {}
-    w.on('message', m => {
-      if (m.done != null) prog[j] = m.done;
-      const d = prog.reduce((x, y) => x + y, 0);
-      if (m.done % 50 === 0) process.stdout.write(`\r${d}/${total} frames  ${((Date.now() - t0) / 1000).toFixed(0)}s   `);
+  let next = 0, doneFrames = 0;
+  const { fork } = require('child_process');
+  const runOne = () => new Promise((res, rej) => {
+    const j = next++;
+    if (j >= chunks.length) return res(false);
+    const [a, b] = chunks[j];
+    const w = fork(__filename, ['--worker', a, b, segs[j], '--samples', SAMPLES], { execArgv: ['--expose-gc', '--max-old-space-size=512'] });
+    w.on('exit', c => {
+      if (c !== 0) return rej(new Error(`chunk ${j} failed (${c})`));
+      doneFrames += b - a;
+      process.stdout.write(`\r${doneFrames}/${total} frames  ${((Date.now() - t0) / 1000).toFixed(0)}s   `);
+      res(true);
     });
-    w.on('exit', c => (c === 0 ? res() : rej(new Error('worker ' + j + ' failed ' + c))));
-  })));
-  segs.sort();
+  });
+  const lane = async () => { while (await runOne()); };
+  await Promise.all(Array.from({ length: JOBS }, lane));
   fs.writeFileSync(path.join(OUT, 'list.txt'), segs.map(s => `file '${s}'`).join('\n'));
   console.log('\nrender done', (Date.now() - t0) / 1000, 's');
 })();
