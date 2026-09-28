@@ -51,7 +51,12 @@ export async function captureAuthSubmit(page: object, submit: AuthSubmit): Retur
   if (!hook) return submit();
   if (hook.used) throw new Error('Authentication submit capture was already consumed');
   hook.used = true;
-  return hook.capture(submit);
+  return hook.capture(async () => {
+    // The account can appear before its authentication reconnect. Give the
+    // baseline the same minimum observation window as the patched signup.
+    const settled = new Promise<void>(resolve => setTimeout(resolve, 2000));
+    try { return await submit(); } finally { await settled; }
+  });
 }
 
 export async function withAuthWriteTarget<T>(page: object, target: AuthWriteTarget, submit: () => Promise<T>): Promise<T> {

@@ -28,6 +28,11 @@ test('signup claims grade each registration write through a fresh browser sessio
       calls.push({ path, claim: body.role ?? null, status });
       res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value));
     };
+    if (path === '/reconnect-delay') {
+      // The reference UI can show the account before its new socket connects.
+      setTimeout(() => send(200, { ok: true }), 750);
+      return;
+    }
     if (path === '/profile') {
       registrations++;
       if (mode === 'reject-all' || mode === 'unreached' && registrations === 3) return send(403, { error: 'Registration refused' });
@@ -62,7 +67,8 @@ test('signup claims grade each registration write through a fresh browser sessio
         const body=await r.json(); if(!r.ok)throw new Error(body.error); return body;
       }
       main.innerHTML='<input id="signup-username"><input id="signup-password"><button id="signup-submit">Register</button><input id="signin-username"><input id="signin-password"><button id="signin-submit">Login</button>';
-      const startup=${JSON.stringify(mode.startsWith('startup-'))}, deferred=${registrations > 0};
+      const earlyUser=${JSON.stringify(mode.startsWith('early-user-'))};
+      const startup=${JSON.stringify(mode.startsWith('startup-') || mode.startsWith('early-user-'))}, deferred=${registrations > 0};
       let socket, connectDone;
       if(startup) {
         const button=document.querySelector('#signup-submit'); button.disabled=true;
@@ -85,8 +91,9 @@ test('signup claims grade each registration write through a fresh browser sessio
         if(${JSON.stringify(mode)}==='client-reject-all')throw new Error('Registration refused');
         await post('/profile',{username:document.querySelector('#signup-username').value,password:document.querySelector('#signup-password').value});
         const created=await post('/finish');
+        if(earlyUser) { show(created.user); await fetch('/reconnect-delay'); }
         if(startup)await new Promise(resolve=>{connectDone=resolve;socket.send('41');socket.send('40'+JSON.stringify({user:created.user}));});
-        show(created.user);
+        if(!earlyUser)show(created.user);
       }catch(e){main.insertAdjacentHTML('beforeend','<span id="auth-error">Registration refused</span>');}};
       document.querySelector('#signin-submit').onclick=async()=>{try{
         show((await post('/login',{username:document.querySelector('#signin-username').value,password:document.querySelector('#signin-password').value})).user);
@@ -101,7 +108,7 @@ test('signup claims grade each registration write through a fresh browser sessio
     socket.on('message', value => {
       const frame=String(value); if(!frame.startsWith('40'))return;
       const claims=frame.length>2 ? JSON.parse(frame.slice(2)) : {};
-      if(mode==='startup-unsafe'&&claims.role==='admin'&&accounts.has(claims.user))accounts.set(claims.user,'admin');
+      if((mode==='startup-unsafe'||mode==='early-user-unsafe')&&claims.role==='admin'&&accounts.has(claims.user))accounts.set(claims.user,'admin');
       calls.push({path:'/socket-connect',claim:claims.role??null,status:200});
       socket.send('40'+JSON.stringify({sid:'namespace'}));
     });
@@ -111,13 +118,15 @@ test('signup claims grade each registration write through a fresh browser sessio
   try {
     for (const [variant, expected] of [['correct', 'passed'], ['unsafe-finalizer', 'failed'],
       ['reject-all', 'failed'], ['client-reject-all', 'failed'], ['unreached', 'inconclusive'],
-      ['missing-signout', 'failed'], ['startup-safe', 'passed'], ['startup-unsafe', 'failed']]) await t.test(variant!, async () => {
+      ['missing-signout', 'failed'], ['startup-safe', 'passed'], ['startup-unsafe', 'failed'],
+      ['early-user-safe', 'passed'], ['early-user-unsafe', 'failed']]) await t.test(variant!, async () => {
       mode = variant!; stock = 0; registrations = 0; calls.length = 0; accounts.clear(); accounts.set('admin', 'admin');
       const action = { id: 'restock', path: '/restock', method: 'POST', reducer: 'restock', args: [], params: [] };
       const definition = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
         name: 'Signup write observation', features: [{ id: 103, name: 'Signup claims', actors: ['admin', 'claimant'],
           setup: [{ do: 'signIn', actor: 'admin', name: 'admin', password: 'fixture-password', exact: true },
-            ...(mode.startsWith('startup-') ? [{ do:'expect', actor:'claimant', testid:'connection-ready' }] : [])],
+            ...(mode.startsWith('startup-') || mode.startsWith('early-user-')
+              ? [{ do:'expect', actor:'claimant', testid:'connection-ready' }] : [])],
           criteria: [{ id: '103b', category: 'production', desc: 'Signup claims do not grant stock authority', points: 1,
             steps: [
               { do: 'callAction', actor: 'admin', action: 'restock', namedAction: action, settleMs: 0 },
@@ -149,8 +158,10 @@ test('signup claims grade each registration write through a fresh browser sessio
         assert.equal(stock, 2, 'the grader must observe the unauthorized stored effect');
       }
       if (variant === 'correct') assert.equal(registrations, 3, 'ordinary registration plus one fresh account per write');
-      if (variant === 'startup-safe') assert.equal(registrations, 4, 'registration and reconnect remain three measured writes');
-      if (variant === 'startup-unsafe') {
+      if (variant === 'startup-safe' || variant === 'early-user-safe') {
+        assert.equal(registrations, 4, 'registration and reconnect remain three measured writes');
+      }
+      if (variant === 'startup-unsafe' || variant === 'early-user-unsafe') {
         assert(calls.some(call=>call.path==='/socket-connect'&&call.claim==='admin'));
         assert.equal(stock, 2, 'authority-bearing reconnect after signup must still be measured');
       }

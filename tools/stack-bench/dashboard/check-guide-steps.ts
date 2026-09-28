@@ -101,7 +101,7 @@ export function stepsText(steps: GuideStep[], depth = 0): string[] {
       lines.push(`${pad}- Run these branches concurrently and wait for all of them:`);
       (s.branches ?? []).forEach((branch, i) => { lines.push(`${pad}  - Branch ${i + 1}:`); lines.push(...stepsText(branch, depth + 2)); });
     } else if (s.do === 'probeSignupClaims') {
-      lines.push(`${pad}- Create an ordinary account and verify that it can sign in. Record each registration write. For the ordinary account and then a fresh account per write, run the observations below. In each fresh attempt, add ${q(s.fields)} to one write only. Missing targets or incomplete capture stay inconclusive.`);
+      lines.push(`${pad}- Create an ordinary account and verify that it can sign in. Record observed registration writes, using the same minimum two-second observation window for ordinary and modified signups. For the ordinary account and then a fresh account per write, run the observations below. In each fresh attempt, add ${q(s.fields)} to one write only. Missing targets or incomplete capture stay inconclusive.`);
       lines.push(...stepsText(s.branches?.[0] ?? [], depth + 1));
     } else {
       const describe = meanings[s.do];
