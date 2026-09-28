@@ -55,7 +55,7 @@ function renderMB(ctx, t, acc) {
   if (argv[0] === '--worker') {
     const a = +argv[1], b = +argv[2], seg = argv[3];
     const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '8', '-pix_fmt', 'yuv420p', seg], { stdio: ['pipe', 'inherit', 'inherit'] });
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '8', '-threads', '1', '-pix_fmt', 'yuv420p', seg], { stdio: ['pipe', 'inherit', 'inherit'] });
     for (let f = a; f < b; f++) {
       const px = renderMB(ctx, f / FPS, acc);
       const buf = Buffer.from(px.buffer, px.byteOffset, px.byteLength);
@@ -69,7 +69,8 @@ function renderMB(ctx, t, acc) {
   }
 
   // orchestrate
-  const JOBS = +opt('--jobs', 16);
+  // Keep the machine usable: default to a third of the cores, run workers at low priority.
+  const JOBS = +opt('--jobs', Math.max(1, Math.floor(require('os').cpus().length / 3)));
   const total = Math.round(DUR * FPS);
   const per = Math.ceil(total / JOBS);
   const segs = [];
@@ -81,6 +82,7 @@ function renderMB(ctx, t, acc) {
     segs.push(seg);
     const { fork } = require('child_process');
     const w = fork(__filename, ['--worker', a, b, seg, '--samples', SAMPLES]);
+    try { require('os').setPriority(w.pid, 19); } catch (e) {}
     w.on('message', m => {
       if (m.done != null) prog[j] = m.done;
       const d = prog.reduce((x, y) => x + y, 0);

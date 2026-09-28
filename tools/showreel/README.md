@@ -10,7 +10,7 @@ Requirements: Node 22+, `ffmpeg` with `libx264`. Run from this directory:
 
 ```sh
 npm install
-npm run build          # audio → video (parallel, motion-blurred) → mux  ≈ 2–3 min on 24 cores
+npm run build          # audio → video (parallel, motion-blurred) → mux  ≈ 6–8 min with the default 8 jobs on 24 cores
 # output: ./spacetimedb-showreel.mp4   (gitignored; ~45 MB)
 ```
 
@@ -19,7 +19,7 @@ Individual steps:
 | Command | What it does |
 |---|---|
 | `npm run audio` | Synthesizes `out/reel.wav` (120 BPM, A minor) from `audio.js` |
-| `npm run video` | Renders all frames in parallel workers into `out/seg_*.mp4` (`--jobs N`, `--samples S` = motion-blur subframes) |
+| `npm run video` | Renders all frames in parallel workers into `out/seg_*.mp4` at low priority. Defaults to a third of the CPU cores; `--jobs N` overrides. **Don't set jobs near the core count: 22 jobs on 24 cores froze the machine.** `--samples S` = motion-blur subframes |
 | `npm run mux` | Concatenates segments, adds audio + light film grain → `spacetimedb-showreel.mp4` |
 | `npm run stills -- 12.5 42 80 --samples 1` | Renders PNG stills at given times to `out/still_<t>.png` (fast way to review a change) |
 | `./sheet.sh out.png a.png b.png c.png d.png` | 2×2 contact sheet of four stills |

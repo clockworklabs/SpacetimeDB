@@ -4,7 +4,7 @@
   "description": "Procedural motion-graphics promo video for SpacetimeDB (canvas renderer + synthesized soundtrack).",
   "scripts": {
     "audio": "node audio.js",
-    "video": "node render.js --jobs 20 --samples 5",
+    "video": "nice -n 19 node render.js --samples 5",
     "mux": "./mux.sh",
     "build": "npm run audio && npm run video && npm run mux",
     "stills": "node render.js --still"
