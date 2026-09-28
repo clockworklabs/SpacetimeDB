@@ -41,7 +41,7 @@ test('warehouse inventory accepts consistent views and rejects missing or confli
     { mode: 'nested-label-quantity', expected: 'passed' },
     { mode: 'nested-label-wrong-quantity', expected: 'failed' },
     { mode: 'nested-label-wrong-warehouse', expected: 'failed' },
-    { mode: 'nested-holding-number-only', expected: 'failed' },
+    { mode: 'nested-holding-number-only', expected: 'passed' },
     { mode: 'missing-item-equal-count', expected: 'failed' },
     { mode: 'wrong-non-mouse-total', expected: 'failed' },
     { mode: 'wrong-item-copy-first', expected: 'failed' },
@@ -61,7 +61,12 @@ test('warehouse inventory accepts consistent views and rejects missing or confli
     { mode: 'unknown-item', expected: 'failed' },
     { mode: 'substring-item', expected: 'failed' },
     { mode: 'unknown-warehouse', expected: 'failed' },
-    { mode: 'nested-number-only', expected: 'failed' },
+    { mode: 'nested-number-only', expected: 'passed' },
+    { mode: 'item-wrapper-empty', expected: 'passed' },
+    { mode: 'item-wrapper-copies', expected: 'passed' },
+    { mode: 'item-wrapper-labelled', expected: 'passed' },
+    { mode: 'item-wrapper-wrong-name', expected: 'failed' },
+    { mode: 'item-wrapper-wrong-number', expected: 'failed' },
     { mode: 'hidden-number', expected: 'failed' },
     { mode: 'late-snapshot', expected: 'inconclusive' },
   ];
@@ -115,6 +120,9 @@ test('warehouse inventory accepts consistent views and rejects missing or confli
     if (mode === 'unknown-warehouse') html = html.replace('<h1>', '<section data-role="admin-warehouse-item">North</section><h1>');
     if (mode === 'nested-number-only') html = html.replace('<span data-role="admin-stock">100</span>',
       '<article data-role="admin-item-row">Air Purifier<span data-role="admin-stock">100</span></article>');
+    if (mode.startsWith('item-wrapper-')) html = html.replace(
+      /<article data-role="admin-item-row" >(<strong>Air Purifier<\/strong>\s*<span data-role="admin-stock">100<\/span>\s*)<\/article>/,
+      `<article data-role="admin-item-row">${mode === 'item-wrapper-wrong-name' ? 'Keyboard' : mode === 'item-wrapper-labelled' ? 'Air Purifier' : ''}${mode === 'item-wrapper-wrong-number' ? 'Air Purifier<span data-role="admin-stock">101</span>' : ''}<article data-role="admin-item-row">$1${mode === 'item-wrapper-labelled' ? ' units available' : ''}</article>${mode === 'item-wrapper-copies' ? '<article data-role="admin-item-row">$1</article>' : ''}</article>`);
     if (mode === 'hidden-number') html = html.replace('<span data-role="admin-stock">100</span>', '<span data-role="admin-stock" hidden>100</span>');
     if (mode === 'nested-item-label') html = html.replace('<strong>Air Purifier</strong>', '<span data-role="admin-warehouse-item">Air Purifier · East</span>');
     if (mode.startsWith('nested-') && mode !== 'nested-number-only') {
@@ -186,7 +194,10 @@ test('warehouse totals validate every visible copy against one recorded baseline
   const cases = [
     ['2a', 'single', 'passed'], ['2a', 'copies', 'passed'], ['2a', 'hidden-copy', 'passed'],
     ['2a', 'outside-copy', 'passed'], ['2a', 'missing-total', 'failed'],
-    ['2a', 'bad-baseline', 'failed'], ['2a', 'nonnumeric', 'failed'], ['2a', 'nested-borrow', 'failed'],
+    ['2a', 'bad-baseline', 'failed'], ['2a', 'nonnumeric', 'failed'], ['2a', 'nested-borrow', 'passed'],
+    ['2a', 'nested-empty', 'passed'], ['2a', 'nested-copies', 'passed'],
+    ['2a', 'nested-labelled', 'passed'],
+    ['2a', 'nested-wrong-name', 'failed'], ['2a', 'nested-wrong-number', 'failed'],
     ['2a', 'wrong-copy', 'failed'], ['2a', 'reverse', 'failed'], ['2a', 'refused', 'failed'],
     ['2a', 'missing-warehouse', 'failed'], ['2a', 'wrong-identity', 'failed'],
     ['201a', 'copies', 'passed'], ['201a', 'unauthorized-effect', 'failed'],
@@ -212,6 +223,11 @@ test('warehouse totals validate every visible copy against one recorded baseline
       if (mode === 'nonnumeric') extra = row('East', 'unknown');
       if (mode === 'hidden-copy') extra = row('East', 999, 'hidden');
       if (mode === 'nested-borrow') extra = `<section data-role="admin-warehouse-item">East ${row('East', 600)}</section>`;
+      if (mode === 'nested-empty') extra = `<section data-role="admin-warehouse-item">${row('East', 600)}</section>`;
+      if (mode === 'nested-copies') extra = `<section data-role="admin-warehouse-item">East ${row('East', 600)}${row('East', 600)}</section>`;
+      if (mode === 'nested-labelled') extra = `<section data-role="admin-warehouse-item">East ${row('East warehouse', 600).replace('data-warehouse="East warehouse"', 'data-warehouse="East"')}</section>`;
+      if (mode === 'nested-wrong-name') extra = `<section data-role="admin-warehouse-item">East ${row('West', 400)}</section>`;
+      if (mode === 'nested-wrong-number') extra = `<section data-role="admin-warehouse-item">East <span data-role="warehouse-total">601</span>${row('East', 600)}</section>`;
       try {
         await page.setContent(`<section id="admin-panel">
           ${row(mode === 'wrong-identity' ? 'Eastside' : 'East', 600)}

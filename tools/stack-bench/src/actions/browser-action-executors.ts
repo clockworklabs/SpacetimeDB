@@ -720,16 +720,17 @@ async function expectNumber({ input, capabilities, signal }:
 const matchesInventoryName = (text: string, name: string): boolean => new RegExp(
   `(?<![\\p{L}\\p{N}_])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_])`, 'u').test(text);
 
-async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserCapability) {
+async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserCapability,
+  identities: readonly { control: string; names: readonly string[] }[]) {
   const selectors = Object.fromEntries(['admin-item-row', 'admin-warehouse-item', 'admin-location-row',
     'admin-stock', 'admin-location-qty', 'warehouse-total'].map(id => [id, browser.testId(id)]));
   const rows = ['admin-item-row', 'admin-warehouse-item', 'admin-location-row'];
-  return (actor.page as PlaywrightPage).locator(browser.testId('admin-panel'))
+  const observed = await (actor.page as PlaywrightPage).locator(browser.testId('admin-panel'))
       .filter({ visible: true }).locator(rows.map(id => selectors[id]).join(',')).filter({ visible: true })
       .evaluateAll((elements, selectors) => {
         interface Node {
           nodeType: number; textContent: string | null; childNodes: ArrayLike<Node>;
-          matches(selector: string): boolean; closest(selector: string): Node | null;
+          matches(selector: string): boolean; closest(selector: string): Node | null; contains(node: Node): boolean;
           querySelectorAll(selector: string): ArrayLike<Node>;
           tagName: string; value?: string; innerText: string;
           getBoundingClientRect(): { width: number; height: number };
@@ -739,8 +740,8 @@ async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserC
           const box = node.getBoundingClientRect();
           return !!(box.width || box.height) && node.ownerDocument.defaultView.getComputedStyle(node).visibility === 'visible';
         };
-        // Marked labels can be nested. Same-role rows and child holdings own
-        // their text so an empty parent cannot borrow a complete child's identity.
+        // Marked labels can be nested. Keep each same-role row's labels separate
+        // until redundant wrappers are resolved; child holdings own their text.
         const ownText = (node: Node, root: Node, excludedRows: string): string => {
           if (node.nodeType === 3) return node.textContent ?? '';
           if (node.nodeType !== 1 || node !== root && node.matches(excludedRows)) return '';
@@ -750,7 +751,7 @@ async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserC
           return node.tagName === 'BR' || !style.display.startsWith('inline') && style.display !== 'contents'
             ? ` ${text} ` : text;
         };
-        return elements.map(element => {
+        const observations = elements.map(element => {
           const row = element as unknown as Node;
           const control = ['admin-item-row', 'admin-warehouse-item', 'admin-location-row']
             .find(id => row.matches(selectors[id]!))!;
@@ -762,9 +763,22 @@ async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserC
               .map(child => ['INPUT', 'TEXTAREA', 'SELECT'].includes(child.tagName)
                 ? child.value ?? '' : child.innerText);
           const excludedRows = [owner, selectors['admin-location-row']!].join(',');
-          return { control, text: ownText(row, row, excludedRows).replace(/\s+/g, ' ').trim(), values };
+          return { row, control, values,
+            text: ownText(row, row, `${excludedRows},${selectors[numeric]}`).replace(/\s+/g, ' ').trim() };
         });
+        return observations.map(entry => ({ control: entry.control, text: entry.text, values: entry.values,
+          descendantLabels: observations.filter(child => child !== entry && child.control === entry.control
+            && entry.row.contains(child.row)).map(child => child.text).filter(Boolean) }));
       }, selectors);
+  // A repeated marker can wrap the same complete view. Compare the declared
+  // identities, not decoration or DOM shape. Keep every numeric projection.
+  return observed.filter(row => {
+    if (row.values.length || !row.descendantLabels.length) return true;
+    const identify = (text: string) => identities.flatMap((entry, index) => entry.control === row.control
+      && entry.names.every(name => matchesInventoryName(text, name)) ? [index] : []);
+    const matches = [...row.descendantLabels, ...(row.text ? [row.text] : [])].map(identify);
+    return matches.some(match => match.length !== 1 || match[0] !== matches[0]![0]);
+  }).map(({ descendantLabels: _descendants, ...row }) => row);
 }
 
 async function readWarehouseTotal(actor: BrowserActor, browser: BrowserCapability, name: string | undefined,
@@ -777,7 +791,8 @@ async function readWarehouseTotal(actor: BrowserActor, browser: BrowserCapabilit
       if (failure) throw failure;
       inconclusive('observation-window-missed', { detail: 'The warehouse total read did not start within its observation window' });
     }
-    const observed = await readWarehouseInventoryRows(actor, browser);
+    const observed = await readWarehouseInventoryRows(actor, browser,
+      name === undefined ? [] : [{ control: 'admin-warehouse-item', names: [name] }]);
     signal.throwIfAborted();
     if (Date.now() > deadline) {
       if (failure) throw failure;
@@ -828,7 +843,7 @@ async function expectWarehouseInventory({ input, capabilities, signal }: Browser
       if (failure) throw failure;
       inconclusive('observation-window-missed', { detail: 'The warehouse inventory read did not start within its observation window' });
     }
-    const observed = await readWarehouseInventoryRows(actor, browser);
+    const observed = await readWarehouseInventoryRows(actor, browser, expected);
     signal.throwIfAborted();
     if (Date.now() > deadline) {
       if (failure) throw failure;
