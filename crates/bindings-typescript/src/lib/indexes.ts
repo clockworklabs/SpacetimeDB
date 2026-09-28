@@ -10,7 +10,7 @@ import type { ColumnIsUnique } from './constraints';
  */
 export type IndexOpts<AllowedCol extends string> = {
   accessor: string;
-  name?: string;
+  name?: string | undefined;
 } & (
   | { algorithm: 'btree'; columns: readonly AllowedCol[] }
   | { algorithm: 'hash'; columns: readonly AllowedCol[] }
