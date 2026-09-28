@@ -108,6 +108,74 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
     ...selected, stackBenchRoot: STACK_BENCH_ROOT, references: plan.references.entries,
     qualificationDocuments: savedDocuments };
   assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, context));
+  // A fixed reference does not rebuild from graph prompts. Rekeying a different
+  // independent scenario must not discard this unchanged, measured slice.
+  const rekeyed = structuredClone(savedDocuments);
+  const oldKey = 'ecommerce.feature.accounts.accounts.1c';
+  const newKey = 'ecommerce.spec.access-control.account-password.1c';
+  const password = rekeyed.release.checkCatalog.find(check => check.stableKey === oldKey)!;
+  Object.assign(password, { stableKey: newKey, stablePackId: 'ecommerce.spec.access-control',
+    checkGroupId: 'account-password' });
+  Object.assign((rekeyed.meaning.checks as Array<Record<string, unknown>>)
+    .find(check => check.stableKey === oldKey)!, password);
+  const passwordExecution = (rekeyed.execution.execution as Array<{ id: string;
+    checkGroups: Array<Record<string, unknown>> }>).find(item => item.id === password.executionId)!;
+  const passwordGroup = passwordExecution.checkGroups.find(group => group.checkGroupId === 'accounts')!;
+  Object.assign(passwordGroup, { stablePackId: 'ecommerce.spec.access-control', checkGroupId: 'account-password' });
+  rekeyed.release.meaningSha256 = sha256(canonicalDefinitionJson(rekeyed.meaning));
+  rekeyed.release.executionSha256 = sha256(canonicalDefinitionJson(rekeyed.execution));
+  rekeyed.release.contentSha256 = sha256(canonicalDefinitionJson({ schemaVersion: 3,
+    meaningSha256: rekeyed.release.meaningSha256, executionSha256: rekeyed.release.executionSha256 }));
+  validateQualificationDocuments(rekeyed);
+  const rekeyedPlan = structuredClone(plan);
+  rekeyedPlan.qualification.checks = rekeyedPlan.qualification.checks!.map(key => key === oldKey ? newKey : key);
+  rekeyedPlan.qualification.featureCatalog!.contentSha256 = 'a'.repeat(64);
+  const rekeyedContext = { ...context, calibration: rekeyedPlan,
+    release: rekeyed.release, qualificationDocuments: rekeyed };
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, rekeyedContext));
+  const implicitSelection = structuredClone(rekeyedPlan);
+  delete implicitSelection.qualification.checks;
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry,
+    { ...rekeyedContext, calibration: implicitSelection }));
+  const absentCurrent = structuredClone(rekeyedPlan);
+  absentCurrent.qualification.checks = absentCurrent.qualification.checks!
+    .filter(key => !entry.slice!.checks.includes(key));
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...rekeyedContext, calibration: absentCurrent }), /absent from source or current qualification/);
+  const absentSource = structuredClone(saved);
+  absentSource.calibration.qualification.checks = absentSource.calibration.qualification.checks
+    .filter((key: string) => !entry.slice!.checks.includes(key));
+  const absentSourcePath = join(temporary, 'absent-source.json');
+  writeFileSync(absentSourcePath, JSON.stringify(absentSource));
+  const absentSourceEntry = structuredClone(entry);
+  absentSourceEntry.slice!.snapshot = { path: relative(STACK_BENCH_ROOT, absentSourcePath),
+    sha256: sha256(readFileSync(absentSourcePath)) };
+  assert.throws(() => validateQualificationSlice(artifact, absentSourceEntry, rekeyedContext),
+    /absent from source or current qualification/);
+  const changedDependency = structuredClone(rekeyed);
+  (changedDependency.meaning.checks as Array<Record<string, unknown>>)
+    .find(check => check.stableKey === entry.slice!.checks[0])!.requiresFeatures = ['different-feature'];
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...rekeyedContext, qualificationDocuments: changedDependency }), /changed check/);
+  for (const change of [
+    (p: CalibrationPlan) => { p.qualification.featureCatalog!.id = 'other-catalog'; },
+    (p: CalibrationPlan) => { p.qualification.featureCatalog!.path = 'other.json'; },
+    (p: CalibrationPlan) => { delete p.qualification.featureCatalog; },
+    (p: CalibrationPlan) => { p.qualification.runner!.platform = 'other'; },
+    (p: CalibrationPlan) => { p.qualification.exactCombinationRequired = false; },
+  ]) {
+    const bad = structuredClone(rekeyedPlan); change(bad);
+    assert.throws(() => validateQualificationSlice(artifact, entry,
+      { ...rekeyedContext, calibration: bad }), /source qualification policy differs/);
+  }
+  for (const field of ['fixture', 'nullControl', 'controls'] as const) {
+    const bad = structuredClone(rekeyedPlan);
+    if (field === 'controls') bad.controls.push({ stableKey: entry.slice!.checks[0]!,
+      role: 'control', promotionPolicy: 'required', mutationTargets: [] });
+    else Object.assign(bad[field], { changed: true });
+    assert.throws(() => validateQualificationSlice(artifact, entry,
+      { ...rekeyedContext, calibration: bad }), new RegExp(`source ${field} differs`));
+  }
   // Failure cases specified before implementation: contract wording alone may
   // be reviewed, but wrong task hashes, absent or changed evidence, requirements,
   // ownership, and changed scenario steps must never receive that exemption.
@@ -175,7 +243,6 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   assert.throws(() => validateQualificationSlice(artifact, entry,
     { ...context, calibration: removedStack }), /measured stack is absent/);
   for (const change of [
-    (p: CalibrationPlan) => { p.qualification.checks = []; },
     (p: CalibrationPlan) => { p.qualification.referenceRepetitions += 1; },
     (p: CalibrationPlan) => { p.qualification.mutationRepetitions += 1; },
   ]) {

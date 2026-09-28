@@ -923,8 +923,8 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     || source.release.id !== release.id || sourceCalibration.selection.alias !== calibration.selection.alias) {
     evidenceFailure(at, 'source calibration does not bind the saved recipe');
   }
-  // Do not reuse a different reference, runner, repetition policy, feature
-  // selection, or zero-point policy merely because its checks have the same IDs.
+  // Do not reuse a different reference, runner, repetition policy, or
+  // zero-point policy merely because its checks have the same IDs.
   for (const field of ['fixture', 'nullControl', 'controls'] as const) {
     if (canonicalDefinitionJson(sourceCalibration[field]) !== canonicalDefinitionJson(calibration[field])) {
       evidenceFailure(at, `source ${field} differs`);
@@ -951,8 +951,10 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     evidenceFailure(at, 'source references differs');
   }
   const { evidence: _oldEvidence, buildImage: _oldImage, stacks: oldStacks,
+    checks: oldChecks, featureCatalog: oldCatalog,
     ...oldPolicy } = sourceCalibration.qualification;
   const { evidence: _newEvidence, buildImage: _newImage, stacks: newStacks,
+    checks: newChecks, featureCatalog: newCatalog,
     ...newPolicy } = calibration.qualification;
   // A receipt measures one stack (or the stack-neutral empty app). Adding another
   // stack cannot qualify it: complete coverage is still required for each stack.
@@ -960,9 +962,22 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     || !newStacks.includes(entry.stack))) {
     evidenceFailure(at, 'measured stack is absent from source or current qualification policy');
   }
-  if (canonicalDefinitionJson(oldPolicy) !== canonicalDefinitionJson(newPolicy)) {
+  const catalogPolicy = (catalog: CalibrationPlan['qualification']['featureCatalog']) =>
+    catalog ? { id: catalog.id, path: catalog.path } : null;
+  if (canonicalDefinitionJson(oldPolicy) !== canonicalDefinitionJson(newPolicy)
+    || canonicalDefinitionJson(catalogPolicy(oldCatalog)) !== canonicalDefinitionJson(catalogPolicy(newCatalog))) {
     evidenceFailure(at, 'source qualification policy differs');
   }
+  const sourcePopulation = new Set(oldChecks ?? source.release.checkCatalog.map(check => check.stableKey));
+  const currentPopulation = new Set(newChecks ?? release.checkCatalog.map(check => check.stableKey));
+  if (slice.checks.some(key => !sourcePopulation.has(key) || !currentPopulation.has(key))) {
+    evidenceFailure(at, 'slice check is absent from source or current qualification policy');
+  }
+  // Fixed reference controls select all catalog nodes through this level, not
+  // graph work gated by previous results. Their source is hash-bound and each
+  // scenario resets. An unrelated check/catalog digest may therefore change;
+  // the complete retained scenario and its dependencies must still match below.
+  // This does not permit reuse of model progression or sequential-stage grades.
   const trackRoot = resolve(stackBenchRoot, 'tracks', release.track);
   const current = context.qualificationDocuments ?? validateQualificationDocuments(buildRecipeQualificationDocuments(
     resolve(trackRoot, calibration.recipe.path), { trackRoot }));
