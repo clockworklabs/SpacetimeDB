@@ -64,13 +64,13 @@ error[E0277]: the first argument of an HTTP handler must be `&mut HandlerContext
 10 | fn handler_immutable_ctx(_ctx: &HandlerContext, _req: Request) -> Response {
    |                                ^^^^^^^^^^^^^^^ first argument must be `&mut HandlerContext`
    |
-   = help: the trait `HttpHandlerContextArg` is not implemented for `&HandlerContext`
-help: the trait `HttpHandlerContextArg` is implemented for `&mut HandlerContext`
+   = help: the trait `spacetimedb::rt::HttpHandlerContextArg` is not implemented for `&HandlerContext`
+help: the trait `spacetimedb::rt::HttpHandlerContextArg` is implemented for `&mut HandlerContext`
   --> src/rt.rs
    |
    | impl HttpHandlerContextArg for &mut HandlerContext {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: `HttpHandlerContextArg` is implemented for `&mut HandlerContext`, but not for `&HandlerContext`
+   = note: `spacetimedb::rt::HttpHandlerContextArg` is implemented for `&mut HandlerContext`, but not for `&HandlerContext`
 
 error[E0308]: mismatched types
   --> tests/ui/http_handlers.rs:15:4
@@ -94,8 +94,8 @@ error[E0277]: the first argument of an HTTP handler must be `&mut HandlerContext
 15 | fn handler_wrong_ctx(_ctx: &mut ProcedureContext, _req: Request) -> Response {
    |                            ^^^^^^^^^^^^^^^^^^^^^ first argument must be `&mut HandlerContext`
    |
-   = help: the trait `HttpHandlerContextArg` is not implemented for `&mut ProcedureContext`
-help: the trait `HttpHandlerContextArg` is implemented for `&mut HandlerContext`
+   = help: the trait `spacetimedb::rt::HttpHandlerContextArg` is not implemented for `&mut ProcedureContext`
+help: the trait `spacetimedb::rt::HttpHandlerContextArg` is implemented for `&mut HandlerContext`
   --> src/rt.rs
    |
    | impl HttpHandlerContextArg for &mut HandlerContext {}
@@ -121,9 +121,9 @@ error[E0277]: the second argument of an HTTP handler must be `spacetimedb::http:
   --> tests/ui/http_handlers.rs:25:68
    |
 25 | fn handler_wrong_request_arg_type(_ctx: &mut HandlerContext, _req: u32) -> Response {
-   |                                                                    ^^^ the trait `HttpHandlerRequestArg` is not implemented for `u32`
+   |                                                                    ^^^ the trait `spacetimedb::rt::HttpHandlerRequestArg` is not implemented for `u32`
    |
-help: the trait `HttpHandlerRequestArg` is implemented for `http::request::Request<Body>`
+help: the trait `spacetimedb::rt::HttpHandlerRequestArg` is implemented for `http::request::Request<Body>`
   --> src/rt.rs
    |
    | impl HttpHandlerRequestArg for crate::http::Request {}
@@ -149,9 +149,9 @@ error[E0277]: HTTP handlers must return `spacetimedb::http::Response`
   --> tests/ui/http_handlers.rs:35:75
    |
 35 | fn handler_wrong_return_type(_ctx: &mut HandlerContext, _req: Request) -> u32 {
-   |                                                                           ^^^ the trait `HttpHandlerReturn` is not implemented for `u32`
+   |                                                                           ^^^ the trait `spacetimedb::rt::HttpHandlerReturn` is not implemented for `u32`
    |
-help: the trait `HttpHandlerReturn` is implemented for `http::response::Response<Body>`
+help: the trait `spacetimedb::rt::HttpHandlerReturn` is implemented for `http::response::Response<Body>`
   --> src/rt.rs
    |
    | impl HttpHandlerReturn for crate::http::Response {}
@@ -175,7 +175,7 @@ error[E0609]: no field `db` on type `&mut HandlerContext`
 53 |     let _rows = ctx.db.test_table().iter();
    |                     ^^ unknown field
    |
-   = note: available fields are: `timestamp`, `http`
+   = note: available fields are: `env`, `timestamp`, `http`
 
 error[E0308]: mismatched types
   --> tests/ui/http_handlers.rs:66:4

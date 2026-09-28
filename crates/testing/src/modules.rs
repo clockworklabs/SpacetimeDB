@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
@@ -67,6 +68,49 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
+    /// Publish a complete configuration through the standalone control API.
+    pub async fn republish_environment(
+        &self,
+        environment: BTreeMap<String, String>,
+    ) -> anyhow::Result<spacetimedb::host::UpdateDatabaseResult> {
+        let program = self
+            .client
+            .module()
+            .relational_db()
+            .program()?
+            .expect("published module");
+        self.republish_program(program.bytes.into(), program.kind.into(), environment)
+            .await
+    }
+
+    /// Publish exact replacement artifact bytes and their complete configuration.
+    pub async fn republish_program(
+        &self,
+        program_bytes: Bytes,
+        host_type: HostType,
+        environment: BTreeMap<String, String>,
+    ) -> anyhow::Result<spacetimedb::host::UpdateDatabaseResult> {
+        self.env
+            .publish_database(
+                &Identity::ZERO,
+                DatabaseDef {
+                    database_identity: self.db_identity,
+                    program_bytes,
+                    environment,
+                    environment_remove: Vec::new(),
+                    environment_replace: true,
+                    expected_module_version: None,
+                    num_replicas: None,
+                    host_type,
+                    parent: None,
+                    organization: None,
+                },
+                MigrationPolicy::Compatible,
+            )
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected an update to the existing database"))
+    }
+
     async fn call_reducer_result(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<ReducerCallResult> {
         let result = self
             .client
@@ -235,6 +279,18 @@ pub enum CompilationMode {
 }
 
 impl CompiledModule {
+    /// Use an artifact built by an external toolchain, such as Linux NativeAOT.
+    /// This changes only compilation; publication and execution still use the
+    /// same in-process standalone server as locally compiled fixtures.
+    pub fn from_artifact(name: &str, host_type: HostType, path: PathBuf) -> Self {
+        Self {
+            name: name.to_owned(),
+            path,
+            host_type,
+            program_bytes: OnceLock::new(),
+        }
+    }
+
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
         let (path, host_type) = spacetimedb_cli::build(
             &module_path(name),
@@ -245,12 +301,7 @@ impl CompiledModule {
             None,
         )
         .expect("Module compilation failed");
-        Self {
-            name: name.to_owned(),
-            path,
-            host_type: host_type.parse().unwrap(),
-            program_bytes: OnceLock::new(),
-        }
+        Self::from_artifact(name, host_type.parse().unwrap(), path)
     }
 
     pub fn path(&self) -> &Path {
@@ -280,9 +331,21 @@ impl CompiledModule {
         R: FnOnce(ModuleHandle) -> F,
         F: Future<Output = O>,
     {
+        self.with_module_async_with_environment(config, BTreeMap::new(), routine)
+    }
+
+    pub fn with_module_async_with_environment<O, R, F>(
+        &self,
+        config: Config,
+        environment: BTreeMap<String, String>,
+        routine: R,
+    ) where
+        R: FnOnce(ModuleHandle) -> F,
+        F: Future<Output = O>,
+    {
         with_runtime(move |runtime| {
             runtime.block_on(async {
-                let module = self.load_module(config, None).await;
+                let module = self.load_module_with_environment(config, None, environment).await;
                 let env = module.env.clone();
                 let db_identity = module.db_identity;
                 let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
@@ -311,6 +374,16 @@ impl CompiledModule {
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
     pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
+        self.load_module_with_environment(config, reuse_db_path, BTreeMap::new())
+            .await
+    }
+
+    pub async fn load_module_with_environment(
+        &self,
+        config: Config,
+        reuse_db_path: Option<&RootDir>,
+        environment: BTreeMap<String, String>,
+    ) -> ModuleHandle {
         let paths = match reuse_db_path {
             Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
@@ -350,6 +423,10 @@ impl CompiledModule {
             DatabaseDef {
                 database_identity: db_identity,
                 program_bytes: self.program_bytes(),
+                environment,
+                environment_remove: Vec::new(),
+                environment_replace: false,
+                expected_module_version: None,
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
