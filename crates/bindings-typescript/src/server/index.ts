@@ -4,16 +4,12 @@ export {
   type InferSchema,
   type ModuleExport,
   type ModuleSettings,
+  type SubmoduleMount,
 } from './schema.ts';
 export { CaseConversionPolicy } from '../lib/autogen/types.ts';
 export { table } from '../lib/table.ts';
 export { SenderError, SpacetimeHostError, errors } from './errors.ts';
-export type {
-  Reducer,
-  ReducerCtx,
-  JwtClaims,
-  AuthCtx,
-} from '../lib/reducers.ts';
+export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers.ts';
 export type { ReducerExport } from './reducers.ts';
 export { type DbView } from './db_view.ts';
 export * from './query.ts';
