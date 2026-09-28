@@ -1,0 +1,205 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-convex-20260928111850-31",
+  "attempt": {
+    "id": "reference-live-convex-20260928111850-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:18:50.517Z",
+    "completedAt": "2026-09-28T11:23:40.578Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-convex",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "801937f18c5e69475d7b8149920abb82aaa1300c6ab61e0135b5df9697b361e8"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-convex",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 44,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "a4c6129dabae65afddfad4348243e6b49458c042c87456bfe631f2ff3d95661f",
+      "executableSha256": "c3362f25defd5fd69124efba09fe9aefd3ad20063395dba0cf8453f60efa532a",
+      "kind": "mutation",
+      "mutationSha256": "70ba9ab5db04994cd038570cf8e1b723c75f6be4a9528ccefa4fcad8ccbc54fb",
+      "recipe": {
+        "contentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "convex",
+        "reference": {
+          "id": "ecommerce-reference-convex",
+          "sourceSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+        },
+        "version": "1.0.0"
+      },
+      "sha256": "b88b036edcda61a26cfa50261fa778821d8e9c28318ac33a70176ef858db4cc4"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "convex.runs/r1-workers",
+        "durationMs": 285487,
+        "processError": null,
+        "harnessSha256Before": "dddaf829fd340a789e739c41e51025a3988430b2ea73e7200134455d93e434c5",
+        "harnessSha256After": "dddaf829fd340a789e739c41e51025a3988430b2ea73e7200134455d93e434c5",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-convex-20260928111850-31",
+        "score": "3/3",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 3,
+        "zeroPointCriteria": 0,
+        "fingerprint": "b653270074ed6fe87be8602c9d562fafac30469e5bdf5af31030045937c84a41",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "checkCount": 1,
+              "setupRuntimeMs": 255,
+              "criterionRuntimeMs": 20,
+              "measuredRuntimeMs": 275,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.live-state",
+              "checkCount": 1,
+              "setupRuntimeMs": 725,
+              "criterionRuntimeMs": 400,
+              "measuredRuntimeMs": 1125,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 184000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "checkCount": 1,
+              "setupRuntimeMs": 21944,
+              "criterionRuntimeMs": 5340,
+              "measuredRuntimeMs": 27284,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 3,
+          "total": 3
+        },
+        "baselineDurationMs": 165349,
+        "baselineOutput": "convex.runs/r1",
+        "baselineHarnessSha256Before": "dddaf829fd340a789e739c41e51025a3988430b2ea73e7200134455d93e434c5",
+        "baselineHarnessSha256After": "dddaf829fd340a789e739c41e51025a3988430b2ea73e7200134455d93e434c5",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 424,
+            "artifact": "convex.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "catalog-initial-ranking-is-reversed"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex.runs/r1-workers/w1.stdout.log",
+              "stderr": "convex.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 425,
+            "artifact": "convex.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "active-search-uses-purchase-ranking"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex.runs/r1-workers/w2.stdout.log",
+              "stderr": "convex.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 426,
+            "artifact": "convex.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "purchase-counts-never-affect-ranking"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex.runs/r1-workers/w3.stdout.log",
+              "stderr": "convex.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "dddaf829fd340a789e739c41e51025a3988430b2ea73e7200134455d93e434c5",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.catalog.catalog-ranking.2b",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.spec.search-ordering.search-ordering.402b"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "track": "ecommerce",
+  "level": 3,
+  "recipe": "ecommerce.progression-catalog",
+  "featureCatalog": "progression/ecommerce.json",
+  "checks": [
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.search-ordering.search-ordering.402b"
+  ],
+  "slots": {
+    "spacetime": 400,
+    "postgres": 408,
+    "mongodb": 416,
+    "convex": 424
+  },
+  "mutations": {
+    "spacetime": [
+      "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+      "purchase-does-not-update-ranking-count",
+      "active-search-uses-purchase-ranking"
+    ],
+    "postgres": [
+      "purchase-does-not-broadcast-ranking",
+      "active-search-uses-purchase-ranking",
+      "progression-catalog-ranking-is-reversed"
+    ],
+    "mongodb": [
+      "purchase-counts-never-affect-ranking",
+      "catalog-initial-ranking-is-reversed",
+      "active-search-uses-purchase-ranking"
+    ],
+    "convex": [
+      "catalog-initial-ranking-is-reversed",
+      "active-search-uses-purchase-ranking",
+      "purchase-counts-never-affect-ranking"
+    ]
+  },
+  "controls": {
+    "spacetime": [
+      {
+        "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ]
+      },
+      {
+        "id": "purchase-does-not-update-ranking-count",
+        "targets": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      }
+    ],
+    "postgres": [
+      {
+        "id": "purchase-does-not-broadcast-ranking",
+        "targets": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      },
+      {
+        "id": "progression-catalog-ranking-is-reversed",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ]
+      }
+    ],
+    "mongodb": [
+      {
+        "id": "purchase-counts-never-affect-ranking",
+        "targets": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ]
+      },
+      {
+        "id": "catalog-initial-ranking-is-reversed",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      }
+    ],
+    "convex": [
+      {
+        "id": "catalog-initial-ranking-is-reversed",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      },
+      {
+        "id": "purchase-counts-never-affect-ranking",
+        "targets": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ]
+      }
+    ]
+  },
+  "mutationManifestSha256": {
+    "spacetime": "e5fd8b8752cc89f12c019b72df9959b3632c2abedcf08a5dc5de943a0b3c67f0",
+    "postgres": "2c757bf0ededa88d5b8d4d078ed74dc16bea090e9ce688f10d7e1ba71bd87155",
+    "mongodb": "255140a2cc0c4ffcdd026cc25418c1bda80f15e4eb7829bbca43d06206ebc07d",
+    "convex": "f08b9fd2ae3e6f9ebe60908110861e188bede3e639c7264a45f7e41c6d1a313e"
+  },
+  "ports": [
+    3710,
+    3711,
+    3712,
+    6709,
+    6710,
+    6711,
+    6817,
+    6818,
+    6819,
+    6873,
+    6874,
+    6875,
+    6981,
+    6982,
+    6983,
+    7139,
+    7140,
+    7141,
+    7347,
+    7348,
+    7349,
+    7425,
+    7426,
+    7427,
+    13634,
+    13635,
+    13636
+  ],
+  "locks": [
+    "listener:http://127.0.0.1:3710",
+    "listener:http://127.0.0.1:3711",
+    "listener:http://127.0.0.1:3712",
+    "slot:ecommerce:spacetime:run400",
+    "slot:ecommerce:spacetime:run401",
+    "slot:ecommerce:spacetime:run402",
+    "slot:ecommerce:postgres:run408",
+    "slot:ecommerce:postgres:run409",
+    "slot:ecommerce:postgres:run410",
+    "slot:ecommerce:mongodb:run416",
+    "slot:ecommerce:mongodb:run417",
+    "slot:ecommerce:mongodb:run418",
+    "listener:http://127.0.0.1:13634",
+    "listener:http://127.0.0.1:13635",
+    "listener:http://127.0.0.1:13636",
+    "slot:ecommerce:convex:run424",
+    "slot:ecommerce:convex:run425",
+    "slot:ecommerce:convex:run426"
+  ],
+  "repetitions": 1,
+  "mutationWorkers": 3,
+  "modelCalls": 0,
+  "qualified": false
+}

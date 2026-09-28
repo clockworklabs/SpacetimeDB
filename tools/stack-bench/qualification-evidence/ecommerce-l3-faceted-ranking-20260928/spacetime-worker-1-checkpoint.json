@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T11-23-01-843Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T11-23-01-843Z",
+    "parentId": "ecommerce-spacetime-run400-20260928112217-214f2bc5"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:23:01.843Z",
+    "completedAt": "2026-09-28T11:23:46.860Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 45017,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-ofu8xE/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-ofu8xE/selected-mutations.json",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-catalog-ranking.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "d3d855efa8d6e3ab24ccd05e42d5b026646c1a1c80977a82862f6c5e2f4f6895"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+          "identitySha256": "31a077c275d1f3bb1b8f8c11d0af923c04d568dfbc5cf4f3ce6c8b3c6cbd9b34",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+        "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.feature.catalog.catalog-ranking.2b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c",
+      "recipeSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "calibrationSha256": "dd9eb769e56f3b8bc1348f1fccac8b49db7da12f2c8ffd800051c425aed8bc51",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+          "scenarioSha256": "59647930d98beb0a27cb81b7675ebc1f6a4e3c714a960e8196bf87b501580fbc",
+          "mutationSha256": "34c9f4c72bda30f4682436ba72b6ddcf0516bd2f54d520554e1046633508f987",
+          "selectionSha256": "0c680639735cd3fa115044770fb4a9dad98d1327a8e1dc938910af90697ec498",
+          "identitySha256": "31a077c275d1f3bb1b8f8c11d0af923c04d568dfbc5cf4f3ce6c8b3c6cbd9b34",
+          "mutationIds": [
+            "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T11:23:46.860Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+        "mutationId": "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-CaSJic/grade.json",
+          "sha256": "86d7f866f61e53c1203e172bde78342a87acd426689516590fd08f070ec779be"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}
