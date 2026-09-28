@@ -18,6 +18,7 @@ interface AccountInput {
   readonly actor: string;
   // False leaves the final session assertion to the next observation.
   readonly awaitSignedIn?: boolean;
+  readonly deferAuthFailureToExpect?: boolean;
   readonly exact?: boolean;
   readonly expectFailure?: boolean;
   readonly name: string;
@@ -111,15 +112,29 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
       await browser.sleep(input.settleMs ?? 2000, signal);
       return { user, authenticationPath: 'local-form', expectedFailure: true };
     }
-    await finishRegistration({ input, capabilities, signal }, () => observation?.stop());
+    let usedFallback = false;
+    await finishRegistration({ input, capabilities, signal }, () => {
+      usedFallback = true;
+      observation?.stop();
+    });
     observation?.stop();
     if (input.awaitSignedIn === false) {
       return { user, authenticationPath: 'local-form', submitted: true };
     }
-    await actor.page.locator(browser.testId('current-user')).first()
-      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
-    await observation?.finish(true, (await actor.loc('current-user').innerText()).includes(user));
-    return { user, authenticationPath: 'local-form', signedUp: true };
+    try {
+      await actor.page.locator(browser.testId('current-user')).first()
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    } catch (error) {
+      if (!input.deferAuthFailureToExpect || signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+        || 'classification' in error || harnessBrowserFailure(error)) throw error;
+      return { user, authenticationPath: 'local-form', submitted: true };
+    }
+    const correctUser = (await actor.loc('current-user').innerText()).includes(user);
+    await observation?.finish(true, correctUser);
+    if (correctUser && usedFallback) confirmSpacetimeSignup(actor.page, user);
+    return input.deferAuthFailureToExpect
+      ? { user, authenticationPath: 'local-form', submitted: true }
+      : { user, authenticationPath: 'local-form', signedUp: true };
   } finally {
     observation?.discard();
   }
@@ -184,12 +199,21 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
       observation?.discard();
       return { user, authenticationPath: 'local-form', submitted: true };
     }
-    await currentUser.waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    try {
+      await currentUser.waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    } catch (error) {
+      if (!input.deferAuthFailureToExpect || signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+        || 'classification' in error || harnessBrowserFailure(error)) throw error;
+      observation?.discard();
+      return { user, authenticationPath: 'local-form', submitted: true };
+    }
     observation?.stop();
     const correctUser = (await currentUser.innerText()).includes(user);
     await observation?.finish(true, correctUser);
     if (correctUser) confirmSpacetimeSignup(actor.page, user);
-    return { user, authenticationPath: 'local-form', signedIn: true };
+    return input.deferAuthFailureToExpect
+      ? { user, authenticationPath: 'local-form', submitted: true }
+      : { user, authenticationPath: 'local-form', signedIn: true };
   } catch (error) {
     observation?.discard();
     // Restoration can remove the form between the readiness check and an interaction.

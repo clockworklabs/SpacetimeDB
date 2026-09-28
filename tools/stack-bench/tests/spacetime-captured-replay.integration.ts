@@ -256,7 +256,8 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
         socket.close(); return;
       }
       const args = received.at(-1) as unknown[];
-      const opaqueRejected = ['opaque-hash-login', 'opaque-delayed-login', 'opaque-completed-reload'].includes(mode) && args[1] !== 'hash-correct'
+      const opaqueRejected = ['deferred-reject-login', 'deferred-reject-signup'].includes(mode)
+        || ['opaque-hash-login', 'opaque-delayed-login', 'opaque-completed-reload'].includes(mode) && args[1] !== 'hash-correct'
         || ['opaque-hash-signup', 'opaque-delayed-signup', 'opaque-salted-signup'].includes(mode) && args[0] === 'claimant';
       send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
         timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: mode === 'refused' || opaqueRejected
@@ -268,7 +269,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
   const browser = await chromium.launch();
   try {
-    for (mode of ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'type-changing-fields', 'nonmatching-credentials', 'missing-claim', 'opaque-hash-login', 'opaque-delayed-login', 'opaque-ok-denial', 'opaque-completed-reload', 'opaque-hash-signup', 'opaque-delayed-signup', 'opaque-salted-signup', 'opaque-http-signup-profile', 'opaque-ambiguous-witness', 'opaque-unrelated-witness', 'opaque-closed-witness', 'opaque-abandoned-witness', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
+    for (mode of ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'type-changing-fields', 'nonmatching-credentials', 'missing-claim', 'opaque-hash-login', 'opaque-delayed-login', 'opaque-ok-denial', 'opaque-completed-reload', 'opaque-hash-signup', 'opaque-delayed-signup', 'deferred-reject-login', 'deferred-reject-signup', 'opaque-salted-signup', 'opaque-http-signup-profile', 'opaque-ambiguous-witness', 'opaque-unrelated-witness', 'opaque-closed-witness', 'opaque-abandoned-witness', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
       'second-then-submit-error', 'malformed-outbound', 'malformed-inbound', 'wrong-module', 'foreign-target', 'unsupported-protocol', 'unsupported-schema', 'app-proxy']) {
       await t.test(mode, async () => {
         received.length = 0; connections = 0;
@@ -288,6 +289,38 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
             socket.addEventListener('message', () => (window as unknown as { replies: number }).replies++);
             await new Promise(resolve => socket.addEventListener('message', resolve, { once: true }));
           }, { socketUrl, protocol: mode === 'unsupported-protocol' ? 'unsupported' : 'v3.bsatn.spacetimedb' });
+          if (mode === 'deferred-reject-login' || mode === 'deferred-reject-signup') {
+            const signup = mode === 'deferred-reject-signup';
+            await page.evaluate(({ signup, call }) => {
+              const prefix = signup ? 'signup' : 'signin';
+              document.body.innerHTML = `<form id="${prefix}-form"><input id="${prefix}-username"><input id="${prefix}-password" type="password"><button id="${prefix}-submit">Submit</button></form><span id="auth-error" hidden>Refused</span><strong id="current-user" hidden></strong>`;
+              document.querySelector('form')!.addEventListener('submit', async event => {
+                event.preventDefault();
+                const socket = (window as unknown as { socket: WebSocket }).socket;
+                const reply = new Promise(resolve => socket.addEventListener('message', resolve, { once: true }));
+                socket.send(new Uint8Array(call)); await reply;
+                document.querySelector('#auth-error')!.removeAttribute('hidden');
+              });
+            }, { signup, call: [...callBytes(31, signup ? 'ordinary' : 'customer')] });
+            const actor = { page, loc: (id: string) => page.locator(`#${id}`) };
+            const capabilities = { actors: { get: () => actor },
+              'browser-interaction': { defaultWithin: 200, scopedUser: (user: string) => user,
+                testId: (id: string) => `#${id}`, sleep: (ms: number) => page.waitForTimeout(ms) },
+              'browser-observation': { defaultWithin: 100, expand: (value: string) => value,
+                testId: (id: string) => `#${id}`, sleep: (ms: number) => page.waitForTimeout(ms) } };
+            const user = signup ? 'ordinary' : 'customer';
+            const action = signup ? 'signUp' : 'signIn';
+            const submitted = await executeAction(ACTION_REGISTRY, action,
+              { do: action, actor: 'probe', name: user, exact: true,
+                deferAuthFailureToExpect: true }, { capabilities });
+            assert.equal(submitted.status, 'passed', `${mode}: refusal must reach the next assertion`);
+            const observed = await executeAction(ACTION_REGISTRY, 'expect',
+              { do: 'expect', actor: 'probe', testid: 'current-user', contains: user, within: 100 }, { capabilities });
+            assert.equal(observed.status, 'failed', `${mode}: the explicit session assertion must catch refusal`);
+            observations.push({ mode, submittedStatus: submitted.status, assertionStatus: observed.status,
+              nativeCalls: received.length });
+            return;
+          }
           if (['opaque-ambiguous-witness', 'opaque-unrelated-witness', 'opaque-closed-witness', 'opaque-abandoned-witness'].includes(mode)) {
             const observation = beginSpacetimeAuthObservation(page, 'signin', 'customer');
             const calls = mode === 'opaque-ambiguous-witness' ? [callBytes(31), callBytes(32)] : [callBytes(31)];
@@ -349,7 +382,8 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
               sleep: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)),
             } };
             const good = await executeAction(ACTION_REGISTRY, 'signIn',
-              { do: 'signIn', actor: 'probe', name: 'customer', exact: true, password: 'correct' }, { capabilities });
+              { do: 'signIn', actor: 'probe', name: 'customer', exact: true, password: 'correct',
+                deferAuthFailureToExpect: true }, { capabilities });
             assert.equal(good.status, 'passed', JSON.stringify(good));
             await page.evaluate(() => document.querySelector('#current-user')!.setAttribute('hidden', ''));
             const bad = await executeAction(ACTION_REGISTRY, 'signIn',
@@ -396,7 +430,8 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
               sleep: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)),
             } };
             const signup = await executeAction(ACTION_REGISTRY, 'signUp',
-              { do: 'signUp', actor: 'probe', name: 'ordinary', exact: true, password: 'ordinary-password' }, { capabilities });
+              { do: 'signUp', actor: 'probe', name: 'ordinary', exact: true, password: 'ordinary-password',
+                deferAuthFailureToExpect: true }, { capabilities });
             assert.equal(signup.status, 'passed', JSON.stringify(signup));
             await page.evaluate(() => document.querySelector('#current-user')!.setAttribute('hidden', ''));
             const signin = await executeAction(ACTION_REGISTRY, 'signIn',

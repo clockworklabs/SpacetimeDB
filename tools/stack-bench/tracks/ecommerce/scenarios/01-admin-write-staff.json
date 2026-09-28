@@ -58,7 +58,7 @@
             { "do": "expectActionOutcome", "actor": "staff", "outcome": "completed", "routeProvenBy": "admin" },
             { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before-admin-claim", "plus": 0 },
             { "do": "expectActionOutcome", "actor": "staff", "outcome": "application-refused", "routeProvenBy": "admin" },
-            { "do": "signUp", "actor": "claimant", "name": "ordinary" },
+            { "do": "signUp", "actor": "claimant", "name": "ordinary", "deferAuthFailureToExpect": true },
             { "do": "expect", "actor": "claimant", "testid": "current-user", "contains": "{user:ordinary}", "within": 10000 },
             { "do": "click", "actor": "claimant", "testid": "current-user", "unlessVisible": "signout" },
             { "do": "click", "actor": "claimant", "testid": "signout" },

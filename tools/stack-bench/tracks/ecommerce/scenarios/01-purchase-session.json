@@ -128,7 +128,7 @@
               "relativeTo": "speaker-before-control",
               "plus": -1
             },
-            { "do": "signIn", "actor": "query-input", "name": "kim" },
+            { "do": "signIn", "actor": "query-input", "name": "kim", "deferAuthFailureToExpect": true },
             { "do": "expect", "actor": "query-input", "testid": "current-user", "contains": "{user:kim}", "within": 6000 },
             { "do": "click", "actor": "query-input", "testid": "current-user", "unlessVisible": "signout" },
             { "do": "click", "actor": "query-input", "testid": "signout" },
