@@ -4,8 +4,8 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { restoreRepairSource } from '../src/runtime/source-materialization.js';
-import { hashAppSource, snapshotAppSource, restoreAppSource } from '../src/runtime/source-snapshot.js';
+import { materializeAcceptedSource, restoreRepairSource } from '../src/runtime/source-materialization.js';
+import { assertPlainAppSourceTree, hashAppSource, snapshotAppSource, restoreAppSource } from '../src/runtime/source-snapshot.js';
 
 test('rejected installed dependency changes cannot survive accepted source materialization', { timeout: 60_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-rollback-'));
@@ -67,5 +67,116 @@ test('clean dependency restore removes nested links without touching external pa
     assert.equal(existsSync(join(app, 'server', 'node_modules')), false);
     assert.equal(existsSync(join(app, 'abandoned')), false);
     assert.equal(readFileSync(join(outside, 'dependency.js'), 'utf8'), 'external');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('clean startup regenerates root local environment without changing accepted source', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-local-env-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(app);
+    writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(app, 'app.js'), 'export const ready = true;\n');
+    writeFileSync(join(app, '.env.local'), 'VITE_CONVEX_URL=stale\n');
+    writeFileSync(join(app, '.env'), 'APP_MODE=production\n');
+    snapshotAppSource(app, accepted);
+    assert.equal(existsSync(join(accepted, '.env.local')), false);
+    const sourceSha256 = hashAppSource(accepted).sha256;
+    writeFileSync(join(app, '.env.local'), 'VITE_CONVEX_URL=wrong-runtime-value\n');
+    await materializeAcceptedSource(accepted, app, { backend: 'convex', app, port: 0, probe: '' },
+      async (_spec, mode) => {
+        if (mode !== 'start') return;
+        assert.equal(existsSync(join(app, '.env.local')), false);
+        assert.equal(readFileSync(join(app, '.env'), 'utf8'), 'APP_MODE=production\n');
+        writeFileSync(join(app, '.env.local'), 'VITE_CONVEX_URL=current-lease\n');
+      });
+    assert.equal(hashAppSource(app).sha256, sourceSha256);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('clean restore discards root local environment even from an older source snapshot', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-old-local-env-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(app);
+    mkdirSync(accepted);
+    writeFileSync(join(accepted, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(accepted, '.env.local'), 'VITE_CONVEX_URL=old-lease\n');
+    writeFileSync(join(app, '.env.local'), 'VITE_CONVEX_URL=stale\n');
+    restoreAppSource(accepted, app, { cleanDependencies: true });
+    assert.equal(existsSync(join(app, '.env.local')), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an authored root local environment remains bound and survives clean startup', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-warm-local-env-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(app);
+    writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(app, '.env.local'), 'VITE_CONVEX_URL=http://lease\nAPP_MODE=authored\n');
+    snapshotAppSource(app, accepted);
+    assert.equal(existsSync(join(accepted, '.env.local')), true);
+    const sourceSha256 = hashAppSource(accepted).sha256;
+    await materializeAcceptedSource(accepted, app,
+      { backend: 'convex', app, port: 0, probe: '' }, async (_spec, mode) => {
+        if (mode === 'start') assert.equal(readFileSync(join(app, '.env.local'), 'utf8'),
+          'VITE_CONVEX_URL=http://lease\nAPP_MODE=authored\n');
+      });
+    assert.equal(hashAppSource(app).sha256, sourceSha256);
+    writeFileSync(join(app, '.env.local'), 'VITE_CONVEX_URL=http://lease\nAPP_MODE=changed\n');
+    assert.notEqual(hashAppSource(app).sha256, sourceSha256);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('nested local environment, root environment, and authored code remain source-bound', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-authored-env-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(join(app, 'client'), { recursive: true });
+    writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(app, '.env'), 'APP_MODE=production\n');
+    writeFileSync(join(app, 'client', '.env.local'), 'CLIENT_MODE=production\n');
+    writeFileSync(join(app, 'client', 'app.js'), 'export const ready = true;\n');
+    snapshotAppSource(app, accepted);
+    for (const [file, value] of [
+      ['.env', 'APP_MODE=changed\n'],
+      ['client/.env.local', 'CLIENT_MODE=changed\n'],
+      ['client/app.js', 'export const ready = false;\n'],
+    ] as const) {
+      await assert.rejects(materializeAcceptedSource(accepted, app,
+        { backend: 'convex', app, port: 0, probe: '' }, async (_spec, mode) => {
+          if (mode === 'start') writeFileSync(join(app, file), value);
+        }), /materialized application source differs from its accepted snapshot/);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('runtime file names do not hide authored directories or links', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-runtime-name-dir-'));
+  try {
+    const app = join(root, 'app');
+    mkdirSync(app);
+    writeFileSync(join(app, 'app.js'), 'export const ready = true;\n');
+    const original = hashAppSource(app).sha256;
+    for (const name of ['.env.local', 'cache.tsbuildinfo', 'a.log']) {
+      const directory = join(app, name);
+      mkdirSync(directory);
+      writeFileSync(join(directory, 'logic.js'), 'export const value = 1;\n');
+      const accepted = hashAppSource(app).sha256;
+      assert.notEqual(accepted, original, `${name} directory must belong to source identity`);
+      writeFileSync(join(directory, 'logic.js'), 'export const value = 2;\n');
+      assert.notEqual(hashAppSource(app).sha256, accepted, `${name} executable change must be detected`);
+      rmSync(directory, { recursive: true, force: true });
+    }
+    const accepted = join(root, 'accepted');
+    snapshotAppSource(app, accepted);
+    const outside = join(root, 'outside.js');
+    writeFileSync(outside, 'export const value = 3;\n');
+    symlinkSync(outside, join(app, '.env.local'), 'file');
+    assert.throws(() => assertPlainAppSourceTree(app), /unsupported filesystem entry.*\.env\.local/);
+    restoreAppSource(accepted, app, { cleanDependencies: true });
+    assert.equal(existsSync(join(app, '.env.local')), false);
+    assert.equal(readFileSync(outside, 'utf8'), 'export const value = 3;\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

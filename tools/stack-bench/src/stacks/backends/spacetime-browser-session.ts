@@ -28,7 +28,12 @@ interface Codec {
     makeSerializer(type: { tag: string }): (writer: Writer, value: unknown) => void;
   };
 }
-interface CapturedCall { call: Call; committed: boolean }
+interface CapturedCall { call: Call; committed: boolean; result?: string; observation?: AuthObservation }
+type AuthKind = 'signup' | 'signin';
+interface AuthObservation {
+  calls: CapturedCall[]; failed: boolean; finishWait(): void;
+}
+interface AuthWitness { kind: AuthKind; user: string; item: CapturedCall; accepted: boolean; usable: boolean }
 interface Socket {
   url: string;
   server: WebSocketRoute;
@@ -47,6 +52,9 @@ interface Capture {
   handshakes: Map<string, { url: string; protocol?: string }>;
   template?: { match: string; control: string; count: number; value: Template };
   auth?: { change(message: Message, socket: Socket): Message | null; fail(): void };
+  authObservation?: AuthObservation;
+  authWitnesses: AuthWitness[];
+  authUnproved: Set<AuthKind>;
 }
 type AuthReceipt = { shape: string; success: boolean; transport: 'spacetime-websocket';
   bodySha256: string; absentParameters?: string[] };
@@ -76,7 +84,7 @@ function serverBytes(bytes: string | Buffer): Buffer {
 }
 
 function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeTarget,
-  allowAppProxy = false): boolean {
+  allowAppProxy = false, allowClosedHandshakeOverlap = false): boolean {
   const url = new URL(socket.url);
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
   const handshakes = [...capture.handshakes.values()].filter(item => item.url === socket.url);
@@ -88,10 +96,13 @@ function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeT
   // The app chooses its proxy prefix. Keep the exact leased database suffix.
   const appProxy = allowAppProxy && url.origin === new URL(capture.page.url()).origin
     && url.pathname.endsWith(path);
+  const handshakesProved = handshakes.length === 1
+    || allowClosedHandshakeOverlap && handshakes.length > 1
+      && capture.sockets.filter(candidate => !candidate.closed && candidate.url === socket.url).length === 1;
   return !socket.closed && !socket.invalid && socket.identified
     && (direct || appProxy)
-    && handshakes.length === 1
-    && ['v2.bsatn.spacetimedb', 'v3.bsatn.spacetimedb'].includes(handshakes[0]!.protocol ?? '');
+    && handshakesProved
+    && handshakes.every(item => ['v2.bsatn.spacetimedb', 'v3.bsatn.spacetimedb'].includes(item.protocol ?? ''));
 }
 
 // Only selected repeatFormWrite actors use this route. Forward all application
@@ -99,7 +110,8 @@ function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeT
 export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
   if (captures.has(page)) return;
   const wire = await (codec ??= import(new URL('../spacetime-wire-codec.js', import.meta.url).href));
-  const capture: Capture = { page, codec: wire, sockets: [], handshakes: new Map() }; captures.set(page, capture);
+  const capture: Capture = { page, codec: wire, sockets: [], handshakes: new Map(),
+    authWitnesses: [], authUnproved: new Set() }; captures.set(page, capture);
   // Read the actual server handshake outside the app's mutable JavaScript realm.
   const inspector = await page.context().newCDPSession(page);
   inspector.on('Network.webSocketCreated', event => {
@@ -111,7 +123,22 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
       .find(([key]) => key.toLowerCase() === 'sec-websocket-protocol')?.[1];
   });
   inspector.on('Network.webSocketClosed', event => { capture.handshakes.delete(event.requestId); });
-  page.once('close', () => { void inspector.detach().catch(() => {}); });
+  page.on('request', request => {
+    const observation = capture.authObservation;
+    if (observation && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) {
+      observation.failed = true;
+      observation.finishWait();
+    }
+  });
+  page.once('close', () => {
+    capture.authObservation = undefined;
+    for (const socket of capture.sockets) for (const item of socket.calls) {
+      if (item.observation && !item.result) { item.observation.failed = true; item.observation.finishWait(); }
+    }
+    capture.authWitnesses = [];
+    capture.authUnproved.clear();
+    void inspector.detach().catch(() => {});
+  });
   await inspector.send('Network.enable');
   await page.routeWebSocket(/\/v1\/database\/[^/]+\/subscribe(?:\?|$)/, client => {
     const server = client.connectToServer();
@@ -121,6 +148,10 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
     capture.sockets.push(socket);
     const invalidate = () => {
       socket.invalid = true;
+      for (const item of socket.calls) if (item.observation && !item.result) {
+        item.observation.failed = true;
+        item.observation.finishWait();
+      }
       socket.pending?.finish('unknown');
       socket.authPending?.finish('unknown');
       capture.auth?.fail();
@@ -128,6 +159,10 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
     const close = () => {
       socket.closed = true;
       socket.invalid = true;
+      for (const item of socket.calls) if (item.observation && !item.result) {
+        item.observation.failed = true;
+        item.observation.finishWait();
+      }
       socket.pending?.finish('unknown');
       socket.authPending?.finish('unknown');
     };
@@ -149,7 +184,16 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
               changedFrame = true;
             }
             if (socket.calls.length >= 200) invalidate();
-            else socket.calls.push({ call: message.value, committed: false });
+            else {
+              const item: CapturedCall = { call: message.value, committed: false };
+              const observation = capture.authObservation;
+              if (observation) {
+                if (!leasedSocket(capture, socket, leasedSpacetimeTarget(), true, true)) observation.failed = true;
+                item.observation = observation;
+                observation.calls.push(item);
+              }
+              socket.calls.push(item);
+            }
           }
         }
         if (changedFrame) outbound = Buffer.concat(messages.map(message => encode(wire, wire.ClientMessage, message)));
@@ -169,8 +213,12 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
           }
           if (message.tag === 'ReducerResult') {
             const { requestId, result } = message.value;
-            for (const item of socket.calls) if (item.call.requestId === requestId)
+            for (const item of socket.calls) if (item.call.requestId === requestId) {
               item.committed = result.tag === 'Ok' || result.tag === 'OkEmpty';
+              item.result = result.tag;
+              item.observation?.finishWait();
+              item.observation = undefined;
+            }
             if (socket.pending?.id === requestId) socket.pending.finish(result.tag);
             if (socket.authPending?.id === requestId) socket.authPending.finish(result.tag);
           }
@@ -183,12 +231,71 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
   });
 }
 
+// Record the one native call made by an ordinary form submit. The caller must
+// verify the account state before this can identify a later modified request.
+export function beginSpacetimeAuthObservation(page: object, kind: AuthKind, user: string) {
+  const capture = captures.get(page);
+  if (!capture) return null;
+  if (capture.auth) return null;
+  if (capture.authObservation) throw new Error('Authentication observation is already active');
+  let finishWait!: () => void;
+  const done = new Promise<void>(resolve => { finishWait = resolve; });
+  const observation: AuthObservation = { calls: [], failed: false, finishWait };
+  capture.authObservation = observation;
+  let completed = false;
+  const discard = () => {
+    if (completed) return false;
+    completed = true;
+    if (capture.authObservation === observation) capture.authObservation = undefined;
+    if (observation.calls.length) capture.authUnproved.add(kind);
+    for (const socket of capture.sockets) {
+      socket.calls = socket.calls.filter(call => !observation.calls.includes(call));
+    }
+    observation.calls.length = 0;
+    return false;
+  };
+  return {
+    stop: () => { if (capture.authObservation === observation) capture.authObservation = undefined; },
+    discard,
+    finish: async (accepted: boolean, uiVerified = true) => {
+      if (completed) return false;
+      if (capture.authObservation === observation) capture.authObservation = undefined;
+      const item = observation.calls.length === 1 ? observation.calls[0] : undefined;
+      if (!uiVerified || !item || observation.failed) return discard();
+      const timeout = setTimeout(finishWait, 10_000);
+      try { if (!item.result) await done; } finally { clearTimeout(timeout); }
+      const valid = !observation.failed && ['Ok', 'OkEmpty', 'Err'].includes(item.result ?? '')
+        && (!accepted || item.committed);
+      if (!valid) return discard();
+      if (capture.authWitnesses.length >= 3) {
+        for (const socket of capture.sockets) {
+          socket.calls = socket.calls.filter(call => !capture.authWitnesses.some(witness => witness.item === call));
+        }
+        capture.authWitnesses = [];
+        return discard();
+      }
+      capture.authWitnesses.push({ kind, user, item, accepted, usable: kind === 'signin' && accepted });
+      completed = true;
+      observation.calls.length = 0;
+      return true;
+    },
+  };
+}
+
+export function confirmSpacetimeSignup(page: object, user: string): void {
+  const capture = captures.get(page);
+  if (!capture || capture.authUnproved.has('signup')) return;
+  for (const witness of capture.authWitnesses) {
+    if (witness.kind === 'signup' && witness.user === user && witness.item.committed) witness.usable = true;
+  }
+}
+
 // Patch the app's own credential reducer call on its existing socket. The
 // declared reducer parameters are the only authority for locating extra fields.
 export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
-  patch: (args: unknown[], parameters: readonly { name: string }[]) =>
+  patch: (args: unknown[], parameters: readonly { name: string }[], observedPassword?: string | null) =>
     { value: unknown; shape: string; absentParameters?: string[] } | null,
-  onFailure: () => void) {
+  onFailure: () => void, kind?: AuthKind, fieldsOnly = false) {
   const capture = captures.get(page);
   if (!capture) return null;
   if (capture.auth) throw new Error('Authentication request patch is already active');
@@ -241,6 +348,46 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       write: types.map(type => capture.codec.AlgebraicType.makeSerializer(type!)),
     });
   }
+  const observed = kind ? capture.authWitnesses.filter(witness => witness.kind === kind) : [];
+  const witnessValues = (witness: AuthWitness) => {
+    const declaration = declarations.get(witness.item.call.reducer);
+    if (!declaration) return null;
+    const reader = new capture.codec.BinaryReader(witness.item.call.args);
+    const values = declaration.read.map(read => read(reader));
+    if (reader.remaining) return null;
+    const writer = new capture.codec.BinaryWriter(128);
+    declaration.write.forEach((write, index) => write(writer, values[index]));
+    return Buffer.from(writer.getBuffer()).equals(Buffer.from(witness.item.call.args)) ? values : null;
+  };
+  type WitnessRoute = { reducer: string; userAt: number; credentialAt?: number; baseline: unknown[] };
+  let witnessRoute: WitnessRoute | undefined;
+  if (kind === 'signin' && observed.length === 2) {
+    const positive = observed.find(witness => witness.user === username && witness.accepted && witness.usable);
+    const negative = observed.find(witness => witness.user === username && !witness.accepted);
+    if (positive && negative && positive.item.call.reducer === negative.item.call.reducer
+      && positive.item.call.flags === negative.item.call.flags) {
+      const first = witnessValues(positive), second = witnessValues(negative);
+      const userAt = first?.findIndex(value => value === username) ?? -1;
+      const differences = first?.map((value, index) => isDeepStrictEqual(value, second?.[index]) ? -1 : index)
+        .filter(index => index >= 0) ?? [];
+      if (first && second && first.length === second.length && userAt >= 0
+        && first.filter(value => value === username).length === 1
+        && second[userAt] === username && differences.length === 1 && differences[0] !== userAt) {
+        witnessRoute = { reducer: positive.item.call.reducer, userAt,
+          credentialAt: differences[0]!, baseline: second };
+      }
+    }
+  }
+  if (kind === 'signup' && fieldsOnly && observed.length === 1 && observed[0]!.usable && observed[0]!.item.committed) {
+    const witness = observed[0]!;
+    const values = witnessValues(witness);
+    const userAt = values?.findIndex(value => value === witness.user) ?? -1;
+    if (values && userAt >= 0 && values.filter(value => value === witness.user).length === 1) {
+      witnessRoute = { reducer: witness.item.call.reducer, userAt, baseline: values };
+    }
+  }
+  // A partial witness never authorizes the old raw-value fallback.
+  const witnessUnproved = kind && capture.authUnproved.has(kind) || observed.length > 0 && !witnessRoute;
   let matched = false, settled = false, failed = false, timer: ReturnType<typeof setTimeout> | undefined;
   let finish!: (value: AuthReceipt | undefined) => void;
   const done = new Promise<AuthReceipt | undefined>(resolve => {
@@ -254,15 +401,29 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       if (!declaration) return null;
       const reader = new capture.codec.BinaryReader(message.value.args);
       const values = declaration.read.map(read => read(reader));
-      if (reader.remaining || values.filter(value => value === username).length !== 1
+      if (reader.remaining || witnessUnproved) return null;
+      let observedPassword: string | null | undefined;
+      if (witnessRoute) {
+        if (message.value.reducer !== witnessRoute.reducer || values.length !== witnessRoute.baseline.length
+          || values[witnessRoute.userAt] !== username || values.filter(value => value === username).length !== 1) return null;
+        if (kind === 'signup') {
+          observedPassword = null;
+        } else if (values.some((value, index) => index !== witnessRoute!.userAt
+          && !isDeepStrictEqual(value, witnessRoute!.baseline[index]))) return null;
+        else {
+          const credential = values[witnessRoute.credentialAt!];
+          if (typeof credential !== 'string' || credential === username) return null;
+          observedPassword = credential;
+        }
+      } else if (values.filter(value => value === username).length !== 1
         || values.filter(value => value === password).length !== 1) return null;
       if (matched) { fail(); throw new Error('Ambiguous credential call'); }
-      if (!leasedSocket(capture, socket, target, true)) return null;
+      if (!leasedSocket(capture, socket, target, true, true)) return null;
       const writer = new capture.codec.BinaryWriter(128);
       declaration.write.forEach((write, index) => write(writer, values[index]));
       if (!Buffer.from(writer.getBuffer()).equals(Buffer.from(message.value.args))
         || socket.authPending || socket.invalid) { fail(); throw new Error('Ambiguous credential call'); }
-      const changed = patch(values, declaration.names.map(name => ({ name })));
+      const changed = patch(values, declaration.names.map(name => ({ name })), observedPassword);
       if (!changed) return null;
       const args = changed.value;
       if (!Array.isArray(args) || args.length !== values.length) {
@@ -290,7 +451,16 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
   };
   return {
     receipt: async () => { const value = matched ? await done : undefined; return failed ? undefined : value; },
-    dispose: () => { capture.auth = undefined; finish(undefined); },
+    dispose: () => {
+      capture.auth = undefined;
+      finish(undefined);
+      for (const witness of capture.authWitnesses) {
+        for (const socket of capture.sockets) socket.calls = socket.calls.filter(item => item !== witness.item);
+      }
+      capture.authWitnesses = [];
+      capture.authUnproved.clear();
+      witnessRoute?.baseline.fill(undefined);
+    },
   };
 }
 

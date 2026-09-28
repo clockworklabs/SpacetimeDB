@@ -121,7 +121,8 @@ test('number observations use the authored budget across a control redraw', asyn
         JSON.stringify({ browser: browser.version(), observations }, null, 2));
     }
   });
-  for (const mode of ['within-budget', 'after-budget', 'wrong-value', 'input', 'textarea', 'select'] as const) {
+  // A final redraw must not erase a value already observed inside the budget.
+  for (const mode of ['within-budget', 'after-budget', 'wrong-value', 'final-redraw', 'input', 'textarea', 'select'] as const) {
     await t.test(mode, async () => {
       const page = await browser.newPage();
       try {
@@ -142,6 +143,11 @@ test('number observations use the authored budget across a control redraw', asyn
           const locator = page.locator('[data-testid="warehouse"]').filter({ hasText: 'East' })
             .locator('[data-testid="stock"]').filter({ visible: true }).first();
           return new Proxy(locator, { get(target, key) {
+            if (key === 'evaluate' && mode === 'final-redraw') return async (...args: Parameters<typeof locator.evaluate>) => {
+              const value = await target.evaluate(...args);
+              await page.locator('#value').evaluate(element => { element.innerHTML = ''; });
+              return value;
+            };
             if (key === 'waitFor') return async (options: Parameters<typeof locator.waitFor>[0]) => {
               await target.waitFor(options);
               if (redrawStarted) return;
@@ -177,8 +183,11 @@ test('number observations use the authored budget across a control redraw', asyn
           observedRestoreAfterMs: restoredAt ? Number(restoredAt) - started : null,
           elapsedMs, status: result.status, finding: result.finding ?? null, summary: result.summary ?? null });
         if (mode === 'within-budget') assert(restoredAt && Number(restoredAt) - started < 1000);
-        assert.equal(result.status, mode === 'after-budget' || mode === 'wrong-value' ? 'failed' : 'passed', result.summary ?? mode);
-        if (mode === 'wrong-value') assert.equal(result.finding?.kind, 'number-mismatch');
+        assert.equal(result.status, ['after-budget', 'wrong-value', 'final-redraw'].includes(mode) ? 'failed' : 'passed', result.summary ?? mode);
+        if (mode === 'wrong-value' || mode === 'final-redraw') {
+          assert.equal(result.finding?.kind, 'number-mismatch');
+          assert.equal(result.finding?.fields.observed, 0);
+        }
       } finally { await page.close(); }
     });
   }

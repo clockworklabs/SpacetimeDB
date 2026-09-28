@@ -685,7 +685,13 @@ async function expectNumber({ input, capabilities, signal }:
   let last = null;
   for (;;) {
     if (Date.now() >= deadline) break;
-    last = readControlNumber(await readValue(loc, Math.max(1, deadline - Date.now())), input.testid);
+    try {
+      last = readControlNumber(await readValue(loc, Math.max(1, deadline - Date.now())), input.testid);
+    } catch (error) {
+      if (last !== null && !signal?.aborted && Date.now() >= deadline
+        && errorField(error, 'name') === 'TimeoutError' && !harnessBrowserFailure(error)) break;
+      throw error;
+    }
     if (Date.now() > deadline) break;
     if (last !== null && matches(last)) return { value: last };
     await browser.sleep(Math.min(250, deadline - Date.now()), signal);

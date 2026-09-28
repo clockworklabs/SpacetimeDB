@@ -1,4 +1,4 @@
-import { accessSync, chmodSync, constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync,
+import { accessSync, chmodSync, constants, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
   rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
@@ -40,7 +40,16 @@ function preservedRuntimeFile(rel: string): boolean {
     || normalized.endsWith('.log');
 }
 
-const transientRuntimeFile = (rel: string): boolean => basename(rel).endsWith('.tsbuildinfo');
+function transientRuntimeFile(path: string, rel: string): boolean {
+  if (basename(rel).endsWith('.tsbuildinfo')) return true;
+  if (rel.replaceAll('\\', '/') !== '.env.local') return false;
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.size > 64 * 1024) return false;
+  // Convex writes leased URLs here; an extra authored key keeps the file in source.
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/).map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'));
+  return lines.length > 0 && lines.every(line => /^(?:VITE_CONVEX_URL|VITE_CONVEX_SITE_URL)\s*=/.test(line));
+}
 
 function directoryDisposition(rel: string): DirectoryDisposition {
   const normalized = rel.replaceAll('\\', '/');
@@ -69,9 +78,9 @@ function copySourceTree(from: string, to: string, rel = '', writable = false): v
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
     if (directoryDisposition(childRel) !== 'source') continue;
-    if (!entry.isDirectory() && (preservedRuntimeFile(childRel) || transientRuntimeFile(childRel))) continue;
     const source = join(from, entry.name);
     const target = join(to, entry.name);
+    if (!entry.isDirectory() && (preservedRuntimeFile(childRel) || transientRuntimeFile(source, childRel))) continue;
     if (entry.isDirectory()) copySourceTree(source, target, childRel, writable);
     else if (entry.isFile()) {
       cpSync(source, target, { force: true, dereference: false });
@@ -112,6 +121,10 @@ function syncSourceTree(snapshot: string, appDir: string, cleanDependencies: boo
 
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
+    if (!entry.isDirectory() && transientRuntimeFile(join(appDir, entry.name), childRel)) {
+      rmSync(join(appDir, entry.name), { force: true });
+      continue;
+    }
     if (cleanDependencies && entry.name === 'node_modules') {
       rmSync(join(appDir, entry.name), { recursive: true, force: true });
       continue;
@@ -131,6 +144,7 @@ function syncSourceTree(snapshot: string, appDir: string, cleanDependencies: boo
     const childRel = rel ? join(rel, entry.name) : entry.name;
     const source = join(snapshot, entry.name);
     const target = join(appDir, entry.name);
+    if (!entry.isDirectory() && transientRuntimeFile(source, childRel)) continue;
     if (entry.isDirectory()) {
       if (existsSync(target) && !lstatSync(target).isDirectory()) rmSync(target, { force: true });
       syncSourceTree(source, target, cleanDependencies, childRel);
@@ -159,8 +173,8 @@ export function snapshotAppSource(appDir: string, to: string): void {
 }
 
 export function hashAppSource(appDir: string): HashFilesResult {
-  return hashDirectory(appDir, { exclude: (rel) => directoryDisposition(rel) !== 'source'
-    || preservedRuntimeFile(rel) || transientRuntimeFile(rel) });
+  return hashDirectory(appDir, { exclude: (rel, entry) => directoryDisposition(rel) !== 'source'
+    || (!entry.isDirectory() && (preservedRuntimeFile(rel) || transientRuntimeFile(join(appDir, rel), rel))) });
 }
 
 export function assertAppSourceIdentity(appDir: string, expectedSha256: string,
@@ -182,7 +196,8 @@ export function assertPlainAppSourceTree(appDir: string): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const childRel = rel ? join(rel, entry.name) : entry.name;
       if (directoryDisposition(childRel) !== 'source') continue;
-      if (!entry.isDirectory() && (preservedRuntimeFile(childRel) || transientRuntimeFile(childRel))) continue;
+      if (!entry.isDirectory() && (preservedRuntimeFile(childRel)
+        || transientRuntimeFile(join(directory, entry.name), childRel))) continue;
       if (entry.isDirectory()) walk(join(directory, entry.name), childRel);
       else if (!entry.isFile()) {
         throw new Error(`application source contains unsupported filesystem entry ${childRel}`);

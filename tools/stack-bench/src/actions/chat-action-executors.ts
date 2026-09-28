@@ -9,6 +9,7 @@ import {
 import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { withAuthRequestPatch, type AuthRequestPatch } from './auth-request-patch.js';
+import { beginSpacetimeAuthObservation, confirmSpacetimeSignup } from '../stacks/backends/spacetime-browser-session.js';
 
 type ChatArguments<Input extends { readonly actor: string }> =
   ActorActionArguments<Input, BrowserActorCapabilities>;
@@ -44,7 +45,7 @@ interface ManyMessagesInput {
   readonly prefix: string;
 }
 
-async function finishRegistration(args: ChatArguments<AccountInput>): Promise<void> {
+async function finishRegistration(args: ChatArguments<AccountInput>, beforeFallback?: () => void): Promise<void> {
   const actor = actorFor(args.capabilities, args.input.actor);
   const browser = browserFor(args.capabilities);
   try {
@@ -59,6 +60,7 @@ async function finishRegistration(args: ChatArguments<AccountInput>): Promise<vo
     if (await actor.loc('auth-error').isVisible()) return;
     if (!(await actor.loc('signin-username').or(actor.loc('signin-toggle'))
       .filter({ visible: true }).first().isVisible())) return;
+    beforeFallback?.();
     await signIn({ ...args, input: { ...args.input, requestPatch: undefined, awaitSignedIn: false } }, true);
   }
 }
@@ -72,7 +74,7 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
       user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
-      browser.authRequestPatch);
+      browser.authRequestPatch, 'signup');
     if (result.requestPatch.success !== false && (result.requestPatch.status ?? 200) < 400) {
       await finishRegistration({ input, capabilities, signal });
     }
@@ -102,16 +104,25 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     inconclusive('invalid-input', { detail: 'signup input changed the requested username; use a compatible scenario account name' });
   }
   await actor.page.locator(browser.testId('signup-password')).first().fill(password);
-  await actor.page.locator(browser.testId('signup-submit')).first().click();
-  if (input.expectFailure) {
-    await browser.sleep(input.settleMs ?? 2000, signal);
-    return { user, authenticationPath: 'local-form', expectedFailure: true };
+  const observation = beginSpacetimeAuthObservation(actor.page, 'signup', user);
+  try {
+    await actor.page.locator(browser.testId('signup-submit')).first().click();
+    if (input.expectFailure) {
+      await browser.sleep(input.settleMs ?? 2000, signal);
+      return { user, authenticationPath: 'local-form', expectedFailure: true };
+    }
+    await finishRegistration({ input, capabilities, signal }, () => observation?.stop());
+    observation?.stop();
+    if (input.awaitSignedIn === false) {
+      return { user, authenticationPath: 'local-form', submitted: true };
+    }
+    await actor.page.locator(browser.testId('current-user')).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    await observation?.finish(true, (await actor.loc('current-user').innerText()).includes(user));
+    return { user, authenticationPath: 'local-form', signedUp: true };
+  } finally {
+    observation?.discard();
   }
-  await finishRegistration({ input, capabilities, signal });
-  if (input.awaitSignedIn === false) return { user, authenticationPath: 'local-form', submitted: true };
-  await actor.page.locator(browser.testId('current-user')).first()
-    .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
-  return { user, authenticationPath: 'local-form', signedUp: true };
 }
 
 async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false): Promise<Record<string, unknown>> {
@@ -124,7 +135,7 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
     if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
     const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
       user, password, input.requestPatch, () => signIn({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
-      browser.authRequestPatch);
+      browser.authRequestPatch, 'signin');
     await currentUser.or(actor.loc('auth-error')).filter({ visible: true }).first()
       .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
     return result;
@@ -139,6 +150,7 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   if (await restoredSession()) return { user, signedIn: false };
   const username = actor.page.locator(browser.testId('signin-username')).first();
   const toggle = actor.loc('signin-toggle');
+  let observation: ReturnType<typeof beginSpacetimeAuthObservation> = null;
   try {
     const entry = username.or(toggle);
     await (acceptRestoredSession ? entry.or(currentUser) : entry)
@@ -155,8 +167,31 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
       inconclusive('invalid-input', { detail: 'signin input changed the requested username; use a compatible scenario account name' });
     }
     await actor.page.locator(browser.testId('signin-password')).first().fill(password);
+    observation = beginSpacetimeAuthObservation(actor.page, 'signin', user);
     await actor.page.locator(browser.testId('signin-submit')).first().click();
+    if (input.expectFailure) {
+      if (observation) {
+        try { await actor.loc('auth-error').waitFor({ state: 'visible', timeout: Math.min(browser.defaultWithin * 2, 6000) }); }
+        catch (error) {
+          if (!(error instanceof Error) || error.name !== 'TimeoutError') throw error;
+        }
+      } else await browser.sleep(input.settleMs ?? 2000, signal);
+      observation?.stop();
+      await observation?.finish(false, await actor.loc('auth-error').isVisible() && !(await currentUser.isVisible()));
+      return { user, authenticationPath: 'local-form', expectedFailure: true };
+    }
+    if (input.awaitSignedIn === false) {
+      observation?.discard();
+      return { user, authenticationPath: 'local-form', submitted: true };
+    }
+    await currentUser.waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    observation?.stop();
+    const correctUser = (await currentUser.innerText()).includes(user);
+    await observation?.finish(true, correctUser);
+    if (correctUser) confirmSpacetimeSignup(actor.page, user);
+    return { user, authenticationPath: 'local-form', signedIn: true };
   } catch (error) {
+    observation?.discard();
     // Restoration can remove the form between the readiness check and an interaction.
     if (!signal?.aborted && error instanceof Error && error.name === 'TimeoutError'
       && !('classification' in error) && !harnessBrowserFailure(error) && await restoredSession()) {
@@ -164,14 +199,6 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
     }
     throw error;
   }
-  if (input.expectFailure) {
-    await browser.sleep(input.settleMs ?? 2000, signal);
-    return { user, authenticationPath: 'local-form', expectedFailure: true };
-  }
-  if (input.awaitSignedIn === false) return { user, authenticationPath: 'local-form', submitted: true };
-  await actor.page.locator(browser.testId('current-user')).first()
-    .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
-  return { user, authenticationPath: 'local-form', signedIn: true };
 }
 
 async function createRoom({ input, capabilities }: ChatArguments<RoomInput>) {

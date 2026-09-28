@@ -100,20 +100,23 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
   return { body: JSON.stringify(value), ...receipt };
 }
 
-function patchAuthValues(body: unknown, username: string, password: string, patch: AuthRequestPatch,
+function patchAuthValues(body: unknown, username: string, password: string | undefined, patch: AuthRequestPatch,
   parameters?: readonly CallParameter[]) {
+  if (password === undefined && Object.hasOwn(patch, 'password')) throw new Error('Credential value is unproved');
   const fields = requestedChange(patch);
   const copy = structuredClone(body);
-  const matches: { container: Record<string, unknown> | unknown[]; passwordKey: string }[] = [];
+  const matches: { container: Record<string, unknown> | unknown[]; passwordKey?: string }[] = [];
   const visit = (value: unknown): void => {
     if (!value || typeof value !== 'object') return;
     const entries = Object.entries(value);
-    const users = entries.filter(([, v]) => v === username), secrets = entries.filter(([, v]) => v === password);
-    if (users.length && secrets.length) {
-      if (users.length !== 1 || secrets.length !== 1 || users[0]![0] === secrets[0]![0]) {
+    const users = entries.filter(([, v]) => v === username);
+    const secrets = password === undefined ? [] : entries.filter(([, v]) => v === password);
+    if (users.length && (password === undefined || secrets.length)) {
+      if (users.length !== 1 || password !== undefined &&
+        (secrets.length !== 1 || users[0]![0] === secrets[0]![0])) {
         throw new Error('Ambiguous credential values');
       }
-      matches.push({ container: value as Record<string, unknown>, passwordKey: secrets[0]![0] });
+      matches.push({ container: value as Record<string, unknown>, passwordKey: secrets[0]?.[0] });
     }
     for (const [, child] of entries) visit(child);
   };
@@ -122,7 +125,7 @@ function patchAuthValues(body: unknown, username: string, password: string, patc
   if (matches.length !== 1) throw new Error('Multiple credential containers');
   const { container, passwordKey } = matches[0]!;
   if (Object.hasOwn(patch, 'password')) {
-    Object.defineProperty(container, passwordKey,
+    Object.defineProperty(container, passwordKey!,
       { value: patch.password, enumerable: true, writable: true, configurable: true });
   }
   const absentParameters: string[] = [];
@@ -236,7 +239,7 @@ async function callParameters(request: Request): Promise<CallParameter[] | undef
 
 export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unroute'>,
   username: string, password: string, patch: AuthRequestPatch, submit: () => Promise<T>,
-  platformPatch?: PlatformAuthPatch | null) {
+  platformPatch?: PlatformAuthPatch | null, nativeKind?: 'signup' | 'signin') {
   let matches = 0, error = false;
   const pending: Promise<void>[] = [];
   let receipt: PatchReceipt | undefined;
@@ -258,11 +261,11 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
   };
   let spacetime: Awaited<ReturnType<typeof startSpacetimeAuthPatch>>;
   try {
-    spacetime = await startSpacetimeAuthPatch(page, username, password, (args, parameters) => {
-      const changed = patchAuthValues(args, username, password, patch, parameters);
+    spacetime = await startSpacetimeAuthPatch(page, username, password, (args, parameters, observedPassword) => {
+      const changed = patchAuthValues(args, username, observedPassword === null ? undefined : observedPassword ?? password, patch, parameters);
       if (changed && ++matches !== 1) throw new Error('Multiple credential requests');
       return changed;
-    }, () => { error = true; });
+    }, () => { error = true; }, nativeKind, !Object.hasOwn(patch, 'password'));
   } catch (error) {
     if (sockets) sockets.active = undefined;
     throw error;

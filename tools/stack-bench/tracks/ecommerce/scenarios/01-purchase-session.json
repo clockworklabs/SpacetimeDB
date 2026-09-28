@@ -11,7 +11,6 @@
       "actors": [
         "buyer",
         "guest",
-        "wrong-password",
         "duplicate",
         "query-input"
       ],
@@ -129,35 +128,40 @@
               "relativeTo": "speaker-before-control",
               "plus": -1
             },
+            { "do": "signIn", "actor": "query-input", "name": "kim" },
+            { "do": "expect", "actor": "query-input", "testid": "current-user", "contains": "{user:kim}", "within": 6000 },
+            { "do": "click", "actor": "query-input", "testid": "current-user", "unlessVisible": "signout" },
+            { "do": "click", "actor": "query-input", "testid": "signout" },
+            { "do": "waitUntilAbsent", "actor": "query-input", "testid": "current-user", "within": 6000 },
             {
               "do": "signIn",
-              "actor": "wrong-password",
+              "actor": "query-input",
               "name": "kim",
               "password": "not-kims-password",
               "expectFailure": true
             },
             {
               "do": "expect",
-              "actor": "wrong-password",
+              "actor": "query-input",
               "testid": "auth-error",
               "within": 6000
             },
             {
               "do": "reload",
-              "actor": "wrong-password",
+              "actor": "query-input",
               "application": true,
               "settleMs": 1000
             },
             {
               "do": "expect",
-              "actor": "wrong-password",
+              "actor": "query-input",
               "testid": "current-user",
               "absent": true,
               "within": 1000
             },
             {
               "do": "callAction",
-              "actor": "wrong-password",
+              "actor": "query-input",
               "from": "buyer",
               "action": "buy",
               "namedAction": {
@@ -186,7 +190,7 @@
             },
             {
               "do": "expectActionOutcome",
-              "actor": "wrong-password",
+              "actor": "query-input",
               "outcome": "application-refused",
               "routeProvenBy": "buyer"
             },
