@@ -1,0 +1,900 @@
+{
+  "track": "ecommerce",
+  "level": 3,
+  "recipe": "ecommerce.progression-catalog",
+  "featureCatalog": "progression/ecommerce.json",
+  "candidate": "d9cf20f6d7512b7b8e8e7c2cb17d433624da9712",
+  "finalized": true,
+  "preparationInputsSha256": "f3c5156d636a4345e286bbadc5ce1b927ddbadb92008e4678da8dfadb323b1ad",
+  "recipeSha256": "aada3dfbfd205afed9ac7019f0b5ea21985f94263efbffc126485fb305e1e316",
+  "checks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "slots": {
+    "spacetime": 480,
+    "postgres": 488,
+    "mongodb": 496,
+    "convex": 504
+  },
+  "mutations": {
+    "spacetime": [
+      "restock-client-snapshot-overwrites-concurrent-purchases",
+      "restock-race-records-wrong-order-total",
+      "every-signed-in-customer-is-treated-as-an-admin",
+      "warehouse-view-omits-west",
+      "existing-cart-line-does-not-increment",
+      "checkout-does-not-empty-cart",
+      "operator-authorization-allows-customer-transfer",
+      "customer-can-cancel-foreign-order-1-1",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "faceted-search-ignores-category",
+      "active-search-uses-purchase-ranking",
+      "faceted-search-next-page-does-not-advance",
+      "warehouse-totals-are-frozen-at-page-load",
+      "transfer-skips-the-source-holding-check",
+      "checkout-crash-integrity",
+      "checkout-crash-sibling-stock",
+      "checkout-crash-durability",
+      "mixed-history-lost-transfer",
+      "mixed-history-wrong-price",
+      "mixed-history-ignored-write",
+      "mixed-history-reject-valid-write",
+      "mixed-history-repeat-cancel",
+      "mixed-history-wrong-owner",
+      "checkout-empty-replay-creates-order",
+      "checkout-rejects-every-request",
+      "checkout-replay-loses-prior-order",
+      "checkout-clears-cart-without-order",
+      "cancel-rejects-every-request"
+    ],
+    "postgres": [
+      "restock-race-records-wrong-order-total",
+      "admin-warehouse-view-drops-one-location",
+      "purchase-read-write-loses-concurrent-stock",
+      "operator-authorization-allows-customer-transfer",
+      "customer-can-cancel-foreign-order-1-1",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "progression-faceted-filter-ignores-category",
+      "active-search-uses-purchase-ranking",
+      "progression-pagination-always-shows-first-page",
+      "progression-concurrent-cart-line-does-not-increment",
+      "progression-concurrent-checkout-leaves-cart-lines",
+      "progression-staff-sees-admin-navigation",
+      "transfer-overdraft-guard-skips-bulk-transfers",
+      "transfer-does-not-publish-warehouse-totals",
+      "checkout-crash-integrity",
+      "checkout-crash-sibling-stock",
+      "checkout-crash-durability",
+      "mixed-history-lost-transfer",
+      "mixed-history-wrong-price",
+      "mixed-history-ignored-write",
+      "mixed-history-reject-valid-write",
+      "mixed-history-repeat-cancel",
+      "mixed-history-wrong-owner",
+      "checkout-empty-replay-creates-order",
+      "checkout-rejects-every-request",
+      "checkout-replay-loses-prior-order",
+      "checkout-clears-cart-without-order",
+      "cancel-trusts-submitted-owner",
+      "cancel-claim-commits-then-refuses",
+      "cancel-rejects-every-request"
+    ],
+    "mongodb": [
+      "restock-race-records-wrong-order-total",
+      "warehouse-view-omits-one-location",
+      "operator-authorization-allows-customer-transfer",
+      "customer-can-cancel-foreign-order-1-1",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "staff-can-see-admin-navigation",
+      "faceted-search-ignores-category",
+      "active-search-uses-purchase-ranking",
+      "pagination-repeats-first-page",
+      "concurrent-cart-add-does-not-increment",
+      "checkout-claim-is-not-atomic",
+      "purchase-read-write-loses-concurrent-stock",
+      "overdraw-transfer-is-accepted",
+      "checkout-crash-integrity",
+      "checkout-crash-sibling-stock",
+      "checkout-crash-durability",
+      "mixed-history-lost-transfer",
+      "mixed-history-wrong-price",
+      "mixed-history-ignored-write",
+      "mixed-history-reject-valid-write",
+      "mixed-history-repeat-cancel",
+      "mixed-history-wrong-owner",
+      "checkout-empty-replay-creates-order",
+      "checkout-rejects-every-request",
+      "checkout-replay-loses-prior-order",
+      "checkout-clears-cart-without-order",
+      "cancel-trusts-submitted-owner",
+      "cancel-rejects-every-request"
+    ],
+    "convex": [
+      "warehouse-view-omits-one-location",
+      "faceted-search-ignores-category",
+      "active-search-uses-purchase-ranking",
+      "pagination-repeats-first-page",
+      "checkout-retains-purchased-cart",
+      "checkout-rejects-every-request",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "customer-can-cancel-foreign-order-1-1",
+      "concurrent-cart-add-does-not-increment",
+      "restock-race-records-wrong-order-total",
+      "overdraw-transfer-is-accepted",
+      "staff-can-see-admin-navigation",
+      "checkout-crash-integrity",
+      "checkout-crash-sibling-stock",
+      "checkout-crash-durability",
+      "mixed-history-lost-transfer",
+      "mixed-history-wrong-price",
+      "mixed-history-ignored-write",
+      "mixed-history-reject-valid-write",
+      "mixed-history-repeat-cancel",
+      "mixed-history-wrong-owner",
+      "checkout-empty-replay-creates-order",
+      "checkout-replay-loses-prior-order",
+      "checkout-clears-cart-without-order",
+      "cancel-trusts-submitted-owner",
+      "cancel-rejects-every-request"
+    ]
+  },
+  "controls": {
+    "spacetime": [
+      {
+        "id": "restock-client-snapshot-overwrites-concurrent-purchases",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "restock-race-records-wrong-order-total",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "every-signed-in-customer-is-treated-as-an-admin",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "warehouse-view-omits-west",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "existing-cart-line-does-not-increment",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+        ]
+      },
+      {
+        "id": "checkout-does-not-empty-cart",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "customer-can-cancel-foreign-order-1-1",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "faceted-search-ignores-category",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.401a"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      },
+      {
+        "id": "faceted-search-next-page-does-not-advance",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ]
+      },
+      {
+        "id": "warehouse-totals-are-frozen-at-page-load",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a"
+        ]
+      },
+      {
+        "id": "transfer-skips-the-source-holding-check",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      },
+      {
+        "id": "checkout-crash-integrity",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-sibling-stock",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-durability",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ]
+      },
+      {
+        "id": "mixed-history-lost-transfer",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-price",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-ignored-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-reject-valid-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-repeat-cancel",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-owner",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "checkout-empty-replay-creates-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-rejects-every-request",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-replay-loses-prior-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-clears-cart-without-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "cancel-rejects-every-request",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      }
+    ],
+    "postgres": [
+      {
+        "id": "restock-race-records-wrong-order-total",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "admin-warehouse-view-drops-one-location",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "purchase-read-write-loses-concurrent-stock",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "customer-can-cancel-foreign-order-1-1",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "progression-faceted-filter-ignores-category",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.401a"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      },
+      {
+        "id": "progression-pagination-always-shows-first-page",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ]
+      },
+      {
+        "id": "progression-concurrent-cart-line-does-not-increment",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+        ]
+      },
+      {
+        "id": "progression-concurrent-checkout-leaves-cart-lines",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "progression-staff-sees-admin-navigation",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "transfer-overdraft-guard-skips-bulk-transfers",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      },
+      {
+        "id": "transfer-does-not-publish-warehouse-totals",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a"
+        ]
+      },
+      {
+        "id": "checkout-crash-integrity",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-sibling-stock",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-durability",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ]
+      },
+      {
+        "id": "mixed-history-lost-transfer",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-price",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-ignored-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-reject-valid-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-repeat-cancel",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-owner",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "checkout-empty-replay-creates-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-rejects-every-request",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-replay-loses-prior-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-clears-cart-without-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "cancel-trusts-submitted-owner",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "cancel-claim-commits-then-refuses",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "cancel-rejects-every-request",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      }
+    ],
+    "mongodb": [
+      {
+        "id": "restock-race-records-wrong-order-total",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "warehouse-view-omits-one-location",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "customer-can-cancel-foreign-order-1-1",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "staff-can-see-admin-navigation",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "faceted-search-ignores-category",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.401a"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      },
+      {
+        "id": "pagination-repeats-first-page",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ]
+      },
+      {
+        "id": "concurrent-cart-add-does-not-increment",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+        ]
+      },
+      {
+        "id": "checkout-claim-is-not-atomic",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "purchase-read-write-loses-concurrent-stock",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "overdraw-transfer-is-accepted",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      },
+      {
+        "id": "checkout-crash-integrity",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-sibling-stock",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-durability",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ]
+      },
+      {
+        "id": "mixed-history-lost-transfer",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-price",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-ignored-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-reject-valid-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-repeat-cancel",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-owner",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "checkout-empty-replay-creates-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-rejects-every-request",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-replay-loses-prior-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-clears-cart-without-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "cancel-trusts-submitted-owner",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "cancel-rejects-every-request",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      }
+    ],
+    "convex": [
+      {
+        "id": "warehouse-view-omits-one-location",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "faceted-search-ignores-category",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.401a"
+        ]
+      },
+      {
+        "id": "active-search-uses-purchase-ranking",
+        "targets": [
+          "ecommerce.spec.search-ordering.search-ordering.402b"
+        ]
+      },
+      {
+        "id": "pagination-repeats-first-page",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ]
+      },
+      {
+        "id": "checkout-retains-purchased-cart",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-rejects-every-request",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "customer-can-cancel-foreign-order-1-1",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "concurrent-cart-add-does-not-increment",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+        ]
+      },
+      {
+        "id": "restock-race-records-wrong-order-total",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ]
+      },
+      {
+        "id": "overdraw-transfer-is-accepted",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      },
+      {
+        "id": "staff-can-see-admin-navigation",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "checkout-crash-integrity",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-sibling-stock",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ]
+      },
+      {
+        "id": "checkout-crash-durability",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ]
+      },
+      {
+        "id": "mixed-history-lost-transfer",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-price",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-ignored-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-reject-valid-write",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-repeat-cancel",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-owner",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ]
+      },
+      {
+        "id": "checkout-empty-replay-creates-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-replay-loses-prior-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "checkout-clears-cart-without-order",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ]
+      },
+      {
+        "id": "cancel-trusts-submitted-owner",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      },
+      {
+        "id": "cancel-rejects-every-request",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ]
+      }
+    ]
+  },
+  "mutationManifestSha256": {
+    "spacetime": "e5fd8b8752cc89f12c019b72df9959b3632c2abedcf08a5dc5de943a0b3c67f0",
+    "postgres": "2c757bf0ededa88d5b8d4d078ed74dc16bea090e9ce688f10d7e1ba71bd87155",
+    "mongodb": "255140a2cc0c4ffcdd026cc25418c1bda80f15e4eb7829bbca43d06206ebc07d",
+    "convex": "f08b9fd2ae3e6f9ebe60908110861e188bede3e639c7264a45f7e41c6d1a313e"
+  },
+  "ports": [
+    3790,
+    3791,
+    3792,
+    6789,
+    6790,
+    6791,
+    6897,
+    6898,
+    6899,
+    6953,
+    6954,
+    6955,
+    7061,
+    7062,
+    7063,
+    7219,
+    7220,
+    7221,
+    7427,
+    7428,
+    7429,
+    7505,
+    7506,
+    7507,
+    13714,
+    13715,
+    13716
+  ],
+  "locks": [
+    "listener:http://127.0.0.1:3790",
+    "listener:http://127.0.0.1:3791",
+    "listener:http://127.0.0.1:3792",
+    "slot:ecommerce:spacetime:run480",
+    "slot:ecommerce:spacetime:run481",
+    "slot:ecommerce:spacetime:run482",
+    "slot:ecommerce:postgres:run488",
+    "slot:ecommerce:postgres:run489",
+    "slot:ecommerce:postgres:run490",
+    "slot:ecommerce:mongodb:run496",
+    "slot:ecommerce:mongodb:run497",
+    "slot:ecommerce:mongodb:run498",
+    "listener:http://127.0.0.1:13714",
+    "listener:http://127.0.0.1:13715",
+    "listener:http://127.0.0.1:13716",
+    "slot:ecommerce:convex:run504",
+    "slot:ecommerce:convex:run505",
+    "slot:ecommerce:convex:run506"
+  ],
+  "repetitions": 1,
+  "mutationWorkers": 3,
+  "modelCalls": 0,
+  "qualified": false
+}

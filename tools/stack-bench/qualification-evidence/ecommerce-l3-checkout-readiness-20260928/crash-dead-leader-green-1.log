@@ -1,0 +1,24 @@
+▶ hosted crash uses owned writer freeze while preserving complete process quiescence
+  ✔ direct (4305.410401ms)
+  ✔ proxy (4682.059644ms)
+  ✔ late-auxiliary (5367.902652ms)
+  ✔ disarming before CRASH leaves the application running (1746.066069ms)
+  ✔ missing (1677.229393ms)
+  ✔ foreign (5473.274627ms)
+  ✔ stale (2502.897097ms)
+  ✔ a new listener after arming belongs to the complete writer freeze (2389.548142ms)
+  ✔ a terminated leader cannot hide a live owned worker (3063.940085ms)
+  ✔ respawn cannot bypass complete quiescence (2522.007894ms)
+  removed the leased run container sb-d52e27c1f90eb7d3-browser
+  removed the leased run container sb-d52e27c1f90eb7d3-build
+  removed the leased run container sb-d52e27c1f90eb7d3-backend
+  ✔ database boundary is unchanged (2111.719219ms)
+✔ hosted crash uses owned writer freeze while preserving complete process quiescence (44452.021924ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 46520.842274

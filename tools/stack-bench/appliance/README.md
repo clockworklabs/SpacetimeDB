@@ -142,12 +142,13 @@ expiry during a request stops that request as a provider failure. Log in again
 and replace the stored file before another attempt.
 OpenAI receipts use observed tokens and the plan's frozen rates. They are a
 comparison cost, not an account-plan invoice. Use rates that cover the selected
-model and context range. Hosted tools, a requested service tier, files, images
-without a verified token bound, non-text output, stored prompts and server-side
+model and context range. Hosted tools, a requested service tier, files, remote
+images, non-text output, stored prompts and server-side
 conversation references are forwarded and marked unpriced. Inline image bytes
 are not counted as text tokens. Models with a verified image-token bound use it
-for reservation; other images, including Sol screenshots, retain unknown-cost
-receipts. The output bound and priced text reservation still apply. Provider
+for reservation. Other inline images, including Sol screenshots, require complete
+provider token usage for final pricing; without it, their cost remains unknown.
+The output bound and priced text reservation still apply. Provider
 usage records the observed normalized token cost without claiming to cover all
 unpriced charges.
 
