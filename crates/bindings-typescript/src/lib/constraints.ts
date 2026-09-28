@@ -44,5 +44,5 @@ export type ColumnIsUnique<M extends ColumnMetadata<any>> = M extends
  * of constraint definitions.
  */
 export type ConstraintOpts<AllowedCol extends string> = {
-  name?: string | undefined;
+  name?: string;
 } & { constraint: 'unique'; columns: [AllowedCol] };
