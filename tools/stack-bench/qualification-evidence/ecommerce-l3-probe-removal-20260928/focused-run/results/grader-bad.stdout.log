@@ -1,0 +1,5 @@
+Feature 1: bad ... 0/1
+    FAIL bad: the missing control did not appear
+
+TOTAL 0/1
+Report written to D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\tracks\recovery-test-RAgvTX\results\grading-bad.json

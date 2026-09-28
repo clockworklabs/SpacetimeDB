@@ -19,3 +19,4 @@
 /tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/Dockerfile -text -whitespace
 /tools/stack-bench/qualification-evidence/ecommerce-l3-checkout-readiness-20260928/** -text -whitespace
 /tools/stack-bench/qualification-evidence/ecommerce-l3-click-classifier-20260928/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-probe-removal-20260928/** -text -whitespace
