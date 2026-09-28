@@ -46,12 +46,17 @@ export interface ProcessCrashReceipt {
   processEvidence: string;
   clockOffsetBeforeMs: number;
   clockOffsetAfterMs: number;
+  applicationFreeze?: {
+    startedAtMs: number;
+    completedAtMs: number;
+    processes: Array<{ pid: number; startTicks: number; threads: number[] }>;
+  };
 }
 
 // The container remains alive: it owns the attempt's network namespace. Kill
 // only application-user processes or the recorded native backend process group.
 // /proc avoids adding process tools to the pinned database images.
-function processCrashScript(processRecord: string | null): string {
+function processCrashScript(processRecord: string | null, applicationPort?: number): string {
   return `set -eu
 self=$$; uid=$(id -u); group=""; killed=0
 ${processRecord ? `read group expected_start < ${processRecord}
@@ -66,30 +71,111 @@ scan() {
     pid=\${entry##*/}; [ "$pid" != 1 ] && [ "$pid" != "$self" ] || continue
     [ -r "$entry/stat" ] && [ -r "$entry/status" ] || continue
     IFS= read -r stat < "$entry/stat" || continue; rest=\${stat##*) }; set -- $rest
-    state=$1; pgid=$3; started=\${20}; [ "$state" != Z ] && [ "$state" != X ] || continue
+    pgid=$3; started=\${20}
     if [ -n "$group" ]; then [ "$pgid" = "$group" ] || continue
     else
       owner=""; while read -r key value rest; do [ "$key" != Uid: ] || { owner=$value; break; }; done < "$entry/status"
       [ "$owner" = "$uid" ] || continue
     fi
+    # A terminated leader can still own live threads. An unreadable task list
+    # is not proof of quiescence; retain that group for bounded KILL cleanup.
+    live=0
+    for task in "$entry"/task/[0-9]*; do
+      if IFS= read -r stat < "$task/stat"; then
+        rest=\${stat##*) }; set -- $rest
+        case "$1" in Z|X) ;; *) live=1; break;; esac
+      else live=1; break; fi
+    done
+    [ "$live" = 1 ] || continue
     targets="$targets $pid:$started"
   done
 }
+${applicationPort ? `# Prove the entry belongs to this UID; the fault covers every writer, not socket roles.
+entry_pids=$(lsof -nP -t -a -u "$uid" -iTCP:${applicationPort} -sTCP:LISTEN)
+[ -n "$entry_pids" ] || { echo 'no owned application listener' >&2; exit 4; }
+entry_identities=""
+for pid in $entry_pids; do
+  IFS= read -r stat < "/proc/$pid/stat"; rest=\${stat##*) }; set -- $rest
+  entry_identities="$entry_identities $pid:\${20}"
+done
+invalid=0; frozen_targets=""; frozen_threads=""
+stopped() {
+  verify_pid=$1; verify_start=$2; threads=""
+  IFS= read -r stat < "/proc/$verify_pid/stat" || return 1
+  rest=\${stat##*) }; set -- $rest
+  [ "\${20}" = "$verify_start" ] || return 1
+  for task in /proc/$verify_pid/task/[0-9]*; do
+    IFS= read -r stat < "$task/stat" || return 1
+    rest=\${stat##*) }; set -- $rest
+    case "$1" in Z|X) continue;; T|t) ;; *) return 1;; esac
+    threads="$threads\${threads:+,}\${task##*/}"
+  done
+  [ -n "$threads" ]
+}
+freeze_writers() {
+  scan
+  for identity in $entry_identities; do
+    case " $targets " in *" $identity "*) ;; *) return 1;; esac
+  done
+  freeze_attempt=0
+  while [ "$freeze_attempt" -lt 50 ]; do
+    sweep="$targets"
+    for identity in $sweep; do
+      pid=\${identity%:*}; started=\${identity#*:}
+      IFS= read -r stat < "/proc/$pid/stat" || return 1
+      rest=\${stat##*) }; set -- $rest
+      [ "\${20}" = "$started" ] || return 1
+      at=$(date +%s%3N) || return 1
+      kill -STOP "$pid" || return 1
+      echo "STOP $pid $started $at"
+    done
+    scan
+    all_stopped=1; frozen_threads=""
+    for identity in $targets; do
+      if stopped "\${identity%:*}" "\${identity#*:}"; then
+        frozen_threads="$frozen_threads $identity:$threads"
+      else all_stopped=0; fi
+    done
+    verified="$targets"; scan
+    for identity in $entry_identities; do
+      case " $targets " in *" $identity "*) ;; *) return 1;; esac
+    done
+    if [ "$all_stopped" = 1 ] && [ "$sweep" = "$targets" ] && [ "$verified" = "$targets" ]; then
+      frozen_targets="$targets"
+      for row in $frozen_threads; do echo "FROZEN_PROCESS $row"; done
+      echo "FROZEN $(date +%s%3N)"
+      return 0
+    fi
+    freeze_attempt=$((freeze_attempt + 1)); sleep 0.1
+  done
+  return 1
+}` : ''}
 attempt=0
 scan
 echo ARMED
 IFS= read -r trigger || exit 0
 [ "$trigger" = CRASH ] || exit 4
+${applicationPort ? `# Failure must still reach bounded KILL cleanup, including partially stopped writers.
+if ! freeze_writers; then invalid=1; fi
+scan` : ''}
 while [ "$attempt" -lt 50 ]; do
   if [ -z "$targets" ]; then
     [ "$killed" -gt 0 ] || { echo 'no live process was crashed' >&2; exit 4; }
-    echo QUIET; exit 0
+    echo QUIET
+    ${applicationPort ? `[ "$invalid" = 0 ] || { echo 'application writer freeze was not verified' >&2; exit 4; }` : ''}
+    exit 0
   fi
   for identity in $targets; do
     pid=\${identity%:*}; started=\${identity#*:}
     [ -r "/proc/$pid/stat" ] || continue
     IFS= read -r stat < "/proc/$pid/stat" || continue; rest=\${stat##*) }; set -- $rest
-    [ "\${20}" = "$started" ] || { echo 'process identity changed before crash' >&2; exit 4; }
+    [ "\${20}" = "$started" ] || { ${applicationPort ? 'invalid=1; continue' : "echo 'process identity changed before crash' >&2; exit 4"}; }
+    ${applicationPort ? `case " $frozen_targets " in *" $identity "*)
+      if stopped "$pid" "$started"; then
+        case " $frozen_threads " in *" $identity:$threads "*) ;; *) invalid=1;; esac
+      else invalid=1; fi;;
+      *) invalid=1;;
+    esac` : ''}
     at=$(date +%s%3N)
     if kill -KILL "$pid"; then echo "KILLED $pid $started $at"; killed=$((killed + 1)); fi
   done
@@ -98,11 +184,14 @@ done
 echo 'writers remained after SIGKILL' >&2; exit 4`;
 }
 
-export async function prepareProcessCrash(lease: BackendLease, target: CrashTarget) {
+export async function prepareProcessCrash(lease: BackendLease, target: CrashTarget, applicationPort?: number) {
   const runtime = stackDatabaseRuntime(lease.backend);
   if (!runtime || !['application', 'database'].includes(target)) throw new Error('unsupported process crash boundary');
   if (runtime.combinedBoundary && target === 'application') {
     throw new Error(`${lease.backend} application and database share one boundary; use database`);
+  }
+  if (target === 'application' && (!Number.isInteger(applicationPort) || applicationPort! < 1 || applicationPort! > 65535)) {
+    throw new Error('application crash requires its leased entry port');
   }
   requireAttemptNetwork(lease);
   const container = target === 'application' ? lease.resources.buildContainer : lease.resources.container;
@@ -122,7 +211,7 @@ export async function prepareProcessCrash(lease: BackendLease, target: CrashTarg
   let child!: ReturnType<typeof execFile>;
   const completed = new Promise<string>((resolve, reject) => {
     child = execFile('docker', ['exec', '-i', '--user', user, container.id, 'sh', '-c',
-      processCrashScript(target === 'database' ? runtime.processRecord : null)],
+      processCrashScript(target === 'database' ? runtime.processRecord : null, target === 'application' ? applicationPort : undefined)],
     { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       failArm(new Error('fault process exited before it was armed'));
       if (error) reject(Object.assign(error, { stdout })); else resolve(stdout);
@@ -149,6 +238,19 @@ export async function prepareProcessCrash(lease: BackendLease, target: CrashTarg
       receipt.clockOffsetAfterMs = Date.now() - evidenceNowMs();
       if (!/^KILLED \d+ \d+ \d+$/m.test(receipt.processEvidence) || !/^QUIET$/m.test(receipt.processEvidence)) {
         throw new Error('crash command did not prove a killed process and stopped writers');
+      }
+      if (target === 'application') {
+        const startedAtMs = Number(receipt.processEvidence.match(/^STOP \d+ \d+ (\d+)$/m)?.[1]);
+        const completedAtMs = Number(receipt.processEvidence.match(/^FROZEN (\d+)$/m)?.[1]);
+        const processes = [...receipt.processEvidence.matchAll(/^FROZEN_PROCESS (\d+):(\d+):([\d,]+)$/gm)]
+          .map(row => ({ pid: Number(row[1]), startTicks: Number(row[2]), threads: row[3]!.split(',').map(Number) }));
+        const firstKill = Math.min(...[...receipt.processEvidence.matchAll(/^KILLED \d+ \d+ (\d+)$/gm)]
+          .map(row => Number(row[1])));
+        if (!(startedAtMs > 0 && completedAtMs >= startedAtMs && completedAtMs <= firstKill) || !processes.length
+          || processes.some(row => !new RegExp(`^KILLED ${row.pid} ${row.startTicks} \\d+$`, 'm').test(receipt.processEvidence))) {
+          throw new Error('application writer freeze receipt is incomplete');
+        }
+        receipt.applicationFreeze = { startedAtMs, completedAtMs, processes };
       }
       return receipt;
     } catch (cause) {

@@ -216,7 +216,7 @@ export function createCredentialBroker(configInput: unknown, {
       recordLedger();
       let billableSettled = !billable;
       // Without response usage, a declared feature cannot be shown unused.
-      const unprovenPricing = firstUnpricedReason(pricing.unpriced, pricing.unlessUnused);
+      const unprovenPricing = firstUnpricedReason(pricing.unpriced, pricing.requiresUsage);
       const settleBillable = ({ usage = null, estimated = null, reportedCost = null, unpriced = null }:
         { usage?: ClaudeUsage | null; estimated?: EstimateReason | null; reportedCost?: number | null;
           unpriced?: UnpricedReason | null } = {}): void => {

@@ -17,6 +17,7 @@
         { "do": "fill", "actor": "visitor", "testid": "category-filter", "text": "Home" },
         { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "50" },
         { "do": "fill", "actor": "visitor", "testid": "maximum-price", "text": "200" },
+        { "do": "pressKey", "actor": "visitor", "key": "Tab", "settleMs": 0 },
         { "do": "click", "actor": "visitor", "testid": "filter-apply", "ifAvailable": true }
       ],
       "criteria": [

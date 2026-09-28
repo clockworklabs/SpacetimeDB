@@ -11,6 +11,7 @@
       "setup": [
         { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "minimum-price" },
         { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "1" },
+        { "do": "pressKey", "actor": "visitor", "key": "Tab", "settleMs": 0 },
         { "do": "click", "actor": "visitor", "testid": "filter-apply", "ifAvailable": true }
       ],
       "criteria": [

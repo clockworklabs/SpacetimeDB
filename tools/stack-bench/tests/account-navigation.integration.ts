@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import test from 'node:test';
@@ -656,6 +656,98 @@ test('cart and recommendation probes leave blocking overlays before the next cat
   } finally { await browser.close(); }
 });
 
+test('checkout observations reopen the committed cart after redirects and reloads', async t => {
+  // Failure cases precede the scenario fix: immediate/delayed redirect, an open
+  // toggle, and an account menu behind confirmation. Wrong/missing counts fail.
+  // This fixture measures browser navigation only. Existing native mutation
+  // controls retain responsibility for the complete dbExpectCheckout invariant.
+  const load = (file: string) => compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios', file), 'utf8'))).features[0]!;
+  const duplicate = load('01-duplicate-checkout.json').criteria.find(c => c.id === '203b')!.steps;
+  const crash = load('progression-checkout-crash.json').setup;
+  const cases = [
+    { name: 'normal', source: duplicate, before: 'control-before', layouts: ['redirect', 'delayed', 'open', 'menu-confirmation', 'wrong', 'missing'] },
+    { name: 'recovered', source: duplicate, before: 'recovered-before', layouts: ['redirect'] },
+    { name: 'crash-setup', source: crash, before: 'recovered-before', layouts: ['delayed', 'open'] },
+    { name: 'lost-reply-reload', source: duplicate, before: null, layouts: ['menu-confirmation', 'wrong', 'missing'] },
+  ];
+  const evidence: unknown[] = [];
+  t.after(() => {
+    if (process.env.STACK_BENCH_CART_NAVIGATION_EVIDENCE)
+      writeFileSync(process.env.STACK_BENCH_CART_NAVIGATION_EVIDENCE, JSON.stringify(evidence, null, 2) + '\n');
+  });
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  for (const item of cases) for (const layout of item.layouts) await t.test(`${item.name}/${layout}`, async () => {
+    const proof = item.before ? item.source.findIndex(s => s.do === 'dbExpectCheckout' && s.before === item.before) : -1;
+    const start = item.before ? item.source.slice(0, proof).findLastIndex(s => s.do === 'click' && s.testid === 'checkout-submit')
+      : item.source.findIndex(s => s.do === 'loseCheckoutResponse') + 1;
+    const count = item.source.findIndex((s, i) => i > start && s.do === 'expectNumber' && s.testid === 'cart-count' && s.equals === 0);
+    assert(start >= 0 && count > start);
+    const steps = item.source.slice(start, Math.max(count, proof) + 1);
+    let committed = item.before === null, loads = 0, writes = 0, toggles = 0;
+    let recordCommit!: () => void, deliverReply!: () => void;
+    const commit = new Promise<void>(resolve => { recordCommit = resolve; });
+    const reply = new Promise<void>(resolve => { deliverReply = resolve; });
+    if (committed) recordCommit();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(250);
+    await page.exposeFunction('recordToggle', () => { toggles++; });
+    await page.route('http://checkout.test/**', async route => {
+      if (route.request().method() === 'POST') {
+        writes++; committed = true; recordCommit();
+        if (layout === 'delayed') await reply;
+        // Reload deliberately abandons the old document's pending reply.
+        await route.fulfill({ contentType: 'application/json', body: '{}' });
+        return;
+      }
+      loads++;
+      const open = !committed || layout === 'open';
+      await route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+        <button id="current-user" onclick="document.querySelector('nav').hidden=false">${item.name === 'crash-setup' ? 'recovered' : 'lost-reply'}</button>
+        <button id="catalog-link">Catalog</button>
+        <nav ${committed && layout === 'menu-confirmation' ? 'hidden' : ''}><button id="cart-toggle" onclick="recordToggle();document.querySelector('#cart').hidden=!document.querySelector('#cart').hidden">Cart</button></nav>
+        <section id="cart" ${open ? '' : 'hidden'}><span id="cart-total">0</span>
+          ${committed && layout === 'missing' ? '' : `<span id="cart-count">${committed && layout !== 'wrong' ? 0 : 1}</span>`}
+          <button id="checkout-submit" onclick="fetch('/checkout',{method:'POST'}).then(()=>{
+            if(${layout === 'open'})document.querySelector('#cart-count').textContent='0';
+            else document.querySelector('#cart').hidden=true;
+          })">Checkout</button></section>
+        <dialog><button id="overlay-close" onclick="document.querySelector('dialog').close()">Close</button></dialog>
+        ${committed && layout === 'menu-confirmation' ? '<script>document.querySelector("dialog").showModal()</script>' : ''}` });
+    });
+    try {
+      await page.goto('http://checkout.test/');
+      const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+      const service = { defaultWithin: 250, expand: (value: string) => value, testId: stableElementSelector,
+        sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 20))) };
+      const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+      const actions: ActionEvidence[] = [];
+      for (const step of steps) {
+        if (step.do === 'dbExpectCheckout') { await commit; continue; }
+        if (step.do === 'ensureSignedIn') continue; // The fixture remains signed in on every load.
+        if (step.do === 'expectNumber' && layout === 'delayed') {
+          // Hold the reply across any visibility guard. Its redirect races the
+          // count observation, unless the scenario has replaced the old document.
+          if (loads === 1) assert.equal(await page.locator('#cart-count').innerText(), '1');
+          deliverReply();
+        }
+        const result = await executeAction(ACTION_REGISTRY, step.do,
+          { ...step, ...(step.testid ? { within: 250 } : {}) }, { capabilities });
+        actions.push(result);
+        if (result.status !== 'passed') break;
+      }
+      const expected = ['wrong', 'missing'].includes(layout) ? 'failed' : 'passed';
+      evidence.push({ name: item.name, layout, expected, loads, writes, toggles, actions });
+      assert.equal(actions.at(-1)?.status, expected, JSON.stringify(evidence.at(-1)));
+      if (layout === 'open') assert.equal(toggles, 0, 'do not close an already open cart');
+      if (expected === 'failed') assert.equal(actions.at(-1)?.action.id, 'expectNumber', 'invalid counts must reach the value assertion');
+      assert.equal(writes, item.before === null ? 0 : 1, 'navigation cannot issue another checkout');
+    } finally { deliverReply(); await context.close(); }
+  });
+});
+
 test('declared subview openers accept inline content and tabs without accepting broken views', async () => {
   const read = (name: string) => compileScenarioDefinition(JSON.parse(readFileSync(
     join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', name), 'utf8')));
@@ -1155,6 +1247,94 @@ test('account creation accepts explicit login without masking refused or wrong-a
         rerun: 'STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern="account creation accepts explicit login" dist/tests/account-navigation.integration.js',
         evidence,
       }, null, 2));
+    }
+  }
+});
+
+test('mixed history reads the committed cart before preparing its next server operation', async t => {
+  // Direct harness writes bypass UI callbacks. These real scenario slices must
+  // refresh the document before using cart rows as input to the next operation.
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/mixed-operation-history.json');
+  const all = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8'))).features[0]!.criteria[0]!.steps;
+  const reads = all.flatMap((step, index) => step.do === 'expectNumber' && step.testid === 'cart-quantity' ? [index] : []);
+  assert.equal(reads.length, 3);
+  const browser = await chromium.launch({ headless: true });
+  const evidence: unknown[] = [];
+  try {
+    for (const [position, end] of reads.entries()) for (const layout of ['correct', 'confirmation', 'restored-cart', 'wrong', 'missing', 'restored-missing']) {
+      await t.test(`cart preparation ${position + 1}/${layout}`, async () => {
+        const start = all.slice(0, end).findLastIndex(step => step.do === 'dbExpectOperation') + 1;
+        const steps = all.slice(start, end + 1);
+        const actorName = all[end]!.actor!;
+        const user = actorName === 'b' ? 'history-17-b' : 'history-17-a';
+        let stored = 0, loads = 0, writes = 0;
+        const page = await browser.newPage();
+        const actions: ActionEvidence[] = [];
+        try {
+          await page.route('http://history-cart.test/**', async route => {
+            if (route.request().method() === 'POST') {
+              writes++; stored = layout === 'wrong' ? 2 : 1;
+              await route.fulfill({ contentType: 'application/json', body: '{}' });
+              return;
+            }
+            loads++;
+            const restored = stored > 0 && ['restored-cart', 'restored-missing'].includes(layout);
+            const confirmation = stored > 0 && layout === 'confirmation';
+            const cartTag = restored ? 'dialog' : 'section';
+            await route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+              <span id="current-user">${user}</span>
+              <button id="cart-toggle" onclick="document.querySelector('#cart').hidden=!document.querySelector('#cart').hidden">Cart</button>
+              <${cartTag} id="cart" ${restored ? '' : 'hidden'}><span id="cart-total">64</span>
+                ${stored && !['missing', 'restored-missing'].includes(layout) ? `<div data-role="cart-item">Coffee Grinder<input data-role="cart-quantity" value="${stored}"></div>` : '<span id="empty-cart">Empty cart</span>'}
+                ${restored ? '<button id="overlay-close" onclick="document.querySelector(\'#cart\').close()">Close</button>' : ''}
+              </${cartTag}>
+              ${confirmation ? '<dialog id="confirmation"><button id="overlay-close" onclick="document.querySelector(\'#confirmation\').close()">Close</button></dialog>' : ''}
+              ${restored || confirmation ? `<script>document.querySelector('#${restored ? 'cart' : 'confirmation'}').showModal()</script>` : ''}` });
+          });
+          await page.goto('http://history-cart.test/');
+          // This is a real HTTP write, with no app event handler to update its cache.
+          await page.evaluate(async () => { await fetch('/cart-add', { method: 'POST' }); });
+          assert.equal(stored, layout === 'wrong' ? 2 : 1);
+          const actor = { page, name: actorName,
+            loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string } }) => {
+              const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid))
+                .filter({ hasText: options.scope.contains }).first() : page;
+              const loc = root.locator(stableElementSelector(id)).filter({ visible: true });
+              return (options?.contains ? loc.filter({ hasText: options.contains }) : loc).first();
+            } };
+          const service = { defaultWithin: 250, testId: stableElementSelector,
+            scopedUser: (name: string) => name, expand: (value: string) => value,
+            sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 20))) };
+          const capabilities = { actors: { get: () => actor },
+            'browser-interaction': service, 'browser-observation': service };
+          for (const step of steps) {
+            const result = await executeAction(ACTION_REGISTRY, step.do,
+              { ...step, ...(step.testid ? { within: 250 } : {}) }, { capabilities });
+            actions.push(result);
+            if (result.status !== 'passed') break;
+          }
+          assert.equal(actions.at(-1)?.action.id, 'expectNumber', 'reach the original cart quantity assertion');
+          assert.equal(actions.at(-1)?.status, ['wrong', 'missing', 'restored-missing'].includes(layout) ? 'failed' : 'passed');
+          assert.equal(writes, 1, 'observation must not add another cart item');
+        } finally {
+          await page.close();
+          evidence.push({ position: position + 1, layout, steps, expected: ['wrong', 'missing', 'restored-missing'].includes(layout) ? 'failed' : 'passed',
+            stored, loads, writes, actions, pageClosed: page.isClosed() });
+        }
+      });
+    }
+  } finally {
+    await browser.close();
+    if (process.env.STACK_BENCH_HISTORY_CART_EVIDENCE) {
+      const { createHash } = await import('node:crypto');
+      const hash = (file: string | URL) => createHash('sha256').update(readFileSync(file)).digest('hex');
+      writeFileSync(process.env.STACK_BENCH_HISTORY_CART_EVIDENCE, JSON.stringify({
+        rerun: 'STACK_BENCH_HISTORY_CART_EVIDENCE=<file> node --test --test-name-pattern="mixed history reads" dist/tests/account-navigation.integration.js',
+        fixture: 'Server cart read only on document load; direct POST commits quantity 1 or 2. Closed cart, restored cart, restored confirmation, and missing row variants.',
+        source, sourceSha256: hash(source), testSha256: hash(new URL(import.meta.url)),
+        driverSha256: hash(new URL('../src/actions/browser-action-executors.js', import.meta.url)),
+        browserClosed: !browser.isConnected(), evidence,
+      }, null, 2) + '\n');
     }
   }
 });

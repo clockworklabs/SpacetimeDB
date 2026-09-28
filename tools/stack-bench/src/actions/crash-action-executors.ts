@@ -214,7 +214,11 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const signalTimes = [...receipt.processEvidence.matchAll(/^KILLED \d+ \d+ (\d+)$/gm)].map(match => Number(match[1]) - receipt!.clockOffsetBeforeMs);
     const faultAtMs = Math.min(...signalTimes);
     const faultEndMs = Math.max(...signalTimes);
-    const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
+    const application = receipt.target === 'application';
+    const interruptionAtMs = application ? (receipt.applicationFreeze?.startedAtMs ?? NaN) - receipt.clockOffsetBeforeMs : faultAtMs;
+    const interruptionEndMs = application ? (receipt.applicationFreeze?.completedAtMs ?? NaN) - receipt.clockOffsetBeforeMs : faultEndMs;
+    const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= interruptionAtMs
+      && row.completedAtMs >= interruptionEndMs).length;
     // The caller has no stable order ID. Another request can replace a lost
     // pre-cut acknowledged order while leaving the aggregate state unchanged.
     // Both measured clock offsets bound acknowledgements near the kill.
@@ -226,7 +230,8 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const unmeasuredVerdicts = durabilityUnlinked
       ? { durability: 'acknowledged checkout cannot be linked to the recovered order' } : undefined;
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed,
-      faultAtMs, faultEndMs, outstandingAtFault, ...(unmeasuredVerdicts ? { unmeasuredVerdicts } : {}) };
+      faultAtMs, faultEndMs, interruptionAtMs, interruptionEndMs, outstandingAtFault,
+      ...(unmeasuredVerdicts ? { unmeasuredVerdicts } : {}) };
     const unmeasured = prepared.state.reservations.length && evidenceNowMs() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window'

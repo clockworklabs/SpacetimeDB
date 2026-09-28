@@ -63,7 +63,7 @@ function anthropicRequestPricing(payload: JsonRecord): RequestPricing {
     payload.speed !== undefined && payload.speed !== 'standard' ? 'speed' : null,
     declared(payload.mcp_servers) ? 'mcp' : null,
     declared(payload.container) ? 'container' : null);
-  return { unpriced, unlessUnused: serverTools ? 'server-tool' : null,
+  return { unpriced, requiresUsage: serverTools ? 'server-tool' : null,
     bounded: !serverTools && unpriced === null };
 }
 
@@ -160,8 +160,8 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
 export interface RequestPricing {
   // A declared feature whose charge the rates cannot price.
   unpriced: UnpricedReason | null;
-  // A declared feature that is priced only when the response reports no use.
-  unlessUnused: UnpricedReason | null;
+  // Pricing needs valid response usage (including evidence of unused server tools).
+  requiresUsage: UnpricedReason | null;
   // False when server-side input or tools can exceed the request's reservation.
   bounded: boolean;
 }
@@ -266,7 +266,7 @@ export function imageTokenAdjustment(value: unknown, model: string): number {
     // OpenAI vision: 30,000 patches maximum x 1.2 tokens, plus rounding.
     // https://developers.openai.com/api/docs/guides/images-vision
     // Replace base64 text bytes rather than charging for both representations.
-    // An unpriced inline image is not text. Its visual tokens remain unknown;
+    // An unbounded inline image is not text. Its visual tokens are unknown before usage;
     // do not reserve its base64 bytes as if they were priced text tokens.
     const inline = inlineImageUrl(image);
     return url === null ? sum - (inline === null ? 0 : Buffer.byteLength(inline, 'utf8'))
@@ -275,16 +275,16 @@ export function imageTokenAdjustment(value: unknown, model: string): number {
 }
 
 // Responses usage covers tokens only. A requested tier, hosted tools, files,
-// unbounded images, non-text output, and stored context can add charges or
+// remote images, non-text output, and stored context can add charges or
 // input that the broker neither prices nor reserves.
-function responsesRequestFeature(payload: JsonRecord, model: string): UnpricedReason | null {
+function responsesRequestFeature(payload: JsonRecord): UnpricedReason | null {
   return firstUnpricedReason(
     payload.service_tier !== undefined && payload.service_tier !== 'default' && payload.service_tier !== 'auto'
       ? 'service-tier' : null,
     payload.tools !== undefined && (!Array.isArray(payload.tools)
       || payload.tools.some(tool => !isRecord(tool) || !['function', 'custom'].includes(String(tool.type))))
       ? 'hosted-tool' : null,
-    hasUnpricedInput(payload.input) || images(payload.input).some(image => boundedImageUrl(image, model) === null)
+    hasUnpricedInput(payload.input) || images(payload.input).some(image => inlineImageUrl(image) === null)
       ? 'unpriced-input' : null,
     payload.image_config !== undefined || payload.audio !== undefined
       || (payload.modalities !== undefined && (!Array.isArray(payload.modalities)
@@ -366,8 +366,15 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     },
     // OpenRouter's reported cost includes every feature; only the reservation is affected.
     requestPricing: payload => {
-      const feature = responsesRequestFeature(payload, config.model);
-      return { unpriced: router ? null : feature, unlessUnused: null, bounded: feature === null };
+      const feature = responsesRequestFeature(payload);
+      const unboundedImage = images(payload.input).some(image => boundedImageUrl(image, config.model) === null);
+      // Vision input tokens are included in Responses usage. A missing model-specific
+      // reservation bound does not make complete usage unpriced. Without usage,
+      // keep the unknown input flag; never treat the partial reservation as a ceiling.
+      // https://developers.openai.com/api/docs/guides/images-vision#calculating-costs
+      return { unpriced: router ? null : feature,
+        requiresUsage: !router && unboundedImage ? 'unpriced-input' : null,
+        bounded: feature === null && !unboundedImage };
     },
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,

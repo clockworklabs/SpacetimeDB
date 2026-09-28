@@ -10,7 +10,7 @@ import { installResponseLoss } from '../grader/response-loss.js';
 test('a lost browser HTTP reply keeps its committed effect and does not change the write', async t => {
   // A lost reply must not apply its Set-Cookie header, even after cleanup or retry.
   // A normally delivered reply must apply it; the duplicate-write refusal sets no cookie.
-  const evidence: { loss: boolean; cookieBeforeFinish: string | null; cookieAfterFinish: string | null;
+  const evidence: { loss: boolean; reload: boolean; cookieBeforeFinish: string | null; cookieAfterFinish: string | null;
     cookieAfterRetry: string | null; retryCookie: string | null; retryStatus: number }[] = [];
   t.after(() => {
     if (process.env.STACK_BENCH_RESPONSE_LOSS_EVIDENCE)
@@ -43,14 +43,17 @@ test('a lost browser HTTP reply keeps its committed effect and does not change t
   const address = server.address(); assert(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}`;
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
-  for (const lose of [false, true]) await t.test(`loss=${lose}`, async () => {
+  for (const { lose, reload } of [{ lose: false, reload: false }, { lose: true, reload: false },
+    { lose: true, reload: true }]) await t.test(`loss=${lose}, reload=${reload}`, async () => {
     const context = await browser.newContext();
     await context.addCookies([{ name: 'original-session', value: 'actor-original', url, httpOnly: true, sameSite: 'Lax' }]);
     const gate = await installResponseLoss(context);
     try {
       const page = await context.newPage(); await page.goto(url);
+      // A normal positive checkout may reload this page before the later lost-reply probe.
+      if (reload) await page.reload();
       if (lose) gate.arm();
-      const cart = `cart-${lose}`;
+      const cart = `cart-${lose}-${reload}`;
       await page.evaluate(cart => {
         document.querySelector('#result')!.textContent = 'pending';
         void fetch('/checkout', { method: 'POST', headers: { 'x-application-header': 'retained' },
@@ -80,7 +83,7 @@ test('a lost browser HTTP reply keeps its committed effect and does not change t
         method: 'POST', headers: { 'x-application-header': 'retained' }, body: JSON.stringify({ cart }),
       })).status, cart);
       assert.equal(retry, 409); assert.equal(carts.size, before);
-      const observed = { loss: lose, cookieBeforeFinish, cookieAfterFinish, cookieAfterRetry: await sessionCookie(),
+      const observed = { loss: lose, reload, cookieBeforeFinish, cookieAfterFinish, cookieAfterRetry: await sessionCookie(),
         retryCookie: retryCookies.get(cart) ?? null, retryStatus: retry };
       evidence.push(observed);
       assert.deepEqual([observed.cookieBeforeFinish, observed.cookieAfterFinish, observed.cookieAfterRetry],
@@ -136,18 +139,28 @@ test('native text and binary WebSocket replies are dropped without changing requ
   const url = `http://127.0.0.1:${address.port}`, wsUrl = `ws://127.0.0.1:${address.port}`;
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
   const cases = [
-    { binary: false, lose: false, failedLookup: false },
-    { binary: false, lose: true, failedLookup: false },
-    { binary: true, lose: false, failedLookup: false },
-    { binary: true, lose: true, failedLookup: false },
-    { binary: false, lose: true, failedLookup: true },
+    { binary: false, lose: false, failedLookup: false, reload: false },
+    { binary: false, lose: true, failedLookup: false, reload: false },
+    { binary: true, lose: false, failedLookup: false, reload: false },
+    { binary: true, lose: true, failedLookup: false, reload: false },
+    { binary: false, lose: true, failedLookup: true, reload: false },
+    { binary: false, lose: true, failedLookup: false, reload: true },
+    { binary: true, lose: true, failedLookup: false, reload: true },
   ];
-  for (const { binary, lose, failedLookup } of cases) await t.test(`binary=${binary}, loss=${lose}, lookup failure=${failedLookup}`, async () => {
+  for (const { binary, lose, failedLookup, reload } of cases) await t.test(`binary=${binary}, loss=${lose}, lookup failure=${failedLookup}, reload=${reload}`, async () => {
     lookupFails = failedLookup;
     const context = await browser.newContext();
     const gate = await installResponseLoss(context);
     try {
       const page = await context.newPage(); await page.goto(url);
+      if (reload) {
+        // Close an intercepted old application connection, then establish the new one below.
+        await page.evaluate(async wsUrl => {
+          const socket = new WebSocket(`${wsUrl}/?token=application-session`, 'gate.test');
+          await new Promise<void>(resolve => { socket.onopen = () => resolve(); });
+        }, wsUrl);
+        await page.reload();
+      }
       await page.evaluate(async wsUrl => {
         const socket = new WebSocket(`${wsUrl}/?token=application-session`, 'gate.test'); socket.binaryType = 'arraybuffer';
         const dev = new WebSocket(`${wsUrl}/?token=verified-dev`, 'gate.test');

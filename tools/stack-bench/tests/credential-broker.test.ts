@@ -1280,43 +1280,59 @@ test('OpenAI inline screenshots retain input and reserve bounded vision tokens',
     const body = JSON.stringify({ model, input: [large] });
     assert.ok(Buffer.byteLength(body) + imageTokenAdjustment([large], model) < 37_000,
       'a large screenshot must not reserve its base64 bytes as text tokens');
-    assert.deepEqual(protocol.requestPricing(request), { unpriced: null, unlessUnused: null, bounded: true });
+    assert.deepEqual(protocol.requestPricing(request), { unpriced: null, requiresUsage: null, bounded: true });
     const remote = protocol.parseRequest(Buffer.from(JSON.stringify({ model,
       input: [{ ...image, image_url: 'https://example.com/image.png' }] })), '/v1/responses');
     assert.equal(protocol.inputTokenAdjustment!(remote), 0);
-    assert.deepEqual(protocol.requestPricing(remote), { unpriced: 'unpriced-input', unlessUnused: null, bounded: false });
+    assert.deepEqual(protocol.requestPricing(remote), { unpriced: 'unpriced-input', requiresUsage: 'unpriced-input', bounded: false });
   }
   const unverified = brokerProtocol({ provider: 'openai', mode: 'subscription-token',
     model: 'gpt-5.3-codex', accountId: 'test' } as BrokerConfig);
   const inline = unverified.parseRequest(Buffer.from(JSON.stringify({ model: 'gpt-5.3-codex', input: [image] })), '/v1/responses');
-  assert.equal(unverified.requestPricing(inline).unpriced, 'unpriced-input');
+  assert.deepEqual(unverified.requestPricing(inline), { unpriced: null, requiresUsage: 'unpriced-input', bounded: false });
 });
 
-test('Sol screenshots under a priced-spend cap retain unpriced input without a full-context reservation', async () => {
+test('Sol screenshot receipts require usage, not an image reservation bound', async t => {
   const root = mkdtempSync(join(tmpdir(), 'sol-priced-image-'));
   const ledgerPath = join(root, 'ledger.json');
   const rates = { input: 2, output: 14, cacheRead: 0.2, cacheWrite5m: 0, cacheWrite1h: 0 };
   const usage = { input_tokens: 1000, output_tokens: 100, input_tokens_details: { cached_tokens: 500 } };
-  try {
+  const cases = [
+    { name: 'complete usage', body: { object: 'response', status: 'completed', usage }, unknown: false },
+    { name: 'missing usage', body: { object: 'response', status: 'completed' }, unknown: true },
+    { name: 'invalid usage', body: { object: 'response', status: 'completed',
+      usage: { ...usage, input_tokens: -1 } }, unknown: true },
+    { name: 'HTTP refusal has no usage charge', body: { error: { message: 'unavailable' } }, status: 503, unknown: false },
+    { name: 'hosted tool', body: { object: 'response', status: 'completed', usage },
+      tools: [{ type: 'web_search' }], unknown: true },
+  ];
+  const evidence: unknown[] = [];
+  try { for (const row of cases) await t.test(row.name, async () => {
     await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen }) => {
       const input = [{ type: 'custom_tool_call_output', output: [{ type: 'input_image',
         image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' }] }];
       const response = await send(brokerPort, { path: '/v1/responses',
-        headers: { authorization: `Bearer ${sessionToken}` }, body: JSON.stringify({ model: 'gpt-6-sol', input }) });
-      assert.equal(response.status, 200);
+        headers: { authorization: `Bearer ${sessionToken}` }, body: JSON.stringify({ model: 'gpt-6-sol', input,
+          ...(row.tools ? { tools: row.tools } : {}) }) });
+      assert.equal(response.status, row.status ?? 200);
       assert.deepEqual(JSON.parse(seen[0]!.body).input, input);
       const ledger = readCredentialBrokerLedger(ledgerPath);
-      assert.equal(ledger.unpricedByReason['unpriced-input'], 1);
       const reconciled = reconcileCredentialBrokerReceipt({ ledger, provider: 'openai',
         cliResult: { usage: ZERO_RAW_USAGE }, model: 'gpt-6-sol', maxBudgetUsd: 2, pricingRates: rates });
       assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
-      assert.equal(reconciled.receipt.exact, false);
-      assert.equal(reconciled.receipt.costUsd, 0.0025);
-      assert.equal(reconciled.receipt.unpricedRequests, 1);
+      evidence.push({ name: row.name, ledger, receipt: reconciled.receipt, expectedUnknown: row.unknown });
+      assert.equal(reconciled.receipt.exact, !row.unknown);
+      if (!row.unknown) assert.equal(reconciled.receipt.costUsd, row.status ? 0 : 0.0025);
+      assert.equal(reconciled.receipt.unpricedRequests, row.unknown ? 1 : 0);
     }, { provider: 'openai', model: 'gpt-6-sol', accountId: 'test', ledgerPath,
       pricingRates: rates, maxBudgetUsd: 2,
-      upstreamBody: JSON.stringify({ object: 'response', status: 'completed', usage }) });
-  } finally { rmSync(root, { recursive: true, force: true }); }
+      upstreamBody: JSON.stringify(row.body), upstreamStatus: row.status ?? 200 });
+  }); } finally {
+    if (process.env.STACK_BENCH_IMAGE_COST_EVIDENCE) writeFileSync(process.env.STACK_BENCH_IMAGE_COST_EVIDENCE,
+      JSON.stringify({ rerun: 'node --test --test-name-pattern="Sol screenshot receipts" dist/tests/credential-broker.test.js',
+        modelCalls: 0, rates, cases: evidence }, null, 2));
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('output reservations honor API caps without assuming account endpoints enforce them', () => {

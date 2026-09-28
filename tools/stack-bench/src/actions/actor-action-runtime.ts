@@ -14,7 +14,7 @@ export interface Locator {
   fill(value: string): Promise<void>;
   filter(options: unknown): Locator;
   first(): Locator;
-  getAttribute(name: string): Promise<string | null>;
+  getAttribute(name: string, options?: { timeout?: number }): Promise<string | null>;
   innerText(): Promise<string>;
   inputValue(): Promise<string>;
   isVisible(): Promise<boolean>;

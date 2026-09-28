@@ -33,6 +33,7 @@ const meanings: Record<string, (s: GuideStep) => string> = {
   setOffline: s => `${s.offline === false ? 'Restore' : 'Disconnect'} the ${s.actor} browser's network connection.`,
   expect: s => `${actor(s)}${s.absent ? 'watch for and reject any visible' : 'check for visible'} ${target(s)}${s.count !== undefined ? `; require ${s.count} matching elements` : ''}${s.value !== undefined ? `; require value ${q(s.value)}` : ''}${s.nonEmpty ? '; require nonempty content' : ''}${s.notContains ? `; reject text containing ${q(s.notContains)}` : ''}${s.ignoreCase ? ' (ignore letter case)' : ''}.`,
   expectNumber: s => `${actor(s)}check that ${target(s)} is ${s.comparison === 'atMost' ? 'no greater than ' : s.comparison === 'atLeast' ? 'at least ' : ''}${wanted(s)}.`,
+  expectWarehouseInventory: s => `${actor(s)}read all visible warehouse inventory rows in the open admin panel; require every declared item and warehouse holding, with correct stock in every copy.`,
   expectElementCount: s => `${actor(s)}count ${target(s)}; require ${wanted(s)}.`,
   expectSequence: s => `${actor(s)}read every ${target(s)} in displayed order; require exactly ${q(s.equals)}.`,
   expectAgreement: s => `Compare ${target(s)} in browsers ${(s.actors ?? []).join(', ')}; require equal ${s.numeric ? 'numbers' : 'values'}.`,

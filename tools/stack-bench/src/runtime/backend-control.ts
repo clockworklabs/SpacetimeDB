@@ -122,7 +122,7 @@ export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: Cras
 // application-user processes in its owned container, including dev watchers.
 export async function prepareRuntimeCrash(spec: RuntimeControlSpec, target: CrashTarget): Promise<PreparedRuntimeCrash> {
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
-  const prepared = await prepareProcessCrash(lease, target);
+  const prepared = await prepareProcessCrash(lease, target, spec.port);
   return {
     ...prepared,
     combinedBoundary: stackDatabaseRuntime(lease.backend)?.combinedBoundary ?? false,

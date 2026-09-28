@@ -228,6 +228,12 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { equals: number, atLeast: number, atMost: number, relativeTo: nonEmptyString, plus: number,
       comparison: value => oneOf(value, ['atMost', 'atLeast']),
       ...locator, ...within }),
+  expectWarehouseInventory: fields({ ...actor, items: value => array(value) && value.length > 0
+    && value.every(item => object(item) && nonEmptyString(item.name) && object(item.stock)
+      && Object.keys(item).every(key => key === 'name' || key === 'stock')
+      && Object.keys(item.stock).length === 2
+      && nonNegativeInteger(item.stock.East) && nonNegativeInteger(item.stock.West))
+    && new Set(value.map(item => (item as UnknownRecord).name)).size === value.length }, within),
   expectOrderMatches: fields({ ...actors, prefix: string }),
   expectSequence: fields({ ...actor, testid: nonEmptyString, equals: stringArray },
     { ...locator, ...within }),

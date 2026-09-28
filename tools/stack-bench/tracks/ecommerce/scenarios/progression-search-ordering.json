@@ -51,6 +51,7 @@
           "testid": "minimum-price",
           "text": "1"
         },
+        { "do": "pressKey", "actor": "visitor", "key": "Tab", "settleMs": 0 },
         {
           "do": "click",
           "actor": "visitor",
@@ -99,6 +100,7 @@
               "testid": "minimum-price",
               "text": ""
             },
+            { "do": "pressKey", "actor": "visitor", "key": "Tab", "settleMs": 0 },
             {
               "do": "click",
               "actor": "visitor",

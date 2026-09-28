@@ -636,7 +636,7 @@ function expectedNumber(browser: BrowserCapability, input: ElementCountInput): n
   return base + (input.plus ?? 0);
 }
 
-async function recordNumber({ input, capabilities }: BrowserArguments<RecordNumberInput>) {
+async function recordNumber({ input, capabilities, signal }: BrowserArguments<RecordNumberInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   if (input.count) {
@@ -647,6 +647,12 @@ async function recordNumber({ input, capabilities }: BrowserArguments<RecordNumb
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
     : undefined;
+  if (input.testid === 'warehouse-total' && scope?.testid === 'admin-warehouse-item') {
+    const observed = await readWarehouseTotal(actor, browser, scope.contains,
+      input.within ?? browser.defaultWithin, signal);
+    browser.recorded.set(input.as, observed.value);
+    return { key: input.as, ...observed };
+  }
   const loc = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   const value = readControlNumber(await readValue(loc), input.testid);
@@ -671,6 +677,15 @@ async function expectNumber({ input, capabilities, signal }:
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
     : undefined;
+  const target = expectedNumber(browser, input);
+  const expected = {
+    ...(input.atLeast === undefined ? {} : { atLeast: input.atLeast }),
+    ...(input.atMost === undefined ? {} : { atMost: input.atMost }),
+    ...(target === undefined ? {} : { [input.comparison ?? 'equals']: target }),
+  };
+  if (input.testid === 'warehouse-total' && scope?.testid === 'admin-warehouse-item') {
+    return readWarehouseTotal(actor, browser, scope.contains, within, signal, expected);
+  }
   const loc = actor.loc(input.testid, { contains, scope });
   await loc.waitFor({ state: 'visible', timeout: within }).catch(error => {
     if (errorField(error, 'name') !== 'TimeoutError') throw error;
@@ -681,12 +696,6 @@ async function expectNumber({ input, capabilities, signal }:
       ...(contains || scope?.contains ? { filtered: true } : {}) });
   });
 
-  const target = expectedNumber(browser, input);
-  const expected = {
-    ...(input.atLeast === undefined ? {} : { atLeast: input.atLeast }),
-    ...(input.atMost === undefined ? {} : { atMost: input.atMost }),
-    ...(target === undefined ? {} : { [input.comparison ?? 'equals']: target }),
-  };
   const matches = (number: number): boolean => numberMatches(number, expected);
 
   let last = null;
@@ -706,6 +715,161 @@ async function expectNumber({ input, capabilities, signal }:
   fail('number-mismatch', { control: input.testid, observed: last, expected,
     ...(scope?.contains && !/password|secret|token/i.test(scope.testid)
       ? { scopeText: findingText(String(scope.contains)) } : {}) });
+}
+
+const matchesInventoryName = (text: string, name: string): boolean => new RegExp(
+  `(?<![\\p{L}\\p{N}_])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_])`, 'u').test(text);
+
+async function readWarehouseInventoryRows(actor: BrowserActor, browser: BrowserCapability) {
+  const selectors = Object.fromEntries(['admin-item-row', 'admin-warehouse-item', 'admin-location-row',
+    'admin-stock', 'admin-location-qty', 'warehouse-total'].map(id => [id, browser.testId(id)]));
+  const rows = ['admin-item-row', 'admin-warehouse-item', 'admin-location-row'];
+  return (actor.page as PlaywrightPage).locator(browser.testId('admin-panel'))
+      .filter({ visible: true }).locator(rows.map(id => selectors[id]).join(',')).filter({ visible: true })
+      .evaluateAll((elements, selectors) => {
+        interface Node {
+          nodeType: number; textContent: string | null; childNodes: ArrayLike<Node>;
+          matches(selector: string): boolean; closest(selector: string): Node | null;
+          querySelectorAll(selector: string): ArrayLike<Node>;
+          tagName: string; value?: string; innerText: string;
+          getBoundingClientRect(): { width: number; height: number };
+          ownerDocument: { defaultView: { getComputedStyle(node: Node): { display: string; visibility: string } } };
+        }
+        const rowSelector = ['admin-item-row', 'admin-warehouse-item', 'admin-location-row']
+          .map(id => selectors[id]).join(',');
+        const visible = (node: Node): boolean => {
+          const box = node.getBoundingClientRect();
+          return !!(box.width || box.height) && node.ownerDocument.defaultView.getComputedStyle(node).visibility === 'visible';
+        };
+        // A nested row owns its text and numbers; it cannot fill an empty parent row.
+        const ownText = (node: Node, root: Node): string => {
+          if (node.nodeType === 3) return node.textContent ?? '';
+          if (node.nodeType !== 1 || node !== root && node.matches(rowSelector)) return '';
+          const style = node.ownerDocument.defaultView.getComputedStyle(node);
+          if (style.display === 'none' || style.visibility !== 'visible') return '';
+          const text = Array.from(node.childNodes, child => ownText(child, root)).join('');
+          return node.tagName === 'BR' || !style.display.startsWith('inline') && style.display !== 'contents'
+            ? ` ${text} ` : text;
+        };
+        return elements.map(element => {
+          const row = element as unknown as Node;
+          const control = ['admin-item-row', 'admin-warehouse-item', 'admin-location-row']
+            .find(id => row.matches(selectors[id]!))!;
+          const numeric = control === 'admin-item-row' ? 'admin-stock'
+            : control === 'admin-warehouse-item' ? 'warehouse-total' : 'admin-location-qty';
+          const owner = control === 'admin-warehouse-item' ? selectors['admin-warehouse-item']! : rowSelector;
+          const values = Array.from(row.querySelectorAll(selectors[numeric]!))
+              .filter(child => child.closest(owner) === row && visible(child))
+              .map(child => ['INPUT', 'TEXTAREA', 'SELECT'].includes(child.tagName)
+                ? child.value ?? '' : child.innerText);
+          return { control, text: ownText(row, row).replace(/\s+/g, ' ').trim(), values };
+        });
+      }, selectors);
+}
+
+async function readWarehouseTotal(actor: BrowserActor, browser: BrowserCapability, name: string | undefined,
+  within: number, signal: AbortSignal, expected?: { equals?: number; atLeast?: number; atMost?: number }) {
+  const deadline = Date.now() + within;
+  let failure: ActionApplicationFailure | undefined;
+  for (;;) {
+    signal.throwIfAborted();
+    if (Date.now() >= deadline) {
+      if (failure) throw failure;
+      inconclusive('observation-window-missed', { detail: 'The warehouse total read did not start within its observation window' });
+    }
+    const observed = await readWarehouseInventoryRows(actor, browser);
+    signal.throwIfAborted();
+    if (Date.now() > deadline) {
+      if (failure) throw failure;
+      inconclusive('observation-window-missed', {
+        detail: 'The warehouse total snapshot arrived after its observation deadline',
+      });
+    }
+    const rows = observed.filter(row => row.control === 'admin-warehouse-item');
+    const selected = rows.filter(row => name !== undefined && matchesInventoryName(row.text, name));
+    const values = selected.flatMap(row => row.values.map(text => readControlNumber(text, 'warehouse-total')));
+    const value = values[0];
+    const target = expected ?? { equals: value ?? undefined };
+    let mismatch: ReturnType<typeof finding> | undefined;
+    if (!selected.length || selected.some(row => !row.values.length)) {
+      mismatch = finding('control-missing', { control: 'warehouse-total', scope: 'admin-warehouse-item', matchingText: findingText(name ?? '') });
+    } else if (value == null || values.some(number => number === null || !numberMatches(number, target))) {
+      mismatch = finding('number-mismatch', { control: 'warehouse-total',
+        observed: values.find(number => number === null || !numberMatches(number, target)) ?? null,
+        expected: target, scopeText: findingText(name ?? '') });
+    }
+    const observation = { copies: selected.length, values };
+    if (!mismatch && value != null) return { value, ...observation };
+    failure = new ActionApplicationFailure(renderFinding(mismatch!), {
+      finding: mismatch!, observation,
+    });
+    await browser.sleep(Math.max(0, Math.min(250, deadline - Date.now())), signal);
+  }
+}
+
+async function expectWarehouseInventory({ input, capabilities, signal }: BrowserArguments<{
+  actor: string; items: Array<{ name: string; stock: { East: number; West: number } }>; within?: number;
+}>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = observation(capabilities);
+  const deadline = Date.now() + (input.within ?? browser.defaultWithin);
+  const expected = [
+    ...input.items.map(item => ({ control: 'admin-item-row', names: [item.name],
+      quantity: item.stock.East + item.stock.West })),
+    ...['East', 'West'].map(name => ({ control: 'admin-warehouse-item', names: [name], quantity: null })),
+    ...input.items.flatMap(item => (['East', 'West'] as const).map(warehouse => ({
+      control: 'admin-location-row', names: [item.name, warehouse], quantity: item.stock[warehouse],
+    }))),
+  ];
+  let failure: ActionApplicationFailure | undefined;
+  for (;;) {
+    signal.throwIfAborted();
+    if (Date.now() >= deadline) {
+      if (failure) throw failure;
+      inconclusive('observation-window-missed', { detail: 'The warehouse inventory read did not start within its observation window' });
+    }
+    const observed = await readWarehouseInventoryRows(actor, browser);
+    signal.throwIfAborted();
+    if (Date.now() > deadline) {
+      if (failure) throw failure;
+      inconclusive('observation-window-missed', {
+        detail: 'The warehouse inventory snapshot arrived after its observation deadline',
+      });
+    }
+    const copies = expected.map(() => 0);
+    let mismatch: ReturnType<typeof finding> | undefined;
+    const records = observed.map(row => {
+      const identities = expected.flatMap((entry, index) => entry.control === row.control
+        && entry.names.every(name => matchesInventoryName(row.text, name)) ? [index] : []);
+      const numbers = row.control === 'admin-warehouse-item' ? [] : row.values.map(value => readControlNumber(value, row.control === 'admin-item-row'
+        ? 'admin-stock' : 'admin-location-qty'));
+      if (identities.length !== 1) {
+        mismatch ??= finding('value-mismatch', { control: row.control, observed: findingText(row.text),
+          expected: findingText('one declared inventory identity') });
+      } else {
+        const index = identities[0]!;
+        copies[index]!++;
+        const entry = expected[index]!;
+        if (entry.quantity !== null && (!numbers.length || numbers.some(value => value !== entry.quantity))) {
+          mismatch ??= finding('number-mismatch', {
+            control: row.control === 'admin-item-row' ? 'admin-stock' : 'admin-location-qty',
+            observed: numbers.find(value => value !== entry.quantity) ?? null,
+            expected: { equals: entry.quantity }, scopeText: findingText(entry.names.join(' / ')),
+          });
+        }
+      }
+      return { ...row, numbers, identities: identities.map(index => expected[index]!.names) };
+    });
+    const missing = copies.findIndex(count => count === 0);
+    if (missing !== -1) mismatch ??= finding('control-missing', { control: expected[missing]!.control,
+      scope: 'admin-panel', matchingText: findingText(expected[missing]!.names.join(' / ')) });
+    const result = { expected: expected.map((entry, index) => ({ ...entry, copies: copies[index] })), observed: records };
+    if (!mismatch) return result;
+    failure = new ActionApplicationFailure(renderFinding(mismatch), {
+      finding: mismatch, expected, observation: result,
+    });
+    await browser.sleep(Math.max(0, Math.min(250, deadline - Date.now())), signal);
+  }
 }
 
 async function expectOrderMatches({ input, capabilities }:
@@ -928,6 +1092,7 @@ export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
   expectAllPresent: contractBrowserAction(expectAllPresent),
   expectElementCount: contractBrowserAction(expectElementCount),
   expectNumber: contractBrowserAction(expectNumber),
+  expectWarehouseInventory: contractBrowserAction(expectWarehouseInventory),
   expectOrderMatches: contractBrowserAction(expectOrderMatches),
   expectSequence: contractBrowserAction(expectSequence),
   expectStable: contractBrowserAction(expectStable),

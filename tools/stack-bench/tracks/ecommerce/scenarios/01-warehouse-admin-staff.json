@@ -35,11 +35,21 @@
           "points": 1,
           "statedBy": "admin lists every item with its stock, every warehouse, and the stock of each item in each warehouse",
           "steps": [
-            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 13 },
-            { "do": "expect", "actor": "admin", "testid": "admin-location-row", "count": 26 },
-            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
-            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 100 }
+            { "do": "expectWarehouseInventory", "actor": "admin", "items": [
+              {"name": "Air Purifier", "stock": {"East": 60, "West": 40}},
+              {"name": "Bluetooth Speaker", "stock": {"East": 50, "West": 50}},
+              {"name": "Coffee Grinder", "stock": {"East": 70, "West": 30}},
+              {"name": "Desk Lamp", "stock": {"East": 55, "West": 45}},
+              {"name": "Espresso Machine", "stock": {"East": 80, "West": 20}},
+              {"name": "Gaming Mouse", "stock": {"East": 50, "West": 50}},
+              {"name": "Headphones", "stock": {"East": 60, "West": 40}},
+              {"name": "Induction Cooktop", "stock": {"East": 50, "West": 50}},
+              {"name": "Keyboard", "stock": {"East": 70, "West": 30}},
+              {"name": "Laptop Stand", "stock": {"East": 90, "West": 10}},
+              {"name": "Mirrorless Camera", "stock": {"East": 2, "West": 1}},
+              {"name": "USB Cable", "stock": {"East": 0, "West": 0}},
+              {"name": "Webcam", "stock": {"East": 60, "West": 40}}
+            ] }
           ]
         }
       ]

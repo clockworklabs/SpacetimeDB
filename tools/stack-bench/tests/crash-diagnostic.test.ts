@@ -419,7 +419,7 @@ test('a recovered replacement cannot stand in for a checkout acknowledged before
   const prior = { id: 'prior', accountId: 'a', status: 'pending', totalMinor: 100,
     lines: [{ itemId: 'i', quantity: 1, priceMinor: 100, allocations: [{ warehouseId: 'w', quantity: 1 }] }] };
   const payment = { id: 'prior-payment', orderId: 'prior', amountMinor: 100, status: 'paid' };
-  for (const mode of ['masked', 'idempotent', 'clock-drift', 'no-precut-ack', 'lost-prior', 'partial', 'direct'] as const) {
+  for (const mode of ['masked', 'idempotent', 'clock-drift', 'no-precut-ack', 'lost-prior', 'partial', 'direct', 'application-ack-after-service-cut'] as const) {
     const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100, cart: [],
       stock: [{ warehouseId: 'w', quantity: 10 }], reservations: [], orders: [prior], payments: [payment],
       orphanOrderLines: 0 };
@@ -440,7 +440,7 @@ test('a recovered replacement cannot stand in for a checkout acknowledged before
     const recorded = new Map<string, unknown>();
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
       do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
-      requests: 16, offsetMs: 0, target: 'database', ...(mode === 'direct' ? {} : { as: 'captured' }),
+      requests: 16, offsetMs: 0, target: mode === 'application-ack-after-service-cut' ? 'application' : 'database', ...(mode === 'direct' ? {} : { as: 'captured' }),
     }, { capabilities: {
       actors: { get: () => ({ name: 'buyer', page: { evaluate: async () => [] },
         context: { cookies: async () => [] }, writes: [{ url: 'http://app/session', headers: { authorization: 'Bearer private-token' } }] }) },
@@ -449,11 +449,11 @@ test('a recovered replacement cannot stand in for a checkout acknowledged before
         fetch: async () => {
           const index = ++calls;
           if (index !== 1 || mode === 'no-precut-ack') await resumed;
-          return { status: index <= (['masked', 'idempotent', 'clock-drift', 'direct'].includes(mode) ? 2 : 1) ? 200 : 409,
+          return { status: index <= (['masked', 'idempotent', 'clock-drift', 'direct', 'application-ack-after-service-cut'].includes(mode) ? 2 : 1) ? 200 : 409,
             text: async () => {
-              if (index === 1 && mode !== 'no-precut-ack') { clock = base + (mode === 'clock-drift' ? 8 : 1); firstDone(); }
+              if (index === 1 && mode !== 'no-precut-ack') { clock = base + (['clock-drift', 'application-ack-after-service-cut'].includes(mode) ? 8 : 1); firstDone(); }
               if (index !== 1 || mode === 'no-precut-ack') clock = base + 20;
-              return index <= (['masked', 'idempotent', 'clock-drift', 'direct'].includes(mode) ? 2 : 1) ? '{}' : 'refused';
+              return index <= (['masked', 'idempotent', 'clock-drift', 'direct', 'application-ack-after-service-cut'].includes(mode) ? 2 : 1) ? '{}' : 'refused';
             } };
         } },
       'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
@@ -463,9 +463,16 @@ test('a recovered replacement cannot stand in for a checkout acknowledged before
         close: async () => {}, crash: async () => {
           if (mode !== 'no-precut-ack') await first;
           clock = base + 10;
-          return { backend: 'postgres', target: 'database', requestedAtMs: clock, completedAtMs: clock,
+          return { backend: 'postgres', target: mode === 'application-ack-after-service-cut' ? 'application' : 'database',
+            requestedAtMs: base, completedAtMs: clock,
             clockOffsetBeforeMs: mode === 'clock-drift' ? 4 : 0, clockOffsetAfterMs: 0, signal: 'SIGKILL',
-            processEvidence: `KILLED 42 123 ${clock}\nQUIET\n` };
+            // Freeze ends at +5, acknowledgement at +8, final kill at +10.
+            // Narrowing the overlap interval must not bless a replacement order.
+            ...(mode === 'application-ack-after-service-cut' ? {
+              applicationFreeze: { startedAtMs: base + 4, completedAtMs: base + 5,
+                processes: [{ pid: 41, startTicks: 122, threads: [41] }, { pid: 42, startTicks: 123, threads: [42] }] },
+            } : {}),
+            processEvidence: `${mode === 'application-ack-after-service-cut' ? `KILLED 41 122 ${base + 5}\n` : ''}KILLED 42 123 ${clock}\nQUIET\n` };
         }, recover: async () => { release(); return null; } }) },
     } });
     assert.equal(calls, 16, mode);
@@ -477,7 +484,7 @@ test('a recovered replacement cannot stand in for a checkout acknowledged before
     }, { capabilities: { 'browser-observation': { recorded } } });
     const atomicity = await verdict('atomicity'), durability = await verdict('durability');
     assert.equal(atomicity.status, mode === 'partial' ? 'failed' : 'passed', mode);
-    assert.equal(durability.status, ['masked', 'idempotent', 'clock-drift', 'partial'].includes(mode) ? 'inconclusive'
+    assert.equal(durability.status, ['masked', 'idempotent', 'clock-drift', 'partial', 'application-ack-after-service-cut'].includes(mode) ? 'inconclusive'
       : mode === 'lost-prior' ? 'failed' : 'passed', mode);
   }
 });

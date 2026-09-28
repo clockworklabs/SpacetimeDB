@@ -85,19 +85,40 @@ type NamedTransportCapabilities = NamedActionCapabilities & TransportActorCapabi
 type NamedTransportArguments<Input> =
   ActorActionArguments<Input, NamedTransportCapabilities>;
 
-async function readActionValues(capabilities: ActorCapabilities, source: Actor, action: NamedAction,
-  input: { action: string; input: NonNullable<CallActionInput['input']> }, within: number) {
+async function readActionValues(capabilities: NamedActionCapabilities, source: Actor, action: NamedAction,
+  input: { action: string; input: NonNullable<CallActionInput['input']> }, within: number, signal: AbortSignal) {
   if (!Array.isArray(action.params) || action.params.length === 0) {
     inconclusive('action-without-parameters', { action: input.action });
   }
 
-  const target = source.loc(input.input.testid, { contains: input.input.contains });
-  await target.waitFor({ state: 'attached', timeout: within });
-  const raw = await target.getAttribute(input.input.attribute);
-  if (raw === null || raw === '') {
-    fail('interface-missing', { control: input.input.testid, attribute: input.input.attribute,
-      action: input.action });
-  }
+  const named = capabilities['named-actions'];
+  const deadline = named.now() + within;
+  const readAttribute = async (actor: Actor, selector: { testid: string; contains?: string; attribute: string }) => {
+    const target = actor.loc(selector.testid, { contains: selector.contains });
+    const missing = (): never => fail('interface-missing', {
+      control: selector.testid, attribute: selector.attribute, action: input.action,
+    });
+    const remaining = () => {
+      signal.throwIfAborted();
+      const ms = deadline - named.now();
+      if (ms <= 0) missing();
+      return Math.max(1, ms);
+    };
+    try {
+      await target.waitFor({ state: 'attached', timeout: remaining() });
+      for (;;) {
+        const value = await target.getAttribute(selector.attribute, { timeout: remaining() });
+        signal.throwIfAborted();
+        if (value !== null && value !== '') return value;
+        await named.sleep(Math.min(100, remaining()), signal);
+      }
+    } catch (error) {
+      signal.throwIfAborted();
+      if (error instanceof Error && error.name === 'TimeoutError' && named.now() >= deadline) missing();
+      throw error;
+    }
+  };
+  const raw = await readAttribute(source, input.input);
   const invalid = (detail: string): never => fail('interface-invalid',
     { action: input.action, attribute: input.input.attribute, detail });
   let values: unknown;
@@ -116,13 +137,7 @@ async function readActionValues(capabilities: ActorCapabilities, source: Actor, 
     [name, Object.hasOwn(supplied, name) ? supplied[name] : defaults[index]]));
   for (const [name, override] of Object.entries(input.input.overrides ?? {})) {
     if (!expected.includes(name)) invalid(`override parameter ${name} is not declared`);
-    const target = actorFor(capabilities, override.actor).loc(override.testid, { contains: override.contains });
-    await target.waitFor({ state: 'attached', timeout: within });
-    const value = await target.getAttribute(override.attribute);
-    if (value === null || value === '') {
-      fail('interface-missing', { control: override.testid, attribute: override.attribute, action: input.action });
-    }
-    actionValues[name] = value;
+    actionValues[name] = await readAttribute(actorFor(capabilities, override.actor), override);
   }
   const missing = expected.filter(name => actionValues[name] === undefined);
   if (missing.length) {
@@ -145,7 +160,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     inconclusive('unresolved-action', { action: input.action });
   }
   const actionValues = input.input
-    ? await readActionValues(capabilities, source, action, { action: input.action, input: input.input }, transport.defaultWithin)
+    ? await readActionValues(capabilities, source, action, { action: input.action, input: input.input }, transport.defaultWithin, signal)
     : Object.fromEntries((action.params ?? []).map((param, index) => [param.name, action.args![index]]));
 
   const request = namedActionRequest(named, action, { values: actionValues });
@@ -197,6 +212,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     }
     credentials = tamperedSessionCredentials(credentials, caller.name);
   }
+  signal.throwIfAborted();
   let status = 0;
   let classified = classifyNamedActionResponse(named, request, { status, text: '' });
   try {
@@ -302,7 +318,7 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
     if (!action) inconclusive('unknown-action', { action: group.action });
     const values = group.input ? await readActionValues(
       capabilities, actorFor(capabilities, group.from ?? group.actors[0]!), action,
-      { action: group.action, input: group.input }, group.requestTimeoutMs ?? 30000) : undefined;
+      { action: group.action, input: group.input }, group.requestTimeoutMs ?? 30000, signal) : undefined;
     const request = namedActionRequest(named, action, values === undefined ? group : { values });
     if (!request?.url) inconclusive('unresolved-action', { action: group.action });
     const actors: Array<{ name: string; credentials: HeaderRecord; body?: string | null }> = [];

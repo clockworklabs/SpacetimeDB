@@ -540,23 +540,10 @@
           "testid": "checkout-submit"
         },
         {
-          "do": "expectNumber",
-          "actor": "c",
-          "testid": "cart-count",
-          "equals": 0,
-          "within": 10000
-        },
-        {
-          "do": "click",
-          "actor": "c",
-          "testid": "overlay-close",
-          "ifAvailable": true,
-          "within": 1000
-        },
-        {
           "do": "dbExpectCheckout",
           "before": "recovered-before",
           "prepared": "recovered-prepared",
+          "within": 10000,
           "quantity": [
             {
               "item": "Keyboard",
@@ -567,7 +554,13 @@
               "quantity": 1
             }
           ]
-        }
+        },
+        {"do":"reload","actor":"c","settleMs":0},
+        {"do":"ensureSignedIn","actor":"c","name":"recovered","readyTestid":"current-user"},
+        {"do":"click","actor":"c","testid":"overlay-close","ifAvailable":true,"unlessVisible":"cart-total","within":1000},
+        {"do":"click","actor":"c","testid":"current-user","ifAvailable":true,"unlessVisible":["cart-toggle","cart-total"]},
+        {"do":"click","actor":"c","testid":"cart-toggle","unlessVisible":"cart-total"},
+        {"do":"expectNumber","actor":"c","testid":"cart-count","equals":0,"within":10000}
       ],
       "criteria": [
         {
