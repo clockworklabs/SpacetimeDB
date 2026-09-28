@@ -1,0 +1,18 @@
+{
+  "name": "spacetimedb-showreel",
+  "private": true,
+  "description": "Procedural motion-graphics promo video for SpacetimeDB (canvas renderer + synthesized soundtrack).",
+  "scripts": {
+    "audio": "node audio.js",
+    "video": "node render.js --jobs 20 --samples 5",
+    "mux": "./mux.sh",
+    "build": "npm run audio && npm run video && npm run mux",
+    "stills": "node render.js --still"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/source-code-pro": "^5.2.7",
+    "@napi-rs/canvas": "^0.1.80",
+    "geist": "^1.5.1"
+  }
+}
