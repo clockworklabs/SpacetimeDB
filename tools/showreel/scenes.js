@@ -841,7 +841,7 @@ function sRealtime(ctx, t) {
 
   ctx.save();
   ctx.globalAlpha = 1 - pout;
-  riseParts(ctx, [{ s: 'Subscribe' }, { s: 'to any query.' }], CX, 170, { t: u - 0.3, size: 70, weight: 800, align: 'center', stagger: 0.02, outT: u > 3.0 ? u - 3.0 : undefined, outDir: -1 });
+  riseParts(ctx, [{ s: 'Subscribe' }, { s: 'to the rows you need.' }], CX, 170, { t: u - 0.3, size: 70, weight: 800, align: 'center', stagger: 0.02, outT: u > 3.0 ? u - 3.0 : undefined, outDir: -1 });
   riseParts(ctx, [{ s: 'Every change. Every client.' }, { s: 'Instantly.', fill: 'brand' }], CX, 170, { t: u - 3.2, size: 70, weight: 800, align: 'center', stagger: 0.014 });
   const bt = u - 4.6;
   if (bt > 0) {

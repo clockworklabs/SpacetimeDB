@@ -67,6 +67,7 @@ Stakeholder feedback so far:
 - **No Convex price comparison** (considered cheeky). Keep the "Convex" label in the benchmark chart as is. No pipelining caveat on screen.
 - **Syntax highlighting keeps its own palette** (`SYN` in `scenes.js`: purple attributes, pink keywords, yellow types, green function calls, cyan strings). It is exempt from the accent rules below.
 - "Start free" on the Maincloud scene is a prominent solid-green button.
+- **Claims must be technically exact.** E.g. the real-time headline is "Subscribe to the rows you need.", not "…to any query": subscriptions only accept a SQL subset (whole rows from one table, at most a two-table indexed join, no projections or aggregates; see `docs/docs/00300-resources/00200-reference/00400-sql-reference.md`).
 
 Designer's brand rules (applied in `lib.js`/`scenes.js`):
 
