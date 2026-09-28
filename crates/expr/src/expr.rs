@@ -1,5 +1,7 @@
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{
+    query::Delta, view_instance_arg_hash_value, AlgebraicType, AlgebraicValue, Identity, ProductValue,
+};
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
@@ -62,6 +64,12 @@ impl CollectViews for ProjectName {
 }
 
 impl ProjectName {
+    pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr.bind_view_arg_hashes(caller),
+        }
+    }
+
     /// Unwrap the outer projection, returning the inner expression
     pub fn unwrap(self) -> RelExpr {
         match self {
@@ -203,6 +211,16 @@ impl CollectViews for ProjectList {
 }
 
 impl ProjectList {
+    pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
+        match self {
+            Self::Name(exprs) => exprs.iter_mut().for_each(|expr| expr.bind_view_arg_hashes(caller)),
+            Self::List(exprs, _) | Self::Agg(exprs, ..) => {
+                exprs.iter_mut().for_each(|expr| expr.bind_view_arg_hashes(caller))
+            }
+            Self::Limit(input, _) => input.bind_view_arg_hashes(caller),
+        }
+    }
+
     /// Does this expression project a single relvar?
     /// If so, we return it's [`TableOrViewSchema`].
     /// If not, it projects a list of columns, so we return [None].
@@ -268,17 +286,29 @@ pub struct Relvar {
     pub alias: RawNamespacedIdentifier,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
+    /// The arguments of a parameterized view call.
+    /// `None` for tables and for views without parameters.
+    pub view_args: Option<ViewArgs>,
+}
+
+/// The arguments of one parameterized view call
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewArgs {
+    /// The typed arguments
+    pub args: ProductValue,
+    /// The call's `arg_hash`, which depends on the caller for sender-scoped views.
+    pub arg_hash: Option<AlgebraicValue>,
 }
 
 impl CollectViews for RelExpr {
     fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.visit(&mut |expr| {
-            if let Self::RelVar(Relvar { schema, .. }) = expr
+            if let Self::RelVar(Relvar { schema, view_args, .. }) = expr
                 && let Some(info) = &schema.view_info
             {
                 views.insert(ViewCall {
                     view_id: info.view_id,
-                    args: ProductValue::default(),
+                    args: view_args.as_ref().map(|v| v.args.clone()).unwrap_or_default(),
                 });
             }
         });
@@ -286,6 +316,35 @@ impl CollectViews for RelExpr {
 }
 
 impl RelExpr {
+    /// Sets the `arg_hash` of every parameterized view call in this expression.
+    /// Sender-scoped views hash the `caller` with their args, and anonymous views hash only their args.
+    pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
+        self.for_each_relvar_mut(|relvar| {
+            if let Some(view_args) = &mut relvar.view_args {
+                let sender = (!relvar.schema.is_anonymous_view()).then_some(caller);
+                view_args.arg_hash = Some(view_instance_arg_hash_value(sender, &view_args.args));
+            }
+        });
+    }
+
+    pub fn for_each_relvar(&self, mut f: impl FnMut(&Relvar)) {
+        self.visit(&mut |expr| match expr {
+            Self::RelVar(relvar)
+            | Self::LeftDeepJoin(LeftDeepJoin { rhs: relvar, .. })
+            | Self::EqJoin(LeftDeepJoin { rhs: relvar, .. }, ..) => f(relvar),
+            Self::Select(..) => {}
+        });
+    }
+
+    pub fn for_each_relvar_mut(&mut self, mut f: impl FnMut(&mut Relvar)) {
+        self.visit_mut(&mut |expr| match expr {
+            Self::RelVar(relvar)
+            | Self::LeftDeepJoin(LeftDeepJoin { rhs: relvar, .. })
+            | Self::EqJoin(LeftDeepJoin { rhs: relvar, .. }, ..) => f(relvar),
+            Self::Select(..) => {}
+        });
+    }
+
     /// Walk the expression tree and call `f` on each node
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);

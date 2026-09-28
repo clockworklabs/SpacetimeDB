@@ -67,6 +67,7 @@ pub trait TypeChecker {
                     schema,
                     alias,
                     delta: None,
+                    view_args: None,
                 }))
             }
             SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
@@ -76,6 +77,7 @@ pub trait TypeChecker {
                     schema,
                     alias,
                     delta: None,
+                    view_args: None,
                 });
 
                 for SqlJoin {
@@ -94,6 +96,7 @@ pub trait TypeChecker {
                         schema: Self::type_relvar(tx, &name)?,
                         alias,
                         delta: None,
+                        view_args: None,
                     };
 
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
