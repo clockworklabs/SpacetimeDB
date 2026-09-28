@@ -567,6 +567,8 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   const defaultWithin = ctx.defaultWithin ?? DEFAULT_WITHIN;
   const actorAccess = Object.freeze({ get: (name: string) => actors.get(name) });
   const runtimeValues = Object.freeze({
+    sequenceScopeFallback: ctx.contractIds?.includes('ecommerce.progression.faceted-search-hooks')
+      ? { testid: 'item-name', from: 'item-list', to: 'search-results' } : undefined,
     applicationUrl: ctx.url,
     authRequestPatch: ctx.authRequestPatch ?? null,
     authReadEndpoints: ctx.authReadEndpoints ?? [],

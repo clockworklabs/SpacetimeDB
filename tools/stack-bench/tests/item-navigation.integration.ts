@@ -13,37 +13,81 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { gradeFeature } from '../grader/grade.js';
 
 test('catalog ranking distinguishes exact name hooks from surrounding decoration', async () => {
-  // Failure cases: outside icons must pass; inside text, wrong order, missing,
-  // duplicate and changed names must fail the explicit name-only interface.
+  // Failure cases: scoped fallback requires the delivered contract and cannot
+  // conceal hidden results, wrong visible primary contents, or a stale observer.
   const names = ['Air Purifier', 'Bluetooth Speaker', 'Coffee Grinder', 'Desk Lamp',
     'Espresso Machine', 'Gaming Mouse', 'Headphones', 'Induction Cooktop', 'Keyboard', 'Laptop Stand'];
   const scenario = readFileSync(join(STACK_BENCH_ROOT,
     'tracks/ecommerce/scenarios/01-catalog-ranking.json'), 'utf8');
-  const feature = compileScenarioDefinition(JSON.parse(scenario)).features[0]!;
+  const compiled = compileScenarioDefinition(JSON.parse(scenario)).features[0]!;
+  const feature = { ...compiled, setup: compiled.setup.map(step => ({ ...step, within: 250 })),
+    criteria: compiled.criteria.map(criterion => ({ ...criterion,
+      steps: criterion.steps.map(step => ({ ...step, within: 250 })),
+    })) };
+  const liveSource = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/01-core.json'), 'utf8'));
+  const live = compileScenarioDefinition(liveSource).features.find(candidate => candidate.id === 2)!;
+  // Exercise the registered two-client ranking steps without unrelated auth/stock setup.
+  const liveFeature = { ...live, actors: ['buyer', 'visitor'], setup: [],
+    criteria: live.criteria.filter(criterion => criterion.id === '2c').map(criterion => ({
+      ...criterion, steps: criterion.steps.filter(step => step.do !== 'expectAgreement')
+        .map(step => ({ ...step, within: 500 })),
+    })) };
   let mode = 'plain';
+  let purchased = false;
   const evidence: unknown[] = [];
-  const server = createServer((_request, response) => {
+  const server = createServer((request, response) => {
+    if (request.url === '/buy') {
+      purchased = true; response.writeHead(204); response.end(); return;
+    }
+    if (request.url === '/ranking') {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify(purchased ? [names[2], ...names.filter(name => name !== names[2])] : names));
+      return;
+    }
     const rows = [...names];
-    if (mode === 'wrong-order') [rows[0], rows[1]] = [rows[1]!, rows[0]!];
-    if (mode === 'missing') rows.pop();
-    if (mode === 'duplicate') rows[9] = rows[0]!;
+    if (mode.endsWith('wrong-order')) [rows[0], rows[1]] = [rows[1]!, rows[0]!];
+    if (mode.endsWith('missing')) rows.pop();
+    if (mode.endsWith('duplicate')) rows[9] = rows[0]!;
     if (mode === 'changed-name') rows[0] = 'Air Purifier Pro';
+    const cards = (values: string[]) => values.map(name =>
+      `<article data-role="item-card"><button><span data-role="item-name">${name}${mode === 'inside-icon' ? ' ↗' : ''}</span>${mode === 'outside-icon' ? '<span aria-hidden="true"> ↗</span>' : ''}</button><button data-role="buy-now" onclick="fetch('/buy')">Buy</button></article>`).join('');
+    const fallback = mode.startsWith('fallback') || mode === 'no-gate' || mode === 'hidden-only'
+      || mode === 'live' || mode === 'stale';
+    let html = mode === 'fallback-absent' ? ''
+      : `<section id="item-list" ${fallback ? 'hidden' : ''}>${cards(mode === 'primary-wrong' ? [...rows].reverse() : rows)}</section>`;
+    if (fallback || mode === 'primary-wrong') html += `<section id="search-results" ${mode === 'hidden-only' ? 'hidden' : ''}>${cards(rows)}</section>`;
+    if (mode === 'nested') html = `<section id="search-results">${html}</section>`;
+    if (mode === 'live' || mode === 'stale') html += `<script>
+      const update = ${cards.toString()};
+      const mode = ${JSON.stringify(mode)};
+      let previous = ${JSON.stringify(JSON.stringify(names))};
+      if (mode === 'live') setInterval(async () => {
+        const rows = await (await fetch('/ranking')).json(), next = JSON.stringify(rows);
+        if (next !== previous) document.querySelector('#search-results').innerHTML = update(rows);
+        previous = next;
+      }, 30);
+    </script>`;
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    response.end(`<section id="item-list">${rows.map(name =>
-      `<article data-role="item-card"><button><span data-role="item-name">${name}${mode === 'inside-icon' ? ' ↗' : ''}</span>${mode === 'outside-icon' ? '<span aria-hidden="true"> ↗</span>' : ''}</button></article>`
-    ).join('')}</section>`);
+    response.end(html);
   }).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const browser = await chromium.launch({ headless: true });
   try {
-    for (mode of ['plain', 'outside-icon', 'inside-icon', 'wrong-order', 'missing', 'duplicate', 'changed-name']) {
-      const expected = mode === 'plain' || mode === 'outside-icon' ? 'passed' : 'failed';
-      const grade = await gradeFeature(browser, feature,
+    for (mode of ['plain', 'outside-icon', 'inside-icon', 'wrong-order', 'missing', 'duplicate', 'changed-name',
+      'fallback', 'fallback-absent', 'no-gate', 'nested', 'hidden-only', 'primary-wrong',
+      'fallback-wrong-order', 'fallback-missing', 'fallback-duplicate', 'live', 'stale']) {
+      purchased = false;
+      const expected = ['plain', 'outside-icon', 'fallback', 'fallback-absent', 'nested', 'live'].includes(mode) ? 'passed' : 'failed';
+      const gated = !['plain', 'outside-icon', 'inside-icon', 'wrong-order', 'missing', 'duplicate', 'changed-name', 'no-gate'].includes(mode);
+      const grade = await gradeFeature(browser, mode === 'live' || mode === 'stale' ? liveFeature : feature,
         { url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
         { runId: 'catalog-name-contract', roomName: name => name, url, actions: [],
-          spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 250 });
-      evidence.push({ mode, expected, grade });
+          spacetime: null, backend: 'postgres', nullControl: false, defaultWithin: 250,
+          contractIds: gated ? ['ecommerce.progression.faceted-search-hooks'] : [] });
+      evidence.push({ mode, expected, gated, grade });
+      if (mode === 'stale') assert.equal(purchased, true, 'the stale observer case must reach the purchase');
       assert.equal(grade.criteria[0]!.evidence.status, expected, JSON.stringify(evidence.at(-1)));
     }
   } finally {
@@ -54,7 +98,7 @@ test('catalog ranking distinguishes exact name hooks from surrounding decoration
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, JSON.stringify({
         rerun: 'STACK_BENCH_ITEM_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern="catalog ranking distinguishes" dist/tests/item-navigation.integration.js',
-        browserVersion: browser.version(), names, scenario: JSON.parse(scenario), evidence,
+        browserVersion: browser.version(), names, scenario: JSON.parse(scenario), liveSource, evidence,
       }, null, 2));
     }
   }

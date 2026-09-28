@@ -67,6 +67,7 @@ interface BrowserActor {
 }
 
 interface BrowserCapability {
+  readonly sequenceScopeFallback?: { readonly testid: string; readonly from: string; readonly to: string };
   readonly applicationUrl?: string;
   readonly defaultWithin: number;
   readonly recorded: {
@@ -530,12 +531,18 @@ async function expectSequence({ input, capabilities, signal }: BrowserArguments<
   const browser = observation(capabilities);
   const within = input.within ?? browser.defaultWithin;
   const deadline = Date.now() + within;
-  const root = input.in
+  const primary = input.in
     ? actor.page.locator(browser.testId(input.in.testid),
       input.in.contains ? { hasText: browser.expand(input.in.contains) } : {}).filter({ visible: true }).first()
-    : actor.page;
+    : undefined;
+  const fallback = browser.sequenceScopeFallback;
+  const alternate = fallback && input.testid === fallback.testid && input.in?.testid === fallback.from
+    ? actor.page.locator(browser.testId(fallback.to),
+      input.in.contains ? { hasText: browser.expand(input.in.contains) } : {}).filter({ visible: true }).first()
+    : undefined;
   let seen: string[] = [];
   for (;;) {
+    const root = alternate && primary && !await primary.isVisible() ? alternate : primary ?? actor.page;
     seen = (await root.locator(browser.testId(input.testid)).filter({ visible: true }).allInnerTexts())
       .map(value => value.replace(/\s+/g, ' ').trim());
     if (seen.length === input.equals.length
