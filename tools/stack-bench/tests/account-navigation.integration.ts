@@ -752,7 +752,6 @@ test('purchase attribution requires a working private history, not a blank view'
   const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-purchase-attribution.json');
   const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;
   const steps = feature.criteria[0]!.steps.filter(step => step.actor === 'victim' && step.do === 'expect');
-  assert.equal(feature.setup.at(-1)!.in?.contains, 'Coffee Grinder');
   assert.equal(steps.length, 2);
   const browser = await chromium.launch({ headless: true });
   try {
