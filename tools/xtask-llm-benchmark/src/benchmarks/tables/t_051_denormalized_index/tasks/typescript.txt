@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in TypeScript that maintains an indexed denormalized category slug on products.
+
+TABLES
+- category (public)
+  - Fields:
+    - id: u64 (primary key)
+    - slug: string
+- product (public)
+  - Fields:
+    - id: u64 (primary key)
+    - categoryId: u64 (btree index byCategory)
+    - categorySlug: string (btree index byCategorySlug)
+    - name: string
+
+REDUCERS
+- create_category(id: u64, slug: string)
+- create_product(id: u64, categoryId: u64, name: string)
+  - Copy the current category slug into categorySlug
+- rename_category(id: u64, newSlug: string)
+  - Update the category slug
+  - Update every related product so categorySlug stays synchronized

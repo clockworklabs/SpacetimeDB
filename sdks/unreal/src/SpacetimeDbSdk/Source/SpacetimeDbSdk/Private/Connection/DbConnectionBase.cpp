@@ -46,11 +46,20 @@ static FDatabaseUpdateType QueryRowsToDatabaseUpdate(const FQueryRowsType& Rows,
 static FDatabaseUpdateType TransactionUpdateToDatabaseUpdate(const FTransactionUpdateType& Update)
 {
 	FDatabaseUpdateType Out;
+	TMap<FString, int32> TableNameToIndex;
 	for (const FQuerySetUpdateType& QuerySet : Update.QuerySets)
 	{
 		for (const FTableUpdateType& TableUpdate : QuerySet.Tables)
 		{
-			Out.Tables.Add(TableUpdate);
+			if (const int32* ExistingIndex = TableNameToIndex.Find(TableUpdate.TableName))
+			{
+				Out.Tables[*ExistingIndex].Rows.Append(TableUpdate.Rows);
+			}
+			else
+			{
+				const int32 NewIndex = Out.Tables.Add(TableUpdate);
+				TableNameToIndex.Add(TableUpdate.TableName, NewIndex);
+			}
 		}
 	}
 	return Out;

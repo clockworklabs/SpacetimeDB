@@ -1,0 +1,13 @@
+{
+  "description": "SolidJS web app with TypeScript server",
+  "client_framework": "SolidJS",
+  "client_lang": "typescript",
+  "server_lang": "typescript",
+  "builtWith": [
+    "solid-js",
+    "vite-plugin-solid",
+    "typescript",
+    "vite",
+    "spacetimedb"
+  ]
+}

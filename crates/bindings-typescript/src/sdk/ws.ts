@@ -28,6 +28,18 @@ async function resolveWS(): Promise<typeof WebSocket> {
 
 export interface WebSocketAdapter {
   readonly protocol: string;
+  /**
+   * The underlying socket's `readyState`, using the standard `WebSocket`
+   * constants: `CONNECTING` (0), `OPEN` (1), `CLOSING` (2), `CLOSED` (3). Used
+   * to detect sockets that died silently, for example after the tab was frozen
+   * or the machine slept, without a clean `onclose` having fired.
+   *
+   * Optional so existing custom adapters stay valid without changes. When an
+   * adapter does not expose it, the resume handler cannot detect a
+   * silently-closed socket for that adapter and leaves it to the normal
+   * `onclose` path.
+   */
+  readonly readyState?: number;
   send(msg: Uint8Array<ArrayBuffer>): void;
   close(): void;
 

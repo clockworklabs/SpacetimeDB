@@ -8,14 +8,14 @@ const user = table({
   active: t.bool(),
 });
 
-const userStats = table({
+const user_stats = table({
   name: 'user_stats',
 }, {
   key: t.string().primaryKey(),
   count: t.u64(),
 });
 
-const spacetimedb = schema({ user, userStats });
+const spacetimedb = schema({ user, user_stats });
 export default spacetimedb;
 
 export const compute_user_counts = spacetimedb.reducer(
@@ -29,7 +29,7 @@ export const compute_user_counts = spacetimedb.reducer(
       }
     }
 
-    ctx.db.userStats.insert({ key: 'total', count: total });
-    ctx.db.userStats.insert({ key: 'active', count: active });
+    ctx.db.user_stats.insert({ key: 'total', count: total });
+    ctx.db.user_stats.insert({ key: 'active', count: active });
   }
 );

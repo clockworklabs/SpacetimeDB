@@ -516,7 +516,7 @@ pub trait IndexIsPointed: Index {}
 ///
 /// ```no_run
 /// # #[cfg(target_arch = "wasm32")] mod demo {
-/// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
+/// use spacetimedb::{table, DbContext, PointIndex, ReducerContext};
 ///
 /// #[table(accessor = user,
 ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
@@ -537,7 +537,7 @@ pub trait IndexIsPointed: Index {}
 ///
 /// ```no_run
 /// # #[cfg(target_arch = "wasm32")] mod demo {
-/// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
+/// use spacetimedb::{table, DbContext, RangedIndex, ReducerContext};
 ///
 /// #[table(accessor = user)]
 /// struct User {
@@ -548,7 +548,7 @@ pub trait IndexIsPointed: Index {}
 /// }
 ///
 /// fn demo(ctx: &ReducerContext) {
-///     let by_dogs: PointIndex<_, (u64,), _> = ctx.db().user().dogs();
+///     let by_dogs: RangedIndex<_, (u64,), _> = ctx.db().user().dogs();
 /// }
 /// # }
 /// ```

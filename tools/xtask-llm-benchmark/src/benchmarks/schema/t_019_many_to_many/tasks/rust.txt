@@ -13,7 +13,7 @@ TABLES
     - group_id: u64 (primary key, auto_inc)
     - title: String
 
-- membership
+- membership (public)
   - Struct: Membership
   - Fields:
     - id: u64 (primary key, auto_inc)

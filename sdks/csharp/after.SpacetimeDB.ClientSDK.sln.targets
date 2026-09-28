@@ -5,6 +5,7 @@
       <ItemGroup>
          <!-- Delete doesn't support wildcards on its own, collect files into an interim ItemGroup. -->
          <_UnsupportedDLLs Include="packages/**/net8.0/**" />
+         <_UnsupportedDLLs Include="packages/**/net10.0/**" />
       </ItemGroup>
       <Delete Files="@(_UnsupportedDLLs)" />
    </Target>

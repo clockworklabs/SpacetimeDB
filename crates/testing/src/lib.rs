@@ -49,6 +49,55 @@ pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {
     }
     // If CUSTOM_SPACETIMEDB_PATH is missing, fall through to the default behavior.
 
+    if cmd == "publish" {
+        // Publishing inspects exact module bytes in a child process. This
+        // function is linked into a libtest under target/*/deps, so current_exe
+        // cannot locate the standalone companion of the actual runtime CLI.
+        // Use the same explicit build artifacts as the test server guard.
+        let cli = spacetimedb_guard::ensure_binaries_built();
+        let inspector = cli
+            .with_file_name("spacetimedb-standalone")
+            .with_extension(std::env::consts::EXE_EXTENSION);
+        assert!(
+            inspector.is_file(),
+            "SDK tests require the standalone schema inspector beside the CLI: {}",
+            inspector.display()
+        );
+        assert!(
+            sub_args.get_one::<String>("server").is_some(),
+            "SDK publication must use its explicit test server"
+        );
+        let root = paths
+            .to_root_dir()
+            .expect("SDK tests require an isolated root directory");
+        let status = RUNTIME.block_on(async {
+            let mut child = tokio::process::Command::new(cli)
+                .arg("--root-dir")
+                .arg(root)
+                .arg("--config-path")
+                .arg(paths.cli_config_dir.cli_toml())
+                .args(args)
+                .arg("--no-config")
+                .env("SPACETIMEDB_SCHEMA_EXTRACTOR", inspector)
+                .stdin(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .spawn()
+                .expect("Failed to start the pre-built publish CLI");
+            // Output streams directly to the test log, without accumulating a
+            // second buffer. The inspector retains its own tighter bounds.
+            match tokio::time::timeout(std::time::Duration::from_secs(120), child.wait()).await {
+                Ok(status) => status.expect("Failed to reap the pre-built publish CLI"),
+                Err(_) => {
+                    let _ = child.start_kill();
+                    child.wait().await.expect("Failed to reap timed-out publish CLI");
+                    panic!("SDK module publication timed out");
+                }
+            }
+        });
+        assert!(status.success(), "SDK module publication failed");
+        return;
+    }
+
     // Default: run in-process CLI (fast/path-friendly for tests).
     let config = Config::new_with_localhost(paths.cli_config_dir.cli_toml());
     RUNTIME

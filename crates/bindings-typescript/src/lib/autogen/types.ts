@@ -51,6 +51,23 @@ export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
 });
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
+// The tagged union or sum type for the algebraic type `EnvVarType`.
+export const EnvVarType = __t.enum('EnvVarType', {
+  String: __t.unit(),
+  StringLiteral: __t.string(),
+  Union: __t.array(__t.string()),
+});
+export type EnvVarType = __Infer<typeof EnvVarType>;
+
+export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
+  name: __t.string(),
+  get ty() {
+    return EnvVarType;
+  },
+  optional: __t.bool(),
+});
+export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
+
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
 export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Table() {
@@ -60,6 +77,9 @@ export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
     return NameMapping;
   },
   get Index() {
+    return NameMapping;
+  },
+  get Namespace() {
     return NameMapping;
   },
 });
@@ -158,6 +178,15 @@ export const Lifecycle = __t.enum('Lifecycle', {
 });
 export type Lifecycle = __Infer<typeof Lifecycle>;
 
+// The tagged union or sum type for the algebraic type `MethodOrAny`.
+export const MethodOrAny = __t.enum('MethodOrAny', {
+  Any: __t.unit(),
+  get Method() {
+    return HttpMethod;
+  },
+});
+export type MethodOrAny = __Infer<typeof MethodOrAny>;
+
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
 export const MiscModuleExport = __t.enum('MiscModuleExport', {
   get TypeAlias() {
@@ -238,6 +267,20 @@ export const RawConstraintDefV9 = __t.object('RawConstraintDefV9', {
   },
 });
 export type RawConstraintDefV9 = __Infer<typeof RawConstraintDefV9>;
+
+export const RawHttpHandlerDefV10 = __t.object('RawHttpHandlerDefV10', {
+  sourceName: __t.string(),
+});
+export type RawHttpHandlerDefV10 = __Infer<typeof RawHttpHandlerDefV10>;
+
+export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
+  handlerFunction: __t.string(),
+  get method() {
+    return MethodOrAny;
+  },
+  path: __t.string(),
+});
+export type RawHttpRouteDefV10 = __Infer<typeof RawHttpRouteDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
 export const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
@@ -357,6 +400,21 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get ExplicitNames() {
     return ExplicitNames;
+  },
+  get HttpHandlers() {
+    return __t.array(RawHttpHandlerDefV10);
+  },
+  get HttpRoutes() {
+    return __t.array(RawHttpRouteDefV10);
+  },
+  get ViewPrimaryKeys() {
+    return __t.array(RawViewPrimaryKeyDefV10);
+  },
+  get Submodules() {
+    return __t.array(RawSubmoduleV10);
+  },
+  get Environment() {
+    return __t.array(EnvironmentDeclaration);
   },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
@@ -515,6 +573,14 @@ export const RawSequenceDefV9 = __t.object('RawSequenceDefV9', {
 });
 export type RawSequenceDefV9 = __Infer<typeof RawSequenceDefV9>;
 
+export const RawSubmoduleV10 = __t.object('RawSubmoduleV10', {
+  namespace: __t.string(),
+  get module(): any {
+    return RawModuleDefV10;
+  },
+});
+export type RawSubmoduleV10 = __Infer<typeof RawSubmoduleV10>;
+
 export const RawTableDefV10 = __t.object('RawTableDefV10', {
   sourceName: __t.string(),
   productTypeRef: __t.u32(),
@@ -641,6 +707,12 @@ export const RawViewDefV9 = __t.object('RawViewDefV9', {
   },
 });
 export type RawViewDefV9 = __Infer<typeof RawViewDefV9>;
+
+export const RawViewPrimaryKeyDefV10 = __t.object('RawViewPrimaryKeyDefV10', {
+  viewSourceName: __t.string(),
+  columns: __t.array(__t.string()),
+});
+export type RawViewPrimaryKeyDefV10 = __Infer<typeof RawViewPrimaryKeyDefV10>;
 
 export const ReducerDef = __t.object('ReducerDef', {
   name: __t.string(),

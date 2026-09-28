@@ -2,51 +2,74 @@ name: Validate LLM benchmark golden answers
 
 on:
   schedule:
-    # Nightly at 2 AM UTC
-    - cron: '0 2 * * *'
-  workflow_dispatch: {}
+    # Weekly on Monday at 2 AM UTC.
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: 'Language to validate for manual smoke runs'
+        required: false
+        type: choice
+        default: all
+        options:
+          - all
+          - rust
+          - csharp
+          - typescript
 
 permissions:
   contents: read
 
 concurrency:
-  group: llm-benchmark-validate-goldens
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate-goldens:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-linux
     timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
 
     strategy:
       fail-fast: false
       matrix:
-        lang: [rust, csharp, typescript]
+        lang: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.lang != 'all' && format('["{0}"]', inputs.lang) || '["rust","csharp","typescript"]') }}
 
     steps:
-      - name: Install spacetime CLI
-        run: |
-          curl -sSf https://install.spacetimedb.com | sh -s -- -y
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Checkout master
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
+          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+
+      - name: Restore OpenSSL
+        id: cache-openssl
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.ci-cache/openssl
+          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
+
+      - name: Configure cached OpenSSL
+        if: steps.cache-openssl.outputs.cache-hit == 'true'
+        run: |
+          echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
+          echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
 
       - name: Setup .NET SDK
         if: matrix.lang == 'csharp'
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          global-json-file: global.json
 
       - name: Install WASI workload
         if: matrix.lang == 'csharp'
@@ -57,6 +80,12 @@ jobs:
         run: |
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
 
+      - name: Pack C# runtime packages
+        if: matrix.lang == 'csharp'
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+
       - name: Set up Node.js
         if: matrix.lang == 'typescript'
         uses: actions/setup-node@v4
@@ -66,13 +95,31 @@ jobs:
       - name: Install pnpm
         if: matrix.lang == 'typescript'
         uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Build TypeScript SDK
+        if: matrix.lang == 'typescript'
+        run: pnpm build
+        working-directory: crates/bindings-typescript
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
 
+      - name: Build SpacetimeDB server for benchmark harness
+        run: |
+          cargo ci smoketests prepare
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$GITHUB_WORKSPACE/target/release/spacetimedb-cli" "$HOME/.local/bin/spacetime"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Validate golden answers (${{ matrix.lang }})
         env:
+          DOTNET_MULTILEVEL_LOOKUP: "0"
+          DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
+          DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          LLM_BENCH_CSHARP_CONCURRENCY: "1"
         run: |
           llm_benchmark run --goldens-only --lang ${{ matrix.lang }}

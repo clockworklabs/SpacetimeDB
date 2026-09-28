@@ -62,6 +62,7 @@ fn resolve_sys_module_inner<'scope>(
             (1, 3) => Ok(v1::sys_v1_3(scope)),
             (2, 0) => Ok(v2::sys_v2_0(scope)),
             (2, 1) => Ok(v2::sys_v2_1(scope)),
+            (2, 2) => Ok(v2::sys_v2_2(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
             It requires sys module v{major}.{minor}, but that version is not supported by the database."
@@ -115,7 +116,7 @@ pub(super) fn call_call_view_anon(
     }
 }
 
-pub use self::common::{call_call_procedure, call_describe_module};
+pub use self::common::{call_call_http_handler, call_call_procedure, call_describe_module};
 
 /// Get the hooks for the module.
 ///

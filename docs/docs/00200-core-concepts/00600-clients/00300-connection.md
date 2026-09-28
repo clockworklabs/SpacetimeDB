@@ -26,9 +26,10 @@ Create a connection using the `DbConnection` builder pattern:
 ```typescript
 import { DbConnection } from './module_bindings';
 
-const conn = new DbConnection.builder()
+const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
-    .withDatabaseName("my_database");
+    .withDatabaseName("my_database")
+    .build();
 ```
 
 </TabItem>
@@ -38,7 +39,7 @@ const conn = new DbConnection.builder()
 using SpacetimeDB;
 
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .Build();
 ```
@@ -80,9 +81,10 @@ To connect to a database hosted on MainCloud:
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const conn = new DbConnection.builder()
+const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
-    .withDatabaseName("my_database");
+    .withDatabaseName("my_database")
+    .build();
 ```
 
 </TabItem>
@@ -90,7 +92,7 @@ const conn = new DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .Build();
 ```
@@ -126,10 +128,11 @@ To authenticate with a token (for example, from [SpacetimeAuth](../00500-authent
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const conn = new DbConnection.builder()
+const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
-    .withToken("your_auth_token_here");
+    .withToken("your_auth_token_here")
+    .build();
 ```
 
 </TabItem>
@@ -137,7 +140,7 @@ const conn = new DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .WithToken("your_auth_token_here")
     .Build();
@@ -174,9 +177,9 @@ The token is sent to the server during connection and validates your identity. S
 
 :::danger[Critical: C#, Unity, and Unreal Users]
 
-In C# (including Unity) and Unreal Engine, you **must** manually advance the connection to process incoming messages. The connection does not process messages automatically!
+In C# (including Unity), you **must** manually advance the connection to process incoming messages. In Unreal Engine, you must either manually advance the connection or enable automatic ticking. If the connection is not advanced, it will not process messages.
 
-Call `DbConnection.FrameTick()` in your game loop or update method:
+Call `FrameTick()` in your game loop or update method:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="csharp" label="C#">
@@ -200,7 +203,7 @@ while (running)
 <TabItem value="unreal" label="Unreal">
 
 ```cpp
-// In your Actor's Tick() method
+// Option 1: call FrameTick() from your Actor's Tick() method
 void AMyActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
@@ -210,6 +213,10 @@ void AMyActor::Tick(float DeltaTime)
         Conn->FrameTick();
     }
 }
+
+// Option 2: enable automatic ticking once after building the connection
+Conn = Builder->Build();
+Conn->SetAutoTicking(true);
 ```
 
 </TabItem>
@@ -256,7 +263,7 @@ const conn = DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .OnConnect((conn, identity, token) =>
     {
@@ -312,13 +319,13 @@ let conn = DbConnection::builder()
 ```cpp
 // Create delegates
 FOnConnectDelegate ConnectDelegate;
-ConnectDelegate.BindDynamic(this, &AMyActor::OnConnected);
+BIND_DELEGATE_SAFE(ConnectDelegate, this, AMyActor, OnConnected);
 
 FOnConnectErrorDelegate ErrorDelegate;
-ErrorDelegate.BindDynamic(this, &AMyActor::OnConnectError);
+BIND_DELEGATE_SAFE(ErrorDelegate, this, AMyActor, OnConnectError);
 
 FOnDisconnectDelegate DisconnectDelegate;
-DisconnectDelegate.BindDynamic(this, &AMyActor::OnDisconnected);
+BIND_DELEGATE_SAFE(DisconnectDelegate, this, AMyActor, OnDisconnected);
 
 // Build connection with callbacks
 UDbConnection* Conn = UDbConnection::Builder()
@@ -344,9 +351,9 @@ void OnConnectError(const FString& Error)
 }
 
 UFUNCTION()
-void OnDisconnected()
+void OnDisconnected(UDbConnection* Connection, const FString& Error)
 {
-    UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB"));
+    UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB: %s"), *Error);
 }
 ```
 
@@ -390,11 +397,11 @@ Conn->Disconnect();
 
 ### Reconnection Behavior
 
-:::note[Current Limitation]
+:::note[Reconnection behavior]
 
-Automatic reconnection behavior is inconsistently implemented across SDKs. If your connection is interrupted, you may need to create a new `DbConnection` to re-establish connectivity.
+Lower-level `DbConnection` objects do not reconnect themselves. If you create a `DbConnection` directly and the connection is interrupted, create a new `DbConnection` to re-establish connectivity. We recommend implementing reconnection logic in your application if reliable connectivity is critical.
 
-We recommend implementing reconnection logic in your application if reliable connectivity is critical.
+The TypeScript React, Solid, and Svelte providers manage their connections through the SDK's shared connection manager. While a provider is mounted, that manager automatically rebuilds unexpectedly closed connections with exponential backoff and re-checks connection liveness when the page becomes visible, regains focus, returns online, or is restored from the back-forward cache.
 
 :::
 

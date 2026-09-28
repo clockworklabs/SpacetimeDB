@@ -169,6 +169,24 @@ pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
+pub(super) fn sys_v2_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(scope, "spacetime:sys@2.2", (with_sys_result, AbiCall::EnvGet, env_get),)
+}
+
+fn env_get<'s>(
+    scope: &mut PinScope<'s, '_>,
+    args: FunctionCallbackArguments<'s>,
+) -> SysCallResult<Local<'s, v8::Value>> {
+    let key: String = deserialize_js(scope, args.get(0))?;
+    match get_env(scope)?.instance_env.env_get(&key)? {
+        Some(value) => Ok(value
+            .into_string(scope)
+            .map_err(|_| RangeError("environment value could not be represented").throw(scope))?
+            .into()),
+        None => Ok(v8::null(scope).into()),
+    }
+}
+
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
 fn register_module_fun(
@@ -402,6 +420,19 @@ pub fn get_hooks_from_default_export<'scope>(
     let call_view = get_hook_function(scope, hooks, str_from_ident!(__call_view__))?;
     let call_view_anon = get_hook_function(scope, hooks, str_from_ident!(__call_view_anon__))?;
     let call_procedure = get_hook_function(scope, hooks, str_from_ident!(__call_procedure__))?;
+    // `call_http_handler` is optional, unlike the other hooks.
+    // This is because HTTP handler support was added after the initial release of TypeScript modules,
+    // and so we need to continue supporting precompiled TypeScript and JS modules
+    // which used an earlier version of the bindings package,
+    // prior to the inclusion of `__call_http_handler__`.
+    let call_http_handler = {
+        let key = str_from_ident!(__call_http_handler__).string(scope);
+        let value = hooks.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+        (!value.is_null_or_undefined())
+            .then(|| cast!(scope, value, Function, "module function hook `__call_http_handler__`"))
+            .transpose()
+            .map_err(|e| e.throw(scope))?
+    };
 
     // Cache hooks in context slots so syscall-time code can reconstruct them.
     let hooks = HookFunctions {
@@ -414,6 +445,7 @@ pub fn get_hooks_from_default_export<'scope>(
         call_view: Some(call_view),
         call_view_anon: Some(call_view_anon),
         call_procedure: Some(call_procedure),
+        call_http_handler,
     };
     set_registered_hooks(scope, &hooks)?;
     Ok(Some(hooks))

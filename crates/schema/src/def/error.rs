@@ -5,7 +5,7 @@ use derive_more::Display;
 use spacetimedb_lib::db::raw_def::IndexType;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_sats::satn::Satn as _;
 use spacetimedb_sats::{buffer, AlgebraicType, AlgebraicValue};
 use std::fmt;
@@ -114,7 +114,7 @@ pub enum SchemaError {
     MultiplePrimaryKeys { table: Box<str>, pks: Vec<String> },
     #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
     ColumnsNotFound {
-        name: RawIdentifier,
+        name: RawNamespacedIdentifier,
         table: TableName,
         columns: Vec<ColId>,
         ty: DefType,
@@ -124,7 +124,7 @@ pub enum SchemaError {
     #[error("table `{table}` have `Constraints::unset()` for columns: {columns:?}")]
     ConstraintUnset {
         table: TableName,
-        name: RawIdentifier,
+        name: RawNamespacedIdentifier,
         columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
@@ -132,7 +132,7 @@ pub enum SchemaError {
     #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
     OnlyBtree {
         table: TableName,
-        index: RawIdentifier,
+        index: RawNamespacedIdentifier,
         index_type: IndexType,
     },
 }

@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines one table and two reducers: one that inserts a row and one that deletes a row.
 
 TABLE
-- User
+- User (public)
   - Struct: User
   - Fields:
     - Id: ulong (primary key, auto-increment)

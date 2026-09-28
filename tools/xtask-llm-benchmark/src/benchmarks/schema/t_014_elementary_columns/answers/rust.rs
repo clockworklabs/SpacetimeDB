@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(accessor = primitive)]
+#[table(accessor = primitive, public)]
 pub struct Primitive {
     #[primary_key]
     #[auto_inc]

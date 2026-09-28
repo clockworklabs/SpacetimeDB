@@ -5,6 +5,7 @@ slug: /tables/event-tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 In many applications, particularly games and real-time systems, modules need to notify clients about things that happened without storing that information permanently. A combat system might need to tell clients "entity X took 50 damage" so they can display a floating damage number, but there is no reason to keep that record in the database after the moment has passed.
 
@@ -21,10 +22,11 @@ To declare a table as an event table, add the `event` attribute to the table def
 
 ```typescript
 const damageEvent = table({
+  name: 'damage_event',
   public: true,
   event: true,
 }, {
-  entity_id: t.identity(),
+  entityId: t.identity(),
   damage: t.u32(),
   source: t.string(),
 });
@@ -61,6 +63,21 @@ pub struct DamageEvent {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+struct DamageEvent {
+    Identity entity_id;
+    uint32_t damage;
+    std::string source;
+};
+SPACETIMEDB_STRUCT(DamageEvent, entity_id, damage, source)
+SPACETIMEDB_TABLE(DamageEvent, damage_event, Public, true)
+```
+
+</TabItem>
 </Tabs>
 
 :::note Changing the event flag
@@ -76,13 +93,13 @@ To publish an event, simply insert a row into the event table from within a redu
 
 ```typescript
 export const attack = spacetimedb.reducer(
-  { target_id: t.identity(), damage: t.u32() },
-  (ctx, { target_id, damage }) => {
+  { targetId: t.identity(), damage: t.u32() },
+  (ctx, { targetId, damage }) => {
     // Game logic...
 
     // Publish the event
     ctx.db.damageEvent.insert({
-      entity_id: target_id,
+      entityId: targetId,
       damage,
       source: "melee_attack",
     });
@@ -129,6 +146,21 @@ fn attack(ctx: &ReducerContext, target_id: Identity, damage: u32) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+SPACETIMEDB_REDUCER(attack, ReducerContext ctx, Identity target_id, uint32_t damage) {
+    // Game logic...
+
+    // Publish the event
+    ctx.db[damage_event].insert(DamageEvent{target_id, damage, "melee_attack"});
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 Because events are just table inserts, you can publish the same event type from any number of reducers. A `DamageEvent` might be inserted by a melee attack reducer, a spell reducer, and an environmental hazard reducer and clients receive the same event regardless of what triggered it.
@@ -143,7 +175,7 @@ This behavior follows naturally from the fact that event table rows are never me
 
 ## Subscribing to Events
 
-On the client side, event tables are subscribed to in the same way as regular tables. The important difference is that event table rows are never stored in the client cache. Calling `count()` on an event table always returns 0, and `iter()` always yields no rows. Instead, you observe events through `on_insert` callbacks, which fire for each row that was inserted during the transaction.
+On the client side, event tables are subscribed to like regular tables: either through subscribe-all helpers such as `subscribeToAllTables`, `SubscribeToAllTables`, and `subscribe_to_all_tables`, or through explicit typed queries. Once subscribed, event table rows are never stored in the client cache. Calling `count()` on an event table always returns 0, and `iter()` always yields no rows. Instead, you observe events through `on_insert` callbacks, which fire for each row that was inserted during the transaction.
 
 Because event table rows are ephemeral, only `on_insert` callbacks are available. There are no `on_delete`, `on_update`, or `on_before_delete` callbacks, since rows are never present in the client state to be deleted or updated.
 

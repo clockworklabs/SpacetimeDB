@@ -1,18 +1,23 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 use bytes::{Bytes, BytesMut};
-use futures::TryStreamExt as _;
+use futures::{FutureExt as _, TryStreamExt as _};
 use spacetimedb::config::CertificateAuthority;
+use spacetimedb::host::ModuleHost;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
+use spacetimedb_lib::http as st_http;
+use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
@@ -25,6 +30,7 @@ use spacetimedb::client::{
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::module_host::EventStatus;
 use spacetimedb::host::FunctionArgs;
+use spacetimedb::host::ReducerCallResult;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::identity::RequestId;
@@ -53,27 +59,80 @@ pub(crate) fn module_path(name: &str) -> PathBuf {
 }
 
 pub struct ModuleHandle {
-    // Needs to hold a reference to the standalone env.
-    _env: Arc<StandaloneEnv>,
+    // Keep the in-process standalone env alive for the lifetime of module.
+    // The teardown helper will use it to drive the same shutdown path a standalone server would use.
+    env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
     receiver: ClientConnectionReceiver,
     pub db_identity: Identity,
 }
 
 impl ModuleHandle {
-    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+    /// Publish a complete configuration through the standalone control API.
+    pub async fn republish_environment(
+        &self,
+        environment: BTreeMap<String, String>,
+    ) -> anyhow::Result<spacetimedb::host::UpdateDatabaseResult> {
+        let program = self
+            .client
+            .module()
+            .relational_db()
+            .program()?
+            .expect("published module");
+        self.republish_program(program.bytes.into(), program.kind.into(), environment)
+            .await
+    }
+
+    /// Publish exact replacement artifact bytes and their complete configuration.
+    pub async fn republish_program(
+        &self,
+        program_bytes: Bytes,
+        host_type: HostType,
+        environment: BTreeMap<String, String>,
+    ) -> anyhow::Result<spacetimedb::host::UpdateDatabaseResult> {
+        self.env
+            .publish_database(
+                &Identity::ZERO,
+                DatabaseDef {
+                    database_identity: self.db_identity,
+                    program_bytes,
+                    environment,
+                    environment_remove: Vec::new(),
+                    environment_replace: true,
+                    expected_module_version: None,
+                    num_replicas: None,
+                    host_type,
+                    parent: None,
+                    organization: None,
+                },
+                MigrationPolicy::Compatible,
+            )
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected an update to the existing database"))
+    }
+
+    async fn call_reducer_result(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<ReducerCallResult> {
         let result = self
             .client
             .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
             .await;
-        let result = match result {
-            Ok(result) => result.into(),
+        let result: anyhow::Result<ReducerCallResult> = match result {
+            Ok(result) => Ok(result),
             Err(err) => Err(err.into()),
         };
         match result {
-            Ok(()) => Ok(()),
+            Ok(result) if result.is_ok() => Ok(result),
+            Ok(result) => {
+                let err = Result::<(), anyhow::Error>::from(result)
+                    .expect_err("non-committed reducer outcome should produce an error");
+                Err(err.context(format!("Logs:\n{}", self.read_log(None).await)))
+            }
             Err(err) => Err(err.context(format!("Logs:\n{}", self.read_log(None).await))),
         }
+    }
+
+    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+        self.call_reducer_result(reducer, args).await.map(drop)
     }
 
     pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
@@ -84,6 +143,16 @@ impl ModuleHandle {
     pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = bsatn::to_vec(&args).unwrap();
         self.call_reducer(reducer, FunctionArgs::Bsatn(args.into())).await
+    }
+
+    pub async fn call_reducer_binary_result(
+        &self,
+        reducer: &str,
+        args: &sats::ProductValue,
+    ) -> anyhow::Result<ReducerCallResult> {
+        let args = bsatn::to_vec(&args).unwrap();
+        self.call_reducer_result(reducer, FunctionArgs::Bsatn(args.into()))
+            .await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -101,7 +170,8 @@ impl ModuleHandle {
     }
 
     pub async fn recv_message(&mut self) -> Option<OutboundMessage> {
-        self.receiver.recv().await
+        let mut buf = Vec::with_capacity(1);
+        (self.receiver.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
     }
 
     pub async fn recv_reducer_update(&mut self, request_id: RequestId) -> anyhow::Result<()> {
@@ -143,6 +213,56 @@ impl ModuleHandle {
             .expect("failed to collect log stream");
         String::from_utf8(bytes.into()).unwrap()
     }
+
+    async fn module_host(&self) -> ModuleHost {
+        let database = self
+            .env
+            .get_database_by_identity(&self.db_identity)
+            .await
+            .unwrap()
+            .unwrap();
+        let host = self.env.leader(database.id).await.expect("host should be running");
+        host.module().await.expect("module should be running")
+    }
+
+    /// Call a procedure by name with JSON-encoded args, returning the raw `AlgebraicValue` on success.
+    pub async fn call_procedure_with_args(&self, procedure: &str, args_json: &str) -> anyhow::Result<AlgebraicValue> {
+        let module = self.module_host().await;
+        let ret = module
+            .call_procedure(
+                Identity::ZERO,
+                None,
+                None,
+                procedure,
+                FunctionArgs::Json(args_json.into()),
+            )
+            .await;
+        ret.result
+            .map(|r| r.return_val)
+            .map_err(|e| anyhow::anyhow!("procedure {procedure} failed: {e:#}"))
+    }
+
+    /// Dispatch a GET request to a module HTTP route by path, returning the response body on success.
+    pub async fn call_http_route_get(&self, path: &str) -> anyhow::Result<Bytes> {
+        let module = self.module_host().await;
+        let (handler_id, _, _) = module
+            .info()
+            .module_def
+            .match_http_route(&st_http::Method::Get, path)
+            .ok_or_else(|| anyhow::anyhow!("no GET route registered for {path}"))?;
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: std::iter::empty::<(Option<Box<str>>, Box<[u8]>)>().collect(),
+            timeout: None,
+            uri: format!("http://localhost{path}"),
+            version: st_http::Version::Http11,
+        };
+        let (_response, body) = module
+            .call_http_handler(handler_id, request, Bytes::new())
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP handler error: {e}"))?;
+        Ok(body)
+    }
 }
 
 pub struct CompiledModule {
@@ -159,20 +279,29 @@ pub enum CompilationMode {
 }
 
 impl CompiledModule {
+    /// Use an artifact built by an external toolchain, such as Linux NativeAOT.
+    /// This changes only compilation; publication and execution still use the
+    /// same in-process standalone server as locally compiled fixtures.
+    pub fn from_artifact(name: &str, host_type: HostType, path: PathBuf) -> Self {
+        Self {
+            name: name.to_owned(),
+            path,
+            host_type,
+            program_bytes: OnceLock::new(),
+        }
+    }
+
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
         let (path, host_type) = spacetimedb_cli::build(
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
             None,
+            false,
+            None,
         )
         .expect("Module compilation failed");
-        Self {
-            name: name.to_owned(),
-            path,
-            host_type: host_type.parse().unwrap(),
-            program_bytes: OnceLock::new(),
-        }
+        Self::from_artifact(name, host_type.parse().unwrap(), path)
     }
 
     pub fn path(&self) -> &Path {
@@ -202,11 +331,25 @@ impl CompiledModule {
         R: FnOnce(ModuleHandle) -> F,
         F: Future<Output = O>,
     {
+        self.with_module_async_with_environment(config, BTreeMap::new(), routine)
+    }
+
+    pub fn with_module_async_with_environment<O, R, F>(
+        &self,
+        config: Config,
+        environment: BTreeMap<String, String>,
+        routine: R,
+    ) where
+        R: FnOnce(ModuleHandle) -> F,
+        F: Future<Output = O>,
+    {
         with_runtime(move |runtime| {
             runtime.block_on(async {
-                let module = self.load_module(config, None).await;
-
-                routine(module).await;
+                let module = self.load_module_with_environment(config, None, environment).await;
+                let env = module.env.clone();
+                let db_identity = module.db_identity;
+                let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
+                finish_module_test(&env, db_identity, routine_result).await;
             });
         });
     }
@@ -217,8 +360,12 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             let module = runtime.block_on(async { self.load_module(config, None).await });
+            let env = module.env.clone();
+            let db_identity = module.db_identity;
+            let func_result = std::panic::catch_unwind(AssertUnwindSafe(|| func(runtime, &module)));
+            drop(module);
 
-            func(runtime, &module);
+            runtime.block_on(async { finish_module_test(&env, db_identity, func_result).await });
         });
     }
 
@@ -227,6 +374,16 @@ impl CompiledModule {
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
     pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
+        self.load_module_with_environment(config, reuse_db_path, BTreeMap::new())
+            .await
+    }
+
+    pub async fn load_module_with_environment(
+        &self,
+        config: Config,
+        reuse_db_path: Option<&RootDir>,
+        environment: BTreeMap<String, String>,
+    ) -> ModuleHandle {
         let paths = match reuse_db_path {
             Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
@@ -244,7 +401,9 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
+                durability: Default::default(),
                 websocket: WebSocketOptions::default(),
+                module_http: Default::default(),
                 wasm: Default::default(),
                 v8: Default::default(),
             },
@@ -265,6 +424,10 @@ impl CompiledModule {
             DatabaseDef {
                 database_identity: db_identity,
                 program_bytes: self.program_bytes(),
+                environment,
+                environment_remove: Vec::new(),
+                environment_replace: false,
+                expected_module_version: None,
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
@@ -295,10 +458,41 @@ impl CompiledModule {
             ClientConnection::dummy_with_receiver(client_id, ClientConfig::for_test(), instance.id, module_rx);
 
         ModuleHandle {
-            _env: env,
+            env,
             client,
             receiver,
             db_identity,
+        }
+    }
+}
+
+/// These standalone module tests run a `StandaloneEnv` in-process.
+/// That means [`CompiledModule::with_module_async`] and [`CompiledModule::with_module`]
+/// own the Tokio runtime, host controller, module host, scheduler, `RelationalDB`,
+/// JS worker threads, etc.
+///
+/// Some modules schedule repeating reducers during `init`.
+/// If these helpers return without explicitly shutting the database down,
+/// scheduled reducer calls can still be queued or running
+/// while the Tokio runtime and V8 worker state are being torn down.
+///
+/// [`StandaloneEnv::delete_database`] is the public standalone shutdown path.
+/// It removes the database and replica from standalone control state,
+/// asks the host controller to exit the module host, closes and waits for the scheduler,
+/// and then shuts down the `RelationalDB`.
+async fn finish_module_test(env: &StandaloneEnv, db_identity: Identity, test_result: std::thread::Result<()>) {
+    let cleanup_result = env.delete_database(&Identity::ZERO, &db_identity).await;
+
+    // Cleanup should not hide the result of the test body.
+    // If the test already panicked, resume that panic after attempting shutdown.
+    // If the test passed, make cleanup failure a test failure.
+    match (test_result, cleanup_result) {
+        (Ok(()), Ok(())) => {}
+        (Ok(()), Err(err)) => panic!("failed to delete test database {db_identity}: {err:#}"),
+        (Err(panic), Ok(())) => std::panic::resume_unwind(panic),
+        (Err(panic), Err(err)) => {
+            log::error!("failed to delete test database {db_identity} after test panic: {err:#}");
+            std::panic::resume_unwind(panic);
         }
     }
 }
@@ -313,10 +507,6 @@ pub static DEFAULT_CONFIG: Config = Config {
 /// For performance tests, do not persist to disk.
 pub static IN_MEMORY_CONFIG: Config = Config {
     storage: Storage::Disk,
-    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
-    // and makes the perf test for `chunk` go over 1ms.
-    // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
-    // TODO(centril): investigate further why this size affects the benchmark.
     page_pool_max_size: Some(1 << 16),
 };
 

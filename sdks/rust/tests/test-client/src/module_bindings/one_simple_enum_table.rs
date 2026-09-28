@@ -19,6 +19,18 @@ pub struct OneSimpleEnumTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_simple_enum`.
+pub struct OneSimpleEnumTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneSimpleEnumTableAccessor {
+    type Row = OneSimpleEnum;
+    type Handle<'db> = OneSimpleEnumTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_simple_enum()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_simple_enum`.
 ///
@@ -40,6 +52,18 @@ impl OneSimpleEnumTableAccess for super::RemoteTables {
 
 pub struct OneSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct OneSimpleEnumDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for OneSimpleEnumTableHandle<'ctx> {
+    type Row = OneSimpleEnum;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneSimpleEnum> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for OneSimpleEnumTableHandle<'ctx> {
     type Row = OneSimpleEnum;
@@ -65,6 +89,36 @@ impl<'ctx> __sdk::Table for OneSimpleEnumTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneSimpleEnumDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneSimpleEnumDeleteCallbackId {
+        OneSimpleEnumDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneSimpleEnumDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneSimpleEnumTableHandle<'ctx> {
+    type InsertCallbackId = OneSimpleEnumInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneSimpleEnumInsertCallbackId {
+        OneSimpleEnumInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneSimpleEnumInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneSimpleEnumTableHandle<'ctx> {
     type DeleteCallbackId = OneSimpleEnumDeleteCallbackId;
 
     fn on_delete(

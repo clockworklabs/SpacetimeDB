@@ -11,7 +11,7 @@
 ///    `on_result_reducer` (read from the outbox table's schema) and deletes the st_outbound_msg row.
 /// 6. Enforces sequential delivery per target database: msg N+1 is only delivered after N is done.
 use crate::db::relational_db::RelationalDB;
-use crate::energy::EnergyQuanta;
+use crate::energy::FunctionBudget;
 use crate::host::module_host::{CallReducerParams, ModuleInfo, WeakModuleHost};
 use crate::host::{FunctionArgs, ReducerCallError, ReducerCallResult, ReducerOutcome};
 use anyhow::anyhow;
@@ -291,7 +291,7 @@ fn duplicate_result_from_st_inbound_row(
     ReducerCallResult {
         outcome,
         reducer_return_value: (row.result_status == StInboundMsgResultStatus::Success).then_some(row.result_payload),
-        energy_used: EnergyQuanta::ZERO,
+        execution_budget_used: FunctionBudget::ZERO,
         execution_duration: Duration::ZERO,
         tx_offset: None,
     }

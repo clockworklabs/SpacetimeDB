@@ -135,6 +135,8 @@ struct TableTag {
             SpacetimeDB::Module::RegisterExplicitTableName(#table_name, _spacetimedb_table_options.canonical_name); \
         } \
     } \
+    inline std::bool_constant<!((options_expr).is_event)> \
+    lookup_table_allowed(::SpacetimeDB::query_builder::detail::row_tag<type>); \
     struct SPACETIMEDB_PASTE(table_name, _tag_type) : SpacetimeDB::TableTag<type> { \
         static constexpr const char* __table_name_internal = #table_name; \
         static constexpr bool __is_event_internal = (options_expr).is_event; \
@@ -637,7 +639,7 @@ public:
           index_name_(index_name),
           column_list_(column_list) {}
     
-    // Exact match on all columns (template method - types deduced from call)
+    // Exact supplied prefix, optionally terminated by a range.
     template<typename... FieldTypes>
     IndexIteratorRange<TableType> filter(const std::tuple<FieldTypes...>& values) const 
         requires (sizeof...(FieldTypes) > 0 && sizeof...(FieldTypes) <= 6)
@@ -650,11 +652,23 @@ public:
         
         return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, values));
     }
+
+    // Range on the first indexed column.
+    template<typename FieldType>
+    IndexIteratorRange<TableType> filter(const Range<FieldType>& range) const {
+        IndexId id = resolve_index_id();
+        
+        if (id.inner == 0) {
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
+        }
+        
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, range));
+    }
     
-    // Prefix-only match: find all rows where first N-1 columns match
+    // Prefix-only match: find all rows where the first indexed column matches.
     template<typename FirstColType>
-    IndexIteratorRange<TableType> filter(const FirstColType& prefix_value) const 
-        requires (!is_tuple_v<FirstColType>)
+    IndexIteratorRange<TableType> filter(const FirstColType& prefix_value) const
+        requires (!is_tuple_v<FirstColType> && !is_range_v<FirstColType>)
     {
         IndexId id = resolve_index_id();
         
@@ -665,40 +679,29 @@ public:
         // Use prefix_match_tag to disambiguate constructor
         return IndexIteratorRange<TableType>(IndexIterator<TableType>(prefix_match_tag{}, id, prefix_value));
     }
-    
-    // Prefix + range match: find rows where first N-1 columns match and last is in range
-    template<typename FirstColType, typename RangeType>
-    IndexIteratorRange<TableType> filter(const std::tuple<FirstColType, RangeType>& values) const 
-        requires (is_range_v<RangeType>)
-    {
-        IndexId id = resolve_index_id();
-        
-        if (id.inner == 0) {
-            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
-        }
-        
-        return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, values));
-    }
 };
 
 // =============================================================================
 // Auto-Increment Integration Helper
 // =============================================================================
 
-// Helper macro to register auto-increment integration function
-// Creates a unique function and registers it for the struct type
-#define SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(StructType, field_name) \
+// Helper macros to register an auto-increment integration function.
+// Table and field names make the generated symbols stable and unique across headers.
+#define SPACETIMEDB_AUTOINC_SYMBOL(prefix, table_name, field_name) \
+    SPACETIMEDB_PASTE(prefix, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, field_name)))
+
+#define SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(table_name, StructType, field_name) \
     namespace SpacetimeDB { namespace detail { \
-        static void SPACETIMEDB_PASTE(autoinc_integrate_, __LINE__)(StructType& row, SpacetimeDB::bsatn::Reader& reader) { \
+        static void SPACETIMEDB_AUTOINC_SYMBOL(autoinc_integrate_, table_name, field_name)(StructType& row, SpacetimeDB::bsatn::Reader& reader) { \
             using FieldType = decltype(std::declval<StructType>().field_name); \
             FieldType generated_value = SpacetimeDB::bsatn::deserialize<FieldType>(reader); \
             row.field_name = generated_value; \
         } \
     }} \
-    extern "C" __attribute__((export_name("__preinit__19_autoinc_register_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
-    void SPACETIMEDB_PASTE(__preinit__19_autoinc_register_, __LINE__)() { \
+    extern "C" __attribute__((export_name("__preinit__19_autoinc_register_" #table_name "_" #field_name))) \
+    void SPACETIMEDB_AUTOINC_SYMBOL(__preinit__19_autoinc_register_, table_name, field_name)() { \
         SpacetimeDB::detail::get_autoinc_integrator<StructType>() = \
-            &SpacetimeDB::detail::SPACETIMEDB_PASTE(autoinc_integrate_, __LINE__); \
+            &SpacetimeDB::detail::SPACETIMEDB_AUTOINC_SYMBOL(autoinc_integrate_, table_name, field_name); \
     }
 
 // =============================================================================
@@ -710,6 +713,9 @@ public:
                                                       decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
                                                       SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(table_name)>::type, \
+        &std::remove_cv_t<decltype(table_name)>::type::field_name>); \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
@@ -728,6 +734,9 @@ public:
                                                   decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
                                                   SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(table_name)>::type, \
+        &std::remove_cv_t<decltype(table_name)>::type::field_name>); \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
@@ -746,6 +755,9 @@ public:
                                                    decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
                                                    SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(table_name)>::type, \
+        &std::remove_cv_t<decltype(table_name)>::type::field_name>); \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
@@ -764,13 +776,16 @@ public:
                                                       decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
                                                       SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(table_name)>::type, \
+        &std::remove_cv_t<decltype(table_name)>::type::field_name>); \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
             #table_name, #field_name, static_cast<::SpacetimeDB::FieldConstraint>( \
                 static_cast<int>(::SpacetimeDB::FieldConstraint::PrimaryKey) | static_cast<int>(::SpacetimeDB::FieldConstraint::AutoInc))); \
     } \
-    SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(typename std::remove_cv_t<decltype(table_name)>::type, field_name)
+    SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(table_name, typename std::remove_cv_t<decltype(table_name)>::type, field_name)
 
 #define FIELD_UniqueAutoInc(table_name, field_name) \
     static_assert([]() constexpr { \
@@ -786,13 +801,16 @@ public:
                                                   decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
                                                   SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(table_name)>::type, \
+        &std::remove_cv_t<decltype(table_name)>::type::field_name>); \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
             #table_name, #field_name, static_cast<::SpacetimeDB::FieldConstraint>( \
                 static_cast<int>(::SpacetimeDB::FieldConstraint::Unique) | static_cast<int>(::SpacetimeDB::FieldConstraint::AutoInc))); \
     } \
-    SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(typename std::remove_cv_t<decltype(table_name)>::type, field_name)
+    SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(table_name, typename std::remove_cv_t<decltype(table_name)>::type, field_name)
 
 #define FIELD_IndexAutoInc(table_name, field_name) \
     static_assert([]() constexpr { \
@@ -808,6 +826,9 @@ public:
                                                    decltype(std::declval<typename std::remove_cv_t<decltype(table_name)>::type>().field_name), \
                                                    SPACETIMEDB_PASTE(table_name, _tag_type)::__is_event_internal> \
     table_name##_##field_name { #table_name, #field_name, &std::remove_cv_t<decltype(table_name)>::type::field_name }; \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(table_name)>::type, \
+        &std::remove_cv_t<decltype(table_name)>::type::field_name>); \
     extern "C" __attribute__((export_name("__preinit__21_field_constraint_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
     void SPACETIMEDB_PASTE(__preinit__21_field_constraint_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
@@ -828,7 +849,7 @@ public:
         SpacetimeDB::Internal::getV10Builder().AddFieldConstraint<typename std::remove_cv_t<decltype(table_name)>::type>( \
             #table_name, #field_name, ::SpacetimeDB::FieldConstraint::AutoInc); \
     } \
-    SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(typename std::remove_cv_t<decltype(table_name)>::type, field_name)
+    SPACETIMEDB_AUTOINC_INTEGRATION_IMPL(table_name, typename std::remove_cv_t<decltype(table_name)>::type, field_name)
 
 #define SPACETIMEDB_REGISTER_EXPLICIT_SINGLE_COLUMN_INDEX_NAME(table_name, field_name, canonical_name) \
     extern "C" __attribute__((export_name("__preinit__18_explicit_index_name_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \

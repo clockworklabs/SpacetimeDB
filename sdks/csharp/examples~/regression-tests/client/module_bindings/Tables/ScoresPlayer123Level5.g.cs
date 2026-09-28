@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ScoresPlayer123Level5Handle : RemoteTableHandle<EventContext, Score>
         {
-            protected override string RemoteTableName => "scores_player_123_level_5";
+            public override string RemoteTableName => "scores_player_123_level_5";
 
             internal ScoresPlayer123Level5Handle(DbConnection conn) : base(conn)
             {

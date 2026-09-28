@@ -24,10 +24,10 @@ Throw a `SenderError`:
 ```typescript
 import { SenderError } from 'spacetimedb/server';
 
-export const transfer_credits = spacetimedb.reducer(
-  { to_user: t.u64(), amount: t.u32() },
-  (ctx, { to_user, amount }) => {
-    const fromUser = ctx.db.users.id.find(ctx.sender);
+export const transferCredits = spacetimedb.reducer(
+  { toUser: t.identity(), amount: t.u32() },
+  (ctx, { toUser, amount }) => {
+    const fromUser = ctx.db.users.identity.find(ctx.sender);
     if (!fromUser) {
       throw new SenderError('User not found');
     }
@@ -41,9 +41,9 @@ export const transfer_credits = spacetimedb.reducer(
 );
 
 // Alternative: return error object
-export const transfer_credits = spacetimedb.reducer(
-  { to_user: t.u64(), amount: t.u32() },
-  (ctx, { to_user, amount }) => {
+export const transferCreditsResult = spacetimedb.reducer(
+  { toUser: t.u64(), amount: t.u32() },
+  (ctx, { toUser, amount }) => {
     // ...validation...
     if (error) {
       return { tag: 'err', value: 'Insufficient credits' };
@@ -60,9 +60,9 @@ Throw an exception:
 
 ```csharp
 [SpacetimeDB.Reducer]
-public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
+public static void TransferCredits(ReducerContext ctx, Identity toUser, uint amount)
 {
-    var fromUser = ctx.Db.User.Id.Find(ctx.Sender);
+    var fromUser = ctx.Db.User.Identity.Find(ctx.Sender);
     if (fromUser == null)
     {
         throw new InvalidOperationException("User not found");
@@ -86,13 +86,13 @@ Return an error:
 #[reducer]
 pub fn transfer_credits(
     ctx: &ReducerContext,
-    to_user: u64,
+    to_user: Identity,
     amount: u32
 ) -> Result<(), String> {
-    let from_balance = ctx.db.users().id().find(ctx.sender.identity)
-        .ok_or("User not found");
+    let from_user = ctx.db.users().identity().find(ctx.sender())
+        .ok_or("User not found")?;
     
-    if from_balance.credits < amount {
+    if from_user.credits < amount {
         return Err("Insufficient credits".to_string());
     }
     
@@ -146,7 +146,7 @@ Unexpected errors caused by bugs in module code. These should be fixed by the de
 Regular errors (not `SenderError`):
 
 ```typescript
-export const process_data = spacetimedb.reducer(
+export const processData = spacetimedb.reducer(
   { data: t.array(t.u8()) },
   (ctx, { data }) => {
     // Regular Error indicates a bug

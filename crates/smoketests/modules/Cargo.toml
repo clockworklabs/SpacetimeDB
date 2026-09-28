@@ -15,10 +15,12 @@ members = [
     # Views tests
     "views-basic",
     # "views-broken-namespace" - intentionally broken, uses runtime compilation
-    # "views-broken-return-type" - intentionally broken, uses runtime compilation
+    "views-broken-return-type",
     "views-sql",
     "views-auto-migrate",
     "views-auto-migrate-updated",
+    "views-primary-key-auto-migrate",
+    "views-primary-key-auto-migrate-updated",
     "views-drop-view",
     "views-trapped",
     "views-recovered",
@@ -26,9 +28,14 @@ members = [
     "views-query",
     "views-callable",
     "views-count",
+    "views-auto-migrate-stable",
+    "views-auto-migrate-stable-updated",
+    "views-auto-migrate-read-set",
+    "views-auto-migrate-read-set-updated",
 
     # Security and permissions
     "rls",
+    "rls-broken-private-table",
     "rls-no-filter",
     "rls-with-filter",
     "permissions-private",
@@ -36,7 +43,33 @@ members = [
 
     # Call/procedure tests
     "call-reducer-procedure",
+    "call-reducer-procedure-identity-arg",
     "call-empty",
+    "call-many",
+
+    # Auto-migration tests
+    "auto-migration-simple",
+    "auto-migration-incompatible",
+    "auto-migration-add-table-initial",
+    "auto-migration-add-table-updated",
+    "auto-migration-add-columns",
+    "auto-migration-add-columns-again",
+    "auto-migration-with-primary-key",
+    "auto-migration-without-primary-key",
+    "auto-migration-without-primary-key-v2",
+    "auto-migration-event-table-before",
+    "auto-migration-event-table-after",
+    "auto-migration-drop-event-table-before",
+    "auto-migration-drop-event-table-after",
+
+    # HTTP tests
+    "http-egress",
+    "http-routes",
+    "http-routes-example",
+    "http-routes-strict-root",
+    "http-routes-strict-non-root",
+    "http-routes-full-uri",
+    "http-routes-request-body",
 
     # SQL format tests
     "sql-format",
@@ -71,10 +104,12 @@ members = [
 
     # Connection tests
     "connect-disconnect",
+    "connection-session",
     "confirmed-reads",
     "delete-database",
     "client-connection-reject",
     "client-connection-disconnect-panic",
+    "client-connection-http-cancel",
     "sql-connect-hook",
 
     # Log filtering tests
@@ -84,7 +119,9 @@ members = [
     "namespaces",
     "new-user-flow",
     "module-nested-op",
-    # "fail-initial-publish-broken" - intentionally broken, uses runtime compilation
+    "noop",
+    "environment-publish",
+    "fail-initial-publish-broken",
     "fail-initial-publish-fixed",
 
     # Auto-increment tests (all 10 integer types in one module each)

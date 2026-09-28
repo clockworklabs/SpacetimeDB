@@ -6,7 +6,7 @@ TYPES
   - right: number (i32)
 
 TABLE
-- result
+- result (public)
   - Fields:
     - id: number (i32, primary key)
     - value: Score

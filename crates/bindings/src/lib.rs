@@ -1,14 +1,15 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{Cell, LazyCell, OnceCell, RefCell};
+use core::cell::{LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
+#[cfg(feature = "rand08")]
+use std::cell::Cell;
 use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
-#[cfg(feature = "unstable")]
 pub mod http;
 pub mod log_stopwatch;
 mod logger;
@@ -25,9 +26,11 @@ pub use spacetimedb_query_builder as query_builder;
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
+use rand::distributions::{Distribution, Standard};
+#[cfg(feature = "rand08")]
 pub use rand08 as rand;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
@@ -43,12 +46,17 @@ pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
 // `FilterableValue` re-exported purely for rustdoc.
+#[cfg(feature = "unstable")]
+use crate::http::HandlerContext;
+use crate::http::HttpClient;
 pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_lib::Uuid;
+#[doc(hidden)]
+pub use spacetimedb_lib::ViewPrimaryKeyColumn;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
@@ -365,9 +373,9 @@ pub use spacetimedb_bindings_macro::settings;
 ///     // The following line would panic, since we use `insert` rather than `try_insert`.
 ///     // let result = ctx.db.country().insert(Country { code: "CN".into(), national_bird: "Blue Magpie".into() });
 ///
-///     // If we wanted to *update* the row for Australia, we can use the `update` method of `UniqueIndex`.
-///     // The following line will succeed:
-///     ctx.db.country().code().update(Country {
+///     // If we wanted to replace the row for Australia, we can delete it and insert the new row.
+///     assert!(ctx.db.country().code().delete("AU".to_string()));
+///     ctx.db.country().insert(Country {
 ///         code: "AU".into(), national_bird: "Australian Emu".into()
 ///     });
 /// }
@@ -699,7 +707,7 @@ pub use spacetimedb_bindings_macro::table;
 /// <!-- TODO: SLAs? -->
 ///
 /// [`&ReducerContext`]: `ReducerContext`
-/// [clients]: https://spacetimedb.com/docs/#client
+/// [clients]: https://spacetimedb.com/docs/intro/key-architecture#client
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
@@ -769,10 +777,9 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
 /// when a database is under heavy load.
 ///
-/// [clients]: https://spacetimedb.com/docs/#client
+/// [clients]: https://spacetimedb.com/docs/intro/key-architecture#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
-#[cfg(feature = "unstable")]
 pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
@@ -912,10 +919,81 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+/// Declare the complete publish-time environment schema and generate named accessors.
+///
+/// Fields may be `String`, enums deriving [`EnvironmentValue`], or `Option` of
+/// either, including type aliases. Values are supplied on every publish, never
+/// in metadata. The macro generates an `EnvAccess` extension trait for a struct
+/// named `Env`; import that trait if the declaration lives in another module.
+/// The name `get` is reserved for generic checked access.
+///
+/// ```no_run
+/// #[derive(spacetimedb::EnvironmentValue)]
+/// pub enum LogLevel {
+///     #[env(value = "debug")]
+///     Debug,
+///     #[env(value = "info")]
+///     Info,
+/// }
+/// #[spacetimedb::env]
+/// pub struct Env {
+///     pub API_KEY: String,
+///     pub LOG_LEVEL: Option<LogLevel>,
+/// }
+/// fn read(ctx: &spacetimedb::ReducerContext) {
+///     let _: String = ctx.env.API_KEY();
+///     let _: Option<LogLevel> = ctx.env.LOG_LEVEL();
+/// }
+/// ```
+///
+/// Existing `#[env(values("a", "b"))]` field constraints remain supported for
+/// `String` and `Option<String>`; enum constraints come from their variants.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::env;
+
+/// Derive a typed environment value from an enum with unit variants.
+///
+/// Each variant accepts its exact Rust name by default. Use
+/// `#[env(value = "in progress")]` to map a variant to an arbitrary string,
+/// including spaces, capitalization, Unicode or the empty string. Mappings must
+/// be distinct, with 1 to 256 variants and at most 8192 UTF-8 bytes per string.
+/// Generic enums and variants with payloads are not supported.
+///
+/// The schema contains only allowed strings. A named environment accessor returns
+/// this enum, or `Option<Enum>` for an optional field; generic `env.get` still
+/// returns `Option<String>`. Missing required values and unmapped strings panic
+/// with the key name only. Other derives and the enum's ordinary serialization
+/// are unaffected.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::EnvironmentValue;
+
+/// Read-only access to this database's environment store.
+///
+/// Reads use the current transaction. In a procedure outside a transaction,
+/// each read uses a short snapshot; use `with_tx` to read related keys together.
+/// Values are stored in plaintext and may be read by database collaborators.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Environment {
+    _private: (),
+}
+
+impl Environment {
+    /// Return `None` for an absent declared optional key and `Some("")` for a present empty value.
+    /// Keys must be POSIX environment names of at most 256 bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key is undeclared, invalid, or inaccessible in the current host call.
+    pub fn get(&self, key: &str) -> Option<String> {
+        rt::env_get(key)
+    }
+}
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
+    pub env: Environment,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -923,6 +1001,7 @@ pub struct AnonymousViewContext {
 impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
+            env: Environment::default(),
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
@@ -932,6 +1011,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
+    pub env: Environment,
     sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
@@ -941,6 +1021,7 @@ impl ViewContext {
     pub fn new(sender: Identity) -> Self {
         Self {
             sender,
+            env: Environment::default(),
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
@@ -971,6 +1052,8 @@ impl ViewContext {
 /// Implements the `DbContext` trait for accessing views into a database.
 #[non_exhaustive]
 pub struct ReducerContext {
+    /// Read-only access to the database environment in this transaction.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the reducer.
     sender: Identity,
 
@@ -1027,7 +1110,7 @@ pub struct ReducerContext {
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1035,6 +1118,7 @@ impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
+            env: Environment::default(),
             db: Local {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
@@ -1042,7 +1126,7 @@ impl ReducerContext {
             sender_auth: AuthCtx::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1050,6 +1134,7 @@ impl ReducerContext {
     #[doc(hidden)]
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
+            env: Environment::default(),
             db,
             sender,
             timestamp,
@@ -1057,7 +1142,7 @@ impl ReducerContext {
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1118,12 +1203,12 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v4(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v4()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1140,12 +1225,12 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1153,7 +1238,6 @@ impl ReducerContext {
     }
 }
 
-#[cfg(feature = "unstable")]
 /// The context that an anonymous transaction
 /// in [`ProcedureContext::with_tx`] is provided with.
 ///
@@ -1167,19 +1251,76 @@ impl ReducerContext {
 /// Implements the `DbContext` trait for accessing views into a database.
 pub struct TxContext(ReducerContext);
 
-#[cfg(feature = "unstable")]
 impl AsRef<ReducerContext> for TxContext {
     fn as_ref(&self) -> &ReducerContext {
         &self.0
     }
 }
 
-#[cfg(feature = "unstable")]
 impl Deref for TxContext {
     type Target = ReducerContext;
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+/// We need to passthrough identity and connection_id because procedures can be invoked by users.
+/// For [HttpContext] this is always anonymous ([Identity::ZERO]).
+/// Construct the inner [ReducerContext] with the appropriate caller information.
+fn try_with_tx<T, E>(
+    body: impl Fn(&TxContext) -> Result<T, E>,
+    identity: Identity,
+    connection_id: Option<ConnectionId>,
+) -> Result<T, E> {
+    let abort = || {
+        crate::sys::procedure::procedure_abort_mut_tx()
+            .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+    };
+
+    let run = || {
+        let timestamp = crate::sys::procedure::procedure_start_mut_tx()
+            .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
+        let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+        let tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
+        let tx = TxContext(tx);
+
+        struct DoOnDrop<F: Fn()>(F);
+        impl<F: Fn()> Drop for DoOnDrop<F> {
+            fn drop(&mut self) {
+                (self.0)();
+            }
+        }
+        let abort_guard = DoOnDrop(abort);
+        let res = body(&tx);
+        core::mem::forget(abort_guard);
+        res
+    };
+
+    let mut res = run();
+
+    match res {
+        Ok(_) if crate::sys::procedure::procedure_commit_mut_tx().is_err() => {
+            log::warn!("committing anonymous transaction failed");
+            res = run();
+            match res {
+                Ok(_) => crate::sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                Err(_) => abort(),
+            }
+        }
+        Ok(_) => {}
+        Err(_) => abort(),
+    }
+
+    res
+}
+
+fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
+    use core::convert::Infallible;
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
+        Ok(v) => v,
+        Err(e) => match e {},
     }
 }
 
@@ -1190,8 +1331,9 @@ impl Deref for TxContext {
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
 #[non_exhaustive]
-#[cfg(feature = "unstable")]
 pub struct ProcedureContext {
+    /// Read-only access to the database environment.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the procedure.
     sender: Identity,
 
@@ -1213,21 +1355,21 @@ pub struct ProcedureContext {
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
     // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
-#[cfg(feature = "unstable")]
 impl ProcedureContext {
     fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
             sender,
             timestamp,
             connection_id,
+            env: Environment::default(),
             http: http::HttpClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1245,7 +1387,13 @@ impl ProcedureContext {
     }
 
     /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `ProcedureContext::database_identity` instead.")]
     pub fn identity(&self) -> Identity {
+        self.database_identity()
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn database_identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
         // However, this would be:
         // - Onerous, because we have no tooling to inspect the system tables from module code.
@@ -1278,7 +1426,6 @@ impl ProcedureContext {
     /// # }
     /// ```
     // TODO(procedure-sleep-until): remove this method
-    #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
         let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
@@ -1311,13 +1458,8 @@ impl ProcedureContext {
     /// and return the same result on each invocation,
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
-    #[cfg(feature = "unstable")]
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        use core::convert::Infallible;
-        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
-            Ok(v) => v,
-            Err(e) => match e {},
-        }
+        with_tx(body, self.sender(), self.connection_id())
     }
 
     /// Acquire a mutable transaction
@@ -1349,63 +1491,8 @@ impl ProcedureContext {
     /// and return the same result on each invocation,
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
-    #[cfg(feature = "unstable")]
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        let abort = || {
-            sys::procedure::procedure_abort_mut_tx()
-                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
-        };
-
-        let run = || {
-            // Start the transaction.
-
-            use core::mem;
-            let timestamp = sys::procedure::procedure_start_mut_tx().expect(
-                "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
-            );
-            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
-
-            // We've resumed, so let's do the work, but first prepare the context.
-            let tx = ReducerContext::new(Local {}, self.sender, self.connection_id, timestamp);
-            let tx = TxContext(tx);
-
-            // Guard the execution of `body` with a scope-guard that `abort`s on panic.
-            // Wasmtime now supports unwinding, so we need to protect against that.
-            // We're not using `scopeguard::guard` here to avoid an extra dependency.
-            struct DoOnDrop<F: Fn()>(F);
-            impl<F: Fn()> Drop for DoOnDrop<F> {
-                fn drop(&mut self) {
-                    (self.0)();
-                }
-            }
-            let abort_guard = DoOnDrop(abort);
-            let res = body(&tx);
-            // Defuse the bomb.
-            mem::forget(abort_guard);
-            res
-        };
-
-        let mut res = run();
-
-        // Commit or roll back?
-        match res {
-            Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
-                // Tried to commit, but couldn't. Retry once.
-                log::warn!("committing anonymous transaction failed");
-                // NOTE(procedure,centril): there's no actual guarantee that `body`
-                // does the exact same as the time before, as the timestamps differ
-                // and due to interior mutability.
-                res = run();
-                match res {
-                    Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
-                    Err(_) => abort(),
-                }
-            }
-            Ok(_) => {}
-            Err(_) => abort(),
-        }
-
-        res
+        try_with_tx(body, self.sender(), self.connection_id())
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -1415,14 +1502,14 @@ impl ProcedureContext {
     /// use spacetimedb::{procedure, ProcedureContext, Uuid};
     ///
     /// #[procedure]
-    /// fn generate_uuid_v4(ctx: &ProcedureContext) -> Uuid {
-    ///     let uuid = ctx.new_uuid_v4();
-    ///     log::info!(uuid);
+    /// fn generate_uuid_v4(ctx: &mut ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4().expect("failed to generate uuid");
+    ///     log::info!("{uuid}");
     ///     uuid
     /// }
     /// # }
     /// ```
-    #[cfg(all(feature = "unstable", feature = "rand"))]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1437,14 +1524,14 @@ impl ProcedureContext {
     /// use spacetimedb::{procedure, ProcedureContext, Uuid};
     ///
     /// #[procedure]
-    /// fn generate_uuid_v7(ctx: &ProcedureContext) -> Result<Uuid, Box<dyn std::error::Error>> {
-    ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
-    ///     Ok(uuid)
+    /// fn generate_uuid_v7(ctx: &mut ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v7().expect("failed to generate uuid");
+    ///     log::info!("{uuid}");
+    ///     uuid
     /// }
     /// # }
     /// ```
-    #[cfg(all(feature = "unstable", feature = "rand"))]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1453,6 +1540,7 @@ impl ProcedureContext {
 }
 
 /// A handle on a database with a particular table schema.
+#[deprecated(note = "Use the capability based traits (CtxDbRead, CtxDbWrite) instead!")]
 pub trait DbContext {
     /// A view into the tables of a database.
     ///
@@ -1471,10 +1559,10 @@ pub trait DbContext {
     ///
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly;
 }
 
+#[allow(deprecated)]
 impl DbContext for AnonymousViewContext {
     type DbView = LocalReadOnly;
 
@@ -1482,12 +1570,12 @@ impl DbContext for AnonymousViewContext {
         &self.db
     }
 
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1495,13 +1583,12 @@ impl DbContext for ReducerContext {
         &self.db
     }
 
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly {
         self.db.get_read_only()
     }
 }
 
-#[cfg(feature = "unstable")]
+#[allow(deprecated)]
 impl DbContext for TxContext {
     type DbView = Local;
 
@@ -1514,6 +1601,7 @@ impl DbContext for TxContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for ViewContext {
     type DbView = LocalReadOnly;
 
@@ -1521,7 +1609,6 @@ impl DbContext for ViewContext {
         &self.db
     }
 
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
@@ -1539,9 +1626,297 @@ impl DbContext for ViewContext {
 pub struct Local {}
 
 impl Local {
-    #[cfg(feature = "unstable")]
     fn get_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
+    }
+}
+
+/// Contexts which provide read access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
+pub trait CtxDbRead {
+    fn db_read_only(&self) -> &LocalReadOnly;
+}
+
+impl CtxDbRead for TxContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+impl CtxDbRead for ReducerContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+impl CtxDbRead for ViewContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+impl CtxDbRead for AnonymousViewContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+/// Contexts which provide read-write access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and from transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
+/// as the context's `db` field provides the same access.
+pub trait CtxDbWrite: CtxDbRead {
+    fn db(&self) -> &Local;
+}
+
+impl CtxDbWrite for TxContext {
+    fn db(&self) -> &Local {
+        &Local {}
+    }
+}
+
+impl CtxDbWrite for ReducerContext {
+    fn db(&self) -> &Local {
+        &Local {}
+    }
+}
+
+/// Contexts which can retrieve the sender [`Identity`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's inherent `sender` method provides the same access.
+pub trait CtxWithSender {
+    fn sender(&self) -> Identity;
+}
+
+impl CtxWithSender for ViewContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+impl CtxWithSender for ReducerContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+impl CtxWithSender for TxContext {
+    fn sender(&self) -> Identity {
+        self.0.sender
+    }
+}
+
+impl CtxWithSender for ProcedureContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+/// Contexts which can retrieve the current [`Timestamp`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers, procedures, HTTP handlers,
+/// and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = ", [`HandlerContext`]")]
+/// or [`TxContext`],
+/// this trait is not necessary, as the context's `timestamp` field provides the same access.
+pub trait CtxWithTimestamp {
+    fn timestamp(&self) -> Timestamp;
+}
+
+impl CtxWithTimestamp for ReducerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for TxContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for ProcedureContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithTimestamp for HandlerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+/// Contexts which can retrieve the current [`AuthCtx`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
+/// this trait is not necessary, as the context's sender_auth method provides the same access.
+pub trait CtxWithSenderAuth {
+    fn sender_auth(&self) -> &AuthCtx;
+}
+
+impl CtxWithSenderAuth for ReducerContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.sender_auth()
+    }
+}
+
+impl CtxWithSenderAuth for TxContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.0.sender_auth()
+    }
+}
+
+/// Contexts which can enter a start a transaction with a [`TxContext`] inside the function.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`] or")]
+/// [`ProcedureContext`],
+/// this trait is not necessary, as the context's methods provide the same access.
+pub trait CtxWithTxManagement {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T;
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E>;
+}
+
+impl CtxWithTxManagement for ProcedureContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithTxManagement for HandlerContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+/// Contexts which can retrieve the current [`StdbRng`] state.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`],")]
+/// [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
+/// this trait is not necessary, as the context's methods provide the same access.
+#[cfg(feature = "rand08")]
+pub trait CtxWithRng {
+    fn rng(&self) -> &StdbRng;
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>;
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for ProcedureContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+impl CtxWithRng for HandlerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for ReducerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for TxContext {
+    fn rng(&self) -> &StdbRng {
+        self.0.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.0.random()
+    }
+}
+
+/// Contexts which can perform outgoing HTTP requests.
+///
+/// This type is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = "or [`HandlerContext`],")]
+/// this trait is not necessary,
+/// as the context's `http` field provides the same access.
+pub trait CtxWithHttp {
+    fn http(&self) -> &HttpClient;
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithHttp for HandlerContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
+    }
+}
+
+impl CtxWithHttp for ProcedureContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
     }
 }
 

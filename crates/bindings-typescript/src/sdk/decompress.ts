@@ -28,9 +28,24 @@ export async function decompress(
   const decompressedStream = readableStream.pipeThrough(decompressionStream);
 
   // Collect the decompressed chunks efficiently
-  const chunks = [];
-  for await (const chunk of decompressedStream) {
-    chunks.push(chunk);
+  const reader = decompressedStream.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalLength = 0;
+  let result: any;
+
+  while (!(result = await reader.read()).done) {
+    chunks.push(result.value);
+    totalLength += result.value.length;
   }
-  return new Blob(chunks).bytes();
+
+  // Allocate a single Uint8Array for the decompressed data
+  const decompressedArray = new Uint8Array(totalLength);
+  let chunkOffset = 0;
+
+  for (const chunk of chunks) {
+    decompressedArray.set(chunk, chunkOffset);
+    chunkOffset += chunk.length;
+  }
+
+  return decompressedArray;
 }

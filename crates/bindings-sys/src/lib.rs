@@ -644,7 +644,6 @@ pub mod raw {
         pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource) -> u16;
     }
 
-    #[cfg(feature = "unstable")]
     #[link(wasm_import_module = "spacetime_10.3")]
     unsafe extern "C" {
         /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
@@ -775,7 +774,6 @@ pub mod raw {
         /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
         /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
         /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
-        #[cfg(feature = "unstable")]
         pub fn procedure_http_request(
             request_ptr: *const u8,
             request_len: u32,
@@ -883,6 +881,17 @@ pub mod raw {
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.6")]
+    unsafe extern "C" {
+        /// Read a UTF-8 environment value. Writes INVALID for a missing key;
+        /// present empty strings have a valid BytesSource. Returns ordinary errno.
+        /// Invalid keys return HOST_CALL_FAILURE. NO_SPACE means 256 byte
+        /// sources remain unconsumed; consume a source before retrying.
+        /// Calls outside a reducer/view
+        /// transaction or procedure return NOT_IN_TRANSACTION.
+        pub fn env_get(key: *const u8, key_len: usize, out: *mut BytesSource) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -1072,7 +1081,6 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T> {
 /// Assuming the call to `f` returns 0, `Ok(())` is returned,
 /// and otherwise `Err(err)` is returned.
 #[inline]
-#[cfg(feature = "unstable")]
 fn call_no_ret(f: impl FnOnce() -> u16) -> Result<()> {
     let f_code = f();
     cvt(f_code)?;
@@ -1496,6 +1504,14 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
     }
 }
 
+/// Read a database environment value without exposing the system table.
+#[inline]
+pub fn env_get(key: &str) -> Option<raw::BytesSource> {
+    let source = unsafe { call(|out| raw::env_get(key.as_ptr(), key.len(), out)) }
+        .unwrap_or_else(|errno: Errno| panic!("Error reading environment: {errno}"));
+    (source != raw::BytesSource::INVALID).then_some(source)
+}
+
 pub struct RowIter {
     raw: raw::RowIter,
 }
@@ -1548,7 +1564,6 @@ impl Drop for RowIter {
     }
 }
 
-#[cfg(feature = "unstable")]
 pub mod procedure {
     //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
 
@@ -1566,7 +1581,7 @@ pub mod procedure {
     ///
     /// Once complete, returns `Ok(timestamp)` on success,
     /// enabling further calls that require a pending transaction,
-    /// or [`Errno`] otherwise.
+    /// or [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1582,7 +1597,7 @@ pub mod procedure {
     /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1604,7 +1619,7 @@ pub mod procedure {
     /// Aborts a mutable transaction,
     /// blocking until the transaction has been rolled back.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1624,7 +1639,6 @@ pub mod procedure {
     }
 
     #[inline]
-    #[cfg(feature = "unstable")]
     /// Perform an HTTP request as specified by `http_request_bsatn`,
     /// suspending execution until the request is complete,
     /// then return its response or error.

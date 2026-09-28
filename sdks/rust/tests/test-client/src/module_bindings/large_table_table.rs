@@ -24,6 +24,18 @@ pub struct LargeTableTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `large_table`.
+pub struct LargeTableTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for LargeTableTableAccessor {
+    type Row = LargeTable;
+    type Handle<'db> = LargeTableTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.large_table()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `large_table`.
 ///
@@ -45,6 +57,18 @@ impl LargeTableTableAccess for super::RemoteTables {
 
 pub struct LargeTableInsertCallbackId(__sdk::CallbackId);
 pub struct LargeTableDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for LargeTableTableHandle<'ctx> {
+    type Row = LargeTable;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = LargeTable> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for LargeTableTableHandle<'ctx> {
     type Row = LargeTable;
@@ -70,6 +94,36 @@ impl<'ctx> __sdk::Table for LargeTableTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = LargeTableDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> LargeTableDeleteCallbackId {
+        LargeTableDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: LargeTableDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for LargeTableTableHandle<'ctx> {
+    type InsertCallbackId = LargeTableInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> LargeTableInsertCallbackId {
+        LargeTableInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: LargeTableInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for LargeTableTableHandle<'ctx> {
     type DeleteCallbackId = LargeTableDeleteCallbackId;
 
     fn on_delete(

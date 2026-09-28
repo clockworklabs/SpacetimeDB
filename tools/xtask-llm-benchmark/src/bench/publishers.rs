@@ -1,5 +1,6 @@
 use crate::bench::utils::sanitize_db_name;
-use anyhow::{bail, Result};
+use crate::eval::spacetime_command;
+use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::borrow::Cow;
 use std::env;
@@ -7,6 +8,196 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static CLI_SESSION_TAG: LazyLock<String> = LazyLock::new(|| {
+    let started_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{}-{started_at}", std::process::id())
+});
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("xtask-llm-benchmark is under public/tools/xtask-llm-benchmark")
+        .to_path_buf()
+}
+
+fn pnpm_minimum_release_age() -> Result<String> {
+    let workspace = fs::read_to_string(workspace_root().join("pnpm-workspace.yaml"))?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("minimumReleaseAge:")?
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .map(|age| age.to_string())
+        .ok_or_else(|| anyhow::anyhow!("pnpm-workspace.yaml is missing minimumReleaseAge"))
+}
+
+fn path_entries() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    let path = env::var_os("Path").or_else(|| env::var_os("PATH"));
+    #[cfg(not(windows))]
+    let path = env::var_os("PATH");
+
+    path.map(|path| env::split_paths(&path).collect()).unwrap_or_default()
+}
+
+fn command_path_candidates(name: &str) -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let path = Path::new(name);
+        if path.extension().is_some() {
+            vec![name.to_string()]
+        } else {
+            vec![
+                format!("{name}.cmd"),
+                format!("{name}.exe"),
+                format!("{name}.bat"),
+                name.to_string(),
+            ]
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        vec![name.to_string()]
+    }
+}
+
+fn resolve_command_on_path(name: &str) -> Option<PathBuf> {
+    for dir in path_entries() {
+        for candidate in command_path_candidates(name) {
+            let path = dir.join(candidate);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn configured_nodejs_dir() -> Option<PathBuf> {
+    env::var("NODEJS_DIR")
+        .ok()
+        .map(|s| s.trim().trim_matches('"').trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+fn pnpm_in_dir(dir: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        for candidate in ["pnpm.cmd", "pnpm.exe", "pnpm.bat"] {
+            let path = dir.join(candidate);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+        None
+    }
+    #[cfg(not(windows))]
+    {
+        let path = dir.join("pnpm");
+        path.is_file().then_some(path)
+    }
+}
+
+fn node_in_dir(dir: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    let path = dir.join("node.exe");
+    #[cfg(not(windows))]
+    let path = dir.join("node");
+
+    path.is_file().then_some(path)
+}
+
+fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
+    nodejs_dir
+        .and_then(node_in_dir)
+        .or_else(|| resolve_command_on_path("node"))
+        .or_else(|| {
+            env::var("NVM_SYMLINK")
+                .ok()
+                .map(PathBuf::from)
+                .and_then(|dir| node_in_dir(&dir))
+        })
+}
+
+struct CliRootDir {
+    path: PathBuf,
+    remove_on_drop: bool,
+}
+
+impl CliRootDir {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn remove(&self) -> Result<()> {
+        match fs::remove_dir_all(&self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error).with_context(|| format!("failed to remove CLI root {}", self.path.display())),
+        }
+    }
+
+    fn claim_cleanup(&mut self) {
+        self.remove_on_drop = true;
+    }
+
+    fn relinquish_cleanup(&mut self) {
+        self.remove_on_drop = false;
+    }
+}
+
+impl Drop for CliRootDir {
+    fn drop(&mut self) {
+        if self.remove_on_drop
+            && let Err(error) = self.remove()
+        {
+            eprintln!("[cleanup] failed to remove CLI root {}: {error:#}", self.path.display());
+        }
+    }
+}
+
+fn spacetime_cmd(cli_root: &CliRootDir) -> Command {
+    let mut cmd = spacetime_command();
+    cmd.arg("--root-dir").arg(cli_root.path());
+    cmd
+}
+
+fn pnpm_cjs_for_cmd(pnpm: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let is_cmd = pnpm
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"));
+        if !is_cmd {
+            return None;
+        }
+
+        let cjs = pnpm
+            .parent()?
+            .join("node_modules")
+            .join("pnpm")
+            .join("bin")
+            .join("pnpm.cjs");
+        cjs.is_file().then_some(cjs)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pnpm;
+        None
+    }
+}
 
 /// Strip ANSI escape codes (color codes) from a string
 fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
@@ -21,35 +212,343 @@ fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
 /* Shared                                                                     */
 /* -------------------------------------------------------------------------- */
 
+pub struct PublishedDatabase {
+    host_url: String,
+    db: String,
+    // Keep the publishing CLI session alive so deletion uses the database
+    // owner's credentials without sharing mutable CLI state across routes.
+    cli_root: CliRootDir,
+    deleted: bool,
+}
+
+impl PublishedDatabase {
+    fn new(host_url: &str, db: String, mut cli_root: CliRootDir) -> Self {
+        cli_root.claim_cleanup();
+        Self {
+            host_url: host_url.to_owned(),
+            db,
+            cli_root,
+            deleted: false,
+        }
+    }
+
+    fn delete_inner(&self) -> Result<()> {
+        let mut cmd = spacetime_cmd(&self.cli_root);
+        cmd.arg("delete")
+            .arg("-y")
+            .arg("--no-config")
+            .arg("--server")
+            .arg(&self.host_url)
+            .arg(&self.db);
+        run(&mut cmd, "spacetime delete").with_context(|| {
+            format!(
+                "failed to clean up benchmark database `{}` on {}",
+                self.db, self.host_url
+            )
+        })
+    }
+
+    pub fn delete(mut self) -> Result<()> {
+        self.delete_inner()?;
+        self.deleted = true;
+        self.cli_root.remove()?;
+        self.cli_root.relinquish_cleanup();
+        Ok(())
+    }
+
+    /// Relinquish cleanup ownership after another handle for the same database
+    /// has been created by a migration republish.
+    pub fn relinquish(mut self) {
+        self.deleted = true;
+        self.cli_root.relinquish_cleanup();
+    }
+}
+
+impl Drop for PublishedDatabase {
+    fn drop(&mut self) {
+        if !self.deleted
+            && let Err(error) = self.delete_inner()
+        {
+            eprintln!(
+                "[cleanup] failed to delete benchmark database `{}` during fallback cleanup: {error:#}",
+                self.db
+            );
+        }
+    }
+}
+
 pub trait Publisher: Send + Sync {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()>;
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase>;
+}
+
+fn database_cli_root(module_name: &str, remove_on_drop: bool) -> Result<CliRootDir> {
+    let db = sanitize_db_name(module_name);
+    let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()));
+    fs::create_dir_all(&path)?;
+    Ok(CliRootDir { path, remove_on_drop })
 }
 
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
 #[cfg(unix)]
-fn was_signal_killed(status: &std::process::ExitStatus) -> bool {
+fn signal_killed_by(status: &std::process::ExitStatus) -> Option<i32> {
     use std::os::unix::process::ExitStatusExt;
-    status.signal().is_some()
+    status.signal()
 }
 
 #[cfg(not(unix))]
-fn was_signal_killed(_status: &std::process::ExitStatus) -> bool {
-    false
+fn signal_killed_by(_status: &std::process::ExitStatus) -> Option<i32> {
+    None
 }
 
 /// Check if the failure is a transient error that should be retried.
-/// These are resource contention issues in the dotnet WASI SDK.
+/// These are resource contention issues and diagnostic-free child-process crashes.
 fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let combined = format!("{stderr}{stdout}");
-    // "Pipe is broken" errors from WASI SDK parallel builds
+    let output = combined.to_ascii_lowercase();
+    let has_source_diagnostic = output.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("error[")
+            || line.contains(": error cs")
+            || line.contains(": error stdb")
+            || line.contains(": error il")
+            || line.starts_with("error ts")
+            || line.contains("rust-lld: error:")
+            || line.contains("lld-link: error:")
+            || line.strip_prefix("error:").is_some_and(|message| {
+                let message = message.trim_start();
+                !message.starts_with("could not compile `")
+                    && !message.starts_with("process didn't exit successfully")
+                    && !message.starts_with("command [\"cargo\", \"build\"")
+                    && !message.starts_with("command [\"dotnet\", \"publish\"")
+                    && !message.starts_with("failed to run custom build command for `")
+                    && !message.starts_with("linking with `rust-lld.exe` failed")
+            })
+    });
+    if has_source_diagnostic {
+        return false;
+    }
+
+    let has_terminal_failure = output.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("error: could not compile `")
+            || line.starts_with("failed:")
+            || line.starts_with("exception:")
+            || line.contains("build failed")
+            || line.contains("panicked at")
+    });
+    let diagnostic_free_rust_exit = (output.contains("process didn't exit successfully")
+        && output.contains("--crate-name"))
+        || output.contains("linking with `rust-lld.exe` failed: exit code: 1");
+    let wrapper_command_exit = output.contains("error: command [\"cargo\", \"build\"")
+        || output.contains("error: command [\"dotnet\", \"publish\"")
+        || (output.contains("error: failed to run custom build command for")
+            && output.contains("process didn't exit successfully"));
+    let progress_only_exit = output.trim().is_empty()
+        || output.lines().filter(|line| !line.trim().is_empty()).all(|line| {
+            let line = line.trim_start();
+            [
+                "building ",
+                "compiling ",
+                "downloaded ",
+                "downloading ",
+                "finished ",
+                "logged in with identity ",
+                "optimizing ",
+                "packages: ",
+                "progress: ",
+                "recreating ",
+                "restored ",
+                "restoring ",
+                "saving config ",
+                "warning: this login will not work for any other servers.",
+                "we have logged in directly to your target server.",
+            ]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+                || line.chars().all(|character| matches!(character, '+' | '-'))
+        });
+
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
-        // Other transient resource errors
         || combined.contains("Unable to read data from the transport connection")
-        // WASI SDK tar extraction race condition - multiple parallel builds
-        // trying to extract the same tarball simultaneously
         || (combined.contains("wasi-sdk") && combined.contains("tar"))
         || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
+        || combined.contains("code <signal")
+        || diagnostic_free_rust_exit
+        || wrapper_command_exit
+        || (!has_terminal_failure && progress_only_exit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_transient_build_error, CliRootDir};
+    use std::fs;
+
+    #[test]
+    fn cli_root_cleans_up_when_it_owns_the_directory() {
+        let path = std::env::temp_dir().join(format!("stdb-cli-root-cleanup-test-{}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+
+        drop(CliRootDir {
+            path: path.clone(),
+            remove_on_drop: true,
+        });
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cli_root_can_relinquish_cleanup_to_a_republish() {
+        let path = std::env::temp_dir().join(format!("stdb-cli-root-republish-test-{}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+
+        drop(CliRootDir {
+            path: path.clone(),
+            remove_on_drop: false,
+        });
+
+        assert!(path.exists());
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn retries_publish_exit_without_actionable_diagnostic() {
+        assert!(is_transient_build_error(
+            "Saving config to temporary-root/config/cli.toml.",
+            "Logged in with identity c200"
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_source_compile_error() {
+        assert!(!is_transient_build_error(
+            "error: could not compile `spacetime-module`",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_partial_cargo_output_containing_error_in_crate_name() {
+        assert!(is_transient_build_error(
+            "Compiling thiserror v1.0.69\nCompiling anyhow v1.0.104",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_silent_rustc_exit() {
+        assert!(is_transient_build_error(
+            "error: could not compile `rand_core` (lib)\n\nCaused by:\n  process didn't exit successfully: `rustc --crate-name rand_core` (exit code: 1)",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_rustc_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error[E0425]: cannot find value `missing` in this scope\nerror: could not compile `spacetime-module`\n\nCaused by:\n  process didn't exit successfully: `rustc --crate-name spacetime_module` (exit code: 1)",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_silent_cargo_exit() {
+        assert!(is_transient_build_error(
+            "Error: command [\"cargo\", \"build\", \"--release\"] exited with code 1",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_rust_lld_exit_without_linker_diagnostic() {
+        assert!(is_transient_build_error(
+            "error: linking with `rust-lld.exe` failed: exit code: 1\n  = note: some arguments are omitted\n  = note:\n\nerror: could not compile `rustversion` (lib) due to 1 previous error",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_rust_lld_exit_with_linker_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error: linking with `rust-lld.exe` failed: exit code: 1\n  = note: rust-lld: error: undefined symbol: missing",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_build_script_exit_without_diagnostic() {
+        assert!(is_transient_build_error(
+            "error: failed to run custom build command for `anyhow v1.0.104`\n\nCaused by:\n  process didn't exit successfully: `target/release/build/anyhow/build-script-build` (exit code: 1)\n  --- stdout\n  cargo:rerun-if-changed=src/nightly.rs",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_build_script_exit_with_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error: failed to run custom build command for `native-dependency v1.0.0`\n\nCaused by:\n  process didn't exit successfully: `target/release/build/native-dependency/build-script-build` (exit code: 1)\n  --- stderr\n  error: required native compiler was not found",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_dotnet_linker_exit_without_source_diagnostic() {
+        assert!(is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\"] exited with code 1",
+            "Microsoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn retries_dotnet_publish_exit_without_diagnostic() {
+        assert!(is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\", \"-c\", \"Release\", \"-v\", \"quiet\"] exited with code 1",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_dotnet_publish_exit_with_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\", \"-c\", \"Release\"] exited with code 1",
+            "src/Module.cs(10,5): error CS0122: method is inaccessible due to its protection level"
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_dotnet_linker_exit_with_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\"] exited with code 1",
+            "Lib.cs(10,5): error CS0103: The name 'missing' does not exist.\nMicrosoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_permanent_package_error() {
+        assert!(!is_transient_build_error(
+            "ERR_PNPM_NO_MATCHING_VERSION No matching version found for missing-package@1.0.0",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_authentication_error() {
+        assert!(!is_transient_build_error("authentication token expired", ""));
+    }
+
+    #[test]
+    fn retries_incomplete_pnpm_progress() {
+        assert!(is_transient_build_error(
+            "",
+            "Recreating generated/node_modules\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +10\n++++++++++"
+        ));
+    }
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
@@ -96,13 +595,14 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
         let stderr = strip_ansi_codes(&stderr_raw);
         let stdout = strip_ansi_codes(&stdout_raw);
 
-        // Retry on signal kills (like SIGSEGV) or transient build errors
-        let should_retry = was_signal_killed(&out.status) || is_transient_build_error(&stderr, &stdout);
+        // Retry on signal kills (like SIGSEGV) or transient build errors.
+        let signal = signal_killed_by(&out.status);
+        let should_retry = signal.is_some() || is_transient_build_error(&stderr, &stdout);
         if should_retry && attempt < max_retries {
-            let reason = if was_signal_killed(&out.status) {
-                "signal kill"
+            let reason = if let Some(signal) = signal {
+                format!("signal {signal}")
             } else {
-                "transient build error"
+                "transient build error".to_string()
             };
             eprintln!("⚠️ {label}: {reason} detected, will retry...");
             last_error = Some(format!(
@@ -139,10 +639,29 @@ impl DotnetPublisher {
         }
         Ok(())
     }
+
+    fn configure_dotnet_env(cmd: &mut Command) -> &mut Command {
+        cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
+            .env("DOTNET_NOLOGO", "1")
+            // The CI runner's .NET install can crash while formatting localized
+            // DateTime/TimeZoneInfo data before publish starts. Force invariant
+            // globalization so generated C# module publish reaches MSBuild.
+            .env("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
+            // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
+            // when running multiple dotnet builds in parallel.
+            .env("MSBUILDDISABLENODEREUSE", "1")
+            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+    }
 }
 
 impl Publisher for DotnetPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -151,30 +670,28 @@ impl Publisher for DotnetPublisher {
         Self::ensure_csproj(source)?;
 
         let db = sanitize_db_name(module_name);
+        let source = source
+            .canonicalize()
+            .with_context(|| format!("failed to resolve C# source path {}", source.display()))?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
-        let mut cmd = Command::new("spacetime");
-        cmd.arg("build")
-            .current_dir(source)
-            .env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
-            .env("DOTNET_NOLOGO", "1")
-            // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
-            // when running multiple dotnet builds in parallel.
-            .env("MSBUILDDISABLENODEREUSE", "1")
-            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0");
-        run(&mut cmd, "spacetime build (csharp)")?;
-
-        let mut pubcmd = Command::new("spacetime");
+        let mut pubcmd = spacetime_cmd(&cli_root);
+        pubcmd.arg("publish");
+        if clear_database {
+            pubcmd.arg("-c");
+        }
         pubcmd
-            .arg("publish")
-            .arg("-c")
             .arg("-y")
             .arg("--server")
             .arg(host_url)
+            .arg("--module-path")
+            .arg(&source)
             .arg(&db)
-            .current_dir(source);
+            .current_dir(&source);
+        Self::configure_dotnet_env(&mut pubcmd);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }
 /* -------------------------------------------------------------------------- */
@@ -194,7 +711,13 @@ impl SpacetimeRustPublisher {
 }
 
 impl Publisher for SpacetimeRustPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -205,21 +728,29 @@ impl Publisher for SpacetimeRustPublisher {
 
         // sanitize db + server
         let db = sanitize_db_name(module_name);
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         // 2) Publish
-        run(
-            Command::new("spacetime")
-                .arg("publish")
-                .arg("-c")
-                .arg("-y")
-                .arg("--server")
-                .arg(host_url)
-                .arg(&db)
-                .current_dir(source),
-            "spacetime publish",
-        )?;
+        let mut pubcmd = spacetime_cmd(&cli_root);
+        pubcmd.arg("publish");
+        if clear_database {
+            pubcmd.arg("-c");
+        }
+        pubcmd
+            .arg("-y")
+            .arg("--server")
+            .arg(host_url)
+            .arg(&db)
+            .current_dir(source);
+        if let Some(target_dir) = env::var_os("LLM_BENCH_RUST_TARGET_DIR") {
+            pubcmd.env("CARGO_TARGET_DIR", target_dir);
+        } else {
+            // Generated modules share a crate name, so they cannot safely share the workspace target directory.
+            pubcmd.env_remove("CARGO_TARGET_DIR");
+        }
+        run(&mut pubcmd, "spacetime publish")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }
 
@@ -240,7 +771,13 @@ impl TypeScriptPublisher {
 }
 
 impl Publisher for TypeScriptPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -248,82 +785,102 @@ impl Publisher for TypeScriptPublisher {
 
         Self::ensure_package_json(source)?;
         let db = sanitize_db_name(module_name);
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         // Install dependencies (--ignore-workspace to avoid parent workspace interference).
-        // If NODEJS_DIR is set (e.g. nvm4w on Windows), use full path to pnpm so spawn finds it.
-        let pnpm_exe = env::var("NODEJS_DIR")
-            .ok()
-            .map(|s| s.trim().trim_matches('"').trim().to_string())
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
-            .and_then(|dir| {
-                #[cfg(windows)]
-                {
-                    let pnpm_cmd = dir.join("pnpm.cmd");
-                    let pnpm_exe_path = dir.join("pnpm.exe");
-                    if pnpm_cmd.is_file() {
-                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm.cmd)", dir.display());
-                        Some(pnpm_cmd)
-                    } else if pnpm_exe_path.is_file() {
-                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm.exe)", dir.display());
-                        Some(pnpm_exe_path)
-                    } else {
-                        eprintln!(
-                            "[pnpm] NODEJS_DIR set to {} but pnpm.cmd/pnpm.exe not found there, using PATH",
-                            dir.display()
-                        );
-                        None
-                    }
-                }
-                #[cfg(not(windows))]
-                {
-                    let pnpm = dir.join("pnpm");
-                    if pnpm.is_file() {
-                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm)", dir.display());
-                        Some(pnpm)
-                    } else {
-                        eprintln!(
-                            "[pnpm] NODEJS_DIR set to {} but pnpm not found there, using PATH",
-                            dir.display()
-                        );
-                        None
-                    }
-                }
-            });
-        let mut pnpm_cmd = match &pnpm_exe {
-            Some(p) => Command::new(p),
-            None => Command::new("pnpm"),
+        let nodejs_dir = configured_nodejs_dir();
+        let pnpm_exe = nodejs_dir
+            .as_deref()
+            .and_then(pnpm_in_dir)
+            .or_else(|| resolve_command_on_path("pnpm"));
+        if let Some(ref pnpm) = pnpm_exe {
+            eprintln!("[pnpm] using {}", pnpm.display());
+        } else if let Some(ref dir) = nodejs_dir {
+            eprintln!(
+                "[pnpm] NODEJS_DIR set to {} but pnpm not found there or on PATH",
+                dir.display()
+            );
+        }
+        let node_exe = resolve_node_exe(nodejs_dir.as_deref());
+        let pnpm_cjs = pnpm_exe.as_deref().and_then(pnpm_cjs_for_cmd);
+        let mut pnpm_cmd = if let (Some(node), Some(cjs)) = (&node_exe, pnpm_cjs) {
+            eprintln!("[pnpm] invoking {} {}", node.display(), cjs.display());
+            let mut cmd = Command::new(node);
+            cmd.arg(cjs);
+            cmd
+        } else {
+            match &pnpm_exe {
+                Some(p) => Command::new(p),
+                None => Command::new("pnpm"),
+            }
         };
         pnpm_cmd
             .arg("install")
             .arg("--ignore-workspace")
             .current_dir(source)
-            .env("CI", "true");
-        // When using NODEJS_DIR, prepend it to PATH so pnpm.cmd can find node.
-        if let Some(ref dir) = pnpm_exe
-            && let Some(parent) = dir.parent()
+            .env("CI", "true")
+            // This install runs in a materialized project with workspace config
+            // ignored, so pass the repo's pnpm package-age policy explicitly.
+            .env("npm_config_minimum_release_age", pnpm_minimum_release_age()?);
+        let mut prepend_paths = Vec::new();
+        if let Some(dir) = nodejs_dir {
+            prepend_paths.push(dir);
+        }
+        if let Some(ref pnpm) = pnpm_exe
+            && let Some(parent) = pnpm.parent()
         {
-            let mut paths: Vec<PathBuf> = env::split_paths(&env::var("PATH").unwrap_or_default()).collect();
-            paths.insert(0, parent.to_path_buf());
-            if let Ok(new_path) = env::join_paths(paths) {
-                pnpm_cmd.env("PATH", new_path);
+            prepend_paths.push(parent.to_path_buf());
+        }
+        if let Some(node) = node_exe
+            && let Some(parent) = node.parent()
+        {
+            prepend_paths.push(parent.to_path_buf());
+        }
+        let child_path = if !prepend_paths.is_empty() {
+            let mut paths = path_entries();
+            for path in prepend_paths.into_iter().rev() {
+                if !paths.iter().any(|existing| existing == &path) {
+                    paths.insert(0, path);
+                }
             }
+            env::join_paths(paths).ok()
+        } else {
+            None
+        };
+        if let Some(ref new_path) = child_path {
+            #[cfg(windows)]
+            {
+                pnpm_cmd.env_remove("PATH");
+                pnpm_cmd.env("Path", new_path);
+            }
+            #[cfg(not(windows))]
+            pnpm_cmd.env("PATH", new_path);
         }
         run(&mut pnpm_cmd, "pnpm install (typescript)")?;
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
-        run(
-            Command::new("spacetime")
-                .arg("publish")
-                .arg("-c")
-                .arg("-y")
-                .arg("--server")
-                .arg(host_url)
-                .arg(&db)
-                .current_dir(source),
-            "spacetime publish (typescript)",
-        )?;
+        let mut publish_cmd = spacetime_cmd(&cli_root);
+        publish_cmd.arg("publish");
+        if clear_database {
+            publish_cmd.arg("-c");
+        }
+        publish_cmd
+            .arg("-y")
+            .arg("--server")
+            .arg(host_url)
+            .arg(&db)
+            .current_dir(source);
+        if let Some(ref new_path) = child_path {
+            #[cfg(windows)]
+            {
+                publish_cmd.env_remove("PATH");
+                publish_cmd.env("Path", new_path);
+            }
+            #[cfg(not(windows))]
+            publish_cmd.env("PATH", new_path);
+        }
+        run(&mut publish_cmd, "spacetime publish (typescript)")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }

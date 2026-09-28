@@ -11,6 +11,12 @@ import {
 class WebsocketTestAdapter implements WebSocketAdapter {
   protocol: string = '';
 
+  // WebSocket.CLOSED (3) / WebSocket.OPEN (1). Uses literals rather than the
+  // `WebSocket` global, which is not defined when these tests run under Node.
+  get readyState(): number {
+    return this.closed ? 3 : 1;
+  }
+
   messageQueue: Uint8Array<ArrayBuffer>[];
   outgoingMessages: ClientMessage[];
   closed: boolean;
@@ -19,6 +25,7 @@ class WebsocketTestAdapter implements WebSocketAdapter {
   #onclose: (ev: CloseEvent) => void = () => {};
   #onopen: () => void = () => {};
   #onmessage: (msg: { data: Uint8Array }) => void = () => {};
+  #onerror: (msg: ErrorEvent) => void = () => {};
 
   constructor() {
     this.messageQueue = [];
@@ -39,7 +46,13 @@ class WebsocketTestAdapter implements WebSocketAdapter {
     this.#onmessage = handler;
   }
 
-  set onerror(_handler: (msg: ErrorEvent) => void) {}
+  set onerror(handler: (msg: ErrorEvent) => void) {
+    this.#onerror = handler;
+  }
+
+  error(error: Error): void {
+    this.#onerror(error as unknown as ErrorEvent);
+  }
 
   send(message: Uint8Array<ArrayBuffer>): void {
     const rawMessage = message.slice();

@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class MyAccountMissingHandle : RemoteTableHandle<EventContext, Account>
         {
-            protected override string RemoteTableName => "my_account_missing";
+            public override string RemoteTableName => "my_account_missing";
 
             internal MyAccountMissingHandle(DbConnection conn) : base(conn)
             {

@@ -18,6 +18,18 @@ pub struct PlayersAtLevel0TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `players_at_level_0`.
+pub struct PlayersAtLevel0TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PlayersAtLevel0TableAccessor {
+    type Row = Player;
+    type Handle<'db> = PlayersAtLevel0TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.players_at_level_0()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `players_at_level_0`.
 ///
@@ -39,6 +51,18 @@ impl PlayersAtLevel0TableAccess for super::RemoteTables {
 
 pub struct PlayersAtLevel0InsertCallbackId(__sdk::CallbackId);
 pub struct PlayersAtLevel0DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for PlayersAtLevel0TableHandle<'ctx> {
+    type Row = Player;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = Player> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {
     type Row = Player;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = PlayersAtLevel0DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayersAtLevel0DeleteCallbackId {
+        PlayersAtLevel0DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PlayersAtLevel0DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for PlayersAtLevel0TableHandle<'ctx> {
+    type InsertCallbackId = PlayersAtLevel0InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayersAtLevel0InsertCallbackId {
+        PlayersAtLevel0InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PlayersAtLevel0InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PlayersAtLevel0TableHandle<'ctx> {
     type DeleteCallbackId = PlayersAtLevel0DeleteCallbackId;
 
     fn on_delete(

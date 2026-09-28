@@ -1,4 +1,4 @@
-import type { InferTypeOfRow } from '../lib/type_builders.ts';
+import type { InferTypeOfParams } from '../lib/type_builders.ts';
 import type { DbContext } from './db_context';
 import type { Event } from './event.ts';
 import type { ReducerEvent } from './reducer_event.ts';
@@ -13,7 +13,7 @@ export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
   event: Event<
     ReducerEventInfo<
       RemoteModule['reducers'][number]['name'],
-      InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+      InferTypeOfParams<RemoteModule['reducers'][number]['params']>
     >
   >;
 }
@@ -25,7 +25,7 @@ export interface ReducerEventContextInterface<
   event: ReducerEvent<
     ReducerEventInfo<
       RemoteModule['reducers'][number]['name'],
-      InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+      InferTypeOfParams<RemoteModule['reducers'][number]['params']>
     >
   >;
 }

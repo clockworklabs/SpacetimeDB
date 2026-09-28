@@ -9,7 +9,8 @@ on:
 
 jobs:
   upload-assets:
-    runs-on: spacetimedb-new-runner-2
+    # This only downloads existing artifacts and attaches them to a GitHub release.
+    runs-on: spacetimedb-linux-small
     permissions:
       contents: write  # needed to modify releases
 
@@ -17,10 +18,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download artifacts from private base URL
+      - name: Download artifacts from AWS base URL
         env:
           RELEASE_TAG: ${{ github.event.inputs.release_tag }}
-          BASE_URL: ${{ secrets.ARTIFACT_BASE_URL }}
+          BASE_URL: https://${{ vars.AWS_BUCKET }}.s3.amazonaws.com/refs/tags
         run: |
           set -euo pipefail
 
@@ -60,4 +61,3 @@ jobs:
           gh release upload "$RELEASE_TAG" ./* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
-

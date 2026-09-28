@@ -1,6 +1,6 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-const userInternal = table({
+const user_internal = table({
   name: 'user_internal',
 }, {
   id: t.u64().primaryKey().autoInc(),
@@ -9,7 +9,7 @@ const userInternal = table({
   passwordHash: t.string(),
 });
 
-const userPublic = table({
+const user_public = table({
   name: 'user_public',
   public: true,
 }, {
@@ -17,19 +17,19 @@ const userPublic = table({
   name: t.string(),
 });
 
-const spacetimedb = schema({ userInternal, userPublic });
+const spacetimedb = schema({ user_internal, user_public });
 export default spacetimedb;
 
 export const register_user = spacetimedb.reducer(
   { name: t.string(), email: t.string(), passwordHash: t.string() },
   (ctx, { name, email, passwordHash }) => {
-    const internal = ctx.db.userInternal.insert({
+    const internal = ctx.db.user_internal.insert({
       id: 0n,
       name,
       email,
       passwordHash,
     });
-    ctx.db.userPublic.insert({
+    ctx.db.user_public.insert({
       id: internal.id,
       name,
     });

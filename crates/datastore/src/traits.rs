@@ -15,7 +15,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
@@ -207,7 +207,11 @@ pub struct TxDataTableEntry {
     pub ephemeral: bool,
 }
 
-static_assert_size!(TxDataTableEntry, 56);
+// Grew from 56 when `TableName` became a `NamespacedIdentifier`: it keeps both the
+// validated segments and their dot-joined rendering (2 words each) where it previously
+// held a single `RawIdentifier` (1 word). The extra word is per table per transaction,
+// which is not a hot allocation; keeping the segments typed is worth it.
+static_assert_size!(TxDataTableEntry, 72);
 
 impl TxDataTableEntry {
     /// Create a new, empty `TxDataTableEntry` for `table_name`.
@@ -629,6 +633,25 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, index_schema: IndexSchema, is_unique: bool) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()>;
+    fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()>;
+    fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()>;
+    fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()>;
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> super::Result<Option<IndexId>>;
 
     // TODO: Index data
@@ -643,6 +666,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
     // Constraints
+    fn create_constraint_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        constraint: ConstraintSchema,
+    ) -> super::Result<ConstraintId>;
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()>;
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 

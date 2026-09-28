@@ -68,18 +68,12 @@ No additional installation needed - Node.js/npm will handle dependencies.
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Next we need to [install .NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) so that we can build and publish our module.
+Next we need to [install .NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) so that we can build and publish our module.
 
-You may already have .NET 8 installed:
+You may already have .NET 10 installed:
 
 ```bash
 dotnet --list-sdks
-```
-
-.NET 8.0 is the earliest to have the `wasi-experimental` workload that we rely on, but requires manual activation:
-
-```bash
-dotnet workload install wasi-experimental
 ```
 
 </TabItem>
@@ -393,7 +387,7 @@ function validateName(name: string) {
   }
 }
 
-export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+export const setName = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -510,7 +504,7 @@ function validateMessage(text: string) {
   }
 }
 
-export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
+export const sendMessage = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   validateMessage(text);
   console.info(`User ${ctx.sender}: ${text}`);
   ctx.db.message.insert({
@@ -1444,6 +1438,10 @@ Here we are configuring our SpacetimeDB connection by specifying the server URI,
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
+:::warning
+With no token, SpacetimeDB issues a server-issued identity and a non-expiring token; persist it and pass it back on reconnect to keep the same identity. A lost token can't be recovered, so self-issued identities are for development. For production, authenticate with an OIDC provider such as SpacetimeAuth, which handles token lifecycle. See [Authentication](../../00200-core-concepts/00500-authentication.md).
+:::
+
 If you chose a different name for your database, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
 
 Our React hooks will subscribe to the data in SpacetimeDB. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server.
@@ -1532,7 +1530,7 @@ Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setSettingName(false);
-  setName({ name: newName });
+  setName({ name: newName }).catch(console.error);
 };
 ```
 
@@ -1542,11 +1540,11 @@ Next, modify the `onSubmitMessage` callback by adding a call to the `sendMessage
 const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setNewMessage('');
-  sendMessage({ text: newMessage });
+  sendMessage({ text: newMessage }).catch(console.error);
 };
 ```
 
-SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module.
+SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module. They return a `Promise` that rejects if the reducer fails, so we log any error to the console.
 
 Let's try out our app to see the result of these changes.
 
@@ -1786,7 +1784,7 @@ var input_queue = new ConcurrentQueue<(string Command, string Args)>();
 
 We'll work outside-in, first defining our `Main` function at a high level, then implementing each behavior it needs. We need `Main` to do several things:
 
-1. Initialize the `AuthToken` module, which loads and stores our authentication token to/from local storage.
+1. Initialize the `AuthToken` module, which loads and stores our authentication token in a local file.
 2. Connect to the database.
 3. Register a number of callbacks to run in response to various database events.
 4. Start our processing thread which connects to the SpacetimeDB database, updates the SpacetimeDB client and processes commands that come in from the input loop running in the main thread.
@@ -1862,7 +1860,7 @@ DbConnection ConnectToDB()
 
 SpacetimeDB will accept any [OpenID Connect](https://openid.net/developers/how-connect-works/) compliant [JSON Web Token](https://jwt.io/) and use it to compute an `Identity` for the user. More complex applications will generally authenticate their user somehow, generate or retrieve a token, and attach it to their connection via `WithToken`. In our case, though, we'll connect anonymously the first time, let SpacetimeDB generate a fresh `Identity` and corresponding JWT for us, and save that token locally to re-use the next time we connect.
 
-Once we are connected, we'll use the `AuthToken` module to save our token to local storage, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change. This callback also notifies us of our client's `Address`, an opaque identifier SpacetimeDB modules can use to distinguish connections by the same `Identity`, but we won't use it in our app.
+Once we are connected, we'll use the `AuthToken` module to save our token locally, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change. If you need an opaque identifier for this specific connection, read `conn.ConnectionId`.
 
 To `Program.cs`, add:
 
@@ -2044,7 +2042,10 @@ void PrintMessage(RemoteTables tables, Message message)
 
 #### Warn if our name was rejected
 
-We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `OnReducerEvent` method of the `Reducer` namespace, which is automatically implemented for each reducer by `spacetime generate`.
+We can also register callbacks for reducer results. We register these callbacks
+using generated events on `conn.Reducers`, such as `conn.Reducers.OnSetName`
+and `conn.Reducers.OnSendMessage`, which are automatically implemented for
+each reducer by `spacetime generate`.
 
 Each reducer callback takes one fixed argument:
 
@@ -2056,14 +2057,15 @@ The `ReducerEventContext` of the callback, which contains an `Event` that contai
 
 It also takes a variable amount of additional arguments that match the reducer's arguments.
 
-These callbacks will be invoked in one of two cases:
+These callbacks are invoked for reducer calls made by this connection, whether the reducer commits successfully or fails.
 
-1. If the reducer was successful and altered any of our subscribed rows.
-2. If we requested an invocation which failed.
+Note that the caller identity is our own identity for these callbacks.
 
-Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
-
-We already handle successful `SetName` invocations using our `User.OnUpdate` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `Reducer_OnSetNameEvent` as a `Reducer.OnSetNameEvent` callback which checks if the reducer failed, and if it did, prints an error message including the rejected name.
+We already handle successful `SetName` invocations using our `User.OnUpdate`
+callback, but if the module rejects a user's chosen name, we'd like that user's
+client to let them know. We define a function `Reducer_OnSetNameEvent` and
+register it with `conn.Reducers.OnSetName`; the callback checks if the reducer
+failed, and if it did, prints an error message including the rejected name.
 
 We'll test both that our identity matches the sender and that the status is `Failed`, even though the latter implies the former, for demonstration purposes.
 

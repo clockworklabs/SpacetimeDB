@@ -771,7 +771,12 @@ impl<T, const N: usize> GrowingVec<T> for SmallVec<[T; N]> {
 
 /// A basic implementation of `ArrayVisitor::visit` using the provided size hint.
 pub fn array_visit<'de, A: ArrayAccess<'de>, V: GrowingVec<A::Element>>(mut access: A) -> Result<V, A::Error> {
-    let mut v = V::try_with_capacity(access.size_hint().unwrap_or(0))?;
+    // Don’t blindly trust length prefixes when reserving initial capacity
+    // for decoding array elements, as malformed input could generate a huge allocation,
+    // potentially resulting in an OOM kill.
+    const RESERVE_ARRAY_ELEMENTS: usize = 4096;
+    let cap = access.size_hint().unwrap_or(0);
+    let mut v = V::try_with_capacity(cap.min(RESERVE_ARRAY_ELEMENTS))?;
     while let Some(x) = access.next_element()? {
         v.push(x)
     }

@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class LogEntryHandle : RemoteTableHandle<EventContext, LogEntry>
         {
-            protected override string RemoteTableName => "log_entry";
+            public override string RemoteTableName => "log_entry";
 
             internal LogEntryHandle(DbConnection conn) : base(conn)
             {

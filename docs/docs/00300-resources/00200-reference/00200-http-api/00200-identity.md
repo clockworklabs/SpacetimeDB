@@ -39,7 +39,7 @@ Generate a short-lived access token which can be used in untrusted contexts, e.g
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](./00100-authorization.md). |
+| `Authorization` | A Spacetime token [encoded as Bearer authorization](./00100-authorization.md). |
 
 #### Returns
 
@@ -77,11 +77,11 @@ Returns JSON in the form:
 
 ```typescript
 {
-    "addresses": array<string>
+    "identities": array<string>
 }
 ```
 
-The `addresses` value is an array of zero or more strings, each of which is the address of a database owned by the identity passed as a parameter.
+The `identities` value is an array of zero or more strings, each of which is the identity of a database owned by the identity passed as a parameter.
 
 ## `GET /v1/identity/:identity/verify`
 
@@ -97,7 +97,7 @@ Verify the validity of an identity/token pair.
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](./00100-authorization.md). |
+| `Authorization` | A Spacetime token [encoded as Bearer authorization](./00100-authorization.md). |
 
 #### Returns
 

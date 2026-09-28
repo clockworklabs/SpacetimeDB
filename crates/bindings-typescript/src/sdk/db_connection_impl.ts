@@ -23,14 +23,19 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
+import type {
+  Deserializer,
+  Identity,
+  InferTypeOfParams,
+  Serializer,
+} from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import { makeQueryBuilder } from '../lib/query';
+import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
 import {
   type TableCache,
   type Operation,
@@ -52,6 +57,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -107,7 +113,23 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
 const TEXT_ENCODER = new TextEncoder();
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function getClientMessageVariantTag(name: string): number {
   if (ClientMessage.algebraicType.tag !== 'Sum') {
@@ -122,6 +144,15 @@ function getClientMessageVariantTag(name: string): number {
   return tag;
 }
 
+// Browser websocket `onerror` handlers receive an `ErrorEvent`, which does
+// not extend `Error`. Normalize before emitting so `onConnectError` and
+// `onDisconnect` callbacks always receive the documented `Error` shape.
+function toError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  const message = (e as ErrorEvent | undefined)?.message || 'WebSocket error';
+  return new Error(message, { cause: e });
+}
+
 const CLIENT_MESSAGE_CALL_REDUCER_TAG =
   getClientMessageVariantTag('CallReducer');
 const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
@@ -130,6 +161,11 @@ const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
 // path or create very large websocket writes.
 const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 
+// WebSocket `readyState` values from the WHATWG spec. Uses literals rather than
+// the `WebSocket` global, which is not defined on earlier Node versions we
+const WS_READY_STATE_CLOSING = 2;
+const WS_READY_STATE_CLOSED = 3;
+
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
 {
@@ -137,6 +173,50 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Whether or not the connection is active.
    */
   isActive = false;
+
+  /**
+   * Whether `disconnect()` has been called on this connection.
+   * Once requested, the connection will not be reused: managed environments
+   * (such as the React `SpacetimeDBProvider`) use this to avoid reconnecting
+   * after an intentional disconnect.
+   */
+  isDisconnectRequested = false;
+
+  /**
+   * Whether the initial connection handshake completed, i.e. the
+   * `InitialConnection` message was received and `onConnect` was invoked.
+   * Used to route websocket errors on an established connection to the
+   * `disconnect` path instead of `connectError`.
+   */
+  #everConnected = false;
+
+  /**
+   * The websocket error that ended an established connection, if any,
+   * normalized to `Error`. Passed to the `disconnect` emit so `onDisconnect`
+   * callbacks receive the documented `error?: Error` shape.
+   */
+  #connectionError?: Error = undefined;
+
+  /**
+   * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
+   * (3). This becomes true even when the browser never delivered an
+   * `onclose` event, for example if the socket was torn down while the tab was
+   * frozen or the machine was asleep. The `ConnectionManager` uses this to detect
+   * such "zombie" connections when the page resumes and to force a reconnect.
+   *
+   * Returns false while the socket is still `CONNECTING`/`OPEN`, or before
+   * the socket has been created.
+   */
+  get isSocketClosed(): boolean {
+    const ws = this.ws;
+    if (!ws) {
+      return false;
+    }
+    return (
+      ws.readyState === WS_READY_STATE_CLOSING ||
+      ws.readyState === WS_READY_STATE_CLOSED
+    );
+  }
 
   /**
    * This connection's public identity.
@@ -321,12 +401,21 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.ws = v;
 
         this.ws.onclose = () => {
-          this.#emitter.emit('disconnect', this);
           this.isActive = false;
+          this.#emitter.emit('disconnect', this, this.#connectionError);
         };
         this.ws.onerror = (e: ErrorEvent) => {
-          this.#emitter.emit('connectError', this, e);
           this.isActive = false;
+          if (this.#everConnected) {
+            // An error on an established connection is not a connect
+            // failure. Record it and close the socket so the `onclose` ->
+            // 'disconnect' path handles teardown, per the documented
+            // `onDisconnect` contract.
+            this.#connectionError = toError(e);
+            this.ws?.close();
+            return;
+          }
+          this.#emitter.emit('connectError', this, toError(e));
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
@@ -375,7 +464,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+      (out as any)[key] = (
+        params: InferTypeOfParams<typeof reducer.params>
+      ) => {
         const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
@@ -406,7 +497,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
-        params: InferTypeOfRow<typeof procedure.params>
+        params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();
         serializeArgs(writer, params);
@@ -428,7 +519,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     event: Event<
       ReducerEventInfo<
         RemoteModule['reducers'][number]['name'],
-        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+        InferTypeOfParams<RemoteModule['reducers'][number]['params']>
       >
     >
   ): EventContextInterface<RemoteModule> {
@@ -453,8 +544,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return new SubscriptionBuilderImpl(this);
   };
 
-  getTablesMap(): any {
-    return makeQueryBuilder({ tables: this.#remoteModule.tables } as any);
+  getFromBuilder<
+    SchemaDef extends UntypedSchemaDef,
+  >(): NamespacedQueryBuilder<SchemaDef> {
+    return makeFromBuilder<SchemaDef>(
+      this.#remoteModule.tables as SchemaDef['tables']
+    );
   }
 
   registerSubscription(
@@ -847,6 +942,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.token = serverMessage.value.token;
         }
         this.#setConnectionId(serverMessage.value.connectionId);
+        this.#everConnected = true;
         this.#emitter.emit('connect', this, this.identity, this.token);
         break;
       }
@@ -1104,7 +1200,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
     if (reducerArgs) {
@@ -1139,7 +1235,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
@@ -1220,7 +1316,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     encodedProcedureName: Uint8Array,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
     this.#procedureCallbacks.set(requestId, result => {
@@ -1237,7 +1333,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallProcedure({
       procedure: procedureName,
@@ -1292,6 +1388,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * ```
    */
   disconnect(): void {
+    this.isDisconnectRequested = true;
     this.wsPromise.then(ws => ws?.close());
   }
 

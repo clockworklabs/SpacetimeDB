@@ -2,17 +2,16 @@ use super::{
     committed_state::{CommitTableForInsertion, CommittedState},
     datastore::{Result, TxMetrics},
     delete_table::DeleteTable,
-    sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
-    SharedMutexGuard, SharedWriteGuard,
+    SharedWriteGuard,
 };
 use crate::{
     error::ViewError,
     system_tables::{
         system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
+        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields,
         ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
 };
@@ -20,13 +19,13 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StInboundMsgFields,
-        StInboundMsgRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields,
-        StOutboundMsgRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow,
-        StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
-        SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID,
-        ST_INBOUND_MSG_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID, ST_ROW_LEVEL_SECURITY_ID,
-        ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
+        StInboundMsgFields, StInboundMsgRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
+        StOutboundMsgFields, StOutboundMsgRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields,
+        StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
+        StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+        ST_EVENT_TABLE_ID, ST_INBOUND_MSG_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -36,30 +35,36 @@ use crate::{
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
 use bytes::Bytes;
-use core::{cell::RefCell, iter, mem, ops::RangeBounds};
+use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
+use rand::Rng;
+use rand_xoshiro::Xoshiro128PlusPlus;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
-    db::raw_def::v9::RawSql,
-    db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
-    metrics::ExecutionMetrics,
-    ConnectionId, Identity, Timestamp,
+    db::auth::StAccess, db::raw_def::v9::RawSql, empty_view_arg_hash_value, metrics::ExecutionMetrics,
+    sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
-    ProductType, ProductValue,
+    bsatn::to_writer,
+    memory_usage::MemoryUsage,
+    raw_identifier::{RawIdentifier, RawNamespacedIdentifier},
+    ser::Serialize,
+    AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
-    identifier::Identifier,
+    identifier::{Identifier, NamespacePath, NamespacedIdentifier},
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
+    schema::{
+        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+        VIEW_ARG_HASH_COL,
+    },
     table_name::TableName,
 };
 use spacetimedb_table::{
@@ -81,15 +86,157 @@ use std::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
     pub view_id: ViewId,
-    pub table_id: TableId,
-    pub fn_ptr: ViewFnPtr,
-    pub sender: Option<Identity>,
+    pub arg_hash: AlgebraicValue,
+}
+
+impl ViewCallInfo {
+    pub fn anonymous(view_id: ViewId) -> Self {
+        Self {
+            view_id,
+            arg_hash: MutTxId::anonymous_view_arg_hash(),
+        }
+    }
+
+    pub fn sender(view_id: ViewId, sender: Identity) -> Self {
+        Self {
+            view_id,
+            arg_hash: MutTxId::view_arg_hash(sender),
+        }
+    }
+
+    pub fn from_args(view_id: ViewId, args: ViewInstanceArgs) -> Self {
+        match args {
+            ViewInstanceArgs::Anonymous => Self::anonymous(view_id),
+            ViewInstanceArgs::Sender(sender) => Self::sender(view_id, sender),
+        }
+    }
+}
+
+impl MemoryUsage for ViewCallInfo {
+    fn heap_usage(&self) -> usize {
+        self.arg_hash.heap_usage()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewInstanceArgs {
+    Anonymous,
+    Sender(Identity),
+}
+
+impl ViewInstanceArgs {
+    pub fn sender(self) -> Option<Identity> {
+        match self {
+            Self::Anonymous => None,
+            Self::Sender(sender) => Some(sender),
+        }
+    }
+}
+
+impl MemoryUsage for ViewInstanceArgs {}
+
+#[derive(Clone, Debug)]
+pub(super) struct ViewInstanceState {
+    pub(super) args: ViewInstanceArgs,
+    pub(super) active_subscribers: HashMap<Identity, u64>,
+    pub(super) last_used: Timestamp,
+}
+
+impl MemoryUsage for ViewInstanceState {
+    fn heap_usage(&self) -> usize {
+        self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>()
+    }
+}
+
+pub struct ViewCleanupResult {
+    pub cleaned: usize,
+    pub backlog: bool,
+}
+
+impl ViewInstanceState {
+    fn new(args: ViewInstanceArgs, last_used: Timestamp) -> Self {
+        Self {
+            args,
+            active_subscribers: HashMap::default(),
+            last_used,
+        }
+    }
+
+    fn has_subscribers(&self) -> bool {
+        !self.active_subscribers.is_empty()
+    }
+}
+
+/// Transaction-local overlay for materialized view lifecycle state.
+///
+/// The overlay stores a full post-image for each touched view instead of a delta.
+/// This keeps same-transaction reads, rollback, and commit simple.
+///
+/// TODO: This will clone the `active_subscribers` from the committed state,
+/// which for a highly subscribed-to view can be expensive.
+/// Look into optimizing this later.
+#[derive(Default)]
+pub(super) struct ViewInstanceTxState {
+    changes: HashMap<ViewCallInfo, Option<ViewInstanceState>>,
+}
+
+impl ViewInstanceTxState {
+    fn get<'a>(&'a self, committed_state: &'a CommittedState, call: &ViewCallInfo) -> Option<&'a ViewInstanceState> {
+        match self.changes.get(call) {
+            Some(Some(state)) => Some(state),
+            Some(None) => None,
+            None => committed_state.view_instance(call),
+        }
+    }
+
+    fn get_cloned(&self, committed_state: &CommittedState, call: &ViewCallInfo) -> Option<ViewInstanceState> {
+        self.get(committed_state, call).cloned()
+    }
+
+    fn set(&mut self, call: ViewCallInfo, state: ViewInstanceState) {
+        self.changes.insert(call, Some(state));
+    }
+
+    fn remove(&mut self, call: ViewCallInfo) {
+        self.changes.insert(call, None);
+    }
+
+    fn active_view_calls_for_subscriber(
+        &self,
+        committed_state: &CommittedState,
+        subscriber: Identity,
+    ) -> HashSet<ViewCallInfo> {
+        let mut calls = committed_state.active_view_calls_for_subscriber(subscriber);
+        for (call, state) in &self.changes {
+            match state {
+                Some(state)
+                    if state
+                        .active_subscribers
+                        .get(&subscriber)
+                        .is_some_and(|count| *count > 0) =>
+                {
+                    calls.insert(call.clone());
+                }
+                _ => {
+                    calls.remove(call);
+                }
+            }
+        }
+        calls
+    }
+
+    pub(super) fn into_changes(self) -> HashMap<ViewCallInfo, Option<ViewInstanceState>> {
+        self.changes
+    }
 }
 
 /// A data structure for tracking the database rows/keys that are read by views
 #[derive(Default)]
 pub struct ViewReadSets {
     tables: IntMap<TableId, TableReadSet>,
+    replacements: HashSet<ViewCallInfo>,
+    view_removals: HashSet<ViewId>,
+    removals: HashSet<ViewCallInfo>,
 }
 
 impl MemoryUsage for ViewReadSets {
@@ -102,6 +249,9 @@ impl ViewReadSets {
     /// Returns whether there are no read sets recorded.
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
+            && self.replacements.is_empty()
+            && self.view_removals.is_empty()
+            && self.removals.is_empty()
     }
 
     /// Returns the views that perform a full scan of this table
@@ -117,16 +267,54 @@ impl ViewReadSets {
         self.tables.entry(table_id).or_default().insert_table_scan(call);
     }
 
-    /// Removes keys for `view_id` from the read set
-    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+    /// Record that `call` was successfully materialized in this transaction.
+    ///
+    /// On commit, the committed read set for this exact view call should be replaced
+    /// by the dependencies recorded in this transaction.
+    pub fn replace_view_read_set(&mut self, call: ViewCallInfo) {
+        self.replacements.insert(call);
+    }
+
+    /// Removes keys for `view_id` from the read set.
+    pub fn remove_view(&mut self, view_id: ViewId) {
         self.tables.retain(|_, readset| {
-            readset.remove_view(view_id, sender);
+            readset.remove_view(view_id);
+            !readset.is_empty()
+        });
+    }
+
+    /// On commit, removes keys for `call` from the committed read set.
+    pub fn remove_view_on_commit(&mut self, call: ViewCallInfo) {
+        self.removals.insert(call);
+    }
+
+    /// On commit, removes all keys for `view_id` from the committed read set.
+    pub fn remove_view_id_on_commit(&mut self, view_id: ViewId) {
+        self.view_removals.insert(view_id);
+    }
+
+    /// Removes keys for exactly `call` from the read set.
+    fn remove_view_call(&mut self, call: &ViewCallInfo) {
+        self.tables.retain(|_, readset| {
+            readset.remove_view_call(call);
             !readset.is_empty()
         });
     }
 
     /// Merge or union read sets together
     pub fn merge(&mut self, readset: Self) {
+        for view_id in readset.view_removals {
+            self.remove_view(view_id);
+        }
+
+        for call in readset.removals {
+            self.remove_view_call(&call);
+        }
+
+        for call in readset.replacements {
+            self.remove_view_call(&call);
+        }
+
         for (table_id, rs) in readset.tables {
             self.tables.entry(table_id).or_default().merge(rs);
         }
@@ -195,11 +383,9 @@ impl TableReadSet {
         self.table_scans.is_empty() && self.index_reads.is_empty()
     }
 
-    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
-    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
-        let matches_call = |call: &ViewCallInfo| {
-            call.view_id == view_id && sender.as_ref().is_none_or(|s| call.sender.as_ref() == Some(s))
-        };
+    /// Removes keys for `view_id` from the read set.
+    fn remove_view(&mut self, view_id: ViewId) {
+        let matches_call = |call: &ViewCallInfo| call.view_id == view_id;
 
         // Remove from table_scans
         self.table_scans.retain(|call| !matches_call(call));
@@ -208,6 +394,19 @@ impl TableReadSet {
         self.index_reads.retain(|_cols, key_map| {
             key_map.retain(|_key, views| {
                 views.retain(|call| !matches_call(call));
+                !views.is_empty()
+            });
+            !key_map.is_empty()
+        });
+    }
+
+    /// Removes keys for exactly `call` from the read set.
+    fn remove_view_call(&mut self, call: &ViewCallInfo) {
+        self.table_scans.retain(|candidate| candidate != call);
+
+        self.index_reads.retain(|_cols, key_map| {
+            key_map.retain(|_key, views| {
+                views.retain(|candidate| candidate != call);
                 !views.is_empty()
             });
             !key_map.is_empty()
@@ -245,9 +444,9 @@ pub enum FuncCallType {
 pub struct MutTxId {
     pub(super) tx_state: TxState,
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
-    pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
     pub(super) read_sets: ViewReadSets,
+    pub(super) view_instances: ViewInstanceTxState,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -257,7 +456,10 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 432);
+// Grew by one word when `ReducerName` became fully qualified: it now holds a
+// `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
+// One per transaction, not per row.
+static_assert_size!(MutTxId, 576);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -265,6 +467,14 @@ impl MutTxId {
         if let FuncCallType::View(view) = op {
             self.read_sets.insert_full_table_scan(table_id, view.clone());
         }
+    }
+
+    /// Replace the committed read set for `call` with the read set recorded in this transaction.
+    ///
+    /// This is transaction-local state. If the transaction rolls back, the committed read set is
+    /// left unchanged.
+    pub fn replace_view_read_set(&mut self, call: ViewCallInfo) {
+        self.read_sets.replace_view_read_set(call);
     }
 
     /// Record that a view performs a ranged index scan in this transaction's read set.
@@ -396,16 +606,15 @@ impl MutTxId {
         }
         Either::Right(res.into_iter())
     }
-    /// Removes keys for `view_id` from the committed read set.
+    /// Removes keys for `view_id` from the committed read set on commit.
     /// Used for dropping views in an auto-migration.
     pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
-        self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
+        self.read_sets.remove_view_id_on_commit(view_id)
     }
 
-    /// Removes a specific view call from the committed read set.
-    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
-        self.committed_state_write_lock
-            .drop_view_from_read_sets(view_id, Some(sender))
+    /// Removes a specific view call from the committed read set on commit.
+    pub fn drop_view_call_from_committed_read_set(&mut self, call: ViewCallInfo) {
+        self.read_sets.remove_view_on_commit(call)
     }
 }
 
@@ -575,7 +784,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: RawIdentifier = name.clone().into();
+        let view_name: RawNamespacedIdentifier = RawIdentifier::from(name.clone()).into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -590,6 +799,52 @@ impl MutTxId {
         Ok((view_id, table_id))
     }
 
+    /// Like [`create_view`] but registers the view under `name_prefix + view_def.name`
+    /// (e.g. `"lib.library_view"`), using `owning_def` for type resolution.
+    ///
+    /// The canonical `view_def.name` is used (not `accessor_name`) so that submodule views
+    /// follow the same convention as root views ([`Self::create_view`]) and match the keys
+    /// used by `ModuleDef::view_by_name_with_global_fn_ptr` and the auto-migrate plan.
+    ///
+    /// Used for submodule views whose canonical names are dot-namespaced.
+    pub fn create_view_with_prefix(
+        &mut self,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId)> {
+        let mut table_schema = TableSchema::from_view_def_for_datastore(owning_def, view_def);
+        let full_view_name = name_prefix.join(view_def.name.clone());
+        table_schema.table_name = TableName::from(full_view_name.clone());
+
+        // Namespace the alias rather than dropping it: a bare accessor name would collide
+        // when two mounts have views with the same local name, but discarding it loses the
+        // mapping codegen needs.
+        table_schema.alias = table_schema.alias.map(|alias| name_prefix.join_namespaced(&alias));
+
+        // Prefix index and constraint names so they remain globally unique across mounts.
+        for index in &mut table_schema.indexes {
+            index.index_name = name_prefix.join_raw(&index.index_name);
+        }
+        for constraint in &mut table_schema.constraints {
+            constraint.constraint_name = name_prefix.join_raw(&constraint.constraint_name);
+        }
+
+        let table_id = self.create_table(table_schema)?;
+
+        let view_name = RawNamespacedIdentifier::from(full_view_name);
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, &view_def.param_columns)?;
+        self.insert_into_st_view_column(view_id, &view_def.return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
+
+        Ok((view_id, table_id))
+    }
+
     /// Drop the backing table of a view and update the system tables.
     pub fn drop_view(&mut self, view_id: ViewId) -> Result<()> {
         let st_view_row = self.lookup_st_view(view_id)?;
@@ -598,6 +853,13 @@ impl MutTxId {
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
         self.drop_st_view_sub(view_id)?;
+        let calls = self
+            .effective_view_instances_for_view(view_id)
+            .map(|(call, _)| call.clone())
+            .collect::<Vec<_>>();
+        for call in calls {
+            self.view_instances.remove(call);
+        }
         self.drop_view_from_committed_read_set(view_id);
 
         // Drop the view's backing table if materialized
@@ -705,8 +967,10 @@ impl MutTxId {
         }
 
         // Insert constraints into `st_constraints`.
+        // The fresh table has no `st_constraint` rows yet, so every row here is newly
+        // inserted — the `bool` in the returned tuple is always `true` and is ignored.
         for constraint in constraints {
-            self.create_constraint(constraint)?;
+            let _ = self.create_st_constraint(constraint)?;
         }
 
         // Insert sequences into `st_sequences`.
@@ -730,7 +994,7 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_table_accessor` for `table_name`, if an alias is present.
-    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&Identifier>) -> Result<()> {
+    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&NamespacedIdentifier>) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -762,7 +1026,11 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_index_accessor` for `index_name`, if an alias is present.
-    fn insert_st_index_accessor(&mut self, index_name: &RawIdentifier, alias: Option<&RawIdentifier>) -> Result<()> {
+    fn insert_st_index_accessor(
+        &mut self,
+        index_name: &RawNamespacedIdentifier,
+        alias: Option<&RawNamespacedIdentifier>,
+    ) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -923,7 +1191,7 @@ impl MutTxId {
     }
 
     /// Drops rows in `st_index_accessor` for this canonical `index_name`.
-    fn drop_st_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
+    fn drop_st_index_accessor(&mut self, index_name: &RawNamespacedIdentifier) -> Result<()> {
         let value = index_name.as_ref().into();
         self.delete_col_eq(ST_INDEX_ACCESSOR_ID, StIndexAccessorFields::IndexName.col_id(), &value)
     }
@@ -943,7 +1211,7 @@ impl MutTxId {
         self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
     }
 
-    /// Drops the rows in `st_view_sub` for this `view_id`
+    /// Drops any legacy rows in `st_view_sub` for this `view_id`.
     fn drop_st_view_sub(&mut self, view_id: ViewId) -> Result<()> {
         self.delete_col_eq(ST_VIEW_SUB_ID, StViewSubFields::ViewId.col_id(), &view_id.into())
     }
@@ -979,6 +1247,15 @@ impl MutTxId {
             )?;
         }
 
+        // Remove the table's row from `st_event_table`, if it is an event table.
+        if schema.is_event {
+            self.delete_col_eq(
+                ST_EVENT_TABLE_ID,
+                StEventTableFields::TableId.col_id(),
+                &table_id.into(),
+            )?;
+        }
+
         // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
         // No need to keep the delete tables.
@@ -989,6 +1266,8 @@ impl MutTxId {
             .tables
             .remove(&table_id)
             .expect("there should be a schema in the committed state if we reach here");
+        self.committed_state_write_lock
+            .sub_datastore_page_bytes(commit_table.page_bytes());
         self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, commit_table));
 
         Ok(())
@@ -1092,15 +1371,17 @@ impl MutTxId {
 impl MutTxId {
     /// Set the table access of `table_id` to `access`.
     pub(crate) fn alter_table_access(&mut self, table_id: TableId, access: StAccess) -> Result<()> {
+        let old_access = self.find_st_table_row(table_id)?.table_access;
+
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.table_access = access);
 
-        // Update system tables.
-        let old_access = self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_access, access))?;
-
-        // Remember the pending change so we can undo if necessary.
+        // Remember the pending change so we can undo it if a later system-table update fails.
         self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
+
+        // Update system tables.
+        self.update_st_table_row(table_id, |st| st.table_access = access)?;
 
         Ok(())
     }
@@ -1110,17 +1391,141 @@ impl MutTxId {
     /// Updates both the in-memory schema and the `st_table` system table.
     /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
     pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        let old_pk = self.find_st_table_row(table_id)?.table_primary_key;
+
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
 
-        // Update system tables.
+        // Remember the pending change so we can undo it if a later system-table update fails.
         let new_pk_col_list = new_primary_key.map(|col| col.into());
-        let old_pk =
-            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
-
-        // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        // Update system tables.
+        self.update_st_table_row(table_id, |st| st.table_primary_key = new_pk_col_list)?;
+
+        Ok(())
+    }
+
+    /// Change the source-name alias of the index identified by `index_id`.
+    pub(crate) fn alter_index_source_name(
+        &mut self,
+        index_id: IndexId,
+        source_name: RawNamespacedIdentifier,
+    ) -> Result<()> {
+        let st_index_ref = self
+            .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        let st_index_row = StIndexRow::try_from(st_index_ref)?;
+        let table_id = st_index_row.table_id;
+
+        let old_alias = self
+            .find_st_index_accessor_row_by_index_name(st_index_row.index_name.as_ref())?
+            .map(|row| row.accessor_name);
+
+        if old_alias.as_ref() == Some(&source_name) {
+            return Ok(());
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        let mut index_schema = tx_table
+            .get_schema()
+            .indexes
+            .iter()
+            .find(|index| index.index_id == index_id)
+            .cloned()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        index_schema.alias = Some(source_name.clone());
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_index(index_schema));
+        self.push_schema_change(PendingSchemaChange::IndexAlterSourceName(table_id, index_id, old_alias));
+
+        self.drop_st_index_accessor(&st_index_row.index_name)?;
+        self.insert_st_index_accessor(&st_index_row.index_name, Some(&source_name))?;
+
+        Ok(())
+    }
+
+    /// Change the accessor name alias of the table identified by `table_id`.
+    pub(crate) fn alter_table_accessor_name(
+        &mut self,
+        table_id: TableId,
+        new_alias: NamespacedIdentifier,
+    ) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
+        let old_alias = self
+            .iter_by_col_eq(
+                ST_TABLE_ACCESSOR_ID,
+                StTableAccessorFields::TableName,
+                &table_name.as_ref().into(),
+            )?
+            .next()
+            .and_then(|row| StTableAccessorRow::try_from(row).ok())
+            .map(|row| row.accessor_name);
+
+        if old_alias.as_ref() == Some(&new_alias) {
+            return Ok(());
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.alias = Some(new_alias.clone()));
+        self.push_schema_change(PendingSchemaChange::TableAlterAccessorName(table_id, old_alias));
+
+        self.drop_st_table_accessor(&table_name)?;
+        self.insert_st_table_accessor(&table_name, Some(&new_alias))?;
+
+        Ok(())
+    }
+
+    /// Change the accessor name alias of the column identified by `table_id` and `col_id`.
+    pub(crate) fn alter_column_accessor_name(
+        &mut self,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: Identifier,
+    ) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
+        // Read old column info from the current schema
+        let col_info: Vec<(Identifier, Option<Identifier>, ColId)> = self
+            .schema_for_table(table_id)?
+            .columns
+            .iter()
+            .map(|c| (c.col_name.clone(), c.alias.clone(), c.col_pos))
+            .collect();
+
+        let old_alias = col_info
+            .iter()
+            .find(|(_, _, pos)| *pos == col_id)
+            .and_then(|(_, alias, _)| alias.clone());
+
+        if old_alias.as_ref() == Some(&new_alias) {
+            return Ok(());
+        }
+
+        // Update system tables: drop and re-insert all column accessor rows for this table
+        self.drop_st_column_accessor(&table_name)?;
+        for (col_name, alias, pos) in &col_info {
+            let name = if *pos == col_id {
+                &new_alias
+            } else {
+                alias.as_ref().unwrap_or(col_name)
+            };
+            self.insert_st_column_accessor(&table_name, col_name, Some(name))?;
+        }
+
+        // Update in-memory schema
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| {
+            if let Some(col) = s.columns.iter_mut().find(|c| c.col_pos == col_id) {
+                col.alias = Some(new_alias);
+            }
+        });
+
+        self.push_schema_change(PendingSchemaChange::ColumnAlterAccessorName(
+            table_id, col_id, old_alias,
+        ));
 
         Ok(())
     }
@@ -1157,6 +1562,8 @@ impl MutTxId {
         // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
         // prior to changing it just now.
         unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
@@ -1166,8 +1573,44 @@ impl MutTxId {
         self.drop_st_column_accessor(&table_name)?;
         self.insert_st_column(&table_name, &column_schemas)?;
 
-        // Remember the pending change so we can undo if necessary.
-        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
+        Ok(())
+    }
+
+    pub(crate) fn alter_event_table_row_type(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        // Sanity check: is this actually an event table?
+        if self.find_st_event_table_row(table_id).is_err() {
+            return Err(TableError::ReschemaNotAnEventTable(table_id).into());
+        }
+
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+
+        if tx_table.row_count != 0 || commit_table.row_count != 0 {
+            // N.b. the delete table must also be empty, 'cause the committed table is empty.
+            return Err(TableError::EventTableNotEmpty(table_id).into());
+        }
+
+        let old_column_schemas = tx_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+
+        commit_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
+
+        // Update system tables.
+        // We'll simply remove all rows in `st_columns` and then add the new ones.
+        // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+        self.drop_st_column(table_id)?;
+        self.drop_st_column_accessor(&table_name)?;
+        self.insert_st_column(&table_name, &column_schemas)?;
 
         Ok(())
     }
@@ -1230,19 +1673,14 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let mut seq_values: HashMap<_, (i128, i128)> = HashMap::default();
+        let mut seq_values: HashMap<_, i128> = HashMap::default();
         for seq in &original_table_schema.sequences {
-            let value = self
-                .sequence_state_lock
-                .get_sequence_mut(seq.sequence_id)
-                .expect("sequence exists in original schema and should in sequence state.")
-                .get_value();
             let allocated = self
                 .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq.sequence_id.into())?
                 .last()
                 .ok_or(SequenceError::NotFound(seq.sequence_id))?
                 .read_col(StSequenceFields::Allocated)?;
-            seq_values.insert(seq.sequence_name.clone(), (value, allocated));
+            seq_values.insert(seq.sequence_name.clone(), allocated);
         }
 
         // Drop existing table first due to unique constraints on table name in `st_table`
@@ -1277,32 +1715,22 @@ impl MutTxId {
     /// schema change (for example `add_columns_to_table`).
     ///
     /// `create_table(...)` generates fresh table/sequence IDs and inserts fresh
-    /// rows into `st_sequence`. We then restore preserved `(value, allocated)`
+    /// rows into `st_sequence`. We then restore preserved `allocated`
     /// by sequence name:
-    /// - update in-memory sequence state (`SequencesState`) so this process keeps
-    ///   allocating from the same point;
     /// - patch the newly created `st_sequence` row so reopen/replay restores the
     ///   same allocation cursor instead of sequence start.
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, (i128, i128)>,
+        seq_values: HashMap<RawNamespacedIdentifier, i128>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
 
         for seq in table_schema.sequences.iter() {
-            let (value, allocated) = *seq_values
+            let allocated = *seq_values
                 .get(&seq.sequence_name)
-                .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
-            {
-                let new_seq = self
-                    .sequence_state_lock
-                    .get_sequence_mut(seq.sequence_id)
-                    .expect("sequence just created");
-                new_seq.update_value(value);
-                new_seq.update_allocation(allocated);
-            }
+                .ok_or(SequenceError::NotFound(seq.sequence_id))?;
 
             // This updates the new `st_sequence` row created by `create_table(...)`
             // above (old table rows are already dropped).
@@ -1607,12 +2035,7 @@ impl MutTxId {
     }
 
     pub fn get_next_sequence_value(&mut self, seq_id: SequenceId) -> Result<i128> {
-        get_next_sequence_value(
-            &mut self.tx_state,
-            &self.committed_state_write_lock,
-            &mut self.sequence_state_lock,
-            seq_id,
-        )
+        get_next_sequence_value(&mut self.tx_state, &mut self.committed_state_write_lock, seq_id)
     }
 }
 
@@ -1626,32 +2049,30 @@ pub enum IndexScanPointOrRange<'de, 'a> {
     Range(IndexScanRanged<'a>),
 }
 
-fn get_sequence_mut(seq_state: &mut SequencesState, seq_id: SequenceId) -> Result<&mut Sequence> {
-    seq_state
-        .get_sequence_mut(seq_id)
-        .ok_or_else(|| SequenceError::NotFound(seq_id).into())
+const SEQUENCE_SIMULATED_ALLOCATION_CHUNK: u16 = 4096;
+
+/// Should the next sequence allocation skip values?
+///
+/// We don't want users to depend on sequence values being strictly sequential,
+/// as we have in the past and may in the future used optimizations that would cause values to be skipped.
+/// To prevent this, [`get_next_sequence_value`] occasionally simulates a skip ahead.
+///
+/// The supplied `rng` should be the one in the committed state for this purpose,
+/// so that tests which rely on auto-inc sequences will be deterministic.
+/// See [`CommittedState::sequence_advance_simulate_reallocation_rng`].
+fn should_simulate_sequence_reallocation(rng: &mut Xoshiro128PlusPlus) -> bool {
+    // Skip an average of once every 4096 values, the same as the chunk size.
+    // Chosen completely arbitrarily.
+    rng.random::<u16>().is_multiple_of(SEQUENCE_SIMULATED_ALLOCATION_CHUNK)
 }
 
 fn get_next_sequence_value(
     tx_state: &mut TxState,
-    committed_state: &CommittedState,
-    seq_state: &mut SequencesState,
+    committed_state: &mut CommittedState,
     seq_id: SequenceId,
 ) -> Result<i128> {
-    {
-        let sequence = get_sequence_mut(seq_state, seq_id)?;
-
-        // If there are allocated sequence values, return the new value.
-        // `gen_next_value` internally checks that the new allocation is acceptable,
-        // i.e. is less than or equal to the allocation amount.
-        // Note that on restart we start one after the allocation amount.
-        if let Some(value) = sequence.gen_next_value() {
-            return Ok(value);
-        }
-    }
-
-    // Allocate new sequence values
-    // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
+    // Allocate a new sequence value
+    // Read and update the `st_sequence` row to record the new value.
     let old_seq_row_ref = iter_by_col_eq(
         tx_state,
         committed_state,
@@ -1662,13 +2083,35 @@ fn get_next_sequence_value(
     .last()
     .unwrap();
     let old_seq_row_ptr = old_seq_row_ref.pointer();
-    let seq_row = {
+    let (seq_row, value) = {
         let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
-        let sequence = get_sequence_mut(seq_state, seq_id)?;
-        let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
-        seq_row.allocated = new_allocated;
-        seq_row
+        let value = seq_row.allocated;
+
+        // We don't want users to depend on sequence values being strictly sequential,
+        // as we have in the past and may in the future used optimizations that would cause values to be skipped.
+        // To prevent this, skip sequence values at a low rate.
+        if should_simulate_sequence_reallocation(&mut committed_state.sequence_advance_simulate_reallocation_rng) {
+            // Simulate an event where you skip to the next block of 4096 values.
+            // Do this by masking off the low 11 bits of the counter,
+            // then incrementing the 12th bit,
+            // resulting in a value that is strictly larger than the previous value,
+            // and which is divisible by 4096.
+            let mask = !(SEQUENCE_SIMULATED_ALLOCATION_CHUNK as i128 - 1);
+            let lower = seq_row.allocated & mask;
+            let higher = lower
+                .checked_add(SEQUENCE_SIMULATED_ALLOCATION_CHUNK as i128)
+                .ok_or(SequenceError::Overflow(value))?;
+            assert!(higher > value);
+
+            seq_row.allocated = higher;
+        } else {
+            seq_row.allocated = value
+                .checked_add(SequenceSchema::INCREMENT)
+                .ok_or(SequenceError::Overflow(value))?;
+        };
+
+        (seq_row, value)
     };
 
     delete(tx_state, committed_state, ST_SEQUENCE_ID, old_seq_row_ptr)?;
@@ -1680,12 +2123,10 @@ fn get_next_sequence_value(
     //   has ID 0, and would otherwise trigger autoinc.
     with_sys_table_buf(|buf| {
         to_writer(buf, &seq_row).unwrap();
-        insert::<false>(tx_state, committed_state, seq_state, ST_SEQUENCE_ID, buf)
+        insert::<false>(tx_state, committed_state, ST_SEQUENCE_ID, buf)
     })?;
 
-    get_sequence_mut(seq_state, seq_id)?
-        .gen_next_value()
-        .ok_or_else(|| SequenceError::UnableToAllocate(seq_id).into())
+    Ok(value)
 }
 
 impl MutTxId {
@@ -1728,10 +2169,10 @@ impl MutTxId {
             table_id,
             col_pos: seq.col_pos,
             allocated: seq.start,
-            increment: seq.increment,
+            increment: SequenceSchema::INCREMENT,
             start: seq.start,
-            min_value: seq.min_value,
-            max_value: seq.max_value,
+            min_value: SequenceSchema::MIN_VALUE,
+            max_value: SequenceSchema::MAX_VALUE,
         };
         let row = self.insert_via_serialize_bsatn(ST_SEQUENCE_ID, &sequence_row)?;
         let seq_id = row.1.collapse().read_col(StSequenceFields::SequenceId)?;
@@ -1741,7 +2182,6 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_sequence(schema.clone()));
-        self.sequence_state_lock.insert(Sequence::new(schema, None));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {seq_id}");
@@ -1760,18 +2200,13 @@ impl MutTxId {
         // Delete from system tables.
         self.delete(ST_SEQUENCE_ID, st_sequence_ref.pointer())?;
 
-        // Drop the sequence from in-memory tables.
-        let sequence = self
-            .sequence_state_lock
-            .remove(sequence_id)
-            .expect("there should be a sequence in the committed state if we reach here");
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
         let schema = commit_table
             .with_mut_schema_and_clone(tx_table, |s| s.remove_sequence(sequence_id))
             .expect("there should be a schema in the committed state if we reach here");
-        self.push_schema_change(PendingSchemaChange::SequenceRemoved(table_id, sequence, schema));
+        self.push_schema_change(PendingSchemaChange::SequenceRemoved(table_id, schema));
 
         Ok(())
     }
@@ -1785,19 +2220,29 @@ impl MutTxId {
             })
     }
 
-    /// Create a constraint.
+    /// Inserts constraint metadata into system tables only.
+    ///
+    /// This is used during `create_table` where the index is already created
+    /// with the correct uniqueness. For adding constraints to existing tables,
+    /// use [`Self::create_constraint`] instead.
     ///
     /// Requires:
     /// - `constraint.constraint_name` must not be used for any other database entity.
-    /// - `constraint.constraint_id == ConstraintId::SENTINEL`
-    /// - `constraint.table_id != TableId::SENTINEL`
-    /// - `is_unique` must be `true` if and only if a unique constraint will exist on
-    ///   `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
+    /// - `constraint.constraint_id == ConstraintId::SENTINEL`.
+    /// - `constraint.table_id != TableId::SENTINEL`.
+    /// - The caller is responsible for ensuring that the backing indices on
+    ///   `ColSet::from(&constraint.data.unique_columns())` already have the correct
+    ///   uniqueness — this method does not touch the in-memory index uniqueness.
+    ///   Use [`Self::create_constraint`] if the indices need to be converted.
     ///
     /// Ensures:
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
-    /// - The returned ID is unique and is not `constraintId::SENTINEL`.
-    fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
+    /// - The returned ID is unique and is not `ConstraintId::SENTINEL`.
+    /// - The `bool` in the return value is `true` iff a new `st_constraint` row was
+    ///   inserted (and therefore a `PendingSchemaChange::ConstraintAdded` was pushed).
+    ///   It is `false` if an identical row already existed (idempotent re-insertion);
+    ///   in that case the schema and pending-changes list are untouched.
+    fn create_st_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<(ConstraintId, bool)> {
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{constraint:#?}`").into());
         }
@@ -1825,20 +2270,26 @@ impl MutTxId {
         let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
         if let RowRefInsertion::Existed(_) = constraint_row.1 {
             log::trace!("CONSTRAINT ALREADY EXISTS: {constraint_id}");
-            return Ok(constraint_id);
+            return Ok((constraint_id, false));
         }
 
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_constraint(constraint.clone()));
-        self.push_schema_change(PendingSchemaChange::ConstraintAdded(table_id, constraint_id));
+        self.push_schema_change(PendingSchemaChange::ConstraintAdded(
+            table_id,
+            constraint_id,
+            vec![],
+            None,
+        ));
 
         log::trace!("CONSTRAINT CREATED: {constraint_id}");
-        Ok(constraint_id)
+        Ok((constraint_id, true))
     }
 
-    pub fn drop_constraint(&mut self, constraint_id: ConstraintId) -> Result<()> {
+    /// Removes constraint metadata from system tables only.
+    fn drop_st_constraint(&mut self, constraint_id: ConstraintId) -> Result<(TableId, ConstraintSchema)> {
         // Delete row in `st_constraint`.
         let st_constraint_ref = self
             .iter_by_col_eq(
@@ -1853,12 +2304,208 @@ impl MutTxId {
 
         // Remove constraint in transaction's insert table.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
-        // This likely will do a clone-write as over time?
-        // The schema might have found other referents.
+        // This likely will do a clone-write as over time
+        // the schema might have found other referents.
         let schema = commit_table
             .with_mut_schema_and_clone(tx_table, |s| s.remove_constraint(constraint_id))
             .expect("there should be a schema in the committed state if we reach here");
-        self.push_schema_change(PendingSchemaChange::ConstraintRemoved(table_id, schema));
+
+        Ok((table_id, schema))
+    }
+
+    /// Creates a constraint, making the corresponding indices unique.
+    ///
+    /// This inserts constraint metadata AND converts the in-memory indices
+    /// from non-unique to unique. If the existing data contains duplicate
+    /// values in the constrained columns, an error is returned.
+    ///
+    /// Pre-validation (before any system-table mutation):
+    /// - the constraint must be a unique one (the only kind supported today);
+    /// - the target table must already have at least one index on the constrained columns.
+    pub fn create_constraint(&mut self, constraint: ConstraintSchema) -> Result<ConstraintId> {
+        let table_id = constraint.table_id;
+
+        // (a) Only unique constraints are supported at the moment. Reject anything else
+        //     up front, before writing to `st_constraint`.
+        let Some(cols) = constraint.data.unique_columns().cloned() else {
+            return Err(anyhow::anyhow!(
+                "adding non-unique constraints is not supported (constraint on table {table_id})"
+            )
+            .into());
+        };
+        let col_list: ColList = cols.into();
+
+        // (b) A unique constraint must be backed by at least one index on the same columns.
+        //     Check on the committed table; the tx table's index set is kept in lockstep
+        //     with the committed one by the datastore, so agreement is an invariant.
+        {
+            let (_, (commit_table, _, _)) = self.get_or_create_insert_table_mut(table_id)?;
+            if commit_table.get_indexes_by_cols(&col_list).is_empty() {
+                return Err(anyhow::anyhow!(
+                    "unique constraint on table {table_id} column(s) {col_list:?} \
+                     requires at least one backing index on those columns"
+                )
+                .into());
+            }
+        }
+
+        // (c) Validation passed — insert metadata into system tables. On any failure
+        //     beyond this point, the tx rollback unwinds both the st_constraint row and
+        //     the pending schema change.
+        let (constraint_id, newly_inserted) = self.create_st_constraint(constraint)?;
+
+        // If the constraint already existed in `st_constraint`, nothing new was pushed
+        // to `pending_schema_changes`, and the backing indices are already in the
+        // correct state. Return early — in particular, do NOT overwrite
+        // `pending_schema_changes.last_mut()`, which would clobber an unrelated change.
+        if !newly_inserted {
+            return Ok(constraint_id);
+        }
+
+        // Re-borrow after the system-table write (self was reborrowed by create_st_constraint).
+        let ((tx_table, _, tx_delete_table), (commit_table, commit_blob_store, _)) =
+            self.get_or_create_insert_table_mut(table_id)?;
+
+        // Find all indices matching these columns. Pre-validation guarantees non-empty.
+        let index_ids: Vec<_> = commit_table
+            .get_indexes_by_cols(&col_list)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        debug_assert!(
+            !index_ids.is_empty(),
+            "pre-validation guaranteed at least one backing index",
+        );
+
+        // Revert previously-made-unique `commit_table` and `tx_table` indices. Used on
+        // both the committed-state duplicate path and the tx-state merge-conflict path
+        // so a failing `create_constraint` leaves the tx in the same shape it had before.
+        let revert = |commit_table: &mut Table, tx_table: &mut Table, up_to: usize| {
+            for &id in &index_ids[..up_to] {
+                if let Some(idx) = commit_table.indexes.get_mut(&id) {
+                    idx.make_non_unique();
+                }
+                if let Some(idx) = tx_table.indexes.get_mut(&id) {
+                    idx.make_non_unique();
+                }
+            }
+        };
+
+        // Record whether this table had a unique index before.
+        let had_unique = commit_table.has_unique_index();
+
+        // Build a human-readable error from an index's duplicate groups. Used on both the
+        // committed-state and tx-state `make_unique` failure paths (`source` distinguishes
+        // which one fired).
+        let dup_err = |idx: &TableIndex, source: &str| {
+            let duplicates = idx.iter_duplicates();
+            let total = duplicates.len();
+            let examples: String = duplicates
+                .iter()
+                .take(10)
+                .map(|(val, count)| format!("  - {val:?} appears {count} times"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::anyhow!(
+                "Cannot add unique constraint on table {table_id} column(s) {col_list:?} \
+                 ({source}):\n{total} duplicate group(s) found.\n{examples}{}",
+                if total > 10 { "\n  ... and more" } else { "" }
+            )
+        };
+
+        // Try to make each matching index unique on both tables. `make_unique` fails fast on
+        // the first duplicate; only if it fails do we run `iter_duplicates` to build a
+        // human-readable error (showing up to 10 duplicate groups).
+        for (i, &index_id) in index_ids.iter().enumerate() {
+            let commit_idx = commit_table.indexes.get_mut(&index_id).expect("index must exist");
+            if commit_idx.make_unique().is_err() {
+                // `make_unique` restored the failing index to non-unique on error.
+                let err = dup_err(commit_idx, "committed state");
+                revert(commit_table, tx_table, i);
+                return Err(err.into());
+            }
+
+            // Tx table can have duplicates too (same-tx inserts before the constraint add).
+            let tx_idx = tx_table.indexes.get_mut(&index_id).expect("tx index must exist");
+            if tx_idx.make_unique().is_err() {
+                let err = dup_err(tx_idx, "current transaction");
+                // Revert the just-made-unique commit index plus any earlier pair.
+                revert(commit_table, tx_table, i + 1);
+                return Err(err.into());
+            }
+        }
+
+        // Check that each pair of unique indices can be merged.
+        for &index_id in &index_ids {
+            let can_merge_result = {
+                let commit_idx = &commit_table.indexes[&index_id];
+                let tx_idx = &tx_table.indexes[&index_id];
+                let is_deleted = |ptr: &RowPointer| tx_delete_table.contains(*ptr);
+                commit_idx.can_merge(tx_idx, is_deleted)
+            };
+            if let Err(violation) = can_merge_result {
+                let cols = commit_table.indexes[&index_id].indexed_columns().clone();
+                let violation = commit_table
+                    .get_row_ref(commit_blob_store, violation)
+                    .expect("row came from scanning the table")
+                    .project(&cols)
+                    .expect("cols should be valid for this table");
+                revert(commit_table, tx_table, index_ids.len());
+                return Err(anyhow::anyhow!("Unique constraint violation during merge: {violation:?}").into());
+            }
+        }
+
+        // Take the pointer map if this is the first unique index.
+        let pointer_map = if !had_unique {
+            tx_table.take_pointer_map();
+            commit_table.take_pointer_map()
+        } else {
+            None
+        };
+
+        // Update the pending schema change with index info.
+        // The last pushed change is our ConstraintAdded from create_st_constraint.
+        // Replace it with the enriched version.
+        if let Some(last) = self.tx_state.pending_schema_changes.last_mut() {
+            *last = PendingSchemaChange::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map);
+        }
+
+        Ok(constraint_id)
+    }
+
+    /// Drops a constraint, making the corresponding indices non-unique.
+    pub fn drop_constraint(&mut self, constraint_id: ConstraintId) -> Result<()> {
+        let (table_id, schema) = self.drop_st_constraint(constraint_id)?;
+
+        // If this was a unique constraint, make all matching indices non-unique.
+        let unique_cols = schema.data.unique_columns().cloned();
+        let made_non_unique_index_ids = if let Some(cols) = unique_cols {
+            let col_list: ColList = cols.into();
+
+            let ((tx_table, tx_blob_store, _), (commit_table, commit_blob_store, _)) =
+                self.get_or_create_insert_table_mut(table_id)?;
+
+            let index_ids: Vec<_> = commit_table
+                .get_indexes_by_cols(&col_list)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+
+            for &index_id in &index_ids {
+                commit_table.make_index_non_unique(index_id, commit_blob_store);
+                tx_table.make_index_non_unique(index_id, tx_blob_store);
+            }
+
+            index_ids
+        } else {
+            vec![]
+        };
+
+        self.push_schema_change(PendingSchemaChange::ConstraintRemoved(
+            table_id,
+            schema,
+            made_non_unique_index_ids,
+        ));
         // TODO(1.0): we should also re-initialize `table` without a unique constraint.
         // unless some other unique constraint on the same columns exists.
         // NOTE(centril): is this already handled by dropping the corresponding index?
@@ -2014,7 +2661,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
-        let (tx_offset, tx_data, tx_metrics, reducer) = self.commit_and_then(|_| {});
+        let (tx_offset, tx_data, tx_metrics, reducer, _) = self.commit_and_then(|_| {});
         let tx_data =
             Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
         (tx_offset, tx_data, tx_metrics, reducer)
@@ -2023,11 +2670,11 @@ impl MutTxId {
     pub(super) fn commit_and_then(
         mut self,
         before_release: impl FnOnce(&Arc<TxData>),
-    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>) {
+    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(self.tx_state, self.read_sets, &self.ctx);
+        let tx_data =
+            self.committed_state_write_lock
+                .merge(self.tx_state, self.read_sets, self.view_instances, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2058,9 +2705,12 @@ impl MutTxId {
         };
 
         let tx_data = Arc::new(tx_data);
+        // Capture the cached committed memory total while this transaction still owns the write lock.
+        // Callers can observe this value after commit without re-entering `committed_state`.
+        let datastore_memory_bytes = self.committed_state_write_lock.datastore_memory_bytes();
         before_release(&tx_data);
 
-        (tx_offset, tx_data, tx_metrics, reducer)
+        (tx_offset, tx_data, tx_metrics, reducer, datastore_memory_bytes)
     }
 
     /// Commits this transaction, applying its changes to the committed state.
@@ -2077,7 +2727,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub(super) fn commit_downgrade(self, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        let (tx_data, tx_metrics, tx) = self.commit_downgrade_and_then(workload, |_| {});
+        let (tx_data, tx_metrics, tx, _) = self.commit_downgrade_and_then(workload, |_| {});
         let tx_data =
             Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
         (tx_data, tx_metrics, tx)
@@ -2087,10 +2737,10 @@ impl MutTxId {
         mut self,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId) {
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(self.tx_state, self.read_sets, &self.ctx);
+    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
+        let tx_data =
+            self.committed_state_write_lock
+                .merge(self.tx_state, self.read_sets, self.view_instances, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2107,6 +2757,7 @@ impl MutTxId {
         );
 
         let tx_data = Arc::new(tx_data);
+        let datastore_memory_bytes = self.committed_state_write_lock.datastore_memory_bytes();
         before_downgrade(&tx_data);
 
         // Update the workload type of the execution context
@@ -2118,7 +2769,7 @@ impl MutTxId {
             ctx: self.ctx,
             metrics: ExecutionMetrics::default(),
         };
-        (tx_data, tx_metrics, tx)
+        (tx_data, tx_metrics, tx, datastore_memory_bytes)
     }
 
     /// Rolls back this transaction, discarding its changes.
@@ -2127,9 +2778,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `ReducerName`, the name of the reducer which ran during this transaction.
     pub fn rollback(mut self) -> (TxOffset, TxMetrics, Option<ReducerName>) {
-        let offset = self
-            .committed_state_write_lock
-            .rollback(&mut self.sequence_state_lock, self.tx_state);
+        let offset = self.committed_state_write_lock.rollback(self.tx_state);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2156,8 +2805,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn rollback_downgrade(mut self, workload: Workload) -> (TxMetrics, TxId) {
-        self.committed_state_write_lock
-            .rollback(&mut self.sequence_state_lock, self.tx_state);
+        self.committed_state_write_lock.rollback(self.tx_state);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2282,187 +2930,212 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    /// Does this caller have an entry for `view_id` in `st_view_sub`?
-    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
-        use StViewSubFields::*;
-        let sender = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), sender.into()]);
-        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    /// Returns the hash value for an anonymous view's empty arguments.
+    pub fn anonymous_view_arg_hash() -> AlgebraicValue {
+        empty_view_arg_hash_value()
     }
 
-    /// Does any `st_view_sub` row exist for this anonymous view?
-    pub fn is_anonymous_view_materialized(&self, view_id: ViewId) -> Result<bool> {
-        let cols = StViewSubFields::ViewId;
-        let value = view_id.into();
-        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    /// Returns the hash value for a sender-scoped view's arguments.
+    pub fn view_arg_hash(sender: Identity) -> AlgebraicValue {
+        sender_view_arg_hash_value(sender)
     }
 
-    /// Updates the `last_called` timestamp in `st_view_sub`.
-    /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
+    fn get_view_instance(&self, call: &ViewCallInfo) -> Option<&ViewInstanceState> {
+        self.view_instances.get(&self.committed_state_write_lock, call)
+    }
+
+    fn get_view_instance_cloned(&self, call: &ViewCallInfo) -> Option<ViewInstanceState> {
+        self.view_instances.get_cloned(&self.committed_state_write_lock, call)
+    }
+
+    fn effective_view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
+        let committed = self
+            .committed_state_write_lock
+            .view_instances()
+            .filter_map(|(call, state)| match self.view_instances.changes.get(call) {
+                Some(Some(tx_state)) => Some((call, tx_state)),
+                Some(None) => None,
+                None => Some((call, state)),
+            });
+
+        // The committed iterator above already applies tx-local overrides and
+        // removals for committed calls. This second half yields only tx-local
+        // inserts whose calls do not exist in committed state.
+        let tx_only = self.view_instances.changes.iter().filter_map(|(call, state)| {
+            if self.committed_state_write_lock.view_instance(call).is_some() {
+                None
+            } else {
+                state.as_ref().map(|state| (call, state))
+            }
+        });
+
+        committed.chain(tx_only)
+    }
+
+    fn effective_view_instances_for_view(
+        &self,
+        view_id: ViewId,
+    ) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
+        self.effective_view_instances()
+            // FIXME: use a better data structure to store view instances in `CommittedState` and `MutTxId`,
+            // so that this can behave like an index scan rather than a full scan and filter.
+            .filter(move |(call, _)| call.view_id == view_id)
+    }
+
+    /// Is this view argument currently materialized?
+    pub fn is_view_materialized(&self, call: &ViewCallInfo) -> Result<bool> {
+        Ok(self.get_view_instance(call).is_some())
+    }
+
+    /// Returns the stored arguments needed to execute this materialized view argument.
+    pub fn view_instance_args(&self, call: &ViewCallInfo) -> Option<ViewInstanceArgs> {
+        self.get_view_instance(call).map(|state| state.args)
+    }
+
+    /// Returns all materialized view instances for `view_id`.
+    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
+        self.effective_view_instances_for_view(view_id)
+            .map(|(_, state)| state.args)
+            .collect()
+    }
+
+    /// Returns active subscribers for a materialized view.
+    #[cfg(any(test, feature = "test"))]
+    pub fn active_subscribers_for_view(&self, view_id: ViewId) -> Vec<(Identity, u64)> {
+        self.effective_view_instances_for_view(view_id)
+            .flat_map(|(_, state)| {
+                state
+                    .active_subscribers
+                    .iter()
+                    .map(|(identity, count)| (*identity, *count))
+            })
+            .collect()
+    }
+
+    /// Updates the `last_used` timestamp for a materialized view argument.
     ///
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
-    pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        self.update_view_timestamp_at(view_id, arg_id, sender, Timestamp::now())
+    pub fn update_view_timestamp(&mut self, call: ViewCallInfo, args: ViewInstanceArgs) -> Result<()> {
+        self.update_view_timestamp_at(call, args, Timestamp::now())
     }
 
-    /// Updates the `last_called` timestamp in `st_view_sub` to an explicit value.
+    /// Updates the `last_used` timestamp for a materialized view argument to an explicit value.
     pub fn update_view_timestamp_at(
         &mut self,
-        view_id: ViewId,
-        arg_id: ArgId,
-        sender: Identity,
-        last_called: Timestamp,
+        call: ViewCallInfo,
+        args: ViewInstanceArgs,
+        last_used: Timestamp,
     ) -> Result<()> {
-        use StViewSubFields::*;
-
-        let identity = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = last_called.into();
-
-        // Update `last_called` of `st_view_sub` row
-        if let Some((row, ptr)) = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .next()
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .transpose()?
-        {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &StViewSubRow { last_called, ..row })?;
-            return Ok(());
-        }
-
-        // Insert `st_view_sub` row with 0 subscribers
-        self.insert_via_serialize_bsatn(
-            ST_VIEW_SUB_ID,
-            &StViewSubRow {
-                view_id,
-                arg_id,
-                identity,
-                num_subscribers: 0,
-                has_subscribers: false,
-                last_called,
-            },
-        )?;
+        let mut state = self
+            .get_view_instance_cloned(&call)
+            .unwrap_or_else(|| ViewInstanceState::new(args, last_used));
+        state.args = args;
+        state.last_used = last_used;
+        self.view_instances.set(call, state);
         Ok(())
     }
 
-    /// Increment `num_subscribers` in `st_view_sub` to effectively subscribe a caller to a view.
-    /// We insert a row if there are no current subscribers and the row does not exist.
-    pub fn subscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        use StViewSubFields::*;
-
-        let identity = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = Timestamp::now().into();
-
-        // Update `last_called` of `st_view_sub` row
-        if let Some((row, ptr)) = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .next()
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .transpose()?
-        {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-            self.insert_via_serialize_bsatn(
-                ST_VIEW_SUB_ID,
-                &StViewSubRow {
-                    num_subscribers: row.num_subscribers + 1,
-                    has_subscribers: true,
-                    last_called,
-                    ..row
-                },
-            )?;
-            return Ok(());
-        }
-
-        // Insert `st_view_sub` row with 1 subscriber
-        self.insert_via_serialize_bsatn(
-            ST_VIEW_SUB_ID,
-            &StViewSubRow {
-                view_id,
-                arg_id,
-                identity,
-                num_subscribers: 1,
-                has_subscribers: true,
-                last_called,
-            },
-        )?;
+    /// Increment this subscriber's refcount for a materialized view argument.
+    pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
+        let mut state = self
+            .get_view_instance_cloned(&call)
+            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
+        state.args = args;
+        *state.active_subscribers.entry(subscriber).or_default() += 1;
+        state.last_used = Timestamp::now();
+        self.view_instances.set(call, state);
         Ok(())
     }
 
-    /// Clean up views that have no subscribers and haven’t been called recently.
+    /// Decrement this subscriber's refcount for a materialized view argument.
+    pub fn unsubscribe_view(&mut self, call: ViewCallInfo, subscriber: Identity) -> Result<()> {
+        let Some(mut state) = self.get_view_instance_cloned(&call) else {
+            return Ok(());
+        };
+
+        if let Some(count) = state.active_subscribers.get_mut(&subscriber) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                state.active_subscribers.remove(&subscriber);
+            }
+            state.last_used = Timestamp::now();
+            self.view_instances.set(call, state);
+        }
+
+        Ok(())
+    }
+
+    /// Decrement this subscriber's refcount for all of their subscribed view arguments.
+    pub fn unsubscribe_views(&mut self, subscriber: Identity) -> Result<()> {
+        let calls = self
+            .view_instances
+            .active_view_calls_for_subscriber(&self.committed_state_write_lock, subscriber);
+
+        for call in calls {
+            self.unsubscribe_view(call, subscriber)?;
+        }
+
+        Ok(())
+    }
+
+    /// Clean up materialized view arguments that have no subscribers and haven’t been used recently.
     ///
-    /// This function will scan for subscription entries in `st_view_sub` where:
-    /// - `has_subscribers == false`, `num_subscribers == 0`.
-    /// - `last_called` is older than `expiration_duration`.
+    /// Expired views are cleared in batches. Each loop iteration selects up to
+    /// `batch_size` expired view calls and deletes their materialized rows.
     ///
-    /// For each such expired row:
-    /// 1. It deletes the expired `st_view_sub` row.
-    /// 2. If that row was the last remaining materialization entry for the view,
-    ///    it clears the backing table and removes the view from the committed read set.
+    /// `max_duration` is checked between batches, so cleanup always finishes at
+    /// least one batch once it starts, even if that batch takes longer than
+    /// `max_duration`.
     ///
-    /// The cleanup is bounded by a total `max_duration`. The function stops when either:
-    /// - all expired views have been processed, or
-    /// - the `max_duration` budget is reached.
-    ///
-    /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of expired `st_view_sub` rows deleted in this run.
-    /// - `total_expired`: Total number of expired rows found (even if not all were cleaned due to time budget).
+    /// Returns the number of calls cleaned and whether more expired work is
+    /// likely pending.
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
         max_duration: Duration,
-    ) -> Result<(usize, usize)> {
+        batch_size: usize,
+    ) -> Result<ViewCleanupResult> {
         let start = std::time::Instant::now();
-        let now = Timestamp::now();
-        let expiration_threshold = now - expiration_duration;
-        let mut cleaned_count = 0;
+        let expiration_threshold = Timestamp::now() - expiration_duration;
+        let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
+        let mut cleaned = 0;
+        let batch_size = batch_size.max(1);
 
-        // Collect all expired views from st_view_sub
-        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
-            .iter_by_col_eq(
-                ST_VIEW_SUB_ID,
-                StViewSubFields::HasSubscribers,
-                &AlgebraicValue::from(false),
-            )?
-            .filter_map(|row_ref| {
-                let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
-
-                if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
-                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
+        loop {
+            let mut unexpired_visited_building_batch = 0;
+            let filter_and_count_view_instance = |(call, state): (&ViewCallInfo, &ViewInstanceState)| {
+                if is_expired(state) {
+                    Some(call.clone())
                 } else {
+                    unexpired_visited_building_batch += 1;
                     None
                 }
-            })
-            .collect();
+            };
+            // FIXME: Use a better datastructure for `view_instances` in `CommittedState` and `MutTxId`
+            // to avoid having to traverse live or recently-expired views to delete stale ones.
 
-        let total_expired = expired_items.len();
+            let mut batch = self
+                .effective_view_instances()
+                .filter_map(filter_and_count_view_instance)
+                .take(batch_size + 1)
+                .collect::<Vec<_>>();
 
-        // For each expired subscription row, clear the backing table only if that row
-        // was the last remaining entry for the shared materialization.
-        for (view_id, sender, sub_row_ptr) in expired_items {
-            // Check if we've exceeded our time budget
-            if start.elapsed() >= max_duration {
-                break;
-            }
+            log::info!(
+                "[{}]: Traversed {} unexpired views to collect and delete a batch of {} expired views",
+                self.ctx.database_identity,
+                unexpired_visited_building_batch,
+                batch.len()
+            );
 
-            let StViewRow {
-                table_id, is_anonymous, ..
-            } = self.lookup_st_view(view_id)?;
-            let table_id = table_id.expect("views have backing table");
+            let backlog = batch.len() > batch_size;
+            batch.truncate(batch_size);
 
-            if is_anonymous {
-                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
-                    self.clear_table(table_id)?;
-                    self.drop_view_from_committed_read_set(view_id);
-                }
-            } else {
+            for call in batch {
+                let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
+                let table_id = table_id.expect("views have backing table");
                 let rows_to_delete = self
-                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &call.arg_hash)?
                     .map(|res| res.pointer())
                     .collect::<Vec<_>>();
 
@@ -2470,88 +3143,15 @@ impl MutTxId {
                     self.delete(table_id, row_ptr)?;
                 }
 
-                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                self.drop_view_call_from_committed_read_set(call.clone());
+                self.view_instances.remove(call);
+                cleaned += 1;
             }
 
-            // Finally, delete the subscription row
-            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
-            cleaned_count += 1;
+            if start.elapsed() >= max_duration || !backlog {
+                return Ok(ViewCleanupResult { cleaned, backlog });
+            }
         }
-
-        Ok((cleaned_count, total_expired))
-    }
-
-    /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
-    pub fn unsubscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        use StViewSubFields::*;
-
-        let identity = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = Timestamp::now().into();
-
-        // Update `last_called` of `st_view_sub` row
-        if let Some((row, ptr)) = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .next()
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .transpose()?
-        {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-            self.insert_via_serialize_bsatn(
-                ST_VIEW_SUB_ID,
-                &StViewSubRow {
-                    num_subscribers: row.num_subscribers - 1,
-                    has_subscribers: row.num_subscribers > 1,
-                    last_called,
-                    ..row
-                },
-            )?;
-        }
-        Ok(())
-    }
-
-    /// To effectively unsubscribe a caller from all of their subscribed views,
-    /// we decrement `num_subscribers` in `st_view_sub` for all of a caller's views.
-    pub fn unsubscribe_views(&mut self, sender: Identity) -> Result<()> {
-        let sender = IdentityViaU256(sender);
-        let cols = col_list![StViewSubFields::Identity];
-        let value = sender.into();
-
-        // Collect the rows for this identity.
-        // These are rows for which we will decrement the subscriber count.
-        let rows_to_delete = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .filter(|result| match result {
-                Ok((row, _)) => row.has_subscribers && row.num_subscribers > 0,
-                _ => true,
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // Copy the rows to delete and decrement their subscriber count.
-        // These are the rows that we will insert.
-        let rows_to_insert = rows_to_delete
-            .iter()
-            .map(|(row, _)| row.clone())
-            .map(|row| StViewSubRow {
-                num_subscribers: row.num_subscribers - 1,
-                has_subscribers: row.num_subscribers > 1,
-                ..row
-            })
-            .collect::<Vec<_>>();
-
-        // Delete the old rows
-        for (_, ptr) in rows_to_delete {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-        }
-
-        // Insert the new rows
-        for row in rows_to_insert {
-            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &row)?;
-        }
-
-        Ok(())
     }
 
     /// Clear all rows from all view tables without dropping them.
@@ -2566,25 +3166,6 @@ impl MutTxId {
             self.clear_table(table_id)?;
         }
         Ok(())
-    }
-
-    /// Get all view subscriptions for a given view.
-    pub fn lookup_st_view_subs(&self, view_id: ViewId) -> Result<Vec<StViewSubRow>> {
-        let cols = StViewSubFields::ViewId;
-        let value = view_id.into();
-        self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .map(StViewSubRow::try_from)
-            .collect::<Result<Vec<_>>>()
-    }
-
-    /// Does this `view_id` have other entries in `st_view_sub` besides `current_ptr`?
-    /// Can be true for anonymous views with multiple subscribers.
-    fn has_other_st_view_sub_entries(&self, view_id: ViewId, current_ptr: RowPointer) -> Result<bool> {
-        let cols = StViewSubFields::ViewId;
-        let value = view_id.into();
-        Ok(self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .any(|row_ref| row_ref.pointer() != current_ptr))
     }
 
     /// Lookup a row in `st_view` by its primary key
@@ -2643,7 +3224,7 @@ impl MutTxId {
         ) {
             // This is possible on restart if the database was previously running a version
             // before this system table was added.
-            log::error!(
+            log::warn!(
                 "[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}"
             );
         }
@@ -2673,7 +3254,7 @@ impl MutTxId {
         {
             Some(ptr) => self.delete(ST_CLIENT_ID, ptr).map(drop)?,
             _ => {
-                log::error!(
+                log::info!(
                     "[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident"
                 );
             }
@@ -2817,13 +3398,7 @@ impl MutTxId {
         table_id: TableId,
         row: &[u8],
     ) -> Result<(ColList, RowRefInsertion<'_>, InsertFlags)> {
-        insert::<GENERATE>(
-            &mut self.tx_state,
-            &self.committed_state_write_lock,
-            &mut self.sequence_state_lock,
-            table_id,
-            row,
-        )
+        insert::<GENERATE>(&mut self.tx_state, &mut self.committed_state_write_lock, table_id, row)
     }
 }
 
@@ -2846,8 +3421,7 @@ impl MutTxId {
 /// - The "commit table for insertion" for further processing.
 fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     tx_state: &'a mut TxState,
-    committed_state: &'a CommittedState,
-    seq_state: &mut SequencesState,
+    committed_state: &'a mut CommittedState,
     table_id: TableId,
     row: &[u8],
 ) -> Result<(
@@ -2857,12 +3431,11 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     TxTableForInsertion<'a>,
     CommitTableForInsertion<'a>,
 )> {
-    // Get commit table and friends.
-    let commit_parts = committed_state.get_table_and_blob_store(table_id)?;
-    let (commit_table, ..) = commit_parts;
-
     // Get the insert table, so we can write the row into it.
-    let (tx_table, tx_blob_store, _) = tx_state.get_table_and_blob_store_or_create_from(table_id, commit_table);
+    let (tx_table, tx_blob_store, _) = {
+        let (commit_table, ..) = committed_state.get_table_and_blob_store(table_id)?;
+        tx_state.get_table_and_blob_store_or_create_from(table_id, commit_table)
+    };
 
     // 1. Insert the physical row.
     let page_pool = &committed_state.page_pool;
@@ -2877,12 +3450,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
         // Generate a value for every column in the row that needs it.
         let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
         for sequence_id in seqs_to_use {
-            seq_vals.push(get_next_sequence_value(
-                tx_state,
-                committed_state,
-                seq_state,
-                sequence_id,
-            )?);
+            seq_vals.push(get_next_sequence_value(tx_state, committed_state, sequence_id)?);
         }
 
         // Write the generated values to the physical row at `tx_row_ptr`.
@@ -2905,6 +3473,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
         (tx_parts, ColList::empty())
     };
 
+    let commit_parts = committed_state.get_table_and_blob_store(table_id)?;
     Ok((tx_row_ptr, gen_cols, blob_bytes, tx_parts, commit_parts))
 }
 
@@ -2925,8 +3494,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
 /// - any insert flags.
 pub(super) fn insert<'a, const GENERATE: bool>(
     tx_state: &'a mut TxState,
-    committed_state: &'a CommittedState,
-    seq_state: &mut SequencesState,
+    committed_state: &'a mut CommittedState,
     table_id: TableId,
     row: &[u8],
 ) -> Result<(ColList, RowRefInsertion<'a>, InsertFlags)> {
@@ -2936,7 +3504,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
         blob_bytes,
         (tx_table, tx_blob_store, delete_table),
         (commit_table, commit_blob_store, _),
-    ) = insert_physically_maybe_generate::<GENERATE>(tx_state, committed_state, seq_state, table_id, row)?;
+    ) = insert_physically_maybe_generate::<GENERATE>(tx_state, committed_state, table_id, row)?;
 
     let insert_flags = InsertFlags {
         is_scheduler_table: tx_table.is_scheduler(),
@@ -3079,8 +3647,7 @@ impl MutTxId {
             (commit_table, commit_blob_store, _),
         ) = insert_physically_maybe_generate::<true>(
             &mut self.tx_state,
-            &self.committed_state_write_lock,
-            &mut self.sequence_state_lock,
+            &mut self.committed_state_write_lock,
             table_id,
             row,
         )?;
@@ -3457,9 +4024,9 @@ fn unindexed_iter_by_col_range_warn(
 ) {
     match table_row_count(tx_state, committed_state, table_id) {
         // TODO(ux): log these warnings to the module logs rather than host logs.
-        None => log::error!("iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",),
+        None => log::debug!("iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",),
         Some(num_rows) => too_many_rows_for_scan_do(committed_state, num_rows, table_id, cols, |name, cols| {
-            log::warn!("iter_by_col_range without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
+            log::info!("iter_by_col_range without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
         }),
     }
 }
@@ -3499,9 +4066,9 @@ fn unindexed_iter_by_col_eq_warn(
 ) {
     match table_row_count(tx_state, committed_state, table_id) {
         // TODO(ux): log these warnings to the module logs rather than host logs.
-        None => log::error!("iter_by_col_eq on unindexed column, but couldn't fetch table `{table_id}`s row count",),
+        None => log::debug!("iter_by_col_eq on unindexed column, but couldn't fetch table `{table_id}`s row count",),
         Some(num_rows) => too_many_rows_for_scan_do(committed_state, num_rows, table_id, cols, |name, cols| {
-            log::warn!("iter_by_col_eq without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
+            log::info!("iter_by_col_eq without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
         }),
     }
 }

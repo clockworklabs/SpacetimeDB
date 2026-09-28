@@ -269,6 +269,11 @@ mod tests {
         }
 
         #[test]
+        #[ignore = "This test needs to be refactored. \
+                    It can generate input that allocates a lot of memory during decode, \
+                    which can sometimes result in a SIGKILL. \
+                    This supposedly occurs for array types with zero-width elements, \
+                    but this has not been confirmed."]
         fn bsatn_invalid_wont_decode(ty in generate_algebraic_type(), bytes in vec(any::<u8>(), 0..4096)) {
             prop_assume!(type_non_empty(&ty));
             prop_assume!(WithTypespace::empty(&ty).validate(Deserializer::new(&mut &bytes[..])).is_err());

@@ -20,7 +20,6 @@ blake3.workspace = true
 bytes.workspace = true
 crossbeam-queue.workspace = true
 futures.workspace = true
-hex.workspace = true
 log.workspace = true
 scopeguard.workspace = true
 tempfile.workspace = true
@@ -33,8 +32,9 @@ zstd-framed.workspace = true
 [dev-dependencies]
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-schema = { path = "../schema" }
-spacetimedb-datastore = { path = "../datastore", features = ["test"] }
+spacetimedb-datastore = { workspace = true, features = ["test"] }
 spacetimedb-durability = { workspace = true, features = ["test"] }
+spacetimedb-runtime = { workspace = true }
 
 anyhow.workspace = true
 env_logger.workspace = true

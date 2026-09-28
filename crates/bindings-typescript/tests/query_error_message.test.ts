@@ -28,7 +28,7 @@ import { and } from ${JSON.stringify(imports.query)};
 import { tables } from ${JSON.stringify(imports.moduleBindings)};
 
 tables.player
-  .leftSemijoin(tables.unindexed_player, (l, r) => ${semijoinPredicateExpr})
+  .leftSemijoin(tables.unindexedPlayer, (l, r) => ${semijoinPredicateExpr})
   .build();
 `;
 

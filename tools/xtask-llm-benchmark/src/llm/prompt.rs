@@ -19,9 +19,19 @@ pub struct BuiltPrompt {
     pub search_enabled: bool,
 }
 
+/// SpacetimeDB version as "major.minor".
+fn spacetimedb_version() -> String {
+    let full = spacetimedb_lib::version::spacetimedb_lib_version();
+    let mut parts = full.splitn(3, '.');
+    match (parts.next(), parts.next()) {
+        (Some(major), Some(minor)) => format!("{major}.{minor}"),
+        _ => full.to_string(),
+    }
+}
+
 impl PromptBuilder {
     pub fn build_segmented(&self, mode: &str, context: &str) -> BuiltPrompt {
-        let version = "1.6";
+        let version = spacetimedb_version();
         let search_enabled = mode == "search";
 
         // SYSTEM: hygiene-only for Knowledge; hygiene + stricter output rules for Conformance.
@@ -94,8 +104,14 @@ pub fn make_prompt_from_task(spec_file: &str, task_id: &str, lang: Lang) -> Resu
     let tasks_file = find_tasks_file(task_root, lang)
         .with_context(|| format!("missing tasks file for {} in {}", lang.as_str(), task_root.display()))?;
 
-    let instructions =
+    let mut instructions =
         std::fs::read_to_string(&tasks_file).with_context(|| format!("read {}", tasks_file.display()))?;
+    if let Some(setup_file) = find_setup_file(task_root, lang) {
+        let setup_source =
+            std::fs::read_to_string(&setup_file).with_context(|| format!("read {}", setup_file.display()))?;
+        instructions.push_str("\n\nEXISTING MODULE SOURCE TO UPDATE:\n");
+        instructions.push_str(&setup_source);
+    }
 
     Ok(PromptBuilder {
         lang: lang.display_name().to_string(),
@@ -119,5 +135,55 @@ fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
             let p = dir.join("typescript.txt");
             p.exists().then_some(p)
         }
+    }
+}
+
+fn find_setup_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
+    let file = match lang {
+        Lang::CSharp => "csharp.cs",
+        Lang::Rust => "rust.rs",
+        Lang::TypeScript => "typescript.ts",
+    };
+    let path = task_root.join("setup").join(file);
+    path.exists().then_some(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::eval::Lang;
+
+    #[test]
+    fn prompt_uses_workspace_version() {
+        let pb = super::PromptBuilder {
+            lang: "TypeScript".into(),
+            task_id: "t_000".into(),
+            instructions: "test".into(),
+        };
+        let built = pb.build_segmented("no_context", "");
+        let task = &built.segments[0].text;
+        let expected = format!("SpacetimeDB {} syntax", super::spacetimedb_version());
+        assert!(task.contains(&expected), "prompt missing '{expected}': {task}");
+    }
+
+    #[test]
+    fn version_is_major_minor() {
+        let v = super::spacetimedb_version();
+        let mut parts = v.split('.');
+        assert!(parts.next().unwrap().parse::<u32>().is_ok(), "major not numeric: {v}");
+        assert!(parts.next().unwrap().parse::<u32>().is_ok(), "minor not numeric: {v}");
+        assert_eq!(parts.next(), None, "expected major.minor only: {v}");
+    }
+
+    #[test]
+    fn update_task_prompt_includes_existing_module_source() {
+        let spec = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/benchmarks/tables/t_053_default_values/spec.rs");
+        let prompt = super::make_prompt_from_task(spec.to_str().unwrap(), "t_053_default_values", Lang::Rust)
+            .expect("build migration prompt");
+
+        assert!(prompt.instructions.contains("EXISTING MODULE SOURCE TO UPDATE:"));
+        assert!(prompt.instructions.contains("pub struct Widget"));
+        assert!(prompt.instructions.contains("name: String"));
+        assert!(prompt.instructions.contains("pub fn touch"));
     }
 }

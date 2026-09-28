@@ -2,9 +2,7 @@ use crate::module_bindings::*;
 
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 
-use test_counter::TestCounter;
-
-const LOCALHOST: &str = "http://localhost:3000";
+use test_counter::{server_url, TestCounter};
 
 pub async fn dispatch(db_name: &str) {
     let disconnect_test_counter = TestCounter::new();
@@ -16,7 +14,7 @@ pub async fn dispatch(db_name: &str) {
 
     let connection = DbConnection::builder()
         .with_database_name(db_name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
         .on_connect(move |ctx, _, _| {
             connected_result(Ok(()));
@@ -80,7 +78,7 @@ pub async fn dispatch(db_name: &str) {
             reconnected_result(Ok(()));
         })
         .with_database_name(db_name)
-        .with_uri(LOCALHOST);
+        .with_uri(server_url());
     let new_connection = build_connection(new_connection).await;
 
     new_connection

@@ -127,18 +127,23 @@ export function useTable<TableDef extends UntypedTableDef>(
       setSubscribeApplied(false);
       return;
     }
-    const connection = connectionState.getConnection()!;
-    if (connectionState.isActive && connection) {
-      const cancel = connection
-        .subscriptionBuilder()
-        .onApplied(() => {
-          setSubscribeApplied(true);
-        })
-        .subscribe(querySql);
-      return () => {
-        cancel.unsubscribe();
-      };
+    const connection = connectionState.getConnection();
+    if (!connectionState.isActive || !connection) {
+      // The connection dropped (or was replaced and has not reconnected
+      // yet), so any previously applied subscription no longer reflects the
+      // current cache. Report not-ready until the new subscription applies.
+      setSubscribeApplied(false);
+      return;
     }
+    const cancel = connection
+      .subscriptionBuilder()
+      .onApplied(() => {
+        setSubscribeApplied(true);
+      })
+      .subscribe(querySql);
+    return () => {
+      cancel.unsubscribe();
+    };
   }, [querySql, connectionState.isActive, connectionState, enabled]);
 
   const subscribe = useCallback(

@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"],
+    "erasableSyntaxOnly": true
+  },
+  "include": ["check-skills-sync.ts"]
+}

@@ -1,9 +1,9 @@
 use super::system_tables::SystemTable;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
-use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::buffer::DecodeError;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 use spacetimedb_snapshot::SnapshotError;
@@ -40,7 +40,7 @@ pub enum DatastoreError {
 #[derive(Error, Debug)]
 pub enum ViewError {
     #[error("view '{0}' not found")]
-    NotFound(RawIdentifier),
+    NotFound(RawNamespacedIdentifier),
     #[error("Table backing View '{0}' not found")]
     TableNotFound(ViewId),
     #[error("failed to deserialize view arguments from row")]
@@ -57,8 +57,6 @@ pub enum ViewError {
     TypeMismatchOption,
     #[error("expected ProductValue in view result")]
     ExpectedProduct,
-    #[error("failed to serialize view arguments")]
-    SerializeArgs,
 }
 
 #[derive(Error, Debug)]
@@ -84,6 +82,12 @@ pub enum TableError {
     ChangeColumnsError(#[from] Box<table::ChangeColumnsError>),
     #[error(transparent)]
     AddColumnsError(#[from] Box<table::AddColumnsError>),
+    #[error("Event table with ID `{0}` is not empty")]
+    EventTableNotEmpty(TableId),
+    #[error(
+        "Table with ID `{0}` attempted to reschema using `alter_event_table_row_type`, but it is not an event table"
+    )]
+    ReschemaNotAnEventTable(TableId),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -112,22 +116,10 @@ pub enum SequenceError {
     Exist(String),
     #[error("Sequence `{0}`: The increment is 0, and this means the sequence can't advance.")]
     IncrementIsZero(String),
-    #[error("Sequence `{0}`: The min_value {1} must < max_value {2}.")]
-    MinMax(String, i128, i128),
-    #[error("Sequence `{0}`: The start value {1} must be >= min_value {2}.")]
-    MinStart(String, i128, i128),
-    #[error("Sequence `{0}`: The start value {1} must be <= min_value {2}.")]
-    MaxStart(String, i128, i128),
-    #[error("Sequence `{0}` failed to decode value from Sled (not a u128).")]
-    SequenceValue(String),
     #[error("Sequence ID `{0}` not found.")]
     NotFound(SequenceId),
-    #[error("Sequence applied to a non-integer field. Column `{col}` is of type {{found.to_sats()}}.")]
-    NotInteger { col: String, found: AlgebraicType },
-    #[error("Sequence ID `{0}` still had no values left after allocation.")]
-    UnableToAllocate(SequenceId),
-    #[error("Autoinc constraint on table {0:?} spans more than one column: {1:?}")]
-    MultiColumnAutoInc(TableId, ColList),
+    #[error("Incrementing sequence with previous value {0} would result in integer overflow")]
+    Overflow(i128),
 }
 
 impl From<InvalidFieldError> for DatastoreError {

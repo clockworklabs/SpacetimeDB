@@ -18,6 +18,18 @@ pub struct PkUuidTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_uuid`.
+pub struct PkUuidTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkUuidTableAccessor {
+    type Row = PkUuid;
+    type Handle<'db> = PkUuidTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_uuid()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_uuid`.
 ///
@@ -39,6 +51,18 @@ impl PkUuidTableAccess for super::RemoteTables {
 
 pub struct PkUuidInsertCallbackId(__sdk::CallbackId);
 pub struct PkUuidDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for PkUuidTableHandle<'ctx> {
+    type Row = PkUuid;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkUuid> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     type Row = PkUuid;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = PkUuidDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkUuidDeleteCallbackId {
+        PkUuidDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkUuidDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for PkUuidTableHandle<'ctx> {
+    type InsertCallbackId = PkUuidInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkUuidInsertCallbackId {
+        PkUuidInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkUuidInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkUuidTableHandle<'ctx> {
     type DeleteCallbackId = PkUuidDeleteCallbackId;
 
     fn on_delete(

@@ -1,0 +1,21 @@
+[package]
+name = "spacetimedb-runtime"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Runtime and deterministic simulation utilities for SpacetimeDB"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio.workspace = true
+spacetimedb-runtime-core = { workspace = true, optional = true }
+libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+futures.workspace = true
+
+[features]
+simulation = ["dep:spacetimedb-runtime-core", "spacetimedb-runtime-core/sim", "dep:libc"]

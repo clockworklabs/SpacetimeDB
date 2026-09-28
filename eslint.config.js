@@ -23,6 +23,19 @@ export default tseslint.config(
       '**/templates/angular-ts/.angular/**',
     ],
   },
+  {
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Promise',
+          property: 'withResolvers',
+          message:
+            'Use createDeferred() instead; Promise.withResolvers is ES2024 and not supported in all SDK runtimes.',
+        },
+      ],
+    },
+  },
   js.configs.recommended,
   {
     files: ['**/*.{js,cjs,mjs}'],
@@ -51,6 +64,8 @@ export default tseslint.config(
           './crates/bindings-typescript/test-app/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
+          './templates/money-exchange-react-ts/tsconfig.json',
+          './templates/hangman-react-ts/tsconfig.json',
           './templates/basic-ts/tsconfig.json',
           './templates/angular-ts/tsconfig.app.json',
           './docs/tsconfig.json',

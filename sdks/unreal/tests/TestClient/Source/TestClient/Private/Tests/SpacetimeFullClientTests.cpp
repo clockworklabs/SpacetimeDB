@@ -102,6 +102,109 @@ static FString NormalizeDuration(const FSpacetimeDBTimeDuration &Dur)
 	const double Seconds = static_cast<double>(Dur.GetMicroseconds()) / 1'000'000.0;
 	return TrimFloat(Seconds);
 }
+
+static void CompileTypedQueryBuilderSmoke(UDbConnection* Conn)
+{
+	Conn->SubscriptionBuilder()
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneU8().Where([](const FOneU8Cols& Cols)
+			{
+				return Cols.N.Eq(static_cast<uint8>(1));
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneString().Where([](const FOneStringCols& Cols)
+			{
+				return Cols.S.Eq(TEXT("typed-query-builder"));
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneTimestamp().Where([](const FOneTimestampCols& Cols)
+			{
+				return Cols.T.Gte(FSpacetimeDBTimestamp(1));
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.PkU32().LeftSemijoin(Q.From.UniqueU32(), [](const FPkU32IxCols& Left, const FUniqueU32IxCols& Right)
+			{
+				return Left.N.Eq(Right.N);
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.UniqueU32().Where([](const FUniqueU32Cols&, const FUniqueU32IxCols& Ix)
+			{
+				return Ix.N.Eq(static_cast<uint32>(7));
+			});
+		});
+}
+
+bool FBlueprintQueryBuilderBasicFlowTest::RunTest(const FString& Parameters)
+{
+	FOneU8Query Query = UQueryBuilderBlueprintLibrary::FromOneU8();
+	TestEqual(TEXT("blueprint one_u_8 base sql"), Query.Sql, TEXT("SELECT * FROM \"one_u_8\""));
+
+	const FBlueprintPredicate Predicate = UQueryBuilderBlueprintLibrary::UInt8Equal(
+		UQueryBuilderBlueprintLibrary::OneU8N(Query),
+		static_cast<uint8>(1));
+	Query = UQueryBuilderBlueprintLibrary::OneU8Where(Query, Predicate);
+	TestEqual(
+		TEXT("blueprint one_u_8 filtered sql"),
+		Query.Sql,
+		TEXT("SELECT * FROM \"one_u_8\" WHERE (\"one_u_8\".\"n\" = 1)")
+	);
+
+	USubscriptionBuilder* Builder = NewObject<USubscriptionBuilder>();
+	USubscriptionHandle* Handle = Builder->AddOneU8Query(Query)->Subscribe();
+	TestNotNull(TEXT("blueprint one_u_8 handle"), Handle);
+	TestEqual(TEXT("blueprint one_u_8 builder sql count"), Handle->GetQuerySqls().Num(), 1);
+	TestEqual(TEXT("blueprint one_u_8 builder sql"), Handle->GetQuerySqls()[0], Query.Sql);
+
+	const FString TypedDoubleSql = FString(
+		UTF8_TO_TCHAR(
+			FQueryBuilder()
+				.From.OneF64()
+				.Where([](const FOneF64Cols& Cols)
+				{
+					return Cols.F.Eq(0.123456789);
+				})
+				.into_sql()
+				.c_str()));
+	TestEqual(
+		TEXT("typed one_f_64 precise sql"),
+		TypedDoubleSql,
+		TEXT("SELECT * FROM \"one_f_64\" WHERE (\"one_f_64\".\"f\" = 0.123456789)")
+	);
+
+	FOneF64Query DoubleQuery = UQueryBuilderBlueprintLibrary::FromOneF64();
+	DoubleQuery = UQueryBuilderBlueprintLibrary::OneF64Where(
+		DoubleQuery,
+		UQueryBuilderBlueprintLibrary::DoubleEqual(
+			UQueryBuilderBlueprintLibrary::OneF64F(DoubleQuery),
+			0.123456789));
+	TestEqual(
+		TEXT("blueprint one_f_64 precise sql"),
+		DoubleQuery.Sql,
+		TEXT("SELECT * FROM \"one_f_64\" WHERE (\"one_f_64\".\"f\" = 0.123456789)")
+	);
+
+	FOneStringQuery StringQuery = UQueryBuilderBlueprintLibrary::FromOneString();
+	StringQuery = UQueryBuilderBlueprintLibrary::OneStringWhere(
+		StringQuery,
+		UQueryBuilderBlueprintLibrary::StringEqual(
+			UQueryBuilderBlueprintLibrary::OneStringS(StringQuery),
+			TEXT("reuse-check")));
+	USubscriptionHandle* SecondHandle = Builder->AddOneStringQuery(StringQuery)->Subscribe();
+	TestNotNull(TEXT("second subscribe handle"), SecondHandle);
+	TestEqual(TEXT("second subscribe builder sql count"), SecondHandle->GetQuerySqls().Num(), 1);
+	TestEqual(TEXT("second subscribe builder sql"), SecondHandle->GetQuerySqls()[0], StringQuery.Sql);
+
+	return true;
+}
 //
 
 bool FInsertPrimitiveTest::RunTest(const FString &Parameters)
@@ -1706,7 +1809,7 @@ static FString GetReauthTokenPath()
     return FPaths::Combine(Dir, TEXT("reauth_token.txt"));
 }
 
-bool FReauth1Test::RunTest(const FString &Parameters)
+bool FReauthTest::RunTest(const FString &Parameters)
 {
 	TestName = "Reauth";
 
@@ -1718,81 +1821,49 @@ bool FReauth1Test::RunTest(const FString &Parameters)
 	// Create and register a test counter to track completion.
 	UTestHandler *Handler = CreateTestHandler<UTestHandler>();
 	Handler->Counter->Register(TEXT("ReauthPart1"));
+	Handler->Counter->Register(TEXT("ReauthPart2"));
 
-	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
-											{
-			UCredentials::Init(TestName);
+	ConnectThen(Handler->Counter, TEXT("ReauthPart1"), [this, Handler](UDbConnection *Conn)
+	{
 			const FString Token = UCredentials::LoadToken();
 			UE_LOG(LogTemp, Display, TEXT("[Reauth1] Loaded token: '%s'"), *Token);
 			if (!Token.IsEmpty())
 			{
 				const FString TokenFilePath = GetReauthTokenPath();
 				const bool bOK = FFileHelper::SaveStringToFile(Token, *TokenFilePath);
-                UE_LOG(LogTemp, Display, TEXT("[Reauth1] Save token -> %s (ok=%d)"), *TokenFilePath, bOK);
+				UE_LOG(LogTemp, Display, TEXT("[Reauth1] Save token -> %s (ok=%d)"), *TokenFilePath, bOK);
 
 				UCredentials::SaveToken(Token);
 				Handler->Counter->MarkSuccess("ReauthPart1");
+
+				ConnectWithThen(
+					Handler->Counter,
+					TEXT("ReauthPart2"),
+					[Token](UDbConnectionBuilder *Builder)
+					{
+						return Builder->WithToken(Token);
+					},
+					[Handler, Token](UDbConnection *Conn)
+					{
+						const FString CurrentToken = UCredentials::LoadToken();
+						UE_LOG(LogTemp, Display, TEXT("[Reauth2] CurrentToken='%s' OldToken='%s'"),
+							*CurrentToken, *Token);
+						if (CurrentToken == Token)
+						{
+							Handler->Counter->MarkSuccess("ReauthPart2");
+						}
+						else
+						{
+							Handler->Counter->MarkFailure("ReauthPart2", FString(TEXT("Unexpected Token: ")) + CurrentToken);
+						}
+					});
 			}
 			else
 			{
 				Handler->Counter->MarkFailure("ReauthPart1", TEXT("Token was not saved"));
-			} });
-
-	// Wait for the test counter to signal completion.
-	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
-
-	return true;
-}
-
-bool FReauth2Test::RunTest(const FString &Parameters)
-{
-	TestName = "Reauth";
-
-	if (!ValidateParameterConfig(this))
-	{
-		return false;
-	}
-
-	// Create and register a test counter to track completion.
-	UTestHandler *Handler = CreateTestHandler<UTestHandler>();
-	Handler->Counter->Register(TEXT("ReauthPart2"));
-
-	UCredentials::Init(TestName);
-	const FString TokenFilePath = GetReauthTokenPath();
-	//const FString OldToken = UCredentials::LoadToken();
-	FString OldToken;
-    const bool bRead = FFileHelper::LoadFileToString(OldToken, *TokenFilePath);
-
-    UE_LOG(LogTemp, Display, TEXT("[Reauth2] Read token (ok=%d) from %s: '%s'"),
-           bRead, *TokenFilePath, *OldToken);
-    if (!bRead || OldToken.IsEmpty())
-    {
-        Handler->Counter->MarkFailure("ReauthPart2", TEXT("Missing/empty token file"));
-        ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
-        return true;
-    }
-
-	UDbConnection *Connection = ConnectWithThen(
-		Handler->Counter,
-		TestName,
-		[OldToken](UDbConnectionBuilder *Builder)
-		{
-			return Builder->WithToken(OldToken);
-		},
-		[this, Handler, OldToken](UDbConnection *Conn)
-		{
-			const FString CurrentToken = UCredentials::LoadToken();
-			            UE_LOG(LogTemp, Display, TEXT("[Reauth2] CurrentToken='%s' OldToken='%s'"),
-                   *CurrentToken, *OldToken);
-			if (CurrentToken == OldToken)
-			{
-				Handler->Counter->MarkSuccess("ReauthPart2");
+				Handler->Counter->MarkFailure("ReauthPart2", TEXT("Skipped because part 1 did not save a token"));
 			}
-			else
-			{
-				Handler->Counter->MarkFailure("ReauthPart2", FString(TEXT("Unexpected Token: ")) + CurrentToken);
-			}
-		});
+	});
 
 	// Wait for the test counter to signal completion.
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));

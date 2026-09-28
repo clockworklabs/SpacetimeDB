@@ -4,7 +4,7 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
@@ -35,10 +35,10 @@ pub trait SchemaView {
 }
 
 #[derive(Default)]
-pub struct Relvars(HashMap<RawIdentifier, Arc<TableOrViewSchema>>);
+pub struct Relvars(HashMap<RawNamespacedIdentifier, Arc<TableOrViewSchema>>);
 
 impl Deref for Relvars {
-    type Target = HashMap<RawIdentifier, Arc<TableOrViewSchema>>;
+    type Target = HashMap<RawNamespacedIdentifier, Arc<TableOrViewSchema>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -157,10 +157,9 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
     let ast = parse_subscription(sql)?;
     let has_param = ast.has_parameter();
-    let ast = ast.resolve_sender(auth.caller());
     expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
 }
 

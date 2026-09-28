@@ -31,6 +31,7 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
@@ -119,11 +120,7 @@ impl Plan {
     /// Return the search arguments for this query
     fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         let mut args = HashSet::new();
-        for arg in self
-            .plans
-            .iter()
-            .flat_map(|subscription| subscription.optimized_physical_plan().search_args())
-        {
+        for arg in self.plans.iter().flat_map(|subscription| subscription.search_args()) {
             args.insert(arg);
         }
         args.into_iter()
@@ -1482,7 +1479,8 @@ impl SubscriptionManager {
                 let table_name = plan.subscribed_table_name().clone();
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
-                        tracing::error!(
+                        // TODO: Redirect subscription query errors attributable to user SQL to guest logs.
+                        tracing::warn!(
                             message = "Query errored during tx update",
                             sql = qstate.query.sql,
                             reason = ?err,
@@ -1639,7 +1637,8 @@ impl SubscriptionManager {
 
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
-                        tracing::error!(
+                        // TODO: Redirect subscription query errors attributable to user SQL to guest logs.
+                        tracing::warn!(
                             message = "Query errored during tx update",
                             sql = qstate.query.sql,
                             reason = ?err,
@@ -1920,7 +1919,8 @@ impl SendWorker {
             .filter(|upd| !clients_with_errors.contains(&upd.id))
             // Do the aggregation.
             .fold(client_table_id_updates, |mut tables, upd| {
-                let table_name = upd.table_name.into();
+                // The v1 wire type takes a plain `RawIdentifier`; see `execute_one_off_query`.
+                let table_name = RawIdentifier::new(&*upd.table_name);
                 match tables.entry((upd.id, upd.table_id)) {
                     Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
                         Bsatn((tbl_upd, update)) => tbl_upd.push(update),
@@ -2088,7 +2088,7 @@ impl SendWorker {
                 let table_updates: Vec<ws_v2::TableUpdate> = qs_updates
                     .into_iter()
                     .map(|((_, _, table_name), rows)| ws_v2::TableUpdate {
-                        table_name: table_name.into(),
+                        table_name: RawIdentifier::new(&*table_name),
                         rows: rows.into_boxed_slice(),
                     })
                     .collect();
@@ -2171,7 +2171,7 @@ fn send_to_client_v1(
     message: impl Into<SerializableMessage>,
 ) {
     if let Err(e) = client.send_message(tx_offset, OutboundMessage::V1(message.into())) {
-        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        tracing::debug!(%client.id, "failed to send update message to client: {e}")
     }
 }
 fn send_to_client(
@@ -2182,7 +2182,7 @@ fn send_to_client(
 ) {
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {
-        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        tracing::debug!(%client.id, "failed to send update message to client: {e}")
     }
 }
 
@@ -2203,15 +2203,15 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
+    use crate::db::sql::ast::SchemaViewer;
     use crate::host::module_host::DatabaseTableUpdate;
-    use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::tx::DeltaTx;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
-        energy::EnergyQuanta,
+        energy::FunctionBudget,
         host::{
             module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
             ArgsTuple,
@@ -3183,7 +3183,7 @@ mod tests {
             },
             status: EventStatus::Committed(DatabaseUpdate::default()),
             reducer_return_value: None,
-            energy_quanta_used: EnergyQuanta::ZERO,
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::default(),
             request_id: None,
             timer: None,

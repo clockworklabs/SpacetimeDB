@@ -4,6 +4,7 @@ export {
   type InferSchema,
   type ModuleExport,
   type ModuleSettings,
+  type SubmoduleMount,
 } from './schema';
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
@@ -22,5 +23,19 @@ export type { Uuid } from '../lib/uuid';
 export type { Random } from './rng';
 export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views';
 export { Range, type Bound } from './range';
+export {
+  Headers,
+  Request,
+  SyncResponse,
+  Router,
+  type BodyInit,
+  type HeadersInit,
+  type RequestInit,
+  type ResponseInit,
+} from './http';
+export type { HandlerContext, HttpHandlerExport } from './http';
+export { ScheduleAt } from '../lib/schedule_at';
+
+export type { Environment } from './environment';
 
 import './polyfills'; // Ensure polyfills are loaded

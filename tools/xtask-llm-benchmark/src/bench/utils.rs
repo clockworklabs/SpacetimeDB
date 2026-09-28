@@ -45,6 +45,14 @@ pub fn sanitize_db_name(raw: &str) -> String {
     out
 }
 
+pub fn run_scope_tag(mode: &str, vendor: &str, api_model: &str) -> String {
+    sanitize_db_name(&format!("{mode}-{vendor}-{api_model}"))
+}
+
+pub fn golden_db_name(category: &str, task: &str, scope: &str) -> String {
+    sanitize_db_name(&format!("{category}-{task}-{scope}-golden"))
+}
+
 pub fn work_server_dir_scoped(category: &str, task: &str, lang: &str, phase: &str, route_tag: &str) -> PathBuf {
     let target = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".into());
     Path::new(&target)
@@ -109,13 +117,13 @@ pub fn bench_rust_concurrency() -> usize {
         .unwrap_or(2)
 }
 
-/// Concurrency for C# builds. Lower default than Rust due to dotnet/WASI SDK
-/// instability under high parallelism (causes SIGSEGV and "Pipe is broken" errors).
+/// Concurrency for C# builds. Keep this serialized to match smoketest behavior;
+/// dotnet/WASI SDK builds are fragile when multiple generated modules publish at once.
 pub fn bench_csharp_concurrency() -> usize {
     env::var("LLM_BENCH_CSHARP_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(4)
+        .unwrap_or(1)
 }
 
 pub fn bench_route_concurrency() -> usize {
@@ -135,5 +143,24 @@ pub fn fmt_dur(d: Duration) -> String {
         let m = (secs / 60.0).floor() as u64;
         let s = secs - (m as f64) * 60.0;
         format!("{}m {:.1}s", m, s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_scope_separates_modes_and_models() {
+        let guidelines = run_scope_tag("guidelines", "openai", "gpt-5.4-mini");
+        let docs = run_scope_tag("docs", "openai", "gpt-5.4-mini");
+        let other_model = run_scope_tag("guidelines", "openai", "gpt-5.5");
+
+        assert_ne!(guidelines, docs);
+        assert_ne!(guidelines, other_model);
+        assert_ne!(
+            golden_db_name("views", "t_067", &guidelines),
+            golden_db_name("views", "t_067", &docs)
+        );
     }
 }

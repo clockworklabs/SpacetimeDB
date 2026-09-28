@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines a table, a non-reducer helper function, and a reducer that uses the helper.
 
 TABLE
-- result
+- result (public)
   - Fields:
     - id: number (i32, primary key)
     - sum: number (i32)

@@ -15,15 +15,19 @@ namespace SpacetimeDB.Types
     {
         [DataMember(Name = "id")]
         public ulong Id;
+        [DataMember(Name = "sender")]
+        public SpacetimeDB.Identity Sender;
         [DataMember(Name = "name")]
         public string Name;
 
         public ViewPkPlayer(
             ulong Id,
+            SpacetimeDB.Identity Sender,
             string Name
         )
         {
             this.Id = Id;
+            this.Sender = Sender;
             this.Name = Name;
         }
 

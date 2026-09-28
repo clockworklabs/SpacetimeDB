@@ -1,9 +1,6 @@
-use super::{
-    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
-};
+use super::{committed_state::CommittedState, mut_tx::MutTxId, state_view::StateView, tx::TxId, tx_state::TxState};
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
+use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -25,7 +22,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
@@ -36,7 +33,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
 use spacetimedb_table::{
@@ -57,7 +54,6 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 /// Lock Acquisition Order:
 /// 1. `memory`
 /// 2. `committed_state`
-/// 3. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
@@ -66,8 +62,6 @@ pub struct Locking {
     // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
     // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of sequence generation in this database.
-    pub(super) sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
@@ -76,14 +70,9 @@ impl MemoryUsage for Locking {
     fn heap_usage(&self) -> usize {
         let Self {
             committed_state,
-            sequence_state,
             database_identity,
         } = self;
-        std::mem::size_of_val(&**committed_state)
-            + committed_state.read().heap_usage()
-            + std::mem::size_of_val(&**sequence_state)
-            + sequence_state.lock().heap_usage()
-            + database_identity.heap_usage()
+        std::mem::size_of_val(&**committed_state) + committed_state.read().heap_usage() + database_identity.heap_usage()
     }
 }
 
@@ -91,7 +80,6 @@ impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
-            sequence_state: <_>::default(),
             database_identity,
         }
     }
@@ -114,9 +102,6 @@ impl Locking {
 
         // Create the system tables and insert information about themselves into
         commit_state.bootstrap_system_tables(database_identity)?;
-        // The database tables are now initialized with the correct data.
-        // Now we have to build our in memory structures.
-        build_sequence_state(&datastore, &mut commit_state)?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -198,14 +183,10 @@ impl Locking {
                 .with_label_values(&database_identity, &table_id.into(), &schema.table_name)
                 .set(table_size as i64);
         }
+        committed_state.rebuild_datastore_page_bytes();
 
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
-
-        // Set the sequence state. In practice we will end up doing this again after replaying
-        // the commit log, but we do it here too just to avoid having an incorrectly restored
-        // snapshot.
-        build_sequence_state(&datastore, &mut committed_state)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -228,14 +209,27 @@ impl Locking {
     /// error.
     pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>> {
         Self::take_snapshot_internal(&self.committed_state, repo)?
-            .map(|(_offset, snap)| snap.sync_all())
+            .map(|(_offset, snap)| snap.sync_all().map_err(Into::into))
             .transpose()
-            .map_err(Into::into)
     }
 
     pub fn assert_system_tables_match(&self) -> Result<()> {
         let committed_state = self.committed_state.read_arc();
         committed_state.assert_system_table_schemas_match()
+    }
+
+    /// Returns committed datastore table page bytes.
+    ///
+    /// This reads the cached committed-state aggregate.
+    pub fn datastore_page_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_page_bytes()
+    }
+
+    /// Returns committed datastore bytes.
+    ///
+    /// Currently just page and blobstore bytes.
+    pub fn datastore_memory_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_memory_bytes()
     }
 
     pub fn take_snapshot_internal(
@@ -294,6 +288,34 @@ impl Locking {
         tx.alter_table_primary_key(table_id, primary_key)
     }
 
+    pub fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    pub fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    pub fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     pub fn alter_table_row_type_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -301,6 +323,15 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn alter_event_table_row_type_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        tx.alter_event_table_row_type(table_id, column_schemas)
     }
 
     pub fn add_columns_to_table_mut_tx(
@@ -527,6 +558,34 @@ impl MutTxDatastore for Locking {
         tx.drop_index(index_id)
     }
 
+    fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
         tx.index_id_from_name_or_alias(index_name)
     }
@@ -545,6 +604,10 @@ impl MutTxDatastore for Locking {
 
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> Result<Option<SequenceId>> {
         tx.sequence_id_from_name(sequence_name)
+    }
+
+    fn create_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint: ConstraintSchema) -> Result<ConstraintId> {
+        tx.create_constraint(constraint)
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {
@@ -895,15 +958,14 @@ impl MutTx for Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
-        let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
 
         MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -930,15 +992,14 @@ impl Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
-        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
         let lock_wait_time = timer.elapsed();
 
         Some(MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -962,7 +1023,7 @@ impl Locking {
         &self,
         tx: MutTxId,
         before_release: impl FnOnce(&Arc<TxData>),
-    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)>> {
         Ok(Some(tx.commit_and_then(before_release)))
     }
 
@@ -973,7 +1034,7 @@ impl Locking {
         tx: MutTxId,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId) {
+    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
         tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
@@ -1007,6 +1068,7 @@ pub(crate) mod tests {
         ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME,
         ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
+    use crate::system_tables::{ST_ENV_ID, ST_ENV_NAME};
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use core::{fmt, mem};
@@ -1018,11 +1080,11 @@ pub(crate) mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ArgId, ColId, ScheduleId, ViewId};
+    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;
-    use spacetimedb_sats::raw_identifier::RawIdentifier;
+    use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::identifier::Identifier;
@@ -1150,7 +1212,7 @@ pub(crate) mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                index_name: RawIdentifier::new(value.name),
+                index_name: RawNamespacedIdentifier::new(value.name),
                 index_algorithm: StIndexAlgorithm::BTree { columns: value.col },
             }
         }
@@ -1220,7 +1282,7 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1236,13 +1298,10 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
-                increment: 1,
                 start: value.start,
-                min_value: 1,
-                max_value: i128::MAX,
             }
         }
     }
@@ -1257,7 +1316,7 @@ pub(crate) mod tests {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
-                constraint_name: RawIdentifier::new(value.constraint_name),
+                constraint_name: RawNamespacedIdentifier::new(value.constraint_name),
                 table_id: value.table_id.into(),
                 constraint_data: StConstraintData::Unique {
                     columns: value.unique_columns.into(),
@@ -1351,9 +1410,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "Foo_id_seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -1476,6 +1532,7 @@ pub(crate) mod tests {
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StInboundMsgFields::DatabaseIdentity.into()) },
             TableRow { id: ST_OUTBOUND_MSG_ID.into(), name: ST_OUTBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StOutboundMsgFields::MsgId.into()) },
+            TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]
@@ -1582,6 +1639,9 @@ pub(crate) mod tests {
             ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 0, name: "msg_id", ty: AlgebraicType::U64 },
             ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 1, name: "outbox_table_id", ty: TableId::get_type() },
             ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 2, name: "row_id", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_ENV_ID.into(), pos: 0, name: "key", ty: AlgebraicType::String },
+            ColRow { table: ST_ENV_ID.into(), pos: 1, name: "value", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1616,6 +1676,7 @@ pub(crate) mod tests {
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_INBOUND_MSG_ID.into(), col: col(0), name: "st_inbound_msg_database_identity_idx_btree", },
             IndexRow { id: 31, table: ST_OUTBOUND_MSG_ID.into(), col: col(0), name: "st_outbound_msg_msg_id_idx_btree", },
+            IndexRow { id: 32, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1664,6 +1725,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
             ConstraintRow { constraint_id: 26, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col(0), constraint_name: "st_inbound_msg_database_identity_key", },
             ConstraintRow { constraint_id: 27, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_msg_msg_id_key", },
+            ConstraintRow { constraint_id: 28, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2059,9 +2121,40 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
+        // The rolled-back insert did not consume the first auto-inc value.
         #[rustfmt::skip]
-        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
+    }
+
+    #[test]
+    fn sequence_occasionally_skips_values_to_simulate_reallocation() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.primary_key = Some(0.into());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut previous_value = 0;
+
+        // Determined experimentally;
+        // the fixed seed we use for tests first hits a simulated reallocation point
+        // somewhere between rows 8192 and 16384.
+        const MAX_ROWS: u32 = 16384;
+
+        for row_number in 0..MAX_ROWS {
+            let row = product![0_u32, format!("row_{row_number}"), 0_u32];
+            let (_, row_ref) = insert(&datastore, &mut tx, table_id, &row)?;
+            let value = row_ref.read_col::<u32>(0).unwrap();
+            if value != previous_value + 1 {
+                return Ok(());
+            }
+            previous_value = value;
+        }
+
+        panic!("did not simulate a sequence reallocation after inserting {MAX_ROWS} rows");
     }
 
     fn assert_st_indices(tx: &MutTxId, include_age: bool) -> ResultTest<()> {
@@ -2099,6 +2192,7 @@ pub(crate) mod tests {
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_INBOUND_MSG_ID.into(), col: col(0), name: "st_inbound_msg_database_identity_idx_btree", },
             IndexRow { id: 31,  table: ST_OUTBOUND_MSG_ID.into(), col: col(0), name: "st_outbound_msg_msg_id_idx_btree", },
+            IndexRow { id: 32, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -2259,9 +2353,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
@@ -2320,7 +2411,8 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
-        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+        // The auto-inc value generated before the rollback remains available.
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
         datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
@@ -2948,7 +3040,7 @@ pub(crate) mod tests {
 
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
             let tx = begin_tx(datastore);
-            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
+            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows) {
                 assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
             Ok(())
@@ -3195,7 +3287,7 @@ pub(crate) mod tests {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: Identifier::for_test("schedule"),
-            function_name: Identifier::for_test("reducer"),
+            function_name: Identifier::for_test("reducer").into(),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);
@@ -3434,10 +3526,12 @@ pub(crate) mod tests {
             "Unexpected delete entries after altering the table"
         );
 
+        // The rolled-back migration did not consume 7, so the committed migration uses it
+        // after the two initial committed rows with IDs 5 and 6.
         let inserted_rows = [
             product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
             product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
-            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let new_entry = tx_data
@@ -3681,6 +3775,405 @@ pub(crate) mod tests {
         assert!(
             result.is_ok(),
             "same PK in a new TX should succeed for event tables (no committed state)"
+        );
+        Ok(())
+    }
+
+    /// Creates a table with a non-unique btree index on `cols` but no constraints.
+    fn table_with_non_unique_index(cols: impl Into<ColList>) -> TableSchema {
+        let indices = vec![IndexSchema::for_test(
+            "Foo_idx_btree",
+            BTreeAlgorithm { columns: cols.into() },
+        )];
+        basic_table_schema_with_indices(indices, Vec::<ConstraintSchema>::new())
+    }
+
+    #[test]
+    fn test_create_constraint_makes_index_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert unique rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint — should succeed since data is unique.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+
+        // Inserting a duplicate should now fail (index is unique).
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            dup_result.is_err(),
+            "duplicate insert should fail after adding unique constraint"
+        );
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_rollback_restores_non_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert unique rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // TX4: after rollback, duplicates should be allowed again.
+        let mut tx = begin_mut_tx(&datastore);
+        let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            result.is_ok(),
+            "duplicate insert should succeed after rollback of unique constraint"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_fails_with_duplicates() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert duplicate rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?; // duplicate id=1
+        commit(&datastore, tx)?;
+
+        // TX3: try to add unique constraint — should fail.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(result.is_err(), "create_constraint should fail when duplicates exist");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_multi_col() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique multi-column index on (col 0, col 2).
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(col_list![0, 2]);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert rows unique on (id, age) and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?; // same id, different age
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint on (col 0, col 2) — should succeed.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_age_unique", ColSet::from(col_list![0, 2]));
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_makes_index_non_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with unique constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: drop the unique constraint on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+
+        // Inserting a duplicate on col 0 should now succeed.
+        let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
+        assert!(
+            result.is_ok(),
+            "duplicate insert should succeed after dropping unique constraint"
+        );
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_rollback_keeps_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with unique constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: drop constraint, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // TX4: after rollback, constraint should be back — duplicates should fail.
+        let mut tx = begin_mut_tx(&datastore);
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
+        assert!(
+            dup_result.is_err(),
+            "duplicate insert should fail after rollback of drop constraint"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_merge_error_reverts_uniqueness() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row into committed state.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: insert a conflicting row in the tx state, then try adding a unique constraint.
+        // The committed table has id=1 and the tx state also has id=1.
+        // The committed index check passes (no duplicates within committed data alone),
+        // but `can_merge` should fail because tx + committed have the same key.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint should fail when tx state conflicts with committed state"
+        );
+
+        // Before rolling back, verify the merge-error revert path already restored the
+        // index to non-unique within the still-open failing tx: a further duplicate
+        // insert on the same key must succeed.
+        let pre_rollback_dup = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Dave", 19));
+        assert!(
+            pre_rollback_dup.is_ok(),
+            "index must be non-unique inside the failing tx: the merge-error path should revert `make_unique` before returning",
+        );
+
+        // Rollback and verify the index is still non-unique.
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx = begin_mut_tx(&datastore);
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            dup_result.is_ok(),
+            "index should be non-unique after merge-error rollback: duplicates must be allowed"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_rollback_restores_pointer_map_invariant() -> ResultTest<()> {
+        // Invariant (table.rs): a table holds a pointer map iff it has no unique index.
+        //
+        // Forward `drop_constraint` on a table with EXACTLY ONE unique constraint makes
+        // the backing index non-unique and rebuilds the pointer map (because no unique
+        // index remains to enforce set semantics). On rollback we must (a) restore the
+        // index to unique AND (b) drop the rebuilt pointer map — otherwise the table
+        // ends up with BOTH a unique index AND a pointer map, breaking the invariant.
+        //
+        // The schema must have exactly one unique constraint, otherwise the forward
+        // path's `!has_unique_index()` check short-circuits the rebuild and the test
+        // would pass trivially on broken code.
+        let datastore = get_datastore()?;
+
+        // TX1: create table with a single unique constraint on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let indices = vec![IndexSchema::for_test("Foo_id_idx_btree", BTreeAlgorithm::from(0))];
+        let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
+        let schema = basic_table_schema_with_indices(indices, constraints);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // Baseline: with a unique index in place there should be no pointer map.
+        {
+            let committed = datastore.committed_state.read();
+            let table = committed.tables.get(&table_id).expect("table should exist");
+            assert!(table.has_unique_index(), "baseline: table should have a unique index");
+            assert!(
+                !table.has_pointer_map(),
+                "baseline: a unique index subsumes the pointer map",
+            );
+        }
+
+        // TX2: drop the only unique constraint, then rollback. Forward drop rebuilds the
+        // pointer map; rollback must drop it.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // After rollback: the unique index must be restored AND the pointer map that the
+        // forward path rebuilt must be discarded.
+        let committed = datastore.committed_state.read();
+        let table = committed.tables.get(&table_id).expect("table should exist");
+        assert!(
+            table.has_unique_index(),
+            "rollback of drop_constraint must restore the unique index",
+        );
+        assert!(
+            !table.has_pointer_map(),
+            "rollback must discard the pointer map rebuilt by forward drop_constraint — having both a unique index and a pointer map breaks the table invariant",
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_is_idempotent_and_does_not_clobber_pending_changes() -> ResultTest<()> {
+        // `create_st_constraint` short-circuits when the exact `st_constraint` row already
+        // exists in the tx insert table (`RowRefInsertion::Existed`), and in that case does
+        // NOT push a `PendingSchemaChange`. Previously `create_constraint` would then
+        // blindly overwrite `pending_schema_changes.last_mut()`, clobbering whichever
+        // unrelated change happened to be at the end of the list.
+        //
+        // This test drives that exact scenario: run `create_constraint` once on a fresh
+        // schema, inject an unrelated marker `PendingSchemaChange` at the end of the tx
+        // pending list, then call `create_constraint` again with a byte-identical
+        // `ConstraintSchema` (same constraint_id). The second call must hit the Existed
+        // path and leave the marker untouched.
+        use super::super::tx_state::PendingSchemaChange;
+
+        let datastore = get_datastore()?;
+
+        // TX1: create table with a non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: first call — adds the constraint, makes the index unique.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint_a = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint_a.table_id = table_id;
+        let constraint_id = datastore.create_constraint_mut_tx(&mut tx, constraint_a)?;
+
+        // Inject an unrelated marker at the end of the pending-changes list.
+        // If `create_constraint` clobbers `last_mut()` on the Existed path, this marker
+        // gets overwritten with a ConstraintAdded; otherwise it stays a TableAdded.
+        tx.tx_state
+            .pending_schema_changes
+            .push(PendingSchemaChange::TableAdded(TableId::SENTINEL));
+        let expected_len = tx.tx_state.pending_schema_changes.len();
+
+        // Second call — identical ConstraintSchema with the now-known constraint_id.
+        // The row bytes match the one just inserted, so `create_st_constraint` takes the
+        // `RowRefInsertion::Existed` short-circuit and pushes nothing.
+        let mut constraint_b = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint_b.table_id = table_id;
+        constraint_b.constraint_id = constraint_id;
+        let returned_id = datastore.create_constraint_mut_tx(&mut tx, constraint_b)?;
+        assert_eq!(
+            returned_id, constraint_id,
+            "idempotent re-add must return the existing constraint id",
+        );
+
+        // Length unchanged (no new push), and — critically — the marker is still the last
+        // element (not clobbered into a ConstraintAdded).
+        assert_eq!(
+            tx.tx_state.pending_schema_changes.len(),
+            expected_len,
+            "Existed path must not push a new pending schema change",
+        );
+        assert_eq!(
+            tx.tx_state.pending_schema_changes.last(),
+            Some(&PendingSchemaChange::TableAdded(TableId::SENTINEL)),
+            "Existed path must not overwrite an unrelated trailing pending schema change",
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_fails_without_backing_index() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with ZERO indices.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(Vec::<IndexSchema>::new(), Vec::<ConstraintSchema>::new());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: try to add a unique constraint on col 0 — no backing index exists.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint must fail when no backing index covers the constrained columns"
+        );
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            err_msg.contains("requires at least one backing index"),
+            "error message should mention the missing backing index, got: {err_msg}",
+        );
+
+        // Verify no orphan st_constraint row was persisted: `constraint_id_from_name`
+        // must return `None` because pre-validation fired before `create_st_constraint`.
+        let orphan = tx.constraint_id_from_name("Foo_id_unique")?;
+        assert!(
+            orphan.is_none(),
+            "pre-validation must run before create_st_constraint; no st_constraint row may be written on failure",
         );
         Ok(())
     }
