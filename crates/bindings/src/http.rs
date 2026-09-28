@@ -98,6 +98,9 @@ pub use spacetimedb_bindings_macro::http_router as router;
 #[cfg(feature = "unstable")]
 #[non_exhaustive]
 pub struct HandlerContext {
+    /// Read-only access to this database's environment store.
+    pub env: crate::Environment,
+
     /// The time at which the handler was started.
     pub timestamp: Timestamp,
 
@@ -117,6 +120,7 @@ pub struct HandlerContext {
 impl HandlerContext {
     pub(crate) fn new(timestamp: Timestamp) -> Self {
         Self {
+            env: crate::Environment::default(),
             timestamp,
             http: HttpClient {},
             #[cfg(feature = "rand08")]

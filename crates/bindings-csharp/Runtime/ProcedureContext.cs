@@ -3,6 +3,7 @@ namespace SpacetimeDB;
 #pragma warning disable STDB_UNSTABLE
 public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 {
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public static Identity Identity => Internal.IProcedureContext.GetIdentity();
     public Identity Sender { get; }
     public ConnectionId? ConnectionId { get; }
@@ -100,6 +101,7 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
     void IRefreshableTxContext.Refresh(Internal.TxContext inner) => Refresh(inner);
 
     public LocalBase Db => (LocalBase)Inner.Db;
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Identity Sender => Inner.Sender;
     public ConnectionId? ConnectionId => Inner.ConnectionId;
     public Timestamp Timestamp => Inner.Timestamp;

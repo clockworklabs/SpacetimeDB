@@ -25,7 +25,7 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 ---
 
 ### **Getting Started**
-If you want to follow a more structured tutorial where it shows you how to set everything up, start with our [Blackholio Tutorial](https://spacetimedb.com/docs/unity/part-1).
+If you want to follow a more structured tutorial where it shows you how to set everything up, start with our [Blackholio Tutorial](https://spacetimedb.com/docs/tutorials/unity/part-1).
 
 If you just want to checkout the final project and play around a bit, follow these steps:
 
@@ -79,7 +79,7 @@ Blackholio/
 ### **Requirements**
 - **Unity**: Version `2021.2` or newer.
 - **Rust**: Version `1.65.0` or later (for the SpacetimeDB server module).
-- **SpacetimeDB CLI**: Installed via [SpacetimeDB installation guide](https://spacetimedb.com/docs/install).
+- **SpacetimeDB CLI**: Installed via [SpacetimeDB installation guide](https://spacetimedb.com/install).
 
 ---
 
