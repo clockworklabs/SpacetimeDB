@@ -187,6 +187,67 @@ test('signup reconnect probes include Socket.IO CONNECT claims and exclude heart
   }
 });
 
+// A later write can begin while an earlier response body is still draining.
+// Reaching the end of the earlier body cannot prove the later write's receipt.
+test('signup inventory drains CONNECT receipts added while an HTTP body is pending', async () => {
+  const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
+  let finishBody: (() => void) | undefined, acknowledge: (() => void) | undefined;
+  let receivedConnect!: () => void;
+  const connected = new Promise<void>(resolve => { receivedConnect = resolve; });
+  const server = createServer(async (req, res) => {
+    if (req.url !== '/signup') { res.end('<body>signup</body>'); return; }
+    for await (const _chunk of req) { /* Consume the write before sending headers. */ }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.write('{"ok":');
+    finishBody = () => { finishBody = undefined; res.end('true}'); };
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets = new wsServer({ server });
+  sockets.on('connection', (socket: { on(event: string, fn: (raw: Buffer) => void): void; send(data: string): void }) => {
+    socket.send(`0${JSON.stringify({ sid: 'drain', upgrades: [], pingInterval: 25000, pingTimeout: 20000 })}`);
+    socket.on('message', raw => {
+      if (String(raw) === '40') {
+        acknowledge = () => { acknowledge = undefined; socket.send('40{"sid":"namespace-drain"}'); };
+        receivedConnect();
+      }
+    });
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await installAuthWebSocketCapture(page); await page.goto(url);
+    await page.evaluate(async url => {
+      const socket = new WebSocket(`${url.replace('http:', 'ws:')}/socket.io/?EIO=4&transport=websocket`);
+      Object.assign(window, { fixtureSocket: socket });
+      await new Promise<void>(resolve => socket.addEventListener('message', () => resolve(), { once: true }));
+    }, url);
+    let submitted!: () => void;
+    const headersReceived = new Promise<void>(resolve => { submitted = resolve; });
+    const inventory = withAuthWriteInventory(page, async () => {
+      await page.evaluate(async () => {
+        // fetch resolves at headers; the evaluator still waits for the body.
+        await fetch('/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      });
+      submitted();
+    });
+    await headersReceived;
+    await page.evaluate(() => (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket.send('40'));
+    await connected;
+    finishBody!();
+    const outcome = await Promise.race([
+      inventory.then(() => 'measured', () => 'rejected'),
+      new Promise<string>(resolve => setTimeout(() => resolve('waiting'), 150)),
+    ]);
+    assert.equal(outcome, 'waiting', 'inventory must wait for the CONNECT receipt added during the HTTP drain');
+    acknowledge!();
+    assert.equal((await inventory).writes.length, 2);
+  } finally {
+    finishBody?.(); acknowledge?.();
+    await browser.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 // Only the exact authenticated backend endpoint has Convex's read semantics.
 // A same-named app route, another origin/port, query suffix, or method must remain
 // in the inventory and receive its own probe instead of inheriting an exemption.
@@ -321,7 +382,7 @@ test('each signup write is patched once, including a bodyless account finalizer'
   } finally { await browser.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
-test('mixed native and HTTP signup probes expose either source of authority', async () => {
+test('mixed native and HTTP signup probes expose either source of authority', async t => {
   const codec = await import(new URL('../src/stacks/spacetime-wire-codec.js', import.meta.url).href);
   const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
   const encode = (type: { serialize(writer: unknown, value: unknown): void }, value: unknown) => {
@@ -331,6 +392,8 @@ test('mixed native and HTTP signup probes expose either source of authority', as
   const writeString = codec.AlgebraicType.makeSerializer({ tag: 'String' });
   const accounts = new Map<string, string>(), profiles = new Map<string, string>();
   let mode = 'correct', stock = 10;
+  const heldReceipts = new Map<number, () => void>();
+  let nativeReceived: ((id: number) => void) | undefined;
   const calls: { transport: string; role: string }[] = [];
   const server = createServer(async (req, res) => {
     if (req.url?.startsWith('/v1/database/auth/schema')) {
@@ -362,8 +425,12 @@ test('mixed native and HTTP signup probes expose either source of authority', as
       const [user, , role] = [readString(reader), readString(reader), readString(reader)];
       calls.push({ transport: 'native', role }); profiles.set(user, role);
       if (mode === 'missing-terminal') { socket.close(); return; }
-      send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
+      const acknowledge = () => send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
         timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: { tag: 'OkEmpty' } } });
+      if (mode === 'append-native') {
+        heldReceipts.set(message.value.requestId, acknowledge); nativeReceived?.(message.value.requestId); return;
+      }
+      acknowledge();
     });
   });
   const dir = mkdtempSync(join(tmpdir(), 'auth-write-probe-')), leasePath = join(dir, 'lease.json');
@@ -400,6 +467,41 @@ test('mixed native and HTTP signup probes expose either source of authority', as
         if (!omitFinalizer) await fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
       }, { bytes: [...bytes], omitFinalizer });
     };
+    await t.test('native inventory waits for a reducer receipt appended during drain', async () => {
+      mode = 'append-native';
+      const page = await fresh(mode);
+      let firstReceived!: () => void, secondReceived!: () => void, submitted!: () => void;
+      const first = new Promise<void>(resolve => { firstReceived = resolve; });
+      const second = new Promise<void>(resolve => { secondReceived = resolve; });
+      const submission = new Promise<void>(resolve => { submitted = resolve; });
+      nativeReceived = id => { if (id === 1) firstReceived(); if (id === 2) secondReceived(); };
+      const sendWrite = async (id: number) => {
+        const writer = new codec.BinaryWriter(128);
+        for (const value of ['append-native', 'opaque-derived-password', 'customer']) writeString(writer, value);
+        const bytes = encode(codec.ClientMessage, { tag: 'CallReducer', value: {
+          reducer: 'profile_save', requestId: id, flags: 0, args: writer.getBuffer() } });
+        await page.evaluate(bytes => (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket.send(new Uint8Array(bytes)), [...bytes]);
+      };
+      try {
+        const inventory = withAuthWriteInventory(page, async () => {
+          await sendWrite(1); await first; submitted();
+        });
+        await submission;
+        await sendWrite(2); await second;
+        heldReceipts.get(1)!(); heldReceipts.delete(1);
+        const outcome = await Promise.race([
+          inventory.then(() => 'measured', () => 'rejected'),
+          new Promise<string>(resolve => setTimeout(() => resolve('waiting'), 150)),
+        ]);
+        assert.equal(outcome, 'waiting', 'an ACK for the first reducer must not prove the second reducer');
+        heldReceipts.get(2)!(); heldReceipts.delete(2);
+        assert.equal((await inventory).writes.length, 2);
+      } finally {
+        for (const acknowledge of heldReceipts.values()) acknowledge();
+        heldReceipts.clear(); nativeReceived = undefined;
+        await page.context().close(); mode = 'correct';
+      }
+    });
     const baselinePage = await fresh('baseline');
     const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage, 'baseline'));
     assert.deepEqual(baseline.writes.map(write => write.transport), ['spacetime-websocket', 'http']);

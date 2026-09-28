@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
@@ -61,10 +62,31 @@ test('signup claims grade each registration write through a fresh browser sessio
         const body=await r.json(); if(!r.ok)throw new Error(body.error); return body;
       }
       main.innerHTML='<input id="signup-username"><input id="signup-password"><button id="signup-submit">Register</button><input id="signin-username"><input id="signin-password"><button id="signin-submit">Login</button>';
+      const startup=${JSON.stringify(mode.startsWith('startup-'))}, deferred=${registrations > 0};
+      let socket, connectDone;
+      if(startup) {
+        const button=document.querySelector('#signup-submit'); button.disabled=true;
+        let opened, sent=false;
+        const opening=new Promise(resolve=>opened=resolve);
+        socket=new WebSocket(location.origin.replace('http:','ws:')+'/socket.io/?EIO=4&transport=websocket');
+        socket.onmessage=event=>{
+          if(String(event.data).startsWith('0')) { opened(); if(!deferred)socket.send('40'); }
+          if(String(event.data).startsWith('40')) {
+            button.disabled=false;
+            if(!document.querySelector('#connection-ready'))main.insertAdjacentHTML('beforeend','<span id="connection-ready">Ready</span>');
+            connectDone?.();
+          }
+        };
+        document.querySelector('#signup-username').oninput=async()=>{
+          if(deferred&&!sent) { sent=true; await opening; socket.send('40'); }
+        };
+      }
       document.querySelector('#signup-submit').onclick=async()=>{try{
         if(${JSON.stringify(mode)}==='client-reject-all')throw new Error('Registration refused');
         await post('/profile',{username:document.querySelector('#signup-username').value,password:document.querySelector('#signup-password').value});
-        show((await post('/finish')).user);
+        const created=await post('/finish');
+        if(startup)await new Promise(resolve=>{connectDone=resolve;socket.send('41');socket.send('40'+JSON.stringify({user:created.user}));});
+        show(created.user);
       }catch(e){main.insertAdjacentHTML('beforeend','<span id="auth-error">Registration refused</span>');}};
       document.querySelector('#signin-submit').onclick=async()=>{try{
         show((await post('/login',{username:document.querySelector('#signin-username').value,password:document.querySelector('#signin-password').value})).user);
@@ -72,17 +94,30 @@ test('signup claims grade each registration write through a fresh browser sessio
     </script>`);
   }).listen(0, '127.0.0.1');
   await once(server, 'listening');
+  const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
+  const sockets = new wsServer({ server });
+  sockets.on('connection', (socket: { send(value: string): void; on(event: string, callback: (value: Buffer) => void): void }) => {
+    socket.send('0'+JSON.stringify({sid: 'fixture', upgrades: [], pingInterval: 25000, pingTimeout: 20000}));
+    socket.on('message', value => {
+      const frame=String(value); if(!frame.startsWith('40'))return;
+      const claims=frame.length>2 ? JSON.parse(frame.slice(2)) : {};
+      if(mode==='startup-unsafe'&&claims.role==='admin'&&accounts.has(claims.user))accounts.set(claims.user,'admin');
+      calls.push({path:'/socket-connect',claim:claims.role??null,status:200});
+      socket.send('40'+JSON.stringify({sid:'namespace'}));
+    });
+  });
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const browser = await chromium.launch({ headless: true });
   try {
     for (const [variant, expected] of [['correct', 'passed'], ['unsafe-finalizer', 'failed'],
       ['reject-all', 'failed'], ['client-reject-all', 'failed'], ['unreached', 'inconclusive'],
-      ['missing-signout', 'failed']]) await t.test(variant!, async () => {
+      ['missing-signout', 'failed'], ['startup-safe', 'passed'], ['startup-unsafe', 'failed']]) await t.test(variant!, async () => {
       mode = variant!; stock = 0; registrations = 0; calls.length = 0; accounts.clear(); accounts.set('admin', 'admin');
       const action = { id: 'restock', path: '/restock', method: 'POST', reducer: 'restock', args: [], params: [] };
       const definition = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
         name: 'Signup write observation', features: [{ id: 103, name: 'Signup claims', actors: ['admin', 'claimant'],
-          setup: [{ do: 'signIn', actor: 'admin', name: 'admin', password: 'fixture-password', exact: true }],
+          setup: [{ do: 'signIn', actor: 'admin', name: 'admin', password: 'fixture-password', exact: true },
+            ...(mode.startsWith('startup-') ? [{ do:'expect', actor:'claimant', testid:'connection-ready' }] : [])],
           criteria: [{ id: '103b', category: 'production', desc: 'Signup claims do not grant stock authority', points: 1,
             steps: [
               { do: 'callAction', actor: 'admin', action: 'restock', namedAction: action, settleMs: 0 },
@@ -114,9 +149,14 @@ test('signup claims grade each registration write through a fresh browser sessio
         assert.equal(stock, 2, 'the grader must observe the unauthorized stored effect');
       }
       if (variant === 'correct') assert.equal(registrations, 3, 'ordinary registration plus one fresh account per write');
+      if (variant === 'startup-safe') assert.equal(registrations, 4, 'registration and reconnect remain three measured writes');
+      if (variant === 'startup-unsafe') {
+        assert(calls.some(call=>call.path==='/socket-connect'&&call.claim==='admin'));
+        assert.equal(stock, 2, 'authority-bearing reconnect after signup must still be measured');
+      }
     });
   } finally {
-    await browser.close(); server.closeAllConnections();
+    await browser.close(); sockets.close(); server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
     if (process.env.STACK_BENCH_SIGNUP_CLAIMS_EVIDENCE) writeFileSync(process.env.STACK_BENCH_SIGNUP_CLAIMS_EVIDENCE,
       `${JSON.stringify({ schemaVersion: 1, modelCalls: 0, evidence }, null, 2)}\n`);

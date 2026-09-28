@@ -8,7 +8,8 @@ import {
 } from './actor-action-runtime.js';
 import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
-import { hasAuthWriteTarget, stopAuthWriteInventory, withAuthRequestPatch, type AuthRequestPatch } from './auth-request-patch.js';
+import { captureAuthSubmit, hasAuthWriteTarget, stopAuthWriteInventory, withAuthRequestPatch, withAuthSubmitCapture,
+  type AuthRequestPatch } from './auth-request-patch.js';
 import { beginSpacetimeAuthObservation, confirmSpacetimeSignup } from '../stacks/backends/spacetime-browser-session.js';
 
 type ChatArguments<Input extends { readonly actor: string }> =
@@ -81,10 +82,14 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
       await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
         .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
     };
-    const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
-      user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
+    const run = () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal });
+    const patch = input.requestPatch;
+    const capture = (submit: () => Promise<Record<string, unknown>>) => withAuthRequestPatch(
+      actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>, user, password, patch, submit,
       browser.authRequestPatch, 'signup', undefined, targeted ? complete : undefined);
-    if (!targeted) await complete(result.requestPatch);
+    if (targeted) return withAuthSubmitCapture(actor.page, run, capture);
+    const result = await capture(run);
+    await complete(result.requestPatch);
     return result;
   }
   const username = actor.page.locator(browser.testId('signup-username')).first();
@@ -109,40 +114,42 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     inconclusive('invalid-input', { detail: 'signup input changed the requested username; use a compatible scenario account name' });
   }
   await actor.page.locator(browser.testId('signup-password')).first().fill(password);
-  const observation = beginSpacetimeAuthObservation(actor.page, 'signup', user);
-  try {
-    await actor.page.locator(browser.testId('signup-submit')).first().click();
-    if (input.expectFailure) {
-      await browser.sleep(input.settleMs ?? 2000, signal);
-      return { user, authenticationPath: 'local-form', expectedFailure: true };
-    }
-    let usedFallback = false;
-    await finishRegistration({ input, capabilities, signal }, () => {
-      usedFallback = true;
-      observation?.stop();
-      stopAuthWriteInventory(actor.page);
-    });
-    observation?.stop();
-    if (input.awaitSignedIn === false) {
-      return { user, authenticationPath: 'local-form', submitted: true };
-    }
+  return captureAuthSubmit(actor.page, async () => {
+    const observation = beginSpacetimeAuthObservation(actor.page, 'signup', user);
     try {
-      await actor.page.locator(browser.testId('current-user')).first()
-        .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
-    } catch (error) {
-      if (!input.deferAuthFailureToExpect || signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
-        || 'classification' in error || harnessBrowserFailure(error)) throw error;
-      return { user, authenticationPath: 'local-form', submitted: true };
+      await actor.page.locator(browser.testId('signup-submit')).first().click();
+      if (input.expectFailure) {
+        await browser.sleep(input.settleMs ?? 2000, signal);
+        return { user, authenticationPath: 'local-form', expectedFailure: true };
+      }
+      let usedFallback = false;
+      await finishRegistration({ input, capabilities, signal }, () => {
+        usedFallback = true;
+        observation?.stop();
+        stopAuthWriteInventory(actor.page);
+      });
+      observation?.stop();
+      if (input.awaitSignedIn === false) {
+        return { user, authenticationPath: 'local-form', submitted: true };
+      }
+      try {
+        await actor.page.locator(browser.testId('current-user')).first()
+          .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+      } catch (error) {
+        if (!input.deferAuthFailureToExpect || signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+          || 'classification' in error || harnessBrowserFailure(error)) throw error;
+        return { user, authenticationPath: 'local-form', submitted: true };
+      }
+      const correctUser = (await actor.loc('current-user').innerText()).includes(user);
+      await observation?.finish(true, correctUser);
+      if (correctUser && usedFallback) confirmSpacetimeSignup(actor.page, user);
+      return input.deferAuthFailureToExpect
+        ? { user, authenticationPath: 'local-form', submitted: true }
+        : { user, authenticationPath: 'local-form', signedUp: true };
+    } finally {
+      observation?.discard();
     }
-    const correctUser = (await actor.loc('current-user').innerText()).includes(user);
-    await observation?.finish(true, correctUser);
-    if (correctUser && usedFallback) confirmSpacetimeSignup(actor.page, user);
-    return input.deferAuthFailureToExpect
-      ? { user, authenticationPath: 'local-form', submitted: true }
-      : { user, authenticationPath: 'local-form', signedUp: true };
-  } finally {
-    observation?.discard();
-  }
+  });
 }
 
 async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false): Promise<Record<string, unknown>> {

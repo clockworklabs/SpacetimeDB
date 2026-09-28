@@ -29,6 +29,31 @@ const writeStops = new WeakMap<object, () => void>();
 export const hasAuthWriteTarget = (page: object): boolean => writeTargets.has(page);
 export const stopAuthWriteInventory = (page: object): void => writeStops.get(page)?.();
 
+type AuthSubmit = () => Promise<Record<string, unknown>>;
+const submitCaptures = new WeakMap<object, { used: boolean; capture: (submit: AuthSubmit) => ReturnType<AuthSubmit> }>();
+
+// Registered signup prepares the form before it consumes this one-shot hook.
+// Direct capture helpers retain their immediate capture boundary.
+export async function withAuthSubmitCapture<T>(page: object, run: () => Promise<T>,
+  capture: (submit: AuthSubmit) => ReturnType<AuthSubmit>): Promise<T> {
+  if (submitCaptures.has(page)) throw new Error('Authentication submit capture is already active');
+  const hook = { used: false, capture };
+  submitCaptures.set(page, hook);
+  try {
+    const result = await run();
+    if (!hook.used) throw new Error('Authentication submit capture was not reached');
+    return result;
+  } finally { submitCaptures.delete(page); }
+}
+
+export async function captureAuthSubmit(page: object, submit: AuthSubmit): ReturnType<AuthSubmit> {
+  const hook = submitCaptures.get(page);
+  if (!hook) return submit();
+  if (hook.used) throw new Error('Authentication submit capture was already consumed');
+  hook.used = true;
+  return hook.capture(submit);
+}
+
 export async function withAuthWriteTarget<T>(page: object, target: AuthWriteTarget, submit: () => Promise<T>): Promise<T> {
   if (writeTargets.has(page)) throw new Error('Authentication write target is already active');
   writeTargets.set(page, target);
@@ -463,7 +488,15 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     const drain = async () => {
       let drainTimer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await Promise.race([Promise.all([...pending, native?.finish()]), new Promise<void>(resolve => {
+        const receipts = async () => {
+          let consumed = 0;
+          do {
+            const batch = pending.slice(consumed);
+            consumed = pending.length;
+            await Promise.all([...batch, native?.finish()]);
+          } while (!failed && consumed < pending.length);
+        };
+        await Promise.race([receipts(), new Promise<void>(resolve => {
           drainTimer = setTimeout(() => { fail(); resolve(); }, 10_000);
         })]);
       } finally { clearTimeout(drainTimer); }

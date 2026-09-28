@@ -417,7 +417,14 @@ export async function startSpacetimeAuthWriteCapture(page: object,
     stop: () => { stopped = true; },
     finish: async () => {
       timer = setTimeout(fail, 10_000);
-      try { await Promise.all(pending); } finally { clearTimeout(timer); }
+      try {
+        let consumed = 0;
+        do {
+          const batch = pending.slice(consumed);
+          consumed = pending.length;
+          await Promise.all(batch);
+        } while (consumed < pending.length);
+      } finally { clearTimeout(timer); }
     },
     dispose: () => {
       clearTimeout(timer); capture.auth = undefined; capture.authResult = undefined; capture.authProcedure = undefined;
