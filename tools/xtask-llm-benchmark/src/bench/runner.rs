@@ -428,7 +428,7 @@ impl TaskRunner {
             hash: cfg.hash.to_string(),
             task: task_id.clone(),
             lang: cfg.lang_name.to_string(),
-            model_name: cfg.route.display_name.to_string(),
+            model_name: cfg.route.model_id(),
             vendor: cfg.route.vendor.slug().to_string(),
             golden_published: publish_error.is_none(),
             total_tests: total_tasks as u32,
@@ -1261,7 +1261,7 @@ fn build_fail_outcome(
         golden_published: false,
         category: Some(category),
 
-        model_name: route.display_name.to_string(),
+        model_name: route.model_id(),
         total_tests: 1,
         passed_tests: 0,
 
