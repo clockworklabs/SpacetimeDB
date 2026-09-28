@@ -649,6 +649,7 @@ namespace SpacetimeDB
 
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
+        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public readonly Identity Sender;
         public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
@@ -731,6 +732,7 @@ namespace SpacetimeDB
 
     public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal ProcedureContext(
@@ -809,6 +811,7 @@ namespace SpacetimeDB
 
     public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal HandlerContext(Random random, Timestamp time)
@@ -849,6 +852,8 @@ namespace SpacetimeDB
 
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
+
         internal ProcedureTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -858,6 +863,8 @@ namespace SpacetimeDB
     [Experimental("STDB_UNSTABLE")]
     public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
+
         internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -892,6 +899,7 @@ namespace SpacetimeDB
     {
         public Identity Sender { get; }
 
+        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal ViewContext(Identity sender, Internal.LocalReadOnly db)
@@ -905,6 +913,7 @@ namespace SpacetimeDB
         : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
+        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal AnonymousViewContext(Internal.LocalReadOnly db)
@@ -2101,7 +2110,7 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             >().GetAlgebraicType(registrar)
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2151,7 +2160,7 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2195,7 +2204,7 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2237,7 +2246,7 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2279,7 +2288,7 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2319,7 +2328,7 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
             ReturnType: new Player.BSATN().GetAlgebraicType(registrar)
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2360,7 +2369,7 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2405,7 +2414,7 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2450,7 +2459,7 @@ sealed class view_primary_key_missing_columnViewDispatcher : global::SpacetimeDB
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2494,7 +2503,7 @@ sealed class view_primary_key_non_equatable_columnViewDispatcher
             >().GetAlgebraicType(registrar)
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2543,7 +2552,7 @@ sealed class view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher
             >().GetAlgebraicType(registrar)
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2594,7 +2603,7 @@ sealed class view_primary_key_uses_wrong_source_nameViewDispatcher
             >().GetAlgebraicType(registrar)
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2643,7 +2652,7 @@ sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Inte
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2688,7 +2697,7 @@ sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Inter
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2733,7 +2742,7 @@ sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnon
             )
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2780,7 +2789,7 @@ sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
             >().GetAlgebraicType(registrar)
         );
 
-    public byte[] Invoke(
+    public static byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -3210,7 +3219,16 @@ namespace SpacetimeDB.Internal
 
 static class ModuleRegistration
 {
-    class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
+    // Module host calls are single-threaded in Wasm today, so the generated
+    // entrypoints reuse buffers across calls to avoid per-invocation allocation.
+    private static byte[] reducerArgsBuffer = new byte[0x10_000];
+    private static byte[] procedureArgsBuffer = new byte[0x10_000];
+    private static byte[] httpRequestBuffer = new byte[0x10_000];
+    private static byte[] httpRequestBodyBuffer = new byte[0x10_000];
+    private static byte[] viewArgsBuffer = new byte[0x10_000];
+    private static byte[] anonymousViewArgsBuffer = new byte[0x10_000];
+
+    sealed class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3225,13 +3243,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.__ReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
-    class DummyScheduledReducer : SpacetimeDB.Internal.IReducer
+    sealed class DummyScheduledReducer : SpacetimeDB.Internal.IReducer
     {
         private static readonly TestScheduleIssues.BSATN tableRW = new();
 
@@ -3248,7 +3266,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             TestScheduleIssues.DummyScheduledReducer(
                 (SpacetimeDB.ReducerContext)ctx,
@@ -3257,7 +3275,7 @@ static class ModuleRegistration
         }
     }
 
-    class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
+    sealed class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3272,13 +3290,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.OnReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
-    class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
+    sealed class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3293,13 +3311,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
-    class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
+    sealed class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3314,13 +3332,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerKind2((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
-    class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
+    sealed class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3335,13 +3353,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
-    class TestReducerReturnType : SpacetimeDB.Internal.IReducer
+    sealed class TestReducerReturnType : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3356,13 +3374,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestReducerReturnType((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
-    class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
+    sealed class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3377,7 +3395,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             throw new System.InvalidOperationException();
         }
@@ -3395,10 +3413,7 @@ static class ModuleRegistration
     [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
 #else
     // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-    [DynamicDependency(
-        DynamicallyAccessedMemberTypes.PublicMethods,
-        typeof(SpacetimeDB.Internal.Module)
-    )]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(ModuleRegistration))]
 #endif
     public static void Main()
     {
@@ -3737,13 +3752,780 @@ static class ModuleRegistration
         }
     }
 
-    // Exports only work from the main assembly, so we need to generate forwarding methods.
+    // Export entrypoints live in generated module code so all build modes can
+    // dispatch directly to concrete generated functions.
 #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
+#endif
     public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) =>
         SpacetimeDB.Internal.Module.__describe_module__(d);
 
+    private static SpacetimeDB.Internal.Errno __call_reducer_0(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            __ReducerWithReservedPrefix.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_1(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            DummyScheduledReducer.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_2(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            OnReducerWithReservedPrefix.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_3(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestDuplicateReducerKind1.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_4(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestDuplicateReducerKind2.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_5(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestDuplicateReducerName.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_6(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestReducerReturnType.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_7(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestReducerWithoutContext.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_0(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_ienumerable_return_from_filterViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_1(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_ienumerable_return_from_iterViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_2(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_no_contextViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_3(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_no_publicViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_4(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_wrong_contextViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_5(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_wrong_returnViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_6(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_no_deleteViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_7(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_no_insertViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_8(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_primary_key_missing_columnViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_9(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_primary_key_non_equatable_columnViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_10(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher.Invoke(
+                reader,
+                ctx
+            );
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_11(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateViewContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(args, ref viewArgsBuffer);
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_primary_key_uses_wrong_source_nameViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_anon_0(
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateAnonymousViewContext();
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref anonymousViewArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_index_no_mutationViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking anonymous view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_anon_1(
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateAnonymousViewContext();
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref anonymousViewArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_no_anon_identityViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking anonymous view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_anon_2(
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateAnonymousViewContext();
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref anonymousViewArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_no_iterViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking anonymous view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_view_anon_3(
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateAnonymousViewContext();
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref anonymousViewArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            var bytes = view_def_returns_not_a_spacetime_typeViewDispatcher.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.WriteBytes(sink, bytes);
+            return (SpacetimeDB.Internal.Errno)2;
+        }
+        catch (System.Exception e)
+        {
+            SpacetimeDB.Log.Error($"Error while invoking anonymous view: {e}");
+            return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
+#endif
     public static SpacetimeDB.Internal.Errno __call_reducer__(
         int id,
         ulong sender_0,
@@ -3756,20 +4538,114 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink error
     ) =>
-        SpacetimeDB.Internal.Module.__call_reducer__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            conn_id_0,
-            conn_id_1,
-            timestamp,
-            args,
-            error
-        );
+        id switch
+        {
+            0
+                => __call_reducer_0(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            1
+                => __call_reducer_1(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            2
+                => __call_reducer_2(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            3
+                => __call_reducer_3(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            4
+                => __call_reducer_4(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            5
+                => __call_reducer_5(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            6
+                => __call_reducer_6(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            7
+                => __call_reducer_7(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            _
+                => SpacetimeDB.Internal.Module.WriteReducerError(
+                    error,
+                    new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown reducer id")
+                )
+        };
 
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
+#endif
     public static SpacetimeDB.Internal.Errno __call_procedure__(
         int id,
         ulong sender_0,
@@ -3782,20 +4658,19 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink result_sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_procedure__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            conn_id_0,
-            conn_id_1,
-            timestamp,
-            args,
-            result_sink
-        );
+        id switch
+        {
+            _
+                => throw new System.ArgumentOutOfRangeException(
+                    nameof(id),
+                    id,
+                    "Unknown procedure id"
+                )
+        };
 
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
+#endif
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
         int id,
         SpacetimeDB.Timestamp timestamp,
@@ -3804,16 +4679,19 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSink response_sink,
         SpacetimeDB.Internal.BytesSink response_body_sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_http_handler__(
-            id,
-            timestamp,
-            request,
-            request_body,
-            response_sink,
-            response_body_sink
-        );
+        id switch
+        {
+            _
+                => throw new System.ArgumentOutOfRangeException(
+                    nameof(id),
+                    id,
+                    "Unknown HTTP handler id"
+                )
+        };
 
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
+#endif
     public static SpacetimeDB.Internal.Errno __call_view__(
         int id,
         ulong sender_0,
@@ -3823,23 +4701,51 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_view__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            args,
-            sink
-        );
+        id switch
+        {
+            0 => __call_view_0(sender_0, sender_1, sender_2, sender_3, args, sink),
+            1 => __call_view_1(sender_0, sender_1, sender_2, sender_3, args, sink),
+            2 => __call_view_2(sender_0, sender_1, sender_2, sender_3, args, sink),
+            3 => __call_view_3(sender_0, sender_1, sender_2, sender_3, args, sink),
+            4 => __call_view_4(sender_0, sender_1, sender_2, sender_3, args, sink),
+            5 => __call_view_5(sender_0, sender_1, sender_2, sender_3, args, sink),
+            6 => __call_view_6(sender_0, sender_1, sender_2, sender_3, args, sink),
+            7 => __call_view_7(sender_0, sender_1, sender_2, sender_3, args, sink),
+            8 => __call_view_8(sender_0, sender_1, sender_2, sender_3, args, sink),
+            9 => __call_view_9(sender_0, sender_1, sender_2, sender_3, args, sink),
+            10 => __call_view_10(sender_0, sender_1, sender_2, sender_3, args, sink),
+            11 => __call_view_11(sender_0, sender_1, sender_2, sender_3, args, sink),
+            _ => UnknownViewId(id)
+        };
 
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
+#endif
     public static SpacetimeDB.Internal.Errno __call_view_anon__(
         int id,
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink sink
-    ) => SpacetimeDB.Internal.Module.__call_view_anon__(id, args, sink);
-#endif
+    ) =>
+        id switch
+        {
+            0 => __call_view_anon_0(args, sink),
+            1 => __call_view_anon_1(args, sink),
+            2 => __call_view_anon_2(args, sink),
+            3 => __call_view_anon_3(args, sink),
+            _ => UnknownAnonymousViewId(id)
+        };
+
+    private static SpacetimeDB.Internal.Errno UnknownViewId(int id)
+    {
+        SpacetimeDB.Log.Error($"Unknown view id: {id}");
+        return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+    }
+
+    private static SpacetimeDB.Internal.Errno UnknownAnonymousViewId(int id)
+    {
+        SpacetimeDB.Log.Error($"Unknown anonymous view id: {id}");
+        return SpacetimeDB.Internal.Errno.HOST_CALL_FAILURE;
+    }
 }
 
 #pragma warning restore STDB_UNSTABLE

@@ -105,6 +105,7 @@ pub enum Workload {
     Subscribe,
     Unsubscribe,
     Update,
+    Procedure,
     Internal,
 }
 
@@ -131,6 +132,7 @@ impl Workload {
             Self::Subscribe => WorkloadType::Subscribe,
             Self::Unsubscribe => WorkloadType::Unsubscribe,
             Self::Update => WorkloadType::Update,
+            Self::Procedure => WorkloadType::Procedure,
             Self::Internal => WorkloadType::Internal,
         }
     }
@@ -174,6 +176,7 @@ impl ExecutionContext {
             Workload::Subscribe => Self::new(database, None, WorkloadType::Subscribe),
             Workload::Unsubscribe => Self::new(database, None, WorkloadType::Unsubscribe),
             Workload::Update => Self::new(database, None, WorkloadType::Update),
+            Workload::Procedure => Self::new(database, None, WorkloadType::Procedure),
         }
     }
 

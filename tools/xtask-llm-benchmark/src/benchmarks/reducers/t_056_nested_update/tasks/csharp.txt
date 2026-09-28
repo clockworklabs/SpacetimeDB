@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in C# that stores and updates nested profile preferences.
+
+TYPES
+- Preferences
+  - Theme: string
+  - EmailNotifications: bool
+  - Timezone: string
+
+TABLE
+- Profile (public, accessor Profile)
+  - Fields:
+    - Id: ulong (primary key)
+    - Preferences: Preferences
+
+REDUCERS
+- CreateProfile(id: ulong, theme: string, emailNotifications: bool, timezone: string)
+  - Insert a Profile with all three preference fields
+- UpdateTheme(id: ulong, theme: string)
+  - Change only Preferences.Theme
+  - Preserve Preferences.EmailNotifications and Preferences.Timezone

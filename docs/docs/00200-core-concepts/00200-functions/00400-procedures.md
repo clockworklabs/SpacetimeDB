@@ -23,7 +23,7 @@ For this reason, prefer defining reducers rather than procedures unless you need
 Define a procedure with `spacetimedb.procedure`:
 
 ```typescript
-export const add_two_numbers = spacetimedb.procedure(
+export const addTwoNumbers = spacetimedb.procedure(
     { lhs: t.u32(), rhs: t.u32() },
     t.u64(),
     (ctx, { lhs, rhs }) => BigInt(lhs) + BigInt(rhs),
@@ -31,14 +31,15 @@ export const add_two_numbers = spacetimedb.procedure(
 ```
 
 The `spacetimedb.procedure` function takes:
-* the procedure name,
-* (optional) an object representing its parameter types,
+* optional procedure options, such as `onSchedule`,
+* an optional object representing its parameter types,
 * its return type,
 * and the procedure function itself.
 
-The function will receive a `ProcedureContext` and an object of its arguments, and it must return
-a value corresponding to its return type. This return value will be sent to the caller, but will
-not be broadcast to any other clients.
+The exported value's name becomes the procedure name. The callback receives a `ProcedureContext`
+and, when the procedure has parameters, an object of its arguments. It must return a value
+corresponding to its return type. This return value will be sent to the caller, but will not be
+broadcast to any other clients.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -235,8 +236,8 @@ struct MyTable {
 
 #[spacetimedb::procedure]
 fn insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
-    ctx.with_tx(|ctx| {
-        ctx.my_table().insert(MyTable { a, b });
+    ctx.with_tx(|tx| {
+        tx.db.my_table().insert(MyTable { a, b });
     });
 }
 ```
@@ -368,11 +369,11 @@ For fallible database operations, instead use `ProcedureContext::try_with_tx`:
 ```rust
 #[spacetimedb::procedure]
 fn maybe_insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
-    ctx.try_with_tx(|ctx| {
+    ctx.try_with_tx(|tx| {
         if a < 10 {
             return Err("a is less than 10!");
         }
-        ctx.my_table().insert(MyTable { a, b });
+        tx.db.my_table().insert(MyTable { a, b });
         Ok(())
     });
 }
@@ -439,7 +440,7 @@ const player = table(
 const spacetimedb = schema({ player });
 export default spacetimedb;
 
-export const find_highest_level_player = spacetimedb.procedure(t.unit(), ctx => {
+export const findHighestLevelPlayer = spacetimedb.procedure(t.unit(), ctx => {
     let highestLevelPlayer = ctx.withTx(ctx =>
         Iterator.from(ctx.db.player).reduce(
             (a, b) => a == null || b.level > a.level ? b : a,
@@ -589,7 +590,7 @@ Procedures can make HTTP requests to external services using methods contained i
 It can perform simple `GET` requests:
 
 ```typescript
-export const get_request = spacetimedb.procedure(t.unit(), ctx => {
+export const getRequest = spacetimedb.procedure(t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid");
         const body = response.text();
@@ -604,7 +605,7 @@ export const get_request = spacetimedb.procedure(t.unit(), ctx => {
 It can also accept an options object to specify a body, headers, HTTP method, and timeout:
 
 ```typescript
-export const post_request = spacetimedb.procedure(t.unit(), ctx => {
+export const postRequest = spacetimedb.procedure(t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid/upload", {
             method: "POST",
@@ -619,7 +620,7 @@ export const post_request = spacetimedb.procedure(t.unit(), ctx => {
     return {};
 });
 
-export const get_request_with_short_timeout = spacetimedb.procedure(t.unit(), ctx => {
+export const getRequestWithShortTimeout = spacetimedb.procedure(t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid", {
             method: "GET",
@@ -892,7 +893,7 @@ export const processItem = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { item
 });
 
 // Call it from a procedure using the saved reference
-export const fetch_and_process = spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
+export const fetchAndProcess = spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
   // Fetch external data
   const response = ctx.http.fetch(url);
   const data = response.json();

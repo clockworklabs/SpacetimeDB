@@ -22,9 +22,6 @@ public interface IReducer
 
     Lifecycle? Lifecycle { get; }
 
-    // This one is not static because we need to be able to store IReducer in a list.
-    void Invoke(BinaryReader reader, IReducerContext args);
-
     public static void VolatileNonatomicScheduleImmediate(string name, MemoryStream args)
     {
         var name_bytes = Encoding.UTF8.GetBytes(name);

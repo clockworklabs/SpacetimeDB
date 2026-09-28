@@ -186,3 +186,60 @@ describe('readUInt8Array buffer ownership', () => {
     expect(value).toBe('héllo ☃');
   });
 });
+
+describe('writeString', () => {
+  // BSATN layout for `string`: u32 byte length (LE) followed by UTF-8 bytes.
+  const expected = (value: string): number[] => {
+    const utf8 = new TextEncoder().encode(value);
+    return [
+      utf8.length & 0xff,
+      (utf8.length >> 8) & 0xff,
+      (utf8.length >> 16) & 0xff,
+      (utf8.length >> 24) & 0xff,
+      ...utf8,
+    ];
+  };
+  const written = (value: string, initialCapacity = 8): number[] => {
+    const writer = new BinaryWriter(initialCapacity);
+    writer.writeString(value);
+    return [...writer.getBuffer()];
+  };
+
+  test.each([
+    ['empty', ''],
+    ['ascii', 'hello world'],
+    ['ascii at the fast-path boundary', '\x7f'],
+    ['latin-1', 'héllo'],
+    ['cjk', '日本語'],
+    ['astral (surrogate pair)', 'emoji 🎉 mix'],
+    ['ascii prefix then non-ascii', 'ascii then ÿ'],
+    ['long ascii', 'x'.repeat(10_000)],
+    ['long non-ascii', 'ü'.repeat(10_000)],
+  ])('%s encodes like TextEncoder', (_name, value) => {
+    expect(written(value)).toEqual(expected(value));
+  });
+
+  test('grows the buffer from a tiny initial capacity', () => {
+    expect(written('hello world', 1)).toEqual(expected('hello world'));
+    expect(written('héllo', 1)).toEqual(expected('héllo'));
+  });
+
+  test('round-trips through readString', () => {
+    for (const value of ['', 'plain', 'héllo ☃', '🎉'.repeat(100)]) {
+      const writer = new BinaryWriter(4);
+      writer.writeString(value);
+      expect(new BinaryReader(writer.getBuffer()).readString()).toBe(value);
+    }
+  });
+
+  test('consecutive writes stay contiguous', () => {
+    const writer = new BinaryWriter(4);
+    writer.writeString('ab');
+    writer.writeString('ç');
+    writer.writeU8(7);
+    const reader = new BinaryReader(writer.getBuffer());
+    expect(reader.readString()).toBe('ab');
+    expect(reader.readString()).toBe('ç');
+    expect(reader.readU8()).toBe(7);
+  });
+});

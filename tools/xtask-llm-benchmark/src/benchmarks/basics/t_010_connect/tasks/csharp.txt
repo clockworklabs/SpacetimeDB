@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines one table and two reducers for client lifecycle events.
 
 TABLE
-- Event
+- Event (private)
   - Struct: Event
   - Fields:
     - Id: int (primary key, auto-increment)

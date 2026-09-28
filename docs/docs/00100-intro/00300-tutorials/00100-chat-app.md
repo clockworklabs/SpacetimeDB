@@ -387,7 +387,7 @@ function validateName(name: string) {
   }
 }
 
-export const set_name = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+export const setName = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
   if (!user) {
@@ -504,7 +504,7 @@ function validateMessage(text: string) {
   }
 }
 
-export const send_message = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
+export const sendMessage = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   validateMessage(text);
   console.info(`User ${ctx.sender}: ${text}`);
   ctx.db.message.insert({
@@ -1784,7 +1784,7 @@ var input_queue = new ConcurrentQueue<(string Command, string Args)>();
 
 We'll work outside-in, first defining our `Main` function at a high level, then implementing each behavior it needs. We need `Main` to do several things:
 
-1. Initialize the `AuthToken` module, which loads and stores our authentication token to/from local storage.
+1. Initialize the `AuthToken` module, which loads and stores our authentication token in a local file.
 2. Connect to the database.
 3. Register a number of callbacks to run in response to various database events.
 4. Start our processing thread which connects to the SpacetimeDB database, updates the SpacetimeDB client and processes commands that come in from the input loop running in the main thread.
@@ -1860,7 +1860,7 @@ DbConnection ConnectToDB()
 
 SpacetimeDB will accept any [OpenID Connect](https://openid.net/developers/how-connect-works/) compliant [JSON Web Token](https://jwt.io/) and use it to compute an `Identity` for the user. More complex applications will generally authenticate their user somehow, generate or retrieve a token, and attach it to their connection via `WithToken`. In our case, though, we'll connect anonymously the first time, let SpacetimeDB generate a fresh `Identity` and corresponding JWT for us, and save that token locally to re-use the next time we connect.
 
-Once we are connected, we'll use the `AuthToken` module to save our token to local storage, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change. This callback also notifies us of our client's `Address`, an opaque identifier SpacetimeDB modules can use to distinguish connections by the same `Identity`, but we won't use it in our app.
+Once we are connected, we'll use the `AuthToken` module to save our token locally, so that we can re-authenticate as the same user the next time we connect. We'll also store the identity in a global variable `local_identity` so that we can use it to check if we are the sender of a message or name change. If you need an opaque identifier for this specific connection, read `conn.ConnectionId`.
 
 To `Program.cs`, add:
 

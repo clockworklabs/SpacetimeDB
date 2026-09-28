@@ -95,7 +95,7 @@ public sealed class HttpRequest
     /// Optional timeout for the request.
     /// </summary>
     /// <remarks>
-    /// The SpacetimeDB host clamps all timeouts to a maximum of 500ms.
+    /// The SpacetimeDB host clamps all timeouts to a maximum of 180 seconds.
     /// </remarks>
     public TimeSpan? Timeout { get; init; }
 }
@@ -143,7 +143,7 @@ public sealed class HttpError(string message) : Exception(message)
 /// </para>
 ///
 /// <para>
-/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 500ms.
+/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 180 seconds.
 /// </para>
 ///
 /// <para>
@@ -154,7 +154,7 @@ public sealed class HttpError(string message) : Exception(message)
 /// </remarks>
 public sealed class HttpClient
 {
-    private static readonly TimeSpan MaxTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(180);
     private static byte[] responseWireBuffer = new byte[0x10_000];
     private static byte[] responseBodyBuffer = new byte[0x10_000];
     private static byte[] errorWireBuffer = new byte[0x10_000];
@@ -164,7 +164,7 @@ public sealed class HttpClient
     /// </summary>
     /// <param name="uri">The request URI.</param>
     /// <param name="timeout">
-    /// Optional timeout for the request. The host clamps timeouts to a maximum of 500ms.
+    /// Optional timeout for the request. The host clamps timeouts to a maximum of 180 seconds.
     /// </param>
     /// <returns>
     /// <c>Ok(HttpResponse)</c> when a response was received (regardless of HTTP status code),
@@ -294,7 +294,7 @@ public sealed class HttpClient
                 );
             }
 
-            // The host clamps all HTTP timeouts to a maximum of 500ms.
+            // The host clamps all HTTP timeouts to a maximum of 180 seconds.
             // Clamp here as well to keep C# behavior aligned with the Rust docs and to reduce surprises.
             var timeout = request.Timeout;
             if (timeout is not null)

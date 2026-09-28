@@ -47,6 +47,7 @@ pub struct PublishParams<'a> {
     pub source_text: &'a str,
     pub db_name: String,
     pub host: Option<String>,
+    pub clear_database: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -134,6 +135,8 @@ pub struct RouteRun {
 pub enum RunOneError {
     #[error("{msg}")]
     WithOutput { msg: String, llm_output: String },
+    #[error("{msg}")]
+    Infrastructure { msg: String, llm_output: Option<String> },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

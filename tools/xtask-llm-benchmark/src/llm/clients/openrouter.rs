@@ -6,9 +6,9 @@ use super::http::HttpClient;
 use super::oa_compat::OACompatResp;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    desired_output_tokens, deterministic_trim_prefix, non_context_reserve_tokens_env, Segment,
+    deterministic_trim_prefix, non_context_reserve_tokens_env, output_token_limit_env, Segment,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 const OPENROUTER_BASE: &str = "https://openrouter.ai/api/v1";
 
@@ -162,7 +162,7 @@ impl OpenRouterClient {
         Ok(())
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
 
         let system = prompt.system.clone();
@@ -183,6 +183,7 @@ impl OpenRouterClient {
             model: &'a str,
             messages: Vec<Msg<'a>>,
             temperature: f32,
+            reasoning: ReasoningConfig,
             #[serde(skip_serializing_if = "Option::is_none")]
             top_p: Option<f32>,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -193,6 +194,11 @@ impl OpenRouterClient {
         struct Msg<'a> {
             role: &'a str,
             content: &'a str,
+        }
+
+        #[derive(Serialize)]
+        struct ReasoningConfig {
+            effort: ReasoningEffort,
         }
 
         let mut messages: Vec<Msg> = Vec::new();
@@ -218,13 +224,13 @@ impl OpenRouterClient {
             });
         }
 
-        let max_tokens = desired_output_tokens().max(1) as u32;
         let req = Req {
             model,
             messages,
             temperature: 0.0,
+            reasoning: ReasoningConfig { effort: reasoning },
             top_p: None,
-            max_tokens: Some(max_tokens),
+            max_tokens: output_token_limit_env().map(|limit| limit.max(1) as u32),
         };
 
         let auth = HttpClient::bearer(&self.api_key);

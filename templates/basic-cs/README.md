@@ -113,5 +113,5 @@ spacetime logs
 
 ## Next steps
 
-- See the [Chat App Tutorial](https://spacetimedb.com/docs/intro/tutorials/chat-app) for a complete example
-- Read the [C# SDK Reference](https://spacetimedb.com/docs/intro/core-concepts/clients/csharp-reference) for detailed API docs
+- See the [Chat App Tutorial](https://spacetimedb.com/docs/tutorials/chat-app) for a complete example
+- Read the [C# SDK Reference](https://spacetimedb.com/docs/clients/c-sharp) for detailed API docs

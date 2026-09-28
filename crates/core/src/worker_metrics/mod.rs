@@ -67,12 +67,14 @@ pub enum ClientDisconnectCause {
     WebsocketSendError,
     /// The websocket receive stream ended without a more specific cause.
     WebsocketStreamEnded,
+    /// A newer connection for the same client session superseded this one.
+    ConnectionSuperseded,
     /// The accepted websocket actor ended without a more specific recorded cause.
     Unknown,
 }
 
 impl ClientDisconnectCause {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::ClientClose,
         Self::IdleTimeout,
         Self::IncomingQueueFull,
@@ -94,6 +96,7 @@ impl ClientDisconnectCause {
         Self::WebsocketReceiveHttpFormat,
         Self::WebsocketSendError,
         Self::WebsocketStreamEnded,
+        Self::ConnectionSuperseded,
         Self::Unknown,
     ];
 
@@ -120,6 +123,7 @@ impl ClientDisconnectCause {
             Self::WebsocketReceiveHttpFormat => "websocket_receive_http_format",
             Self::WebsocketSendError => "websocket_send_error",
             Self::WebsocketStreamEnded => "websocket_stream_ended",
+            Self::ConnectionSuperseded => "connection_superseded",
             Self::Unknown => "unknown",
         }
     }
@@ -191,9 +195,38 @@ pub fn record_module_host_init_attempt(database_identity: Identity) {
         .inc();
 }
 
-pub fn record_module_host_init_failure(database_identity: Identity) {
+/// Causes of module host initialization failure.
+///
+/// These values are metric labels, so changes may require changes to dashboards and alerting rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ModuleHostInitFailureCause {
+    /// The module's init reducer ran out of energy.
+    OutOfEnergy,
+    /// Any failure not covered by a more specific cause.
+    Other,
+}
+
+impl ModuleHostInitFailureCause {
+    pub const ALL: [Self; 2] = [Self::OutOfEnergy, Self::Other];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OutOfEnergy => "out_of_energy",
+            Self::Other => "other",
+        }
+    }
+}
+
+pub fn record_module_host_init_failure(database_identity: Identity, cause: ModuleHostInitFailureCause) {
     WORKER_METRICS
         .module_host_init_failures
+        .with_label_values(&database_identity, cause.as_str())
+        .inc();
+}
+
+pub fn record_module_host_unexpected_exit(database_identity: Identity) {
+    WORKER_METRICS
+        .module_host_unexpected_exits
         .with_label_values(&database_identity)
         .inc();
 }
@@ -253,6 +286,11 @@ metrics_group!(
         #[help = "The cumulative number of ws client connections disconnected after becoming idle"]
         #[labels(database_identity: Identity)]
         pub ws_clients_idle_timed_out: IntCounterVec,
+
+        #[name = spacetime_worker_ws_clients_session_busy_total]
+        #[help = "The cumulative number of ws connections refused because their session was still held by a connection being torn down"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_session_busy: IntCounterVec,
 
         // Compatibility counters above continue to be emitted for existing dashboards.
         // Accepted-client disconnection `cause` label values are:
@@ -518,8 +556,13 @@ metrics_group!(
 
         #[name = spacetime_module_host_init_failures_total]
         #[help = "The cumulative number of failed module host initialization attempts"]
-        #[labels(database_identity: Identity)]
+        #[labels(database_identity: Identity, cause: str)]
         pub module_host_init_failures: IntCounterVec,
+
+        #[name = spacetime_module_host_unexpected_exits_total]
+        #[help = "The cumulative number of unexpected module host exits"]
+        #[labels(database_identity: Identity)]
+        pub module_host_unexpected_exits: IntCounterVec,
 
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
@@ -539,6 +582,11 @@ metrics_group!(
         #[labels(db: Identity, function: str)]
         #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
         pub scheduled_function_delay: HistogramVec,
+
+        #[name = spacetime_scheduler_active_scheduled_functions]
+        #[help = "The number of scheduled functions dispatched by the scheduler and not yet completed"]
+        #[labels(db: Identity)]
+        pub scheduler_active_scheduled_functions: IntGaugeVec,
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
@@ -753,7 +801,7 @@ pub fn spawn_bsatn_rlb_pool_stats(node_id: String, pool: BsatnRowListBuilderPool
 // but it is simpler to just skip all the tokio metrics if they aren't set.
 #[cfg(not(all(target_has_atomic = "64", tokio_unstable)))]
 pub fn spawn_tokio_stats(node_id: String, _: String, _: tokio::runtime::Handle) {
-    log::warn!("Skipping tokio metrics for {node_id}, as they are not enabled in this build.");
+    log::info!("Skipping tokio metrics for {node_id}, as they are not enabled in this build.");
 }
 
 #[cfg(all(target_has_atomic = "64", tokio_unstable))]
@@ -895,6 +943,22 @@ mod tests {
     fn client_disconnect_cause_labels_are_unique() {
         let mut labels = HashSet::new();
         for cause in ClientDisconnectCause::ALL {
+            assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
+        }
+    }
+
+    #[test]
+    fn client_reject_cause_labels_are_unique() {
+        let mut labels = HashSet::new();
+        for cause in ClientRejectCause::ALL {
+            assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
+        }
+    }
+
+    #[test]
+    fn module_host_init_failure_cause_labels_are_unique() {
+        let mut labels = HashSet::new();
+        for cause in ModuleHostInitFailureCause::ALL {
             assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
         }
     }

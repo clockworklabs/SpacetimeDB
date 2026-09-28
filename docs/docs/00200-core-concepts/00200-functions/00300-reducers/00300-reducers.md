@@ -34,7 +34,7 @@ const user = table(
 const spacetimedb = schema({ user });
 export default spacetimedb;
 
-export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+export const createUser = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
     throw new Error('Name cannot be empty');
@@ -559,7 +559,7 @@ import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
-  { name: 'fetch_schedule', scheduled: (): any => fetchExternalData },
+  { name: 'fetch_schedule' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -570,8 +570,10 @@ const fetchSchedule = table(
 const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
-// The procedure to be scheduled
+// The procedure to be scheduled, bound to the schedule table with `onSchedule`.
+// A scheduled procedure must return `t.unit()`.
 export const fetchExternalData = spacetimedb.procedure(
+  { onSchedule: fetchSchedule },
   { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
@@ -598,7 +600,7 @@ export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }
 #pragma warning disable STDB_UNSTABLE
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
     public partial struct FetchSchedule

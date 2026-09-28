@@ -124,10 +124,10 @@ namespace SpacetimeDB::bsatn {
         template<typename T>
         std::optional<T> read_optional() {
             uint8_t tag = read_u8();
-            if (tag == 0) {
-                return std::nullopt;
-            } else if (tag == 1) {
+            if (tag == 0) { // Some, matching the canonical BSATN option type.
                 return SpacetimeDB::bsatn::deserialize<T>(*this);
+            } else if (tag == 1) { // None.
+                return std::nullopt;
             } else {
                 std::abort(); // Invalid optional tag in BSATN deserialization
             }

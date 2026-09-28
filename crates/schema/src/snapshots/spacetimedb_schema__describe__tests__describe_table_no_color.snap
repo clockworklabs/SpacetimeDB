@@ -1,0 +1,18 @@
+---
+source: crates/schema/src/describe.rs
+expression: "describe_table(&prefix, owning, table, PrettyPrintStyle::NoColor)"
+---
+player (public)
+  Columns:
+    id         U64             primary key, auto-increment
+    name       String
+    rank       U32             unique
+    nickname   Option<String>
+    joined_at  Timestamp
+    avatar     Thumbnail
+    color      Color           default: (red = ())
+    level      U32             default: 1
+  Indexes:
+    player_id_idx_btree     btree (id)
+    player_name_idx_hash    hash (name)
+    player_rank_idx_direct  direct (rank)

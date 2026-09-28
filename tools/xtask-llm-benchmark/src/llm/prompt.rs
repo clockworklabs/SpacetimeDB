@@ -104,8 +104,14 @@ pub fn make_prompt_from_task(spec_file: &str, task_id: &str, lang: Lang) -> Resu
     let tasks_file = find_tasks_file(task_root, lang)
         .with_context(|| format!("missing tasks file for {} in {}", lang.as_str(), task_root.display()))?;
 
-    let instructions =
+    let mut instructions =
         std::fs::read_to_string(&tasks_file).with_context(|| format!("read {}", tasks_file.display()))?;
+    if let Some(setup_file) = find_setup_file(task_root, lang) {
+        let setup_source =
+            std::fs::read_to_string(&setup_file).with_context(|| format!("read {}", setup_file.display()))?;
+        instructions.push_str("\n\nEXISTING MODULE SOURCE TO UPDATE:\n");
+        instructions.push_str(&setup_source);
+    }
 
     Ok(PromptBuilder {
         lang: lang.display_name().to_string(),
@@ -132,8 +138,20 @@ fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
     }
 }
 
+fn find_setup_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
+    let file = match lang {
+        Lang::CSharp => "csharp.cs",
+        Lang::Rust => "rust.rs",
+        Lang::TypeScript => "typescript.ts",
+    };
+    let path = task_root.join("setup").join(file);
+    path.exists().then_some(path)
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::eval::Lang;
+
     #[test]
     fn prompt_uses_workspace_version() {
         let pb = super::PromptBuilder {
@@ -154,5 +172,18 @@ mod tests {
         assert!(parts.next().unwrap().parse::<u32>().is_ok(), "major not numeric: {v}");
         assert!(parts.next().unwrap().parse::<u32>().is_ok(), "minor not numeric: {v}");
         assert_eq!(parts.next(), None, "expected major.minor only: {v}");
+    }
+
+    #[test]
+    fn update_task_prompt_includes_existing_module_source() {
+        let spec = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/benchmarks/tables/t_053_default_values/spec.rs");
+        let prompt = super::make_prompt_from_task(spec.to_str().unwrap(), "t_053_default_values", Lang::Rust)
+            .expect("build migration prompt");
+
+        assert!(prompt.instructions.contains("EXISTING MODULE SOURCE TO UPDATE:"));
+        assert!(prompt.instructions.contains("pub struct Widget"));
+        assert!(prompt.instructions.contains("name: String"));
+        assert!(prompt.instructions.contains("pub fn touch"));
     }
 }

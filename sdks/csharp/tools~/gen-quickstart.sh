@@ -7,6 +7,8 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 DOTNET_VERSION="${1:-}"
 
+cd "$STDB_PATH"
+
 GLOBAL_JSON_BACKUPS=()
 
 backup_global_json_once() {
@@ -66,5 +68,4 @@ if [ -n "$DOTNET_VERSION" ]; then
     BUILD_OPTIONS+=("--build-options=--dotnet-version $DOTNET_VERSION")
 fi
 
-cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$STDB_PATH/templates/chat-console-cs/module_bindings" --module-path "$STDB_PATH/templates/chat-console-cs/spacetimedb" "${BUILD_OPTIONS[@]}"
+cargo spacetime generate -y -l csharp -o "$STDB_PATH/templates/chat-console-cs/module_bindings" --module-path "$STDB_PATH/templates/chat-console-cs/spacetimedb" "${BUILD_OPTIONS[@]}"
