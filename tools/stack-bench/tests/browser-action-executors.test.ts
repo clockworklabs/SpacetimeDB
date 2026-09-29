@@ -953,3 +953,60 @@ test('statusText is explicit and cannot replace input or protocol expectations',
     assert.throws(() => compileActionInput({ ...step, ...conflict }));
   }
 });
+
+test('statusText preserves existing input, textarea and select status values', async t => {
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  for (const [name, markup, machineValue, expected] of [
+    ['readonly-input', '<input data-testid="order-status" readonly value="pending">', 'pending', 'passed'],
+    ['readonly-textarea', '<textarea data-testid="order-status" readonly>pending</textarea>', 'pending', 'passed'],
+    ['select', '<select data-testid="order-status"><option value="pending">pending</option><option value="shipped">shipped</option></select>', 'pending', 'passed'],
+    ['select-machine-id', '<select data-testid="order-status"><option value="p">pending</option></select>', 'p', 'passed'],
+    ['select-wrong-label', '<select data-testid="order-status"><option value="pending">shipped</option></select>', 'pending', 'failed'],
+  ] as const) await t.test(name, async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent(markup);
+      const locator = page.locator('[data-testid="order-status"]');
+      const provided = services({ page, loc: () => locator });
+      const step = { do: 'expect', actor: 'a', testid: 'order-status', within: 250 };
+      assert.equal((await run({ ...step, value: machineValue }, provided)).status, 'passed');
+      const result = await run({ ...step, statusText: 'pending' }, provided);
+      assert.equal(result.status, expected, result.summary ?? name);
+      if (expected === 'passed') {
+        assert.deepEqual(result.observation, { visible: true, statusText: 'pending', observedText: 'pending' });
+      } else {
+        assert.equal(result.finding?.kind, 'value-mismatch');
+        assert.equal(result.finding?.fields.observed, 'shipped');
+      }
+      await locator.evaluate(node => { (node as HTMLInputElement).value = 'shipped'; });
+      assert.equal((await run({ ...step, statusText: 'pending' }, provided)).status, 'failed');
+    } finally { await page.close(); }
+  });
+});
+
+test('statusText rejects non-text input values and mixed selected states', async t => {
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  for (const type of ['checkbox', 'radio', 'password']) await t.test(type, async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent(`<input data-testid="order-status" type="${type}" value="pending">`);
+      const provided = services({ page, loc: () => page.locator('[data-testid="order-status"]') });
+      const step = { do: 'expect', actor: 'a', testid: 'order-status', within: 250 };
+      assert.equal((await run({ ...step, value: 'pending' }, provided)).status, 'passed');
+      assert.equal((await run({ ...step, statusText: 'pending' }, provided)).status, 'failed');
+    } finally { await page.close(); }
+  });
+  await t.test('multiple-selected-states', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<select data-testid="order-status" multiple>'
+        + '<option value="pending" selected>pending</option><option value="shipped" selected>shipped</option></select>');
+      const provided = services({ page, loc: () => page.locator('[data-testid="order-status"]') });
+      const step = { do: 'expect', actor: 'a', testid: 'order-status', within: 250 };
+      assert.equal((await run({ ...step, value: 'pending' }, provided)).status, 'passed');
+      assert.equal((await run({ ...step, statusText: 'pending' }, provided)).status, 'failed');
+    } finally { await page.close(); }
+  });
+});

@@ -16,7 +16,8 @@ interface ScrollTarget {
   readonly tagName: string;
   readonly value?: string;
   readonly innerText: string;
-  readonly options?: ArrayLike<{ value: string; label: string }>;
+  readonly type?: string;
+  readonly options?: ArrayLike<{ value: string; label: string; selected?: boolean }>;
   scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
   readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
     callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
@@ -26,7 +27,8 @@ interface ScrollTarget {
 interface Locator {
   click(options?: unknown): Promise<void>;
   count(): Promise<number>;
-  evaluate<Result>(callback: (element: ScrollTarget) => Result, arg?: undefined, options?: { timeout?: number }): Promise<Result>;
+  evaluate<Result>(callback: (element: ScrollTarget, displayedStatus?: boolean) => Result,
+    arg?: boolean, options?: { timeout?: number }): Promise<Result>;
   evaluateAll<Result>(callback: (elements: ScrollTarget[]) => Result): Promise<Result>;
   fill(value: string): Promise<void>;
   filter(options: unknown): Locator;
@@ -181,11 +183,19 @@ function inputScope(browser: BrowserCapability, value: LocatorScope | undefined)
   return { testid: value.testid, contains: browser.expand(value.contains) };
 }
 
-async function readValue(loc: Locator, timeout?: number): Promise<string> {
-  return loc.evaluate(element => {
+async function readValue(loc: Locator, timeout?: number, displayedStatus = false): Promise<string> {
+  return loc.evaluate((element, displayedStatus) => {
+    if (displayedStatus && element.tagName === 'SELECT') {
+      return Array.from(element.options ?? []).filter(option => option.selected).map(option => option.label).join(' ');
+    }
+    if (displayedStatus && element.tagName === 'INPUT'
+      && !['text', 'search', 'tel', 'url', 'email', 'button', 'submit', 'reset'].includes(element.type ?? 'text')) {
+      return '';
+    }
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)) return element.value || '';
-    return (element.innerText || '').trim();
-  }, undefined, { timeout });
+    const text = element.innerText || '';
+    return displayedStatus ? text : text.trim();
+  }, displayedStatus, { timeout });
 }
 
 export function parseRenderedNumber(text: string | null | undefined): number | null {
@@ -464,7 +474,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     const deadline = Date.now() + within;
     const read = async () => input.attribute
       ? await loc.getAttribute(input.attribute) ?? ''
-      : input.statusText === undefined ? readValue(loc) : loc.innerText();
+      : readValue(loc, undefined, input.statusText !== undefined);
     const matches = (value: string) => {
       const text = input.statusText === undefined ? value : value.replace(/^[\s\u00b7\u2022]+|[\s\u00b7\u2022]+$/g, '');
       const actual = input.ignoreCase ? text.toLowerCase() : text;
