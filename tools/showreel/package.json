@@ -7,7 +7,9 @@
     "video": "node render.js --samples 5",
     "mux": "./mux.sh",
     "build": "npm run audio && npm run video && npm run mux",
-    "stills": "node render.js --still"
+    "stills": "node render.js --still",
+    "video:kiosk": "node render.js --samples 5 --slow 2",
+    "build:kiosk": "npm run video:kiosk && ./mux-kiosk.sh"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

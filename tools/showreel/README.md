@@ -24,6 +24,20 @@ Individual steps:
 | `npm run stills -- 12.5 42 80 --samples 1` | Renders PNG stills at given times to `out/still_<t>.png` (fast way to review a change) |
 | `./sheet.sh out.png a.png b.png c.png d.png` | 2×2 contact sheet of four stills |
 
+### Kiosk version (slowed down, for looping on a screen)
+
+For hackathon booths: the same video played **2× slower** (3:00), no audio, loops cleanly (it starts and ends on black).
+
+```sh
+npm run build:kiosk    # → ./spacetimedb-showreel-kiosk.mp4   (≈ 4 min render)
+```
+
+The slowdown is a render-time time scale, not a retime: `render.js --slow N` renders `DUR × N` seconds, samples the
+timeline at `t / N`, narrows the motion-blur shutter accordingly, and writes to `out-kiosk/`; `mux-kiosk.sh` reads the factor
+from `out-kiosk/slow.txt`. To try another factor, change `--slow` in the `video:kiosk` script (1.5× or 2.5× are one re-render away).
+Impacts stay snappy: camera shake, screen flashes and the HUD timecode run on real time (`frame(ctx, t, rt)` + `setSlow`), so they don't turn into slow-motion wobble or second-long white-outs. The kiosk file fades in from black over 0.5 s so the loop point matches the fade-out at the end.
+The soundtrack is keyed to the 1× cut, so the kiosk file has no audio.
+
 Review loop that works well: edit `scenes.js`, render a handful of stills with `--samples 1`,
 build a contact sheet, inspect, and only then do the full build.
 
@@ -97,4 +111,4 @@ Designer's brand rules (applied in `lib.js`/`scenes.js`):
 ## Known limitations
 
 - The soundtrack was checked with loudness/waveform analysis only; nobody has listened to it critically yet.
-- Rendered outputs (`out/`, `*.mp4`) are not committed; rebuild them with `npm run build`.
+- Rendered outputs (`out/`, `out-kiosk/`, `*.mp4`) are not committed; rebuild them with `npm run build` / `npm run build:kiosk`.

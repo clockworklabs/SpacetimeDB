@@ -187,10 +187,16 @@ function fxBursts(ctx, t) {
   }
 }
 
-function shakeOffset(t) {
+// Playback slow-down factor (render.js --slow). Impacts (shake, flashes) stay snappy in real
+// time; everything else plays at scene speed.
+let SLOW = 1;
+function setSlow(n) { SLOW = n; }
+
+// Shake decays and oscillates in real time so a slowed-down render doesn't turn it into a wobble.
+function shakeOffset(t, rt = t) {
   let a = 0;
-  for (const s of SHAKES) if (t >= s.t) a += s.a * pulse(t - s.t, 9);
-  return [a * (Math.sin(t * 91) * 0.6 + Math.sin(t * 143 + 1.3) * 0.4), a * (Math.cos(t * 107) * 0.6 + Math.sin(t * 67 + 0.4) * 0.4)];
+  for (const s of SHAKES) if (t >= s.t) a += s.a * pulse((t - s.t) * SLOW, 9);
+  return [a * (Math.sin(rt * 91) * 0.6 + Math.sin(rt * 143 + 1.3) * 0.4), a * (Math.cos(rt * 107) * 0.6 + Math.sin(rt * 67 + 0.4) * 0.4)];
 }
 
 function riseParts(ctx, parts, x, y, o) {
@@ -1557,7 +1563,7 @@ function sOutro(ctx, t) {
 // HUD
 // ======================================================================
 function sceneIndex(t) { let k = 0; SCENES.forEach((s, i) => { if (t >= s.t) k = i; }); return k; }
-function drawHUD(ctx, t) {
+function drawHUD(ctx, t, rt = t) {
   const a = E.outCubic(P(t, 0.3, 0.9)) * (1 - P(t, DUR - 1.6, DUR - 1.0));
   if (a <= 0) return;
   ctx.save();
@@ -1568,11 +1574,12 @@ function drawHUD(ctx, t) {
   drawMark(ctx, 84, 74, 30, {});
   text(ctx, 'SPACETIMEDB', 106, 80, { size: 14, weight: 700, tracking: 4 });
   text(ctx, '/  SHOWREEL ’26', 250, 80, { size: 14, weight: 500, tracking: 3, fill: hexA(C.white, 0.4) });
-  const fr = Math.floor(t * 60);
-  const tc = `00:${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}:${String(fr % 60).padStart(2, '0')}`;
+  // timecode + rec blink show real (on-screen) time
+  const fr = Math.floor(rt * 60);
+  const tc = `00:${String(Math.floor(rt / 60)).padStart(2, '0')}:${String(Math.floor(rt % 60)).padStart(2, '0')}:${String(fr % 60).padStart(2, '0')}`;
   text(ctx, tc, W - 76, 80, { size: 14, weight: 600, tracking: 3, align: 'right' });
   ctx.fillStyle = hexA(C.white, 0.6);
-  ctx.globalAlpha = a * (Math.floor(t * 2) % 2 ? 0.35 : 1);
+  ctx.globalAlpha = a * (Math.floor(rt * 2) % 2 ? 0.35 : 1);
   ctx.beginPath(); ctx.arc(W - 262, 75, 5, 0, TAU); ctx.fill();
   ctx.globalAlpha = a;
   const k = sceneIndex(t), st = SCENES[k].t;
@@ -1590,13 +1597,14 @@ function drawHUD(ctx, t) {
 // ======================================================================
 // Frame
 // ======================================================================
-function frame(ctx, t) {
+// t = scene time (0..DUR); rt = real on-screen time (differs only when slowed down)
+function frame(ctx, t, rt = t) {
   if (!GRID) initStatic();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   drawBackground(ctx, t);
-  const [sx, sy] = shakeOffset(t);
+  const [sx, sy] = shakeOffset(t, rt);
   ctx.save();
   ctx.translate(sx, sy);
   sHook(ctx, t);
@@ -1614,13 +1622,13 @@ function frame(ctx, t) {
   fxBursts(ctx, t);
   ctx.restore();
   let fl = 0;
-  for (const f of FLASHES) if (t >= f.t) fl += f.a * pulse(t - f.t, f.k);
-  fl += 0.9 * E.inExpo(P(t, K.zoom - 0.25, K.zoom)) * (t < K.zoom ? 1 : 0);
-  fl += 0.5 * E.inExpo(P(t, K.outro - 0.2, K.outro)) * (t < K.outro ? 1 : 0);
+  for (const f of FLASHES) if (t >= f.t) fl += f.a * pulse((t - f.t) * SLOW, f.k);
+  fl += 0.9 * E.inExpo(P(t, K.zoom - 0.25 / SLOW, K.zoom)) * (t < K.zoom ? 1 : 0);
+  fl += 0.5 * E.inExpo(P(t, K.outro - 0.2 / SLOW, K.outro)) * (t < K.outro ? 1 : 0);
   if (fl > 0.003) { ctx.fillStyle = `rgba(244,246,252,${clamp(fl)})`; ctx.fillRect(0, 0, W, H); }
-  drawHUD(ctx, t);
+  drawHUD(ctx, t, rt);
   const fo = P(t, DUR - 0.8, DUR);
   if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${E.inOutSine(fo)})`; ctx.fillRect(0, 0, W, H); }
 }
 
-module.exports = { frame, SCENES, T, K, EVENTS, UP, DOWN };
+module.exports = { frame, setSlow, SCENES, T, K, EVENTS, UP, DOWN };

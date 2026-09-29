@@ -1,3 +1,4 @@
 node_modules/
 out/
+out-kiosk/
 *.mp4
