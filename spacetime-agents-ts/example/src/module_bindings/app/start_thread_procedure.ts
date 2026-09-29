@@ -13,7 +13,6 @@ import {
 export const params = {
   agentName: __t.string(),
   title: __t.option(__t.string()),
-  systemPromptOverride: __t.option(__t.string()),
   metadata: __t.option(__t.string()),
 };
 export const returnType = __t.u64()

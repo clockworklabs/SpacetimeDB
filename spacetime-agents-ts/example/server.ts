@@ -120,7 +120,7 @@ function callReducer(name: string, args: string[]): void {
 function seedApiKey(provider: string, key: string | undefined): boolean {
   const configured = configuredValue(key);
   if (!configured) return false;
-  callReducer('set_api_key', [
+  callReducer('agents.set_api_key', [
     JSON.stringify(provider),
     JSON.stringify(configured),
   ]);
@@ -128,8 +128,10 @@ function seedApiKey(provider: string, key: string | undefined): boolean {
 }
 
 function configureAgentsFromEnv(): void {
-  callReducer('set_agent_secret', [
+  callReducer('agents.set_agent_config', [
     optU32(process.env.STALE_LOCK_THRESHOLD_SECS),
+  ]);
+  callReducer('set_token_limit', [
     optU32(process.env.RATE_LIMIT_TOKENS_PER_WINDOW),
     optU32(process.env.RATE_LIMIT_WINDOW_SECS),
   ]);

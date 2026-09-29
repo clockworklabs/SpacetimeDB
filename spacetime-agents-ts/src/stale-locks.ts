@@ -1,3 +1,5 @@
+import { errors } from './errors';
+
 export const DEFAULT_STALE_LOCK_SWEEP_BATCH = 500;
 
 export interface ThreadLockLike {
@@ -20,7 +22,7 @@ export function deleteStaleThreadLocks<T extends ThreadLockLike>(
   maxRows = DEFAULT_STALE_LOCK_SWEEP_BATCH
 ): number {
   if (!Number.isInteger(maxRows) || maxRows <= 0) {
-    throw new Error('agents.invalid_stale_lock_sweep_batch');
+    throw new Error(errors.invalidStaleLockSweepBatch);
   }
 
   let deleted = 0;

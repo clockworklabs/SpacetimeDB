@@ -9,8 +9,8 @@ export const apiKey = table(
   }
 );
 
-export const agentSecret = table(
-  { name: 'agent_secret', public: false },
+export const agentConfig = table(
+  { name: 'agent_config', public: false },
   {
     singleton: t.bool().primaryKey(),
     staleLockThresholdSecs: t.u32(),
@@ -26,9 +26,9 @@ export const agentAdminIdentity = table(
   }
 );
 
-// Effective config precedence: thread > override > code default.
+// Operator overrides take precedence over agent code defaults.
 export const agentOverride = table(
-  { name: 'agent_override', public: true },
+  { name: 'agent_override', public: false },
   {
     agentName: t.string().primaryKey(),
     provider: t.option(t.string()),
@@ -42,14 +42,14 @@ export const agentOverride = table(
   }
 );
 
+// owner is the application-defined key passed to the client, such as a user id.
 export const thread = table(
   { name: 'thread', public: false },
   {
     id: t.u64().primaryKey().autoInc(),
-    owner: t.identity().index(),
+    owner: t.string().index(),
     agentName: t.string().index(),
     title: t.option(t.string()),
-    systemPromptOverride: t.option(t.string()),
     modelOverride: t.option(t.string()),
     metadata: t.option(t.string()),
     summary: t.option(t.string()),
@@ -59,13 +59,13 @@ export const thread = table(
   }
 );
 
-// owner denormalized from thread so the visibility view can filter on it.
+// owner is denormalized from thread so host views can filter on it.
 export const message = table(
   { name: 'message', public: false },
   {
     id: t.u64().primaryKey().autoInc(),
     threadId: t.u64().index(),
-    owner: t.identity().index(),
+    owner: t.string().index(),
     role: t.string(),
     content: t.string(),
     toolCallsJson: t.option(t.string()),
@@ -76,14 +76,23 @@ export const message = table(
     createdAt: t.timestamp(),
   }
 );
+
 // Presence of a row is the per-thread mutex: a loop is running for it.
 export const threadLock = table(
   { name: 'thread_lock', public: false },
   {
     threadId: t.u64().primaryKey(),
-    owner: t.identity().index(),
+    owner: t.string().index(),
     lockedAt: t.timestamp().index('btree'),
     cancelRequested: t.bool(),
+  }
+);
+
+export const threadLockSweeperTick = table(
+  { name: 'thread_lock_sweeper_tick' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
   }
 );
 
@@ -92,7 +101,7 @@ export const messageEmbedding = table(
   {
     messageId: t.u64().primaryKey(),
     threadId: t.u64().index(),
-    owner: t.identity().index(),
+    owner: t.string().index(),
     model: t.string(),
     vector: t.array(t.f32()),
     createdAt: t.timestamp(),

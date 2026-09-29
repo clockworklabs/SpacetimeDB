@@ -6,8 +6,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
-    "isolatedModules": true,
-    "allowImportingTsExtensions": true
+    "isolatedModules": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]

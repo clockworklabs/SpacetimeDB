@@ -1,11 +1,6 @@
 import { t, type InferSchema, type ViewCtx } from 'spacetimedb/server';
-import {
-  fileViewRow,
-  message,
-  messageEmbedding,
-  thread,
-  threadLock,
-} from './model';
+import { message, thread, threadLock } from '@spacetimedb/agents/submodule';
+import { fileViewRow } from './model';
 
 const authUserViewRow = t.object('AgentAuthUser', {
   userId: t.string(),
@@ -29,7 +24,7 @@ export function registerAgentViews(
     t.array(thread.rowType),
     ctx => {
       const userId = callerUserId(ctx);
-      return userId ? [...ctx.db.thread.userId.filter(userId)] : [];
+      return userId ? [...ctx.db.agents.thread.owner.filter(userId)] : [];
     }
   );
 
@@ -38,7 +33,7 @@ export function registerAgentViews(
     t.array(message.rowType),
     ctx => {
       const userId = callerUserId(ctx);
-      return userId ? [...ctx.db.message.userId.filter(userId)] : [];
+      return userId ? [...ctx.db.agents.message.owner.filter(userId)] : [];
     }
   );
 
@@ -47,16 +42,7 @@ export function registerAgentViews(
     t.array(threadLock.rowType),
     ctx => {
       const userId = callerUserId(ctx);
-      return userId ? [...ctx.db.threadLock.userId.filter(userId)] : [];
-    }
-  );
-
-  const myMessageEmbeddings = spacetimedb.view(
-    { name: 'my_message_embeddings', public: true },
-    t.array(messageEmbedding.rowType),
-    ctx => {
-      const userId = callerUserId(ctx);
-      return userId ? [...ctx.db.messageEmbedding.userId.filter(userId)] : [];
+      return userId ? [...ctx.db.agents.threadLock.owner.filter(userId)] : [];
     }
   );
 
@@ -108,7 +94,6 @@ export function registerAgentViews(
     myThreads,
     myMessages,
     myThreadLocks,
-    myMessageEmbeddings,
     myFiles,
     myAuthUser,
   };

@@ -1,14 +1,10 @@
 import { ScheduleAt } from 'spacetimedb';
-import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
-import type spacetimedb from './index';
+import type { AgentsTx } from './index';
 
-const ONE_SECOND_MICROS = 1_000_000n;
-const SWEEPER_INTERVAL_MICROS = 60n * ONE_SECOND_MICROS;
+const SWEEPER_INTERVAL_MICROS = 60_000_000n;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type InstallCtx = ReducerCtx<Schema>;
-
-export function install(ctx: InstallCtx) {
+/** Makes the caller the first Agents administrator and schedules stale-lock cleanup. */
+export function install(ctx: AgentsTx): void {
   if (ctx.db.agentAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.agentAdminIdentity.insert({
       identity: ctx.sender,
