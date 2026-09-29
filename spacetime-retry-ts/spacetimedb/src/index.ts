@@ -1,7 +1,6 @@
-import { schema, table, t, SenderError } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
+import { schema, table, t } from 'spacetimedb/server';
 import {
-  createRetrySubmodule,
+  client,
   retryFailed,
   retryHandler,
   retryOk,
@@ -51,14 +50,7 @@ const flaky = retryHandler(flakyArgs, (ctx, args): RetryResult => {
   return retryOk();
 });
 
-const retryHandlers = {
-  flaky,
-};
-
-const retry = createRetrySubmodule(
-  { table, t, SenderError, ScheduleAt },
-  retryHandlers
-);
+const retry = client({ handlers: { flaky } });
 const { retryTask, retryHistory, retryAdminIdentity } = retry.tables;
 
 const retryMetric = table(
