@@ -6,11 +6,11 @@ export {
   coordKey,
   parseCoordKey,
   coordsEqual,
-} from './coords';
+} from './coords.js';
 
-export { neighbors } from './neighbors';
+export { neighbors } from './neighbors.js';
 
-export { manhattan, chebyshev, hexDistance, distance } from './distance';
+export { manhattan, chebyshev, hexDistance, distance } from './distance.js';
 
 export {
   type PathResult,
@@ -19,4 +19,4 @@ export {
   type DijkstraNode,
   findPathAstar,
   dijkstra,
-} from './pathfind';
+} from './pathfind.js';

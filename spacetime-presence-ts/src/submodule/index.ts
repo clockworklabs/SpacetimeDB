@@ -8,15 +8,15 @@ import {
   type ReducerCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { errors } from '../errors';
+import { errors } from '../errors.js';
 import {
   DEFAULT_PRESENCE_STATUS,
   removePresence,
   runPresenceSweep,
   updatePresenceConfig,
   upsertPresence,
-} from '../presence';
-import { presenceConfigRow, presenceEntryRow } from '../tables';
+} from '../presence.js';
+import { presenceConfigRow, presenceEntryRow } from '../tables.js';
 
 export const presenceEntry = table(
   { name: 'presence_entry', public: false },

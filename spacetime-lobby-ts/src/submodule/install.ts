@@ -1,5 +1,5 @@
 import { ScheduleAt } from 'spacetimedb';
-import type { ReducerModuleCtx } from './schema';
+import type { ReducerModuleCtx } from './schema.js';
 
 const SWEEP_INTERVAL_MICROS = 15n * 1_000_000n;
 

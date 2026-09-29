@@ -6,7 +6,7 @@ import {
   hashApiKey,
   matchesApiKeyHash,
   hasScope,
-} from '../src/keys.ts';
+} from '../src/keys';
 
 const secret = deriveKeySecret('operator-secret', 1n, 5n);
 assert.equal(secret.length, 32);

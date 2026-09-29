@@ -11,9 +11,9 @@ import {
   t,
   type ViewModuleCtx,
   type WriteCtx,
-} from './schema';
-import { isAdmin, requireAdmin } from './auth';
-import { errors } from '../errors';
+} from './schema.js';
+import { isAdmin, requireAdmin } from './auth.js';
+import { errors } from '../errors.js';
 import {
   deriveKeySecret,
   extractLookupPrefix,
@@ -21,7 +21,7 @@ import {
   hashApiKey,
   matchesApiKeyHash,
   hasScope,
-} from '../keys';
+} from '../keys.js';
 
 const DEFAULT_KEY_PREFIX = 'stdb_live';
 const MAX_NAME_LENGTH = 120;

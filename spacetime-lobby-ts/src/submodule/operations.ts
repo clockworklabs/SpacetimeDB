@@ -13,8 +13,8 @@ import {
   t,
   type ViewModuleCtx,
   type WriteCtx,
-} from './schema';
-import { errors } from '../errors';
+} from './schema.js';
+import { errors } from '../errors.js';
 import {
   DEFAULT_RATING,
   MAX_RATING,
@@ -22,8 +22,8 @@ import {
   expectedScore,
   rankedSelection,
   updatedRating,
-} from '../matchmaking';
-import { lobbyCompositeKey } from '../keys';
+} from '../matchmaking.js';
+import { lobbyCompositeKey } from '../keys.js';
 
 const MAX_POOL_LENGTH = 96;
 const MAX_SUBJECT_LENGTH = 160;
@@ -771,4 +771,4 @@ export {
   myLobbyRoomSeats,
   myLobbyRooms,
   myLobbyTickets,
-} from './views';
+} from './views.js';

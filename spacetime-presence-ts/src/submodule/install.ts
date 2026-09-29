@@ -1,7 +1,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
-import { installPresenceConfig } from '../presence';
-import type spacetimedb from './index';
+import { installPresenceConfig } from '../presence.js';
+import type spacetimedb from './index.js';
 
 const SWEEP_INTERVAL_MICROS = 10n * 1_000_000n;
 

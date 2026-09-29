@@ -1,4 +1,4 @@
-export { errors } from './errors';
+export { errors } from './errors.js';
 export {
   cancelTicketForSubject,
   closeRoom,
@@ -13,4 +13,4 @@ export {
   type ReportMatchResultArgs,
   type RoomSubjectArgs,
   type TicketSubjectArgs,
-} from './submodule/operations';
+} from './submodule/operations.js';

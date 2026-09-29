@@ -1,4 +1,4 @@
-export { default } from './submodule/schema';
+export { default } from './submodule/schema.js';
 export {
   RoomStatus,
   SeatStatus,
@@ -14,9 +14,9 @@ export {
   seatStatus,
   t,
   ticketStatus,
-} from './submodule/schema';
-export { install } from './submodule/install';
-export { errors } from './errors';
+} from './submodule/schema.js';
+export { install } from './submodule/install.js';
+export { errors } from './errors.js';
 export {
   addLobbyAdmin,
   cancelTicket,
@@ -51,4 +51,4 @@ export {
   type ReportMatchResultArgs,
   type RoomSubjectArgs,
   type TicketSubjectArgs,
-} from './submodule/operations';
+} from './submodule/operations.js';

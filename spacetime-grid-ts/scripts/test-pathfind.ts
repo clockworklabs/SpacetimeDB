@@ -7,7 +7,7 @@ import {
   findPathAstar,
   dijkstra,
   coordKey,
-} from '../src/math/index.ts';
+} from '../src/math/index';
 
 let pass = 0;
 let fail = 0;

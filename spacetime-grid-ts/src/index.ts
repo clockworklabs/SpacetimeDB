@@ -12,9 +12,9 @@ export {
   GRID_ORIENTATION_POINTY,
   GRID_MODE_OWNER,
   GRID_MODE_COLLABORATIVE,
-} from './rows';
+} from './rows.js';
 
-export { errors } from './errors';
+export { errors } from './errors.js';
 
 export {
   createGridParams,
@@ -35,7 +35,7 @@ export {
   cellsInRangeParams,
   cellsInRangeReturn,
   cellsInRange,
-} from './procedures';
+} from './procedures.js';
 
 export {
   type Coord,
@@ -56,4 +56,4 @@ export {
   distance,
   findPathAstar,
   dijkstra,
-} from './math/index';
+} from './math/index.js';

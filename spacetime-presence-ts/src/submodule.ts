@@ -1,5 +1,5 @@
-export { default } from './submodule/index';
-export { install } from './submodule/install';
+export { default } from './submodule/index.js';
+export { install } from './submodule/install.js';
 export {
   GLOBAL_SCOPE,
   addPresenceAdmin,
@@ -12,7 +12,7 @@ export {
   removePresenceAdmin,
   runSweep,
   updateConfig,
-} from './submodule/index';
+} from './submodule/index.js';
 export {
   errors,
   removePresence,
@@ -21,4 +21,4 @@ export {
   type PresenceEntryRow,
   type PresenceTxLike,
   type PresenceUpsertOpts,
-} from './index';
+} from './index.js';

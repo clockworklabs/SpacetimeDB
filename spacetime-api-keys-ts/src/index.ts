@@ -1,4 +1,4 @@
-export { errors } from './errors';
+export { errors } from './errors.js';
 export {
   createApiKeyInTx,
   revokeApiKeyInTx,
@@ -7,4 +7,4 @@ export {
   type ApiKeyVerifyResult,
   type CreateApiKeyArgs,
   type VerifyApiKeyArgs,
-} from './submodule/operations';
+} from './submodule/operations.js';

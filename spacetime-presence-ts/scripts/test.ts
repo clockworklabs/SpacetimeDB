@@ -9,7 +9,7 @@ import {
   updatePresenceConfig,
   upsertPresence,
   type PresenceEntryRow,
-} from '../src/presence.ts';
+} from '../src/presence';
 
 let pass = 0;
 let fail = 0;

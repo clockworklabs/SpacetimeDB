@@ -1,4 +1,4 @@
-import type { Coord, GridKind, Connectivity } from './coords';
+import type { Coord, GridKind, Connectivity } from './coords.js';
 
 export function manhattan(a: Coord, b: Coord): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);

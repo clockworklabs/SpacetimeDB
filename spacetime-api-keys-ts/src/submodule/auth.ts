@@ -1,6 +1,6 @@
 import { SenderError } from 'spacetimedb/server';
-import { errors } from '../errors';
-import type { ViewModuleCtx, WriteCtx } from './schema';
+import { errors } from '../errors.js';
+import type { ViewModuleCtx, WriteCtx } from './schema.js';
 
 export function isAdmin(ctx: WriteCtx | ViewModuleCtx): boolean {
   return ctx.db.apiKeyAdminIdentity.identity.find(ctx.sender) != null;

@@ -17,8 +17,8 @@ import {
   GRID_ORIENTATION_POINTY,
   GRID_MODE_OWNER,
   GRID_MODE_COLLABORATIVE,
-} from './rows';
-import { errors } from './errors';
+} from './rows.js';
+import { errors } from './errors.js';
 import {
   type Coord,
   type GridKind,
@@ -28,8 +28,8 @@ import {
   distance,
   findPathAstar,
   dijkstra,
-} from './math/index';
-import type { ReducerModuleCtx } from './submodule/schema';
+} from './math/index.js';
+import type { ReducerModuleCtx } from './submodule/schema.js';
 
 type GridRow = Infer<typeof gridRow>;
 

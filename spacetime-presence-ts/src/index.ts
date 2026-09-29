@@ -1,10 +1,10 @@
-export { errors } from './errors';
+export { errors } from './errors.js';
 export {
   presenceEntryRow,
   presenceConfigRow,
   createPresenceEntryTable,
   createPresenceConfigTable,
-} from './tables';
+} from './tables.js';
 export {
   installPresenceConfig,
   upsertPresence,
@@ -16,4 +16,4 @@ export {
   type PresenceInstallOpts,
   type PresenceTxLike,
   type PresenceUpsertOpts,
-} from './presence';
+} from './presence.js';

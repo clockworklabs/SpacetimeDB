@@ -1,5 +1,5 @@
-export { default } from './submodule/schema';
-export { cellState, entityPath, grid, gridEntity } from './submodule/schema';
+export { default } from './submodule/schema.js';
+export { cellState, entityPath, grid, gridEntity } from './submodule/schema.js';
 export {
   GRID_KIND_SQUARE,
   GRID_KIND_HEX,
@@ -10,8 +10,8 @@ export {
   pathCell,
   pathResult,
   reachableCell,
-} from './rows';
-export { errors } from './errors';
+} from './rows.js';
+export { errors } from './errors.js';
 export {
   createGridParams,
   createGrid,
@@ -31,4 +31,4 @@ export {
   cellsInRangeParams,
   cellsInRangeReturn,
   cellsInRange,
-} from './procedures';
+} from './procedures.js';

@@ -11,7 +11,7 @@ import {
   spacetimedb,
   t,
   type ViewModuleCtx,
-} from './schema';
+} from './schema.js';
 
 const MAX_MATCH_CANDIDATES = 5000;
 const MAX_VIEW_ROWS = 500;

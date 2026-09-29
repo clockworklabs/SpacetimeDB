@@ -7,7 +7,12 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { cellStateRow, entityPathRow, gridEntityRow, gridRow } from '../rows';
+import {
+  cellStateRow,
+  entityPathRow,
+  gridEntityRow,
+  gridRow,
+} from '../rows.js';
 
 export const grid = table({ name: 'grid', public: false }, gridRow);
 

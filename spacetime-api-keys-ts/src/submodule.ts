@@ -1,4 +1,4 @@
-export { default } from './submodule/schema';
+export { default } from './submodule/schema.js';
 export {
   ApiKeyStatus,
   apiKey,
@@ -9,9 +9,9 @@ export {
   apiKeyUsage,
   apiKeyVerifyResult,
   t,
-} from './submodule/schema';
-export { install } from './submodule/install';
-export { errors } from './errors';
+} from './submodule/schema.js';
+export { install } from './submodule/install.js';
+export { errors } from './errors.js';
 export {
   addApiKeysAdmin,
   apiKeyUsageAdmin,
@@ -32,4 +32,4 @@ export {
   type ApiKeyVerifyResult,
   type CreateApiKeyArgs,
   type VerifyApiKeyArgs,
-} from './submodule/operations';
+} from './submodule/operations.js';

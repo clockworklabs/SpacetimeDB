@@ -1,5 +1,5 @@
 import { SenderError, Timestamp } from 'spacetimedb';
-import { errors } from './errors';
+import { errors } from './errors.js';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const U32_MAX = 0xffff_ffff;

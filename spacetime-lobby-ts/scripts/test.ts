@@ -4,8 +4,8 @@ import {
   rankedBand,
   rankedSelection,
   updatedRating,
-} from '../src/matchmaking.ts';
-import { lobbyCompositeKey } from '../src/keys.ts';
+} from '../src/matchmaking';
+import { lobbyCompositeKey } from '../src/keys';
 
 assert.equal(expectedScore(1000, 1000), 0.5);
 assert.ok(expectedScore(1200, 1000) > 0.75);
