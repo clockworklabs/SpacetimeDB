@@ -22,11 +22,6 @@ export const CheckoutSessionResult = __t.object("CheckoutSessionResult", {
 });
 export type CheckoutSessionResult = __Infer<typeof CheckoutSessionResult>;
 
-export const CreateCustomerResult = __t.object("CreateCustomerResult", {
-  customerId: __t.string(),
-});
-export type CreateCustomerResult = __Infer<typeof CreateCustomerResult>;
-
 export const GetOrCreateCustomerResult = __t.object("GetOrCreateCustomerResult", {
   customerId: __t.string(),
   isNew: __t.bool(),
@@ -65,8 +60,10 @@ export const StripeCheckoutSession = __t.object("StripeCheckoutSession", {
   stripeCheckoutSessionId: __t.string(),
   stripeCustomerId: __t.option(__t.string()),
   status: __t.string(),
+  paymentStatus: __t.string(),
   mode: __t.string(),
   metadataJson: __t.option(__t.string()),
+  eventCreatedUnix: __t.i64(),
   insertedAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
 });
@@ -96,16 +93,11 @@ export const StripeCustomer = __t.object("StripeCustomer", {
   name: __t.option(__t.string()),
   metadataJson: __t.option(__t.string()),
   userId: __t.option(__t.string()),
+  eventCreatedUnix: __t.i64(),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
 });
 export type StripeCustomer = __Infer<typeof StripeCustomer>;
-
-export const StripeHttpResponse = __t.object("StripeHttpResponse", {
-  status: __t.u16(),
-  body: __t.string(),
-});
-export type StripeHttpResponse = __Infer<typeof StripeHttpResponse>;
 
 export const StripeInvoice = __t.object("StripeInvoice", {
   stripeInvoiceId: __t.string(),
@@ -117,6 +109,7 @@ export const StripeInvoice = __t.object("StripeInvoice", {
   createdUnix: __t.i64(),
   orgId: __t.option(__t.string()),
   userId: __t.option(__t.string()),
+  eventCreatedUnix: __t.i64(),
   insertedAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
 });
@@ -125,6 +118,7 @@ export type StripeInvoice = __Infer<typeof StripeInvoice>;
 export const StripePayment = __t.object("StripePayment", {
   stripePaymentIntentId: __t.string(),
   stripeCustomerId: __t.option(__t.string()),
+  stripeInvoiceId: __t.option(__t.string()),
   amount: __t.i64(),
   currency: __t.string(),
   status: __t.string(),
@@ -149,6 +143,7 @@ export const StripeSubscription = __t.object("StripeSubscription", {
   metadataJson: __t.option(__t.string()),
   orgId: __t.option(__t.string()),
   userId: __t.option(__t.string()),
+  eventCreatedUnix: __t.i64(),
   insertedAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
 });
@@ -158,7 +153,6 @@ export const StripeWebhookEvent = __t.object("StripeWebhookEvent", {
   eventId: __t.string(),
   eventType: __t.string(),
   livemode: __t.bool(),
-  signatureHeader: __t.option(__t.string()),
   payloadJson: __t.string(),
   get status() {
     return WebhookEventStatus;
@@ -169,13 +163,11 @@ export const StripeWebhookEvent = __t.object("StripeWebhookEvent", {
 });
 export type StripeWebhookEvent = __Infer<typeof StripeWebhookEvent>;
 
-export const SubscriptionWithCreationTime = __t.object("SubscriptionWithCreationTime", {
-  insertedAtMicros: __t.i64(),
-  stripeSubscriptionId: __t.string(),
-  stripeCustomerId: __t.string(),
-  status: __t.string(),
+export const StripeWebhookPruneTick = __t.object("StripeWebhookPruneTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
 });
-export type SubscriptionWithCreationTime = __Infer<typeof SubscriptionWithCreationTime>;
+export type StripeWebhookPruneTick = __Infer<typeof StripeWebhookPruneTick>;
 
 export const ValidateStripePriceResult = __t.object("ValidateStripePriceResult", {
   valid: __t.bool(),

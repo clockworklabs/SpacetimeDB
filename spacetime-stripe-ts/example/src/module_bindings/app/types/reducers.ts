@@ -9,10 +9,12 @@ import { type Infer as __Infer } from "spacetimedb";
 import ClearStoreProductPriceReducer from "../clear_store_product_price_reducer";
 import SeedDefaultStoreProductsReducer from "../seed_default_store_products_reducer";
 import SetStoreProductPriceReducer from "../set_store_product_price_reducer";
+import SetStoreReturnOriginReducer from "../set_store_return_origin_reducer";
 import UpsertStoreProductReducer from "../upsert_store_product_reducer";
 
 export type ClearStoreProductPriceParams = __Infer<typeof ClearStoreProductPriceReducer>;
 export type SeedDefaultStoreProductsParams = __Infer<typeof SeedDefaultStoreProductsReducer>;
 export type SetStoreProductPriceParams = __Infer<typeof SetStoreProductPriceReducer>;
+export type SetStoreReturnOriginParams = __Infer<typeof SetStoreReturnOriginReducer>;
 export type UpsertStoreProductParams = __Infer<typeof UpsertStoreProductReducer>;
 

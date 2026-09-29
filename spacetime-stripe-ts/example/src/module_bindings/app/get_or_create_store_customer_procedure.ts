@@ -11,12 +11,11 @@ import {
 } from "spacetimedb";
 
 import {
-  StoreGetOrCreateCustomerResult,
+  StoreCustomerResult,
 } from "./types";
 
 export const params = {
-  userId: __t.string(),
   email: __t.option(__t.string()),
   name: __t.option(__t.string()),
 };
-export const returnType = StoreGetOrCreateCustomerResult
+export const returnType = StoreCustomerResult

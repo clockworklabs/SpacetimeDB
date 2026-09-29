@@ -18,22 +18,8 @@ export const health = spacetimedb.httpHandler((ctx, _req) => {
   );
 });
 
-export const echo = spacetimedb.httpHandler((_ctx, req) => {
-  const body = req.text();
-  return new SyncResponse(
-    JSON.stringify({
-      method: req.method,
-      uri: req.uri,
-      bodyLength: body.length,
-      bodyPreview: body.slice(0, 200),
-    }),
-    { status: 200, headers: { 'content-type': 'application/json' } }
-  );
-});
-
 export const router = spacetimedb.httpRouter(
   new Router()
     .get('/health', health)
-    .post('/echo', echo)
     .post('/stripe/webhook', stripeWebhookHandler)
 );

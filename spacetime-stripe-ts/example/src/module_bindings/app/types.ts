@@ -10,17 +10,11 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const StoreAdminIdentity = __t.object("StoreAdminIdentity", {
-  identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+export const StoreCheckoutItem = __t.object("StoreCheckoutItem", {
+  productId: __t.string(),
+  quantity: __t.u32(),
 });
-export type StoreAdminIdentity = __Infer<typeof StoreAdminIdentity>;
-
-export const StoreCheckoutLineItem = __t.object("StoreCheckoutLineItem", {
-  priceId: __t.string(),
-  quantity: __t.i64(),
-});
-export type StoreCheckoutLineItem = __Infer<typeof StoreCheckoutLineItem>;
+export type StoreCheckoutItem = __Infer<typeof StoreCheckoutItem>;
 
 export const StoreCheckoutSessionResult = __t.object("StoreCheckoutSessionResult", {
   sessionId: __t.string(),
@@ -28,11 +22,18 @@ export const StoreCheckoutSessionResult = __t.object("StoreCheckoutSessionResult
 });
 export type StoreCheckoutSessionResult = __Infer<typeof StoreCheckoutSessionResult>;
 
-export const StoreGetOrCreateCustomerResult = __t.object("StoreGetOrCreateCustomerResult", {
+export const StoreConfig = __t.object("StoreConfig", {
+  singleton: __t.bool(),
+  returnOrigin: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type StoreConfig = __Infer<typeof StoreConfig>;
+
+export const StoreCustomerResult = __t.object("StoreCustomerResult", {
   customerId: __t.string(),
   isNew: __t.bool(),
 });
-export type StoreGetOrCreateCustomerResult = __Infer<typeof StoreGetOrCreateCustomerResult>;
+export type StoreCustomerResult = __Infer<typeof StoreCustomerResult>;
 
 export const StoreProduct = __t.object("StoreProduct", {
   productId: __t.string(),
@@ -48,24 +49,4 @@ export const StoreProduct = __t.object("StoreProduct", {
   updatedAt: __t.timestamp(),
 });
 export type StoreProduct = __Infer<typeof StoreProduct>;
-
-export const StoreStripeHttpResponse = __t.object("StoreStripeHttpResponse", {
-  status: __t.u16(),
-  body: __t.string(),
-});
-export type StoreStripeHttpResponse = __Infer<typeof StoreStripeHttpResponse>;
-
-export const StoreValidateStripePriceResult = __t.object("StoreValidateStripePriceResult", {
-  valid: __t.bool(),
-  status: __t.u16(),
-  active: __t.option(__t.bool()),
-  currency: __t.option(__t.string()),
-  unitAmount: __t.option(__t.i64()),
-  livemode: __t.option(__t.bool()),
-  type: __t.option(__t.string()),
-  message: __t.option(__t.string()),
-  code: __t.option(__t.string()),
-  errorType: __t.option(__t.string()),
-});
-export type StoreValidateStripePriceResult = __Infer<typeof StoreValidateStripePriceResult>;
 

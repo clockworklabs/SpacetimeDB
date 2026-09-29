@@ -60,44 +60,30 @@ const DEFAULT_STORE_PRODUCTS: Array<{
   },
 ];
 
-const stripeHttpResponse = t.object('StoreStripeHttpResponse', {
-  status: t.u16(),
-  body: t.string(),
+const storeCustomerResult = t.object('StoreCustomerResult', {
+  customerId: t.string(),
+  isNew: t.bool(),
 });
 
-const storeValidateStripePriceResult = t.object(
-  'StoreValidateStripePriceResult',
-  {
-    valid: t.bool(),
-    status: t.u16(),
-    active: t.option(t.bool()),
-    currency: t.option(t.string()),
-    unitAmount: t.option(t.i64()),
-    livemode: t.option(t.bool()),
-    type: t.option(t.string()),
-    message: t.option(t.string()),
-    code: t.option(t.string()),
-    errorType: t.option(t.string()),
-  }
-);
-
-const storeGetOrCreateCustomerResult = t.object(
-  'StoreGetOrCreateCustomerResult',
-  {
-    customerId: t.string(),
-    isNew: t.bool(),
-  }
-);
-
-const storeCheckoutLineItem = t.object('StoreCheckoutLineItem', {
-  priceId: t.string(),
-  quantity: t.i64(),
+const storeCheckoutItem = t.object('StoreCheckoutItem', {
+  productId: t.string(),
+  quantity: t.u32(),
 });
 
 const storeCheckoutSessionResult = t.object('StoreCheckoutSessionResult', {
   sessionId: t.string(),
   url: t.option(t.string()),
 });
+
+const MAX_CHECKOUT_ITEMS = 20;
+const MAX_ITEM_QUANTITY = 99;
+
+function checkoutMode(mode: string): 'payment' | 'subscription' {
+  if (mode !== 'payment' && mode !== 'subscription') {
+    throwSenderError('store.invalid_mode');
+  }
+  return mode;
+}
 
 function parseAmountCents(priceLabel: string): bigint {
   const match = /(\d+)(?:\.(\d{1,2}))?/.exec(priceLabel);
@@ -130,16 +116,11 @@ function formBody(pairs: Array<[string, string | undefined]>): string {
 
 function callStripe(
   ctx: ProcedureModuleCtx,
-  method: string,
+  method: 'GET' | 'POST',
   path: string,
-  body?: string
+  formBody?: string
 ) {
-  return stripe.stripeApiRequest(ctx.as.stripe, {
-    method,
-    path,
-    formBody: body,
-    idempotencyKey: undefined,
-  }) as { status: number; body: string };
+  return stripe.stripeRequest(ctx.as.stripe, { method, path, formBody });
 }
 
 type StripeObject = Record<string, unknown>;
@@ -297,7 +278,7 @@ export const upsertStoreProduct = spacetimedb.reducer(
   },
   (ctx, args) => {
     const tx = ctx;
-    requireAdmin(tx, ctx.sender);
+    requireAdmin(tx);
     upsertStoreProductRow(tx, ctx.timestamp, {
       productId: args.productId,
       name: args.name,
@@ -317,7 +298,7 @@ export const seedDefaultStoreProducts = spacetimedb.reducer(
   (ctx, args) => {
     const force = args.force ?? false;
     const tx = ctx;
-    requireAdmin(tx, ctx.sender);
+    requireAdmin(tx);
     const hasAnyProducts = tx.db.storeProduct.count() > 0n;
     if (hasAnyProducts && !force) return;
 
@@ -359,117 +340,84 @@ export const listStoreProductsJson = spacetimedb.procedure(
     })
 );
 
-export const configureStripe = spacetimedb.procedure(
-  {
-    secretKey: t.string(),
-    stripeVersion: t.option(t.string()),
-    webhookSigningSecret: t.option(t.string()),
-  },
-  t.unit(),
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => {
-      requireAdmin(tx, ctx.sender);
-      return true;
-    });
-    void verdict;
-    return stripe.setStripeConfig(ctx.as.stripe, {
-      secretKey: args.secretKey,
-      stripeVersion: args.stripeVersion,
-      webhookSigningSecret: args.webhookSigningSecret,
-    });
-  }
-);
-
-export const storeStripeApiRequest = spacetimedb.procedure(
-  {
-    method: t.string(),
-    path: t.string(),
-    formBody: t.option(t.string()),
-    idempotencyKey: t.option(t.string()),
-  },
-  stripeHttpResponse,
-  (ctx, args) => {
-    ctx.withTx(tx => requireAdmin(tx, ctx.sender));
-    return stripe.stripeApiRequest(ctx.as.stripe, {
-      method: args.method,
-      path: args.path,
-      formBody: args.formBody,
-      idempotencyKey: args.idempotencyKey,
-    }) as { status: number; body: string };
-  }
-);
-
-export const validateStoreStripePrice = spacetimedb.procedure(
-  { priceId: t.string() },
-  storeValidateStripePriceResult,
-  (ctx, args) =>
-    stripe.validateStripePrice(ctx.as.stripe, {
-      priceId: args.priceId,
-    }) as {
-      valid: boolean;
-      status: number;
-      active: boolean | undefined;
-      currency: string | undefined;
-      unitAmount: bigint | undefined;
-      livemode: boolean | undefined;
-      type: string | undefined;
-      message: string | undefined;
-      code: string | undefined;
-      errorType: string | undefined;
+export const setStoreReturnOrigin = spacetimedb.reducer(
+  { returnOrigin: t.string() },
+  (ctx, { returnOrigin }) => {
+    requireAdmin(ctx);
+    if (!/^https?:\/\/[^/?#\s]+$/.test(returnOrigin)) {
+      throwSenderError('store.invalid_return_origin');
     }
+    const row = { singleton: true, returnOrigin, updatedAt: ctx.timestamp };
+    if (ctx.db.storeConfig.singleton.find(true)) {
+      ctx.db.storeConfig.singleton.update(row);
+    } else {
+      ctx.db.storeConfig.insert(row);
+    }
+  }
 );
 
-export const getStoreWebhookEventCount = spacetimedb.procedure(
-  {},
-  t.i64(),
-  ctx => stripe.getWebhookEventCount(ctx.as.stripe, {}) as bigint
-);
-
+// Signed-in buyers call these procedures directly. The Stripe customer belongs
+// to the caller's identity, and prices, modes, and return URLs come from
+// server-owned state.
 export const getOrCreateStoreCustomer = spacetimedb.procedure(
-  {
-    userId: t.string(),
-    email: t.option(t.string()),
-    name: t.option(t.string()),
-  },
-  storeGetOrCreateCustomerResult,
-  (ctx, args) =>
-    stripe.getOrCreateCustomer(ctx.as.stripe, {
-      userId: args.userId,
-      email: args.email,
-      name: args.name,
-    }) as { customerId: string; isNew: boolean }
+  { email: t.option(t.string()), name: t.option(t.string()) },
+  storeCustomerResult,
+  (ctx, { email, name }) =>
+    stripe.getOrCreateUserCustomer(ctx.as.stripe, {
+      userId: ctx.sender.toHexString(),
+      email,
+      name,
+    })
 );
 
 export const createStoreCheckoutSession = spacetimedb.procedure(
-  {
-    items: t.array(storeCheckoutLineItem),
-    customerId: t.option(t.string()),
-    mode: t.string(),
-    successUrl: t.string(),
-    cancelUrl: t.string(),
-    metadataJson: t.option(t.string()),
-    subscriptionMetadataJson: t.option(t.string()),
-    paymentIntentMetadataJson: t.option(t.string()),
-  },
+  { items: t.array(storeCheckoutItem) },
   storeCheckoutSessionResult,
-  (ctx, args) =>
-    stripe.createCheckoutSession(ctx.as.stripe, {
-      items: args.items,
-      customerId: args.customerId,
-      mode: args.mode,
-      successUrl: args.successUrl,
-      cancelUrl: args.cancelUrl,
-      metadataJson: args.metadataJson,
-      subscriptionMetadataJson: args.subscriptionMetadataJson,
-      paymentIntentMetadataJson: args.paymentIntentMetadataJson,
-    }) as { sessionId: string; url: string | undefined }
+  (ctx, { items }) => {
+    if (items.length === 0 || items.length > MAX_CHECKOUT_ITEMS) {
+      throwSenderError('store.invalid_items');
+    }
+    const checkout = ctx.withTx(tx => {
+      const returnOrigin = tx.db.storeConfig.singleton.find(true)?.returnOrigin;
+      if (!returnOrigin) throwSenderError('store.return_origin_not_set');
+      const lines = items.map(item => {
+        const product = tx.db.storeProduct.productId.find(item.productId);
+        if (!product?.active || !product.stripePriceId) {
+          throwSenderError('store.product_unavailable');
+        }
+        if (item.quantity < 1 || item.quantity > MAX_ITEM_QUANTITY) {
+          throwSenderError('store.invalid_quantity');
+        }
+        return {
+          mode: product.mode,
+          priceId: product.stripePriceId,
+          quantity: BigInt(item.quantity),
+        };
+      });
+      const mode = checkoutMode(lines[0].mode);
+      if (lines.some(line => line.mode !== mode)) {
+        throwSenderError('store.mixed_modes');
+      }
+      return { returnOrigin, mode, lines };
+    });
+    return stripe.createUserCheckoutSession(ctx.as.stripe, {
+      userId: ctx.sender.toHexString(),
+      items: checkout.lines.map(({ priceId, quantity }) => ({
+        priceId,
+        quantity,
+      })),
+      mode: checkout.mode,
+      successUrl: `${checkout.returnOrigin}/?purchased=1`,
+      cancelUrl: `${checkout.returnOrigin}/?canceled=1`,
+    });
+  }
 );
 
 export const syncStoreProductsWithStripe = spacetimedb.procedure(
   {},
   t.string(),
   ctx => {
-    ctx.withTx(tx => requireAdmin(tx, ctx.sender));
+    ctx.withTx(tx => requireAdmin(tx));
     const databaseIdentity = ctx.databaseIdentity.toHexString();
     const rows = ctx.withTx(tx => [
       ...tx.db.storeProduct.byActiveSort.filter([true, new Range()]),
@@ -513,8 +461,7 @@ export const syncStoreProductsWithStripe = spacetimedb.procedure(
 
       ctx.withTx(tx => {
         const current = tx.db.storeProduct.productId.find(row.productId);
-        if (!current)
-          throwSenderError(`store.product_not_found:${row.productId}`);
+        if (!current) throwSenderError('store.product_not_found');
         upsertStoreProductRow(tx, ctx.timestamp, {
           productId: current.productId,
           name: current.name,
@@ -542,10 +489,10 @@ export const setStoreProductPrice = spacetimedb.reducer(
   { productId: t.string(), stripePriceId: t.string() },
   (ctx, args) => {
     const tx = ctx;
-    requireAdmin(tx, ctx.sender);
+    requireAdmin(tx);
     const existing = tx.db.storeProduct.productId.find(args.productId);
     if (!existing) {
-      throwSenderError(`store.product_not_found:${args.productId}`);
+      throwSenderError('store.product_not_found');
     }
     upsertStoreProductRow(tx, ctx.timestamp, {
       productId: existing.productId,
@@ -565,10 +512,10 @@ export const clearStoreProductPrice = spacetimedb.reducer(
   { productId: t.string() },
   (ctx, args) => {
     const tx = ctx;
-    requireAdmin(tx, ctx.sender);
+    requireAdmin(tx);
     const existing = tx.db.storeProduct.productId.find(args.productId);
     if (!existing) {
-      throwSenderError(`store.product_not_found:${args.productId}`);
+      throwSenderError('store.product_not_found');
     }
     upsertStoreProductRow(tx, ctx.timestamp, {
       productId: existing.productId,

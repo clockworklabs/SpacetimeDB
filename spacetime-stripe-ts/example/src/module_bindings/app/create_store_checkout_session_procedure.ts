@@ -11,20 +11,13 @@ import {
 } from "spacetimedb";
 
 import {
-  StoreCheckoutLineItem,
+  StoreCheckoutItem,
   StoreCheckoutSessionResult,
 } from "./types";
 
 export const params = {
   get items() {
-    return __t.array(StoreCheckoutLineItem);
+    return __t.array(StoreCheckoutItem);
   },
-  customerId: __t.option(__t.string()),
-  mode: __t.string(),
-  successUrl: __t.string(),
-  cancelUrl: __t.string(),
-  metadataJson: __t.option(__t.string()),
-  subscriptionMetadataJson: __t.option(__t.string()),
-  paymentIntentMetadataJson: __t.option(__t.string()),
 };
 export const returnType = StoreCheckoutSessionResult

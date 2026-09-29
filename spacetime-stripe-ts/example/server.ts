@@ -85,15 +85,6 @@ function requiredString(
   return value;
 }
 
-function optionalString(
-  value: unknown,
-  field: string,
-  maxLength: number
-): string | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  return requiredString(value, field, maxLength);
-}
-
 function providerActionsReady(): void {
   if (!ALLOW_BROWSER_PROVIDER_ACTIONS) {
     throw new RequestError(403, 'browser_provider_actions_disabled');
@@ -112,13 +103,12 @@ function sendRouteError(route: string, error: unknown, res: Response): void {
   res.status(502).json({ error: `${route}_failed` });
 }
 
-function returnUrl(flag: 'purchased' | 'canceled'): string {
-  const url = new URL('/', STRIPE_RETURN_BASE_URL);
+function returnOrigin(): string {
+  const url = new URL(STRIPE_RETURN_BASE_URL);
   if (IS_PRODUCTION && url.protocol !== 'https:') {
-    throw new RequestError(500, 'stripe_return_url_requires_https');
+    throw new Error('STRIPE_RETURN_BASE_URL must use https in production');
   }
-  url.searchParams.set(flag, '1');
-  return url.toString();
+  return url.origin;
 }
 
 function connectAttempt(token: string | undefined): Promise<ConnectedServer> {
@@ -181,7 +171,7 @@ async function configureStripeFromEnv(): Promise<
     );
   }
 
-  await requireStdb().procedures.configureStripe({
+  await requireStdb().procedures['stripe.setStripeConfig']({
     secretKey,
     stripeVersion: process.env.STRIPE_VERSION || undefined,
     webhookSigningSecret: process.env.STRIPE_WEBHOOK_SECRET || undefined,
@@ -223,81 +213,6 @@ app.get('/api/config', (_req: Request, res: Response) => {
   });
 });
 
-app.post('/api/customer', async (req: Request, res: Response) => {
-  try {
-    providerActionsReady();
-    if (!isRecord(req.body)) throw new RequestError(400, 'invalid_body');
-    const userId = requiredString(req.body.userId, 'user_id', 128);
-    const email = optionalString(req.body.email, 'email', 320);
-    const name = optionalString(req.body.name, 'name', 200);
-    const result = await requireStdb().procedures.getOrCreateStoreCustomer({
-      userId,
-      email,
-      name,
-    });
-    res.json(result);
-  } catch (error) {
-    sendRouteError('customer', error, res);
-  }
-});
-
-app.post('/api/checkout', async (req: Request, res: Response) => {
-  try {
-    providerActionsReady();
-    if (!isRecord(req.body) || !Array.isArray(req.body.items)) {
-      throw new RequestError(400, 'invalid_body');
-    }
-    if (req.body.items.length === 0 || req.body.items.length > 20) {
-      throw new RequestError(400, 'invalid_items');
-    }
-
-    const mode = requiredString(req.body.mode, 'mode', 32);
-    if (mode !== 'payment' && mode !== 'subscription') {
-      throw new RequestError(400, 'invalid_mode');
-    }
-    const customerId = optionalString(req.body.customerId, 'customer_id', 255);
-    if (customerId && !/^cus_[A-Za-z0-9]+$/.test(customerId)) {
-      throw new RequestError(400, 'invalid_customer_id');
-    }
-
-    const catalog = [...requireStdb().db.storeProduct.iter()];
-    const items = req.body.items.map((value, index) => {
-      if (!isRecord(value))
-        throw new RequestError(400, `invalid_item_${index}`);
-      const priceId = requiredString(value.priceId, `price_id_${index}`, 255);
-      const quantity = value.quantity;
-      if (
-        typeof quantity !== 'number' ||
-        !Number.isSafeInteger(quantity) ||
-        quantity < 1 ||
-        quantity > 99
-      ) {
-        throw new RequestError(400, `invalid_quantity_${index}`);
-      }
-      const product = catalog.find(
-        row => row.active && row.stripePriceId === priceId && row.mode === mode
-      );
-      if (!product)
-        throw new RequestError(400, `price_not_in_active_catalog_${index}`);
-      return { priceId, quantity: BigInt(quantity) };
-    });
-
-    const result = await requireStdb().procedures.createStoreCheckoutSession({
-      items,
-      customerId,
-      mode,
-      successUrl: returnUrl('purchased'),
-      cancelUrl: returnUrl('canceled'),
-      metadataJson: undefined,
-      subscriptionMetadataJson: undefined,
-      paymentIntentMetadataJson: undefined,
-    });
-    res.json(result);
-  } catch (error) {
-    sendRouteError('checkout', error, res);
-  }
-});
-
 app.post('/api/validate-price', async (req: Request, res: Response) => {
   try {
     providerActionsReady();
@@ -307,9 +222,9 @@ app.post('/api/validate-price', async (req: Request, res: Response) => {
       row => row.active && row.stripePriceId === priceId
     );
     if (!inCatalog) throw new RequestError(400, 'price_not_in_active_catalog');
-    const result = await requireStdb().procedures.validateStoreStripePrice({
-      priceId,
-    });
+    const result = await requireStdb().procedures['stripe.validateStripePrice'](
+      { priceId }
+    );
     res.json({
       ...result,
       unitAmount:
@@ -323,7 +238,9 @@ app.post('/api/validate-price', async (req: Request, res: Response) => {
 app.get('/api/webhook-event-count', async (_req: Request, res: Response) => {
   try {
     providerActionsReady();
-    const count = await requireStdb().procedures.getStoreWebhookEventCount({});
+    const count = await requireStdb().procedures['stripe.getWebhookEventCount'](
+      {}
+    );
     res.json({ count: Number(count) });
   } catch (error) {
     sendRouteError('webhook_event_count', error, res);
@@ -364,13 +281,6 @@ async function seedCatalogIfEmpty(conn: DbConnection): Promise<void> {
       spacetimeBin: SPACETIME_BIN,
       server: STDB_HTTP,
       database: DB_NAME,
-      procedure: 'add_admin_identity',
-      identity: connected.identity,
-    });
-    grantServerIdentity({
-      spacetimeBin: SPACETIME_BIN,
-      server: STDB_HTTP,
-      database: DB_NAME,
       procedure: 'stripe.add_admin_identity',
       identity: connected.identity,
     });
@@ -381,6 +291,15 @@ async function seedCatalogIfEmpty(conn: DbConnection): Promise<void> {
     );
     console.error(
       '[stdb] is the SpacetimeDB host running and the example module published?'
+    );
+    process.exit(1);
+  }
+
+  try {
+    await stdb.reducers.setStoreReturnOrigin({ returnOrigin: returnOrigin() });
+  } catch (err) {
+    console.error(
+      `[store] return origin rejected: ${err instanceof Error ? err.message : String(err)}`
     );
     process.exit(1);
   }

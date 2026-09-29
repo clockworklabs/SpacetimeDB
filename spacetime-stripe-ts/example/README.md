@@ -2,16 +2,20 @@
 
 Premium Store demonstrates a host database that mounts
 `@spacetimedb/stripe/submodule` and delegates customer, price, checkout, and
-webhook operations through the `stripe` namespace. The browser can shop and create
-Stripe Checkout sessions, but it cannot configure Stripe or mutate administrative
-catalog state.
+webhook operations through the `stripe` namespace. The browser calls buyer
+procedures with its own identity to create its Stripe customer and Checkout
+sessions, but it cannot configure Stripe or mutate administrative catalog state.
 
 ## What this demonstrates
 
 - Mounting the Stripe submodule inside an application-owned store module.
 - Keeping Stripe credentials in private module state.
-- Using a narrow server API for customer lookup, price validation, and Checkout;
-  the browser never receives the privileged service identity.
+- Buyer procedures (`create_store_checkout_session`,
+  `get_or_create_store_customer`) that the browser calls directly. Each buyer's
+  identity owns its Stripe customer, and prices, modes, and return URLs come from
+  server-owned state.
+- One administrator list: the store checks the Stripe submodule's
+  `stripe_admin_identity` table.
 - Seeding an application catalog independently of Stripe provider records.
 - Creating or linking idempotent Stripe test prices during explicit server setup.
 - Receiving Stripe webhooks through the module's native HTTP route.
@@ -72,8 +76,8 @@ npm install @spacetimedb/stripe spacetimedb
 
 Follow the package's
 [integration guide](../README.md#integrate-into-an-application). Copy the
-service-identity, narrow Checkout API, caller-scoped billing views, and signed
-webhook route. The product catalog and storefront are demonstration code.
+buyer procedures, the shared administrator check, and the signed webhook
+route. The product catalog and storefront are demonstration code.
 
 ## Configuration
 
@@ -83,8 +87,8 @@ webhook route. The product catalog and storefront are demonstration code.
 | `STRIPE_WEBHOOK_SECRET`                 | empty                                | Verifies incoming Stripe webhook signatures.                  |
 | `STRIPE_VERSION`                        | submodule default                    | Optional Stripe API-version override.                         |
 | `STRIPE_SYNC_PRICES`                    | `0`                                  | Set to `1` to create/link missing test prices during startup. |
-| `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS` | automatic on non-production loopback | Explicit provider-action opt-in for other environments.       |
-| `STRIPE_RETURN_BASE_URL`                | `http://127.0.0.1:8787`              | Server-owned Checkout return origin.                          |
+| `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS` | automatic on non-production loopback | Enables the price-validation and webhook-count debug routes.  |
+| `STRIPE_RETURN_BASE_URL`                | `http://127.0.0.1:8787`              | Checkout return origin, stored in the module at startup.      |
 | `NODE_ENV`                              | empty                                | Set to `production` to disable development-only defaults.     |
 | `STDB_URI`                              | `ws://127.0.0.1:3000`                | Browser and server WebSocket endpoint.                        |
 | `STDB_HTTP`                             | `http://127.0.0.1:3000`              | CLI administration endpoint. Must match `STDB_URI`.           |
@@ -95,8 +99,10 @@ webhook route. The product catalog and storefront are demonstration code.
 
 When no server token is supplied, the server persists one in the ignored
 `.stdb-server-token` file. The logged-in publishing identity registers that server
-identity in both the host store and Stripe submodule administrator registries. The
-browser identity is never granted either role.
+identity with `stripe.add_admin_identity`, the administrator list shared by the
+store and the Stripe submodule. The browser identity is never an administrator.
+The browser keeps its own identity token in `localStorage`, so the buyer and its
+Stripe customer survive the Checkout redirect.
 
 ## Startup behavior
 
@@ -104,9 +110,10 @@ The example server performs the following bounded setup before accepting HTTP:
 
 1. Connect with the persistent server identity.
 2. Authorize it through the logged-in CLI publishing identity.
-3. Seed the default store catalog if it is empty.
-4. Store Stripe configuration when `STRIPE_SECRET_KEY` is present.
-5. Synchronize missing prices only when `STRIPE_SYNC_PRICES=1`.
+3. Store the Checkout return origin from `STRIPE_RETURN_BASE_URL`.
+4. Seed the default store catalog if it is empty.
+5. Store Stripe configuration when `STRIPE_SECRET_KEY` is present.
+6. Synchronize missing prices only when `STRIPE_SYNC_PRICES=1`.
 
 Price synchronization is opt-in because it creates test-mode objects in the linked
 Stripe account. Existing prices use stable lookup keys and are reused.
@@ -114,12 +121,10 @@ Stripe account. Existing prices use stable lookup keys and are reused.
 ## Architecture
 
 ```text
-Browser storefront
+Browser storefront (own identity)
   -> public store_product subscription
-  -> same-origin /api checkout/customer/validation routes
-  -> authorized server identity
-  -> host checkout/customer/validation procedures
-  -> stripe submodule namespace
+  -> create_store_checkout_session / get_or_create_store_customer
+  -> stripe submodule host helpers
   -> Stripe API
 
 Stripe
@@ -129,17 +134,20 @@ Stripe
 
 Authorized example server
   -> private configuration and catalog setup during startup
+  -> stripe.validate_stripe_price and stripe.get_webhook_event_count for the
+     debug routes
 ```
 
-The Node server exposes only browser-safe health and configuration routes:
+The Node server serves the storefront and these routes:
 
-| Route             | Purpose                             |
-| ----------------- | ----------------------------------- |
-| `GET /api/health` | Local health probe.                 |
-| `GET /api/config` | Browser-safe database/setup status. |
+| Route                          | Purpose                                         |
+| ------------------------------ | ----------------------------------------------- |
+| `GET /api/health`              | Local health probe.                             |
+| `GET /api/config`              | Browser-safe database/setup status.             |
+| `POST /api/validate-price`     | Checks a catalog price with Stripe (debug).     |
+| `GET /api/webhook-event-count` | Reports the stored webhook event count (debug). |
 
-There are no HTTP administration endpoints. The settings panel contains buyer and
-debugging controls only.
+The debug routes are enabled only when browser provider actions are allowed.
 
 ## Webhooks
 
@@ -161,14 +169,17 @@ updated.
 - The server binds to loopback by default.
 - Production deployments should provision an authenticated service identity
   through deployment infrastructure.
-- Browser provider actions are automatic only for a non-production loopback host.
-  Production and externally bound development servers default to disabled. Add
-  application authentication and rate limiting, then set
+- The debug routes are automatic only for a non-production loopback host.
+  Production and externally bound development servers default to disabled. Set
   `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS=1` only when required.
-- The server owns Checkout return URLs. Set `STRIPE_RETURN_BASE_URL` to the public
-  HTTPS origin in production; browser-supplied redirect URLs are ignored.
-- Checkout success in the UI is a redirect result; authoritative fulfillment must
-  come from verified webhooks.
+- The buyer procedures create Stripe customers and Checkout sessions for any
+  connected identity. Add application authentication and rate limiting (for
+  example with `@spacetimedb/rate-limit`) before exposing them publicly.
+- The module owns Checkout return URLs. Set `STRIPE_RETURN_BASE_URL` to the public
+  HTTPS origin in production; the browser cannot supply redirect URLs.
+- Checkout success in the UI is a redirect result. Fulfill from verified
+  webhook state: grant access when `stripe_checkout_session.paymentStatus` is
+  `paid` or `no_payment_required`.
 
 ## Verification
 
@@ -186,8 +197,9 @@ create a test Checkout session.
 
 - **Products say “Sync price first”:** set `STRIPE_SYNC_PRICES=1` and restart with
   a valid test key.
-- **`stripe.not_authorized`:** publish with the logged-in CLI identity and restart;
-  both the store and Stripe namespaces must authorize the server identity.
+- **`stripe.not_authorized` or `store.not_authorized`:** publish with the
+  logged-in CLI identity and restart so it can grant the server identity through
+  `stripe.add_admin_identity`.
 - **Connection targets disagree:** make `STDB_URI`, `STDB_HTTP`, and the publish
   target refer to the same server.
 - **Webhook state is stale:** verify the forwarding URL and
@@ -195,8 +207,8 @@ create a test Checkout session.
 
 ## Important files
 
-- `spacetimedb/src/store/operations.ts`: application catalog and Stripe
-  delegation.
+- `spacetimedb/src/store/operations.ts`: application catalog, buyer procedures,
+  and Stripe delegation.
 - `server.ts`: safe startup configuration and server identity authorization.
 - `src/app.ts`: typed browser-side SpacetimeDB adapter.
 - `public/index.html`: storefront and buyer tools.

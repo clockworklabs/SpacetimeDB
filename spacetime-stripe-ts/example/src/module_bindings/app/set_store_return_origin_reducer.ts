@@ -10,11 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-import {
-  SubscriptionWithCreationTime,
-} from "./types";
-
-export const params = {
-  stripeCustomerId: __t.string(),
+export default {
+  returnOrigin: __t.string(),
 };
-export const returnType = __t.array(SubscriptionWithCreationTime)

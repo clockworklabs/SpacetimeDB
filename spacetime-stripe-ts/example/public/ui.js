@@ -35,7 +35,6 @@ const ui = {
   catalogGrid: byId('catalogGrid'),
   email: byId('email'),
   name: byId('name'),
-  userId: byId('userId'),
   customerId: byId('customerId'),
   btnCheckoutCart: byId('btnCheckoutCart'),
   btnDevToolsClose: byId('btnDevToolsClose'),
@@ -219,20 +218,9 @@ async function api(path, payload) {
   return data;
 }
 
-function buildPostCheckoutUrl(flag) {
-  const url = new URL(window.location.origin);
-  url.searchParams.set(flag, '1');
-  return url.toString();
-}
-
-function makeDefaultUserId() {
-  return `pilot_${crypto.randomUUID().slice(0, 8)}`;
-}
-
 function seedDefaultBuyerDetails() {
   ui.email.value = 'pilot@spacetime.dev';
   ui.name.value = 'Orbital Pilot';
-  ui.userId.value = makeDefaultUserId();
 }
 
 function hydrateCart() {
@@ -604,7 +592,6 @@ async function getOrCreateCustomer() {
     throw new Error('STDB not connected yet. Try again.');
   }
   const result = await window.stdb.getOrCreateCustomer({
-    userId: ui.userId.value,
     email: ui.email.value || undefined,
     name: ui.name.value || undefined,
   });
@@ -626,10 +613,6 @@ async function createCheckoutForCart(cartItems, triggerButton) {
         'Please remove one type and check out separately.'
     );
   }
-  const mode = modes[0];
-
-  const successUrl = buildPostCheckoutUrl('purchased');
-  const cancelUrl = buildPostCheckoutUrl('canceled');
 
   state.checkoutPending = true;
   syncCartState();
@@ -641,13 +624,9 @@ async function createCheckoutForCart(cartItems, triggerButton) {
     }
     const result = await window.stdb.createCheckoutSession({
       items: cartItems.map(entry => ({
-        priceId: entry.priceId,
+        productId: entry.id,
         quantity: entry.quantity,
       })),
-      customerId: ui.customerId.value || undefined,
-      mode,
-      successUrl,
-      cancelUrl,
     });
     writeLog(`create_checkout_session: ${JSON.stringify(result)}`);
 

@@ -1,4 +1,13 @@
 export { default, init } from './store/schema';
-export * from './store/operations';
-export { addAdminIdentity, removeAdminIdentity } from './store/auth';
-export { health, echo, stripeWebhookHandler, router } from './store/webhooks';
+export {
+  upsertStoreProduct,
+  seedDefaultStoreProducts,
+  listStoreProductsJson,
+  setStoreReturnOrigin,
+  getOrCreateStoreCustomer,
+  createStoreCheckoutSession,
+  syncStoreProductsWithStripe,
+  setStoreProductPrice,
+  clearStoreProductPrice,
+} from './store/operations';
+export { health, stripeWebhookHandler, router } from './store/webhooks';

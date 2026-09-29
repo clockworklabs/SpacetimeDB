@@ -9,19 +9,11 @@ declare global {
   interface Window {
     stdb?: {
       getOrCreateCustomer: (args: {
-        userId: string;
         email?: string;
         name?: string;
       }) => Promise<{ customerId: string; isNew: boolean }>;
       createCheckoutSession: (args: {
-        items: Array<{ priceId: string; quantity: number }>;
-        customerId?: string;
-        mode: 'payment' | 'subscription' | string;
-        successUrl: string;
-        cancelUrl: string;
-        metadataJson?: string;
-        subscriptionMetadataJson?: string;
-        paymentIntentMetadataJson?: string;
+        items: Array<{ productId: string; quantity: number }>;
       }) => Promise<{ sessionId: string; url?: string }>;
       validatePrice: (priceId: string) => Promise<{
         valid: boolean;
@@ -55,6 +47,9 @@ interface ServerConfig {
 }
 
 const products = new Map<string, StoreProductRow>();
+// The buyer's identity owns its Stripe customer, so keep it across the
+// Checkout redirect.
+const TOKEN_KEY = 'stdb.premiumStore.token';
 
 function parsePerks(json: string | undefined): string[] {
   if (!json) return [];
@@ -119,8 +114,10 @@ function connect(config: ServerConfig): Promise<DbConnection> {
       .withUri(config.spacetimeUri)
       .withDatabaseName(config.databaseName)
       .withCompression('none')
-      .onConnect(c => {
+      .withToken(localStorage.getItem(TOKEN_KEY) ?? undefined)
+      .onConnect((c, _identity, token) => {
         window.clearTimeout(timeout);
+        localStorage.setItem(TOKEN_KEY, token);
         resolve(c);
       })
       .onDisconnect((_ctx, err) => {
@@ -213,13 +210,9 @@ async function main() {
   registerRowCallbacks(conn);
 
   window.stdb = {
-    getOrCreateCustomer: args => api('/api/customer', args),
+    getOrCreateCustomer: args => conn.procedures.getOrCreateStoreCustomer(args),
     createCheckoutSession: args =>
-      api('/api/checkout', {
-        items: args.items,
-        customerId: args.customerId,
-        mode: args.mode,
-      }),
+      conn.procedures.createStoreCheckoutSession(args),
     validatePrice: priceId => api('/api/validate-price', { priceId }),
     getWebhookEventCount: () =>
       api<{ count: number }>('/api/webhook-event-count').then(

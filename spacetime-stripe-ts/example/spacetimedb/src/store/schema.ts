@@ -24,10 +24,11 @@ export const storeProductRow = {
   updatedAt: t.timestamp(),
 };
 
-// Identities allowed to mutate the catalog. Fresh publishes seed the owner via init.
-export const storeAdminIdentityRow = {
-  identity: t.identity().primaryKey(),
-  addedAtMicros: t.i64(),
+// Origin that Stripe Checkout returns buyers to, set by an administrator.
+export const storeConfigRow = {
+  singleton: t.bool().primaryKey(),
+  returnOrigin: t.string(),
+  updatedAt: t.timestamp(),
 };
 
 export const storeProductTable = table(
@@ -55,19 +56,18 @@ export const storeProductTable = table(
   storeProductRow
 );
 
-export const storeAdminIdentityTable = table(
-  { name: 'store_admin_identity', public: false, indexes: [] },
-  storeAdminIdentityRow
+export const storeConfigTable = table(
+  { name: 'store_config', public: false, indexes: [] },
+  storeConfigRow
 );
 
 export const spacetimedb = schema({
   stripe,
   storeProduct: storeProductTable,
-  storeAdminIdentity: storeAdminIdentityTable,
+  storeConfig: storeConfigTable,
 });
 
 export const init = spacetimedb.init(ctx => {
-  installStore(ctx);
   stripe.install(ctx.as.stripe);
 });
 
@@ -81,11 +81,3 @@ export type TransactionModuleCtx = TransactionCtx<
 >;
 export type WriteCtx = ReducerModuleCtx | TransactionModuleCtx;
 export type ModuleTimestamp = ReducerModuleCtx['timestamp'];
-
-export function installStore(ctx: ReducerModuleCtx) {
-  if (ctx.db.storeAdminIdentity.identity.find(ctx.sender) != null) return;
-  ctx.db.storeAdminIdentity.insert({
-    identity: ctx.sender,
-    addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
-  });
-}
