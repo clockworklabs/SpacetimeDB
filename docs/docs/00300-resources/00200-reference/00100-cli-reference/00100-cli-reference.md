@@ -815,14 +815,13 @@ Run `spacetime help unlock` for more detailed information.
 
 Manage SpacetimeAuth for a database
 
-**Usage:** `spacetime auth
-       auth \<COMMAND\>`
+**Usage:** `spacetime auth <COMMAND>`
 
 ###### **Subcommands:**
 
 * `config` — Manage SpacetimeAuth configuration for a database
 * `idp` — Manage identity providers for a database
-* `client` — Manage OAuth clients for SpacetimeAuth
+* `client` — Manage OAuth clients for a database
 
 
 
@@ -847,7 +846,7 @@ Set a SpacetimeAuth configuration value for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database
+* `<DATABASE>` — The name of the database
 * `<KEY>` — The setting to configure
 
   Possible values: `display_name`, `favicon_url`, `color.text`, `color.background`, `color.primary`, `color.input`, `color.border`, `login.email`, `login.anonymous`, `steam.publisher_key`, `steam.app_ids`
@@ -864,7 +863,7 @@ Reset all SpacetimeAuth configuration for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database
+* `<DATABASE>` — The name of the database
 
 
 
@@ -890,7 +889,7 @@ Configure an identity provider for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database
+* `<DATABASE>` — The name of the database
 * `<IDP>` — The identity provider to configure
 
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
@@ -908,7 +907,7 @@ Enable an identity provider for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database
+* `<DATABASE>` — The name of the database
 * `<IDP>` — The identity provider to configure
 
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
@@ -924,7 +923,7 @@ Disable an identity provider for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name or identity of the database
+* `<DATABASE>` — The name of the database
 * `<IDP>` — The identity provider to configure
 
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
@@ -934,7 +933,7 @@ Disable an identity provider for a database
 
 ## `spacetime auth client`
 
-Manage OAuth clients for SpacetimeAuth
+Manage OAuth clients for a database
 
 **Usage:** `spacetime auth client <COMMAND>`
 
@@ -951,16 +950,17 @@ Manage OAuth clients for SpacetimeAuth
 
 Create a new OAuth client
 
-**Usage:** `spacetime auth client create [OPTIONS] [name]`
+**Usage:** `spacetime auth client create [OPTIONS] <database>`
 
 ###### **Arguments:**
 
-* `<NAME>` — The client name
-
-  Default value: `Default Client`
+* `<DATABASE>` — The name of the database
 
 ###### **Options:**
 
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
 * `--private` — Create the client as private (requires a client secret for token exchange)
 
 
@@ -969,11 +969,15 @@ Create a new OAuth client
 
 Delete an OAuth client
 
-**Usage:** `spacetime auth client delete [name]`
+**Usage:** `spacetime auth client delete [OPTIONS] <database>`
 
 ###### **Arguments:**
 
-* `<NAME>` — The client name
+* `<DATABASE>` — The name of the database
+
+###### **Options:**
+
+* `--name <NAME>` — The client name
 
   Default value: `Default Client`
 
@@ -983,16 +987,17 @@ Delete an OAuth client
 
 Get an OAuth client
 
-**Usage:** `spacetime auth client get [OPTIONS] [name]`
+**Usage:** `spacetime auth client get [OPTIONS] <database>`
 
 ###### **Arguments:**
 
-* `<NAME>` — The client name
-
-  Default value: `Default Client`
+* `<DATABASE>` — The name of the database
 
 ###### **Options:**
 
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
 * `--include-secret` — Include the client secret in the output
 
 
@@ -1001,16 +1006,22 @@ Get an OAuth client
 
 Set a configuration value for an OAuth client
 
-**Usage:** `spacetime auth client set <key> <value>...`
-
-ARGS:
-  [name]  Client name (default: "Default Client")
-  <key>   Setting to update: name, private, web, native, redirect_uris, post_logout_redirect_uris
-  <value> Value to assign
+**Usage:** `spacetime auth client set [OPTIONS] <database> <key> <value>`
 
 ###### **Arguments:**
 
-* `<key>` — [name] <key> <value>
+* `<DATABASE>` — The name of the database
+* `<KEY>` — The setting to configure
+
+  Possible values: `name`, `private`, `web`, `native`, `redirect_uris`, `post_logout_redirect_uris`
+
+* `<VALUE>` — The value to assign to the setting
+
+###### **Options:**
+
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
 
 
 
