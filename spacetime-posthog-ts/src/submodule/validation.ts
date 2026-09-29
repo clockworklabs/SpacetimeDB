@@ -27,7 +27,7 @@ export function throwSenderError(message: string): never {
 
 export function normalizeHost(host: string): string {
   const trimmed = host.trim();
-  if (!trimmed) throwSenderError(errors.invalidHost);
+  if (!/^https?:\/\/[^/]/i.test(trimmed)) throwSenderError(errors.invalidHost);
   return trimmed.replace(/\/+$/, '');
 }
 

@@ -111,7 +111,7 @@ The submodule stores operational state in private tables and exposes admin-gated
 
 **Setup**
 
-- `set_posthog_config({ host, projectApiKey })`
+- `set_posthog_config({ host, projectApiKey })`. `host` must start with `https://` or `http://`, for example `https://us.i.posthog.com`.
 - `get_posthog_config_status()` returns `{ isConfigured, host, projectApiKeyLength }`.
 - `add_admin_identity(identity)` / `remove_admin_identity(identity)`
 
