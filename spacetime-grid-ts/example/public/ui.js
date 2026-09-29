@@ -454,6 +454,9 @@ function renderMatch() {
   }
 
   $('btn-end-turn').disabled = !myTurn;
+  const abandon = $('btn-abandon-match');
+  abandon.hidden = mySeatIdx === undefined || m.status.tag === 'Ended';
+  abandon.textContent = m.status.tag === 'Waiting' ? 'Cancel match' : 'Forfeit';
 
   const my0 = [];
   const en = [];
@@ -558,6 +561,19 @@ $('btn-create-match-ai').addEventListener('click', async () => {
   try {
     const r = await window.grid.createMatch(true);
     window.grid.setActiveMatch(r.matchId);
+  } catch (err) {
+    toast('err', err.message ?? String(err));
+  }
+});
+// Cancel deletes a Waiting match; forfeit ends an Active one.
+$('btn-abandon-match').addEventListener('click', async () => {
+  const m = state?.activeMatch;
+  if (!m) return;
+  const cancel = m.status.tag === 'Waiting';
+  if (!cancel && !window.confirm('Forfeit this match?')) return;
+  try {
+    await window.grid.leaveMatch(m.matchId);
+    if (cancel) window.grid.setActiveMatch(null);
   } catch (err) {
     toast('err', err.message ?? String(err));
   }

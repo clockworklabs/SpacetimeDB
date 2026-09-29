@@ -9,9 +9,14 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "spacetimedb";
+import {
+  AiTurnEvent,
+} from "./types";
 
-export const params = {
-  attackerId: __t.u64(),
-  targetId: __t.u64(),
-};
-export const returnType = __t.unit()
+
+export default __t.row({
+  matchId: __t.u64().primaryKey().name("match_id"),
+  get events() {
+    return __t.array(AiTurnEvent);
+  },
+});

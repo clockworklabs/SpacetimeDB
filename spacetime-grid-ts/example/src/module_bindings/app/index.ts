@@ -34,19 +34,20 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AttackUnitReducer from "./attack_unit_reducer";
+import EndTurnReducer from "./end_turn_reducer";
+import JoinMatchReducer from "./join_match_reducer";
+import LeaveMatchReducer from "./leave_match_reducer";
 
 // Import all procedure arg schemas
-import * as AiTakeTurnProcedure from "./ai_take_turn_procedure";
-import * as AttackUnitProcedure from "./attack_unit_procedure";
 import * as CreateMatchProcedure from "./create_match_procedure";
-import * as EndTurnProcedure from "./end_turn_procedure";
 import * as GetCellsInRangeProcedure from "./get_cells_in_range_procedure";
-import * as JoinMatchProcedure from "./join_match_procedure";
 import * as MoveUnitProcedure from "./move_unit_procedure";
 
 // Import all table schema definitions
 import ActorDirectoryRow from "./actor_directory_table";
 import LobbyOpenMatchesRow from "./lobby_open_matches_table";
+import MyAiTurnsRow from "./my_ai_turns_table";
 import MyCellStatesRow from "./my_cell_states_table";
 import MyGridEntitiesRow from "./my_grid_entities_table";
 import MyGridsRow from "./my_grids_table";
@@ -121,6 +122,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, LobbyOpenMatchesRow),
+  myAiTurns: __table({
+    name: 'my_ai_turns',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAiTurnsRow),
   myCellStates: __table({
     name: 'my_cell_states',
     indexes: [
@@ -192,6 +200,10 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("attack_unit", AttackUnitReducer),
+  __reducerSchema("end_turn", EndTurnReducer),
+  __reducerSchema("join_match", JoinMatchReducer),
+  __reducerSchema("leave_match", LeaveMatchReducer),
   __reducerSchema("auth.add_auth_admin", Auth_AddAuthAdminReducer, "auth.addAuthAdmin"),
   __reducerSchema("auth.link_connection", Auth_LinkConnectionReducer, "auth.linkConnection"),
   __reducerSchema("auth.remove_auth_admin", Auth_RemoveAuthAdminReducer, "auth.removeAuthAdmin"),
@@ -208,12 +220,8 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
-  __procedureSchema("ai_take_turn", AiTakeTurnProcedure.params, AiTakeTurnProcedure.returnType),
-  __procedureSchema("attack_unit", AttackUnitProcedure.params, AttackUnitProcedure.returnType),
   __procedureSchema("create_match", CreateMatchProcedure.params, CreateMatchProcedure.returnType),
-  __procedureSchema("end_turn", EndTurnProcedure.params, EndTurnProcedure.returnType),
   __procedureSchema("get_cells_in_range", GetCellsInRangeProcedure.params, GetCellsInRangeProcedure.returnType),
-  __procedureSchema("join_match", JoinMatchProcedure.params, JoinMatchProcedure.returnType),
   __procedureSchema("move_unit", MoveUnitProcedure.params, MoveUnitProcedure.returnType),
   __procedureSchema("auth.get_auth_public_key", Auth_GetAuthPublicKeyProcedure.params, Auth_GetAuthPublicKeyProcedure.returnType, "auth.getAuthPublicKey"),
   __procedureSchema("auth.list_my_sessions", Auth_ListMySessionsProcedure.params, Auth_ListMySessionsProcedure.returnType, "auth.listMySessions"),
@@ -242,6 +250,7 @@ export const tables = {
   unitType: __qb.unitType,
   actorDirectory: __qb.actorDirectory,
   lobbyOpenMatches: __qb.lobbyOpenMatches,
+  myAiTurns: __qb.myAiTurns,
   myCellStates: __qb.myCellStates,
   myGridEntities: __qb.myGridEntities,
   myGrids: __qb.myGrids,
@@ -260,6 +269,10 @@ export const tables = {
 /** The reducers available in this remote SpacetimeDB module. */
 const __reducerAccessors = __convertToAccessorMap(reducersSchema.reducersType.reducers);
 export const reducers = {
+  attackUnit: __reducerAccessors.attackUnit,
+  endTurn: __reducerAccessors.endTurn,
+  joinMatch: __reducerAccessors.joinMatch,
+  leaveMatch: __reducerAccessors.leaveMatch,
   auth: {
     addAuthAdmin: __reducerAccessors["auth.addAuthAdmin"],
     linkConnection: __reducerAccessors["auth.linkConnection"],
@@ -281,12 +294,8 @@ export const reducers = {
 /** The procedures available in this remote SpacetimeDB module. */
 const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures);
 export const procedures = {
-  aiTakeTurn: __procedureAccessors.aiTakeTurn,
-  attackUnit: __procedureAccessors.attackUnit,
   createMatch: __procedureAccessors.createMatch,
-  endTurn: __procedureAccessors.endTurn,
   getCellsInRange: __procedureAccessors.getCellsInRange,
-  joinMatch: __procedureAccessors.joinMatch,
   moveUnit: __procedureAccessors.moveUnit,
   auth: {
     getAuthPublicKey: __procedureAccessors["auth.getAuthPublicKey"],

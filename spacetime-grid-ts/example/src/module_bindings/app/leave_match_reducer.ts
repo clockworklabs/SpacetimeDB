@@ -10,7 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const params = {
+export default {
   matchId: __t.u64(),
 };
-export const returnType = __t.unit()

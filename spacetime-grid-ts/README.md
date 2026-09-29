@@ -118,7 +118,7 @@ authorization.
 The last path written for an entity, with one row per `entityId`. Consumers call
 `computePath` after cost-map changes to refresh the snapshot.
 
-Helper types `pathCell`, `pathResult`, and `reachableCell` are exported for use in your own procedure signatures.
+Helper types `pathCell`, `pathResult`, and `reachableCell` are exported for use in your own reducer and procedure signatures.
 
 ## Constants
 
@@ -228,7 +228,7 @@ pnpm run typecheck
 Build the
 [example host module](./example/spacetimedb/)
 to verify the
-submodule schema, procedures, and generated bindings.
+submodule schema, helpers, and generated bindings.
 
 ## License
 

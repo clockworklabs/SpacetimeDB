@@ -3,7 +3,7 @@ import {
   t,
   table,
   type InferSchema,
-  type TransactionCtx,
+  type ReducerCtx,
 } from 'spacetimedb/server';
 import * as auth from '@spacetimedb/auth/submodule';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
@@ -105,6 +105,56 @@ export const playerUnit = table(
   }
 );
 
+// Fires the AI's turn when its seat becomes active.
+export const aiTurnSchedule = table(
+  { name: 'ai_turn_schedule' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    matchId: t.u64(),
+  }
+);
+
+// Deletes a match that is still Waiting when this fires.
+export const matchExpirySchedule = table(
+  { name: 'match_expiry_schedule' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    matchId: t.u64(),
+  }
+);
+
+// One event per acting AI unit, in execution order. The client animates the
+// move path, then the attack, using the target snapshot taken before damage.
+export const aiTurnEvent = t.object('AiTurnEvent', {
+  entityId: t.u64(),
+  movePath: t.option(
+    t.array(t.object('AiPathStep', { x: t.i32(), y: t.i32() }))
+  ),
+  attack: t.option(
+    t.object('AiAttackInfo', {
+      targetId: t.u64(),
+      damage: t.i32(),
+      killed: t.bool(),
+      targetX: t.i32(),
+      targetY: t.i32(),
+      targetOwner: t.string(),
+      targetTypeId: t.string(),
+      targetPreHp: t.i32(),
+    })
+  ),
+});
+
+// The latest AI turn per match.
+export const aiTurnLog = table(
+  { name: 'ai_turn_log', public: false },
+  {
+    matchId: t.u64().primaryKey(),
+    events: t.array(aiTurnEvent),
+  }
+);
+
 export const spacetimedb = schema({
   auth,
   grid: gridSubmodule,
@@ -113,8 +163,11 @@ export const spacetimedb = schema({
   matchParticipant,
   npcActor,
   playerUnit,
+  aiTurnSchedule,
+  matchExpirySchedule,
+  aiTurnLog,
 });
 export default spacetimedb;
 
 export type Schema = InferSchema<typeof spacetimedb>;
-export type WriteCtx = TransactionCtx<Schema>;
+export type WriteCtx = ReducerCtx<Schema>;
