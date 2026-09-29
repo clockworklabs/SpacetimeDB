@@ -438,7 +438,7 @@ async function main() {
     throw new Error(`expected bounce reason in row: ${bouncedRow}`);
   }
 
-  step('late sent and delayed events do not undo a bounce');
+  step('late sent, delayed, and failed events do not undo a bounce');
   for (const type of ['email.sent', 'email.delivery_delayed']) {
     await ingestWebhook(
       opts,
@@ -454,6 +454,24 @@ async function main() {
     if (emailStatus(current) !== 'Bounced')
       throw new Error(`late ${type} changed bounce: ${current}`);
   }
+  await ingestWebhook(
+    opts,
+    evt('late_failed'),
+    'email.failed',
+    eventPayload({
+      type: 'email.failed',
+      emailId: em('c'),
+      extra: { failed: { reason: 'late failure' } },
+    })
+  );
+  const afterLateFailure = await callReducer(opts, 'get_email', [
+    quote(em('c')),
+  ]);
+  if (
+    emailStatus(afterLateFailure) !== 'Bounced' ||
+    afterLateFailure.includes('late failure')
+  )
+    throw new Error(`late failure changed bounce: ${afterLateFailure}`);
   await callReducer(opts, 'replay_webhook_event', [
     quote(evt('late_email.sent')),
   ]);

@@ -57,6 +57,8 @@ export function upsertEmail(
           !existing.statusUpdatedAt ||
           statusTime.microsSinceUnixEpoch >=
             existing.statusUpdatedAt.microsSinceUnixEpoch)));
+  // Error and bounce details describe the status that produced them.
+  const statusDetail = replaceStatus ? args : undefined;
   const row = {
     resendId: args.resendId,
     fromAddress: args.fromAddress,
@@ -69,11 +71,11 @@ export function upsertEmail(
         ? args.status
         : (existing?.status ?? EmailStatus.Queued),
     statusUpdatedAt: replaceStatus ? statusTime : existing?.statusUpdatedAt,
-    lastError: args.lastError ?? existing?.lastError,
-    bouncedAt: args.bouncedAt ?? existing?.bouncedAt,
-    bounceJson: args.bounceJson ?? existing?.bounceJson,
-    failedAt: args.failedAt ?? existing?.failedAt,
-    failureReason: args.failureReason ?? existing?.failureReason,
+    lastError: statusDetail?.lastError ?? existing?.lastError,
+    bouncedAt: statusDetail?.bouncedAt ?? existing?.bouncedAt,
+    bounceJson: statusDetail?.bounceJson ?? existing?.bounceJson,
+    failedAt: statusDetail?.failedAt ?? existing?.failedAt,
+    failureReason: statusDetail?.failureReason ?? existing?.failureReason,
     complained: args.complained || (existing?.complained ?? false),
     complainedAt: args.complainedAt ?? existing?.complainedAt,
     opened: args.opened || (existing?.opened ?? false),
