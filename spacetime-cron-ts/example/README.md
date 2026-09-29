@@ -90,7 +90,7 @@ The browser connects directly to SpacetimeDB. The Express process serves static 
 
 1. `cronTable()` declares `digest` and `cleanup` as static jobs. `cleanup` also
    declares `{ keep: u32 }` as its durable argument.
-2. `createCron()` creates the private shared job table, run history, one schedule
+2. `client()` creates the private shared job table, run history, one schedule
    table for each job, and the optional five-minute reconciler.
 3. `schema()` mounts the Cron tables with the example's `activity_log` table.
 4. `cronReducer()` binds each job to its static handler.
@@ -99,7 +99,7 @@ The browser connects directly to SpacetimeDB. The Express process serves static 
    fresh publish.
 7. The browser subscribes to `cron_jobs`, `cron_run`, and `activity_log`.
 8. The scheduling form calls application reducers. Those reducers validate the
-   selected job and typed cleanup argument before calling `schedule()`.
+   selected job and typed cleanup argument before calling `cron.schedule()`.
 
 The `digest` handler appends a summary row. The `cleanup` handler keeps the newest
 configured number of activity rows and records how many older rows it removed.
@@ -119,7 +119,7 @@ rows remain present, and the same recovery path records their failure state.
 The volatile request is best effort. A host failure can leave an enabled job
 without a pending fire. This example enables a five-minute reconciler. The
 reconciler repairs that invariant and records a failed run with `lost_fire`.
-Calls to `schedule()` and `unschedule()` also perform this repair
+Calls to `cron.schedule()` and `cron.unschedule()` also perform this repair
 opportunistically.
 
 Typed arguments remain in the private `cron_job` row. The browser-visible

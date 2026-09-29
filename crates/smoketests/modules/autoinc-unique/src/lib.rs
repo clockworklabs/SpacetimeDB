@@ -23,6 +23,18 @@ macro_rules! autoinc_unique {
                 }
 
                 #[spacetimedb::reducer]
+                pub fn [<add_and_fail_ $ty>](ctx: &ReducerContext) -> Result<(), Box<dyn Error>> {
+                    ctx.db.[<person_ $ty>]().try_insert([<Person_ $ty>] {
+                        key_col: 0,
+                        name: "rolled_back".into(),
+                    })?;
+                    Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "intentional failure after auto_inc insert",
+                    )))
+                }
+
+                #[spacetimedb::reducer]
                 pub fn [<update_ $ty>](ctx: &ReducerContext, name: String, new_id: $ty) {
                     ctx.db.[<person_ $ty>]().name().delete(&name);
                     let _value = ctx.db.[<person_ $ty>]().insert([<Person_ $ty>] { key_col: new_id, name });

@@ -1,6 +1,6 @@
 # @spacetimedb/retry
 
-A typed retry factory for SpacetimeDB TypeScript modules. It creates a private
+Typed retries for SpacetimeDB TypeScript modules. `client()` creates a private
 scheduled-task table, attempt history, admin controls, and exponential-backoff
 dispatch around handlers defined by the host module.
 
@@ -10,7 +10,7 @@ dispatch around handlers defined by the host module.
 npm install @spacetimedb/retry spacetimedb
 ```
 
-The factory registers its tables and reducers in the host schema. It does not
+The tables and reducers are registered in the host schema. Retry does not
 mount a separate submodule schema.
 
 `spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
@@ -23,51 +23,42 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-Retry is a factory because task variants and handlers belong to the host. The
-example below is a module-definition skeleton: replace `sendReceipt` with an
-idempotent application handler.
-
-Create the factory before the schema so its tables can be registered. Register the
-scheduled reducer afterward to resolve the scheduled-table reference.
+Declare each task's argument type in `client()` when the module loads, before
+`schema()`. Register the handlers with `retry.retryReducer()` after
+`schema()`, so each handler receives the host's typed reducer context and its
+task's typed arguments. The example below is a module-definition skeleton:
+replace `sendReceipt` with an idempotent application function.
 
 ```ts
-import { SenderError, schema, t, table } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
-import {
-  createRetrySubmodule,
-  retryFailed,
-  retryHandler,
-  retryOk,
-} from '@spacetimedb/retry';
+import { schema, t } from 'spacetimedb/server';
+import { client, retryFailed, retryOk } from '@spacetimedb/retry';
 
-const retry = createRetrySubmodule(
-  { table, t, SenderError, ScheduleAt },
-  {
-    sendReceipt: retryHandler(
-      t.object('SendReceiptArgs', { orderId: t.u64() }),
-      (ctx, { orderId }) => {
-        const result = sendReceipt(ctx, orderId);
-        return result.sent ? retryOk() : retryFailed(result.error);
-      }
-    ),
-  }
-);
+const retry = client({
+  tasks: {
+    sendReceipt: t.object('SendReceiptArgs', { orderId: t.u64() }),
+  },
+});
 
 const db = schema({ ...retry.tables });
-export const retryFire = db.reducer(
-  { onSchedule: retry.tables.retryTask },
-  { arg: retry.tables.retryTask.rowType },
-  retry.reducers.retryFire
-);
+export default db;
+
+export const init = db.init(ctx => retry.install(ctx));
+
+export const retryFire = retry.retryReducer(db, {
+  sendReceipt(ctx, { orderId }) {
+    const result = sendReceipt(ctx, orderId);
+    return result.sent ? retryOk() : retryFailed(result.error);
+  },
+});
 
 export const submitRetryTask = db.reducer(
   retry.reducers.submitRetryTask.params,
   retry.reducers.submitRetryTask.handler
 );
-
-export const init = db.init(ctx => retry.install(ctx));
-export default db;
 ```
+
+`retryReducer` requires a handler for every task. Registration fails to
+compile if the schema does not include `retry.tables`.
 
 Submit tagged arguments with an attempt cap and base backoff. The first attempt
 is scheduled immediately; subsequent delays are `backoffSecs * 2^attempt`.
@@ -83,16 +74,23 @@ view returns these attempts newest first.
 
 ## API
 
-- `retryHandler(args, run)` associates a SpacetimeDB type builder with a task
-  handler. The handler returns `retryOk()` or `retryFailed(error)`.
-- `makeRetryDispatch(handlers)` creates a typed tagged-union dispatcher.
-- `createRetrySubmodule(deps, handlers, auth?)` returns tables, enum helpers,
-  reducers, admin views, and installation.
-- `install(ctx)` seeds the publishing identity as the initial admin.
+- `client({ tasks })` returns `tables`, `retryReducer`, `install`, `submit`,
+  `requireAdmin`, `views`, and `reducers`.
+- `retryReducer(schema, handlers)` registers the scheduled reducer that runs
+  attempts. Export its result. Each handler returns `retryOk()` or
+  `retryFailed(error)`.
+- `install(ctx)` seeds the publishing identity as the initial admin. Call it
+  from the host's `init` reducer.
+- `submit(ctx, task)` validates a task and schedules its first attempt without
+  an authorization check. Call it from host reducers that authorize the caller.
+- `reducers.submitRetryTask`, `reducers.addRetryAdminIdentity`, and
+  `reducers.removeRetryAdminIdentity` require a Retry admin.
+- `views.retryTasksAdmin` and `views.retryHistoryAdmin` return up to 1,000
+  pending tasks and attempts, newest first, to Retry admins.
+- `errors` holds the `retry.*` codes thrown by these operations.
 
 The generated client can submit a task when the host exports
-`submitRetryTask`. The default factory authorization restricts this operation
-to Retry administrators:
+`submitRetryTask`:
 
 ```ts
 await conn.reducers.submitRetryTask({
@@ -103,14 +101,31 @@ await conn.reducers.submitRetryTask({
 });
 ```
 
-Product-facing applications usually expose a narrower reducer with fixed retry
-limits and arguments derived from authorized application state. Operational
-screens can subscribe to the factory's admin task and history views.
+Product-facing applications usually expose a narrower reducer that authorizes
+the caller, fixes the retry limits, and calls `retry.submit`:
+
+```ts
+export const requestReceipt = db.reducer(
+  { orderId: t.u64() },
+  (ctx, { orderId }) => {
+    requireOrderOwner(ctx, orderId);
+    retry.submit(ctx, {
+      name: `receipt:${orderId}`,
+      args: { tag: 'sendReceipt', value: { orderId } },
+      maxAttempts: 5,
+      backoffSecs: 2,
+    });
+  }
+);
+```
+
+Operational screens can subscribe to the admin task and history views.
 
 Package entrypoints:
 
-- `@spacetimedb/retry/submodule` exports `createRetrySubmodule`.
-- `@spacetimedb/retry` exports the factory, handler, dispatch, and result helpers.
+- `@spacetimedb/retry` exports `client`, `errors`, `retryOk`, `retryFailed`,
+  and the related types.
+- `@spacetimedb/retry/submodule` exports `client` and `errors`.
 
 ## Testing
 
@@ -120,7 +135,7 @@ pnpm run lint
 pnpm --dir spacetimedb run build
 ```
 
-The build compiles the fixture module that registers the factory's tables and reducers.
+The build compiles the fixture module that registers Retry's tables and reducers.
 
 ## License
 

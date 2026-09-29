@@ -1,5 +1,6 @@
 use crate::api::{ClientApi, Connection};
-use crate::sql::{run_sql, Format};
+use crate::common_args::Format;
+use crate::sql::run_sql;
 use colored::*;
 use dirs::home_dir;
 use std::env::temp_dir;
@@ -61,7 +62,7 @@ pub(crate) async fn exec(con: Connection, format: Format) -> Result<(), anyhow::
     let api = ClientApi::new(con);
 
     loop {
-        let readline = rl.readline(&format!("🪐{}>", &database).green());
+        let readline = rl.readline(&format!("🪐{}>", database).green());
         match readline {
             Ok(line) => match line.as_str() {
                 ".exit" => break,

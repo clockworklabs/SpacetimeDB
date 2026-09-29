@@ -6,7 +6,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, non_context_reserve_tokens_env, xai_ctx_limit_tokens, Segment,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 #[derive(Clone)]
 pub struct XaiGrokClient {
@@ -21,7 +21,7 @@ impl XaiGrokClient {
     }
 
     /// Uses BuiltPrompt (system, static_prefix, segments) and maps to xAI /chat/completions.
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let url = format!("{}/v1/chat/completions", self.base.trim_end_matches('/'));
 
         // Never trim system or dynamic segments
@@ -41,6 +41,7 @@ impl XaiGrokClient {
             model: &'a str,
             messages: Vec<Msg<'a>>,
             temperature: f32,
+            reasoning_effort: ReasoningEffort,
         }
 
         #[derive(Serialize)]
@@ -75,6 +76,7 @@ impl XaiGrokClient {
             model,
             messages,
             temperature: 0.0,
+            reasoning_effort: reasoning,
         };
 
         let auth = HttpClient::bearer(&self.api_key);

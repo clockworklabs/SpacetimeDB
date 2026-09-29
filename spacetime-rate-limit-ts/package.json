@@ -17,13 +17,25 @@
     }
   },
   "files": [
-    "src",
-    "LICENSE.txt",
+    "dist",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./submodule": {
+        "types": "./dist/submodule.d.ts",
+        "default": "./dist/submodule.js"
+      }
+    }
   },
   "repository": {
     "type": "git",
@@ -44,7 +56,10 @@
     "format": "prettier . --write --ignore-path ../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test.ts"
+    "test": "tsx scripts/test.ts",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "peerDependencies": {
     "spacetimedb": "workspace:^"

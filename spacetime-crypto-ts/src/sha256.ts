@@ -5,4 +5,3 @@ export function sha256(data: Uint8Array): Uint8Array {
 }
 
 export const SHA256_BYTES = 32;
-export const SHA256_INTERNAL_BLOCK_SIZE = 64;
