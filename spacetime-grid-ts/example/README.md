@@ -82,8 +82,10 @@ rules are host-owned example code.
 | `AUTH_SESSION_TTL_SECONDS`          | `604800`                 | Session lifetime in seconds.                                             |
 | OAuth client variables              | empty                    | Enables Google or GitHub when both values for that provider are present. |
 
-The development server calls `set_auth_config` automatically on startup as the
-logged-in CLI identity. Restart it after changing auth or OAuth values.
+The development server calls `auth.set_auth_config` automatically on startup as
+the logged-in CLI identity. Without `AUTH_ES256_PRIVATE_KEY_PEM` the database
+keeps its stored signing key, and a fresh database gets a newly generated one.
+Restart it after changing auth or OAuth values.
 
 ## Gameplay and authority
 
@@ -147,7 +149,7 @@ For a release smoke test:
 
 - **The server exits at startup:** verify the database exists and the CLI identity
   is its owner or an auth administrator.
-- **No matches appear after login:** check that `link_connection` succeeded before
+- **No matches appear after login:** check that `auth.link_connection` succeeded before
   the caller-scoped subscriptions were created.
 - **OAuth redirects incorrectly:** make `AUTH_ISSUER_URL` match the exact origin
   registered with the provider.
