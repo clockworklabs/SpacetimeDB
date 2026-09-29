@@ -1,7 +1,7 @@
 import type { Timestamp } from 'spacetimedb';
 import { SenderError } from 'spacetimedb/server';
 import { makeAgentRegistry, type AgentDefinition } from '../agent.js';
-import { callChat, type HttpLike } from '../openrouter.js';
+import { callChat, type ChatError, type HttpLike } from '../openrouter.js';
 import { BUILT_IN_PROVIDERS } from '../providers.js';
 import {
   BUILT_IN_EMBEDDING_PROVIDERS,
@@ -75,6 +75,11 @@ export interface AgentsProcedureCtx<Tx> {
 type Db = AgentsTx['db'];
 type ThreadRow = NonNullable<ReturnType<Db['thread']['id']['find']>>;
 type MessageRow = NonNullable<ReturnType<Db['message']['id']['find']>>;
+
+// Log label for a failed provider call, including the HTTP status.
+function failure(error: ChatError): string {
+  return error.kind === 'http' ? `http_${error.status}` : error.kind;
+}
 
 function fail(code: string, detail?: unknown): never {
   throw new SenderError(detail === undefined ? code : `${code}:${detail}`);
@@ -213,7 +218,7 @@ export function client<Tx extends { timestamp: Timestamp }>(
     ]);
     if (!result.ok || result.vectors.length === 0) {
       console.warn(
-        `agents embedding failed: ${result.ok ? 'no vectors' : result.error.kind}`
+        `agents embedding failed: ${result.ok ? 'no vectors' : failure(result.error)}`
       );
       return;
     }
@@ -299,7 +304,7 @@ export function client<Tx extends { timestamp: Timestamp }>(
     });
     if (!result.ok || !result.response.text) {
       console.warn(
-        `agents summarization failed: ${result.ok ? 'no text in response' : result.error.kind}`
+        `agents summarization failed: ${result.ok ? 'no text in response' : failure(result.error)}`
       );
       return;
     }
@@ -585,7 +590,7 @@ export function client<Tx extends { timestamp: Timestamp }>(
       });
       if (!result.ok || !result.response.text) {
         console.warn(
-          `agents title generation failed: ${result.ok ? 'no text' : result.error.kind}`
+          `agents title generation failed: ${result.ok ? 'no text' : failure(result.error)}`
         );
         return;
       }
