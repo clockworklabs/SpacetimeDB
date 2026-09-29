@@ -11,9 +11,9 @@ import {
   type ErrorContext,
 } from './module_bindings/app';
 import type {
-  ExampleAuthUser as AuthUserRow,
+  AuthUser as AuthUserRow,
   MySessions,
-} from './module_bindings/app/types';
+} from './module_bindings/app/auth/types';
 
 declare global {
   interface Window {
@@ -223,8 +223,8 @@ async function bindSession(token: string, user: AuthMe['user'], exp: number) {
   }
 
   try {
-    conn.reducers.linkConnection({ sessionToken: token });
-    const w = await conn.procedures.whoami({});
+    conn.reducers['auth.linkConnection']({ sessionToken: token });
+    const w = await conn.procedures['auth.whoami']({});
     currentSenderHex = w.senderIdentityHex;
   } catch (err) {
     console.warn('link_connection failed', err);
@@ -249,7 +249,7 @@ function subscribeToTables(connection: DbConnection): void {
     .subscriptionBuilder()
     .onApplied(() => emitNotes())
     .onError((ctx: ErrorContext) => console.error('sub error', ctx.event))
-    .subscribe([tables.myNotes, tables.myAuthUser]);
+    .subscribe([tables.myNotes, tables.auth.myAuthUser]);
 }
 
 function registerRowCallbacks(connection: DbConnection): void {
@@ -257,18 +257,20 @@ function registerRowCallbacks(connection: DbConnection): void {
   connection.db.myNotes.onUpdate(() => emitNotes());
   connection.db.myNotes.onDelete(() => emitNotes());
 
-  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
-    syncUserFromRow(row)
+  connection.db['auth.my_auth_user'].onInsert(
+    (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db.myAuthUser.onUpdate(
+  connection.db['auth.my_auth_user'].onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
-    if (!currentUser || row.userId !== currentUser.userId) return;
-    currentUser = null;
-    currentExp = undefined;
-    emitAuthState();
-  });
+  connection.db['auth.my_auth_user'].onDelete(
+    (_ctx: EventContext, row: AuthUserRow) => {
+      if (!currentUser || row.userId !== currentUser.userId) return;
+      currentUser = null;
+      currentExp = undefined;
+      emitAuthState();
+    }
+  );
 }
 
 async function signup(args: {
@@ -304,7 +306,7 @@ async function restoreSession(): Promise<boolean> {
 async function logout() {
   if (conn) {
     try {
-      conn.reducers.unlinkConnection({});
+      conn.reducers['auth.unlinkConnection']({});
     } catch {
       /* best-effort disconnect cleanup */
     }
@@ -334,7 +336,7 @@ function updateNote(args: { noteId: string; title: string; body: string }) {
 
 async function whoami() {
   if (!conn) throw new Error('not_connected');
-  const r = await conn.procedures.whoami({});
+  const r = await conn.procedures['auth.whoami']({});
   currentSenderHex = r.senderIdentityHex;
   emitAuthState();
   return r;
@@ -342,12 +344,12 @@ async function whoami() {
 
 async function listMySessions() {
   if (!conn) throw new Error('not_connected');
-  return await conn.procedures.listMySessions({});
+  return await conn.procedures['auth.listMySessions']({});
 }
 
 function revokeMySession(sessionId: string) {
   if (!conn) throw new Error('not_connected');
-  conn.reducers.revokeMySession({ sessionId });
+  conn.reducers['auth.revokeMySession']({ sessionId });
 }
 
 async function forgotPassword(email: string) {
@@ -368,7 +370,7 @@ function oauthStart(provider: 'google' | 'github') {
 
 function setProfile(args: { name?: string; image?: string }) {
   if (!conn) throw new Error('not_connected');
-  conn.reducers.updateProfile({ name: args.name, image: args.image });
+  conn.reducers['auth.updateProfile']({ name: args.name, image: args.image });
 }
 
 const authResult = authUrlState(window.location);

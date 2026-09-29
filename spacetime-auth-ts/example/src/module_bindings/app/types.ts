@@ -10,46 +10,8 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const AuthPubKey = __t.object("AuthPubKey", {
-  publicKeyPem: __t.string(),
-  keyId: __t.string(),
-  issuerUrl: __t.string(),
-});
-export type AuthPubKey = __Infer<typeof AuthPubKey>;
-
-export const ExampleAuthUser = __t.object("ExampleAuthUser", {
-  userId: __t.string(),
-  email: __t.string(),
-  emailVerified: __t.bool(),
-  name: __t.option(__t.string()),
-  image: __t.option(__t.string()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-});
-export type ExampleAuthUser = __Infer<typeof ExampleAuthUser>;
-
-export const MyAuthUser = __t.object("MyAuthUser", {});
-export type MyAuthUser = __Infer<typeof MyAuthUser>;
-
 export const MyNotes = __t.object("MyNotes", {});
 export type MyNotes = __Infer<typeof MyNotes>;
-
-export const MySession = __t.object("MySession", {
-  sessionId: __t.string(),
-  expiresAt: __t.timestamp(),
-  createdAt: __t.timestamp(),
-  ipAddress: __t.option(__t.string()),
-  userAgent: __t.option(__t.string()),
-  isCurrent: __t.bool(),
-});
-export type MySession = __Infer<typeof MySession>;
-
-export const MySessions = __t.object("MySessions", {
-  get sessions() {
-    return __t.array(MySession);
-  },
-});
-export type MySessions = __Infer<typeof MySessions>;
 
 export const Note = __t.object("Note", {
   noteId: __t.string(),
@@ -59,10 +21,4 @@ export const Note = __t.object("Note", {
   createdAt: __t.timestamp(),
 });
 export type Note = __Infer<typeof Note>;
-
-export const WhoAmI = __t.object("WhoAmI", {
-  userId: __t.option(__t.string()),
-  senderIdentityHex: __t.string(),
-});
-export type WhoAmI = __Infer<typeof WhoAmI>;
 
