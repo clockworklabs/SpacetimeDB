@@ -145,9 +145,12 @@ Both browsers -> SpacetimeDB subscriptions -> realtime colony and presence state
 ```
 
 Colony world data is readable by colony identifier in this demonstration; write
-authority is the behavior under test. The `my_access_keys` view is owner-scoped
-and contains metadata only. Do not copy this public-read model into an application
-where the resource itself must be confidential.
+authority is the behavior under test. The owner manages keys with the
+submodule's own `api_keys.create_api_key`, `api_keys.rotate_api_key`, and
+`api_keys.revoke_api_key` operations and reads them from the owner-scoped
+`api_keys.my_api_keys` view, which contains metadata only. Do not copy this
+public-read model into an application where the resource itself must be
+confidential.
 
 ## Security and deployment boundaries
 

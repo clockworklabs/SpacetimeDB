@@ -10,46 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const AccessKeySummary = __t.object("AccessKeySummary", {
-  keyId: __t.string(),
-  prefix: __t.string(),
-  ownerSubject: __t.string(),
-  name: __t.string(),
-  scopesJson: __t.string(),
-  metadataJson: __t.option(__t.string()),
-  get status() {
-    return ApiKeyStatus;
-  },
-  createdAt: __t.timestamp(),
-  expiresAt: __t.option(__t.timestamp()),
-  lastUsedAt: __t.option(__t.timestamp()),
-  revokedAt: __t.option(__t.timestamp()),
-});
-export type AccessKeySummary = __Infer<typeof AccessKeySummary>;
-
-export const ApiKeyCreateResult = __t.object("ApiKeyCreateResult", {
-  keyId: __t.string(),
-  key: __t.string(),
-  prefix: __t.string(),
-  ownerSubject: __t.string(),
-  name: __t.string(),
-  scopesJson: __t.string(),
-  metadataJson: __t.option(__t.string()),
-  get status() {
-    return ApiKeyStatus;
-  },
-  createdAt: __t.timestamp(),
-  expiresAt: __t.option(__t.timestamp()),
-});
-export type ApiKeyCreateResult = __Infer<typeof ApiKeyCreateResult>;
-
-// The tagged union or sum type for the algebraic type `ApiKeyStatus`.
-export const ApiKeyStatus = __t.enum("ApiKeyStatus", {
-  Active: __t.unit(),
-  Revoked: __t.unit(),
-});
-export type ApiKeyStatus = __Infer<typeof ApiKeyStatus>;
-
 export const CellState = __t.object("CellState", {
   id: __t.u64(),
   gridId: __t.u64(),
@@ -107,9 +67,6 @@ export const GridEntity = __t.object("GridEntity", {
   updatedAt: __t.timestamp(),
 });
 export type GridEntity = __Infer<typeof GridEntity>;
-
-export const MyAccessKeys = __t.object("MyAccessKeys", {});
-export type MyAccessKeys = __Infer<typeof MyAccessKeys>;
 
 export const PresenceEntry = __t.object("PresenceEntry", {
   key: __t.string(),

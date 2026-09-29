@@ -2,7 +2,6 @@ import {
   Router,
   SenderError,
   t,
-  type Infer,
   type Request,
   type SyncResponse,
 } from 'spacetimedb/server';
@@ -14,13 +13,7 @@ import {
   GRID_ORIENTATION_FLAT,
 } from '@spacetimedb/grid/submodule';
 import * as presence from '@spacetimedb/presence/submodule';
-import {
-  accessKeySummary,
-  spacetimedb,
-  type HttpCtx,
-  type ReadCtx,
-  type Tx,
-} from './schema';
+import { spacetimedb, type HttpCtx, type ReadCtx, type Tx } from './schema';
 import {
   asI32,
   asObject,
@@ -58,8 +51,6 @@ const SCOPE_BUILD = 'colony:build';
 const SCOPE_PLANT = 'colony:plant';
 
 export default spacetimedb;
-
-type ApiKeyCreateResult = Infer<typeof apiKeys.apiKeyCreateResult>;
 
 // Surface terrain. regolith is the default (no row); the rest are stored.
 const DEFAULT_TERRAIN = 'regolith';
@@ -434,25 +425,6 @@ function readWorldSnapshot(tx: Tx, ownerSubject: string) {
   };
 }
 
-function mirrorAccessKey(tx: Tx, row: ApiKeyCreateResult): void {
-  const summary = {
-    keyId: row.keyId,
-    prefix: row.prefix,
-    ownerSubject: row.ownerSubject,
-    name: row.name,
-    scopesJson: row.scopesJson,
-    metadataJson: row.metadataJson,
-    status: row.status,
-    createdAt: row.createdAt,
-    expiresAt: row.expiresAt,
-    lastUsedAt: undefined,
-    revokedAt: undefined,
-  };
-  const existing = tx.db.accessKeySummary.keyId.find(summary.keyId);
-  if (existing) tx.db.accessKeySummary.keyId.update(summary);
-  else tx.db.accessKeySummary.insert(summary);
-}
-
 function verifyRequest(
   tx: Tx,
   req: Request,
@@ -731,77 +703,6 @@ export const colonyPresence = spacetimedb.view(
       }
     }
     return out;
-  }
-);
-
-export const myAccessKeys = spacetimedb.view(
-  { name: 'my_access_keys', public: true },
-  t.array(accessKeySummary.rowType),
-  ctx => {
-    const subject = senderSubject(ctx);
-    return [...ctx.db.accessKeySummary.ownerSubject.filter(subject)];
-  }
-);
-
-export const createAccessKey = spacetimedb.procedure(
-  {
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
-  apiKeys.apiKeyCreateResult,
-  (ctx, args) =>
-    ctx.withTx(tx => {
-      const result = apiKeys.createApiKeyInTx(tx.as.apiKeys, {
-        ownerSubject: senderSubject(ctx),
-        name: args.name,
-        scopesJson: args.scopesJson,
-        metadataJson: args.metadataJson,
-        expiresInSeconds: args.expiresInSeconds,
-        keyPrefix: args.keyPrefix,
-      });
-      mirrorAccessKey(tx, result);
-      return result;
-    })
-);
-
-export const rotateAccessKey = spacetimedb.procedure(
-  {
-    keyId: t.string(),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
-  apiKeys.apiKeyCreateResult,
-  (ctx, args) =>
-    ctx.withTx(tx => {
-      const result = apiKeys.rotateApiKeyInTx(tx.as.apiKeys, {
-        keyId: args.keyId,
-        ownerSubject: senderSubject(ctx),
-        expiresInSeconds: args.expiresInSeconds,
-        keyPrefix: args.keyPrefix,
-      });
-      mirrorAccessKey(tx, result);
-      return result;
-    })
-);
-
-export const revokeAccessKey = spacetimedb.reducer(
-  { keyId: t.string() },
-  (ctx, args) => {
-    const ownerSubject = senderSubject(ctx);
-    apiKeys.revokeApiKeyInTx(ctx.as.apiKeys, {
-      keyId: args.keyId,
-      ownerSubject,
-    });
-    const row = ctx.db.accessKeySummary.keyId.find(args.keyId);
-    if (!row || row.ownerSubject !== ownerSubject) return;
-    ctx.db.accessKeySummary.keyId.update({
-      ...row,
-      status: apiKeys.ApiKeyStatus.Revoked,
-      revokedAt: ctx.timestamp,
-    });
   }
 );
 

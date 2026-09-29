@@ -37,30 +37,12 @@ export const worldEvent = table(
   }
 );
 
-export const accessKeySummary = table(
-  { name: 'access_key_summary', public: false },
-  {
-    keyId: t.string().primaryKey(),
-    prefix: t.string(),
-    ownerSubject: t.string().index(),
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    status: apiKeys.apiKeyStatus.index(),
-    createdAt: t.timestamp().index(),
-    expiresAt: t.option(t.timestamp()),
-    lastUsedAt: t.option(t.timestamp()),
-    revokedAt: t.option(t.timestamp()),
-  }
-);
-
 export const spacetimedb = schema({
   apiKeys,
   grid,
   presence,
   world,
   worldEvent,
-  accessKeySummary,
 });
 
 export type Schema = InferSchema<typeof spacetimedb>;
