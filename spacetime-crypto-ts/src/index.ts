@@ -8,10 +8,13 @@ export {
 } from './timing';
 
 export {
+  errors,
   verifyStripeSignature,
   verifySvixSignature,
   verifyGithubSignature,
   type StripeVerifyOpts,
   type SvixVerifyOpts,
   type GithubVerifyOpts,
+  type VerifyFailure,
+  type VerifyResult,
 } from './vendors';
