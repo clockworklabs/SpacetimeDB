@@ -10,6 +10,7 @@ const DEFAULT_SWEEP_INTERVAL_SECONDS = 30n;
 
 export const errors = {
   notAuthorized: 'rate_limit.not_authorized',
+  cannotRemoveLastAdmin: 'rate_limit.cannot_remove_last_admin',
   invalidScope: 'rate_limit.invalid_scope',
   invalidActorKey: 'rate_limit.invalid_actor_key',
   invalidLimit: 'rate_limit.invalid_limit',

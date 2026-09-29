@@ -112,7 +112,8 @@ Override limits or windows only for application-owned dynamic policies.
 `install(ctx, { sweepBatch?, sweepIntervalSeconds? })` seeds the publishing
 identity and cleanup timer from the host's `init` reducer. Repeated installation
 does not add administrators or timers. Admins can grant and revoke access with
-`addRateLimitAdmin` and `removeRateLimitAdmin`.
+`addRateLimitAdmin` and `removeRateLimitAdmin`. The last administrator cannot be
+removed.
 
 `errors` exports stable error codes for callers that distinguish failures.
 

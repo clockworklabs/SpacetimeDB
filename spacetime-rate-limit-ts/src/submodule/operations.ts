@@ -144,7 +144,12 @@ export const removeRateLimitAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, { identity }) => {
     requireAdmin(ctx);
-    ctx.db.rateLimitAdminIdentity.identity.delete(identity);
+    const existing = ctx.db.rateLimitAdminIdentity.identity.find(identity);
+    if (!existing) return;
+    if (ctx.db.rateLimitAdminIdentity.count() <= 1n) {
+      throw new SenderError(errors.cannotRemoveLastAdmin);
+    }
+    ctx.db.rateLimitAdminIdentity.delete(existing);
   }
 );
 
