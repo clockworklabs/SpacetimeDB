@@ -77,7 +77,7 @@ pub async fn exec_subcommand(
         "logout" => logout::exec(config, args).await,
         "lock" => lock::exec(config, args).await,
         "unlock" => unlock::exec(config, args).await,
-        "auth" => auth::exec(config, paths, args).await,
+        "auth" => auth::exec(config, args).await,
         "version" => return subcommands::version::exec(paths, root_dir, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
