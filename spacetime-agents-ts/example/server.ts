@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
@@ -73,27 +74,43 @@ function configuredPem(value: string | undefined): string | undefined {
 const opt = (value: string | undefined) =>
   value === undefined ? JSON.stringify([1, []]) : JSON.stringify([0, value]);
 
-function configureAuthFromEnv(): void {
+function setAuthConfig(privateKeyPem: string | undefined): boolean {
   const args = [
     JSON.stringify(AUTH_ISSUER_URL),
     opt(AUTH_BASE_URL),
     opt(AUTH_COOKIE_NAME),
     JSON.stringify([0, AUTH_SESSION_TTL_SECONDS]),
-    opt(configuredPem(process.env.AUTH_ES256_PRIVATE_KEY_PEM)),
+    opt(privateKeyPem),
     opt(configuredValue(process.env.GOOGLE_CLIENT_ID)),
     opt(configuredValue(process.env.GOOGLE_CLIENT_SECRET)),
     opt(configuredValue(process.env.GITHUB_CLIENT_ID)),
     opt(configuredValue(process.env.GITHUB_CLIENT_SECRET)),
   ];
-
   const result = spawnSync(
     SPACETIME_BIN,
-    ['call', '--server', STDB_SERVER, DB_NAME, 'set_auth_config', ...args],
+    ['call', '--server', STDB_SERVER, DB_NAME, 'auth.set_auth_config', ...args],
     { stdio: 'inherit', shell: false }
   );
-  if (result.status !== 0) {
-    throw new Error(`auth config bootstrap failed (exit ${result.status})`);
+  return result.status === 0;
+}
+
+// The signing key keys every session token and one-time token, so it is
+// generated here rather than inside the module. Without a configured key the
+// database keeps the key it already stores; after a fresh publish a new one
+// is generated.
+function configureAuthFromEnv(): void {
+  const pem = configuredPem(process.env.AUTH_ES256_PRIVATE_KEY_PEM);
+  if (setAuthConfig(pem)) return;
+  if (!pem) {
+    console.log('[auth] no stored signing key; generating one');
+    const { privateKey } = generateKeyPairSync('ec', {
+      namedCurve: 'P-256',
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
+    if (setAuthConfig(privateKey)) return;
   }
+  throw new Error('auth config bootstrap failed');
 }
 
 function optU32(value: string | undefined): string {

@@ -10,17 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const AgentAuthUser = __t.object("AgentAuthUser", {
-  userId: __t.string(),
-  email: __t.string(),
-  emailVerified: __t.bool(),
-  name: __t.option(__t.string()),
-  image: __t.option(__t.string()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-});
-export type AgentAuthUser = __Infer<typeof AgentAuthUser>;
-
 export const AgentConfigStatus = __t.object("AgentConfigStatus", {
   isConfigured: __t.bool(),
   staleLockThresholdSecs: __t.u32(),
@@ -40,13 +29,6 @@ export const AgentInfo = __t.object("AgentInfo", {
 });
 export type AgentInfo = __Infer<typeof AgentInfo>;
 
-export const AuthPubKey = __t.object("AuthPubKey", {
-  publicKeyPem: __t.string(),
-  keyId: __t.string(),
-  issuerUrl: __t.string(),
-});
-export type AuthPubKey = __Infer<typeof AuthPubKey>;
-
 export const File = __t.object("File", {
   id: __t.u64(),
   fileId: __t.u64(),
@@ -64,11 +46,6 @@ export const File = __t.object("File", {
   updatedAt: __t.timestamp(),
 });
 export type File = __Infer<typeof File>;
-
-export const LinkConnectionResult = __t.object("LinkConnectionResult", {
-  userId: __t.string(),
-});
-export type LinkConnectionResult = __Infer<typeof LinkConnectionResult>;
 
 export const Message = __t.object("Message", {
   id: __t.u64(),
@@ -97,31 +74,11 @@ export const MessageAttachment = __t.object("MessageAttachment", {
 });
 export type MessageAttachment = __Infer<typeof MessageAttachment>;
 
-export const MyAuthUser = __t.object("MyAuthUser", {});
-export type MyAuthUser = __Infer<typeof MyAuthUser>;
-
 export const MyFiles = __t.object("MyFiles", {});
 export type MyFiles = __Infer<typeof MyFiles>;
 
 export const MyMessages = __t.object("MyMessages", {});
 export type MyMessages = __Infer<typeof MyMessages>;
-
-export const MySession = __t.object("MySession", {
-  sessionId: __t.string(),
-  expiresAt: __t.timestamp(),
-  createdAt: __t.timestamp(),
-  ipAddress: __t.option(__t.string()),
-  userAgent: __t.option(__t.string()),
-  isCurrent: __t.bool(),
-});
-export type MySession = __Infer<typeof MySession>;
-
-export const MySessions = __t.object("MySessions", {
-  get sessions() {
-    return __t.array(MySession);
-  },
-});
-export type MySessions = __Infer<typeof MySessions>;
 
 export const MyThreadLocks = __t.object("MyThreadLocks", {});
 export type MyThreadLocks = __Infer<typeof MyThreadLocks>;

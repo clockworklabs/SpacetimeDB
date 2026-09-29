@@ -8,9 +8,6 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all procedure arg schemas
 import * as GenerateThreadTitleProcedure from "../generate_thread_title_procedure";
 import * as GetAgentConfigStatusProcedure from "../get_agent_config_status_procedure";
-import * as GetAuthPublicKeyProcedure from "../get_auth_public_key_procedure";
-import * as LinkConnectionProcedure from "../link_connection_procedure";
-import * as ListMySessionsProcedure from "../list_my_sessions_procedure";
 import * as RegenerateResponseProcedure from "../regenerate_response_procedure";
 import * as SendMessageProcedure from "../send_message_procedure";
 import * as StartThreadProcedure from "../start_thread_procedure";
@@ -19,12 +16,6 @@ export type GenerateThreadTitleArgs = __Infer<typeof GenerateThreadTitleProcedur
 export type GenerateThreadTitleResult = __Infer<typeof GenerateThreadTitleProcedure.returnType>;
 export type GetAgentConfigStatusArgs = __Infer<typeof GetAgentConfigStatusProcedure.params>;
 export type GetAgentConfigStatusResult = __Infer<typeof GetAgentConfigStatusProcedure.returnType>;
-export type GetAuthPublicKeyArgs = __Infer<typeof GetAuthPublicKeyProcedure.params>;
-export type GetAuthPublicKeyResult = __Infer<typeof GetAuthPublicKeyProcedure.returnType>;
-export type LinkConnectionArgs = __Infer<typeof LinkConnectionProcedure.params>;
-export type LinkConnectionResult = __Infer<typeof LinkConnectionProcedure.returnType>;
-export type ListMySessionsArgs = __Infer<typeof ListMySessionsProcedure.params>;
-export type ListMySessionsResult = __Infer<typeof ListMySessionsProcedure.returnType>;
 export type RegenerateResponseArgs = __Infer<typeof RegenerateResponseProcedure.params>;
 export type RegenerateResponseResult = __Infer<typeof RegenerateResponseProcedure.returnType>;
 export type SendMessageArgs = __Infer<typeof SendMessageProcedure.params>;

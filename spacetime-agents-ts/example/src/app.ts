@@ -13,10 +13,12 @@ import {
 } from './module_bindings/app';
 import type {
   File as FileRow,
-  AgentAuthUser as AuthUserRow,
   AgentConfigStatus,
-  MySessions,
 } from './module_bindings/app/types';
+import type {
+  AuthUser as AuthUserRow,
+  MySessions,
+} from './module_bindings/app/auth/types';
 
 interface AuthUser {
   userId: string;
@@ -332,18 +334,20 @@ function registerRowCallbacks(connection: DbConnection): void {
   connection.db.myThreadLocks.onUpdate(() => emitThreadLocks());
   connection.db.myThreadLocks.onDelete(() => emitThreadLocks());
 
-  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
-    syncUserFromRow(row)
+  connection.db['auth.my_auth_user'].onInsert(
+    (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db.myAuthUser.onUpdate(
+  connection.db['auth.my_auth_user'].onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
-    if (!currentUser || row.userId !== currentUser.userId) return;
-    currentUser = null;
-    currentExp = undefined;
-    emitAuthState();
-  });
+  connection.db['auth.my_auth_user'].onDelete(
+    (_ctx: EventContext, row: AuthUserRow) => {
+      if (!currentUser || row.userId !== currentUser.userId) return;
+      currentUser = null;
+      currentExp = undefined;
+      emitAuthState();
+    }
+  );
 }
 
 function subscribeToTables(connection: DbConnection): SubscriptionHandle {
@@ -361,7 +365,7 @@ function subscribeToTables(connection: DbConnection): SubscriptionHandle {
       tables.myThreads,
       tables.myThreadLocks,
       tables.myFiles,
-      tables.myAuthUser,
+      tables.auth.myAuthUser,
     ]);
 }
 
@@ -411,7 +415,7 @@ async function bindSession(
 
   // Link the connection before subscribing because views read the binding.
   try {
-    await currentConn.procedures.linkConnection({ sessionToken: token });
+    await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
   } catch (err) {
     console.warn('link_connection failed', err);
   }
@@ -462,7 +466,7 @@ async function login(args: { email: string; password: string }): Promise<void> {
 async function logout(): Promise<void> {
   if (currentConn) {
     try {
-      currentConn.reducers.unlinkConnection({});
+      currentConn.reducers['auth.unlinkConnection']({});
     } catch {
       /* ignore */
     }
@@ -498,10 +502,10 @@ async function requestEmailVerify(): Promise<void> {
 }
 
 async function listMySessions(): Promise<MySessions> {
-  return await requireConn().procedures.listMySessions({});
+  return await requireConn().procedures['auth.listMySessions']({});
 }
 async function revokeMySession(sessionId: string): Promise<void> {
-  requireConn().reducers.revokeMySession({ sessionId });
+  requireConn().reducers['auth.revokeMySession']({ sessionId });
 }
 
 const authResult = authUrlState(window.location);
@@ -539,7 +543,7 @@ async function main(): Promise<void> {
     listMySessions,
     revokeMySession,
     setProfile: args => {
-      requireConn().reducers.updateProfile({
+      requireConn().reducers['auth.updateProfile']({
         name: args.name,
         image: args.image,
       });

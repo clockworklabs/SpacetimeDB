@@ -8,21 +8,11 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import DeleteThreadReducer from "../delete_thread_reducer";
 import RequestCancelReducer from "../request_cancel_reducer";
-import RevokeMySessionReducer from "../revoke_my_session_reducer";
-import RevokeSessionReducer from "../revoke_session_reducer";
-import SetAuthConfigReducer from "../set_auth_config_reducer";
 import SetTokenLimitReducer from "../set_token_limit_reducer";
-import UnlinkConnectionReducer from "../unlink_connection_reducer";
-import UpdateProfileReducer from "../update_profile_reducer";
 import UpdateThreadReducer from "../update_thread_reducer";
 
 export type DeleteThreadParams = __Infer<typeof DeleteThreadReducer>;
 export type RequestCancelParams = __Infer<typeof RequestCancelReducer>;
-export type RevokeMySessionParams = __Infer<typeof RevokeMySessionReducer>;
-export type RevokeSessionParams = __Infer<typeof RevokeSessionReducer>;
-export type SetAuthConfigParams = __Infer<typeof SetAuthConfigReducer>;
 export type SetTokenLimitParams = __Infer<typeof SetTokenLimitReducer>;
-export type UnlinkConnectionParams = __Infer<typeof UnlinkConnectionReducer>;
-export type UpdateProfileParams = __Infer<typeof UpdateProfileReducer>;
 export type UpdateThreadParams = __Infer<typeof UpdateThreadReducer>;
 

@@ -2,16 +2,6 @@ import { t, type InferSchema, type ViewCtx } from 'spacetimedb/server';
 import { message, thread, threadLock } from '@spacetimedb/agents/submodule';
 import { fileViewRow } from './model';
 
-const authUserViewRow = t.object('AgentAuthUser', {
-  userId: t.string(),
-  email: t.string(),
-  emailVerified: t.bool(),
-  name: t.option(t.string()),
-  image: t.option(t.string()),
-  createdAt: t.timestamp(),
-  updatedAt: t.timestamp(),
-});
-
 export function registerAgentViews(
   spacetimedb: typeof import('./index').default
 ) {
@@ -79,22 +69,10 @@ export function registerAgentViews(
     }
   );
 
-  const myAuthUser = spacetimedb.view(
-    { name: 'my_auth_user', public: true },
-    t.array(authUserViewRow),
-    ctx => {
-      const userId = callerUserId(ctx);
-      if (!userId) return [];
-      const row = ctx.db.auth.authUser.userId.find(userId);
-      return row ? [row] : [];
-    }
-  );
-
   return {
     myThreads,
     myMessages,
     myThreadLocks,
     myFiles,
-    myAuthUser,
   };
 }

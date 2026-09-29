@@ -100,10 +100,15 @@ set by the launching process are never overwritten.
 | `HOST`                                      | `127.0.0.1`                | Development web-server bind address.                               |
 | `PORT`                                      | `8789`                     | Static-server port.                                                |
 
-On startup, the logged-in CLI identity calls `set_auth_config`,
+On startup, the logged-in CLI identity calls `auth.set_auth_config`,
 `agents.set_agent_config`, `set_token_limit`, and `agents.set_api_key` for each
 configured provider. Provider keys are stored in private module tables and are
 not returned by `/api/config`.
+
+The auth signing key also keys every session id and one-time token, so it comes
+from outside the module. When `AUTH_ES256_PRIVATE_KEY_PEM` is blank the server
+keeps the key the database already stores; after a fresh publish it generates
+one with `node:crypto`.
 
 ## Architecture
 
@@ -119,7 +124,7 @@ SpacetimeDB module
 ```
 
 The browser subscribes to `my_threads`, `my_thread_locks`, `my_files`, and
-`my_auth_user`. It subscribes to `my_messages` only for the active thread. These
+`auth.my_auth_user`. It subscribes to `my_messages` only for the active thread. These
 views resolve the authenticated user from the linked connection and filter rows
 server-side. Browser subscriptions use these views exclusively.
 
