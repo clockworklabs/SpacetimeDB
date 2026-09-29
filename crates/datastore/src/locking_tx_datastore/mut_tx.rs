@@ -10,7 +10,7 @@ use super::{
 use crate::{
     error::ViewError,
     system_tables::{
-        system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
         StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields,
         ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
@@ -20,10 +20,11 @@ use crate::{
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
-        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
-        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
-        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+        StInboundMsgFields, StInboundMsgRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
+        StOutboundMsgFields, StOutboundMsgRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields,
+        StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
+        StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+        ST_EVENT_TABLE_ID, ST_INBOUND_MSG_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID,
         ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
@@ -33,6 +34,7 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
+use bytes::Bytes;
 use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
 use rand::Rng;
@@ -3277,6 +3279,108 @@ impl MutTxId {
         .map(|row| row.pointer())
     }
 
+    /// Look up the inbound dedup record for (`sender_identity`, `target_reducer`) in `st_inbound_msg`.
+    ///
+    /// Returns `None` if no entry exists for this stream (i.e., no message has been delivered yet).
+    pub fn get_inbound_msg_row(&self, sender_identity: Identity, target_reducer: &str) -> Option<StInboundMsgRow> {
+        self.iter_by_col_eq(
+            ST_INBOUND_MSG_ID,
+            StInboundMsgFields::DatabaseIdentity.col_id(),
+            &IdentityViaU256::from(sender_identity).into(),
+        )
+        .expect("failed to read from st_inbound_msg system table")
+        .filter_map(|row_ref| StInboundMsgRow::try_from(row_ref).ok())
+        .find(|row| row.target_reducer == target_reducer)
+    }
+
+    fn delete_inbound_msg_row(&mut self, sender_identity: Identity, target_reducer: &str) -> Result<()> {
+        let rows: Vec<_> = self
+            .iter_by_col_eq(
+                ST_INBOUND_MSG_ID,
+                StInboundMsgFields::DatabaseIdentity.col_id(),
+                &IdentityViaU256::from(sender_identity).into(),
+            )
+            .expect("failed to read from st_inbound_msg system table")
+            .filter_map(|row_ref| {
+                let row = StInboundMsgRow::try_from(row_ref).ok()?;
+                (row.target_reducer == target_reducer).then_some(row)
+            })
+            .collect();
+
+        for row in rows {
+            self.delete_by_row_value(ST_INBOUND_MSG_ID, &ProductValue::from(row))?;
+        }
+        Ok(())
+    }
+
+    /// Update the last delivered msg_id for (`sender_identity`, `target_reducer`) in `st_inbound_msg`.
+    ///
+    /// If an entry already exists, it is replaced; otherwise a new entry is inserted.
+    /// `result_status` and `result_payload` store the outcome of the reducer call.
+    pub fn upsert_inbound_last_msg(
+        &mut self,
+        sender_identity: Identity,
+        target_reducer: &str,
+        last_outbound_msg: u64,
+        result_status: crate::system_tables::StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        // Delete the existing row if present.
+        self.delete_inbound_msg_row(sender_identity, target_reducer)?;
+        let row = StInboundMsgRow {
+            database_identity: sender_identity.into(),
+            target_reducer: target_reducer.to_owned(),
+            last_outbound_msg,
+            result_status,
+            result_payload,
+        };
+        self.insert_via_serialize_bsatn(ST_INBOUND_MSG_ID, &row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!(
+                    "upsert_inbound_last_outbound_msg: failed to upsert last_outbound_msg for {sender_identity} to {last_outbound_msg}: {e}"
+                );
+            })
+    }
+
+    /// Insert a new outbound inter-database message into `st_outbound_msg`.
+    pub fn insert_st_outbound_msg(&mut self, outbox_table_id: u32, row_id: u64) -> Result<()> {
+        let row = StOutboundMsgRow {
+            msg_id: 0, // auto-incremented by the sequence
+            outbox_table_id,
+            row_id,
+        };
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("insert_st_outbound_msg: failed to insert msg for outbox_table_id={outbox_table_id}: {e}");
+            })
+    }
+
+    /// Retrieve all outbound messages from `st_outbound_msg`, ordered by msg_id ascending.
+    pub fn all_outbound_msgs(&self) -> Result<Vec<StOutboundMsgRow>> {
+        let mut rows: Vec<StOutboundMsgRow> = self
+            .iter(ST_OUTBOUND_MSG_ID)
+            .expect("failed to read from st_outbound_msg system table")
+            .filter_map(|row_ref| StOutboundMsgRow::try_from(row_ref).ok())
+            .collect();
+        rows.sort_by_key(|r| r.msg_id);
+        Ok(rows)
+    }
+
+    /// Delete a message from `st_outbound_msg` once it has been fully processed.
+    pub fn delete_outbound_msg(&mut self, msg_id: u64) -> Result<()> {
+        self.delete_col_eq(
+            ST_OUTBOUND_MSG_ID,
+            StOutboundMsgFields::MsgId.col_id(),
+            &AlgebraicValue::U64(msg_id),
+        )
+        .map(|_| ())
+        .inspect_err(|e| {
+            log::error!("delete_msg_id: failed to delete msg_id={msg_id}: {e}");
+        })
+    }
+
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,
@@ -3422,6 +3526,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
 
     let insert_flags = InsertFlags {
         is_scheduler_table: tx_table.is_scheduler(),
+        is_outbox_table: tx_table.is_outbox(),
     };
     let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
 

@@ -508,6 +508,29 @@ impl JsMainInstance {
         .await
     }
 
+    pub async fn call_reducer_with_success_action(
+        &self,
+        params: CallReducerParams,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
+    ) -> ReducerCallResult {
+        self.request(CallReducerWithSuccessActionRequest { params, action })
+            .await
+    }
+
+    pub async fn call_reducer_from_database(
+        &self,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.request(CallReducerFromDatabaseRequest {
+            params,
+            sender_identity,
+            sender_msg_id,
+        })
+        .await
+    }
+
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.request(ClearAllClientsRequest).await
     }
@@ -637,6 +660,21 @@ js_main_request! {
     CallReducerRequest {
         params: CallReducerParams,
     } => "call_reducer", ReducerCallResult, CallReducer
+}
+
+js_main_request! {
+    CallReducerFromDatabaseRequest {
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    } => "call_reducer", Result<ReducerCallResult, ReducerCallError>, CallReducerFromDatabase
+}
+
+js_main_request! {
+    CallReducerWithSuccessActionRequest {
+        params: CallReducerParams,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
+    } => "call_reducer", ReducerCallResult, CallReducerWithSuccessAction
 }
 
 js_main_request! {
@@ -821,6 +859,19 @@ enum JsMainWorkerRequest {
     CallReducer {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
+    },
+    /// See [`JsMainInstance::call_reducer_from_database`].
+    CallReducerFromDatabase {
+        reply_tx: JsReplyTx<Result<ReducerCallResult, ReducerCallError>>,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    },
+    /// See [`JsMainInstance::call_reducer_with_success_action`].
+    CallReducerWithSuccessAction {
+        reply_tx: JsReplyTx<ReducerCallResult>,
+        params: CallReducerParams,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
     CallReducerDetached {
@@ -1183,6 +1234,13 @@ fn should_retire_worker_for_heap(
     }
 }
 
+fn noop_reducer_success_action(
+    _: &mut spacetimedb_datastore::locking_tx_datastore::MutTxId,
+    _: &Option<bytes::Bytes>,
+) -> anyhow::Result<()> {
+    Ok(())
+}
+
 /// Performs some of the shared startup work for JS worker isolates.
 ///
 /// NOTE(centril): in its own function due to lack of `try` blocks.
@@ -1418,14 +1476,65 @@ fn handle_main_worker_request(
         }),
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
-                let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let mut call_reducer = |tx, params| {
+                    let (mut res, trapped) =
+                        instance_common.call_reducer_with_tx(tx, params, inst, Box::new(noop_reducer_success_action));
+                    res.result.tx_offset = Some(res.tx_offset);
+                    (res.result, trapped)
+                };
                 let (res, trapped) = call_reducer(None, params);
-                (res.result, trapped)
+                (res, trapped)
             })
         }
+        JsMainWorkerRequest::CallReducerFromDatabase {
+            reply_tx,
+            params,
+            sender_identity,
+            sender_msg_id,
+        } => handle_worker_request("call_reducer", reply_tx, || {
+            let mut call_reducer_with_success =
+                |tx, params, on_success: crate::host::idc_actor::ReducerSuccessAction| {
+                    let (mut res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst, on_success);
+                    res.result.tx_offset = Some(res.tx_offset);
+                    (res.result, trapped)
+                };
+            let res = crate::host::idc_actor::call_reducer_from_database(
+                info.as_ref(),
+                replica_ctx.relational_db().as_ref(),
+                params,
+                sender_identity,
+                sender_msg_id,
+                |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
+            );
+            match res {
+                Ok((rcr, trapped)) => (Ok(rcr), trapped),
+                Err(err) => (Err(err), false),
+            }
+        }),
+        JsMainWorkerRequest::CallReducerWithSuccessAction {
+            reply_tx,
+            params,
+            action,
+        } => handle_worker_request("call_reducer", reply_tx, || {
+            let mut call_reducer_with_success =
+                |tx, params, on_success: crate::host::idc_actor::ReducerSuccessAction| {
+                    let (mut res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst, on_success);
+                    res.result.tx_offset = Some(res.tx_offset);
+                    (res.result, trapped)
+                };
+            crate::host::idc_actor::call_reducer_with_success_action(
+                info.as_ref(),
+                replica_ctx.relational_db().as_ref(),
+                params,
+                action,
+                |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
+            )
+        }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
-                let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let mut call_reducer = |tx, params| {
+                    instance_common.call_reducer_with_tx(tx, params, inst, Box::new(noop_reducer_success_action))
+                };
                 let (_res, trapped) = call_reducer(None, params);
                 trapped
             })
@@ -1473,7 +1582,8 @@ fn handle_main_worker_request(
             caller_connection_id,
         } => handle_worker_request("call_identity_connected", reply_tx, || {
             let call_reducer = |tx, params| {
-                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                let (res, trapped) =
+                    instance_common.call_reducer_with_tx(tx, params, inst, Box::new(noop_reducer_success_action));
                 (res.result, trapped)
             };
             let mut trapped = false;
@@ -1486,7 +1596,8 @@ fn handle_main_worker_request(
             caller_connection_id,
         } => handle_worker_request("call_identity_disconnected", reply_tx, || {
             let call_reducer = |tx, params| {
-                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                let (res, trapped) =
+                    instance_common.call_reducer_with_tx(tx, params, inst, Box::new(noop_reducer_success_action));
                 (res.result, trapped)
             };
             let mut trapped = false;
@@ -1502,7 +1613,8 @@ fn handle_main_worker_request(
         JsMainWorkerRequest::DisconnectClient { reply_tx, client_id } => {
             handle_worker_request("disconnect_client", reply_tx, || {
                 let call_reducer = |tx, params| {
-                    let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                    let (res, trapped) =
+                        instance_common.call_reducer_with_tx(tx, params, inst, Box::new(noop_reducer_success_action));
                     (res.result, trapped)
                 };
                 let mut trapped = false;
@@ -1515,7 +1627,9 @@ fn handle_main_worker_request(
             program,
             environment,
         } => handle_worker_request("init_database", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                instance_common.call_reducer_with_tx(tx, params, inst, Box::new(noop_reducer_success_action))
+            };
             let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
                 init_database(replica_ctx, &info.module_def, program, environment, call_reducer);
             (res, trapped)
@@ -1644,11 +1758,11 @@ where
                 scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
                 // Setup the instance environment.
-                let (replica_ctx, scheduler) = match &generation_module_or_mcc {
-                    Either::Left(module) => (module.replica_ctx(), module.scheduler()),
-                    Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
+                let (replica_ctx, scheduler, idc_sender) = match &generation_module_or_mcc {
+                    Either::Left(module) => (module.replica_ctx(), module.scheduler(), module.idc_sender()),
+                    Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler, mcc.idc_sender.clone()),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {

@@ -8,6 +8,7 @@ mod cluster {
     mod auto_inc;
     mod auto_migration;
     mod call;
+    mod call_from_database;
     mod cli;
     mod client_connection_errors;
     mod column_defaults;

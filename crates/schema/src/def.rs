@@ -35,8 +35,9 @@ use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
     RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
-    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -1140,9 +1141,10 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Types(raw_types));
         }
 
-        // Collect schedules from tables (V10 stores them in a separate section).
+        // Collect schedules and outboxes from tables (V10 stores them in separate sections).
         // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
         let mut schedules = Vec::new();
+        let mut outboxes: Vec<RawOutboxDefV10> = Vec::new();
         let raw_tables: Vec<RawTableDefV10> = tables
             .into_values()
             .map(|td| {
@@ -1157,6 +1159,13 @@ impl From<ModuleDef> for RawModuleDefV10 {
                         table_name: td.name.clone().into(),
                         schedule_at_col: sched.at_column,
                         function_name: sched.function_name.into(),
+                    });
+                }
+                if let Some(ref outbox) = td.outbox {
+                    outboxes.push(RawOutboxDefV10 {
+                        table_name: td.accessor_name.clone().into(),
+                        remote_reducer: outbox.remote_reducer.clone().into(),
+                        on_result_reducer: outbox.on_result_reducer.clone().map(Into::into),
                     });
                 }
                 td.into()
@@ -1254,6 +1263,10 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         if !schedules.is_empty() {
             sections.push(RawModuleDefV10Section::Schedules(schedules));
+        }
+
+        if !outboxes.is_empty() {
+            sections.push(RawModuleDefV10Section::Outboxes(outboxes));
         }
 
         if !raw_lifecycle.is_empty() {
@@ -1378,6 +1391,27 @@ pub struct TableDef {
     /// Event tables persist to the commitlog but are not merged into committed state.
     /// Their rows are only visible to V2 subscribers in the transaction that inserted them.
     pub is_event: bool,
+
+    /// Whether this is an outbox table.
+    /// `None` unless this table was declared with `#[spacetimedb::table(outbox(...))]`.
+    pub outbox: Option<OutboxDef>,
+}
+
+/// Configuration for an outbox table used in inter-database communication.
+///
+/// An outbox table must have:
+/// - Col 0: `u64` with `#[primary_key] #[auto_inc]` — row ID tracked in `st_outbound_msg`.
+/// - Col 1: `Identity` — target database identity.
+/// - Remaining cols: arguments forwarded to `remote_reducer` on the target database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxDef {
+    /// The name of the reducer to call on the target database.
+    pub remote_reducer: Identifier,
+
+    /// The local reducer called with the delivery result, if any.
+    ///
+    /// Signature: `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<T, String>)`.
+    pub on_result_reducer: Option<Identifier>,
 }
 
 impl TableDef {
@@ -1405,6 +1439,7 @@ impl From<TableDef> for RawTableDefV9 {
             table_type,
             table_access,
             is_event: _, // V9 does not support event tables; ignore when converting back
+            outbox: _,   // V9 does not support outbox tables; ignore when converting back
             ..
         } = val;
 
@@ -1438,6 +1473,7 @@ impl From<TableDef> for RawTableDefV10 {
             table_access,
             is_event,
             accessor_name,
+            outbox: _, // V10 stores outbox definitions in a separate Outboxes section; handled in From<ModuleDef>.
         } = val;
 
         RawTableDefV10 {
@@ -1490,6 +1526,7 @@ impl From<ViewDef> for TableDef {
             table_access: if is_public { Public } else { Private },
             is_event: false,
             accessor_name,
+            outbox: None,
         }
     }
 }
