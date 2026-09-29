@@ -10,6 +10,20 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const PostHogCaptureResult = __t.object("PostHogCaptureResult", {
+  ok: __t.bool(),
+  statusCode: __t.u16(),
+  error: __t.option(__t.string()),
+});
+export type PostHogCaptureResult = __Infer<typeof PostHogCaptureResult>;
+
+export const PostHogConfigStatus = __t.object("PostHogConfigStatus", {
+  isConfigured: __t.bool(),
+  host: __t.option(__t.string()),
+  projectApiKeyLength: __t.u32(),
+});
+export type PostHogConfigStatus = __Infer<typeof PostHogConfigStatus>;
+
 export const PostHogDeliveryLogRow = __t.object("PostHogDeliveryLogRow", {
   deliveryId: __t.u64(),
   get source() {
@@ -34,12 +48,29 @@ export const PostHogDeliverySource = __t.enum("PostHogDeliverySource", {
 });
 export type PostHogDeliverySource = __Infer<typeof PostHogDeliverySource>;
 
+export const PostHogFeatureFlagResult = __t.object("PostHogFeatureFlagResult", {
+  ok: __t.bool(),
+  statusCode: __t.u16(),
+  enabled: __t.option(__t.bool()),
+  variant: __t.option(__t.string()),
+  error: __t.option(__t.string()),
+});
+export type PostHogFeatureFlagResult = __Infer<typeof PostHogFeatureFlagResult>;
+
+export const PostHogFlushResult = __t.object("PostHogFlushResult", {
+  attempted: __t.u32(),
+  delivered: __t.u32(),
+  failed: __t.u32(),
+});
+export type PostHogFlushResult = __Infer<typeof PostHogFlushResult>;
+
 // The tagged union or sum type for the algebraic type `PostHogOutboxStatus`.
 export const PostHogOutboxStatus = __t.enum("PostHogOutboxStatus", {
   Queued: __t.unit(),
   Processing: __t.unit(),
   Delivered: __t.unit(),
   Failed: __t.unit(),
+  Rejected: __t.unit(),
 });
 export type PostHogOutboxStatus = __Infer<typeof PostHogOutboxStatus>;
 
@@ -86,8 +117,15 @@ export const PosthogDeliveryStats = __t.object("PosthogDeliveryStats", {
 });
 export type PosthogDeliveryStats = __Infer<typeof PosthogDeliveryStats>;
 
+export const PosthogFlushTick = __t.object("PosthogFlushTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type PosthogFlushTick = __Infer<typeof PosthogFlushTick>;
+
 export const PosthogOutbox = __t.object("PosthogOutbox", {
   outboxId: __t.string(),
+  uuid: __t.string(),
   idempotencyKey: __t.option(__t.string()),
   distinctId: __t.string(),
   event: __t.string(),

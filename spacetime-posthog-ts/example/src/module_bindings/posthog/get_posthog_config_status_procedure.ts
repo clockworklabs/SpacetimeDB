@@ -10,6 +10,10 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  PostHogConfigStatus,
+} from "./types";
+
 export const params = {
 };
-export const returnType = __t.string()
+export const returnType = PostHogConfigStatus

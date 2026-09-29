@@ -244,26 +244,12 @@ export const waitingBot = table(
   }
 );
 
-export const cafeDeliveryLogViewRow = posthog.t.object(
-  'ContextCafeDeliveryLogRow',
-  {
-    deliveryId: posthog.t.string(),
-    source: posthog.t.string(),
-    distinctId: posthog.t.string(),
-    event: posthog.t.string(),
-    ok: posthog.t.bool(),
-    statusCode: posthog.t.u16(),
-    responseBody: posthog.t.string(),
-    attemptedAt: posthog.t.timestamp(),
-  }
-);
-
-export const cafeAnalyticsSummaryRow = posthog.t.object(
+export const cafeAnalyticsSummaryRow = t.object(
   'ContextCafeAnalyticsSummaryRow',
   {
-    queued: posthog.t.u64(),
-    delivered: posthog.t.u64(),
-    failed: posthog.t.u64(),
+    queued: t.u64(),
+    delivered: t.u64(),
+    failed: t.u64(),
   }
 );
 

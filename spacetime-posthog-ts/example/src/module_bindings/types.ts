@@ -80,18 +80,6 @@ export const ContextCafeAnalyticsSummaryRow = __t.object("ContextCafeAnalyticsSu
 });
 export type ContextCafeAnalyticsSummaryRow = __Infer<typeof ContextCafeAnalyticsSummaryRow>;
 
-export const ContextCafeDeliveryLogRow = __t.object("ContextCafeDeliveryLogRow", {
-  deliveryId: __t.string(),
-  source: __t.string(),
-  distinctId: __t.string(),
-  event: __t.string(),
-  ok: __t.bool(),
-  statusCode: __t.u16(),
-  responseBody: __t.string(),
-  attemptedAt: __t.timestamp(),
-});
-export type ContextCafeDeliveryLogRow = __Infer<typeof ContextCafeDeliveryLogRow>;
-
 export const Econ = __t.object("Econ", {
   owner: __t.string(),
   cashCents: __t.u64(),
@@ -122,42 +110,6 @@ export const Metrics = __t.object("Metrics", {
   updatedAt: __t.timestamp(),
 });
 export type Metrics = __Infer<typeof Metrics>;
-
-// The tagged union or sum type for the algebraic type `PostHogOutboxStatus`.
-export const PostHogOutboxStatus = __t.enum("PostHogOutboxStatus", {
-  Queued: __t.unit(),
-  Processing: __t.unit(),
-  Delivered: __t.unit(),
-  Failed: __t.unit(),
-});
-export type PostHogOutboxStatus = __Infer<typeof PostHogOutboxStatus>;
-
-export const PosthogDeliveryLogAdmin = __t.object("PosthogDeliveryLogAdmin", {});
-export type PosthogDeliveryLogAdmin = __Infer<typeof PosthogDeliveryLogAdmin>;
-
-export const PosthogOutbox = __t.object("PosthogOutbox", {
-  outboxId: __t.string(),
-  idempotencyKey: __t.option(__t.string()),
-  distinctId: __t.string(),
-  event: __t.string(),
-  propertiesJson: __t.option(__t.string()),
-  get status() {
-    return PostHogOutboxStatus;
-  },
-  attempts: __t.u32(),
-  claimId: __t.option(__t.string()),
-  claimExpiresAtMicros: __t.i64(),
-  nextAttemptAt: __t.timestamp(),
-  lastStatusCode: __t.option(__t.u16()),
-  lastError: __t.option(__t.string()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-  deliveredAt: __t.option(__t.timestamp()),
-});
-export type PosthogOutbox = __Infer<typeof PosthogOutbox>;
-
-export const PosthogOutboxAdmin = __t.object("PosthogOutboxAdmin", {});
-export type PosthogOutboxAdmin = __Infer<typeof PosthogOutboxAdmin>;
 
 export const Product = __t.object("Product", {
   key: __t.string(),

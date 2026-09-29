@@ -5,28 +5,24 @@ import {
   type WriteCtx,
 } from './schema';
 import { requireAdmin } from './auth';
-import { normalizeHost, throwSenderError } from './validation';
+import { errors, normalizeHost, throwSenderError } from './validation';
 
 export type PostHogConfig = {
   host: string;
   projectApiKey: string;
 };
 
-export function loadConfigOrThrow(ctx: WriteCtx): PostHogConfig {
+export function loadConfig(ctx: WriteCtx): PostHogConfig | undefined {
   const row = ctx.db.posthogConfig.singleton.find(true);
-  if (!row) {
-    throwSenderError('posthog.config_missing');
-  }
-  return {
-    host: row.host,
-    projectApiKey: row.projectApiKey,
-  };
+  return row ? { host: row.host, projectApiKey: row.projectApiKey } : undefined;
 }
 
 export function loadConfigOrThrowFromProcedure(
   ctx: ProcedureModuleCtx
 ): PostHogConfig {
-  return ctx.withTx(tx => loadConfigOrThrow(tx));
+  return (
+    ctx.withTx(tx => loadConfig(tx)) ?? throwSenderError(errors.configMissing)
+  );
 }
 
 export const setPosthogConfig = spacetimedb.procedure(
@@ -38,7 +34,7 @@ export const setPosthogConfig = spacetimedb.procedure(
   (ctx, args) => {
     const host = normalizeHost(args.host);
     const projectApiKey = args.projectApiKey.trim();
-    if (!projectApiKey) throwSenderError('posthog.invalid_project_api_key');
+    if (!projectApiKey) throwSenderError(errors.invalidProjectApiKey);
     ctx.withTx(tx => {
       requireAdmin(tx, ctx.sender);
       const existing = tx.db.posthogConfig.singleton.find(true);
@@ -60,21 +56,19 @@ export const setPosthogConfig = spacetimedb.procedure(
 
 export const getPosthogConfigStatus = spacetimedb.procedure(
   {},
-  t.string(),
+  t.object('PostHogConfigStatus', {
+    isConfigured: t.bool(),
+    host: t.option(t.string()),
+    projectApiKeyLength: t.u32(),
+  }),
   ctx =>
     ctx.withTx(tx => {
+      requireAdmin(tx, ctx.sender);
       const row = tx.db.posthogConfig.singleton.find(true);
-      if (!row) {
-        return JSON.stringify({
-          isConfigured: false,
-          host: undefined,
-          projectApiKeyLength: 0,
-        });
-      }
-      return JSON.stringify({
-        isConfigured: true,
-        host: row.host,
-        projectApiKeyLength: row.projectApiKey.length,
-      });
+      return {
+        isConfigured: row != null,
+        host: row?.host,
+        projectApiKeyLength: row?.projectApiKey.length ?? 0,
+      };
     })
 );

@@ -16,6 +16,7 @@ import {
 
 export default __t.row({
   outboxId: __t.string().primaryKey().name("outbox_id"),
+  uuid: __t.string(),
   idempotencyKey: __t.option(__t.string()).name("idempotency_key"),
   distinctId: __t.string().name("distinct_id"),
   event: __t.string(),

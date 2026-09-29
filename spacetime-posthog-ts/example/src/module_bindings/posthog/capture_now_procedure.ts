@@ -10,9 +10,13 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  PostHogCaptureResult,
+} from "./types";
+
 export const params = {
   distinctId: __t.string(),
   event: __t.string(),
   propertiesJson: __t.option(__t.string()),
 };
-export const returnType = __t.string()
+export const returnType = PostHogCaptureResult

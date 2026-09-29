@@ -1,7 +1,7 @@
 # @spacetimedb/posthog
 
 A SpacetimeDB submodule for server-side PostHog analytics: direct capture,
-durable queued events, explicit batch flush, feature flag evaluation, and
+durable queued events, scheduled batch delivery, feature flag evaluation, and
 admin-scoped delivery state. Procedures call PostHog through `ctx.http.fetch`.
 
 ---
@@ -23,9 +23,9 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Register PostHog in the host schema. Configure its private credentials through an
-administrator-only startup path, enqueue events from reducers, and perform
-network delivery from procedures:
+Register PostHog in the host schema, call `install` from the host `init`, and
+enqueue events from reducers. `install` starts a scheduled procedure that
+delivers queued events once credentials are configured:
 
 ```ts
 import { schema, t } from 'spacetimedb/server';
@@ -38,7 +38,7 @@ export const init = spacetimedb.init(ctx => {
   posthog.install(ctx.as.posthog);
 });
 
-export const complete_order = spacetimedb.reducer(
+export const completeOrder = spacetimedb.reducer(
   { orderId: t.string(), totalCents: t.u64() },
   (ctx, args) => {
     // Apply the application's order mutation in this reducer transaction.
@@ -55,10 +55,21 @@ export const complete_order = spacetimedb.reducer(
 );
 ```
 
-The host must decide which events and delivery controls a caller may use. See
-the
-[Context Cafe host module](./example/spacetimedb/)
-for reducer-safe queueing, procedure delivery, and admin-scoped observability.
+`enqueueEventInTx` does not throw on invalid event data, so analytics cannot roll
+back the host reducer. It returns `{ outboxId, inserted, error }`; an invalid
+event is stored with status `Rejected` and the error code in `lastError`, and is
+never sent.
+
+The client calls the business operation. Analytics remain a server-side
+concern:
+
+```ts
+await conn.reducers.completeOrder({ orderId, totalCents });
+```
+
+The host must decide which events a caller may trigger. See the
+[Context Cafe host module](./example/spacetimedb/) for reducer-safe queueing and
+admin-scoped observability.
 
 ### Standalone configuration
 
@@ -78,7 +89,8 @@ Verify:
 spacetime call --server http://127.0.0.1:3000 posthog-ts get_posthog_config_status '{}'
 ```
 
-The project token stays in private module state.
+`get_posthog_config_status` is admin-only. The project token stays in private
+module state.
 
 ## Public views
 
@@ -86,7 +98,7 @@ The submodule stores operational state in private tables and exposes admin-gated
 
 | View                         | Notes                                                      |
 | ---------------------------- | ---------------------------------------------------------- |
-| `posthog_outbox_admin`       | up to 500 queued events waiting for explicit delivery      |
+| `posthog_outbox_admin`       | up to 500 queued and in-flight events                      |
 | `posthog_delivery_log_admin` | recent direct capture, flush, and flag evaluation attempts |
 
 ## API
@@ -94,64 +106,64 @@ The submodule stores operational state in private tables and exposes admin-gated
 **Setup**
 
 - `set_posthog_config({ host, projectApiKey })`
-- `get_posthog_config_status()`
+- `get_posthog_config_status()` returns `{ isConfigured, host, projectApiKeyLength }`.
 - `add_admin_identity(identity)` / `remove_admin_identity(identity)`
+
+**Delivery**
+
+- `install(ctx)` seeds the caller as an administrator and starts
+  `scheduled_flush`, which runs every 5 seconds. Each run deletes up to 1,000
+  delivered, failed, rejected, and delivery log rows older than 30 days, then,
+  once PostHog is configured, sends up to 10 batches of 100 queued events.
+- Each event is sent with its enqueue time as `timestamp` and a stable `uuid`,
+  so PostHog deduplicates events sent more than once.
+- Network errors, 408, 429, and 5xx responses retry with exponential backoff, up
+  to 5 attempts. Other 4xx responses, such as an invalid project key, fail the
+  events immediately. PostHog's `/batch` endpoint reports one status for the
+  whole request, so every event in a batch gets the same result.
+- `flush_outbox({ limit })` sends up to `limit` (1 to 100) queued events now and
+  returns `{ attempted, delivered, failed }`.
+- `requeue_failed_events({ limit })` moves up to `limit` failed events back to
+  the queue with a fresh retry budget, for example after fixing the project key.
+  Rejected events are not requeued.
 
 **Analytics**
 
-- `capture_now({ distinctId, event, propertiesJson })` sends one event immediately
-  through PostHog `/batch` and returns a JSON result string.
-- `flush_outbox({ limit })` sends queued events in one `/batch` request, updates
-  delivery state, and returns a JSON result string.
+- `enqueue_event({ distinctId, event, propertiesJson, idempotencyKey })` queues
+  an event and throws on invalid input. Host reducers should call
+  `enqueueEventInTx` after their own authorization.
+- `capture_now({ distinctId, event, propertiesJson })` sends one event
+  immediately and returns `{ ok, statusCode, error }`.
 - `get_feature_flag({ key, distinctId, personPropertiesJson, groupsJson })` calls
-  PostHog `/flags?v=2` and returns a JSON result string with the requested flag
-  value when present: a boolean or the multivariate flag's variant string.
+  PostHog `/flags?v=2` and returns `{ ok, statusCode, enabled, variant, error }`.
+  `enabled` and `variant` are unset when the flag is missing from the response.
 
 **Maintenance**
 
-- `clearAnalytics(ctx, maxRows)` removes a bounded set of outbox and delivery
-  rows for operator-controlled resets.
-- `posthog_outbox_admin` and `posthog_delivery_log_admin` expose bounded,
-  administrator-scoped operational views.
+- `clear_analytics({ maxRows })` deletes up to `maxRows` outbox and delivery log
+  rows. Events already received by PostHog remain there.
+- The private `posthog_delivery_stats` singleton counts current outbox rows:
+  `pending` (queued and in flight), `delivered`, and `failed` (failed and
+  rejected). Host views can read it through `ctx.db.posthog.posthogDeliveryStats`.
+- `errors`, exported from `@spacetimedb/posthog/submodule`, lists the error
+  codes the submodule throws.
 
-Submodule state exports include `posthogOutbox`, `posthogDeliveryLog`,
-`posthogDeliveryStats`, and `OutboxStatus` for host-defined views and operator
-workflows.
-
-These submodule operations are admin-only because they can spend provider quota.
-Expose product-specific host operations that derive the distinct ID and event or
-flag name from authorized application state.
-
-**Reducer-safe queueing**
-
-- `enqueue_event({ distinctId, event, propertiesJson, idempotencyKey })` writes a
-  durable event intent inside a reducer transaction. The submodule reducer is
-  admin-only; host reducers should call `enqueueEventInTx` after authorization.
-
-For host modules, import `@spacetimedb/posthog/submodule` and call `enqueueEventInTx(ctx.as.posthog, ...)` from reducers or `captureEvent(ctx.as.posthog, ...)` / `deliverOutbox(ctx.as.posthog, ...)` from procedures.
-
-The client calls the business operation. Analytics remain a server-side
-concern:
-
-```ts
-await conn.reducers.completeOrder({ orderId, totalCents });
-```
-
-An operator-owned procedure or scheduled workflow should call
-`posthog.deliverOutbox(ctx.as.posthog, { limit })`. Keep provider credentials and
-generic event names inside the module.
+Every procedure and reducer above except `scheduled_flush` is admin-only because
+it can spend provider quota or change delivery state. `scheduled_flush` only runs
+when called by the database's own scheduler. Expose product-specific host operations that
+derive the distinct ID and event or flag name from authorized application state.
 
 Package entrypoints:
 
 - `@spacetimedb/posthog` can run as a standalone analytics database.
 - `@spacetimedb/posthog/submodule` supplies submodule state, configuration,
-  delivery helpers, and admin views.
+  scheduled delivery, `enqueueEventInTx`, and admin views.
 
 ## Architecture notes
 
 - **Synchronous HTTP API.** Module procedures call PostHog's HTTP endpoints
   directly through `ctx.http.fetch`.
-- **Direct plus outbox.** Immediate capture is useful for important events. The outbox is for reducer-safe transactional queueing and explicit flush.
+- **Direct plus outbox.** Immediate capture is useful for important events. The outbox is for reducer-safe transactional queueing and scheduled delivery.
 - **Browser analytics.** Applications can add `posthog-js` in the frontend for
   autocapture and session replay.
 
@@ -168,4 +180,4 @@ The example app in `example/` mounts the submodule under the `posthog` namespace
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0. The published package includes the license text in `LICENSE`.

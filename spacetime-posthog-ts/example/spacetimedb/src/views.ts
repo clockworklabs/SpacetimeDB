@@ -1,5 +1,4 @@
-import { Range, t } from 'spacetimedb/server';
-import * as posthog from '@spacetimedb/posthog/submodule';
+import { t } from 'spacetimedb/server';
 
 import {
   product,
@@ -12,20 +11,11 @@ import {
   purchase,
   activity,
   waitingBot,
-  cafeDeliveryLogViewRow,
   cafeAnalyticsSummaryRow,
   spacetimedb,
 } from './schema';
-export { default } from './schema';
 
 import { newestFirst } from './recent';
-
-export const flushAnalytics = spacetimedb.procedure(
-  { limit: t.u32() },
-  t.string(),
-  (ctx, args) =>
-    JSON.stringify(posthog.deliverOutbox(ctx.as.posthog, { limit: args.limit }))
-);
 
 export const cafeProducts = spacetimedb.view(
   { name: 'cafe_products', public: true },
@@ -111,51 +101,9 @@ export const cafeRecentActivity = spacetimedb.view(
     ]).slice(0, 80)
 );
 
-export const posthogOutboxAdmin = spacetimedb.view(
-  { name: 'posthog_outbox_admin', public: true },
-  posthog.t.array(posthog.posthogOutbox.rowType),
-  ctx => {
-    const admin = ctx.db.posthog.posthogAdminIdentity.identity.find(ctx.sender);
-    return admin
-      ? [
-          ...ctx.db.posthog.posthogOutbox.byStatus.filter(
-            posthog.OutboxStatus.Queued
-          ),
-        ]
-      : [];
-  }
-);
-
-export const posthogDeliveryLogAdmin = spacetimedb.view(
-  { name: 'posthog_delivery_log_admin', public: true },
-  posthog.t.array(cafeDeliveryLogViewRow),
-  ctx => {
-    const admin = ctx.db.posthog.posthogAdminIdentity.identity.find(ctx.sender);
-    if (!admin) return [];
-    const rows = [
-      ...ctx.db.posthog.posthogDeliveryLog.byAttemptedAt.filter(new Range()),
-    ];
-    rows.sort((a, b) => {
-      const av = a.attemptedAt.microsSinceUnixEpoch;
-      const bv = b.attemptedAt.microsSinceUnixEpoch;
-      return av < bv ? 1 : av > bv ? -1 : 0;
-    });
-    return rows.slice(0, 50).map(row => ({
-      deliveryId: row.deliveryId.toString(),
-      source: row.source.tag,
-      distinctId: row.distinctId,
-      event: row.event,
-      ok: row.ok,
-      statusCode: row.statusCode,
-      responseBody: row.responseBody,
-      attemptedAt: row.attemptedAt,
-    }));
-  }
-);
-
 export const cafeAnalyticsSummary = spacetimedb.anonymousView(
   { name: 'cafe_analytics_summary', public: true },
-  posthog.t.array(cafeAnalyticsSummaryRow),
+  t.array(cafeAnalyticsSummaryRow),
   ctx => {
     const stats = ctx.db.posthog.posthogDeliveryStats.singleton.find(true);
     return [

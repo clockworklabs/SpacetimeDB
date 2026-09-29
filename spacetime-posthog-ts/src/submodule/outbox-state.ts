@@ -43,6 +43,31 @@ export function releaseExpiredClaim<T extends OutboxRow>(
   };
 }
 
+/** 4xx responses other than 408 and 429 will not succeed on retry. */
+export function isPermanentFailure(statusCode: number): boolean {
+  return (
+    statusCode >= 400 &&
+    statusCode < 500 &&
+    statusCode !== 408 &&
+    statusCode !== 429
+  );
+}
+
+export function requeueFailedRow<T extends OutboxRow>(
+  row: T,
+  timestamp: T['updatedAt']
+): T {
+  return {
+    ...row,
+    status: { tag: 'Queued' },
+    attempts: 0,
+    claimId: undefined,
+    claimExpiresAtMicros: 0n,
+    nextAttemptAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 export function claimOutboxRow<T extends OutboxRow>(
   row: T,
   claimId: string,
@@ -63,26 +88,26 @@ export function settleOutboxClaim<T extends OutboxRow>(
   result: { ok: boolean; statusCode: number; responseBody: string },
   timestamp: T['updatedAt'],
   retryAt: T['nextAttemptAt']
-): { row: T; terminal: boolean } {
+): T {
   const attempts = row.attempts + 1;
-  const terminal = result.ok || attempts >= MAX_DELIVERY_ATTEMPTS;
+  const terminal =
+    result.ok ||
+    isPermanentFailure(result.statusCode) ||
+    attempts >= MAX_DELIVERY_ATTEMPTS;
   return {
-    terminal,
-    row: {
-      ...row,
-      status: result.ok
-        ? { tag: 'Delivered' }
-        : terminal
-          ? { tag: 'Failed' }
-          : { tag: 'Queued' },
-      attempts,
-      claimId: undefined,
-      claimExpiresAtMicros: 0n,
-      nextAttemptAt: terminal ? timestamp : retryAt,
-      lastStatusCode: result.statusCode,
-      lastError: result.ok ? undefined : truncateForLog(result.responseBody),
-      updatedAt: timestamp,
-      deliveredAt: result.ok ? timestamp : undefined,
-    },
+    ...row,
+    status: result.ok
+      ? { tag: 'Delivered' }
+      : terminal
+        ? { tag: 'Failed' }
+        : { tag: 'Queued' },
+    attempts,
+    claimId: undefined,
+    claimExpiresAtMicros: 0n,
+    nextAttemptAt: terminal ? timestamp : retryAt,
+    lastStatusCode: result.statusCode,
+    lastError: result.ok ? undefined : truncateForLog(result.responseBody),
+    updatedAt: timestamp,
+    deliveredAt: result.ok ? timestamp : undefined,
   };
 }

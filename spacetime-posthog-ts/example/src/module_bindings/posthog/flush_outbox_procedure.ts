@@ -10,7 +10,11 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  PostHogFlushResult,
+} from "./types";
+
 export const params = {
   limit: __t.u32(),
 };
-export const returnType = __t.string()
+export const returnType = PostHogFlushResult

@@ -1,5 +1,4 @@
 import {
-  SenderError,
   schema,
   table,
   t,
@@ -16,12 +15,14 @@ export const outboxStatus = t.enum('PostHogOutboxStatus', [
   'Processing',
   'Delivered',
   'Failed',
+  'Rejected',
 ]);
 export const OutboxStatus = {
   Queued: { tag: 'Queued' as const },
   Processing: { tag: 'Processing' as const },
   Delivered: { tag: 'Delivered' as const },
   Failed: { tag: 'Failed' as const },
+  Rejected: { tag: 'Rejected' as const },
 };
 
 export const deliverySource = t.enum('PostHogDeliverySource', [
@@ -84,6 +85,7 @@ export const posthogOutbox = table(
   },
   {
     outboxId: t.string().primaryKey(),
+    uuid: t.string(),
     idempotencyKey: t.option(t.string()),
     distinctId: t.string(),
     event: t.string(),
@@ -101,6 +103,16 @@ export const posthogOutbox = table(
   }
 );
 
+export const posthogFlushTick = table(
+  { name: 'posthog_flush_tick', public: false },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+  }
+);
+
+// Counts of outbox rows by state. pending covers Queued and Processing;
+// failed covers Failed and Rejected.
 export const posthogDeliveryStats = table(
   { name: 'posthog_delivery_stats', public: false },
   {
@@ -164,6 +176,7 @@ export const spacetimedb = schema({
   posthogOutbox,
   posthogDeliveryLog,
   posthogDeliveryStats,
+  posthogFlushTick,
 });
 
 export const init = spacetimedb.init(ctx => {
@@ -179,4 +192,4 @@ export type TransactionModuleCtx = TransactionCtx<Schema>;
 export type ViewModuleCtx = ViewCtx<Schema>;
 export type WriteCtx = ReducerModuleCtx | TransactionModuleCtx;
 
-export { SenderError, t };
+export { t };

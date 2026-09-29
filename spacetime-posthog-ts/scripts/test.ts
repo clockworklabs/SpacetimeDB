@@ -10,7 +10,9 @@ import {
   MAX_DELIVERY_ATTEMPTS,
   claimHasExpired,
   claimOutboxRow,
+  isPermanentFailure,
   releaseExpiredClaim,
+  requeueFailedRow,
   retryDelayMicros,
   settleOutboxClaim,
 } from '../src/submodule/outbox-state.ts';
@@ -31,11 +33,10 @@ const flagBody = JSON.stringify({
   },
   requestId: 'x'.repeat(3000),
 });
+const cfg = { host: 'https://us.i.posthog.com', projectApiKey: 'test' };
 const flagResult = posthogFetch(
-  {
-    http: { fetch: () => ({ status: 200, text: () => flagBody }) },
-  } as unknown as Parameters<typeof posthogFetch>[0],
-  { host: 'https://us.i.posthog.com', projectApiKey: 'test' },
+  { http: { fetch: () => ({ status: 200, text: () => flagBody }) } },
+  cfg,
   '/flags?v=2',
   {}
 );
@@ -54,6 +55,30 @@ for (const key of ['invalid', 'missing', 'toString']) {
   assert.equal(featureFlagValue(flagBody, key), undefined);
 }
 assert.equal(featureFlagValue('not json', 'enabled'), undefined);
+
+assert.deepEqual(
+  posthogFetch(
+    {
+      http: {
+        fetch: () => {
+          throw new Error('connection refused');
+        },
+      },
+    },
+    cfg,
+    '/batch',
+    {}
+  ),
+  { ok: false, statusCode: 0, responseBody: 'connection refused' },
+  'network errors become retryable results'
+);
+
+for (const status of [400, 401, 403, 404, 413]) {
+  assert.equal(isPermanentFailure(status), true, `${status} is permanent`);
+}
+for (const status of [0, 408, 429, 500, 503]) {
+  assert.equal(isPermanentFailure(status), false, `${status} is retryable`);
+}
 
 const timestamp = { microsSinceUnixEpoch: 10_000_000n };
 const queued = {
@@ -91,11 +116,10 @@ for (let attempt = 1; attempt < MAX_DELIVERY_ATTEMPTS; attempt++) {
     timestamp,
     { microsSinceUnixEpoch: 11_000_000n }
   );
-  assert.equal(settled.row.attempts, attempt);
-  assert.equal(settled.terminal, false);
-  assert.equal(settled.row.status.tag, 'Queued');
+  assert.equal(settled.attempts, attempt);
+  assert.equal(settled.status.tag, 'Queued');
   retrying = claimOutboxRow(
-    settled.row,
+    settled,
     `claim-${attempt + 1}`,
     15_000_000n,
     timestamp
@@ -108,10 +132,9 @@ const exhausted = settleOutboxClaim(
   timestamp,
   { microsSinceUnixEpoch: 11_000_000n }
 );
-assert.equal(exhausted.row.attempts, MAX_DELIVERY_ATTEMPTS);
-assert.equal(exhausted.terminal, true);
-assert.equal(exhausted.row.status.tag, 'Failed');
-assert.equal(exhausted.row.lastError, 'unavailable');
+assert.equal(exhausted.attempts, MAX_DELIVERY_ATTEMPTS);
+assert.equal(exhausted.status.tag, 'Failed');
+assert.equal(exhausted.lastError, 'unavailable');
 assert.equal(
   settleOutboxClaim(
     claimed,
@@ -122,9 +145,22 @@ assert.equal(
     },
     timestamp,
     timestamp
-  ).row.lastError,
+  ).lastError,
   truncateForLog('x'.repeat(3000))
 );
+
+const unauthorized = settleOutboxClaim(
+  claimed,
+  { ok: false, statusCode: 401, responseBody: 'invalid api key' },
+  timestamp,
+  timestamp
+);
+assert.equal(unauthorized.attempts, 1);
+assert.equal(unauthorized.status.tag, 'Failed', 'auth errors fail at once');
+
+const requeued = requeueFailedRow(unauthorized, timestamp);
+assert.equal(requeued.status.tag, 'Queued');
+assert.equal(requeued.attempts, 0);
 
 const delivered = settleOutboxClaim(
   claimed,
@@ -132,9 +168,8 @@ const delivered = settleOutboxClaim(
   timestamp,
   timestamp
 );
-assert.equal(delivered.terminal, true);
-assert.equal(delivered.row.status.tag, 'Delivered');
-assert.equal(delivered.row.deliveredAt, timestamp);
-assert.equal(delivered.row.lastError, undefined);
+assert.equal(delivered.status.tag, 'Delivered');
+assert.equal(delivered.deliveredAt, timestamp);
+assert.equal(delivered.lastError, undefined);
 
 console.log('posthog tests passed');

@@ -2,16 +2,16 @@
 
 Context Cafe is a small robot café simulator that demonstrates the
 `@spacetimedb/posthog/submodule`. SpacetimeDB owns the catalog, simulation,
-per-browser café state, metrics, and analytics outbox. A dedicated local server
-identity delivers queued events to PostHog; the browser never receives submodule
-administrator privileges or the PostHog project key.
+per-browser café state, metrics, and analytics outbox. The submodule's scheduled
+flush delivers queued events to PostHog from inside the database; the browser
+never receives submodule administrator privileges or the PostHog project key.
 
 ## What this demonstrates
 
 - Mounting the PostHog submodule under the `posthog` namespace.
 - Enqueuing analytics in deterministic reducers for delivery outside
   transactions.
-- Delivering the submodule outbox from an authorized server connection.
+- Scheduled outbox delivery started by `posthog.install` in the host `init`.
 - Caller-scoped café state and safe public aggregate delivery metrics.
 - Editing prices and availability while watching simulated conversion change.
 - Synchronizing a TypeScript-authored catalog from `catalog/catalog.ts`.
@@ -81,14 +81,12 @@ its event catalog are demonstration code.
 | `STDB_URI`                | `ws://127.0.0.1:3000`       | Browser and server WebSocket endpoint.                                   |
 | `STDB_HTTP`               | `http://127.0.0.1:3000`     | CLI administration endpoint. Must address the same server as `STDB_URI`. |
 | `SPACETIMEDB_DB_NAME`     | `spacetime-posthog-example` | Published database name.                                                 |
-| `STDB_SERVER_TOKEN`       | generated locally           | Optional pre-provisioned server identity token.                          |
 | `HOST`                    | `127.0.0.1`                 | Static-server bind address.                                              |
 | `PORT`                    | `8796`                      | Static-server port.                                                      |
 
-When `STDB_SERVER_TOKEN` is unset, the server stores its generated identity token in
-the ignored `.stdb-server-token` file. On startup, the logged-in CLI publisher calls
-`posthog.add_admin_identity` for that identity. This keeps the browser unprivileged
-and preserves the delivery identity across restarts.
+On startup, the server uses the logged-in CLI identity, which published the
+database and is its initial submodule administrator, to call `sync_catalog` and
+`posthog.set_posthog_config`. The browser stays unprivileged.
 
 ## Architecture
 
@@ -97,14 +95,18 @@ Browser
   -> caller-scoped café reducers and views
   -> analytics events queued in the posthog submodule namespace
 
-Authorized example server
-  -> subscribes to the admin-scoped outbox view
-  -> calls flush_analytics in bounded batches
+posthog.scheduled_flush (every 5 seconds, inside the database)
+  -> delivers queued events in bounded batches
   -> PostHog ingestion API
+
+Example server
+  -> serves the UI
+  -> syncs the catalog and PostHog config through the CLI identity
 ```
 
-The public `cafe_analytics_summary` view exposes counts only. The detailed outbox
-and delivery-log views return rows only to registered PostHog administrators.
+The public `cafe_analytics_summary` view exposes counts only. The submodule's
+`posthog_outbox_admin` and `posthog_delivery_log_admin` views return rows only to
+registered PostHog administrators.
 
 The Node server exposes only:
 
@@ -119,7 +121,7 @@ Submodule administrator grants are available only through module operations.
 
 - `POSTHOG_PROJECT_API_KEY` is loaded by the server and written to the submodule's
   private configuration table through the authenticated CLI owner.
-- `.stdb-server-token`, `.env`, and logs are ignored and must not be committed.
+- `.env` and logs are ignored and must not be committed.
 - The development server binds to loopback by default. Setting `HOST` to another
   address expands its network exposure.
 - The example server is scoped to local development. Production deployments
@@ -136,17 +138,18 @@ pnpm exec tsc -p tsconfig.json
 
 For a complete local smoke test, fresh-publish the database, start the server, load
 the UI, press **Run**, and confirm that ticks, queued activity, and the PostHog count
-advance through the authorized server identity.
+advance.
 
 ## Troubleshooting
 
 - **Connection targets disagree:** `STDB_URI`, `STDB_HTTP`, and the server selected
   by the publish script must refer to the same SpacetimeDB instance.
-- **Server identity cannot be authorized:** publish with the currently logged-in
-  CLI identity, then restart. Remove `.stdb-server-token` only when
-  replacing the local server identity.
-- **Events stay queued:** verify `POSTHOG_PROJECT_API_KEY`, inspect server output,
-  and confirm the PostHog host is reachable.
+- **Catalog sync or configuration is not authorized:** publish with the currently
+  logged-in CLI identity, then restart.
+- **Events stay queued or fail:** verify `POSTHOG_PROJECT_API_KEY`, inspect the
+  `posthog_delivery_log_admin` view, and confirm the PostHog host is reachable.
+  After fixing the key, call `posthog.requeue_failed_events` to retry events that
+  failed.
 - **Stored browser identity is rejected after a reset:** reload once; the client
   discards the rejected browser token and obtains a fresh caller identity automatically.
 
@@ -158,7 +161,7 @@ advance through the authorized server identity.
   deterministic purchase behavior.
 - `catalog/catalog.ts`: product, recipe, and scenario source data.
 - `scripts/test-economy.ts`: focused tests for the simulator's economy rules.
-- `server.ts`: safe startup configuration, server identity, and outbox delivery.
+- `server.ts`: static hosting, catalog sync, and PostHog configuration.
 - `src/app.ts`: browser connection and café UI behavior.
 - `public/index.html`: café interface structure.
 - `public/styles.css`: café presentation.

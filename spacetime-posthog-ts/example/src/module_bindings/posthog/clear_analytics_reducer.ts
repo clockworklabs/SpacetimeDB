@@ -10,13 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  deliveryId: __t.string().name("delivery_id"),
-  source: __t.string(),
-  distinctId: __t.string().name("distinct_id"),
-  event: __t.string(),
-  ok: __t.bool(),
-  statusCode: __t.u16().name("status_code"),
-  responseBody: __t.string().name("response_body"),
-  attemptedAt: __t.timestamp().name("attempted_at"),
-});
+export default {
+  maxRows: __t.u32(),
+};

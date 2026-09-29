@@ -4,7 +4,7 @@ import {
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema';
-import { throwSenderError } from './validation';
+import { errors, throwSenderError } from './validation';
 
 type Sender = WriteCtx['sender'];
 type AdminReadableCtx = {
@@ -20,7 +20,7 @@ export function isAdmin(ctx: AdminReadableCtx, sender: Sender): boolean {
 }
 
 export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
-  if (!isAdmin(ctx, sender)) throwSenderError('posthog.not_authorized');
+  if (!isAdmin(ctx, sender)) throwSenderError(errors.notAuthorized);
 }
 
 export const addAdminIdentity = spacetimedb.procedure(
@@ -49,7 +49,7 @@ export const removeAdminIdentity = spacetimedb.procedure(
       const existing = tx.db.posthogAdminIdentity.identity.find(identity);
       if (!existing) return;
       if (tx.db.posthogAdminIdentity.count() <= 1n) {
-        throwSenderError('posthog.cannot_remove_last_admin');
+        throwSenderError(errors.cannotRemoveLastAdmin);
       }
       tx.db.posthogAdminIdentity.delete(existing);
     });

@@ -6,8 +6,5 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
-import * as FlushAnalyticsProcedure from "../flush_analytics_procedure";
 
-export type FlushAnalyticsArgs = __Infer<typeof FlushAnalyticsProcedure.params>;
-export type FlushAnalyticsResult = __Infer<typeof FlushAnalyticsProcedure.returnType>;
 

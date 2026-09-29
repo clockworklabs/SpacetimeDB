@@ -1,4 +1,3 @@
-import type { ProcedureModuleCtx } from './schema';
 import type { PostHogConfig } from './config';
 
 const MAX_LOG_BODY_LENGTH = 2048;
@@ -55,22 +54,40 @@ export function featureFlagValue(
   }
 }
 
+type FetchCtx = {
+  http: {
+    fetch(
+      url: string,
+      init: { method: string; headers: Record<string, string>; body: string }
+    ): { status: number; text(): string };
+  };
+};
+
+/** Network failures return status code 0 with the error message as the body. */
 export function posthogFetch(
-  ctx: ProcedureModuleCtx,
+  ctx: FetchCtx,
   cfg: PostHogConfig,
   path: string,
   body: unknown
 ): PostHogHttpResult {
-  const response = ctx.http.fetch(`${cfg.host}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = ctx.http.fetch(`${cfg.host}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      statusCode: 0,
+      responseBody: error instanceof Error ? error.message : String(error),
+    };
+  }
   const statusCode = toStatusCode(response.status);
-  const responseBody = response.text();
   return {
     ok: isOkStatus(statusCode),
     statusCode,
-    responseBody,
+    responseBody: response.text(),
   };
 }
