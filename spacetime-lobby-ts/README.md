@@ -38,23 +38,29 @@ export const init = spacetimedb.init(ctx => {
 export default spacetimedb;
 ```
 
-Host modules can call submodule helpers with an explicit subject after they have
-validated auth or mapped the SpacetimeDB identity to an application user ID:
+`install` seeds the default config, makes the publishing identity the first
+lobby administrator, and schedules the cleanup sweep.
+
+Players can queue, cancel, join, and leave through the submodule's own
+reducers, which derive the subject from `ctx.sender.toHexString()`. Ranked
+queues, result reporting, and closing a room are host helpers only, so the host
+decides which rating pools exist and who won. Call them with an explicit
+subject after the host has validated auth or mapped the SpacetimeDB identity to
+an application user ID:
 
 ```ts
-lobby.joinQueueForSubject(ctx.as.lobby, {
-  pool: 'duel',
-  subject: userId,
-  matchSize: 2,
-  attributesJson: JSON.stringify({ region: 'iad' }),
+export const findDuel = spacetimedb.reducer({}, ctx => {
+  lobby.joinRankedQueueForSubject(ctx.as.lobby, {
+    pool: 'duel',
+    subject: userIdFor(ctx),
+    matchSize: 2,
+    attributesJson: JSON.stringify({ region: 'iad' }),
+  });
 });
 ```
 
-Public submodule reducers derive the subject from `ctx.sender.toHexString()`.
-Host wrappers can map the caller to an application user ID.
-See the
-[Starclash host module](./example/spacetimedb/)
-for profile mapping, matchmaking, match results, and caller-scoped views.
+See the [Starclash host module](./example/spacetimedb/) for profile mapping,
+matchmaking, match results, and caller-scoped views.
 
 After generating bindings, a client joins through the host operation and reads
 match state through subscriptions:
@@ -67,52 +73,41 @@ await conn.reducers.findDuel({});
 conn
   .subscriptionBuilder()
   .subscribe([
-    tables.myLobbyTickets,
-    tables.myLobbyRooms,
-    tables.myLobbyRoomSeats,
+    tables.lobby.myLobbyTickets,
+    tables.lobby.myLobbyRooms,
+    tables.lobby.myLobbyRoomSeats,
   ]);
 ```
 
-`findDuel` is the example's product-facing wrapper. A host can instead expose
-its own reducer around `lobby.joinQueueForSubject(ctx.as.lobby, ...)`.
-
 ### Publish Lobby as the database
 
-The root entrypoint includes the standalone lifecycle hook for databases
-dedicated to Lobby:
-
-```ts
-export { default, init } from '@spacetimedb/lobby';
-export {
-  joinQueue,
-  joinRankedQueue,
-  cancelTicket,
-  myLobbyTickets,
-  myLobbyRooms,
-  lobbyQueueSummary,
-  lobbyRankedLeaderboard,
-} from '@spacetimedb/lobby';
-```
+[`spacetimedb/`](./spacetimedb/) publishes the submodule as a standalone
+database with its client reducers, views, and administrator operations.
 
 ## API
 
-Reducers:
+Client reducers:
 
-- `join_queue({ pool, matchSize, attributesJson, ttlSeconds})`
-- `join_ranked_queue({ pool, matchSize, attributesJson, ttlSeconds, ratingPool })`
+- `join_queue({ pool, matchSize, attributesJson, ttlSeconds })` queues the
+  caller for an unranked match. A subject waits in one queue at a time, so
+  joining replaces its queued ticket.
 - `cancel_ticket({ ticketId })`
-- `join_room({ roomId })`
-- `leave_room({ roomId })`
-- `close_room({ roomId })`
-- `expire_tickets({ limit })` (admin only, up to 1,000 rows)
-- `set_rating({ pool, subject, rating })` (admin only)
-- `update_config({ defaultTicketTtlSeconds, maxMatchSize })` (admin only)
-- `add_admin_identity({ identity })` (admin only)
-- `remove_admin_identity({ identity })` (admin only)
+- `join_room({ roomId })` marks the caller's reserved seat joined.
+- `leave_room({ roomId })` marks the caller's seat left. Leaving a `Ready` room
+  abandons it. An `Active` room stays active, so its result can still be
+  reported, until every seat has left.
+
+Administrator reducers:
+
+- `set_rating({ pool, subject, rating })`
+- `update_config({ defaultTicketTtlSeconds, maxMatchSize, readyTimeoutSeconds, retentionSeconds })`
+- `add_lobby_admin({ identity })` and `remove_lobby_admin({ identity })`. The
+  last administrator cannot be removed.
 
 Procedure:
 
-- `get_lobby_status()` returns a JSON string.
+- `get_lobby_status()` returns the configured defaults and queued, ready, and
+  active counts.
 
 Views:
 
@@ -121,26 +116,30 @@ Views:
 - `my_lobby_rooms`
 - `my_lobby_room_seats`
 - `lobby_queue_summary`
-- `lobby_ranked_leaderboard`
+- `lobby_ranked_leaderboard`: up to 500 ratings ordered by rating pool, then
+  rating.
 - `lobby_admin_tickets`
 - `lobby_admin_rooms`
 - `lobby_admin_room_seats`
 - `lobby_admin_match_results`
 
-Host helper API:
+Host helpers, called with `ctx.as.lobby` or `tx.as.lobby`:
 
-- Queue lifecycle: `joinQueueForSubject`, `joinRankedQueueForSubject`, and `cancelTicketForSubject`.
-- Room lifecycle: `joinRoomForSubject`, `leaveRoomForSubject`, and `closeRoomForSubject`.
-- Ranking: `reportMatchResult`.
+- `joinQueueForSubject`, `joinRankedQueueForSubject`, and
+  `cancelTicketForSubject`.
+- `joinRoomForSubject` and `leaveRoomForSubject`.
+- `reportMatchResult({ roomId, winnerSubject })` records the result of an
+  active two-player room, updates both ratings, and closes the room. Omit
+  `winnerSubject` for a draw.
+- `closeRoom(tx, roomId)` closes a room without a result.
 
-Submodule administrator operations include `set_rating`, `expire_tickets`, and
-`update_config`.
+Every failure throws a code from the exported `errors` object.
 
 Package entrypoints:
 
-- `@spacetimedb/lobby` can run as a standalone Lobby database.
-- `@spacetimedb/lobby/submodule` supplies the submodule namespace and host
-  helpers.
+- `@spacetimedb/lobby` exports `errors` and the host helpers.
+- `@spacetimedb/lobby/submodule` supplies the submodule namespace, `install`,
+  host helpers, reducers, and views.
 
 ## Matching
 
@@ -156,22 +155,28 @@ Matching is deterministic:
 the metadata when applying product-specific rules.
 
 Ranked queues use a 1,000 starting rating and a widening rating band: 100
-points initially, 50 more for each 10 seconds waited, capped at 800. A host
+points initially, 50 more for each 10 seconds waited, capped at 800. The oldest
+ticket that can fill a match takes the closest ratings in its rating pool. A
 host reports a two-player result through `reportMatchResult` after validating
-its game-specific completion rules. Results are idempotent per room and update
-both players with Elo K=32. The room must be active. Result reporting is a host
-helper and is absent from the generic client-callable API.
+its game-specific completion rules; seats that left still receive the result.
+Results update both players with Elo K=32.
 
-Any participant may close a room through `close_room`. Hosts that need stricter
-completion rules should expose their own reducer and call `closeRoomForSubject` after
-validating the game state.
+## Cleanup
+
+A scheduled sweep runs every 15 seconds and handles up to 500 rows per step:
+
+- queued tickets past their expiry become `Expired`
+- `Ready` rooms whose seats are not all joined within `readyTimeoutSeconds`
+  (default 120) become `Abandoned`
+- cancelled and expired tickets, closed and abandoned rooms with their seats
+  and tickets, and match results are deleted after `retentionSeconds`
+  (default one hour)
 
 ## Testing
 
 ```bash
 pnpm test
 pnpm run typecheck
-pnpm run build
 ```
 
 ## License

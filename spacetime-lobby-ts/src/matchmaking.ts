@@ -24,29 +24,61 @@ export function rankedBand(ticket: RankedTicket, now: bigint): number {
   return Math.min(RANKED_MAX_BAND, RANKED_INITIAL_BAND + extra);
 }
 
+/**
+ * Picks `matchSize` tickets for the oldest anchor that can fill a match inside
+ * its rating band, taking the closest ratings first. `queued` is oldest first.
+ */
 export function rankedSelection<T extends RankedTicket>(
   queued: T[],
   matchSize: number,
   now: bigint
 ): T[] | undefined {
+  const ratingOf = (ticket: T) => ticket.rating ?? DEFAULT_RATING;
+  const isOlder = (a: T, b: T) =>
+    a.createdAt.microsSinceUnixEpoch < b.createdAt.microsSinceUnixEpoch;
+
+  const pools = new Map<string | undefined, T[]>();
+  for (const ticket of queued) {
+    const pool = pools.get(ticket.ratingPool);
+    if (pool) pool.push(ticket);
+    else pools.set(ticket.ratingPool, [ticket]);
+  }
+  const position = new Map<T, number>();
+  for (const pool of pools.values()) {
+    pool.sort(
+      (a, b) =>
+        ratingOf(a) - ratingOf(b) ||
+        (isOlder(a, b) ? -1 : isOlder(b, a) ? 1 : 0)
+    );
+    pool.forEach((ticket, index) => position.set(ticket, index));
+  }
+
   for (const anchor of queued) {
-    const anchorRating = anchor.rating ?? DEFAULT_RATING;
+    const pool = pools.get(anchor.ratingPool)!;
+    if (pool.length < matchSize) continue;
+    const anchorRating = ratingOf(anchor);
     const band = rankedBand(anchor, now);
-    const candidates = queued
-      .filter(
-        ticket =>
-          Math.abs((ticket.rating ?? DEFAULT_RATING) - anchorRating) <= band
-      )
-      .filter(ticket => ticket.ratingPool === anchor.ratingPool)
-      .sort((a, b) => {
-        const ar = Math.abs((a.rating ?? DEFAULT_RATING) - anchorRating);
-        const br = Math.abs((b.rating ?? DEFAULT_RATING) - anchorRating);
-        if (ar !== br) return ar - br;
-        const av = a.createdAt.microsSinceUnixEpoch;
-        const bv = b.createdAt.microsSinceUnixEpoch;
-        return av < bv ? -1 : av > bv ? 1 : 0;
-      });
-    if (candidates.length >= matchSize) return candidates.slice(0, matchSize);
+    const picked = [anchor];
+    let low = position.get(anchor)! - 1;
+    let high = position.get(anchor)! + 1;
+    while (picked.length < matchSize) {
+      const left = low >= 0 ? pool[low] : undefined;
+      const right = high < pool.length ? pool[high] : undefined;
+      const leftGap = left ? anchorRating - ratingOf(left) : Infinity;
+      const rightGap = right ? ratingOf(right) - anchorRating : Infinity;
+      if (Math.min(leftGap, rightGap) > band) break;
+      if (
+        leftGap < rightGap ||
+        (leftGap === rightGap && isOlder(left!, right!))
+      ) {
+        picked.push(left!);
+        low--;
+      } else {
+        picked.push(right!);
+        high++;
+      }
+    }
+    if (picked.length === matchSize) return picked;
   }
   return undefined;
 }

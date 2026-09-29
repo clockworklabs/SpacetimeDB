@@ -1,18 +1,20 @@
-import { Range, type Infer } from 'spacetimedb/server';
+import { Timestamp } from 'spacetimedb';
+import { Range, SenderError, type Infer } from 'spacetimedb/server';
 import {
   RoomStatus,
   SeatStatus,
-  SenderError,
   TicketStatus,
   lobbyQueueTicket,
   lobbyRoom,
+  lobbyStatus,
   lobbySubjectRating,
+  lobbySweepTick,
   spacetimedb,
   t,
-  type ProcedureModuleCtx,
   type ViewModuleCtx,
   type WriteCtx,
 } from './schema';
+import { errors } from '../errors';
 import {
   DEFAULT_RATING,
   MAX_RATING,
@@ -25,10 +27,13 @@ import { lobbyCompositeKey } from '../keys';
 
 const MAX_POOL_LENGTH = 96;
 const MAX_SUBJECT_LENGTH = 160;
+const MAX_TICKET_ID_LENGTH = 200;
 const MAX_JSON_LENGTH = 4096;
-const DEFAULT_EXPIRE_LIMIT = 100;
-const MAX_EXPIRE_LIMIT = 1000;
+const MAX_TTL_SECONDS = 24 * 60 * 60;
+const MAX_MATCH_SIZE = 128;
 const MAX_MATCH_CANDIDATES = 5000;
+const SWEEP_BATCH = 500;
+const ONE_SECOND_MICROS = 1_000_000n;
 
 type QueueTicketRow = Infer<typeof lobbyQueueTicket.rowType>;
 type RoomRow = Infer<typeof lobbyRoom.rowType>;
@@ -43,6 +48,7 @@ export type JoinQueueArgs = {
 };
 
 export type JoinRankedQueueArgs = JoinQueueArgs & {
+  /** Rating pool the result updates. Defaults to `pool`. */
   ratingPool?: string | undefined;
 };
 
@@ -58,14 +64,8 @@ export type RoomSubjectArgs = {
 
 export type ReportMatchResultArgs = {
   roomId: bigint;
-  subject: string;
+  /** Omit for a draw. */
   winnerSubject?: string | undefined;
-};
-
-export type SetRatingArgs = {
-  pool: string;
-  subject: string;
-  rating: number;
 };
 
 export type JoinQueueResult = {
@@ -73,66 +73,42 @@ export type JoinQueueResult = {
   roomId?: bigint | undefined;
 };
 
-function fail(message: string): never {
-  throw new SenderError(`lobby.${message}`);
+function fail(code: string): never {
+  throw new SenderError(code);
 }
 
-function subjectForSender(
-  ctx: WriteCtx | ProcedureModuleCtx | ViewModuleCtx
-): string {
-  return ctx.sender.toHexString();
-}
-
-function normalizeName(value: string, field: string, max: number): string {
+function normalizeName(value: string, code: string, max: number): string {
   const out = value.trim();
-  if (!out) fail(`invalid_${field}`);
-  if (out.length > max) fail(`${field}_too_long`);
+  if (!out || out.length > max) fail(code);
   return out;
 }
 
-function validateJson(
-  value: string | undefined,
-  field: string
-): string | undefined {
-  if (value === undefined) return undefined;
-  const out = value.trim();
+function validateAttributesJson(value: string | undefined): string | undefined {
+  const out = value?.trim();
   if (!out) return undefined;
-  if (out.length > MAX_JSON_LENGTH) fail(`${field}_too_long`);
+  if (out.length > MAX_JSON_LENGTH) fail(errors.invalidAttributesJson);
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(out) as unknown;
-    if (
-      parsed === null ||
-      typeof parsed !== 'object' ||
-      Array.isArray(parsed)
-    ) {
-      fail(`invalid_${field}_json`);
-    }
+    parsed = JSON.parse(out);
   } catch {
-    fail(`invalid_${field}_json`);
+    fail(errors.invalidAttributesJson);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    fail(errors.invalidAttributesJson);
   }
   return out;
-}
-
-function nowMicros(ctx: WriteCtx): bigint {
-  return ctx.timestamp.microsSinceUnixEpoch;
 }
 
 function ratingId(pool: string, subject: string): string {
   return lobbyCompositeKey(pool, subject);
 }
 
-function getRating(
-  ctx: WriteCtx | ViewModuleCtx,
-  pool: string,
-  subject: string
-) {
-  return ctx.db.lobbySubjectRating.ratingId.find(ratingId(pool, subject));
-}
-
 function getOrCreateRating(ctx: WriteCtx, pool: string, subject: string) {
-  const existing = getRating(ctx, pool, subject);
+  const existing = ctx.db.lobbySubjectRating.ratingId.find(
+    ratingId(pool, subject)
+  );
   if (existing) return existing;
-  const row = {
+  return ctx.db.lobbySubjectRating.insert({
     ratingId: ratingId(pool, subject),
     pool,
     subject,
@@ -143,42 +119,21 @@ function getOrCreateRating(ctx: WriteCtx, pool: string, subject: string) {
     draws: 0,
     matches: 0,
     updatedAt: ctx.timestamp,
-  };
-  ctx.db.lobbySubjectRating.insert(row);
-  return row;
-}
-
-function validateRating(value: number): number {
-  const rating = Math.trunc(value);
-  if (!Number.isInteger(rating) || rating < MIN_RATING || rating > MAX_RATING) {
-    fail('invalid_rating');
-  }
-  return rating;
+  });
 }
 
 function getConfig(ctx: WriteCtx) {
-  const existing = ctx.db.lobbyConfig.singleton.find(true);
-  if (existing) return existing;
-  const row = {
-    singleton: true,
-    defaultTicketTtlSeconds: 60,
-    maxMatchSize: 16,
-    updatedAt: ctx.timestamp,
-  };
-  ctx.db.lobbyConfig.insert(row);
-  return row;
+  const config = ctx.db.lobbyConfig.singleton.find(true);
+  if (!config) fail(errors.configMissing);
+  return config;
 }
 
-function isAdmin(ctx: WriteCtx | ViewModuleCtx, sender = ctx.sender): boolean {
-  return ctx.db.lobbyAdminIdentity.identity.find(sender) != null;
+function isAdmin(ctx: WriteCtx | ViewModuleCtx): boolean {
+  return ctx.db.lobbyAdminIdentity.identity.find(ctx.sender) != null;
 }
 
 function requireAdmin(ctx: WriteCtx): void {
-  if (!isAdmin(ctx)) fail('not_authorized');
-}
-
-function isQueued(ticket: QueueTicketRow): boolean {
-  return ticket.status.tag === TicketStatus.Queued.tag;
+  if (!isAdmin(ctx)) fail(errors.notAuthorized);
 }
 
 function isTerminalRoom(room: RoomRow): boolean {
@@ -206,40 +161,8 @@ function countUpTo<T>(rows: Iterable<T>, limit: number): number {
   return count;
 }
 
-function expireQueuedTickets(ctx: WriteCtx, limit: number): number {
-  const now = nowMicros(ctx);
-  let expired = 0;
-  for (const ticket of ctx.db.lobbyQueueTicket.byStatusExpiresAt.filter([
-    TicketStatus.Queued,
-    new Range(undefined, { tag: 'included', value: now }),
-  ])) {
-    if (expired >= limit) break;
-    ctx.db.lobbyQueueTicket.ticketId.update({
-      ...ticket,
-      status: TicketStatus.Expired,
-      updatedAt: ctx.timestamp,
-    });
-    expired++;
-  }
-  return expired;
-}
-
-function activeTicketsForSubjectPool(
-  ctx: WriteCtx,
-  subject: string,
-  pool: string
-) {
-  return take(
-    ctx.db.lobbyQueueTicket.bySubjectStatus.filter([
-      subject,
-      TicketStatus.Queued,
-    ]),
-    1000
-  ).filter(ticket => ticket.pool === pool && isQueued(ticket));
-}
-
-function seatsForRoom(ctx: WriteCtx | ViewModuleCtx, roomId: bigint) {
-  return take(ctx.db.lobbyRoomSeat.byRoom.filter(roomId), 128);
+function seatsForRoom(ctx: WriteCtx, roomId: bigint) {
+  return take(ctx.db.lobbyRoomSeat.byRoom.filter(roomId), MAX_MATCH_SIZE);
 }
 
 function findSeat(ctx: WriteCtx, roomId: bigint, subject: string) {
@@ -251,29 +174,14 @@ function findSeat(ctx: WriteCtx, roomId: bigint, subject: string) {
   return undefined;
 }
 
-function refreshRoomAfterJoin(ctx: WriteCtx, roomId: bigint): void {
-  const room = ctx.db.lobbyRoom.roomId.find(roomId);
-  if (!room || isTerminalRoom(room)) return;
-  const seats = seatsForRoom(ctx, roomId);
-  if (seats.length === 0) return;
-  const allJoined = seats.every(
-    seat => seat.status.tag === SeatStatus.Joined.tag
-  );
-  if (allJoined && room.status.tag === RoomStatus.Ready.tag) {
-    ctx.db.lobbyRoom.roomId.update({
-      ...room,
-      status: RoomStatus.Active,
-      updatedAt: ctx.timestamp,
-    });
-  }
-}
-
-function markRoomAbandoned(ctx: WriteCtx, roomId: bigint): void {
-  const room = ctx.db.lobbyRoom.roomId.find(roomId);
-  if (!room || isTerminalRoom(room)) return;
+function finishRoom(
+  ctx: WriteCtx,
+  room: RoomRow,
+  status: typeof RoomStatus.Closed | typeof RoomStatus.Abandoned
+): void {
   ctx.db.lobbyRoom.roomId.update({
     ...room,
-    status: RoomStatus.Abandoned,
+    status,
     updatedAt: ctx.timestamp,
     closedAt: ctx.timestamp,
   });
@@ -285,7 +193,7 @@ function attemptMatch(
   matchSize: number,
   ranked: boolean
 ): bigint | undefined {
-  const now = nowMicros(ctx);
+  const now = ctx.timestamp.microsSinceUnixEpoch;
   const queued = take(
     ctx.db.lobbyQueueTicket.byPoolStatusCreatedAt.filter([
       pool,
@@ -295,7 +203,6 @@ function attemptMatch(
     MAX_MATCH_CANDIDATES
   ).filter(
     ticket =>
-      ticket.pool === pool &&
       ticket.ranked === ranked &&
       ticket.matchSize === matchSize &&
       ticket.expiresAtMicros > now
@@ -305,7 +212,7 @@ function attemptMatch(
   const selected = ranked
     ? rankedSelection(queued, matchSize, now)
     : queued.slice(0, matchSize);
-  if (!selected || selected.length < matchSize) return undefined;
+  if (!selected) return undefined;
 
   const room = ctx.db.lobbyRoom.insert({
     roomId: 0n,
@@ -331,7 +238,6 @@ function attemptMatch(
       ticketId: ticket.ticketId,
       seatIndex: index,
       status: SeatStatus.Reserved,
-      ready: false,
       joinedAt: undefined,
       leftAt: undefined,
       updatedAt: ctx.timestamp,
@@ -347,100 +253,46 @@ function attemptMatch(
   return room.roomId;
 }
 
-export function joinQueueForSubject(
+function enqueue(
   ctx: WriteCtx,
-  args: JoinQueueArgs
+  args: JoinQueueArgs,
+  ranked: { ratingPool: string } | undefined
 ): JoinQueueResult {
   const config = getConfig(ctx);
-  const pool = normalizeName(args.pool, 'pool', MAX_POOL_LENGTH);
-  const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
-  const matchSize = Math.trunc(args.matchSize);
+  const pool = normalizeName(args.pool, errors.invalidPool, MAX_POOL_LENGTH);
+  const subject = normalizeName(
+    args.subject,
+    errors.invalidSubject,
+    MAX_SUBJECT_LENGTH
+  );
+  const matchSize = args.matchSize;
   if (
     !Number.isInteger(matchSize) ||
     matchSize < 1 ||
     matchSize > config.maxMatchSize
   ) {
-    fail('invalid_match_size');
+    fail(errors.invalidMatchSize);
   }
-  const ttlSeconds =
-    args.ttlSeconds === undefined
-      ? config.defaultTicketTtlSeconds
-      : Math.trunc(args.ttlSeconds);
+  const ttlSeconds = args.ttlSeconds ?? config.defaultTicketTtlSeconds;
   if (
     !Number.isInteger(ttlSeconds) ||
     ttlSeconds < 1 ||
-    ttlSeconds > 24 * 60 * 60
+    ttlSeconds > MAX_TTL_SECONDS
   ) {
-    fail('invalid_ttl_seconds');
+    fail(errors.invalidTtlSeconds);
   }
-  const attributesJson = validateJson(args.attributesJson, 'attributes');
-
-  expireQueuedTickets(ctx, DEFAULT_EXPIRE_LIMIT);
-  for (const ticket of activeTicketsForSubjectPool(ctx, subject, pool)) {
-    ctx.db.lobbyQueueTicket.ticketId.update({
-      ...ticket,
-      status: TicketStatus.Cancelled,
-      updatedAt: ctx.timestamp,
-    });
-  }
-
-  const ticketId = `ticket:${ctx.newUuidV7().toString()}`;
-  ctx.db.lobbyQueueTicket.insert({
-    ticketId,
-    pool,
-    subject,
-    status: TicketStatus.Queued,
-    matchSize,
-    ranked: false,
-    rating: undefined,
-    ratingPool: undefined,
-    partyId: undefined,
-    attributesJson,
-    roomId: undefined,
-    createdAt: ctx.timestamp,
-    updatedAt: ctx.timestamp,
-    expiresAtMicros: nowMicros(ctx) + BigInt(ttlSeconds) * 1_000_000n,
-  });
-
-  const roomId = attemptMatch(ctx, pool, matchSize, false);
-  return { ticketId, roomId };
-}
-
-export function joinRankedQueueForSubject(
-  ctx: WriteCtx,
-  args: JoinRankedQueueArgs
-): JoinQueueResult {
-  const config = getConfig(ctx);
-  const pool = normalizeName(args.pool, 'pool', MAX_POOL_LENGTH);
-  const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
-  const matchSize = Math.trunc(args.matchSize);
-  if (
-    !Number.isInteger(matchSize) ||
-    matchSize < 1 ||
-    matchSize > config.maxMatchSize
-  ) {
-    fail('invalid_match_size');
-  }
-  const ttlSeconds =
-    args.ttlSeconds === undefined
-      ? config.defaultTicketTtlSeconds
-      : Math.trunc(args.ttlSeconds);
-  if (
-    !Number.isInteger(ttlSeconds) ||
-    ttlSeconds < 1 ||
-    ttlSeconds > 24 * 60 * 60
-  ) {
-    fail('invalid_ttl_seconds');
-  }
-  const attributesJson = validateJson(args.attributesJson, 'attributes');
+  const attributesJson = validateAttributesJson(args.attributesJson);
   const ratingPool =
-    args.ratingPool === undefined
-      ? pool
-      : normalizeName(args.ratingPool, 'rating_pool', MAX_POOL_LENGTH);
-  const rating = getOrCreateRating(ctx, ratingPool, subject).rating;
+    ranked &&
+    normalizeName(ranked.ratingPool, errors.invalidPool, MAX_POOL_LENGTH);
 
-  expireQueuedTickets(ctx, DEFAULT_EXPIRE_LIMIT);
-  for (const ticket of activeTicketsForSubjectPool(ctx, subject, pool)) {
+  // A subject waits in one queue at a time.
+  for (const ticket of [
+    ...ctx.db.lobbyQueueTicket.bySubjectStatus.filter([
+      subject,
+      TicketStatus.Queued,
+    ]),
+  ]) {
     ctx.db.lobbyQueueTicket.ticketId.update({
       ...ticket,
       status: TicketStatus.Cancelled,
@@ -455,19 +307,43 @@ export function joinRankedQueueForSubject(
     subject,
     status: TicketStatus.Queued,
     matchSize,
-    ranked: true,
-    rating,
+    ranked: ranked !== undefined,
+    rating: ratingPool
+      ? (ctx.db.lobbySubjectRating.ratingId.find(ratingId(ratingPool, subject))
+          ?.rating ?? DEFAULT_RATING)
+      : undefined,
     ratingPool,
     partyId: undefined,
     attributesJson,
     roomId: undefined,
     createdAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
-    expiresAtMicros: nowMicros(ctx) + BigInt(ttlSeconds) * 1_000_000n,
+    expiresAtMicros:
+      ctx.timestamp.microsSinceUnixEpoch +
+      BigInt(ttlSeconds) * ONE_SECOND_MICROS,
   });
 
-  const roomId = attemptMatch(ctx, pool, matchSize, true);
+  const roomId = attemptMatch(ctx, pool, matchSize, ranked !== undefined);
   return { ticketId, roomId };
+}
+
+/** Queues `subject` for an unranked match, replacing its queued ticket. */
+export function joinQueueForSubject(
+  ctx: WriteCtx,
+  args: JoinQueueArgs
+): JoinQueueResult {
+  return enqueue(ctx, args, undefined);
+}
+
+/**
+ * Queues `subject` for a ranked two-player match. Rating pools appear on the
+ * public leaderboard, so only the host chooses them.
+ */
+export function joinRankedQueueForSubject(
+  ctx: WriteCtx,
+  args: JoinRankedQueueArgs
+): JoinQueueResult {
+  return enqueue(ctx, args, { ratingPool: args.ratingPool ?? args.pool });
 }
 
 function ratingPoolForRoom(room: RoomRow): string {
@@ -507,34 +383,36 @@ function applyResultRow(
   return next;
 }
 
+/**
+ * Records the result of an active two-player room, updates both Elo ratings,
+ * and closes the room. The host determines the winner from its own game
+ * state; seats that left still receive the result.
+ */
 export function reportMatchResult(
   ctx: WriteCtx,
   args: ReportMatchResultArgs
 ): void {
-  const reporter = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
-  if (!room) fail('room_not_found');
-  if (room.status.tag !== RoomStatus.Active.tag) fail('room_not_active');
-  const seats = seatsForRoom(ctx, args.roomId).filter(
-    seat => seat.status.tag !== SeatStatus.Left.tag
-  );
-  if (seats.length !== 2) fail('elo_requires_two_seats');
-  if (!seats.some(seat => seat.subject === reporter) && !isAdmin(ctx))
-    fail('not_room_participant');
-  for (const _existing of ctx.db.lobbyMatchResult.byRoom.filter(args.roomId))
-    return;
+  if (!room) fail(errors.roomNotFound);
+  if (room.status.tag !== RoomStatus.Active.tag) fail(errors.roomNotActive);
+  const seats = seatsForRoom(ctx, args.roomId);
+  if (seats.length !== 2) fail(errors.resultRequiresTwoSeats);
 
   const [seatA, seatB] = seats.sort((a, b) => a.seatIndex - b.seatIndex);
   const winnerSubject =
     args.winnerSubject === undefined
       ? undefined
-      : normalizeName(args.winnerSubject, 'winner_subject', MAX_SUBJECT_LENGTH);
+      : normalizeName(
+          args.winnerSubject,
+          errors.invalidWinnerSubject,
+          MAX_SUBJECT_LENGTH
+        );
   if (
     winnerSubject !== undefined &&
     winnerSubject !== seatA.subject &&
     winnerSubject !== seatB.subject
   ) {
-    fail('winner_not_in_room');
+    fail(errors.winnerNotInRoom);
   }
 
   const scoreA =
@@ -564,18 +442,24 @@ export function reportMatchResult(
     ratingBAfter: nextB.rating,
     reportedAt: ctx.timestamp,
   });
+  finishRoom(ctx, room, RoomStatus.Closed);
 }
 
 export function cancelTicketForSubject(
   ctx: WriteCtx,
   args: TicketSubjectArgs
 ): void {
-  const ticketId = normalizeName(args.ticketId, 'ticket_id', 200);
-  const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
+  const ticketId = normalizeName(
+    args.ticketId,
+    errors.invalidTicketId,
+    MAX_TICKET_ID_LENGTH
+  );
   const ticket = ctx.db.lobbyQueueTicket.ticketId.find(ticketId);
-  if (!ticket) fail('ticket_not_found');
-  if (ticket.subject !== subject) fail('not_ticket_owner');
-  if (!isQueued(ticket)) fail('ticket_not_queued');
+  if (!ticket) fail(errors.ticketNotFound);
+  if (ticket.subject !== args.subject) fail(errors.notTicketOwner);
+  if (ticket.status.tag !== TicketStatus.Queued.tag) {
+    fail(errors.ticketNotQueued);
+  }
   ctx.db.lobbyQueueTicket.ticketId.update({
     ...ticket,
     status: TicketStatus.Cancelled,
@@ -583,58 +467,146 @@ export function cancelTicketForSubject(
   });
 }
 
+/** Marks `subject`'s reserved seat joined. The room activates once every seat joins. */
 export function joinRoomForSubject(ctx: WriteCtx, args: RoomSubjectArgs): void {
-  const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
-  if (!room) fail('room_not_found');
-  if (isTerminalRoom(room)) fail('room_closed');
-  const seat = findSeat(ctx, args.roomId, subject);
-  if (!seat) fail('seat_not_found');
-  if (seat.status.tag === SeatStatus.Left.tag) fail('seat_left');
+  if (!room) fail(errors.roomNotFound);
+  if (isTerminalRoom(room)) fail(errors.roomClosed);
+  const seat = findSeat(ctx, args.roomId, args.subject);
+  if (!seat) fail(errors.seatNotFound);
+  if (seat.status.tag === SeatStatus.Left.tag) fail(errors.seatLeft);
+  if (seat.status.tag === SeatStatus.Joined.tag) return;
   ctx.db.lobbyRoomSeat.seatId.update({
     ...seat,
     status: SeatStatus.Joined,
-    joinedAt: seat.joinedAt ?? ctx.timestamp,
+    joinedAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
   });
-  refreshRoomAfterJoin(ctx, args.roomId);
+  if (
+    room.status.tag === RoomStatus.Ready.tag &&
+    seatsForRoom(ctx, args.roomId).every(
+      other => other.status.tag === SeatStatus.Joined.tag
+    )
+  ) {
+    ctx.db.lobbyRoom.roomId.update({
+      ...room,
+      status: RoomStatus.Active,
+      updatedAt: ctx.timestamp,
+    });
+  }
 }
 
+/**
+ * Marks `subject`'s seat left. Leaving a ready room abandons it. An active
+ * room stays active, so the host can still report its result, until every
+ * seat has left.
+ */
 export function leaveRoomForSubject(
   ctx: WriteCtx,
   args: RoomSubjectArgs
 ): void {
-  const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
-  if (!room) fail('room_not_found');
-  const seat = findSeat(ctx, args.roomId, subject);
-  if (!seat) fail('seat_not_found');
-  if (seat.status.tag === SeatStatus.Left.tag) return;
+  if (!room) fail(errors.roomNotFound);
+  const seat = findSeat(ctx, args.roomId, args.subject);
+  if (!seat) fail(errors.seatNotFound);
+  if (seat.status.tag === SeatStatus.Left.tag || isTerminalRoom(room)) return;
   ctx.db.lobbyRoomSeat.seatId.update({
     ...seat,
     status: SeatStatus.Left,
-    ready: false,
     leftAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
   });
-  markRoomAbandoned(ctx, args.roomId);
+  if (
+    room.status.tag === RoomStatus.Ready.tag ||
+    seatsForRoom(ctx, args.roomId).every(
+      other => other.status.tag === SeatStatus.Left.tag
+    )
+  ) {
+    finishRoom(ctx, room, RoomStatus.Abandoned);
+  }
 }
 
-export function closeRoomForSubject(
-  ctx: WriteCtx,
-  args: RoomSubjectArgs
-): void {
-  const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
-  const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
-  if (!room) fail('room_not_found');
-  if (!findSeat(ctx, args.roomId, subject)) fail('seat_not_found');
-  if (room.status.tag === RoomStatus.Closed.tag) return;
-  ctx.db.lobbyRoom.roomId.update({
-    ...room,
-    status: RoomStatus.Closed,
-    updatedAt: ctx.timestamp,
-    closedAt: ctx.timestamp,
+/** Closes a room without a result. Use `reportMatchResult` to finish a ranked match. */
+export function closeRoom(ctx: WriteCtx, roomId: bigint): void {
+  const room = ctx.db.lobbyRoom.roomId.find(roomId);
+  if (!room) fail(errors.roomNotFound);
+  if (isTerminalRoom(room)) return;
+  finishRoom(ctx, room, RoomStatus.Closed);
+}
+
+function olderThan(ctx: WriteCtx, seconds: number) {
+  return new Range(undefined, {
+    tag: 'included',
+    value: new Timestamp(
+      ctx.timestamp.microsSinceUnixEpoch - BigInt(seconds) * ONE_SECOND_MICROS
+    ),
   });
+}
+
+function deleteRoom(ctx: WriteCtx, room: RoomRow): void {
+  for (const seat of seatsForRoom(ctx, room.roomId)) {
+    if (seat.ticketId !== undefined) {
+      ctx.db.lobbyQueueTicket.ticketId.delete(seat.ticketId);
+    }
+    ctx.db.lobbyRoomSeat.delete(seat);
+  }
+  ctx.db.lobbyRoom.delete(room);
+}
+
+/** One bounded cleanup pass. Runs on the schedule `install` creates. */
+function sweep(ctx: WriteCtx): void {
+  const config = getConfig(ctx);
+  const now = ctx.timestamp.microsSinceUnixEpoch;
+
+  for (const ticket of take(
+    ctx.db.lobbyQueueTicket.byStatusExpiresAt.filter([
+      TicketStatus.Queued,
+      new Range(undefined, { tag: 'included', value: now }),
+    ]),
+    SWEEP_BATCH
+  )) {
+    ctx.db.lobbyQueueTicket.ticketId.update({
+      ...ticket,
+      status: TicketStatus.Expired,
+      updatedAt: ctx.timestamp,
+    });
+  }
+
+  const retained = olderThan(ctx, config.retentionSeconds);
+  for (const status of [TicketStatus.Cancelled, TicketStatus.Expired]) {
+    for (const ticket of take(
+      ctx.db.lobbyQueueTicket.byStatusUpdatedAt.filter([status, retained]),
+      SWEEP_BATCH
+    )) {
+      ctx.db.lobbyQueueTicket.delete(ticket);
+    }
+  }
+
+  for (const room of take(
+    ctx.db.lobbyRoom.byStatusUpdatedAt.filter([
+      RoomStatus.Ready,
+      olderThan(ctx, config.readyTimeoutSeconds),
+    ]),
+    SWEEP_BATCH
+  )) {
+    finishRoom(ctx, room, RoomStatus.Abandoned);
+  }
+
+  for (const status of [RoomStatus.Closed, RoomStatus.Abandoned]) {
+    for (const room of take(
+      ctx.db.lobbyRoom.byStatusUpdatedAt.filter([status, retained]),
+      SWEEP_BATCH
+    )) {
+      deleteRoom(ctx, room);
+    }
+  }
+
+  for (const result of take(
+    ctx.db.lobbyMatchResult.byReportedAt.filter(retained),
+    SWEEP_BATCH
+  )) {
+    ctx.db.lobbyMatchResult.delete(result);
+  }
 }
 
 export const joinQueue = spacetimedb.reducer(
@@ -645,33 +617,7 @@ export const joinQueue = spacetimedb.reducer(
     ttlSeconds: t.option(t.u32()),
   },
   (ctx, args) => {
-    joinQueueForSubject(ctx, {
-      pool: args.pool,
-      subject: subjectForSender(ctx),
-      matchSize: args.matchSize,
-      attributesJson: args.attributesJson,
-      ttlSeconds: args.ttlSeconds,
-    });
-  }
-);
-
-export const joinRankedQueue = spacetimedb.reducer(
-  {
-    pool: t.string(),
-    matchSize: t.u32(),
-    attributesJson: t.option(t.string()),
-    ttlSeconds: t.option(t.u32()),
-    ratingPool: t.option(t.string()),
-  },
-  (ctx, args) => {
-    joinRankedQueueForSubject(ctx, {
-      pool: args.pool,
-      subject: subjectForSender(ctx),
-      matchSize: args.matchSize,
-      attributesJson: args.attributesJson,
-      ttlSeconds: args.ttlSeconds,
-      ratingPool: args.ratingPool,
-    });
+    joinQueueForSubject(ctx, { ...args, subject: ctx.sender.toHexString() });
   }
 );
 
@@ -680,7 +626,7 @@ export const cancelTicket = spacetimedb.reducer(
   (ctx, args) => {
     cancelTicketForSubject(ctx, {
       ticketId: args.ticketId,
-      subject: subjectForSender(ctx),
+      subject: ctx.sender.toHexString(),
     });
   }
 );
@@ -690,7 +636,7 @@ export const joinRoom = spacetimedb.reducer(
   (ctx, args) => {
     joinRoomForSubject(ctx, {
       roomId: args.roomId,
-      subject: subjectForSender(ctx),
+      subject: ctx.sender.toHexString(),
     });
   }
 );
@@ -700,17 +646,7 @@ export const leaveRoom = spacetimedb.reducer(
   (ctx, args) => {
     leaveRoomForSubject(ctx, {
       roomId: args.roomId,
-      subject: subjectForSender(ctx),
-    });
-  }
-);
-
-export const closeRoom = spacetimedb.reducer(
-  { roomId: t.u64() },
-  (ctx, args) => {
-    closeRoomForSubject(ctx, {
-      roomId: args.roomId,
-      subject: subjectForSender(ctx),
+      subject: ctx.sender.toHexString(),
     });
   }
 );
@@ -723,26 +659,22 @@ export const setRating = spacetimedb.reducer(
   },
   (ctx, args) => {
     requireAdmin(ctx);
-    const pool = normalizeName(args.pool, 'pool', MAX_POOL_LENGTH);
-    const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
-    const rating = validateRating(args.rating);
+    const pool = normalizeName(args.pool, errors.invalidPool, MAX_POOL_LENGTH);
+    const subject = normalizeName(
+      args.subject,
+      errors.invalidSubject,
+      MAX_SUBJECT_LENGTH
+    );
+    if (args.rating < MIN_RATING || args.rating > MAX_RATING) {
+      fail(errors.invalidRating);
+    }
     const existing = getOrCreateRating(ctx, pool, subject);
     ctx.db.lobbySubjectRating.ratingId.update({
       ...existing,
-      rating,
-      ratingOrder: BigInt(-rating),
+      rating: args.rating,
+      ratingOrder: BigInt(-args.rating),
       updatedAt: ctx.timestamp,
     });
-  }
-);
-
-export const expireTickets = spacetimedb.reducer(
-  { limit: t.option(t.u32()) },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const limit = args.limit ?? DEFAULT_EXPIRE_LIMIT;
-    if (limit < 1 || limit > MAX_EXPIRE_LIMIT) fail('invalid_expire_limit');
-    expireQueuedTickets(ctx, limit);
   }
 );
 
@@ -750,28 +682,30 @@ export const updateConfig = spacetimedb.reducer(
   {
     defaultTicketTtlSeconds: t.u32(),
     maxMatchSize: t.u32(),
+    readyTimeoutSeconds: t.u32(),
+    retentionSeconds: t.u32(),
   },
   (ctx, args) => {
     requireAdmin(ctx);
     if (
       args.defaultTicketTtlSeconds < 1 ||
-      args.defaultTicketTtlSeconds > 24 * 60 * 60
+      args.defaultTicketTtlSeconds > MAX_TTL_SECONDS ||
+      args.maxMatchSize < 1 ||
+      args.maxMatchSize > MAX_MATCH_SIZE ||
+      args.readyTimeoutSeconds < 1 ||
+      args.retentionSeconds < 1
     ) {
-      fail('invalid_default_ttl_seconds');
+      fail(errors.invalidConfig);
     }
-    if (args.maxMatchSize < 1 || args.maxMatchSize > 128)
-      fail('invalid_max_match_size');
-    const config = getConfig(ctx);
     ctx.db.lobbyConfig.singleton.update({
-      ...config,
-      defaultTicketTtlSeconds: args.defaultTicketTtlSeconds,
-      maxMatchSize: args.maxMatchSize,
+      ...getConfig(ctx),
+      ...args,
       updatedAt: ctx.timestamp,
     });
   }
 );
 
-export const addAdminIdentity = spacetimedb.reducer(
+export const addLobbyAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -783,43 +717,48 @@ export const addAdminIdentity = spacetimedb.reducer(
   }
 );
 
-export const removeAdminIdentity = spacetimedb.reducer(
+export const removeLobbyAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
     const row = ctx.db.lobbyAdminIdentity.identity.find(args.identity);
     if (!row) return;
-    if (ctx.db.lobbyAdminIdentity.count() <= 1n)
-      fail('cannot_remove_last_admin');
+    if (ctx.db.lobbyAdminIdentity.count() <= 1n) {
+      fail(errors.cannotRemoveLastAdmin);
+    }
     ctx.db.lobbyAdminIdentity.delete(row);
   }
 );
 
-export const getLobbyStatus = spacetimedb.procedure({}, t.string(), ctx => {
-  const status = ctx.withTx(tx => {
-    const queuedTickets = countUpTo(
-      tx.db.lobbyQueueTicket.byStatus.filter(TicketStatus.Queued),
-      MAX_MATCH_CANDIDATES
-    );
-    const readyRooms = countUpTo(
-      tx.db.lobbyRoom.byStatus.filter(RoomStatus.Ready),
-      MAX_MATCH_CANDIDATES
-    );
-    const activeRooms = countUpTo(
-      tx.db.lobbyRoom.byStatus.filter(RoomStatus.Active),
-      MAX_MATCH_CANDIDATES
-    );
+export const lobbySweep = spacetimedb.reducer(
+  { onSchedule: lobbySweepTick },
+  { arg: lobbySweepTick.rowType },
+  ctx => {
+    sweep(ctx);
+  }
+);
+
+export const getLobbyStatus = spacetimedb.procedure({}, lobbyStatus, ctx =>
+  ctx.withTx(tx => {
     const config = getConfig(tx);
     return {
       defaultTicketTtlSeconds: config.defaultTicketTtlSeconds,
       maxMatchSize: config.maxMatchSize,
-      queuedTickets,
-      readyRooms,
-      activeRooms,
+      queuedTickets: countUpTo(
+        tx.db.lobbyQueueTicket.byStatus.filter(TicketStatus.Queued),
+        MAX_MATCH_CANDIDATES
+      ),
+      readyRooms: countUpTo(
+        tx.db.lobbyRoom.byStatus.filter(RoomStatus.Ready),
+        MAX_MATCH_CANDIDATES
+      ),
+      activeRooms: countUpTo(
+        tx.db.lobbyRoom.byStatus.filter(RoomStatus.Active),
+        MAX_MATCH_CANDIDATES
+      ),
     };
-  });
-  return JSON.stringify(status);
-});
+  })
+);
 
 export {
   lobbyAdminMatchResults,

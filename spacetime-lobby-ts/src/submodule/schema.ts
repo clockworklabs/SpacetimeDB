@@ -1,5 +1,4 @@
 import {
-  SenderError,
   schema,
   table,
   t,
@@ -9,7 +8,6 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { install } from './install';
 
 export const ticketStatus = t.enum('LobbyTicketStatus', [
   'Queued',
@@ -41,13 +39,11 @@ export const seatStatus = t.enum('LobbySeatStatus', [
   'Reserved',
   'Joined',
   'Left',
-  'Disconnected',
 ]);
 export const SeatStatus = {
   Reserved: { tag: 'Reserved' as const },
   Joined: { tag: 'Joined' as const },
   Left: { tag: 'Left' as const },
-  Disconnected: { tag: 'Disconnected' as const },
 };
 
 export const lobbyConfig = table(
@@ -56,7 +52,19 @@ export const lobbyConfig = table(
     singleton: t.bool().primaryKey(),
     defaultTicketTtlSeconds: t.u32(),
     maxMatchSize: t.u32(),
+    /** Ready rooms whose seats are not all joined by then are abandoned. */
+    readyTimeoutSeconds: t.u32(),
+    /** Finished tickets, rooms, seats, and results are deleted after this. */
+    retentionSeconds: t.u32(),
     updatedAt: t.timestamp(),
+  }
+);
+
+export const lobbySweepTick = table(
+  { name: 'lobby_sweep_tick' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
   }
 );
 
@@ -74,9 +82,13 @@ export const lobbyQueueTicket = table(
     public: false,
     indexes: [
       { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
-      { accessor: 'byPool', algorithm: 'btree', columns: ['pool'] },
       { accessor: 'bySubject', algorithm: 'btree', columns: ['subject'] },
       { accessor: 'byCreatedAt', algorithm: 'btree', columns: ['createdAt'] },
+      {
+        accessor: 'byStatusUpdatedAt',
+        algorithm: 'btree',
+        columns: ['status', 'updatedAt'],
+      },
       {
         accessor: 'byPoolStatusCreatedAt',
         algorithm: 'btree',
@@ -150,6 +162,11 @@ export const lobbyRoom = table(
       { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
       { accessor: 'byPool', algorithm: 'btree', columns: ['pool'] },
       { accessor: 'byCreatedAt', algorithm: 'btree', columns: ['createdAt'] },
+      {
+        accessor: 'byStatusUpdatedAt',
+        algorithm: 'btree',
+        columns: ['status', 'updatedAt'],
+      },
     ],
   },
   {
@@ -212,7 +229,6 @@ export const lobbyRoomSeat = table(
     ticketId: t.option(t.string()),
     seatIndex: t.u32(),
     status: seatStatus,
-    ready: t.bool(),
     joinedAt: t.option(t.timestamp()),
     leftAt: t.option(t.timestamp()),
     updatedAt: t.timestamp(),
@@ -226,7 +242,7 @@ export const queueSummaryRow = t.object('LobbyQueueSummaryRow', {
   activeRooms: t.u32(),
 });
 
-export const lobbyStatusRow = t.object('LobbyStatusRow', {
+export const lobbyStatus = t.object('LobbyStatus', {
   defaultTicketTtlSeconds: t.u32(),
   maxMatchSize: t.u32(),
   queuedTickets: t.u32(),
@@ -252,10 +268,7 @@ export const spacetimedb = schema({
   lobbyRoom,
   lobbyMatchResult,
   lobbyRoomSeat,
-});
-
-export const init = spacetimedb.init(ctx => {
-  install(ctx);
+  lobbySweepTick,
 });
 
 export default spacetimedb;
@@ -267,4 +280,4 @@ export type TransactionModuleCtx = TransactionCtx<Schema>;
 export type ViewModuleCtx = ViewCtx<Schema>;
 export type WriteCtx = ReducerModuleCtx | TransactionModuleCtx;
 
-export { SenderError, t };
+export { t };

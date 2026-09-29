@@ -30,6 +30,32 @@ assert.deepEqual(
 );
 assert.equal(rankedSelection(queue, 3, 5_000_000n), undefined);
 
+// Closest ratings win; other rating pools are never mixed in.
+const mixed = [
+  { ticketId: 'anchor', rating: 1000, ratingPool: 'ranked', createdAt: at(0n) },
+  { ticketId: 'far', rating: 1090, ratingPool: 'ranked', createdAt: at(1n) },
+  { ticketId: 'other', rating: 1000, ratingPool: 'casual', createdAt: at(2n) },
+  { ticketId: 'near', rating: 960, ratingPool: 'ranked', createdAt: at(3n) },
+];
+assert.deepEqual(
+  rankedSelection(mixed, 2, 0n)?.map(ticket => ticket.ticketId),
+  ['anchor', 'near']
+);
+assert.deepEqual(
+  rankedSelection(mixed, 3, 0n)?.map(ticket => ticket.ticketId),
+  ['anchor', 'near', 'far']
+);
+
+// Far-apart ratings stay unmatched; selection stays fast at the scan cap.
+const spread = Array.from({ length: 5000 }, (_, index) => ({
+  rating: 100 + index * 1000,
+  ratingPool: 'ranked',
+  createdAt: at(BigInt(index)),
+}));
+const started = Date.now();
+assert.equal(rankedSelection(spread, 2, 0n), undefined);
+assert.ok(Date.now() - started < 1000);
+
 assert.notEqual(lobbyCompositeKey('a:b', 'c'), lobbyCompositeKey('a', 'b:c'));
 assert.equal(lobbyCompositeKey('ranked', 'player-1'), '6:ranked8:player-1');
 

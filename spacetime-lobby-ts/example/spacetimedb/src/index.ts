@@ -425,8 +425,7 @@ function completeDuel(
   ctx: WriteCtx,
   d: DuelRow,
   round: number,
-  winnerSubject: string,
-  reporterSubject: string
+  winnerSubject: string
 ): void {
   ctx.db.duel.roomId.update({
     ...d,
@@ -444,22 +443,10 @@ function completeDuel(
     round,
     `${winner?.displayName ?? 'A pilot'} wins the duel.`
   );
-  lobby.reportMatchResult(ctx.as.lobby, {
-    roomId: d.roomId,
-    subject: reporterSubject,
-    winnerSubject,
-  });
-  lobby.closeRoomForSubject(ctx.as.lobby, {
-    roomId: d.roomId,
-    subject: reporterSubject,
-  });
+  lobby.reportMatchResult(ctx.as.lobby, { roomId: d.roomId, winnerSubject });
 }
 
-function maybeResolveRound(
-  ctx: WriteCtx,
-  roomId: bigint,
-  reporterSubject: string
-): void {
+function maybeResolveRound(ctx: WriteCtx, roomId: bigint): void {
   const d = refreshDuelStatus(ctx, roomId);
   if (
     d.status.tag === DuelStatus.Complete.tag ||
@@ -543,7 +530,7 @@ function maybeResolveRound(
   }
   const alive = updatedCombatants.filter(c => c.hull > 0);
   if (alive.length === 1) {
-    completeDuel(ctx, d, round, alive[0].subject, reporterSubject);
+    completeDuel(ctx, d, round, alive[0].subject);
   } else if (alive.length === 0) {
     const winner =
       updatedCombatants[0].hull >= updatedCombatants[1].hull
@@ -564,12 +551,7 @@ function maybeResolveRound(
     );
     lobby.reportMatchResult(ctx.as.lobby, {
       roomId,
-      subject: reporterSubject,
       winnerSubject: winner.subject,
-    });
-    lobby.closeRoomForSubject(ctx.as.lobby, {
-      roomId,
-      subject: reporterSubject,
     });
   } else {
     ctx.db.duel.roomId.update({ ...d, round, updatedAt: ctx.timestamp });
@@ -742,7 +724,7 @@ export const chooseManeuver = spacetimedb.reducer(
       args.slot,
       combatant.shipClass
     );
-    maybeResolveRound(ctx, args.roomId, subject);
+    maybeResolveRound(ctx, args.roomId);
   }
 );
 
@@ -762,7 +744,7 @@ export const advanceDuel = spacetimedb.reducer(
       ManeuverSlot.Primary,
       combatant.shipClass
     );
-    maybeResolveRound(ctx, args.roomId, subject);
+    maybeResolveRound(ctx, args.roomId);
   }
 );
 
@@ -806,10 +788,8 @@ export const leaveDuel = spacetimedb.reducer(
     );
     lobby.reportMatchResult(ctx.as.lobby, {
       roomId: args.roomId,
-      subject,
       winnerSubject: opponent.subject,
     });
-    lobby.closeRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
   }
 );
 
@@ -827,7 +807,7 @@ export const queueAgain = spacetimedb.reducer(
           updatedAt: ctx.timestamp,
         });
       }
-      lobby.closeRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
+      lobby.closeRoom(ctx.as.lobby, args.roomId);
     }
     const p = ensurePilot(ctx, subject);
     lobby.joinRankedQueueForSubject(ctx.as.lobby, {
