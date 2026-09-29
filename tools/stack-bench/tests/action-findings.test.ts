@@ -69,6 +69,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'no-session': finding('no-session', { actor: 'buyer', action: 'buy' }),
   'unresolved-action': finding('unresolved-action', { action: 'buy' }),
   'replay-unavailable': finding('replay-unavailable', { actor: 'customer', detail: DETAIL }),
+  'route-unproven': finding('route-unproven', { actor: 'customer', action: 'scheduleRestock' }),
   'forgery-unverifiable': finding('forgery-unverifiable', { actor: 'customer', detail: DETAIL }),
   'not-observed': finding('not-observed', { actor: 'owner' }),
   'transport-incomplete': finding('transport-incomplete', {}),

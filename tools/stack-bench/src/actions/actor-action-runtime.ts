@@ -61,6 +61,8 @@ export interface ReplayResult {
   readonly reason?: string;
   readonly status?: number;
   readonly url?: string;
+  // A replay of a captured write that the source actor completed successfully.
+  readonly routeProven?: boolean;
 }
 
 export interface ForgeResult {
@@ -163,6 +165,15 @@ export function inconclusive<K extends InconclusiveFindingKind>(kind: K,
   fields: FindingFields[K]): never {
   const value = finding(kind, fields);
   throw new ActionInconclusive(renderFinding(value), { finding: value });
+}
+
+// Actions accepted for some actor in this run. A refusal only measures
+// authorization when the same request was proven to work for an authorized actor.
+const provenRoutes = new WeakMap<object, Set<string>>();
+export function routeProofs(capabilities: { readonly actors: object }): Set<string> {
+  let proofs = provenRoutes.get(capabilities.actors);
+  if (!proofs) provenRoutes.set(capabilities.actors, proofs = new Set());
+  return proofs;
 }
 
 export function actorFor<T>(

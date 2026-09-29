@@ -139,6 +139,8 @@
             { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true, "unlessVisible": ["promotions-link", "promotion-code"] },
             { "do": "click", "actor": "staff", "testid": "promotions-link", "unlessVisible": "promotion-code" },
             { "do": "expect", "actor": "staff", "testid": "promotion-item", "contains": "ACCESS10", "within": 10000 },
+            { "do": "replayAs", "actor": "staff", "from": "staff", "match": "__620b-authorized-create__", "namedAction": { "id": "createPromotion", "path": "/api/promotions", "reducer": "create_promotion", "args": ["PROOF10", 10, 4070908800000000, 4102444740000000, 2], "params": [{ "name": "code", "in": "body" }, { "name": "discountPercent", "in": "body" }, { "name": "startMicros", "in": "body" }, { "name": "endMicros", "in": "body" }, { "name": "usageLimit", "in": "body" }] }, "settleMs": 1500 },
+            { "do": "expectReplayCompleted", "actor": "staff", "requireAccepted": true },
             {
               "do": "replayAs",
               "actor": "customer",

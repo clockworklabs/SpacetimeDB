@@ -51,6 +51,30 @@
       ]
     },
     {
+      "id": "role-assignment-trusts-sign-in-admin-flag",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Sign-in copies the account's administrator flag into the session row, and role assignment authorizes from that copied flag instead of the stored account. A session opened while the account was an administrator keeps assigning roles after the account is changed back to staff; sessions opened after the change are refused.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS notify_order boolean NOT NULL DEFAULT false;",
+          "replace": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS notify_order boolean NOT NULL DEFAULT false;\n    ALTER TABLE session ADD COLUMN IF NOT EXISTS signin_is_admin boolean NOT NULL DEFAULT false;"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "    await db.insert(session).values({ id: token, accountId: acc.id });",
+          "replace": "    await db.insert(session).values({ id: token, accountId: acc.id });\n    await pool.query(\"UPDATE session SET signin_is_admin = $1 WHERE id = $2\", [acc.isAdmin, token]);"
+        },
+        {
+          "find": "app.put(\"/api/staff/:id/role\", dependencies.requireAdmin, asyncRoute(async (req, res) => {",
+          "replace": "app.put(\"/api/staff/:id/role\", dependencies.requireAuth, asyncRoute(async (req, res) => {\n    const signIn = await deps.pool.query(\"SELECT signin_is_admin FROM session WHERE id = $1\", [req.cookies?.sid]);\n    if (!signIn.rows[0]?.signin_is_admin) { res.status(403).json({ error: \"admin only\" }); return; }"
+        }
+      ]
+    },
+    {
       "id": "shipping-counts-sale-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
       "targets": [

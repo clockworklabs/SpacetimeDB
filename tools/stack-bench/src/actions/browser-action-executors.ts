@@ -1,5 +1,4 @@
-import { stripVTControlCharacters } from 'node:util';
-import { actionImplementation, ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
+import { actionImplementation, ActionApplicationFailure } from './action-contract.js';
 import type {
   ActionImplementation,
 } from './action-contract.js';
@@ -9,6 +8,9 @@ import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import { runApplicationNavigation } from './browser-navigation.js';
 import { withWriteCompletion } from './auth-request-patch.js';
+import { browserApplicationBoundary, pageFailure } from './browser-boundary.js';
+
+export { browserApplicationBoundary, pageFailure };
 import type { Page as PlaywrightPage } from 'playwright';
 
 
@@ -158,6 +160,8 @@ type ActorsWithInput = Omit<CommonInput, 'actor'> & {
   readonly maxEach?: number;
 };
 
+// A count must hold across samples this far apart before it passes.
+const COUNT_CONFIRM_MS = 500;
 const escapePattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function interaction(capabilities: BrowserCapabilities): BrowserCapability {
@@ -456,10 +460,20 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       : (contains
         ? actor.page.locator(browser.testId(input.testid), { hasText: contains })
         : actor.page.locator(browser.testId(input.testid)));
-    let count = await all.filter({ visible: true }).count();
-    while (count !== input.count && Date.now() < countDeadline) {
+    // A count passes only when it holds across two samples; a duplicate that
+    // appears just after the first matching sample must not pass.
+    const countNow = () => all.filter({ visible: true }).count();
+    let count = await countNow();
+    for (;;) {
+      if (count === input.count) {
+        await browser.sleep(COUNT_CONFIRM_MS, signal);
+        const again = await countNow();
+        if (again === count) break;
+        count = again;
+      }
+      if (Date.now() >= countDeadline) break;
       await browser.sleep(Math.min(250, countDeadline - Date.now()), signal);
-      count = await all.filter({ visible: true }).count();
+      count = await countNow();
     }
     if (count !== input.count) {
       fail('count-mismatch', { control: input.testid, expected: input.count, observed: count,
@@ -539,8 +553,12 @@ async function expectElementCount({ input, capabilities, signal }:
     throw new Error('expected element count must be a nonnegative safe integer');
   }
   for (;;) {
-    const count = await loc.count();
-    if (count === equals) return { count };
+    let count = await loc.count();
+    if (count === equals) {
+      await browser.sleep(COUNT_CONFIRM_MS, signal);
+      count = await loc.count();
+      if (count === equals) return { count };
+    }
     if (Date.now() > deadline) {
       fail('count-mismatch', { control: input.testid, expected: equals, observed: count });
     }
@@ -720,18 +738,19 @@ async function expectNumber({ input, capabilities, signal }:
 
   const matches = (number: number): boolean => numberMatches(number, expected);
 
+  // A read that starts in time counts even if it finishes after the deadline, and
+  // a control that became visible only near the deadline is still read once.
   let last = null;
-  for (;;) {
-    if (Date.now() >= deadline) break;
+  for (let first = true; first || Date.now() < deadline; first = false) {
     try {
-      last = readControlNumber(await readValue(loc, Math.max(1, deadline - Date.now())), input.testid);
+      last = readControlNumber(await readValue(loc, Math.max(1_000, deadline - Date.now())), input.testid);
     } catch (error) {
       if (last !== null && !signal?.aborted && Date.now() >= deadline
         && errorField(error, 'name') === 'TimeoutError' && !harnessBrowserFailure(error)) break;
       throw error;
     }
-    if (Date.now() > deadline) break;
     if (last !== null && matches(last)) return { value: last };
+    if (Date.now() >= deadline) break;
     await browser.sleep(Math.min(250, deadline - Date.now()), signal);
   }
   fail('number-mismatch', { control: input.testid, observed: last, expected,
@@ -1005,76 +1024,6 @@ function errorField(error: unknown, field: string): unknown {
   return typeof error === 'object' && error !== null
     ? (error as Record<string, unknown>)[field]
     : undefined;
-}
-
-function isExpectedBrowserFailure(error: unknown): boolean {
-  if (error instanceof ActionApplicationFailure) return true;
-  if (errorField(error, 'name') === 'TimeoutError') return true;
-  const message = String(errorField(error, 'message') ?? error ?? '');
-  // A Playwright stack frame does not prove an app defect. Only observed
-  // control failures belong here; selector, script and protocol errors stay errors.
-  return /^locator\.[^:]+: (?:Error: )?(?:strict mode violation:|Element is not (?:an? |editable)|Input of type \S+ cannot be filled|Element is outside of the viewport)/i.test(message);
-}
-
-// The one place raw browser text is read: a Playwright error becomes a
-// finding by its shape. The text itself travels only as human detail.
-export function pageFailure(message: string, scope?: string): ActionApplicationFailure {
-  // Alternative/intersection locators do not establish a parent-child scope.
-  const controls = [...new Set([...message.matchAll(/data-(?:testid|role)="([a-zA-Z0-9_-]+)"/g)]
-    .map(match => match[1]!))];
-  const combined = /\.(?:or|and)\(/.test(message);
-  const control = combined ? undefined : controls.at(-1);
-  scope ??= !combined && controls.length > 1 ? controls.at(-2) : undefined;
-  const named = { ...(control ? { control } : {}), ...(scope ? { scope } : {}) };
-  const value = /Page crashed/i.test(message) ? finding('page-crashed', { detail: message })
-    : /intercepts pointer events/i.test(message) ? finding('control-blocked', { ...named, detail: message })
-    : /timeout/i.test(message) ? finding('page-timeout', { ...named,
-      ...(/\.or\(/.test(message) && controls.length ? { alternatives: controls } : {}), detail: message })
-    : finding('page-error', { ...named, detail: message });
-  return new ActionApplicationFailure(renderFinding(value), { finding: value });
-}
-
-function clickMayHaveDispatched(message: string): boolean {
-  let pending = false;
-  for (const line of stripVTControlCharacters(message).split('\n')) {
-    if (/^\s*- click action done\s*$/.test(line)) return true;
-    if (/^\s*- performing click action\s*$/.test(line)) {
-      if (pending) return true;
-      pending = true;
-    } else if (/intercepts pointer events\s*$/.test(line)) {
-      // Playwright's first-event hit-target interceptor blocks this attempt.
-      pending = false;
-    } else if (/retrying click action/.test(line) && pending) {
-      // A later blocked attempt cannot disprove an earlier unresolved delivery.
-      return true;
-    }
-  }
-  return pending;
-}
-
-export function browserApplicationBoundary<Arguments, Result>(
-  implementation: (arguments_: Arguments) => Result | Promise<Result>,
-  scopeOf?: (arguments_: Arguments) => string | undefined,
-): (arguments_: Arguments) => Promise<Result> {
-  return async (args: Arguments): Promise<Result> => {
-    try {
-      return await implementation(args);
-    } catch (error) {
-      if (errorField(error, 'classification') || harnessBrowserFailure(error)) throw error;
-      const message = String(errorField(error, 'message') ?? error);
-      // Playwright can time out after delivering the input (for example, while
-      // a close handler removes the target). Only an explicit interception
-      // disproves delivery. Do not score or repeat an unresolved input.
-      if (errorField(error, 'name') === 'TimeoutError' && /^locator\.click:/.test(message)
-        && clickMayHaveDispatched(message)) {
-        throw new ActionInconclusive('browser click timed out after input dispatch began', {
-          observation: { detail: message }, expected: 'confirmed completion of the browser click',
-        });
-      }
-      if (isExpectedBrowserFailure(error)) throw pageFailure(message, scopeOf?.(args));
-      throw error;
-    }
-  };
 }
 
 function contractBrowserAction<Input, Result>(

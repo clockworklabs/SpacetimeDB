@@ -302,6 +302,16 @@ async function dbExpectCheckout({ input, capabilities, signal }: ActionArguments
     if (Date.now() >= deadline) break;
     observation = await read();
   }
+  // A retried read can pass through the expected state on its way elsewhere
+  // (for example a delayed duplicate checkout). Confirm the match holds.
+  // No read starts after the deadline.
+  if (!observation.differences.length && input.within && Date.now() < deadline) {
+    await capabilities.clock.sleep(Math.min(500, deadline - Date.now()), signal);
+    if (Date.now() < deadline) {
+      const confirmation = await read();
+      if (confirmation.differences.length) observation = confirmation;
+    }
+  }
   const { differences } = observation;
   if (differences[0]) {
     const { control, observed, expected } = differences[0];

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Page, Request, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
 import { ActionApplicationFailure } from './action-contract.js';
-import { browserApplicationBoundary } from './browser-action-executors.js';
+import { browserApplicationBoundary } from './browser-boundary.js';
 import { startSpacetimeAuthPatch, startSpacetimeAuthWriteCapture } from '../stacks/backends/spacetime-browser-session.js';
 import { withBrowserRequest } from './browser-request.js';
 import { installSocketIoAuthCapture, socketIoAuthCapture, socketIoTransport } from './socketio-auth-capture.js';
@@ -66,6 +66,16 @@ export async function withAuthWriteTarget<T>(page: object, target: AuthWriteTarg
 }
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+// A write's destination without per-account values: identifier-like path
+// segments and query values differ between the baseline account and a probe.
+function writeDestination(method: string, raw: string): string {
+  const url = new URL(raw);
+  const identifier = (segment: string) => /^\d+$/.test(segment)
+    || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)
+    || /^[0-9a-f]{16,}$/i.test(segment) || segment.length >= 20 && /\d/.test(segment) && /[a-z]/i.test(segment);
+  const path = url.pathname.split('/').map(segment => identifier(decodeURIComponent(segment)) ? ':id' : segment).join('/');
+  return JSON.stringify([method, url.origin, path, [...new Set(url.searchParams.keys())].sort()]);
+}
 function valueShape(value: unknown): unknown {
   if (value === null) return 'null';
   if (Array.isArray(value)) return value.map(valueShape);
@@ -372,6 +382,12 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     if (failed) return false;
     const expected = probe.target.writes[index];
     if (!expected || expected.transport !== write.transport || expected.destination !== write.destination || expected.shape !== write.shape) {
+      // Writes after the patched target may follow from the claim itself (an app
+      // that grants the claimed role can do more). They are recorded, not refused.
+      // A repeat of the target itself would be unpatched and could undo the claim.
+      const target = probe.target.writes[probe.target.index]!;
+      if (selected === 1 && index > probe.target.index
+        && !(write.transport === target.transport && write.destination === target.destination)) return false;
       fail(); return false;
     }
     return index === probe.target.index && ++selected === 1;
@@ -453,7 +469,7 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
         }
       }
     } catch { fail(); return route.fallback(); }
-    const target = visit({ transport: 'http', destination: hash(JSON.stringify([request.method(), request.url()])),
+    const target = visit({ transport: 'http', destination: hash(writeDestination(request.method(), request.url())),
       shape: hash(JSON.stringify(valueShape(body))) });
     if (!target) {
       pending.push(request.response().then(async response => {
@@ -462,7 +478,9 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
         // Chromium can leave finished() pending for a zero-length response.
         // Its complete headers prove the empty body without waiting for bytes.
         const empty = headers['content-length'] === '0' && !headers['transfer-encoding'];
-        if (!empty && await response.finished() !== null || response.status() >= 300 && response.status() < 400
+        // A redirect after a form post (post/redirect/get) is a completed write.
+        const redirect = response.status() >= 300 && response.status() < 400;
+        if (!redirect && !empty && await response.finished() !== null
           || completionOnly && response.status() === 202) fail();
       }).catch(fail));
       return route.fallback();
@@ -522,10 +540,8 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
       try { await probe.complete(requestPatch); } catch (error) { submissionFailure = error; }
       await drain();
     }
-    const refused = requestPatch?.success === false || (requestPatch?.status ?? 0) >= 400;
     if (!probe && !failed && submissionFailure) throw submissionFailure;
-    if (failed || !completionOnly && !writes.length || probe && (selected !== 1 || !requestPatch
-      || writes.length !== probe.target.writes.length && !refused)) {
+    if (failed || !completionOnly && !writes.length || probe && (selected !== 1 || !requestPatch)) {
       if (completionOnly) inconclusive('transport-incomplete', {});
       inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove the signup write sequence and one complete target request' });
     }

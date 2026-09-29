@@ -51,6 +51,31 @@
       ]
     },
     {
+      "id": "role-assignment-trusts-sign-in-admin-claim",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Sign-in writes the account's administrator flag into the token as a claim, and role assignment authorizes from that claim instead of the stored account. A token issued while the account was an administrator keeps assigning roles after the account is changed back to staff; tokens issued after the change are refused.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "file": "server/src/index.ts",
+          "find": "function signToken(userId: string) {\n  return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: \"30d\" });",
+          "replace": "function signToken(userId: string, admin = false) {\n  return jwt.sign({ sub: userId, admin }, JWT_SECRET, { expiresIn: \"30d\" });"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "  if (!valid) return res.status(401).json({ error: \"Invalid username or password\" });\n  const token = signToken(user._id.toString());",
+          "replace": "  if (!valid) return res.status(401).json({ error: \"Invalid username or password\" });\n  const token = signToken(user._id.toString(), Boolean(user.isAdmin));"
+        },
+        {
+          "find": "app.put(\"/api/staff/:id/role\", auth, admin, async (req: Request, res) => {",
+          "replace": "app.put(\"/api/staff/:id/role\", auth, async (req: Request, res) => {\n    const claims = jwt.decode(String(req.headers.authorization).slice(7), { json: true });\n    if (!claims?.admin) return res.status(403).json({ error: \"Admin access required\" });"
+        }
+      ]
+    },
+    {
       "id": "shipping-counts-sale-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
       "targets": [

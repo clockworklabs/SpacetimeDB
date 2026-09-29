@@ -445,17 +445,18 @@ test('one named server action maps DOM input symmetrically and verifies its outc
     },
   };
   const guest = { name: 'guest' };
-  const provided = services(new Map<string, unknown>([['source', source], ['guest', guest]]), {
+  const buyer = { name: 'buyer', writes: [{ headers: { authorization: 'Bearer buyer' } }] };
+  const provided = services(new Map<string, unknown>([['source', source], ['guest', guest], ['buyer', buyer]]), {
     actions: [{ id: 'buy', path: '/api/items/:item/buy', reducer: 'buy_now', args: [0],
       params: [{ name: 'itemId', in: 'path', placeholder: ':item' }] }],
     fetchImpl: async (url, options) => {
       requests.push({ url, options: options as unknown as UnknownRecord });
-      return namedResponse(401, false);
+      return options.headers?.authorization === 'Bearer buyer' ? namedResponse(200, true) : namedResponse(401, false);
     },
   });
 
-  const called = await run({ do: 'callAction', actor: 'guest', from: 'source', action: 'buy',
-    input: { testid: 'item-card', contains: 'Desk Lamp', attribute: 'data-action-input' },
+  const input = { testid: 'item-card', contains: 'Desk Lamp', attribute: 'data-action-input' };
+  const called = await run({ do: 'callAction', actor: 'guest', from: 'source', action: 'buy', input,
     authentication: 'none', settleMs: 0 }, provided);
   assert.equal(called.status, 'passed');
   assert.equal(record(called.observation).action, 'buy');
@@ -466,6 +467,15 @@ test('one named server action maps DOM input symmetrically and verifies its outc
   assert.equal(request.url, 'http://app.test/api/items/item-42/buy');
   assert.deepEqual(JSON.parse(String(request.options.body)), {});
   assert.equal(Object.hasOwn(record(request.options.headers), 'Authorization'), false);
+
+  // Until the same request succeeds for an authorized caller, the 401 may be a malformed call.
+  const unproven = await run({ do: 'expectActionOutcome', actor: 'guest', outcome: 'refused' }, provided);
+  assert.equal(unproven.status, 'inconclusive');
+  assert.equal(unproven.finding?.kind, 'route-unproven');
+  const authorized = await run({ do: 'callAction', actor: 'buyer', from: 'source', action: 'buy', input, settleMs: 0 },
+    provided);
+  assert.equal(record(authorized.observation).accepted, true);
+  assert.equal(requests[1]?.url, request.url);
 
   const checked = await run({ do: 'expectActionOutcome', actor: 'guest', outcome: 'refused' }, provided);
   assert.equal(checked.status, 'passed');
@@ -529,6 +539,31 @@ test('named action input uses declared defaults and a missing route is not mista
   assert.equal(unrelatedProof.status, 'failed');
 });
 
+// A refusal is evidence only for a route this run has seen succeed. The same
+// caller's earlier accepted request proves it as well as another actor's does.
+test('a refusal counts only after the same action was accepted in this run', async () => {
+  for (const [first, then, expected] of [
+    ['checkout', 403, 'passed'], ['checkout', 404, 'passed'], ['checkout', 500, 'failed'],
+    [null, 403, 'inconclusive'], [null, 404, 'failed'], ['restock', 403, 'inconclusive'], ['restock', 404, 'failed'],
+  ] as const) {
+    const provided = services(new Map([['customer', { name: 'customer',
+      writes: [{ headers: { authorization: 'Bearer customer' } }] }]]), {
+      fetchImpl: async (url, options) => options.headers?.authorization === 'Bearer customer' && url.endsWith(`/${first}`)
+        ? namedResponse(200, true) : namedResponse(then, false),
+    });
+    const call = (action: string) => ({ do: 'callAction', actor: 'customer', action, settleMs: 0,
+      namedAction: { id: action, path: `/api/${action}`, reducer: action, args: [] } });
+    if (first) assert.equal(record((await run(call(first), provided)).observation).accepted, true);
+    const refused = await run({ ...call('checkout'), authentication: 'none' }, provided);
+    assert.equal(record(refused.observation).status, then);
+    for (const outcome of ['refused', 'application-refused']) {
+      const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
+      assert.equal(checked.status, expected, `${first} then ${then}: ${outcome}`);
+      if (expected === 'inconclusive') assert.equal(checked.finding?.kind, 'route-unproven');
+    }
+  }
+});
+
 test('validation refusal accepts only deliberate application rejection statuses', async () => {
   for (const [outcome, status, expected] of [
     ['validation-refused', 400, 'passed'], ['validation-refused', 409, 'passed'], ['validation-refused', 422, 'passed'],
@@ -538,9 +573,16 @@ test('validation refusal accepts only deliberate application rejection statuses'
   ] as const) {
     const actor = { name: 'customer',
       actionCall: { action: 'cart-set-quantity', accepted: false, status } };
-    const provided = services(new Map<string, unknown>([['customer', actor]]));
-    const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
+    const owner = { name: 'owner', actionCall: { action: 'cart-set-quantity', accepted: true, status: 200 } };
+    const provided = services(new Map<string, unknown>([['customer', actor], ['owner', owner]]));
+    const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome,
+      ...(outcome === 'refused' ? { routeProvenBy: 'owner' } : {}) }, provided);
     assert.equal(checked.status, expected, checked.summary ?? undefined);
+    if (outcome === 'refused') {
+      const unproven = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
+      assert.equal(unproven.status, 'inconclusive', `${status} without a proven route`);
+      assert.equal(unproven.finding?.kind, 'route-unproven');
+    }
   }
 });
 
@@ -549,11 +591,18 @@ test('business outcomes allow deliberate refusals but never turn server errors i
     for (const status of [0, 200, 400, 401, 403, 404, 409, 422, 500, 530]) {
       const actor = { name: 'customer', actionCall: { action: 'review', status,
         accepted: status === 200, applicationRejected: status === 530 } };
-      const provided = services(new Map<string, unknown>([['customer', actor]]));
+      const owner = { name: 'owner', actionCall: { action: 'review', status: 200, accepted: true } };
+      const provided = services(new Map<string, unknown>([['customer', actor], ['owner', owner]]));
       const result = await run({ do: 'expectActionOutcome', actor: 'customer', outcome }, provided);
       const allowed = [400, 401, 403, 409, 422, 530].includes(status)
         || (outcome === 'completed' && status === 200);
-      assert.equal(result.status, allowed ? 'passed' : 'failed', `${outcome}: ${status}`);
+      // A refusal of an operation never proven to work cannot measure the business rule.
+      const unproven = allowed && outcome === 'application-refused';
+      assert.equal(result.status, !allowed ? 'failed' : unproven ? 'inconclusive' : 'passed', `${outcome}: ${status}`);
+      if (unproven) assert.equal(result.finding?.kind, 'route-unproven');
+      // With the route proven, a 404 is the application hiding the resource; errors still fail.
+      const proven = await run({ do: 'expectActionOutcome', actor: 'customer', outcome, routeProvenBy: 'owner' }, provided);
+      assert.equal(proven.status, allowed || status === 404 ? 'passed' : 'failed', `${outcome} proven: ${status}`);
     }
     const customer = { name: 'customer',
       actionCall: { action: 'review', status: 404, accepted: false } };
@@ -662,8 +711,8 @@ test('shipping role and cancellation owner claims retain the caller and check fr
     assert.equal(steps[attack + 1]!.outcome, 'completed');
     const refused = steps.findIndex((step, i) => i > attack && step.outcome === 'application-refused');
     assert(steps.slice(attack, refused).some(step => step.do === 'reload'));
-    assert.equal(steps[refused - 1]!.value, 'pending');
-    assert.equal(steps.at(-1)!.value, final);
+    assert.equal(steps[refused - 1]!.statusText, 'pending');
+    assert.equal(steps.at(-1)!.statusText, final);
     for (const backend of ['postgres', 'mongodb', 'spacetime']) {
       const requests: { body: string; authorization: string | undefined }[] = [];
       const provided = services(new Map([caller, claimant].map(name => [name, { name,
@@ -987,7 +1036,7 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
     id: 41, items: [{ itemId: 7, name: 'Desk Lamp' }],
   }] })], [{
     url: 'http://app.test/api/fulfilment/ship', method: 'POST',
-    headers: { 'content-type': 'application/json' }, body: { orderId: 41 },
+    headers: { 'content-type': 'application/json' }, body: { orderId: 41 }, confirmed: true,
   }], 'staff-session');
   const customer = actor('customer', [
     JSON.stringify({ items: [{ id: 8, name: 'Webcam' }] }),
@@ -1016,11 +1065,24 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
   const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
   assert.equal(rejected.status, 'passed');
   assert.equal(record(rejected.observation).classification, 'verified');
+
+  // A source write without a successful response does not prove the route works.
+  staff.writes[0]!.confirmed = false;
+  assert.equal((await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: 'Desk Lamp', with: 'Webcam' }, settleMs: 0 }, provided)).status, 'passed');
+  assert.deepEqual(JSON.parse(String(requests[1]?.options.data)), { orderId: 52 });
+  const unproven = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(unproven.status, 'inconclusive');
+  assert.equal(unproven.finding?.kind, 'route-unproven');
+  assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
 });
 
 test('replay uses an authenticated named action when the source write is an opaque WebSocket call', async () => {
   const requests: CapturedRequest[] = [];
-  const source = { name: 'staff', writes: [], received: [],
+  const session = (token: string) => ({ context: { cookies: async () => [] },
+    page: { evaluate: async (callback: () => unknown) => Function('window',
+      `return (${callback.toString()})()`)({ getSessionToken: () => token }) } });
+  const source = { name: 'staff', writes: [], received: [], ...session('eyJstaff.token.value'),
     lastWsWrite: { event: 'binary reducer call', body: {} },
     loc: (testid: string, options: UnknownRecord) => {
       assert.equal(testid, 'order-item');
@@ -1034,12 +1096,7 @@ test('replay uses an authenticated named action when the source write is an opaq
         },
       };
     } };
-  const customer = {
-    name: 'customer', writes: [], received: [],
-    context: { cookies: async () => [] },
-    page: { evaluate: async (callback: () => unknown) => Function('window',
-      `return (${callback.toString()})()`)({ getSessionToken: () => 'eyJcustomer.token.value' }) },
-  };
+  const customer = { name: 'customer', writes: [], received: [], ...session('eyJcustomer.token.value') };
   const provided = services(new Map<string, unknown>([
     ['staff', source],
     ['customer', customer],
@@ -1049,15 +1106,16 @@ test('replay uses an authenticated named action when the source write is an opaq
     spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
     fetchImpl: async (url, options) => {
       requests.push({ url, options: options as unknown as UnknownRecord });
-      return namedResponse(530, false);
+      return record(options.headers).Authorization === 'Bearer eyJstaff.token.value'
+        ? namedResponse(200, true) : namedResponse(530, false);
     },
   });
 
-  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
-    swap: { find: '52', with: '53' },
+  const replay = { do: 'replayAs', from: 'staff', match: 'ship',
     namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
     namedTarget: { testid: 'order-item', contains: '{room:test}',
-      attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 }, provided);
+      attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 };
+  const replayed = await run({ ...replay, actor: 'customer', swap: { find: '52', with: '53' } }, provided);
   assert.equal(replayed.status, 'passed');
   assert.deepEqual(replayed.observation,
     { attempted: true, accepted: false, status: 530, namedAction: 'ship' });
@@ -1066,6 +1124,14 @@ test('replay uses an authenticated named action when the source write is an opaq
   assert.equal(request.url, 'http://127.0.0.1:3000/v1/database/shop/call/ship_order');
   assert.equal(request.options.body, '[53]');
   assert.equal(record(request.options.headers).Authorization, 'Bearer eyJcustomer.token.value');
+
+  // The refusal counts only after the same named action succeeds for the authorized staff member.
+  const unproven = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(unproven.status, 'inconclusive');
+  assert.equal(unproven.finding?.kind, 'route-unproven');
+  const control = await run({ ...replay, actor: 'staff' }, provided);
+  assert.deepEqual(control.observation, { attempted: true, accepted: true, status: 200, namedAction: 'ship' });
+  assert.equal(requests[1]?.options.body, '[52]');
 
   const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
   assert.equal(rejected.status, 'passed');
@@ -1135,20 +1201,33 @@ test('a replay refusal accepts expected application errors but not missing route
     assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
     assert.equal(provided.verification.length, 0);
   }
+  // A refusal measures authorization only for a route proven to work, such as
+  // a replay of a write the source actor completed successfully.
   for (const status of [400, 401, 403, 409, 422]) {
-    const provided = services(new Map([['customer', { name: 'customer', replay: {
-      accepted: false, status, method: 'POST', url: '/ship',
-    } }]]));
-    assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer' }, provided)).status, 'passed');
+    for (const routeProven of [true, false]) {
+      const provided = services(new Map([['customer', { name: 'customer', replay: {
+        accepted: false, status, method: 'POST', url: '/ship', routeProven,
+      } }]]));
+      const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+      assert.equal(checked.status, routeProven ? 'passed' : 'inconclusive', String(status));
+      if (!routeProven) assert.equal(checked.finding?.kind, 'route-unproven');
+      assert.equal(provided.verification.length, routeProven ? 1 : 0);
+    }
   }
-  // A private-resource replay may explicitly treat not found as refusal.
-  const privateResource = services(new Map<string, unknown>([['customer', { name: 'customer',
-    replay: { accepted: false, status: 404, method: 'POST', url: '/support/1/replies' } }]]));
-  assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound: true },
-    privateResource)).status, 'passed');
+  // A private-resource replay may explicitly treat not found as refusal, and a
+  // proven route makes not found the application hiding the resource.
+  for (const [allowNotFound, routeProven, expected] of [
+    [true, true, 'passed'], [false, true, 'passed'], [true, false, 'inconclusive'], [false, false, 'failed'],
+  ] as const) {
+    const privateResource = services(new Map<string, unknown>([['customer', { name: 'customer',
+      replay: { accepted: false, status: 404, method: 'POST', url: '/support/1/replies', routeProven } }]]));
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound },
+      privateResource)).status, expected, JSON.stringify({ allowNotFound, routeProven }));
+  }
   for (const status of [200, 400, 401, 403, 404, 500]) {
     const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: '{}' });
-    const actor = { name: 'customer', replay: { ...classified, accepted: classified.ok, status, method: 'POST', url: '/api/mutation' } };
+    const actor = { name: 'customer', replay: { ...classified, accepted: classified.ok, status, method: 'POST', url: '/api/mutation',
+      routeProven: true } };
     const provided = services(new Map([['customer', actor]]));
     assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound: true }, provided)).status,
       [401, 403].includes(status) ? 'passed' : 'failed', String(status));
@@ -1270,7 +1349,7 @@ test('cross-account replay uses caller CSRF context and cannot credit missing ca
   for (const callerContext of [true, false]) {
     let requests = 0;
     const owner = { name: 'owner', received: [], writes: [{
-      url: 'http://app.test/api/orders/1/cancel', method: 'POST', body: {},
+      url: 'http://app.test/api/orders/1/cancel', method: 'POST', body: {}, confirmed: true,
       headers: { cookie: 'sid=owner', 'x-csrf-token': 'owner-csrf', origin: 'http://app.test' },
     }] };
     const other = { name: 'other', received: [], writes: callerContext ? [{
@@ -1665,10 +1744,17 @@ test('staff-role replay changes the role without changing the HTTP route or the 
     'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'));
   const steps = scenario.features[0].criteria.find((c: { id: string }) => c.id === '621b').steps;
   const replay = steps.find((step: { do: string; actor: string }) => step.do === 'replayAs' && step.actor === 'staff');
+  // The administrator's accepted replay of the same named action proves the route the staff refusal uses.
+  const control = steps.find((step: { do: string; actor: string; namedAction?: { id: string } }) => step.do === 'replayAs'
+    && step.actor === 'replayAdmin' && step.namedAction?.id === replay.namedAction.id);
+  assert(steps.indexOf(control) < steps.indexOf(replay));
+  assert.deepEqual(steps[steps.indexOf(control) + 1], { do: 'expectReplayCompleted', actor: 'replayAdmin', requireAccepted: true });
   for (const backend of ['postgres', 'mongodb', 'spacetime']) {
     const requests: CapturedRequest[] = [];
     const source = { name: 'replayAdmin', received: [],
-      writes: backend === 'spacetime' ? [] : [{
+      writes: backend === 'spacetime' ? [{
+        url: 'http://app.test/api/me', method: 'GET', headers: { authorization: 'Bearer admin-token' }, body: null,
+      }] : [{
         url: 'http://app.test/api/staff/42/role', method: 'PUT',
         headers: { authorization: 'Bearer admin-token' }, body: { role: 'staff' },
       }],
@@ -1685,16 +1771,19 @@ test('staff-role replay changes the role without changing the HTTP route or the 
       backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
       fetchImpl: async (url, options) => {
         requests.push({ url, options: options as unknown as UnknownRecord });
-        return namedResponse(403, false);
+        return record(options.headers).authorization === 'Bearer admin-token' ? namedResponse(200, true) : namedResponse(403, false);
       },
     });
+    assert.equal(record((await run({ ...control, settleMs: 0 }, provided)).observation).accepted, true);
     assert.equal((await run({ ...replay, settleMs: 0 }, provided)).status, 'passed');
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 2);
+    assert.equal(record(requests[1]!.options.headers).authorization, 'Bearer staff-token');
+    assert.equal(requests[1]!.url, requests[0]!.url);
     if (backend === 'spacetime') {
-      assert.equal(requests[0]!.options.body, '[42,"inventory"]');
+      assert.equal(requests[1]!.options.body, '[42,"inventory"]');
     } else {
-      assert.equal(requests[0]!.url, 'http://app.test/api/staff/42/role');
-      assert.equal(requests[0]!.options.body, '{"role":"inventory"}');
+      assert.equal(requests[1]!.url, 'http://app.test/api/staff/42/role');
+      assert.equal(requests[1]!.options.body, '{"role":"inventory"}');
     }
     assert.equal((await run({ do: 'expectReplayRejected', actor: 'staff' }, provided)).status, 'passed');
   }
@@ -1743,12 +1832,17 @@ test('role revocation uses declared transitions despite earlier captured role wr
 test('native envelopes govern single, concurrent and replay outcomes, including body loss', async () => {
   for (const session of ['bearer', 'argument'])
   for (const reply of ['accepted', 'refused', 'schema-refused', 'unhandled', 'malformed', 'body-loss', 'native400']) {
-    const actor = { name: 'buyer', received: [], writes: [], context: { cookies: async () => [] },
-      page: { evaluate: async () => ['real-browser-token'] } };
-    recordConvexSession(actor.page, 'ws://native.test/api/1.0.0/sync', JSON.stringify(session === 'bearer'
-      ? { type: 'Authenticate', tokenType: 'User', value: 'real-browser-token' }
-      : { type: 'Mutation', args: [{ session: 'real-browser-token' }] }));
-    const provided = services(new Map([['buyer', actor]]));
+    const nativeActor = (name: string, token: string) => {
+      const actor = { name, received: [], writes: [], context: { cookies: async () => [] },
+        page: { evaluate: async () => [token] } };
+      recordConvexSession(actor.page, 'ws://native.test/api/1.0.0/sync', JSON.stringify(session === 'bearer'
+        ? { type: 'Authenticate', tokenType: 'User', value: token }
+        : { type: 'Mutation', args: [{ session: token }] }));
+      return actor;
+    };
+    // The owner's session proves the operation works; every buyer request gets the reply under test.
+    const provided = services(new Map([['buyer', nativeActor('buyer', 'real-browser-token')],
+      ['owner', nativeActor('owner', 'owner-browser-token')]]));
     const prior = record(provided.capabilities['named-actions']);
     const status = reply === 'native400' ? 400 : 200;
     const text = reply === 'accepted' ? '{"status":"success","value":null}'
@@ -1761,8 +1855,12 @@ test('native envelopes govern single, concurrent and replay outcomes, including 
       classifyResponse: (request: Parameters<typeof classifyResponseContract>[0], response: Parameters<typeof classifyResponseContract>[1]) =>
         classifyResponseContract(request, response),
       fetch: async (_url: string, options: { headers: Record<string, string>; body: string }) => {
-        assert.equal(options.headers.Authorization, session === 'bearer' ? 'Bearer real-browser-token' : undefined);
-        assert.equal(JSON.parse(options.body).args.session, session === 'argument' ? 'real-browser-token' : undefined);
+        const owner = [options.headers.Authorization, JSON.parse(options.body).args.session].some(value =>
+          value?.endsWith('owner-browser-token'));
+        const token = owner ? 'owner-browser-token' : 'real-browser-token';
+        assert.equal(options.headers.Authorization, session === 'bearer' ? `Bearer ${token}` : undefined);
+        assert.equal(JSON.parse(options.body).args.session, session === 'argument' ? token : undefined);
+        if (owner) return { status: 200, ok: true, text: async () => '{"status":"success","value":null}' };
         return { status, ok: status === 200, text: async () => { if (reply === 'body-loss') throw new Error('lost'); return text; } };
       },
     } } };
@@ -1781,6 +1879,14 @@ test('native envelopes govern single, concurrent and replay outcomes, including 
     const replay = await run({ do: 'expectReplayCompleted', actor: 'buyer' }, native);
     assert.equal(replay.status, outcome.status, reply);
     if (reply === 'schema-refused') {
+      for (const check of [{ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, { do: 'expectReplayRejected', actor: 'buyer' }]) {
+        const unproven = await run(check, native);
+        assert.equal(unproven.status, 'inconclusive', check.do);
+        assert.equal(unproven.finding?.kind, 'route-unproven');
+      }
+      const control = await run({ do: 'callAction', actor: 'owner', action: 'checkout',
+        namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }, settleMs: 0 }, native);
+      assert.equal(record(control.observation).accepted, true);
       assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, native)).status, 'passed');
       assert.equal((await run({ do: 'expectReplayRejected', actor: 'buyer' }, native)).status, 'passed');
     }

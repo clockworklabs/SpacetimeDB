@@ -545,6 +545,31 @@
       ]
     },
     {
+      "id": "role-assignment-trusts-sign-in-admin-flag",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Each sign-in records on the account whether it was an administrator at that moment, and role assignment authorizes from that recorded flag instead of the current roles. An administrator who signed in before being changed back to staff keeps assigning roles until signing in again.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "file": "convex/schema.js",
+          "find": "    preference: v.object({ order: v.boolean(), stock: v.boolean() }),\n  }).index('auth_user', ['auth_user_id'])",
+          "replace": "    preference: v.object({ order: v.boolean(), stock: v.boolean() }),\n    sign_in_admin: v.optional(v.boolean()),\n  }).index('auth_user', ['auth_user_id'])"
+        },
+        {
+          "file": "convex/accounts.js",
+          "find": "  if (await ctx.db.query('order_account').withIndex('auth_user', q => q.eq('auth_user_id', userId)).unique()) return;",
+          "replace": "  const existing = await ctx.db.query('order_account').withIndex('auth_user', q => q.eq('auth_user_id', userId)).unique();\n  if (existing) { await ctx.db.patch(existing._id, { sign_in_admin: isAdmin(existing) }); return; }"
+        },
+        {
+          "find": "await operator(ctx, true);\n  if (!['staff', 'inventory', 'admin'].includes(role))",
+          "replace": "if (!(await account(ctx)).sign_in_admin) throw new ConvexError('Access denied');\n  if (!['staff', 'inventory', 'admin'].includes(role))"
+        }
+      ]
+    },
+    {
       "id": "review-eligibility-not-enforced",
       "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
       "targets": [

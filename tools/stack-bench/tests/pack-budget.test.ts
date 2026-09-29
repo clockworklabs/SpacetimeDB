@@ -20,7 +20,8 @@ import { loadTrack } from '../src/composition/tracks.js';
 const track = loadTrack('ecommerce');
 const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
 const resolvedCalibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir, alias: 'L3' });
-assert(resolvedCalibration);
+assert(resolvedCalibration, `no L3 calibration matches ${binding.release.id} `
+  + `(${binding.release.contentSha256}); recalibrate after changing its scenarios`);
 const calibration = structuredClone(resolvedCalibration);
 const selectedChecks = calibrationQualificationRelease(calibration,
   binding.release, binding.execution).release.checkCatalog;

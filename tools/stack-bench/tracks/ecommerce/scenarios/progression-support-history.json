@@ -136,7 +136,7 @@
             {"do":"freshClient","actor":"owner","preserveStorage":true},
             {"do":"expect","actor":"owner-fresh","testid":"current-user","absent":true},
             {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"within":1000},
-            {"do":"click","actor":"owner-fresh","testid":"support-link","unlessVisible":"support-email"},
+            {"do":"click","actor":"owner-fresh","testid":"support-link","ifAvailable":true,"unlessVisible":"support-ticket"},
             {"do":"expect","actor":"owner-fresh","testid":"support-email"},
             {"do":"expect","actor":"owner-fresh","testid":"support-ticket","contains":"Logout ticket {user:logoutticketmarker}","absent":true},
             {"do":"expectNotReceived","actor":"owner-fresh","contains":"Logout ticket {user:logoutticketmarker}"}

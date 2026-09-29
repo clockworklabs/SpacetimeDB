@@ -112,6 +112,7 @@ test('hosted crash uses owned writer freeze while preserving complete process qu
     }, 10_000, `${mode} fixture processes`);
     if (mode !== 'missing') await waitFor(() => answers(`http://127.0.0.1:${port}/health`), 10_000, 'entry listener');
   };
+  let failure: { error: unknown } | undefined;
   try {
     claimBackendResources(leasePath, lease, { ...resourceLockScope(), keys: backendResourceLockKeys(lease, ports) });
     activateAttemptBackend({ leasePath, lease, ports });
@@ -378,22 +379,24 @@ tasks:tids.map(tid=>({tid,state:state('/proc/'+pid+'/task/'+tid)}))}));`])) as {
     });
     evidence.result = 'cases finished; assertion results are in the accompanying TAP output';
   } catch (error) {
-    evidence.result = 'failed'; evidence.error = error instanceof Error ? error.message : String(error); throw error;
-  } finally {
-    for (const [key, value] of [['STACK_BENCH_LEASE', previous.lease], ['STACK_BENCH_LEASE_TOKEN', previous.token]]) {
-      if (value === undefined) delete process.env[key!]; else process.env[key!] = value;
-    }
-    try {
-      const current = readBackendLease(leasePath, { token: lease.ownershipToken });
-      const owned = [current.resources.buildContainer, current.resources.browserContainer, current.resources.container]
-        .flatMap(container => container ? [container.id] : []);
-      const released = releaseBackendLease(leasePath, lease.ownershipToken);
-      const remaining = owned.filter(id => attemptDocker(['ps', '-aq', '--filter', `id=${id}`]));
-      const networkRemaining = network ? attemptDocker(['network', 'ls', '-q', '--filter', `id=${network}`]) : '';
-      evidence.cleanup = { released, network, owned, remaining, networkRemaining };
-      assert(released && !remaining.length && !networkRemaining, 'all owned resources must be released');
-    } catch (error) {
-      evidence.cleanupError = error instanceof Error ? error.message : String(error); throw error;
-    } finally { save(); }
+    evidence.result = 'failed'; evidence.error = error instanceof Error ? error.message : String(error);
+    failure = { error };
   }
+  for (const [key, value] of [['STACK_BENCH_LEASE', previous.lease], ['STACK_BENCH_LEASE_TOKEN', previous.token]]) {
+    if (value === undefined) delete process.env[key!]; else process.env[key!] = value;
+  }
+  // A cleanup failure takes precedence over a case failure; both are in the evidence.
+  try {
+    const current = readBackendLease(leasePath, { token: lease.ownershipToken });
+    const owned = [current.resources.buildContainer, current.resources.browserContainer, current.resources.container]
+      .flatMap(container => container ? [container.id] : []);
+    const released = releaseBackendLease(leasePath, lease.ownershipToken);
+    const remaining = owned.filter(id => attemptDocker(['ps', '-aq', '--filter', `id=${id}`]));
+    const networkRemaining = network ? attemptDocker(['network', 'ls', '-q', '--filter', `id=${network}`]) : '';
+    evidence.cleanup = { released, network, owned, remaining, networkRemaining };
+    assert(released && !remaining.length && !networkRemaining, 'all owned resources must be released');
+  } catch (error) {
+    evidence.cleanupError = error instanceof Error ? error.message : String(error); throw error;
+  } finally { save(); }
+  if (failure) throw failure.error;
 });

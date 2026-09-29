@@ -3,6 +3,7 @@ import {
   actorFor,
   fail,
   inconclusive,
+  routeProofs,
   transportFor,
 } from './actor-action-runtime.js';
 import type {
@@ -448,8 +449,9 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         try {
           const response = await named.fetch(request.url, { method: request.method ?? 'POST', ...bound, signal });
           const classified = classifyNamedActionResponse(named, request, { status: response.status, text: await response.text() });
+          // capturedConvexMutation only returns a mutation the server confirmed.
           actor.replay = { ...classified, accepted: classified.ok, status: response.status,
-            url: request.url, method: request.method ?? 'POST' };
+            url: request.url, method: request.method ?? 'POST', routeProven: true };
         } catch (error) {
           if (harnessBrowserFailure(error)) throw error;
           actor.replay = { accepted: false, status: 0, complete: false };
@@ -513,6 +515,7 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         actor.replay = { ...classified, accepted: classified.ok, status: response.status, url: request.url,
           method: request.method ?? 'POST', namedAction: action.id };
       } catch { actor.replay = { accepted: false, status: 0, complete: false, namedAction: action.id }; }
+      if (actor.replay.accepted && action.id) routeProofs(capabilities).add(action.id);
       await transport.sleep(input.settleMs ?? 2000, signal);
       return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status,
         namedAction: action.id };
@@ -587,7 +590,8 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
   try {
     const classified = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, { url, method: write.method },
       response);
-    actor.replay = { ...classified, accepted: classified.ok, status: response.status, url, method: write.method };
+    actor.replay = { ...classified, accepted: classified.ok, status: response.status, url, method: write.method,
+      routeProven: write.confirmed === true };
   } catch { actor.replay = { accepted: false, status: 0, complete: false, url, method: write.method }; }
   await transport.sleep(input.settleMs ?? 2000, signal);
   return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status };
@@ -630,12 +634,19 @@ async function expectReplayRejected({ input, capabilities }:
   if (replay.accepted) {
     fail('replay-accepted', { actor: actor.name, status: replay.status ?? null, ...named });
   }
+  // A refusal measures authorization only when the same request is proven to
+  // work for an authorized actor: a completed captured write, or an accepted
+  // replay or call of the same named action earlier in this run.
+  const routeProven = replay.routeProven === true
+    || replay.namedAction !== undefined && routeProofs(capabilities).has(replay.namedAction);
   const replayStatus = replay.status;
   const httpRefusal = !replay.responseContract?.startsWith('convex-')
-    && ([400, 401, 403, 409, 422].includes(replayStatus ?? 0) || (replayStatus === 404 && input.allowNotFound === true));
+    && ([400, 401, 403, 409, 422].includes(replayStatus ?? 0)
+      || (replayStatus === 404 && (input.allowNotFound === true || routeProven)));
   if (!httpRefusal && replay.refusalKind !== 'access' && replay.refusalKind !== 'validation' && replay.applicationRejected !== true) {
     fail('replay-error', { status: replay.status ?? null, ...named });
   }
+  if (!routeProven) inconclusive('route-unproven', { actor: actor.name, action: replay.namedAction ?? `${replay.method ?? 'POST'} replay` });
   transport.verification.verified(
     `${actor.name}: server refused ${replay.method} ${replay.url} (HTTP ${replay.status})`);
   return { classification: 'verified', status: replay.status };

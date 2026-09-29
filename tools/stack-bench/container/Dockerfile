@@ -30,7 +30,7 @@ RUN npm ci --prefix /opt/browser-tools --omit=dev --ignore-scripts \
 # Pinned, and the auto-updater disabled: a CLI that updates itself mid-series
 # changes the thing under test between one backend and the next. Override at
 # build time to move deliberately rather than by drift.
-ARG CLAUDE_VERSION=2.1.226
+ARG CLAUDE_VERSION=2.1.284
 ARG CODEX_VERSION=0.153.4
 ENV DISABLE_AUTOUPDATER=1
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION} \

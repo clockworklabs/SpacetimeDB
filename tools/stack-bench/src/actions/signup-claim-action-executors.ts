@@ -47,9 +47,19 @@ export const probeSignupClaims = actionImplementation(async ({ input, capabiliti
     previousActor = fresh.actor;
     try {
       const targetPage = actorFor(capabilities, fresh.actor).page as Page;
+      const claimant = `${input.name}-${index}`;
       const result = await withAuthWriteTarget(targetPage, { writes, index, readEndpoints }, () => dispatch({
-        do: 'signUp', actor: fresh.actor, name: `${input.name}-${index}`, requestPatch: { fields: input.fields },
+        do: 'signUp', actor: fresh.actor, name: claimant, requestPatch: { fields: input.fields },
       }));
+      // An app may create the claimed account but leave it signed out (or show an
+      // error). Sign in once so the branch cannot pass on an anonymous request; if
+      // no account exists, the anonymous request is the true state of the claim.
+      const currentUser = actorFor(capabilities, fresh.actor).loc('current-user');
+      const signedIn = async () => await currentUser.isVisible()
+        && (await currentUser.innerText()).includes(browserFor(capabilities).scopedUser(claimant));
+      if (!(await signedIn())) {
+        await dispatch({ do: 'signIn', actor: fresh.actor, name: claimant, expectFailure: true });
+      }
       for (const step of input.branches[0]!) {
         await dispatch({ ...step, ...(step.actor === input.actor ? { actor: fresh.actor } : {}) });
       }

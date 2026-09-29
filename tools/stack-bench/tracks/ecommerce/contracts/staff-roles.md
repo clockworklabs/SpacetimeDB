@@ -5,6 +5,8 @@ If the role controls are on a separate tab or screen within it, expose `staff-ro
 there to open them. Omit this control when the role controls are already shown.
 Use `staff-role-row` for each staff account and set `data-account-id` to that account's server
 identifier. Put `staff-role-select` and `staff-role-save` inside the row.
+When the page loads, `staff-role-select` shows the account's saved role. Keep each account
+listed after its role changes, including an account whose role becomes `admin`.
 On that row, expose `data-submit-state` for the latest role assignment: `idle`
 initially, `pending` immediately when submitted, `succeeded` only after the server
 confirms success, or `failed` after rejection or transport failure. Keep the terminal

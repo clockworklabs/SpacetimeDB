@@ -247,6 +247,20 @@
               "testid": "count"
             },
             {
+              "actor": "a",
+              "do": "expectWarehouseInventory",
+              "items": [
+                {
+                  "name": "item",
+                  "stock": {
+                    "East": 1,
+                    "West": 0
+                  }
+                }
+              ],
+              "within": 1
+            },
+            {
               "actors": [
                 "a",
                 "b"

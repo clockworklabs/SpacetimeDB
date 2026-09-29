@@ -7,6 +7,7 @@ import {
   actorFor,
   fail,
   inconclusive,
+  routeProofs,
   transportFor,
 } from './actor-action-runtime.js';
 import type {
@@ -235,6 +236,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
       method: action.method ?? 'POST' },
     requestFingerprint: input.authentication === 'tampered-session' ? undefined : requestFingerprint,
   };
+  if (caller.actionCall.accepted) routeProofs(capabilities).add(input.action);
   await transport.sleep(input.settleMs ?? 2000, signal);
   if (input.authentication === 'session-control' && !caller.actionCall.accepted) {
     inconclusive('replay-unavailable', { actor: caller.name,
@@ -263,8 +265,12 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
   if (input.outcome === 'completed' || input.outcome === 'application-refused' || input.outcome === 'refused') {
     const proof = input.routeProvenBy === undefined ? null
       : actorFor(capabilities, input.routeProvenBy).actionCall;
+    // A refusal measures authorization only when the same operation was proven
+    // to work for an authorized request; otherwise it may be a malformed call.
+    const routeProven = proof?.accepted === true && proof.action === call.action
+      || routeProofs(capabilities).has(call.action);
     const deliberateRefusal = call.refusalKind === 'access' || (http && [400, 401, 403, 409, 422].includes(call.status))
-      || (http && call.status === 404 && proof?.accepted === true && proof.action === call.action)
+      || (http && call.status === 404 && routeProven)
       || call.applicationRejected === true || call.refusalKind === 'validation';
     if (call.accepted && input.outcome !== 'completed') {
       fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'refused' });
@@ -272,6 +278,9 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
     if (!call.accepted && !deliberateRefusal) {
       fail('call-error', { action: call.action, actor: actor.name, status,
         required: input.outcome === 'refused' ? 'refused' : 'validation-refused', operation: missingOperation(call) });
+    }
+    if (!call.accepted && input.outcome !== 'completed' && !routeProven) {
+      inconclusive('route-unproven', { actor: actor.name, action: call.action });
     }
   } else if (input.outcome === 'accepted') {
     if (!call.accepted) {

@@ -52,6 +52,7 @@
             { "do": "expectForgeryRejected", "actor": "a" },
             { "do": "expectNotReceived", "actor": "a", "contains": "secret" },
             { "do": "expectNumber", "actor": "a", "testid": "count", "equals": 1 },
+            { "do": "expectWarehouseInventory", "actor": "a", "items": [{ "name": "item", "stock": { "East": 1, "West": 0 } }], "within": 1 },
             { "do": "expectOrderMatches", "actors": ["a", "b"], "prefix": "message" },
             { "do": "expectReceived", "actor": "a", "contains": "hello", "within": 1 },
             { "do": "expectReplayCompleted", "actor": "a" },

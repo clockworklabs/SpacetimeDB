@@ -22,7 +22,7 @@ export type FindingKind = keyof FindingFields;
 // The harness could not measure. Never repair feedback.
 export type InconclusiveFindingKind =
   | 'assertion-without-action' | 'unknown-action' | 'action-without-parameters'
-  | 'no-session' | 'unresolved-action' | 'replay-unavailable'
+  | 'no-session' | 'unresolved-action' | 'replay-unavailable' | 'route-unproven'
   | 'forgery-unverifiable' | 'not-observed' | 'transport-incomplete' | 'nothing-contended' | 'observation-window-missed'
   | 'network-not-interrupted'
   | 'no-backend-control' | 'control-refused' | 'database-write-failed'
@@ -131,6 +131,7 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
   'no-session': f => `no session found for ${f.actor}${f.action ? `, so the ${f.action} action could not be issued` : ''}`,
   'unresolved-action': f => `could not resolve where to send ${f.action ? `the ${f.action} action` : 'the action'} for this backend`,
   'replay-unavailable': f => `could not issue the replay as ${f.actor}`,
+  'route-unproven': f => `no authorized ${f.action} request was accepted first, so the refusal for ${f.actor} does not measure authorization`,
   'forgery-unverifiable': f => `could not verify the forgery refusal for ${f.actor}`,
   'not-observed': f => `the expected data could not be observed reaching ${f.actor}`,
   'transport-incomplete': f => 'transport evidence is incomplete; absence cannot be established'
@@ -250,6 +251,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('no-session'), fields: z.strictObject({ actor: z.string(), action: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('unresolved-action'), fields: z.strictObject({ action: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('replay-unavailable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('route-unproven'), fields: z.strictObject({ actor: z.string(), action: z.string() }) }),
   z.strictObject({ kind: z.literal('forgery-unverifiable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('not-observed'), fields: actorSchema }),
   z.strictObject({ kind: z.literal('transport-incomplete'), fields: z.strictObject({

@@ -392,6 +392,7 @@ test('each signup write is patched once, including a bodyless account finalizer'
       if (mode === 'extra') await fetch('/profile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       await fetch(mode === 'changed' ? '/other-finalizer' : '/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
       if (mode === 'duplicate') await fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
+      if (mode === 'after') await fetch('/claimed-follow-up', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     }, mode);
     const baselinePage = await fresh('ordinary');
     const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage));
@@ -417,6 +418,24 @@ test('each signup write is patched once, including a bodyless account finalizer'
         () => submit(page, mode), undefined, 'signup', { writes: baseline.writes, index: 1 }), ActionInconclusive);
       await page.context().close();
     }
+    // The claim may change what the app does after the patched target, so a later
+    // different write is recorded, not refused. A repeat of the target (here the
+    // second profile write) would be unpatched and could undo the claim.
+    for (const [mode, index] of [['changed', 0], ['after', 0], ['after', 1]] as const) {
+      const page = await fresh(`${mode}-after-target-${index}`);
+      calls.length = 0;
+      const result = await withAuthRequestPatch(page, 'unused', 'unused', { fields: { role: 'admin' } },
+        () => submit(page, mode), undefined, 'signup', { writes: baseline.writes, index });
+      assert.equal(result.requestPatch.status, 200, `${mode} ${index}`);
+      assert.deepEqual(calls.map(call => call.role), index === 0
+        ? ['admin', undefined, ...(mode === 'after' ? [undefined] : [])] : ['customer', 'admin', undefined]);
+      assert.equal(calls.at(-1)!.path, mode === 'after' ? '/claimed-follow-up' : '/other-finalizer');
+      await page.context().close();
+    }
+    const repeated = await fresh('repeated-target');
+    await assert.rejects(withAuthRequestPatch(repeated, 'unused', 'unused', { fields: { role: 'admin' } },
+      () => submit(repeated, 'extra'), undefined, 'signup', { writes: baseline.writes, index: 0 }), ActionInconclusive);
+    await repeated.context().close();
     const completing = await fresh('completing');
     await withAuthWriteTarget(completing, { writes: baseline.writes, index: 0 }, () =>
       withAuthRequestPatch(completing, 'unused', 'unused', { fields: { role: 'admin' } },

@@ -51,6 +51,31 @@
       ]
     },
     {
+      "id": "role-assignment-trusts-sign-in-admin-flag",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Sign-in records whether the account was an administrator on the caller identity's session row, and role assignment authorizes from that recorded flag instead of the stored account. A session opened while the account was an administrator keeps assigning roles after the account is changed back to staff; sessions opened after the change are refused.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "file": "backend/spacetimedb/src/schema.ts",
+          "find": "    accountId: t.u64(),\n    expiresMicros: t.i64(),\n  }\n);",
+          "replace": "    accountId: t.u64(),\n    expiresMicros: t.i64(),\n    signInAdmin: t.bool().default(false),\n  }\n);"
+        },
+        {
+          "file": "backend/spacetimedb/src/auth.ts",
+          "find": "    expiresMicros: ctx.timestamp.microsSinceUnixEpoch + SESSION_MICROS });",
+          "replace": "    expiresMicros: ctx.timestamp.microsSinceUnixEpoch + SESSION_MICROS,\n    signInAdmin: ctx.db.account.id.find(accountId)?.isAdmin ?? false });"
+        },
+        {
+          "find": "const actor = requireAdmin(ctx);\n    const target = ctx.db.account.id.find(accountId);",
+          "replace": "const actor = requireAccount(ctx);\n    if (!ctx.db.session.identity.find(ctx.sender)?.signInAdmin) throw new SenderError('Admin access required.');\n    const target = ctx.db.account.id.find(accountId);"
+        }
+      ]
+    },
+    {
       "id": "shipping-counts-sale-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
       "targets": [
