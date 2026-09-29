@@ -1,9 +1,11 @@
-import { SenderError, t } from 'spacetimedb/server';
+import { ScheduleAt, Timestamp } from 'spacetimedb';
+import { Range, SenderError, t } from 'spacetimedb/server';
 import * as lobby from '@spacetimedb/lobby/submodule';
 
 import {
   DUEL_POOL,
-  AI_DUEL_POOL_PREFIX,
+  AI_DUEL_POOL,
+  AI_SUBJECT,
   RATING_POOL,
   MATCH_SIZE,
   DISPLAY_NAME_MAX,
@@ -13,6 +15,8 @@ import {
   ManeuverSlot,
   DuelStatus,
   spacetimedb,
+  forfeitCheck,
+  duelSweepTick,
   type WriteCtx,
   type CombatantRow,
   type ManeuverRow,
@@ -23,6 +27,12 @@ import {
 import { MANEUVER_CATALOG, SHIP_CATALOG } from './catalog';
 export { default } from './schema';
 export * from './views';
+
+const ONE_SECOND_MICROS = 1_000_000n;
+// A pilot who stays disconnected this long forfeits their unfinished duels.
+const DISCONNECT_GRACE_SECONDS = 30n;
+const SWEEP_INTERVAL_SECONDS = 5n;
+const SWEEP_BATCH = 200;
 
 function fail(message: string): never {
   throw new SenderError(`duel.${message}`);
@@ -36,16 +46,24 @@ function displaySubject(subject: string): string {
   return `Pilot ${subject.slice(0, 6).toUpperCase()}`;
 }
 
-function aiSubjectFor(subject: string): string {
-  return `ai:${subject}`;
-}
-
-function aiPoolFor(subject: string): string {
-  return `${AI_DUEL_POOL_PREFIX}:${subject.slice(0, 32)}`;
-}
-
 function isDuelPool(pool: string): boolean {
-  return pool === DUEL_POOL || pool.startsWith(`${AI_DUEL_POOL_PREFIX}:`);
+  return pool === DUEL_POOL || pool === AI_DUEL_POOL;
+}
+
+function isFinished(d: DuelRow): boolean {
+  return (
+    d.status.tag === DuelStatus.Complete.tag ||
+    d.status.tag === DuelStatus.Abandoned.tag
+  );
+}
+
+function take<T>(rows: Iterable<T>, limit: number): T[] {
+  const out: T[] = [];
+  for (const row of rows) {
+    if (out.length >= limit) break;
+    out.push(row);
+  }
+  return out;
 }
 
 function normalizeDisplayName(value: string): string {
@@ -147,20 +165,15 @@ function ensurePilot(ctx: WriteCtx, subject: string) {
   return row;
 }
 
-function ensureAiPilot(ctx: WriteCtx, subject: string) {
-  const existing = ensurePilot(ctx, subject);
-  const seed = hashSeed(subject);
-  const ship = [
-    ShipClass.Bulwark,
-    ShipClass.Interceptor,
-    ShipClass.Phantom,
-    ShipClass.Artillery,
-  ][seed % 4];
-  const displayName = 'Arena AI';
+// Every AI match uses one shared AI pilot and pool, so public views never
+// reveal which player is facing the AI. Its ship is picked per match.
+function ensureAiPilot(ctx: WriteCtx) {
+  const existing = ensurePilot(ctx, AI_SUBJECT);
+  const ships = Object.values(ShipClass);
   const next = {
     ...existing,
-    displayName,
-    shipClass: ship,
+    displayName: 'Arena AI',
+    shipClass: ships[ctx.random.integerInRange(0, ships.length - 1)],
     updatedAt: ctx.timestamp,
   };
   ctx.db.pilot.subject.update(next);
@@ -179,6 +192,21 @@ function hasSeat(ctx: WriteCtx, roomId: bigint, subject: string): boolean {
 
 function roomFor(ctx: WriteCtx, roomId: bigint) {
   return ctx.db.lobby.lobbyRoom.roomId.find(roomId);
+}
+
+function isOpenRoom(room: ReturnType<typeof roomFor>): boolean {
+  return (
+    room?.status.tag === lobby.RoomStatus.Ready.tag ||
+    room?.status.tag === lobby.RoomStatus.Active.tag
+  );
+}
+
+function hasOpenSeat(ctx: WriteCtx, subject: string): boolean {
+  return [...ctx.db.lobby.lobbyRoomSeat.bySubject.filter(subject)].some(
+    seat =>
+      seat.status.tag !== lobby.SeatStatus.Left.tag &&
+      isOpenRoom(roomFor(ctx, seat.roomId))
+  );
 }
 
 function log(
@@ -264,21 +292,10 @@ function refreshDuelStatus(ctx: WriteCtx, roomId: bigint) {
   return updated;
 }
 
-function hashSeed(input: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function roll(seed: string): number {
-  let x = hashSeed(seed) || 1;
-  x ^= x << 13;
-  x ^= x >>> 17;
-  x ^= x << 5;
-  return (x >>> 0) % 10_000;
+// Rolls come from the transaction's RNG, so a player cannot compute them
+// before submitting a maneuver.
+function roll(ctx: WriteCtx): number {
+  return ctx.random.integerInRange(0, 9_999);
 }
 
 function requireMapped<T>(
@@ -348,13 +365,12 @@ function attackOnce(
   defenderMove: ManeuverRow
 ): CombatantRow {
   if (attacker.hull <= 0 || defender.hull <= 0) return defender;
-  const prefix = `${roomId.toString()}:${round}:${attacker.subject}:${defender.subject}`;
   const dodgeBps = clamp(
     defender.dodgeBps + defenderMove.dodgeBonusBps,
     0,
     9000
   );
-  if (roll(`${prefix}:dodge`) < dodgeBps) {
+  if (roll(ctx) < dodgeBps) {
     log(
       ctx,
       roomId,
@@ -364,7 +380,7 @@ function attackOnce(
     return defender;
   }
   const critBps = clamp(attacker.critBps + attackerMove.critBonusBps, 0, 9000);
-  const crit = roll(`${prefix}:crit`) < critBps;
+  const crit = roll(ctx) < critBps;
   const baseDamage = Math.max(1, attacker.attack - defender.defense);
   const attackDamage = Math.max(
     1,
@@ -386,46 +402,37 @@ function attackOnce(
   return updated;
 }
 
-function aiSlotFor(
-  roomId: bigint,
-  round: number,
-  subject: string
-): ManeuverSlotValue {
-  const slots = [
-    ManeuverSlot.Primary,
-    ManeuverSlot.Defensive,
-    ManeuverSlot.Risky,
-  ];
-  return slots[
-    hashSeed(`${roomId.toString()}:${round}:${subject}:ai-move`) % slots.length
-  ];
-}
-
-function ensureAiChoices(
+// The AI picks from the RNG of the transaction that resolves the round, after
+// the player's choice is final, so the player cannot predict it.
+function ensureAiChoice(
   ctx: WriteCtx,
   roomId: bigint,
   round: number,
   combatants: CombatantRow[]
 ): void {
-  for (const combatant of combatants) {
-    if (!combatant.subject.startsWith('ai:')) continue;
-    if (choiceFor(ctx, roomId, round, combatant.subject)) continue;
-    upsertManeuverChoice(
-      ctx,
-      roomId,
-      round,
-      combatant.subject,
-      aiSlotFor(roomId, round, combatant.subject),
-      combatant.shipClass
-    );
-  }
+  const ai = combatants.find(c => c.subject === AI_SUBJECT);
+  if (!ai || choiceFor(ctx, roomId, round, AI_SUBJECT)) return;
+  const slots = Object.values(ManeuverSlot);
+  upsertManeuverChoice(
+    ctx,
+    roomId,
+    round,
+    AI_SUBJECT,
+    slots[ctx.random.integerInRange(0, slots.length - 1)],
+    ai.shipClass
+  );
 }
 
-function completeDuel(
+/**
+ * Marks the duel won and finishes its lobby room. Ranked rooms report the
+ * result so both ratings update; AI rooms close without a rating change.
+ */
+function finishDuel(
   ctx: WriteCtx,
   d: DuelRow,
   round: number,
-  winnerSubject: string
+  winnerSubject: string,
+  message: string
 ): void {
   ctx.db.duel.roomId.update({
     ...d,
@@ -434,30 +441,59 @@ function completeDuel(
     winnerSubject,
     updatedAt: ctx.timestamp,
   });
-  const winner = ctx.db.duelCombatant.combatantId.find(
-    combatantId(d.roomId, winnerSubject)
+  log(ctx, d.roomId, round, message);
+  if (roomFor(ctx, d.roomId)?.pool === AI_DUEL_POOL) {
+    lobby.closeRoom(ctx.as.lobby, d.roomId);
+  } else {
+    lobby.reportMatchResult(ctx.as.lobby, { roomId: d.roomId, winnerSubject });
+  }
+}
+
+function abandonDuel(ctx: WriteCtx, d: DuelRow, message: string): void {
+  ctx.db.duel.roomId.update({
+    ...d,
+    status: DuelStatus.Abandoned,
+    updatedAt: ctx.timestamp,
+  });
+  log(ctx, d.roomId, d.round, message);
+}
+
+/**
+ * Ends an unfinished duel on behalf of `subject`. In an active room the
+ * opponent wins and the loss is recorded. A room that is not active yet is
+ * left, which abandons it without a rating change.
+ */
+function forfeitDuel(ctx: WriteCtx, d: DuelRow, subject: string): void {
+  const room = roomFor(ctx, d.roomId);
+  const opponent = seatsForRoom(ctx, d.roomId).find(
+    seat => seat.subject !== subject
   );
-  log(
-    ctx,
-    d.roomId,
-    round,
-    `${winner?.displayName ?? 'A pilot'} wins the duel.`
-  );
-  lobby.reportMatchResult(ctx.as.lobby, { roomId: d.roomId, winnerSubject });
+  if (room?.status.tag === lobby.RoomStatus.Active.tag && opponent) {
+    const name = (s: string) =>
+      ctx.db.duelCombatant.combatantId.find(combatantId(d.roomId, s))
+        ?.displayName ?? 'A pilot';
+    finishDuel(
+      ctx,
+      d,
+      d.round,
+      opponent.subject,
+      `${name(subject)} forfeits. ${name(opponent.subject)} wins.`
+    );
+    return;
+  }
+  if (room?.status.tag === lobby.RoomStatus.Ready.tag) {
+    lobby.leaveRoomForSubject(ctx.as.lobby, { roomId: d.roomId, subject });
+  }
+  abandonDuel(ctx, d, 'A pilot left. Duel abandoned.');
 }
 
 function maybeResolveRound(ctx: WriteCtx, roomId: bigint): void {
   const d = refreshDuelStatus(ctx, roomId);
-  if (
-    d.status.tag === DuelStatus.Complete.tag ||
-    d.status.tag === DuelStatus.Abandoned.tag
-  )
-    return;
   if (d.status.tag !== DuelStatus.Active.tag) return;
   const combatants = sortedCombatants(ctx, roomId);
   if (combatants.length < MATCH_SIZE) fail('combatants_missing');
   const round = d.round + 1;
-  ensureAiChoices(ctx, roomId, round, combatants);
+  ensureAiChoice(ctx, roomId, round, combatants);
   const moves = new Map<string, ManeuverRow>();
   for (const combatant of combatants) {
     const choice = choiceFor(ctx, roomId, round, combatant.subject);
@@ -530,29 +566,25 @@ function maybeResolveRound(ctx: WriteCtx, roomId: bigint): void {
   }
   const alive = updatedCombatants.filter(c => c.hull > 0);
   if (alive.length === 1) {
-    completeDuel(ctx, d, round, alive[0].subject);
+    finishDuel(
+      ctx,
+      d,
+      round,
+      alive[0].subject,
+      `${alive[0].displayName} wins the duel.`
+    );
   } else if (alive.length === 0) {
     const winner =
       updatedCombatants[0].hull >= updatedCombatants[1].hull
         ? updatedCombatants[0]
         : updatedCombatants[1];
-    ctx.db.duel.roomId.update({
-      ...d,
-      status: DuelStatus.Complete,
-      round,
-      winnerSubject: winner.subject,
-      updatedAt: ctx.timestamp,
-    });
-    log(
+    finishDuel(
       ctx,
-      roomId,
+      d,
       round,
+      winner.subject,
       `${winner.displayName} wins by emergency adjudication.`
     );
-    lobby.reportMatchResult(ctx.as.lobby, {
-      roomId,
-      winnerSubject: winner.subject,
-    });
   } else {
     ctx.db.duel.roomId.update({ ...d, round, updatedAt: ctx.timestamp });
   }
@@ -620,8 +652,17 @@ export const selectShip = spacetimedb.reducer({ shipClass }, (ctx, args) => {
   }
 });
 
+function forfeitOpenDuels(ctx: WriteCtx, subject: string): void {
+  for (const combatant of [...ctx.db.duelCombatant.bySubject.filter(subject)]) {
+    const d = ctx.db.duel.roomId.find(combatant.roomId);
+    if (d && !isFinished(d)) forfeitDuel(ctx, d, subject);
+  }
+}
+
+// Queueing again forfeits any duel the player has not finished.
 export const findDuel = spacetimedb.reducer({}, ctx => {
   const subject = subjectFor(ctx);
+  forfeitOpenDuels(ctx, subject);
   const p = ensurePilot(ctx, subject);
   const result = lobby.joinRankedQueueForSubject(ctx.as.lobby, {
     pool: DUEL_POOL,
@@ -634,53 +675,36 @@ export const findDuel = spacetimedb.reducer({}, ctx => {
   if (result.roomId !== undefined) ensureDuelForRoom(ctx, result.roomId);
 });
 
+// Falls back to an AI opponent only while the player has no open seat, so a
+// real match that formed just before the client's timer is kept.
 export const fallbackToAi = spacetimedb.reducer({}, ctx => {
   const subject = subjectFor(ctx);
+  if (hasOpenSeat(ctx, subject)) return;
   const p = ensurePilot(ctx, subject);
-  const publicTickets = [
-    ...ctx.db.lobby.lobbyQueueTicket.bySubject.filter(subject),
-  ].filter(
-    ticket =>
-      ticket.pool === DUEL_POOL &&
-      ticket.status.tag === lobby.TicketStatus.Queued.tag
-  );
-  for (const ticket of publicTickets) {
-    lobby.cancelTicketForSubject(ctx.as.lobby, {
-      ticketId: ticket.ticketId,
-      subject,
-    });
-  }
-
-  const aiSubject = aiSubjectFor(subject);
-  const aiPilot = ensureAiPilot(ctx, aiSubject);
-  const pool = aiPoolFor(subject);
+  const aiPilot = ensureAiPilot(ctx);
+  // Queueing in the AI pool replaces the player's public ticket. AI rooms
+  // close without a result, so the AI pool never gains ratings.
   lobby.joinRankedQueueForSubject(ctx.as.lobby, {
-    pool,
+    pool: AI_DUEL_POOL,
     subject,
     matchSize: MATCH_SIZE,
-    ratingPool: RATING_POOL,
-    attributesJson: JSON.stringify({
-      shipClass: p.shipClass.tag,
-      fallback: 'human',
-    }),
+    ratingPool: AI_DUEL_POOL,
+    attributesJson: JSON.stringify({ shipClass: p.shipClass.tag }),
     ttlSeconds: 120,
   });
   const result = lobby.joinRankedQueueForSubject(ctx.as.lobby, {
-    pool,
-    subject: aiSubject,
+    pool: AI_DUEL_POOL,
+    subject: AI_SUBJECT,
     matchSize: MATCH_SIZE,
-    ratingPool: RATING_POOL,
-    attributesJson: JSON.stringify({
-      shipClass: aiPilot.shipClass.tag,
-      fallback: 'ai',
-    }),
+    ratingPool: AI_DUEL_POOL,
+    attributesJson: JSON.stringify({ shipClass: aiPilot.shipClass.tag }),
     ttlSeconds: 120,
   });
   if (result.roomId === undefined) fail('ai_match_failed');
   lobby.joinRoomForSubject(ctx.as.lobby, { roomId: result.roomId, subject });
   lobby.joinRoomForSubject(ctx.as.lobby, {
     roomId: result.roomId,
-    subject: aiSubject,
+    subject: AI_SUBJECT,
   });
   ensureDuelForRoom(ctx, result.roomId);
   refreshDuelStatus(ctx, result.roomId);
@@ -708,8 +732,7 @@ export const chooseManeuver = spacetimedb.reducer(
     const subject = subjectFor(ctx);
     if (!hasSeat(ctx, args.roomId, subject)) fail('not_in_room');
     const d = refreshDuelStatus(ctx, args.roomId);
-    if (d.status.tag === DuelStatus.Complete.tag) return;
-    if (d.status.tag === DuelStatus.Abandoned.tag) fail('duel_abandoned');
+    if (isFinished(d)) return;
     if (d.status.tag !== DuelStatus.Active.tag) fail('duel_not_ready');
     const round = d.round + 1;
     const combatant = ctx.db.duelCombatant.combatantId.find(
@@ -728,100 +751,123 @@ export const chooseManeuver = spacetimedb.reducer(
   }
 );
 
-export const advanceDuel = spacetimedb.reducer(
-  { roomId: t.u64() },
-  (ctx, args) => {
-    const subject = subjectFor(ctx);
-    const combatant = ctx.db.duelCombatant.combatantId.find(
-      combatantId(args.roomId, subject)
-    );
-    if (!combatant) fail('combatant_missing');
-    upsertManeuverChoice(
-      ctx,
-      args.roomId,
-      (ctx.db.duel.roomId.find(args.roomId)?.round ?? 0) + 1,
-      subject,
-      ManeuverSlot.Primary,
-      combatant.shipClass
-    );
-    maybeResolveRound(ctx, args.roomId);
-  }
-);
-
 export const leaveDuel = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
     const subject = subjectFor(ctx);
     const d = ctx.db.duel.roomId.find(args.roomId);
-    if (!d || d.status.tag === DuelStatus.Complete.tag) return;
+    if (!d || isFinished(d)) return;
     if (!hasSeat(ctx, args.roomId, subject)) fail('not_in_room');
-    const opponent = seatsForRoom(ctx, args.roomId).find(
-      seat => seat.subject !== subject
-    );
-    if (!opponent) {
-      lobby.leaveRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
-      ctx.db.duel.roomId.update({
-        ...d,
-        status: DuelStatus.Abandoned,
-        updatedAt: ctx.timestamp,
-      });
-      log(ctx, args.roomId, d.round, 'A pilot left. Duel abandoned.');
-      return;
-    }
-    const winner = ctx.db.duelCombatant.combatantId.find(
-      combatantId(args.roomId, opponent.subject)
-    );
-    const loser = ctx.db.duelCombatant.combatantId.find(
-      combatantId(args.roomId, subject)
-    );
-    ctx.db.duel.roomId.update({
-      ...d,
-      status: DuelStatus.Complete,
-      winnerSubject: opponent.subject,
-      updatedAt: ctx.timestamp,
-    });
-    log(
-      ctx,
-      args.roomId,
-      d.round,
-      `${loser?.displayName ?? 'A pilot'} forfeits. ${winner?.displayName ?? 'Opponent'} wins.`
-    );
-    lobby.reportMatchResult(ctx.as.lobby, {
-      roomId: args.roomId,
-      winnerSubject: opponent.subject,
-    });
+    forfeitDuel(ctx, d, subject);
   }
 );
 
-export const queueAgain = spacetimedb.reducer(
-  { roomId: t.option(t.u64()) },
-  (ctx, args) => {
-    const subject = subjectFor(ctx);
-    ensurePilot(ctx, subject);
-    if (args.roomId !== undefined && hasSeat(ctx, args.roomId, subject)) {
-      const d = ctx.db.duel.roomId.find(args.roomId);
-      if (d && d.status.tag !== DuelStatus.Complete.tag) {
-        ctx.db.duel.roomId.update({
-          ...d,
-          status: DuelStatus.Abandoned,
-          updatedAt: ctx.timestamp,
-        });
-      }
-      lobby.closeRoom(ctx.as.lobby, args.roomId);
+function isConnected(ctx: WriteCtx, subject: string): boolean {
+  return !ctx.db.pilotConnection.bySubject.filter(subject).next().done;
+}
+
+export const onConnect = spacetimedb.clientConnected(ctx => {
+  if (!ctx.connectionId) return;
+  ctx.db.pilotConnection.insert({
+    connectionId: ctx.connectionId,
+    subject: subjectFor(ctx),
+  });
+});
+
+// When a pilot's last connection closes, a forfeit check runs after a grace
+// period, so reloading the page does not forfeit the duel.
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
+  if (ctx.connectionId) {
+    ctx.db.pilotConnection.connectionId.delete(ctx.connectionId);
+  }
+  const subject = subjectFor(ctx);
+  if (isConnected(ctx, subject)) return;
+  ctx.db.forfeitCheck.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(
+      ctx.timestamp.microsSinceUnixEpoch +
+        DISCONNECT_GRACE_SECONDS * ONE_SECOND_MICROS
+    ),
+    subject,
+  });
+});
+
+export const forfeitDisconnected = spacetimedb.reducer(
+  { onSchedule: forfeitCheck },
+  { arg: forfeitCheck.rowType },
+  (ctx, { arg }) => {
+    if (!ctx.sender.isEqual(ctx.databaseIdentity)) fail('not_authorized');
+    const subject = arg.subject;
+    if (isConnected(ctx, subject)) return;
+    for (const ticket of [
+      ...ctx.db.lobby.lobbyQueueTicket.bySubject.filter(subject),
+    ]) {
+      if (ticket.status.tag !== lobby.TicketStatus.Queued.tag) continue;
+      lobby.cancelTicketForSubject(ctx.as.lobby, {
+        ticketId: ticket.ticketId,
+        subject,
+      });
     }
-    const p = ensurePilot(ctx, subject);
-    lobby.joinRankedQueueForSubject(ctx.as.lobby, {
-      pool: DUEL_POOL,
-      subject,
-      matchSize: MATCH_SIZE,
-      ratingPool: RATING_POOL,
-      attributesJson: JSON.stringify({ shipClass: p.shipClass.tag }),
-      ttlSeconds: 120,
+    forfeitOpenDuels(ctx, subject);
+  }
+);
+
+/**
+ * Reconciles unfinished duels with lobby changes made outside the duel
+ * reducers, then deletes finished duels once the lobby's retention period
+ * has passed:
+ * - a room that closed or timed out abandons its duel
+ * - a player who left an active room through `lobby.leave_room` forfeits
+ */
+export const duelSweep = spacetimedb.reducer(
+  { onSchedule: duelSweepTick },
+  { arg: duelSweepTick.rowType },
+  ctx => {
+    for (const status of [DuelStatus.Configuring, DuelStatus.Active]) {
+      for (const d of take(ctx.db.duel.byStatus.filter(status), SWEEP_BATCH)) {
+        const room = roomFor(ctx, d.roomId);
+        if (!isOpenRoom(room)) {
+          abandonDuel(ctx, d, 'The match room closed. Duel abandoned.');
+          continue;
+        }
+        if (room?.status.tag !== lobby.RoomStatus.Active.tag) continue;
+        const left = seatsForRoom(ctx, d.roomId).find(
+          seat => seat.status.tag === lobby.SeatStatus.Left.tag
+        );
+        if (left) forfeitDuel(ctx, d, left.subject);
+      }
+    }
+
+    const config = ctx.db.lobby.lobbyConfig.singleton.find(true);
+    if (!config) return;
+    const retained = new Range<Timestamp>(undefined, {
+      tag: 'included',
+      value: new Timestamp(
+        ctx.timestamp.microsSinceUnixEpoch -
+          BigInt(config.retentionSeconds) * ONE_SECOND_MICROS
+      ),
     });
+    for (const status of [DuelStatus.Complete, DuelStatus.Abandoned]) {
+      for (const d of take(
+        ctx.db.duel.byStatusUpdatedAt.filter([status, retained]),
+        SWEEP_BATCH
+      )) {
+        ctx.db.duelCombatant.byRoom.delete(d.roomId);
+        ctx.db.duelRoundLog.byRoom.delete(d.roomId);
+        ctx.db.duelManeuver.byRoom.delete(d.roomId);
+        ctx.db.duel.roomId.delete(d.roomId);
+      }
+    }
   }
 );
 
 export const init = spacetimedb.init(ctx => {
   lobby.install(ctx.as.lobby);
   seedCatalog(ctx);
+  ctx.db.duelSweepTick.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(
+      SWEEP_INTERVAL_SECONDS * ONE_SECOND_MICROS
+    ),
+  });
 });

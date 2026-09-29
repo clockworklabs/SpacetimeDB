@@ -74,105 +74,18 @@ export const DuelStatus = __t.enum("DuelStatus", {
 });
 export type DuelStatus = __Infer<typeof DuelStatus>;
 
-export const ExampleLobbyQueueSummaryRow = __t.object("ExampleLobbyQueueSummaryRow", {
-  pool: __t.string(),
-  queuedTickets: __t.u32(),
-  readyRooms: __t.u32(),
-  activeRooms: __t.u32(),
+export const DuelSweepTick = __t.object("DuelSweepTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
 });
-export type ExampleLobbyQueueSummaryRow = __Infer<typeof ExampleLobbyQueueSummaryRow>;
+export type DuelSweepTick = __Infer<typeof DuelSweepTick>;
 
-export const ExampleLobbyRatingRow = __t.object("ExampleLobbyRatingRow", {
-  pool: __t.string(),
+export const ForfeitCheck = __t.object("ForfeitCheck", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
   subject: __t.string(),
-  rating: __t.i32(),
-  wins: __t.u32(),
-  losses: __t.u32(),
-  draws: __t.u32(),
-  matches: __t.u32(),
 });
-export type ExampleLobbyRatingRow = __Infer<typeof ExampleLobbyRatingRow>;
-
-export const LobbyQueueSummary = __t.object("LobbyQueueSummary", {});
-export type LobbyQueueSummary = __Infer<typeof LobbyQueueSummary>;
-
-export const LobbyQueueTicket = __t.object("LobbyQueueTicket", {
-  ticketId: __t.string(),
-  pool: __t.string(),
-  subject: __t.string(),
-  get status() {
-    return LobbyTicketStatus;
-  },
-  matchSize: __t.u32(),
-  ranked: __t.bool(),
-  rating: __t.option(__t.i32()),
-  ratingPool: __t.option(__t.string()),
-  partyId: __t.option(__t.string()),
-  attributesJson: __t.option(__t.string()),
-  roomId: __t.option(__t.u64()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-  expiresAtMicros: __t.i64(),
-});
-export type LobbyQueueTicket = __Infer<typeof LobbyQueueTicket>;
-
-export const LobbyRankedLeaderboard = __t.object("LobbyRankedLeaderboard", {});
-export type LobbyRankedLeaderboard = __Infer<typeof LobbyRankedLeaderboard>;
-
-export const LobbyRoom = __t.object("LobbyRoom", {
-  roomId: __t.u64(),
-  pool: __t.string(),
-  get status() {
-    return LobbyRoomStatus;
-  },
-  capacity: __t.u32(),
-  metadataJson: __t.option(__t.string()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-  closedAt: __t.option(__t.timestamp()),
-});
-export type LobbyRoom = __Infer<typeof LobbyRoom>;
-
-export const LobbyRoomSeat = __t.object("LobbyRoomSeat", {
-  seatId: __t.u64(),
-  roomId: __t.u64(),
-  subject: __t.string(),
-  ticketId: __t.option(__t.string()),
-  seatIndex: __t.u32(),
-  get status() {
-    return LobbySeatStatus;
-  },
-  joinedAt: __t.option(__t.timestamp()),
-  leftAt: __t.option(__t.timestamp()),
-  updatedAt: __t.timestamp(),
-});
-export type LobbyRoomSeat = __Infer<typeof LobbyRoomSeat>;
-
-// The tagged union or sum type for the algebraic type `LobbyRoomStatus`.
-export const LobbyRoomStatus = __t.enum("LobbyRoomStatus", {
-  Ready: __t.unit(),
-  Active: __t.unit(),
-  Closed: __t.unit(),
-  Abandoned: __t.unit(),
-});
-export type LobbyRoomStatus = __Infer<typeof LobbyRoomStatus>;
-
-// The tagged union or sum type for the algebraic type `LobbySeatStatus`.
-export const LobbySeatStatus = __t.enum("LobbySeatStatus", {
-  Reserved: __t.unit(),
-  Joined: __t.unit(),
-  Left: __t.unit(),
-});
-export type LobbySeatStatus = __Infer<typeof LobbySeatStatus>;
-
-// The tagged union or sum type for the algebraic type `LobbyTicketStatus`.
-export const LobbyTicketStatus = __t.enum("LobbyTicketStatus", {
-  Queued: __t.unit(),
-  Matched: __t.unit(),
-  Cancelled: __t.unit(),
-  Expired: __t.unit(),
-});
-export type LobbyTicketStatus = __Infer<typeof LobbyTicketStatus>;
+export type ForfeitCheck = __Infer<typeof ForfeitCheck>;
 
 export const ManeuverCatalog = __t.object("ManeuverCatalog", {
   maneuverId: __t.string(),
@@ -213,18 +126,6 @@ export type MyDuelRoundLogs = __Infer<typeof MyDuelRoundLogs>;
 export const MyDuels = __t.object("MyDuels", {});
 export type MyDuels = __Infer<typeof MyDuels>;
 
-export const MyLobbyRatings = __t.object("MyLobbyRatings", {});
-export type MyLobbyRatings = __Infer<typeof MyLobbyRatings>;
-
-export const MyLobbyRoomSeats = __t.object("MyLobbyRoomSeats", {});
-export type MyLobbyRoomSeats = __Infer<typeof MyLobbyRoomSeats>;
-
-export const MyLobbyRooms = __t.object("MyLobbyRooms", {});
-export type MyLobbyRooms = __Infer<typeof MyLobbyRooms>;
-
-export const MyLobbyTickets = __t.object("MyLobbyTickets", {});
-export type MyLobbyTickets = __Infer<typeof MyLobbyTickets>;
-
 export const MyProfile = __t.object("MyProfile", {});
 export type MyProfile = __Infer<typeof MyProfile>;
 
@@ -238,6 +139,12 @@ export const Pilot = __t.object("Pilot", {
   updatedAt: __t.timestamp(),
 });
 export type Pilot = __Infer<typeof Pilot>;
+
+export const PilotConnection = __t.object("PilotConnection", {
+  connectionId: __t.connectionId(),
+  subject: __t.string(),
+});
+export type PilotConnection = __Infer<typeof PilotConnection>;
 
 export const Players = __t.object("Players", {});
 export type Players = __Infer<typeof Players>;

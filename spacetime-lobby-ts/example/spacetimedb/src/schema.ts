@@ -10,7 +10,8 @@ import {
 import * as lobby from '@spacetimedb/lobby/submodule';
 
 export const DUEL_POOL = 'spaceship_duel';
-export const AI_DUEL_POOL_PREFIX = 'spaceship_duel_ai';
+export const AI_DUEL_POOL = 'spaceship_duel_ai';
+export const AI_SUBJECT = 'ai:arena';
 export const RATING_POOL = DUEL_POOL;
 export const MATCH_SIZE = 2;
 export const DISPLAY_NAME_MAX = 32;
@@ -122,7 +123,11 @@ export const duel = table(
     public: false,
     indexes: [
       { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
-      { accessor: 'byUpdatedAt', algorithm: 'btree', columns: ['updatedAt'] },
+      {
+        accessor: 'byStatusUpdatedAt',
+        algorithm: 'btree',
+        columns: ['status', 'updatedAt'],
+      },
     ],
   },
   {
@@ -167,10 +172,7 @@ export const duelRoundLog = table(
   {
     name: 'duel_round_log',
     public: false,
-    indexes: [
-      { accessor: 'byRoom', algorithm: 'btree', columns: ['roomId'] },
-      { accessor: 'byCreatedAt', algorithm: 'btree', columns: ['createdAt'] },
-    ],
+    indexes: [{ accessor: 'byRoom', algorithm: 'btree', columns: ['roomId'] }],
   },
   {
     logId: t.u64().primaryKey().autoInc(),
@@ -201,22 +203,36 @@ export const duelManeuver = table(
   }
 );
 
-export const queueSummaryRow = t.object('ExampleLobbyQueueSummaryRow', {
-  pool: t.string(),
-  queuedTickets: t.u32(),
-  readyRooms: t.u32(),
-  activeRooms: t.u32(),
-});
+export const pilotConnection = table(
+  {
+    name: 'pilot_connection',
+    public: false,
+    indexes: [
+      { accessor: 'bySubject', algorithm: 'btree', columns: ['subject'] },
+    ],
+  },
+  {
+    connectionId: t.connectionId().primaryKey(),
+    subject: t.string(),
+  }
+);
 
-export const ratingRow = t.object('ExampleLobbyRatingRow', {
-  pool: t.string(),
-  subject: t.string(),
-  rating: t.i32(),
-  wins: t.u32(),
-  losses: t.u32(),
-  draws: t.u32(),
-  matches: t.u32(),
-});
+export const forfeitCheck = table(
+  { name: 'forfeit_check' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    subject: t.string(),
+  }
+);
+
+export const duelSweepTick = table(
+  { name: 'duel_sweep_tick' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+  }
+);
 
 export const spacetimedb = schema({
   lobby,
@@ -227,6 +243,9 @@ export const spacetimedb = schema({
   duelCombatant,
   duelRoundLog,
   duelManeuver,
+  pilotConnection,
+  forfeitCheck,
+  duelSweepTick,
 });
 
 export type Schema = InferSchema<typeof spacetimedb>;

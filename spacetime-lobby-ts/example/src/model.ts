@@ -113,13 +113,6 @@ export type RoundLog = {
   createdAt: { microsSinceUnixEpoch: bigint };
 };
 
-export type QueueSummary = {
-  pool: string;
-  queuedTickets: number;
-  readyRooms: number;
-  activeRooms: number;
-};
-
 export type RatingRow = {
   pool: string;
   subject: string;
@@ -222,6 +215,7 @@ export function selectHighlightedManeuver(
 
 export const TOKEN_KEY_PREFIX = 'lobby-duel:stdb-token';
 export const MATCH_FALLBACK_MS = 4500;
+export const RATING_POOL = 'spaceship_duel';
 export const shipClasses: ShipClass[] = [
   'Bulwark',
   'Interceptor',

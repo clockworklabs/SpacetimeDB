@@ -34,30 +34,22 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
-import AdvanceDuelReducer from "./advance_duel_reducer";
 import ChooseManeuverReducer from "./choose_maneuver_reducer";
 import FallbackToAiReducer from "./fallback_to_ai_reducer";
 import FindDuelReducer from "./find_duel_reducer";
 import JoinDuelRoomReducer from "./join_duel_room_reducer";
 import LeaveDuelReducer from "./leave_duel_reducer";
-import QueueAgainReducer from "./queue_again_reducer";
 import SelectShipReducer from "./select_ship_reducer";
 import SetDisplayNameReducer from "./set_display_name_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
-import LobbyQueueSummaryRow from "./lobby_queue_summary_table";
-import LobbyRankedLeaderboardRow from "./lobby_ranked_leaderboard_table";
 import ManeuverCatalogRow from "./maneuver_catalog_table";
 import MyDuelCombatantsRow from "./my_duel_combatants_table";
 import MyDuelManeuversRow from "./my_duel_maneuvers_table";
 import MyDuelRoundLogsRow from "./my_duel_round_logs_table";
 import MyDuelsRow from "./my_duels_table";
-import MyLobbyRatingsRow from "./my_lobby_ratings_table";
-import MyLobbyRoomSeatsRow from "./my_lobby_room_seats_table";
-import MyLobbyRoomsRow from "./my_lobby_rooms_table";
-import MyLobbyTicketsRow from "./my_lobby_tickets_table";
 import MyProfileRow from "./my_profile_table";
 import PlayersRow from "./players_table";
 import ShipCatalogRow from "./ship_catalog_table";
@@ -122,20 +114,6 @@ const tablesSchema = __schema({
       { name: 'ship_catalog_ship_id_key', constraint: 'unique', columns: ['shipId'] },
     ],
   }, ShipCatalogRow),
-  lobbyQueueSummary: __table({
-    name: 'lobby_queue_summary',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, LobbyQueueSummaryRow),
-  lobbyRankedLeaderboard: __table({
-    name: 'lobby_ranked_leaderboard',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, LobbyRankedLeaderboardRow),
   myDuelCombatants: __table({
     name: 'my_duel_combatants',
     indexes: [
@@ -164,34 +142,6 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyDuelsRow),
-  myLobbyRatings: __table({
-    name: 'my_lobby_ratings',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyLobbyRatingsRow),
-  myLobbyRoomSeats: __table({
-    name: 'my_lobby_room_seats',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyLobbyRoomSeatsRow),
-  myLobbyRooms: __table({
-    name: 'my_lobby_rooms',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyLobbyRoomsRow),
-  myLobbyTickets: __table({
-    name: 'my_lobby_tickets',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyLobbyTicketsRow),
   myProfile: __table({
     name: 'my_profile',
     indexes: [
@@ -280,13 +230,11 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema("advance_duel", AdvanceDuelReducer),
   __reducerSchema("choose_maneuver", ChooseManeuverReducer),
   __reducerSchema("fallback_to_ai", FallbackToAiReducer),
   __reducerSchema("find_duel", FindDuelReducer),
   __reducerSchema("join_duel_room", JoinDuelRoomReducer),
   __reducerSchema("leave_duel", LeaveDuelReducer),
-  __reducerSchema("queue_again", QueueAgainReducer),
   __reducerSchema("select_ship", SelectShipReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
   __reducerSchema("lobby.add_lobby_admin", Lobby_AddLobbyAdminReducer, "lobby.addLobbyAdmin"),
@@ -323,16 +271,10 @@ const __qb = __makeQueryBuilder(tablesSchema.schemaType);
 export const tables = {
   maneuverCatalog: __qb.maneuverCatalog,
   shipCatalog: __qb.shipCatalog,
-  lobbyQueueSummary: __qb.lobbyQueueSummary,
-  lobbyRankedLeaderboard: __qb.lobbyRankedLeaderboard,
   myDuelCombatants: __qb.myDuelCombatants,
   myDuelManeuvers: __qb.myDuelManeuvers,
   myDuelRoundLogs: __qb.myDuelRoundLogs,
   myDuels: __qb.myDuels,
-  myLobbyRatings: __qb.myLobbyRatings,
-  myLobbyRoomSeats: __qb.myLobbyRoomSeats,
-  myLobbyRooms: __qb.myLobbyRooms,
-  myLobbyTickets: __qb.myLobbyTickets,
   myProfile: __qb.myProfile,
   players: __qb.players,
   lobby: {
@@ -352,13 +294,11 @@ export const tables = {
 /** The reducers available in this remote SpacetimeDB module. */
 const __reducerAccessors = __convertToAccessorMap(reducersSchema.reducersType.reducers);
 export const reducers = {
-  advanceDuel: __reducerAccessors.advanceDuel,
   chooseManeuver: __reducerAccessors.chooseManeuver,
   fallbackToAi: __reducerAccessors.fallbackToAi,
   findDuel: __reducerAccessors.findDuel,
   joinDuelRoom: __reducerAccessors.joinDuelRoom,
   leaveDuel: __reducerAccessors.leaveDuel,
-  queueAgain: __reducerAccessors.queueAgain,
   selectShip: __reducerAccessors.selectShip,
   setDisplayName: __reducerAccessors.setDisplayName,
   lobby: {

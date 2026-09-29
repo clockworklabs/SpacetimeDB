@@ -6,23 +6,19 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
-import AdvanceDuelReducer from "../advance_duel_reducer";
 import ChooseManeuverReducer from "../choose_maneuver_reducer";
 import FallbackToAiReducer from "../fallback_to_ai_reducer";
 import FindDuelReducer from "../find_duel_reducer";
 import JoinDuelRoomReducer from "../join_duel_room_reducer";
 import LeaveDuelReducer from "../leave_duel_reducer";
-import QueueAgainReducer from "../queue_again_reducer";
 import SelectShipReducer from "../select_ship_reducer";
 import SetDisplayNameReducer from "../set_display_name_reducer";
 
-export type AdvanceDuelParams = __Infer<typeof AdvanceDuelReducer>;
 export type ChooseManeuverParams = __Infer<typeof ChooseManeuverReducer>;
 export type FallbackToAiParams = __Infer<typeof FallbackToAiReducer>;
 export type FindDuelParams = __Infer<typeof FindDuelReducer>;
 export type JoinDuelRoomParams = __Infer<typeof JoinDuelRoomReducer>;
 export type LeaveDuelParams = __Infer<typeof LeaveDuelReducer>;
-export type QueueAgainParams = __Infer<typeof QueueAgainReducer>;
 export type SelectShipParams = __Infer<typeof SelectShipReducer>;
 export type SetDisplayNameParams = __Infer<typeof SetDisplayNameReducer>;
 

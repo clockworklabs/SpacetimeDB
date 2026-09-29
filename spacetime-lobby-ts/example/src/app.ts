@@ -3,6 +3,7 @@ import { DbConnection, tables, type ErrorContext } from './module_bindings';
 import {
   TOKEN_KEY_PREFIX,
   MATCH_FALLBACK_MS,
+  RATING_POOL,
   shipClasses,
   maneuverSlots,
   shipColors,
@@ -27,7 +28,6 @@ import {
   type ManeuverCatalogRow,
   type DuelManeuver,
   type RoundLog,
-  type QueueSummary,
   type RatingRow,
 } from './model';
 
@@ -214,7 +214,7 @@ function errorMessage(err: unknown): string {
 // Suppress expected leave and teardown errors after a duel or room has ended.
 function isBenignDuelError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /room_closed|not_in_room|room_not_found|duel_abandoned|duel_not_ready|not_active/i.test(
+  return /room_closed|not_in_room|room_not_found|duel_not_ready|not_active/i.test(
     message
   );
 }
@@ -253,22 +253,19 @@ function displayNameFor(subject: string): string {
   return player?.displayName ?? `Pilot ${subject.slice(0, 6).toUpperCase()}`;
 }
 function ticketsTable(): TableEvents<LobbyTicket> {
-  return requireConn().db.myLobbyTickets;
+  return requireConn().db['lobby.my_lobby_tickets'];
 }
 function roomsTable(): TableEvents<LobbyRoom> {
-  return requireConn().db.myLobbyRooms;
+  return requireConn().db['lobby.my_lobby_rooms'];
 }
 function seatsTable(): TableEvents<LobbySeat> {
-  return requireConn().db.myLobbyRoomSeats;
-}
-function summaryTable(): TableEvents<QueueSummary> {
-  return requireConn().db.lobbyQueueSummary;
+  return requireConn().db['lobby.my_lobby_room_seats'];
 }
 function ratingsTable(): TableEvents<RatingRow> {
-  return requireConn().db.myLobbyRatings;
+  return requireConn().db['lobby.my_lobby_ratings'];
 }
 function leaderboardTable(): TableEvents<RatingRow> {
-  return requireConn().db.lobbyRankedLeaderboard;
+  return requireConn().db['lobby.lobby_ranked_leaderboard'];
 }
 function shipCatalogTable(): TableEvents<ShipCatalogRow> {
   return requireConn().db.shipCatalog;
@@ -481,9 +478,7 @@ function renderProfile(): void {
 }
 
 function renderRanked(): void {
-  const rating = rows(ratingsTable()).find(
-    row => row.pool === 'spaceship_duel'
-  );
+  const rating = rows(ratingsTable()).find(row => row.pool === RATING_POOL);
   setText('myRating', String(rating?.rating ?? 1000));
   setText(
     'myRecord',
@@ -492,9 +487,7 @@ function renderRanked(): void {
       : '0W 0L'
   );
   const leaderboard = rows(leaderboardTable())
-    .filter(
-      row => row.pool === 'spaceship_duel' && !row.subject.startsWith('ai:')
-    )
+    .filter(row => row.pool === RATING_POOL)
     .sort(
       (a, b) =>
         b.rating - a.rating ||
@@ -900,7 +893,6 @@ function registerRowCallbacks(): void {
     ticketsTable(),
     roomsTable(),
     seatsTable(),
-    summaryTable(),
     ratingsTable(),
     leaderboardTable(),
     shipCatalogTable(),
@@ -1002,11 +994,10 @@ function registerUiHandlers(): void {
     if (ev.target === dialog('forfeitDialog')) closeForfeitDialog();
   });
   $('newDuel').addEventListener('click', async () => {
-    const duel = latestDuel();
     try {
       screenOverride = null;
       autoJoinedRoom = null;
-      await requireConn().reducers.queueAgain({ roomId: duel?.roomId });
+      await requireConn().reducers.findDuel({});
       showToast('Looking for match.');
       scheduleAiFallback();
     } catch (err) {
@@ -1045,12 +1036,11 @@ function subscribeToTables(connection: DbConnection): void {
     .subscribe([
       tables.myProfile,
       tables.players,
-      tables.myLobbyTickets,
-      tables.myLobbyRooms,
-      tables.myLobbyRoomSeats,
-      tables.lobbyQueueSummary,
-      tables.myLobbyRatings,
-      tables.lobbyRankedLeaderboard,
+      tables.lobby.myLobbyTickets,
+      tables.lobby.myLobbyRooms,
+      tables.lobby.myLobbyRoomSeats,
+      tables.lobby.myLobbyRatings,
+      tables.lobby.lobbyRankedLeaderboard,
       tables.shipCatalog,
       tables.maneuverCatalog,
       tables.myDuels,
