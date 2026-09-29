@@ -32,10 +32,6 @@ import { errors } from './errors';
 
 type ResendTags = EmailEvent['data']['tags'];
 
-function toAddressArray(value: string | string[]): string[] {
-  return Array.isArray(value) ? value : [value];
-}
-
 function tagsToJson(tags: ResendTags): string | undefined {
   if (!tags) return undefined;
   try {
@@ -50,15 +46,6 @@ function extractTagFields(tags: ResendTags): {
   orgId: string | undefined;
 } {
   if (!tags) return { userId: undefined, orgId: undefined };
-  if (Array.isArray(tags)) {
-    let userId: string | undefined;
-    let orgId: string | undefined;
-    for (const tag of tags) {
-      if (tag.name === 'userId') userId = tag.value;
-      if (tag.name === 'orgId') orgId = tag.value;
-    }
-    return { userId, orgId };
-  }
   return { userId: tags['userId'], orgId: tags['orgId'] };
 }
 
@@ -109,16 +96,14 @@ function makeEmailUpsertArgs(
   now: ModuleTimestamp
 ): Parameters<typeof upsertEmail>[2] {
   const data = event.data;
-  const fromAddress = Array.isArray(data.from) ? data.from[0]! : data.from;
-  const toAddresses = toAddressArray(data.to);
   const tagFields = extractTagFields(data.tags);
   const tagsJson = tagsToJson(data.tags);
   const subject = data.subject;
 
   const base = {
     resendId: data.email_id,
-    fromAddress,
-    toAddressesJson: JSON.stringify(toAddresses),
+    fromAddress: data.from,
+    toAddressesJson: JSON.stringify(data.to),
     subject,
     // undefined preserves whatever send_email recorded.
     html: undefined,

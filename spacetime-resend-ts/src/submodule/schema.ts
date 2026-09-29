@@ -123,7 +123,6 @@ export const resendEmailTable = table(
       { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
       { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
       { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
-      { accessor: 'byUpdatedAt', algorithm: 'btree', columns: ['updatedAt'] },
     ],
   },
   resendEmailRow
@@ -135,11 +134,6 @@ export const resendDeliveryEventTable = table(
     public: false,
     indexes: [
       { accessor: 'byResendId', algorithm: 'btree', columns: ['resendId'] },
-      {
-        accessor: 'byResendIdEventType',
-        algorithm: 'btree',
-        columns: ['resendId', 'eventType'],
-      },
     ],
   },
   resendDeliveryEventRow
@@ -192,11 +186,6 @@ export type ModuleTimestamp = ReducerModuleCtx['timestamp'];
 
 export const sendEmailResult = t.object('SendEmailResult', {
   resendId: t.string(),
-});
-
-export const resendHttpResponse = t.object('ResendHttpResponse', {
-  status: t.u16(),
-  body: t.string(),
 });
 
 export { Range, SenderError, t };

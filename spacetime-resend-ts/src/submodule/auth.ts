@@ -11,7 +11,6 @@ import { errors } from './errors';
 // never bootstrap admin state from "first caller wins". Procedure callers must
 // pass the outer ctx.sender explicitly; transaction ctx may not carry sender.
 type Sender = WriteCtx['sender'];
-type ModuleTimestamp = WriteCtx['timestamp'];
 
 export type AdminVerdict = 'admin' | 'denied';
 
@@ -29,19 +28,6 @@ export function denyIfNotAdmin(verdict: AdminVerdict): void {
 
 export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
   if (!isAdmin(ctx, sender)) throwSenderError(errors.notAuthorized);
-}
-
-// For owner-gated repair/setup code only. Do not call from a public bootstrap path.
-export function seedAdmin(
-  ctx: WriteCtx,
-  sender: Sender,
-  timestamp: ModuleTimestamp
-) {
-  if (ctx.db.resendAdminIdentity.identity.find(sender) != null) return;
-  ctx.db.resendAdminIdentity.insert({
-    identity: sender,
-    addedAtMicros: timestamp.microsSinceUnixEpoch,
-  });
 }
 
 export const addAdminIdentity = spacetimedb.procedure(
