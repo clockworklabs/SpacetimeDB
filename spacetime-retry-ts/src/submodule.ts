@@ -224,6 +224,13 @@ export function client<const Tasks extends RetryTasks>({
 
     const isLast = !result.ok && arg.attempt + 1 >= arg.maxAttempts;
     const history = ctx.db.retryHistory;
+    // Each attempt adds one row, so removing the oldest keeps the bound. Prune
+    // before inserting: an index scan yields rows inserted in the current
+    // transaction before committed rows.
+    if (history.count() >= MAX_ROWS) {
+      const oldest = history.ranAt.filter(new Range<Timestamp>()).next().value;
+      if (oldest) history.delete(oldest);
+    }
     history.insert({
       id: 0n,
       taskName: arg.name,
@@ -232,11 +239,6 @@ export function client<const Tasks extends RetryTasks>({
       error: result.ok ? undefined : result.error.slice(0, MAX_ERROR_LENGTH),
       ranAt: ctx.timestamp,
     });
-    // Each attempt adds one row, so removing the oldest keeps the bound.
-    if (history.count() > MAX_ROWS) {
-      const oldest = history.ranAt.filter(new Range<Timestamp>()).next().value;
-      if (oldest) history.delete(oldest);
-    }
     if (result.ok || isLast) return;
 
     const delay =
