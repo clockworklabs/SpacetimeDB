@@ -596,7 +596,7 @@ async function getOrCreateCustomer() {
     name: ui.name.value || undefined,
   });
   if (result.customerId) ui.customerId.value = result.customerId;
-  writeLog(`get_or_create_customer: ${JSON.stringify(result)}`);
+  writeLog(`get_or_create_store_customer: ${JSON.stringify(result)}`);
 }
 
 async function createCheckoutForCart(cartItems, triggerButton) {

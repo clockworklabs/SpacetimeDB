@@ -116,8 +116,8 @@ Verify:
 spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status '{}'
 ```
 
-The Stripe secret stays in private module state. Every procedure other than
-`ingest_stripe_webhook` is admin-gated.
+The Stripe secret stays in private module state. Every procedure is
+admin-gated, and `ingest_stripe_webhook` accepts only correctly signed events.
 
 ## Private tables
 
