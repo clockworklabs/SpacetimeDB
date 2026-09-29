@@ -26,7 +26,9 @@ changes like any other table.
 ### Integrate into an application
 
 Register the Grid namespace and wrap its helpers with the application's ownership
-rules:
+rules. Every helper runs inside the caller's transaction: pass `ctx.as.grid`
+from a reducer, or `tx.as.grid` inside a procedure's `withTx` when the host
+needs a return value.
 
 ```ts
 import { schema, t } from 'spacetimedb/server';
@@ -35,25 +37,33 @@ import * as grid from '@spacetimedb/grid/submodule';
 const spacetimedb = schema({ grid });
 export default spacetimedb;
 
-export const create_player_grid = spacetimedb.procedure(
+export const createPlayerGrid = spacetimedb.procedure(
   grid.createGridParams,
   t.u64(),
-  (ctx, args) => grid.createGrid(ctx.as.grid, args, ctx.sender.toHexString())
+  (ctx, args) =>
+    ctx.withTx(tx =>
+      grid.createGrid(tx.as.grid, args, ctx.sender.toHexString())
+    )
+);
+
+export const moveMyEntity = spacetimedb.reducer(
+  grid.moveEntityParams,
+  (ctx, args) => {
+    grid.moveEntity(ctx.as.grid, args, ctx.sender.toHexString());
+  }
 );
 ```
 
 The submodule treats owner values as opaque strings. Host operations must map
 the authenticated caller to that string before calling helpers such as
-`createGrid` or `moveEntity`. See the
+`createGrid` or `moveEntity`. Grid tables are private, so the host also
+exposes the rows each caller may see through its own views. See the
 [Grid Tactics host module](./example/spacetimedb/)
 for an authenticated boundary and scoped views.
 
-The generated client calls the host procedure, then subscribes to the host's
-caller-scoped grid views:
+The generated client calls the host operations:
 
 ```ts
-import { tables } from './module_bindings';
-
 const gridId = await conn.procedures.createPlayerGrid({
   name: 'Arena',
   kind: 'square',
@@ -64,8 +74,6 @@ const gridId = await conn.procedures.createPlayerGrid({
   connectivity: 4,
   mode: 'owner',
 });
-
-conn.subscriptionBuilder().subscribe([tables.myGrids]);
 ```
 
 ### Standalone table builders
@@ -89,14 +97,15 @@ import {
 | `kind`             | `string`          | `GRID_KIND_SQUARE` or `GRID_KIND_HEX`                                                   |
 | `orientation`      | `string`          | `GRID_ORIENTATION_FLAT` or `GRID_ORIENTATION_POINTY` (ignored when `kind === 'square'`) |
 | `width` / `height` | `i32`             | Up to 1024 each                                                                         |
-| `defaultCost`      | `i32`             | Per-cell traversal cost when no sparse row exists                                       |
+| `defaultCost`      | `i32`             | Per-cell traversal cost when no sparse row exists, 1 to 10,000                          |
 | `connectivity`     | `i32`             | Square: `4` or `8`. Hex: always `6`.                                                    |
 | `mode`             | `string`          | `GRID_MODE_OWNER` (creator-only mutation) or `GRID_MODE_COLLABORATIVE`                  |
 
 ### `cellState`
 
 Sparse cell state stores rows for non-default cells. `cost <= 0` blocks the
-cell. Rows are indexed by `gridId`.
+cell; costs are at most 10,000. Rows are indexed by `gridId` and by
+`(gridId, x, y)`.
 
 ### `gridEntity`
 
@@ -124,7 +133,10 @@ Helper types `pathCell`, `pathResult`, and `reachableCell` are exported for use 
 
 ## API
 
-Each `*Impl` takes `(ctx, args, owner)`. Wrap them with thin reducers in your module that supply `owner` however your auth scheme works.
+Each helper takes `(tx, args, owner)`, where `tx` is `ctx.as.grid` or
+`tx.as.grid`, and throws a code from the exported `errors` object on failure.
+Parameter objects such as `createGridParams` can be passed straight to
+`spacetimedb.reducer` or `spacetimedb.procedure`.
 
 Package entrypoints:
 
@@ -146,13 +158,13 @@ Package entrypoints:
 
 - Args: `gridId`.
 - Cascades: deletes all `cellState`, `gridEntity`, and `entityPath` rows for the grid.
-- Owner-mode-gated (collaborative mode allows any caller).
+- Only the grid's owner may delete it, in either mode.
 
 ### `setCellCost`
 
 - Args: `gridId`, `x`, `y`, `cost`, `terrain`.
 - Upserts the sparse row. Setting `cost === grid.defaultCost` with empty terrain
-  removes the sparse override.
+  removes the sparse override. `cost` may be at most 10,000.
 - `cost <= 0` blocks the cell for pathfinding.
 
 ### `paintCells`
@@ -171,6 +183,7 @@ Package entrypoints:
 - Args: `entityId`, `toX`, `toY`.
 - Entity-owner-gated (independent of grid mode).
 - Rejects with `grid.move_not_adjacent` unless `(toX, toY)` is in the entity's current neighbor set for the grid's `kind` and `connectivity`.
+- Rejects with `grid.move_blocked` when the destination cell costs `<= 0` or holds another entity with `blocksMovement`.
 
 For multi-step movement, drive sequential `moveEntity` calls from `computePath` results, or compute a path with `storeFor` and replay cells client-side.
 
@@ -178,7 +191,7 @@ For multi-step movement, drive sequential `moveEntity` calls from `computePath` 
 
 - Args: `gridId`, `startX`, `startY`, `endX`, `endY`, `storeFor` (entity id), `maxExpansions` (default 50,000).
 - Returns: `PathResult { found, cells: PathCell[], cost, expanded }`.
-- A\* over the live cost map (sparse `cellState` + entities with `blocksMovement`), using a kind-aware distance heuristic.
+- A\* over the live cost map (sparse `cellState`, with cells holding an entity with `blocksMovement` treated as blocked), using a kind-aware distance heuristic.
 - When `storeFor` is set and a path is found, writes / overwrites the `entityPath` row for that entity.
 
 ### `cellsInRange`
@@ -189,16 +202,9 @@ For multi-step movement, drive sequential `moveEntity` calls from `computePath` 
 
 ## Errors
 
-All `SenderError` with stable codes:
-
-- `grid.invalid_kind` / `grid.invalid_orientation` / `grid.invalid_mode` / `grid.invalid_connectivity`
-- `grid.invalid_dimensions:<w>x<h>` - outside 1-1024
-- `grid.invalid_default_cost:<n>` - `defaultCost < 1`
-- `grid.not_found:<id>` - missing grid
-- `grid.not_owner:<id>` - caller lacks grid ownership when `mode === 'owner'`
-- `grid.entity_not_found:<id>` / `grid.entity_not_owner:<id>`
-- `grid.out_of_bounds:<x>,<y>`
-- `grid.move_not_adjacent` - destination not in current neighbor set
+Helpers throw `SenderError` with the stable codes in `errors`, for example
+`grid.not_found`, `grid.not_owner`, `grid.entity_not_owner`,
+`grid.out_of_bounds`, `grid.move_not_adjacent`, and `grid.move_blocked`.
 
 ## Math helpers
 

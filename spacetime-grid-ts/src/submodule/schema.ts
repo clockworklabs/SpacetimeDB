@@ -11,13 +11,19 @@ import { cellStateRow, entityPathRow, gridEntityRow, gridRow } from '../rows';
 
 export const grid = table({ name: 'grid', public: false }, gridRow);
 
+const byGridCell = {
+  accessor: 'byGridCell',
+  algorithm: 'btree',
+  columns: ['gridId', 'x', 'y'],
+} as const;
+
 export const cellState = table(
-  { name: 'cell_state', public: false },
+  { name: 'cell_state', public: false, indexes: [byGridCell] },
   cellStateRow
 );
 
 export const gridEntity = table(
-  { name: 'grid_entity', public: false },
+  { name: 'grid_entity', public: false, indexes: [byGridCell] },
   gridEntityRow
 );
 

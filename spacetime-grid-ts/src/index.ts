@@ -14,6 +14,8 @@ export {
   GRID_MODE_COLLABORATIVE,
 } from './rows';
 
+export { errors } from './errors';
+
 export {
   createGridParams,
   createGrid,
@@ -35,4 +37,23 @@ export {
   cellsInRange,
 } from './procedures';
 
-export * from './math/index';
+export {
+  type Coord,
+  type GridKind,
+  type HexOrientation,
+  type Connectivity,
+  type PathResult,
+  type PathfindOpts,
+  type DijkstraOpts,
+  type DijkstraNode,
+  coordKey,
+  parseCoordKey,
+  coordsEqual,
+  neighbors,
+  manhattan,
+  chebyshev,
+  hexDistance,
+  distance,
+  findPathAstar,
+  dijkstra,
+} from './math/index';

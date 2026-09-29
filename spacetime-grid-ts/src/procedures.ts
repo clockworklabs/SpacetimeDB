@@ -1,5 +1,6 @@
 // Owner is passed explicitly so the submodule is identity-scheme-agnostic.
-import type { Timestamp } from 'spacetimedb';
+// Each helper runs inside the caller's transaction: pass `ctx.as.grid` from a
+// reducer or `tx.as.grid` inside a procedure's `withTx`.
 import {
   t,
   SenderError,
@@ -17,6 +18,7 @@ import {
   GRID_MODE_OWNER,
   GRID_MODE_COLLABORATIVE,
 } from './rows';
+import { errors } from './errors';
 import {
   type Coord,
   type GridKind,
@@ -27,10 +29,7 @@ import {
   findPathAstar,
   dijkstra,
 } from './math/index';
-import type {
-  ProcedureModuleCtx,
-  TransactionModuleCtx,
-} from './submodule/schema';
+import type { ReducerModuleCtx } from './submodule/schema';
 
 type GridRow = Infer<typeof gridRow>;
 
@@ -43,7 +42,8 @@ const VALID_MODES = new Set([GRID_MODE_OWNER, GRID_MODE_COLLABORATIVE]);
 const VALID_CONNECTIVITY = new Set([4, 8]);
 
 const GRID_MAX_DIM = 1024;
-const PATH_DEFAULT_MAX_EXPANSIONS = 50_000;
+// Path costs stay inside i32: at most PATH_MAX_EXPANSIONS steps of MAX_CELL_COST.
+const MAX_CELL_COST = 10_000;
 const PATH_MAX_EXPANSIONS = 50_000;
 const MAX_RESULT_CELLS = 5_000;
 const MAX_PAINT_CELLS = 1_000;
@@ -64,84 +64,73 @@ export const createGridParams = {
 };
 
 export function createGrid(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof createGridParams>,
   owner: string
 ): bigint {
-  if (
-    typeof args.name !== 'string' ||
-    args.name.length === 0 ||
-    args.name.length > MAX_NAME_LENGTH
-  ) {
-    throw new SenderError('grid.invalid_name');
+  if (args.name.length === 0 || args.name.length > MAX_NAME_LENGTH) {
+    throw new SenderError(errors.invalidName);
   }
-  if (!VALID_KINDS.has(args.kind)) {
-    throw new SenderError(`grid.invalid_kind:${args.kind}`);
-  }
+  if (!VALID_KINDS.has(args.kind)) throw new SenderError(errors.invalidKind);
   if (!VALID_ORIENTATIONS.has(args.orientation)) {
-    throw new SenderError(`grid.invalid_orientation:${args.orientation}`);
+    throw new SenderError(errors.invalidOrientation);
   }
-  if (!VALID_MODES.has(args.mode)) {
-    throw new SenderError(`grid.invalid_mode:${args.mode}`);
-  }
+  if (!VALID_MODES.has(args.mode)) throw new SenderError(errors.invalidMode);
   if (
     args.width < 1 ||
     args.width > GRID_MAX_DIM ||
     args.height < 1 ||
     args.height > GRID_MAX_DIM
   ) {
-    throw new SenderError(
-      `grid.invalid_dimensions:${args.width}x${args.height}`
-    );
+    throw new SenderError(errors.invalidDimensions);
   }
-  if (args.defaultCost < 1) {
-    throw new SenderError(`grid.invalid_default_cost:${args.defaultCost}`);
+  if (args.defaultCost < 1 || args.defaultCost > MAX_CELL_COST) {
+    throw new SenderError(errors.invalidDefaultCost);
   }
   if (
     args.kind === GRID_KIND_SQUARE &&
     !VALID_CONNECTIVITY.has(args.connectivity)
   ) {
-    throw new SenderError(`grid.invalid_connectivity:${args.connectivity}`);
+    throw new SenderError(errors.invalidConnectivity);
   }
-  return ctx.withTx(tx => {
-    const row = tx.db.grid.insert({
-      id: 0n,
-      ownerUserId: owner,
-      name: args.name,
-      kind: args.kind,
-      orientation: args.orientation,
-      width: args.width,
-      height: args.height,
-      defaultCost: args.defaultCost,
-      connectivity: args.kind === GRID_KIND_HEX ? 6 : args.connectivity,
-      mode: args.mode,
-      createdAt: ctx.timestamp,
-      updatedAt: ctx.timestamp,
-    });
-    return row.id;
+  const row = tx.db.grid.insert({
+    id: 0n,
+    ownerUserId: owner,
+    name: args.name,
+    kind: args.kind,
+    orientation: args.orientation,
+    width: args.width,
+    height: args.height,
+    defaultCost: args.defaultCost,
+    connectivity: args.kind === GRID_KIND_HEX ? 6 : args.connectivity,
+    mode: args.mode,
+    createdAt: tx.timestamp,
+    updatedAt: tx.timestamp,
   });
+  return row.id;
 }
 
-// delete_grid cascades cell_state, grid_entity, entity_path.
+// Only the grid's owner deletes it, in either mode. Cascades cell_state,
+// grid_entity, and entity_path.
 export const deleteGridParams = {
   gridId: t.u64(),
 };
 
 export function deleteGrid(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof deleteGridParams>,
   owner: string
 ): void {
-  ctx.withTx(tx => {
-    const grid = requireGridForMutation(tx, args.gridId, owner);
-    for (const c of [...tx.db.cellState.gridId.filter(grid.id)])
-      tx.db.cellState.delete(c);
-    for (const e of [...tx.db.gridEntity.gridId.filter(grid.id)])
-      tx.db.gridEntity.delete(e);
-    for (const p of [...tx.db.entityPath.gridId.filter(grid.id)])
-      tx.db.entityPath.delete(p);
-    tx.db.grid.delete(grid);
-  });
+  const grid = tx.db.grid.id.find(args.gridId);
+  if (!grid) throw new SenderError(errors.notFound);
+  if (grid.ownerUserId !== owner) throw new SenderError(errors.notOwner);
+  for (const c of [...tx.db.cellState.gridId.filter(grid.id)])
+    tx.db.cellState.delete(c);
+  for (const e of [...tx.db.gridEntity.gridId.filter(grid.id)])
+    tx.db.gridEntity.delete(e);
+  for (const p of [...tx.db.entityPath.gridId.filter(grid.id)])
+    tx.db.entityPath.delete(p);
+  tx.db.grid.delete(grid);
 }
 
 // cost<=0 blocks, cost==defaultCost removes the sparse row.
@@ -154,18 +143,12 @@ export const setCellCostParams = {
 };
 
 export function setCellCost(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof setCellCostParams>,
   owner: string
 ): void {
-  if ((args.terrain?.length ?? 0) > MAX_TERRAIN_LENGTH) {
-    throw new SenderError('grid.invalid_terrain');
-  }
-  ctx.withTx(tx => {
-    const grid = requireGridForMutation(tx, args.gridId, owner);
-    assertInBounds(grid, { x: args.x, y: args.y });
-    upsertCellState(tx, grid, args.x, args.y, args.cost, args.terrain);
-  });
+  const grid = requireGrid(tx, args.gridId, owner);
+  upsertCellState(tx, grid, args);
 }
 
 export const paintCellsParams = {
@@ -181,23 +164,15 @@ export const paintCellsParams = {
 };
 
 export function paintCells(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof paintCellsParams>,
   owner: string
 ): void {
-  if (!Array.isArray(args.cells) || args.cells.length > MAX_PAINT_CELLS) {
-    throw new SenderError('grid.too_many_cells');
+  if (args.cells.length > MAX_PAINT_CELLS) {
+    throw new SenderError(errors.tooManyCells);
   }
-  ctx.withTx(tx => {
-    const grid = requireGridForMutation(tx, args.gridId, owner);
-    for (const c of args.cells) {
-      if ((c.terrain?.length ?? 0) > MAX_TERRAIN_LENGTH) {
-        throw new SenderError('grid.invalid_terrain');
-      }
-      assertInBounds(grid, { x: c.x, y: c.y });
-      upsertCellState(tx, grid, c.x, c.y, c.cost, c.terrain);
-    }
-  });
+  const grid = requireGrid(tx, args.gridId, owner);
+  for (const cell of args.cells) upsertCellState(tx, grid, cell);
 }
 
 export const placeEntityParams = {
@@ -210,37 +185,31 @@ export const placeEntityParams = {
 };
 
 export function placeEntity(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof placeEntityParams>,
   owner: string
 ): bigint {
-  if (
-    typeof args.kind !== 'string' ||
-    args.kind.length === 0 ||
-    args.kind.length > MAX_KIND_LENGTH
-  ) {
-    throw new SenderError('grid.invalid_entity_kind');
+  if (args.kind.length === 0 || args.kind.length > MAX_KIND_LENGTH) {
+    throw new SenderError(errors.invalidEntityKind);
   }
   if ((args.label?.length ?? 0) > MAX_LABEL_LENGTH) {
-    throw new SenderError('grid.invalid_entity_label');
+    throw new SenderError(errors.invalidEntityLabel);
   }
-  return ctx.withTx(tx => {
-    const grid = requireGridForMutation(tx, args.gridId, owner);
-    assertInBounds(grid, { x: args.x, y: args.y });
-    const row = tx.db.gridEntity.insert({
-      id: 0n,
-      gridId: grid.id,
-      ownerUserId: owner,
-      x: args.x,
-      y: args.y,
-      kind: args.kind,
-      blocksMovement: args.blocksMovement,
-      label: args.label,
-      createdAt: ctx.timestamp,
-      updatedAt: ctx.timestamp,
-    });
-    return row.id;
+  const grid = requireGrid(tx, args.gridId, owner);
+  assertInBounds(grid, { x: args.x, y: args.y });
+  const row = tx.db.gridEntity.insert({
+    id: 0n,
+    gridId: grid.id,
+    ownerUserId: owner,
+    x: args.x,
+    y: args.y,
+    kind: args.kind,
+    blocksMovement: args.blocksMovement,
+    label: args.label,
+    createdAt: tx.timestamp,
+    updatedAt: tx.timestamp,
   });
+  return row.id;
 }
 
 export const moveEntityParams = {
@@ -249,36 +218,41 @@ export const moveEntityParams = {
   toY: t.i32(),
 };
 
+// Moves one step to an adjacent cell that is not blocked by terrain or by
+// another blocking entity.
 export function moveEntity(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof moveEntityParams>,
   owner: string
 ): void {
-  ctx.withTx(tx => {
-    const ent = tx.db.gridEntity.id.find(args.entityId);
-    if (!ent) throw new SenderError(`grid.entity_not_found:${args.entityId}`);
-    if (ent.ownerUserId !== owner)
-      throw new SenderError(`grid.entity_not_owner:${args.entityId}`);
-    const grid = tx.db.grid.id.find(ent.gridId);
-    if (!grid) throw new SenderError(`grid.not_found:${ent.gridId}`);
-    assertInBounds(grid, { x: args.toX, y: args.toY });
+  const ent = tx.db.gridEntity.id.find(args.entityId);
+  if (!ent) throw new SenderError(errors.entityNotFound);
+  if (ent.ownerUserId !== owner) throw new SenderError(errors.entityNotOwner);
+  const grid = tx.db.grid.id.find(ent.gridId);
+  if (!grid) throw new SenderError(errors.notFound);
+  const to = { x: args.toX, y: args.toY };
+  assertInBounds(grid, to);
 
-    const neighborSet = neighbors(
-      grid.kind as GridKind,
-      { x: ent.x, y: ent.y },
-      grid.connectivity as Connectivity
-    );
-    const reachable = neighborSet.some(
-      n => n.x === args.toX && n.y === args.toY
-    );
-    if (!reachable) throw new SenderError(`grid.move_not_adjacent`);
+  const adjacent = neighbors(
+    grid.kind as GridKind,
+    { x: ent.x, y: ent.y },
+    grid.connectivity as Connectivity
+  ).some(n => n.x === to.x && n.y === to.y);
+  if (!adjacent) throw new SenderError(errors.moveNotAdjacent);
+  if (
+    cellCost(tx, grid, to) <= 0 ||
+    [...tx.db.gridEntity.byGridCell.filter([grid.id, to.x, to.y])].some(
+      other => other.blocksMovement && other.id !== ent.id
+    )
+  ) {
+    throw new SenderError(errors.moveBlocked);
+  }
 
-    tx.db.gridEntity.id.update({
-      ...ent,
-      x: args.toX,
-      y: args.toY,
-      updatedAt: ctx.timestamp,
-    });
+  tx.db.gridEntity.id.update({
+    ...ent,
+    x: to.x,
+    y: to.y,
+    updatedAt: tx.timestamp,
   });
 }
 
@@ -296,86 +270,53 @@ export const computePathParams = {
 export const computePathReturn = pathResult;
 
 export function computePath(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof computePathParams>,
   owner: string
-) {
-  return ctx.withTx(tx => {
-    const grid = requireGridForAccess(tx, args.gridId, owner);
-    assertInBounds(grid, { x: args.startX, y: args.startY });
-    assertInBounds(grid, { x: args.endX, y: args.endY });
+): Infer<typeof pathResult> {
+  const grid = requireGrid(tx, args.gridId, owner);
+  assertInBounds(grid, { x: args.startX, y: args.startY });
+  assertInBounds(grid, { x: args.endX, y: args.endY });
+  const maxExpansions = args.maxExpansions ?? PATH_MAX_EXPANSIONS;
+  if (maxExpansions < 1 || maxExpansions > PATH_MAX_EXPANSIONS) {
+    throw new SenderError(errors.invalidMaxExpansions);
+  }
 
-    const costMap = buildCostMap(tx, grid);
-    const requestedCap = Number(
-      args.maxExpansions ?? PATH_DEFAULT_MAX_EXPANSIONS
-    );
-    if (
-      !Number.isInteger(requestedCap) ||
-      requestedCap < 1 ||
-      requestedCap > PATH_MAX_EXPANSIONS
-    ) {
-      throw new SenderError('grid.invalid_max_expansions');
-    }
-    const cap = requestedCap;
-
-    const neighborsFn = (c: Coord) =>
-      filterInBounds(
-        grid,
-        neighbors(grid.kind as GridKind, c, grid.connectivity as Connectivity)
-      );
-
-    const costFn = (c: Coord) => {
-      const v = costMap.get(coordKey(c));
-      return v === undefined ? grid.defaultCost : v;
-    };
-
-    const result = findPathAstar({
-      start: { x: args.startX, y: args.startY },
-      goal: { x: args.endX, y: args.endY },
-      cost: costFn,
-      neighbors: neighborsFn,
-      heuristic: (a, b) =>
-        distance(
-          grid.kind as GridKind,
-          a,
-          b,
-          grid.connectivity as Connectivity
-        ),
-      maxExpansions: cap,
-    });
-
-    if (result.found && args.storeFor !== undefined && args.storeFor !== null) {
-      const entity = tx.db.gridEntity.id.find(args.storeFor);
-      if (!entity)
-        throw new SenderError(`grid.entity_not_found:${args.storeFor}`);
-      if (entity.gridId !== grid.id)
-        throw new SenderError('grid.entity_grid_mismatch');
-      if (entity.ownerUserId !== owner)
-        throw new SenderError(`grid.entity_not_owner:${args.storeFor}`);
-      if (result.cells.length > MAX_RESULT_CELLS)
-        throw new SenderError('grid.path_too_long');
-      writeEntityPath(
-        tx,
-        ctx.timestamp,
-        args.storeFor,
-        grid.id,
-        result.cells,
-        result.cost
-      );
-    }
-
-    if (result.found) {
-      if (result.cells.length > MAX_RESULT_CELLS)
-        throw new SenderError('grid.path_too_long');
-      return {
-        found: true,
-        cells: result.cells,
-        cost: result.cost,
-        expanded: result.expanded,
-      };
-    }
-    return { found: false, cells: [], cost: 0, expanded: result.expanded };
+  const costMap = buildCostMap(tx, grid);
+  const result = findPathAstar({
+    start: { x: args.startX, y: args.startY },
+    goal: { x: args.endX, y: args.endY },
+    cost: c => costMap.get(coordKey(c)) ?? grid.defaultCost,
+    neighbors: c => neighborsInBounds(grid, c),
+    heuristic: (a, b) =>
+      distance(grid.kind as GridKind, a, b, grid.connectivity as Connectivity),
+    maxExpansions,
   });
+  if (!result.found) {
+    return { found: false, cells: [], cost: 0, expanded: result.expanded };
+  }
+  if (result.cells.length > MAX_RESULT_CELLS) {
+    throw new SenderError(errors.pathTooLong);
+  }
+
+  if (args.storeFor !== undefined) {
+    const entity = tx.db.gridEntity.id.find(args.storeFor);
+    if (!entity) throw new SenderError(errors.entityNotFound);
+    if (entity.gridId !== grid.id) {
+      throw new SenderError(errors.entityGridMismatch);
+    }
+    if (entity.ownerUserId !== owner) {
+      throw new SenderError(errors.entityNotOwner);
+    }
+    writeEntityPath(tx, args.storeFor, grid.id, result.cells, result.cost);
+  }
+
+  return {
+    found: true,
+    cells: result.cells,
+    cost: result.cost,
+    expanded: result.expanded,
+  };
 }
 
 export const cellsInRangeParams = {
@@ -390,144 +331,135 @@ export const cellsInRangeReturn = t.object('CellsInRangeResult', {
 });
 
 export function cellsInRange(
-  ctx: ProcedureModuleCtx,
+  tx: ReducerModuleCtx,
   args: InferTypeOfParams<typeof cellsInRangeParams>,
   owner: string
-) {
-  return ctx.withTx(tx => {
-    const grid = requireGridForAccess(tx, args.gridId, owner);
-    assertInBounds(grid, { x: args.originX, y: args.originY });
+): Infer<typeof cellsInRangeReturn> {
+  const grid = requireGrid(tx, args.gridId, owner);
+  assertInBounds(grid, { x: args.originX, y: args.originY });
 
-    const costMap = buildCostMap(tx, grid);
-    const neighborsFn = (c: Coord) =>
-      filterInBounds(
-        grid,
-        neighbors(grid.kind as GridKind, c, grid.connectivity as Connectivity)
-      );
-    const costFn = (c: Coord) => {
-      const v = costMap.get(coordKey(c));
-      return v === undefined ? grid.defaultCost : v;
-    };
-
-    const reached = dijkstra({
-      start: { x: args.originX, y: args.originY },
-      cost: costFn,
-      neighbors: neighborsFn,
-      maxCost: args.maxCost,
-      maxExpansions: PATH_MAX_EXPANSIONS,
-    });
-
-    if (reached.size > MAX_RESULT_CELLS)
-      throw new SenderError('grid.range_too_large');
-
-    const cells: Array<{ x: number; y: number; cost: number }> = [];
-    for (const node of reached.values()) {
-      cells.push({ x: node.cell.x, y: node.cell.y, cost: node.cost });
-    }
-    return { cells };
+  const costMap = buildCostMap(tx, grid);
+  const reached = dijkstra({
+    start: { x: args.originX, y: args.originY },
+    cost: c => costMap.get(coordKey(c)) ?? grid.defaultCost,
+    neighbors: c => neighborsInBounds(grid, c),
+    maxCost: args.maxCost,
+    maxExpansions: PATH_MAX_EXPANSIONS,
   });
-}
-
-function requireGridForMutation(
-  tx: TransactionModuleCtx,
-  gridId: bigint,
-  owner: string
-): GridRow {
-  const grid = tx.db.grid.id.find(gridId);
-  if (!grid) throw new SenderError(`grid.not_found:${gridId}`);
-  if (grid.mode === GRID_MODE_OWNER && grid.ownerUserId !== owner) {
-    throw new SenderError(`grid.not_owner:${gridId}`);
+  if (reached.size > MAX_RESULT_CELLS) {
+    throw new SenderError(errors.rangeTooLarge);
   }
-  return grid;
+  return {
+    cells: [...reached.values()].map(node => ({
+      x: node.cell.x,
+      y: node.cell.y,
+      cost: node.cost,
+    })),
+  };
 }
 
-function requireGridForAccess(
-  tx: TransactionModuleCtx,
+// Owner mode restricts every operation to the grid owner.
+function requireGrid(
+  tx: ReducerModuleCtx,
   gridId: bigint,
   owner: string
 ): GridRow {
   const grid = tx.db.grid.id.find(gridId);
-  if (!grid) throw new SenderError(`grid.not_found:${gridId}`);
+  if (!grid) throw new SenderError(errors.notFound);
   if (grid.mode === GRID_MODE_OWNER && grid.ownerUserId !== owner) {
-    throw new SenderError(`grid.not_owner:${gridId}`);
+    throw new SenderError(errors.notOwner);
   }
   return grid;
 }
 
 function assertInBounds(grid: GridRow, c: Coord): void {
   if (c.x < 0 || c.y < 0 || c.x >= grid.width || c.y >= grid.height) {
-    throw new SenderError(`grid.out_of_bounds:${c.x},${c.y}`);
+    throw new SenderError(errors.outOfBounds);
   }
 }
 
-function filterInBounds(grid: GridRow, list: Coord[]): Coord[] {
-  return list.filter(
-    c => c.x >= 0 && c.y >= 0 && c.x < grid.width && c.y < grid.height
-  );
+function neighborsInBounds(grid: GridRow, c: Coord): Coord[] {
+  return neighbors(
+    grid.kind as GridKind,
+    c,
+    grid.connectivity as Connectivity
+  ).filter(n => n.x >= 0 && n.y >= 0 && n.x < grid.width && n.y < grid.height);
+}
+
+function findCellState(tx: ReducerModuleCtx, gridId: bigint, c: Coord) {
+  for (const row of tx.db.cellState.byGridCell.filter([gridId, c.x, c.y])) {
+    return row;
+  }
+  return undefined;
+}
+
+function cellCost(tx: ReducerModuleCtx, grid: GridRow, c: Coord): number {
+  return findCellState(tx, grid.id, c)?.cost ?? grid.defaultCost;
 }
 
 function upsertCellState(
-  tx: TransactionModuleCtx,
+  tx: ReducerModuleCtx,
   grid: GridRow,
-  x: number,
-  y: number,
-  cost: number,
-  terrain: string | undefined
+  cell: { x: number; y: number; cost: number; terrain?: string | undefined }
 ): void {
-  let existing = null;
-  for (const c of tx.db.cellState.gridId.filter(grid.id)) {
-    if (c.x === x && c.y === y) {
-      existing = c;
-      break;
-    }
+  if (cell.cost > MAX_CELL_COST) throw new SenderError(errors.invalidCost);
+  if ((cell.terrain?.length ?? 0) > MAX_TERRAIN_LENGTH) {
+    throw new SenderError(errors.invalidTerrain);
   }
-  if (
-    cost === grid.defaultCost &&
-    (terrain === undefined || terrain === null)
-  ) {
+  assertInBounds(grid, cell);
+  const existing = findCellState(tx, grid.id, cell);
+  if (cell.cost === grid.defaultCost && cell.terrain === undefined) {
     if (existing) tx.db.cellState.delete(existing);
     return;
   }
   if (existing) {
-    tx.db.cellState.id.update({ ...existing, cost, terrain });
+    tx.db.cellState.id.update({
+      ...existing,
+      cost: cell.cost,
+      terrain: cell.terrain,
+    });
     return;
   }
-  tx.db.cellState.insert({ id: 0n, gridId: grid.id, x, y, cost, terrain });
+  tx.db.cellState.insert({
+    id: 0n,
+    gridId: grid.id,
+    x: cell.x,
+    y: cell.y,
+    cost: cell.cost,
+    terrain: cell.terrain,
+  });
 }
 
+// Blocking entities override the cell cost, so painted cells cannot hide them.
 function buildCostMap(
-  tx: TransactionModuleCtx,
+  tx: ReducerModuleCtx,
   grid: GridRow
 ): Map<string, number> {
   const map = new Map<string, number>();
   for (const c of tx.db.cellState.gridId.filter(grid.id)) {
-    map.set(coordKey({ x: c.x, y: c.y }), c.cost);
+    map.set(coordKey(c), c.cost);
   }
   for (const e of tx.db.gridEntity.gridId.filter(grid.id)) {
-    if (!e.blocksMovement) continue;
-    const k = coordKey({ x: e.x, y: e.y });
-    if (!map.has(k)) map.set(k, -1);
+    if (e.blocksMovement) map.set(coordKey(e), -1);
   }
   return map;
 }
 
 function writeEntityPath(
-  tx: TransactionModuleCtx,
-  timestamp: Timestamp,
+  tx: ReducerModuleCtx,
   entityId: bigint,
   gridId: bigint,
   cells: Coord[],
   cost: number
 ): void {
-  const existing = tx.db.entityPath.entityId.find(entityId);
   const row = {
     entityId,
     gridId,
     cells: cells.map(c => ({ x: c.x, y: c.y })),
     cost,
-    computedAt: timestamp,
+    computedAt: tx.timestamp,
   };
-  if (existing) {
+  if (tx.db.entityPath.entityId.find(entityId)) {
     tx.db.entityPath.entityId.update(row);
   } else {
     tx.db.entityPath.insert(row);
