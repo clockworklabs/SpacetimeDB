@@ -3,9 +3,7 @@ import {
   table,
   t,
   type InferSchema,
-  type ProcedureCtx,
   type ReducerCtx,
-  type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
 
@@ -56,8 +54,6 @@ export default spacetimedb;
 
 export type Schema = InferSchema<typeof spacetimedb>;
 export type ReducerModuleCtx = ReducerCtx<Schema>;
-export type ProcedureModuleCtx = ProcedureCtx<Schema>;
-export type TransactionModuleCtx = TransactionCtx<Schema>;
 export type ViewModuleCtx = ViewCtx<Schema>;
 
 export { t };

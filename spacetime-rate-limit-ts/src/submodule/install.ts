@@ -1,14 +1,26 @@
-import { installRateLimitState, type RateLimitInstallOpts } from '../limit';
+import { ScheduleAt } from 'spacetimedb';
+import { DEFAULT_SWEEP_BATCH } from '../limit';
 import type { ReducerModuleCtx } from './schema';
 
-/** Call from the host's init reducer to seed its publishing identity and cleanup timer. */
-export function install(ctx: ReducerModuleCtx, opts?: RateLimitInstallOpts) {
+const SWEEP_INTERVAL_MICROS = 30_000_000n;
+
+/**
+ * Call from the host's init reducer. Makes the publishing identity the first
+ * administrator and schedules the expired-bucket sweep. Later calls do nothing.
+ */
+export function install(ctx: ReducerModuleCtx) {
   if (ctx.db.rateLimitConfig.singleton.find(true)) return;
-  if (ctx.db.rateLimitAdminIdentity.identity.find(ctx.sender) == null) {
-    ctx.db.rateLimitAdminIdentity.insert({
-      identity: ctx.sender,
-      addedAt: ctx.timestamp,
-    });
-  }
-  installRateLimitState(ctx, opts);
+  ctx.db.rateLimitAdminIdentity.insert({
+    identity: ctx.sender,
+    addedAt: ctx.timestamp,
+  });
+  ctx.db.rateLimitConfig.insert({
+    singleton: true,
+    sweepBatch: DEFAULT_SWEEP_BATCH,
+    updatedAt: ctx.timestamp,
+  });
+  ctx.db.rateLimitSweepTick.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(SWEEP_INTERVAL_MICROS),
+  });
 }

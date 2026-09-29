@@ -1,4 +1,4 @@
-import { ScheduleAt, Timestamp } from 'spacetimedb';
+import { Timestamp } from 'spacetimedb';
 import { buildRateLimitKey } from './key';
 
 const ONE_SECOND_MICROS = 1_000_000n;
@@ -6,7 +6,6 @@ const U32_MAX = 0xffff_ffff;
 
 export const DEFAULT_SWEEP_BATCH = 500;
 export const MAX_SWEEP_BATCH = 10_000;
-const DEFAULT_SWEEP_INTERVAL_SECONDS = 30n;
 
 export const errors = {
   notAuthorized: 'rate_limit.not_authorized',
@@ -17,7 +16,7 @@ export const errors = {
   invalidWindow: 'rate_limit.invalid_window',
   invalidCost: 'rate_limit.invalid_cost',
   invalidSweepBatch: 'rate_limit.invalid_sweep_batch',
-  invalidSweepInterval: 'rate_limit.invalid_sweep_interval_seconds',
+  invalidMaxRows: 'rate_limit.invalid_max_rows',
   configMissing: 'rate_limit.config_missing',
 } as const;
 
@@ -92,7 +91,7 @@ function assertPositiveInt(code: string, value: number): void {
   }
 }
 
-export function assertRateLimitSweepBatch(value: number): void {
+function assertRateLimitSweepBatch(value: number): void {
   assertPositiveInt(errors.invalidSweepBatch, value);
   if (value > MAX_SWEEP_BATCH) {
     throw new Error(errors.invalidSweepBatch);
@@ -135,99 +134,6 @@ export interface RateLimitTxLike {
       delete(row: RateLimitBucketRow): void;
     };
   };
-}
-
-export interface RateLimitInitCtxLike {
-  timestamp: Timestamp;
-  db: {
-    rateLimitConfig: {
-      singleton: {
-        find(
-          key: boolean
-        ):
-          | { singleton: boolean; sweepBatch: number; updatedAt: Timestamp }
-          | null
-          | undefined;
-        update(row: {
-          singleton: boolean;
-          sweepBatch: number;
-          updatedAt: Timestamp;
-        }): void;
-      };
-      insert(row: {
-        singleton: boolean;
-        sweepBatch: number;
-        updatedAt: Timestamp;
-      }): void;
-    };
-    rateLimitSweepTick: {
-      insert(row: { scheduledId: bigint; scheduledAt: ScheduleAt }): void;
-    };
-  };
-}
-
-export interface RateLimitInstallOpts {
-  sweepBatch?: number;
-  sweepIntervalSeconds?: bigint;
-}
-
-export function installRateLimitState(
-  ctx: RateLimitInitCtxLike,
-  opts?: RateLimitInstallOpts
-): void {
-  const sweepBatch = opts?.sweepBatch ?? DEFAULT_SWEEP_BATCH;
-  assertRateLimitSweepBatch(sweepBatch);
-  const sweepIntervalSeconds =
-    opts?.sweepIntervalSeconds ?? DEFAULT_SWEEP_INTERVAL_SECONDS;
-  if (sweepIntervalSeconds <= 0n) throw new Error(errors.invalidSweepInterval);
-
-  const existing = ctx.db.rateLimitConfig.singleton.find(true);
-  if (existing) return;
-  ctx.db.rateLimitConfig.insert({
-    singleton: true,
-    sweepBatch,
-    updatedAt: ctx.timestamp,
-  });
-
-  ctx.db.rateLimitSweepTick.insert({
-    scheduledId: 0n,
-    scheduledAt: ScheduleAt.interval(sweepIntervalSeconds * ONE_SECOND_MICROS),
-  });
-}
-
-export function resolveRateLimitSweepBatch(ctx: {
-  db: {
-    rateLimitConfig: {
-      singleton: {
-        find(key: boolean): { sweepBatch: number } | null | undefined;
-      };
-    };
-  };
-}): number {
-  const cfg = ctx.db.rateLimitConfig.singleton.find(true);
-  if (!cfg) return DEFAULT_SWEEP_BATCH;
-  const batch = Number(cfg.sweepBatch);
-  return Number.isInteger(batch) && batch > 0 && batch <= MAX_SWEEP_BATCH
-    ? batch
-    : DEFAULT_SWEEP_BATCH;
-}
-
-export interface RateLimitSweepCtxLike extends RateLimitTxLike {
-  db: RateLimitTxLike['db'] & {
-    rateLimitConfig: {
-      singleton: {
-        find(key: boolean): { sweepBatch: number } | null | undefined;
-      };
-    };
-  };
-}
-
-export function runRateLimitSweep(
-  ctx: RateLimitSweepCtxLike,
-  expiredRows: Iterable<RateLimitBucketRow>
-): number {
-  const batch = resolveRateLimitSweepBatch(ctx);
-  return sweepRateLimits(ctx, expiredRows, batch);
 }
 
 export function consumeRateLimit(

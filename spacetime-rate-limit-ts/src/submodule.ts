@@ -6,7 +6,6 @@ export {
   consumeRateLimit,
   type ConsumeRateLimitOpts,
   type RateLimitPolicy,
-  type RateLimitInstallOpts,
   type RateLimitResult,
   type RateLimitTxLike,
 } from './limit';

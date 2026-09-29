@@ -3,7 +3,6 @@ import {
   consumeRateLimit,
   DEFAULT_SWEEP_BATCH,
   MAX_SWEEP_BATCH,
-  runRateLimitSweep,
   sweepRateLimits,
   errors,
 } from '../limit';
@@ -20,7 +19,7 @@ import { buildRateLimitKey } from '../key';
 const MAX_SCOPE_LENGTH = 128;
 const MAX_ACTOR_KEY_LENGTH = 256;
 
-export const consumeResult = t.object('RateLimitConsumeResult', {
+const consumeResult = t.object('RateLimitConsumeResult', {
   allowed: t.bool(),
   scope: t.string(),
   key: t.string(),
@@ -46,6 +45,12 @@ function toU32(code: string, value: number, max = 0xffff_ffff): number {
     throw new SenderError(code);
   }
   return value;
+}
+
+function maxRowsArg(value: number | undefined): number {
+  return value === undefined
+    ? DEFAULT_SWEEP_BATCH
+    : toU32(errors.invalidMaxRows, value, MAX_SWEEP_BATCH);
 }
 
 function sanitizePart(s: string): string {
@@ -106,14 +111,7 @@ export const runSweep = spacetimedb.procedure(
   { maxRows: t.option(t.u32()) },
   t.u32(),
   (ctx, args) => {
-    const maxRows =
-      args.maxRows === undefined
-        ? undefined
-        : toU32(
-            errors.invalidSweepBatch,
-            Number(args.maxRows),
-            MAX_SWEEP_BATCH
-          );
+    const maxRows = maxRowsArg(args.maxRows);
     return ctx.withTx(tx => {
       requireAdmin(tx);
       return sweepRateLimits(
@@ -121,7 +119,7 @@ export const runSweep = spacetimedb.procedure(
         tx.db.rateLimitBucket.expiresAt.filter(
           new Range(undefined, { tag: 'included', value: tx.timestamp })
         ),
-        maxRows ?? DEFAULT_SWEEP_BATCH
+        maxRows
       );
     });
   }
@@ -175,7 +173,7 @@ export const resetBuckets = spacetimedb.reducer(
   { maxRows: t.option(t.u32()) },
   (ctx, args) => {
     requireAdmin(ctx);
-    const maxRows = Math.min(Number(args.maxRows ?? 1000), 10_000);
+    const maxRows = maxRowsArg(args.maxRows);
     let removed = 0;
     for (const row of ctx.db.rateLimitBucket.iter()) {
       if (removed >= maxRows) break;
@@ -203,11 +201,13 @@ export const rateLimitSweep = spacetimedb.reducer(
   { onSchedule: rateLimitSweepTick },
   { arg: rateLimitSweepTick.rowType },
   (ctx, _args) => {
-    runRateLimitSweep(
+    sweepRateLimits(
       ctx,
       ctx.db.rateLimitBucket.expiresAt.filter(
         new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      )
+      ),
+      ctx.db.rateLimitConfig.singleton.find(true)?.sweepBatch ??
+        DEFAULT_SWEEP_BATCH
     );
   }
 );

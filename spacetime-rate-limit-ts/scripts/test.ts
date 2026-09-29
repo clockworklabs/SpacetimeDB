@@ -2,9 +2,7 @@ import { Timestamp } from 'spacetimedb';
 import {
   consumeRateLimit,
   client,
-  DEFAULT_SWEEP_BATCH,
   MAX_SWEEP_BATCH,
-  resolveRateLimitSweepBatch,
   sweepRateLimits,
   type RateLimitBucketRow,
 } from '../src/limit.ts';
@@ -148,17 +146,6 @@ process.stdout.write('\nrate limiter\n');
     () => sweepRateLimits(tx, [], MAX_SWEEP_BATCH + 1),
     'rate_limit.invalid_sweep_batch',
     'sweep rejects an excessive batch size'
-  );
-  const batch = resolveRateLimitSweepBatch({
-    db: {
-      rateLimitConfig: {
-        singleton: { find: () => ({ sweepBatch: MAX_SWEEP_BATCH + 1 }) },
-      },
-    },
-  });
-  assert(
-    batch === DEFAULT_SWEEP_BATCH,
-    'invalid stored sweep batch uses the default'
   );
 }
 

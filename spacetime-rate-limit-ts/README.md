@@ -8,8 +8,6 @@ Fixed-window rate limiter submodule for SpacetimeDB TypeScript modules.
 npm install @spacetimedb/rate-limit spacetimedb
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
-
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
@@ -109,11 +107,11 @@ Configure a policy once with `client({ scope, limit, windowSeconds })`. Call
 transaction. `key` identifies the actor; the library combines it with the scope.
 Override limits or windows only for application-owned dynamic policies.
 
-`install(ctx, { sweepBatch?, sweepIntervalSeconds? })` seeds the publishing
-identity and cleanup timer from the host's `init` reducer. Repeated installation
-does not add administrators or timers. Admins can grant and revoke access with
-`addRateLimitAdmin` and `removeRateLimitAdmin`. The last administrator cannot be
-removed.
+`install(ctx)` makes the publishing identity the first administrator and
+schedules a sweep of expired buckets every 30 seconds. Call it from the host's
+`init` reducer. Repeated installation does not add administrators or timers.
+Admins can grant and revoke access with `addRateLimitAdmin` and
+`removeRateLimitAdmin`. The last administrator cannot be removed.
 
 `errors` exports stable error codes for callers that distinguish failures.
 
@@ -121,17 +119,13 @@ The root package also exports lower-level helpers for standalone integrations:
 
 - `consumeRateLimit`
 - `buildRateLimitKey`
-- `installRateLimitState`
-- `sweepRateLimits`
 
 The submodule `consume`, `runSweep`, and `resetBuckets` operations are admin-only.
 Application-facing operations should enforce a fixed policy in host code and use
-the configured limiter shown above. `resetBuckets({ maxRows })` removes
-1,000 rows by default and accepts a maximum of 10,000 per call, so destructive
-maintenance remains bounded.
-
-Those helpers expect the same submodule table shape. Namespace-aware modules
-use `@spacetimedb/rate-limit/submodule`.
+the configured limiter shown above. `runSweep({ maxRows })` and
+`resetBuckets({ maxRows })` remove 500 rows by default and accept at most 10,000
+per call. `updateConfig({ sweepBatch })` sets how many expired rows each
+scheduled sweep deletes, with the same default and maximum.
 
 Package entrypoints:
 
@@ -142,11 +136,6 @@ Package entrypoints:
 See the
 [Powerhouse host module](./example/spacetimedb/)
 for per-action policies, caller-visible status, and admin controls.
-
-## Cleanup defaults
-
-- 500 expired rows per sweep; at most 10,000.
-- One sweep every 30 seconds.
 
 Use `buildRateLimitKey(scope, actorKey)` only when reading an existing bucket for
 a status view. Consuming a configured policy does not require constructing keys.
