@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
-import { installAuthWebSocketCapture, patchAuthRequest, withAuthRequestPatch, withAuthWriteInventory,
+import { installAuthWebSocketCapture, patchAuthRequest, withAuthRequestPatch, withAuthWriteInventory, withWriteCompletion,
   withAuthWriteTarget, stopAuthWriteInventory, type AuthWrite } from '../src/actions/auth-request-patch.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
@@ -16,6 +16,60 @@ import { supabaseAuthRequestPatch } from '../src/stacks/backends/supabase-operat
 import { convexAuthReadEndpoints } from '../src/stacks/backends/convex-operations.js';
 import { ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 import { installResponseLoss } from '../grader/response-loss.js';
+
+test('UI write completion drains delayed HTTP effects, accepts no write, and rejects lost responses', async () => {
+  let release: (() => void) | undefined, received!: () => void, writes = 0;
+  const server = createServer(async (req, res) => {
+    if (req.method !== 'POST') { res.end('<button id="buy">Buy</button>'); return; }
+    for await (const _chunk of req) { /* Consume either form or JSON input. */ }
+    writes++;
+    if (req.url === '/lost') { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{'); }
+    release = () => {
+      release = undefined;
+      if (req.url === '/lost') res.destroy();
+      else res.writeHead(req.url === '/invalid-json' ? 400 : req.url === '/accepted-pending' ? 202 : 200).end('{}');
+    };
+    received();
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await installAuthWebSocketCapture(page);
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
+    assert.deepEqual((await withWriteCompletion(page, async () => {})).writes, []);
+    for (const mode of ['json', 'form', 'invalid-json', 'accepted-pending', 'lost']) {
+      const request = new Promise<void>(resolve => { received = resolve; });
+      await page.evaluate(mode => {
+        document.querySelector<HTMLButtonElement>('#buy')!.onclick = () => {
+          void fetch(['lost', 'invalid-json', 'accepted-pending'].includes(mode) ? '/' + mode : '/buy', { method: 'POST',
+            headers: { 'content-type': mode === 'form' ? 'application/x-www-form-urlencoded' : 'application/json' },
+            body: mode === 'form' ? 'item=keyboard' : mode === 'invalid-json' ? '{' : '{"item":"keyboard"}' }).catch(() => {});
+        };
+      }, mode);
+      const completion = withWriteCompletion(page, () => page.locator('#buy').click());
+      await request;
+      assert.equal(await Promise.race([completion.then(() => 'done', () => 'failed'),
+        new Promise<string>(resolve => setTimeout(() => resolve('pending'), 100))]), 'pending');
+      release!();
+      if (['lost', 'accepted-pending'].includes(mode)) await assert.rejects(completion, ActionInconclusive);
+      else assert.equal((await completion).writes.length, 1);
+    }
+    // A callback dispatched after the capture returns is outside its boundary.
+    // This does not establish the absence of every possible future timer.
+    await page.evaluate(() => { document.querySelector<HTMLButtonElement>('#buy')!.onclick = () => {
+      Object.assign(window, { laterWrite: () => fetch('/buy', { method: 'POST' }).catch(() => {}) });
+    }; });
+    assert.equal((await withWriteCompletion(page, () => page.locator('#buy').click())).writes.length, 0);
+    const request = new Promise<void>(resolve => { received = resolve; });
+    const later = page.evaluate(() => (window as unknown as { laterWrite(): Promise<unknown> }).laterWrite());
+    await request; release!(); await later;
+    assert.equal(writes, 6);
+  } finally {
+    release?.(); await browser.close(); server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
 
 // Signup reconnects can carry authority in Socket.IO CONNECT data. Heartbeats
 // are transport traffic; an application event without an acknowledgement is not.
@@ -467,7 +521,7 @@ test('mixed native and HTTP signup probes expose either source of authority', as
         if (!omitFinalizer) await fetch('/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
       }, { bytes: [...bytes], omitFinalizer });
     };
-    await t.test('native inventory waits for a reducer receipt appended during drain', async () => {
+    for (const inventoryCall of [withAuthWriteInventory, withWriteCompletion]) await t.test(`${inventoryCall.name} waits for a reducer receipt appended during drain`, async () => {
       mode = 'append-native';
       const page = await fresh(mode);
       let firstReceived!: () => void, secondReceived!: () => void, submitted!: () => void;
@@ -483,7 +537,7 @@ test('mixed native and HTTP signup probes expose either source of authority', as
         await page.evaluate(bytes => (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket.send(new Uint8Array(bytes)), [...bytes]);
       };
       try {
-        const inventory = withAuthWriteInventory(page, async () => {
+        const inventory = inventoryCall(page, async () => {
           await sendWrite(1); await first; submitted();
         });
         await submission;
@@ -528,6 +582,9 @@ test('mixed native and HTTP signup probes expose either source of authority', as
     mode = 'procedure';
     const procedure = await fresh(mode);
     await assert.rejects(withAuthWriteInventory(procedure, () => submit(procedure, mode)), ActionInconclusive);
+    mode = 'missing-terminal';
+    const incomplete = await fresh(mode);
+    await assert.rejects(withWriteCompletion(incomplete, () => submit(incomplete, mode, true)), ActionInconclusive);
   } finally {
     await browser.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve()));
     if (previous.path === undefined) delete process.env.STACK_BENCH_LEASE; else process.env.STACK_BENCH_LEASE = previous.path;
@@ -598,13 +655,18 @@ test('Convex credential probes preserve the live socket and require its matching
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const ws = new wsServer({ server });
   const received: unknown[] = [];
+  let effects = 0;
   let mode: 'accept' | 'reject' | 'disconnect' = 'accept';
   ws.on('connection', (socket: { on(event: string, callback: (data: Buffer) => void): void;
     send(data: string): void; close(): void }) => socket.on('message', raw => {
     const request = JSON.parse(String(raw)); received.push(request);
     if (mode === 'disconnect') { socket.close(); return; }
     socket.send(JSON.stringify({ type: `${request.type}Response`, requestId: request.requestId + 1, success: mode !== 'accept', result: null }));
-    socket.send(JSON.stringify({ type: `${request.type}Response`, requestId: request.requestId, success: mode === 'accept', result: null }));
+    const accepted = mode === 'accept';
+    setTimeout(() => {
+      if (accepted) effects++;
+      socket.send(JSON.stringify({ type: `${request.type}Response`, requestId: request.requestId, success: accepted, result: null }));
+    }, 150);
   }));
   const browser = await chromium.launch({ headless: true });
   try {
@@ -622,7 +684,9 @@ test('Convex credential probes preserve the live socket and require its matching
       const submit = () => page.evaluate(async () => {
         const socket = (window as unknown as { testSocket: WebSocket }).testSocket;
         const done = new Promise(resolve => {
-          socket.addEventListener('message', resolve, { once: true });
+          socket.addEventListener('message', event => {
+            if (JSON.parse(String(event.data)).requestId === 7) resolve(undefined);
+          });
           socket.addEventListener('close', resolve, { once: true });
         });
         socket.send(JSON.stringify({ type: 'Action', requestId: 7, udfPath: 'auth:signup',
@@ -639,6 +703,19 @@ test('Convex credential probes preserve the live socket and require its matching
         assert(!JSON.stringify(receipt).includes('secret'));
         await submit(); // Outside the probe, the native request remains unchanged.
         assert.equal((received.at(-1) as { args: { role?: string }[] }).args[0]!.role, undefined);
+        const before = effects;
+        const completed = withWriteCompletion(page, () => page.evaluate(() => {
+          (window as unknown as { testSocket: WebSocket }).testSocket.send(JSON.stringify({
+            type: 'Mutation', requestId: 8, udfPath: 'shop:buy', args: [{ itemId: 'keyboard' }] }));
+        }));
+        assert.equal(await Promise.race([completed.then(() => 'done'),
+          new Promise<string>(resolve => setTimeout(() => resolve('waiting'), 50))]), 'waiting');
+        assert.equal((await completed).writes[0]!.transport, 'convex-websocket');
+        assert.equal(effects - before, mode === 'accept' ? 1 : 0);
+        const previous = mode;
+        mode = 'disconnect';
+        await assert.rejects(withWriteCompletion(page, submit), ActionInconclusive);
+        mode = previous;
       }
       const changed = received.find(value => (value as { args: { role?: string }[] }).args[0]?.role === 'admin');
       assert.deepEqual(changed, { type: 'Action', requestId: 7, udfPath: 'auth:signup',

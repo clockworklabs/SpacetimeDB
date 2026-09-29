@@ -8,6 +8,7 @@ import { finding, findingText, renderFinding } from './action-findings.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import { runApplicationNavigation } from './browser-navigation.js';
+import { withWriteCompletion } from './auth-request-patch.js';
 import type { Page as PlaywrightPage } from 'playwright';
 
 
@@ -67,6 +68,7 @@ interface BrowserActor {
 }
 
 interface BrowserCapability {
+  readonly authReadEndpoints?: readonly string[];
   readonly sequenceScopeFallback?: { readonly testid: string; readonly from: string; readonly to: string };
   readonly applicationUrl?: string;
   readonly defaultWithin: number;
@@ -202,7 +204,7 @@ async function clearInput({ input, capabilities }: BrowserArguments<{ actor: str
 }
 
 async function click({ input, capabilities, signal }:
-    BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string | string[] }>) {
+    BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string | string[]; awaitWrites?: boolean }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   const deadline = Date.now() + (input.within ?? browser.defaultWithin);
@@ -263,8 +265,14 @@ async function click({ input, capabilities, signal }:
       await browser.sleep(Math.min(100, deadline - Date.now()), signal);
     }
   }
+  let writeCompletion: Awaited<ReturnType<typeof withWriteCompletion>> | undefined;
   try {
-    await target.click({ timeout: input.within ?? browser.defaultWithin });
+    const submit = () => target.click({ timeout: input.within ?? browser.defaultWithin });
+    if (input.awaitWrites) writeCompletion = await withWriteCompletion(actor.page as PlaywrightPage, async () => {
+      await submit();
+      if (input.settleMs) await browser.sleep(input.settleMs, signal);
+    }, browser.authReadEndpoints);
+    else await submit();
   } catch (error) {
     // An already-open view can finish loading while its covered navigation
     // control waits for actionability. Observe that destination; do not click again.
@@ -276,8 +284,8 @@ async function click({ input, capabilities, signal }:
     }
     throw error;
   }
-  if (input.settleMs) await browser.sleep(input.settleMs, signal);
-  return { clicked: input.testid };
+  if (!input.awaitWrites && input.settleMs) await browser.sleep(input.settleMs, signal);
+  return { clicked: input.testid, ...(writeCompletion ? { writes: writeCompletion.writes, capturedWritesCompleted: true } : {}) };
 }
 
 async function openItem({ input, capabilities, signal }:

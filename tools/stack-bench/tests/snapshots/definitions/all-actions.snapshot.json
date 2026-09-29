@@ -13,6 +13,23 @@
           "steps": [
             {
               "actor": "a",
+              "branches": [
+                [
+                  {
+                    "actor": "a",
+                    "do": "expect",
+                    "testid": "current-user"
+                  }
+                ]
+              ],
+              "do": "probeSignupClaims",
+              "fields": {
+                "role": "admin"
+              },
+              "name": "claimant"
+            },
+            {
+              "actor": "a",
               "do": "armScriptCanary"
             },
             {

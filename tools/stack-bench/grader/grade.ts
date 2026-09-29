@@ -978,9 +978,9 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     const steps = [...feature.setup ?? [], ...feature.criteria.flatMap(criterion => criterion.steps)];
     const offlineActors = new Set(steps
       .filter(step => step.do === 'setOffline').map(step => step.actor));
-    // Routing replaces native WebSocket delivery. Only credential probes need it;
+    // Routing replaces native WebSocket delivery. Credential probes and explicit write completion need it;
     // passive transport observation must not pay for forwarding every live update.
-    const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined || step.do === 'probeSignupClaims'
+    const needsAuthPatch = (step: CompiledStep): boolean => step.requestPatch !== undefined || step.do === 'probeSignupClaims' || step.awaitWrites === true
       || Boolean(step.branches?.some(branch => branch.some(needsAuthPatch)));
     const patchAuthentication = steps.some(needsAuthPatch);
     const privacyActors = new Set<string>();

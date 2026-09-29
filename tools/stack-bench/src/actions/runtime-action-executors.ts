@@ -458,7 +458,7 @@ async function dbExpectPurchase({ input, capabilities, signal }: ActionArguments
 }
 
 async function dbExpectPurchaseCount({ input, capabilities, signal }: ActionArguments<{
-  before: string[]; purchasesEach: number;
+  before: string[]; purchasesEach: number; within?: number;
 }>) {
   const database = capabilities['database-read'];
   const snapshots = input.before.map(key => {
@@ -471,17 +471,31 @@ async function dbExpectPurchaseCount({ input, capabilities, signal }: ActionArgu
   if (accepted.size !== snapshots.length) throw new Error('purchase count requires distinct accounts');
   if (snapshots.some(({ before }) => before.state.itemId !== snapshots[0]!.before.state.itemId
     || before.state.priceMinor !== snapshots[0]!.before.state.priceMinor)) throw new Error('purchase count requires the same product and price');
-  const after = [];
-  for (const { key, before } of snapshots) {
-    const value = await database.getCheckoutState(before, signal);
-    if (value.scope !== before.scope || JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) {
-      throw new Error('purchase reader changed during the test');
+  const read = async () => {
+    const after = [];
+    let unchanged = Boolean(input.within);
+    for (const { key, before } of snapshots) {
+      const value = await database.getCheckoutState(before, signal);
+      if (value.scope !== before.scope || JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) {
+        throw new Error('purchase reader changed during the test');
+      }
+      const differences = orderPurchaseDifferences(before.state, value.state, accepted, new Map(), before.storage!.warehouses);
+      unchanged &&= orderPurchaseDifferences(before.state, value.state,
+        new Map([...accepted.keys()].map(account => [account, 0])), new Map(), before.storage!.warehouses).length === 0;
+      after.push({ key, ...value, differences });
     }
-    after.push({ key, ...value, differences: orderPurchaseDifferences(before.state, value.state,
-      accepted, new Map(), before.storage!.warehouses) });
+    return { observation: { before: input.before, purchasesEach: input.purchasesEach, after }, unchanged };
+  };
+  const deadline = Date.now() + (input.within ?? 0);
+  let result = await read();
+  // A UI click can return before its purchase commits. Retry only unchanged
+  // state; partial or corrupt effects must not disappear behind a later read.
+  while (result.unchanged && Date.now() < deadline) {
+    await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
+    result = await read();
   }
-  const observation = { before: input.before, purchasesEach: input.purchasesEach, after };
-  const difference = after.flatMap(row => row.differences)[0];
+  const { observation } = result;
+  const difference = observation.after.flatMap(row => row.differences)[0];
   if (difference) {
     const value = finding('number-mismatch', { control: difference.control,
       observed: difference.observed, expected: { equals: difference.expected } });

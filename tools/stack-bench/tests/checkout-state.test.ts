@@ -281,7 +281,7 @@ test('bounded purchase populations reconcile both accounts and preserve missing 
     if (mode === 'missing') snapshots.delete('b');
     const result = await executeAction(ACTION_REGISTRY, 'dbExpectPurchaseCount', {
       do: 'dbExpectPurchaseCount', before: ['a', 'b'], purchasesEach: 1,
-    }, { capabilities: { 'database-read': {
+    }, { capabilities: { clock: { sleep: async () => {} }, 'database-read': {
       ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: snapshots }),
       getCheckoutState: ({ account }: { account: string }) => {
         if (mode === 'reader-error') throw new Error('reader unavailable');
@@ -291,6 +291,41 @@ test('bounded purchase populations reconcile both accounts and preserve missing 
     } } });
     assert.equal(result.status, mode === 'valid' ? 'passed' : mode === 'missing' ? 'inconclusive'
       : ['duplicate-account', 'reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed', mode);
+    if (result.status === 'failed') assert(result.observation, mode);
+  }
+});
+
+test('purchase completion waits only for unchanged state and never hides partial or corrupt effects', async () => {
+  for (const mode of ['delayed', 'reject-all', 'wrong-owner', 'partial', 'duplicate', 'schema-change', 'reader-error', 'immediate']) {
+    const { before, after } = states();
+    for (const state of [before, after]) {
+      state.stock = []; state.payments = []; state.orphanAllocations = 0;
+      for (const order of state.orders) { order.refundedMinor = 0; order.lines[0]!.allocations = []; }
+    }
+    const broken = structuredClone(after);
+    if (mode === 'wrong-owner') broken.orders[0]!.accountId = 'other';
+    if (mode === 'partial') broken.orders[0]!.lines = [];
+    if (mode === 'duplicate') broken.orders.push({ ...structuredClone(broken.orders[0]!), id: 'duplicate' });
+    const snapshot = { state: before, account: 'a', item: 'i', scope: 'orders' as const,
+      storage: { kind: 'order-data' as const, cart: false, warehouses: false }, schemaSha256: { schema: 'same' } };
+    let reads = 0;
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectPurchaseCount', {
+      do: 'dbExpectPurchaseCount', before: ['before'], purchasesEach: 1,
+      ...(mode === 'immediate' ? {} : { within: 500 }),
+    }, { capabilities: {
+      clock: { sleep: async () => { await new Promise(resolve => setTimeout(resolve, 1)); } },
+      'database-read': { ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: new Map([['before', snapshot]]) }),
+        getCheckoutState: () => {
+          reads++;
+          if (mode === 'reader-error') throw new Error('reader unavailable');
+          return { ...snapshot, state: ['delayed', 'reject-all', 'immediate'].includes(mode)
+            ? (mode === 'delayed' && reads > 1 ? after : before) : reads === 1 ? broken : after,
+            schemaSha256: { schema: mode === 'schema-change' && reads === 1 ? 'changed' : 'same' } };
+        } },
+    } });
+    assert.equal(result.status, mode === 'delayed' ? 'passed'
+      : ['schema-change', 'reader-error'].includes(mode) ? 'harness_failure' : 'failed', mode);
+    assert.equal(reads > 1, ['delayed', 'reject-all'].includes(mode), mode);
     if (result.status === 'failed') assert(result.observation, mode);
   }
 });

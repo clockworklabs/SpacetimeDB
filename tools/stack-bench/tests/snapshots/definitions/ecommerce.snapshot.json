@@ -5551,13 +5551,15 @@
                 "ifAvailable": true,
                 "testid": "current-user",
                 "unlessVisible": [
-                  "admin-link"
+                  "admin-link",
+                  "admin-panel"
                 ]
               },
               {
                 "actor": "admin",
                 "do": "click",
-                "testid": "admin-link"
+                "testid": "admin-link",
+                "unlessVisible": "admin-panel"
               },
               {
                 "actor": "customer",

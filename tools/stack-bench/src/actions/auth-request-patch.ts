@@ -336,6 +336,13 @@ export async function withAuthWriteInventory<T>(page: Page, submit: () => Promis
   return { result, writes };
 }
 
+// Observe writes dispatched during the UI action and while their receipts drain.
+// A no-op control is valid; this does not cover a later, independently queued task.
+export async function withWriteCompletion<T>(page: Page, submit: () => Promise<T>, readEndpoints: readonly string[] = []) {
+  const { result, writes } = await captureAuthWrites(page, submit, undefined, readEndpoints, true);
+  return { result, writes };
+}
+
 interface WriteProbe { target: AuthWriteTarget; patch: AuthRequestPatch; username: string; password: string;
   platformPatch?: PlatformAuthPatch | null; complete?: (receipt: PatchReceipt) => Promise<void> }
 
@@ -346,7 +353,7 @@ async function withAuthWriteProbe<T>(page: Page, submit: () => Promise<T>, probe
 }
 
 async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
-  probe?: WriteProbe, readEndpoints: readonly string[] = []) {
+  probe?: WriteProbe, readEndpoints: readonly string[] = [], completionOnly = false) {
   const writes: AuthWrite[] = [], pending: Promise<void>[] = [];
   let failed = false, stopped = false, requestPatch: PatchReceipt | undefined, selected = 0;
   let finishTarget!: () => void;
@@ -439,8 +446,11 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     const contentType = request.headers()['content-type']?.split(';')[0]?.trim();
     try {
       if (raw) {
-        if (!contentType || !/^application\/(?:[\w.-]+\+)?json$/i.test(contentType)) throw new Error('Opaque write body');
-        body = request.postDataJSON();
+        if (completionOnly) body = raw;
+        else {
+          if (!contentType || !/^application\/(?:[\w.-]+\+)?json$/i.test(contentType)) throw new Error('Opaque write body');
+          body = request.postDataJSON();
+        }
       }
     } catch { fail(); return route.fallback(); }
     const target = visit({ transport: 'http', destination: hash(JSON.stringify([request.method(), request.url()])),
@@ -452,7 +462,8 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
         // Chromium can leave finished() pending for a zero-length response.
         // Its complete headers prove the empty body without waiting for bytes.
         const empty = headers['content-length'] === '0' && !headers['transfer-encoding'];
-        if (!empty && await response.finished() !== null || response.status() >= 300 && response.status() < 400) fail();
+        if (!empty && await response.finished() !== null || response.status() >= 300 && response.status() < 400
+          || completionOnly && response.status() === 202) fail();
       }).catch(fail));
       return route.fallback();
     }
@@ -513,8 +524,9 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     }
     const refused = requestPatch?.success === false || (requestPatch?.status ?? 0) >= 400;
     if (!probe && !failed && submissionFailure) throw submissionFailure;
-    if (failed || !writes.length || probe && (selected !== 1 || !requestPatch
+    if (failed || !completionOnly && !writes.length || probe && (selected !== 1 || !requestPatch
       || writes.length !== probe.target.writes.length && !refused)) {
+      if (completionOnly) inconclusive('transport-incomplete', {});
       inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove the signup write sequence and one complete target request' });
     }
     if (submissionFailure) throw submissionFailure;

@@ -126,7 +126,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   dbExpectNoPurchase: ['database-read'],
   dbExpectPurchase: ['actors', 'database-read', 'browser-observation'],
   dbExpectPurchases: ['database-read', 'named-actions'],
-  dbExpectPurchaseCount: ['database-read'],
+  dbExpectPurchaseCount: ['database-read', 'clock'],
   recordTime: ['browser-observation'],
   expectElapsed: ['browser-observation'],
   wait: ['actors', 'clock', 'browser-observation'],
