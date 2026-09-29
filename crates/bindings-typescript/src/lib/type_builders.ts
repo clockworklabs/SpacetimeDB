@@ -1762,6 +1762,9 @@ class SimpleSumBuilderImpl<Variants extends SimpleVariantsObj>
   }
 }
 
+// Named so declaration files can refer to enum and unit builder instances.
+export type { SumBuilderImpl, SimpleSumBuilderImpl, UnitBuilder };
+
 export const SimpleSumBuilder: {
   new <Variants extends SimpleVariantsObj>(
     variants: Variants,
