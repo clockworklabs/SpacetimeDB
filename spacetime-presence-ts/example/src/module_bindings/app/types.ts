@@ -35,24 +35,6 @@ export const AttachmentInput = __t.object("AttachmentInput", {
 });
 export type AttachmentInput = __Infer<typeof AttachmentInput>;
 
-export const AuthPubKey = __t.object("AuthPubKey", {
-  publicKeyPem: __t.string(),
-  keyId: __t.string(),
-  issuerUrl: __t.string(),
-});
-export type AuthPubKey = __Infer<typeof AuthPubKey>;
-
-export const ChatAuthUser = __t.object("ChatAuthUser", {
-  userId: __t.string(),
-  email: __t.string(),
-  emailVerified: __t.bool(),
-  name: __t.option(__t.string()),
-  image: __t.option(__t.string()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-});
-export type ChatAuthUser = __Infer<typeof ChatAuthUser>;
-
 export const ChatRateLimitStatus = __t.object("ChatRateLimitStatus", {
   scope: __t.string(),
   limit: __t.u32(),
@@ -122,9 +104,6 @@ export const MessageThread = __t.object("MessageThread", {
 });
 export type MessageThread = __Infer<typeof MessageThread>;
 
-export const MyAuthUser = __t.object("MyAuthUser", {});
-export type MyAuthUser = __Infer<typeof MyAuthUser>;
-
 export const MyChatUsers = __t.object("MyChatUsers", {});
 export type MyChatUsers = __Infer<typeof MyChatUsers>;
 
@@ -160,23 +139,6 @@ export type MyServerMembers = __Infer<typeof MyServerMembers>;
 
 export const MyServers = __t.object("MyServers", {});
 export type MyServers = __Infer<typeof MyServers>;
-
-export const MySession = __t.object("MySession", {
-  sessionId: __t.string(),
-  expiresAt: __t.timestamp(),
-  createdAt: __t.timestamp(),
-  ipAddress: __t.option(__t.string()),
-  userAgent: __t.option(__t.string()),
-  isCurrent: __t.bool(),
-});
-export type MySession = __Infer<typeof MySession>;
-
-export const MySessions = __t.object("MySessions", {
-  get sessions() {
-    return __t.array(MySession);
-  },
-});
-export type MySessions = __Infer<typeof MySessions>;
 
 export const MyThreadMessages = __t.object("MyThreadMessages", {});
 export type MyThreadMessages = __Infer<typeof MyThreadMessages>;

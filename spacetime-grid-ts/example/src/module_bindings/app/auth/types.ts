@@ -39,6 +39,7 @@ export const AuthConfig = __t.object("AuthConfig", {
   es256PrivateKeyPem: __t.string(),
   es256PublicKeyPem: __t.string(),
   keyId: __t.string(),
+  tokenCounter: __t.u64(),
   googleClientId: __t.option(__t.string()),
   googleClientSecret: __t.option(__t.string()),
   githubClientId: __t.option(__t.string()),
@@ -50,6 +51,7 @@ export type AuthConfig = __Infer<typeof AuthConfig>;
 export const AuthConnectionBinding = __t.object("AuthConnectionBinding", {
   stdbIdentity: __t.identity(),
   userId: __t.string(),
+  sessionId: __t.string(),
   linkedAt: __t.timestamp(),
 });
 export type AuthConnectionBinding = __Infer<typeof AuthConnectionBinding>;
@@ -74,7 +76,6 @@ export type AuthPubKey = __Infer<typeof AuthPubKey>;
 export const AuthSession = __t.object("AuthSession", {
   sessionId: __t.string(),
   userId: __t.string(),
-  token: __t.string(),
   expiresAt: __t.timestamp(),
   ipAddress: __t.option(__t.string()),
   userAgent: __t.option(__t.string()),

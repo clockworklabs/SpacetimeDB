@@ -10,6 +10,10 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  LobbyStatus,
+} from "./types";
+
 export const params = {
 };
-export const returnType = __t.string()
+export const returnType = LobbyStatus

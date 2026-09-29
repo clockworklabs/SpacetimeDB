@@ -32,6 +32,8 @@ export const LobbyConfig = __t.object("LobbyConfig", {
   singleton: __t.bool(),
   defaultTicketTtlSeconds: __t.u32(),
   maxMatchSize: __t.u32(),
+  readyTimeoutSeconds: __t.u32(),
+  retentionSeconds: __t.u32(),
   updatedAt: __t.timestamp(),
 });
 export type LobbyConfig = __Infer<typeof LobbyConfig>;
@@ -120,7 +122,6 @@ export const LobbyRoomSeat = __t.object("LobbyRoomSeat", {
   get status() {
     return LobbySeatStatus;
   },
-  ready: __t.bool(),
   joinedAt: __t.option(__t.timestamp()),
   leftAt: __t.option(__t.timestamp()),
   updatedAt: __t.timestamp(),
@@ -141,9 +142,17 @@ export const LobbySeatStatus = __t.enum("LobbySeatStatus", {
   Reserved: __t.unit(),
   Joined: __t.unit(),
   Left: __t.unit(),
-  Disconnected: __t.unit(),
 });
 export type LobbySeatStatus = __Infer<typeof LobbySeatStatus>;
+
+export const LobbyStatus = __t.object("LobbyStatus", {
+  defaultTicketTtlSeconds: __t.u32(),
+  maxMatchSize: __t.u32(),
+  queuedTickets: __t.u32(),
+  readyRooms: __t.u32(),
+  activeRooms: __t.u32(),
+});
+export type LobbyStatus = __Infer<typeof LobbyStatus>;
 
 export const LobbySubjectRating = __t.object("LobbySubjectRating", {
   ratingId: __t.string(),
@@ -158,6 +167,12 @@ export const LobbySubjectRating = __t.object("LobbySubjectRating", {
   updatedAt: __t.timestamp(),
 });
 export type LobbySubjectRating = __Infer<typeof LobbySubjectRating>;
+
+export const LobbySweepTick = __t.object("LobbySweepTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type LobbySweepTick = __Infer<typeof LobbySweepTick>;
 
 // The tagged union or sum type for the algebraic type `LobbyTicketStatus`.
 export const LobbyTicketStatus = __t.enum("LobbyTicketStatus", {

@@ -35,6 +35,15 @@ export const ApiKeyAdminIdentity = __t.object("ApiKeyAdminIdentity", {
 });
 export type ApiKeyAdminIdentity = __Infer<typeof ApiKeyAdminIdentity>;
 
+export const ApiKeyConfig = __t.object("ApiKeyConfig", {
+  singleton: __t.bool(),
+  secret: __t.string(),
+  counter: __t.u64(),
+  usageRetentionSeconds: __t.u32(),
+  updatedAt: __t.timestamp(),
+});
+export type ApiKeyConfig = __Infer<typeof ApiKeyConfig>;
+
 export const ApiKeyCreateResult = __t.object("ApiKeyCreateResult", {
   keyId: __t.string(),
   key: __t.string(),
@@ -74,6 +83,12 @@ export const ApiKeySummary = __t.object("ApiKeySummary", {
   revokedAt: __t.option(__t.timestamp()),
 });
 export type ApiKeySummary = __Infer<typeof ApiKeySummary>;
+
+export const ApiKeySweepTick = __t.object("ApiKeySweepTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type ApiKeySweepTick = __Infer<typeof ApiKeySweepTick>;
 
 export const ApiKeyUsage = __t.object("ApiKeyUsage", {
   usageId: __t.u64(),

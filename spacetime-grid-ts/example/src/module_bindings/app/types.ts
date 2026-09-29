@@ -66,13 +66,6 @@ export const AiTurnEvent = __t.object("AiTurnEvent", {
 });
 export type AiTurnEvent = __Infer<typeof AiTurnEvent>;
 
-export const AuthPubKey = __t.object("AuthPubKey", {
-  publicKeyPem: __t.string(),
-  keyId: __t.string(),
-  issuerUrl: __t.string(),
-});
-export type AuthPubKey = __Infer<typeof AuthPubKey>;
-
 export const CellState = __t.object("CellState", {
   id: __t.u64(),
   gridId: __t.u64(),
@@ -111,17 +104,6 @@ export const Grid = __t.object("Grid", {
   updatedAt: __t.timestamp(),
 });
 export type Grid = __Infer<typeof Grid>;
-
-export const GridAuthUser = __t.object("GridAuthUser", {
-  userId: __t.string(),
-  email: __t.string(),
-  emailVerified: __t.bool(),
-  name: __t.option(__t.string()),
-  image: __t.option(__t.string()),
-  createdAt: __t.timestamp(),
-  updatedAt: __t.timestamp(),
-});
-export type GridAuthUser = __Infer<typeof GridAuthUser>;
 
 export const GridEntity = __t.object("GridEntity", {
   id: __t.u64(),
@@ -192,9 +174,6 @@ export const MoveUnitResult = __t.object("MoveUnitResult", {
 });
 export type MoveUnitResult = __Infer<typeof MoveUnitResult>;
 
-export const MyAuthUser = __t.object("MyAuthUser", {});
-export type MyAuthUser = __Infer<typeof MyAuthUser>;
-
 export const MyCellStates = __t.object("MyCellStates", {});
 export type MyCellStates = __Infer<typeof MyCellStates>;
 
@@ -212,23 +191,6 @@ export type MyMatches = __Infer<typeof MyMatches>;
 
 export const MyPlayerUnits = __t.object("MyPlayerUnits", {});
 export type MyPlayerUnits = __Infer<typeof MyPlayerUnits>;
-
-export const MySession = __t.object("MySession", {
-  sessionId: __t.string(),
-  expiresAt: __t.timestamp(),
-  createdAt: __t.timestamp(),
-  ipAddress: __t.option(__t.string()),
-  userAgent: __t.option(__t.string()),
-  isCurrent: __t.bool(),
-});
-export type MySession = __Infer<typeof MySession>;
-
-export const MySessions = __t.object("MySessions", {
-  get sessions() {
-    return __t.array(MySession);
-  },
-});
-export type MySessions = __Infer<typeof MySessions>;
 
 export const NpcActor = __t.object("NpcActor", {
   actorId: __t.string(),
@@ -267,10 +229,4 @@ export const UnitType = __t.object("UnitType", {
   glyph: __t.string(),
 });
 export type UnitType = __Infer<typeof UnitType>;
-
-export const WhoAmI = __t.object("WhoAmI", {
-  userId: __t.option(__t.string()),
-  senderIdentityHex: __t.string(),
-});
-export type WhoAmI = __Infer<typeof WhoAmI>;
 

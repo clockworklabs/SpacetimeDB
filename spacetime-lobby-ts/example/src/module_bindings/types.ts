@@ -142,7 +142,6 @@ export const LobbyRoomSeat = __t.object("LobbyRoomSeat", {
   get status() {
     return LobbySeatStatus;
   },
-  ready: __t.bool(),
   joinedAt: __t.option(__t.timestamp()),
   leftAt: __t.option(__t.timestamp()),
   updatedAt: __t.timestamp(),
@@ -163,7 +162,6 @@ export const LobbySeatStatus = __t.enum("LobbySeatStatus", {
   Reserved: __t.unit(),
   Joined: __t.unit(),
   Left: __t.unit(),
-  Disconnected: __t.unit(),
 });
 export type LobbySeatStatus = __Infer<typeof LobbySeatStatus>;
 

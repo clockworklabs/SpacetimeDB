@@ -11,9 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  pool: __t.string(),
-  matchSize: __t.u32(),
-  attributesJson: __t.option(__t.string()),
-  ttlSeconds: __t.option(__t.u32()),
-  ratingPool: __t.option(__t.string()),
+  identity: __t.identity(),
 };

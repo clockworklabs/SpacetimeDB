@@ -13,4 +13,6 @@ import {
 export default {
   defaultTicketTtlSeconds: __t.u32(),
   maxMatchSize: __t.u32(),
+  readyTimeoutSeconds: __t.u32(),
+  retentionSeconds: __t.u32(),
 };

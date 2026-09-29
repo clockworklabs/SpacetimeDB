@@ -23,7 +23,6 @@ export default __t.row({
   get status() {
     return LobbySeatStatus;
   },
-  ready: __t.bool(),
   joinedAt: __t.option(__t.timestamp()).name("joined_at"),
   leftAt: __t.option(__t.timestamp()).name("left_at"),
   updatedAt: __t.timestamp().name("updated_at"),
