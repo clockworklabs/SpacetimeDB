@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Scheduled-work access",
-  "note": "The customer attempts to schedule a restock and cancel an admin-created pending restock.",
+  "note": "The admin proves each route with a distinct restock; the customer then attempts a new schedule and a cancellation.",
   "features": [
     {
       "id": 317,
@@ -30,12 +30,16 @@
           "points": 3,
           "statedBy": "Only an admin can schedule or cancel a restock.",
           "steps": [
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Webcam" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "West" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Desk Lamp" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
             { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "3" },
             { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" },
             { "do": "callAction", "actor": "admin", "action": "scheduleRestock", "authentication": "actor", "input": { "testid": "schedule-restock-submit", "attribute": "data-action-input" }, "namedAction": { "id": "scheduleRestock", "path": "/api/admin/scheduled-restocks", "method": "POST", "reducer": "schedule_restock", "args": ["", "", 0, 0], "params": [{ "name": "item", "in": "body" }, { "name": "warehouse", "in": "body" }, { "name": "quantity", "in": "body" }, { "name": "delaySeconds", "in": "body" }] }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Keyboard" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "3" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" },
             { "do": "callAction", "actor": "customer", "from": "admin", "action": "scheduleRestock", "authentication": "actor", "input": { "testid": "schedule-restock-submit", "attribute": "data-action-input" }, "namedAction": { "id": "scheduleRestock", "path": "/api/admin/scheduled-restocks", "method": "POST", "reducer": "schedule_restock", "args": ["", "", 0, 0], "params": [{ "name": "item", "in": "body" }, { "name": "warehouse", "in": "body" }, { "name": "quantity", "in": "body" }, { "name": "delaySeconds", "in": "body" }] }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused", "routeProvenBy": "admin" },
             { "do": "reload", "actor": "admin", "settleMs": 1000 },

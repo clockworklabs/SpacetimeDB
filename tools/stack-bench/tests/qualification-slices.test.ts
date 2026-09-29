@@ -379,6 +379,8 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   referenceObservations.push({ case: 'exact source pair and unchanged check', outcome: 'accepted' });
   const definition = JSON.parse(readFileSync(path, 'utf8'));
   definition.qualificationReuse = referenceReuse;
+  // Reuse without source identities is valid only over sliced evidence.
+  definition.qualification.evidence = [entry];
   assert.doesNotThrow(() => compileCalibrationDefinition(definition));
   for (const change of [
     (r: typeof referenceReview) => { r.checks = []; },
