@@ -1418,6 +1418,7 @@ impl InstanceCommon {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             view_typespace,
@@ -1436,6 +1437,7 @@ impl InstanceCommon {
                         fn_ptr,
                         sender: &sender,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1447,6 +1449,7 @@ impl InstanceCommon {
                         table_id,
                         fn_ptr,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1471,13 +1474,9 @@ impl InstanceCommon {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            (Ok(raw), sender) => {
+            (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender, args.tuple()),
-                        None => ViewCallInfo::anonymous(view_id, args.tuple()),
-                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let row_product_type = view_typespace
                         .resolve(row_type)
@@ -1657,7 +1656,7 @@ fn collect_subscribed_view_calls(
                 continue;
             }
             // Each anonymous instance is keyed by its args, so each needs its own call.
-            for sub in subs {
+            for (view_call, sub) in subs {
                 let ViewInstanceArgs::Anonymous { args } = sub else {
                     continue;
                 };
@@ -1669,6 +1668,7 @@ fn collect_subscribed_view_calls(
                     caller: owner_identity,
                     sender: None,
                     args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                    view_call,
                     row_type: *product_type_ref,
                     timestamp: Timestamp::now(),
                     view_typespace: view_typespace.clone(),
@@ -1677,7 +1677,7 @@ fn collect_subscribed_view_calls(
             continue;
         }
 
-        for sub in subs {
+        for (view_call, sub) in subs {
             let ViewInstanceArgs::Sender { sender: identity, args } = sub else {
                 continue;
             };
@@ -1689,6 +1689,7 @@ fn collect_subscribed_view_calls(
                 caller: owner_identity,
                 sender: Some(identity),
                 args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                view_call,
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
                 view_typespace: view_typespace.clone(),
@@ -1980,6 +1981,7 @@ pub struct ViewOp<'a> {
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
     pub sender: &'a Identity,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -1993,7 +1995,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender, self.args.tuple()))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -2005,6 +2007,7 @@ pub struct AnonymousViewOp<'a> {
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -2018,7 +2021,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::anonymous(self.view_id, self.args.tuple()))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -2507,27 +2510,32 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        let mut keys = Vec::new();
         for arg in [42u32, 43u32] {
             let args = ViewInstanceArgs::Anonymous { args: product![arg] };
-            tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, Identity::ZERO)?;
+            let key = ViewCallInfo::from_args(view_id, &args);
+            keys.push((product![arg], key.clone()));
+            tx.subscribe_view(key, args, Identity::ZERO)?;
         }
 
         let calls = collect_subscribed_view_calls(&tx, &module_def, Identity::ZERO)?;
-        let mut tuples: Vec<_> = calls.iter().map(|call| call.args.tuple().clone()).collect();
-        tuples.sort();
+        let mut evaluated: Vec<_> = calls
+            .iter()
+            .map(|call| (call.args.tuple().clone(), call.view_call.clone()))
+            .collect();
+        evaluated.sort_by(|a, b| a.0.cmp(&b.0));
 
-        assert_eq!(tuples, [product![42u32], product![43u32]]);
+        // Each instance is evaluated with its own args, under the key it is stored under.
+        assert_eq!(evaluated, keys);
         assert!(calls.iter().all(|call| call.sender.is_none()));
         Ok(())
     }
 
-    /// Stored view args are passed as BSATN and decoded against the view's params.
-    /// The decoded tuple must produce the same instance key as the stored one,
-    /// for every type a SQL literal can express.
+    /// Stored view args are passed as BSATN and decoded against the view's params,
+    /// reproducing the stored values for every type a SQL literal can express.
     #[test]
-    fn test_view_args_bsatn_round_trip_preserves_key() -> anyhow::Result<()> {
+    fn test_view_args_bsatn_round_trip() -> anyhow::Result<()> {
         use spacetimedb_lib::{ConnectionId, Timestamp, Uuid};
-        use spacetimedb_primitives::ViewId;
         use spacetimedb_sats::{i256, u256, AlgebraicValue};
 
         let params = ProductType::from_iter([
@@ -2577,21 +2585,12 @@ mod tests {
             Uuid::from_u128(9).into(),
         ]);
 
-        let view_id = ViewId(1);
         for is_anonymous in [true, false] {
             let module_def = module_def_for_view_with_params("v", is_anonymous, params.clone());
             let view_def = module_def.view("v").expect("view should exist");
 
             let decoded = FunctionArgs::from_view_args(&stored).into_tuple_for_def(&module_def, view_def)?;
             assert_eq!(decoded.tuple(), &stored);
-
-            let instance = ViewInstanceArgs::for_schema(is_anonymous, Identity::ONE, stored.clone());
-            let decoded_key = if is_anonymous {
-                ViewCallInfo::anonymous(view_id, decoded.tuple())
-            } else {
-                ViewCallInfo::sender(view_id, Identity::ONE, decoded.tuple())
-            };
-            assert_eq!(ViewCallInfo::from_args(view_id, &instance), decoded_key);
 
             // Args that don't match the params fail to decode instead of reaching the guest.
             assert!(FunctionArgs::from_view_args(&product![1u32])

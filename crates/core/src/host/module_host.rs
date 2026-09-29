@@ -1174,6 +1174,8 @@ pub struct CallViewParams {
     pub caller: Identity,
     pub sender: Option<Identity>,
     pub args: ArgsTuple,
+    /// The key of the instance being evaluated: its rows are stored, and its reads tracked, under it.
+    pub view_call: ViewCallInfo,
     pub row_type: AlgebraicTypeRef,
     pub timestamp: Timestamp,
     /// The typespace of the module that owns this view.
@@ -3016,6 +3018,7 @@ impl ModuleHost {
                     view_id,
                     table_id,
                     FunctionArgs::from_view_args(args.args()),
+                    view_call.clone(),
                     caller,
                     sender,
                 )?;
@@ -3114,6 +3117,7 @@ impl ModuleHost {
                 caller,
                 sender,
                 args,
+                view_call,
                 view_def.product_type_ref,
                 timestamp,
                 Arc::new(owning_def.typespace().clone()),
@@ -3155,6 +3159,7 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
@@ -3165,6 +3170,7 @@ impl ModuleHost {
             view_id,
             table_id,
             args,
+            view_call,
             caller,
             sender,
             Timestamp::now(),
@@ -3178,6 +3184,7 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
         timestamp: Timestamp,
@@ -3201,6 +3208,7 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             Arc::new(owning_def.typespace().clone()),
@@ -3217,6 +3225,7 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
         args: ArgsTuple,
+        view_call: ViewCallInfo,
         row_type: AlgebraicTypeRef,
         timestamp: Timestamp,
         view_typespace: Arc<Typespace>,
@@ -3231,6 +3240,7 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             view_typespace,
         };

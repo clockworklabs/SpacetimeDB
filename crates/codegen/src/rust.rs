@@ -453,7 +453,10 @@ pub(super) fn parse_table_update(
 "
         );
 
-        implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor");
+        // A parameterized view can't be queried without arguments, so it gets no argument-less accessor.
+        if !is_parameterized_view(module, &table.name) {
+            implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor");
+        }
 
         OutputFile {
             filename: table_module_name(&table.accessor_name) + ".rs",
@@ -876,6 +879,11 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
     }
 
     Ok(())
+}
+
+/// Is `name` a view that takes arguments?
+fn is_parameterized_view(module: &ModuleDef, name: &Identifier) -> bool {
+    module.view(name).is_some_and(|view| !view.params.elements.is_empty())
 }
 
 pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {
@@ -1689,7 +1697,11 @@ type QueryBuilder = __sdk::QueryBuilder;
             out.delimited_block(
                 "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
                 |out| {
-                    for (name, _, _) in iter_table_names_and_types(module, visibility) {
+                    // `subscribe_to_all_tables` subscribes to `SELECT * FROM {name}` for each of these,
+                    // which a parameterized view would reject for missing args.
+                    for (name, _, _) in iter_table_names_and_types(module, visibility)
+                        .filter(|(name, _, _)| !is_parameterized_view(module, name))
+                    {
                         writeln!(out, "\"{name}\",");
                     }
                 },

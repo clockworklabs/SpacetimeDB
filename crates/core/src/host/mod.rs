@@ -102,6 +102,7 @@ impl ArgsTuple {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn tuple(&self) -> &ProductValue {
         &self.tuple
     }

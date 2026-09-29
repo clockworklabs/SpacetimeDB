@@ -2,7 +2,7 @@ use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar, ViewArgs};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{AlgebraicType, ProductValue};
+use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
@@ -166,12 +166,25 @@ fn type_view_args(schema: &TableOrViewSchema, args: Vec<SqlLiteral>) -> TypingRe
                 .into());
             }
             match type_expr(&Relvars::default(), SqlExpr::Lit(lit), Some(ty))? {
-                Expr::Value(value, _) => Ok(value),
+                Expr::Value(value, _) => Ok(positive_zero(value)),
                 _ => unreachable!("a literal is typed as a value"),
             }
         })
         .collect::<TypingResult<ProductValue>>()?;
     Ok(Some(ViewArgs { args, arg_hash: None }))
+}
+
+/// Replaces a float `-0.0` with `+0.0`.
+///
+/// Values compare `-0.0` and `+0.0` as equal, so calls deduplicate them into one instance,
+/// but a view instance is keyed by the hash of its args' encoding, where they differ.
+/// Using one zero keeps both consistent, as SQL comparisons already treat them as equal.
+fn positive_zero(value: AlgebraicValue) -> AlgebraicValue {
+    match value {
+        AlgebraicValue::F32(x) if x.into_inner() == 0.0 => AlgebraicValue::F32(0.0f32.into()),
+        AlgebraicValue::F64(x) if x.into_inner() == 0.0 => AlgebraicValue::F64(0.0f64.into()),
+        value => value,
+    }
 }
 
 /// Type checker for subscriptions
@@ -275,11 +288,12 @@ pub mod test_utils {
     pub struct SchemaViewer(pub ModuleDef);
 
     impl SchemaViewer {
-        /// The schema of view `v` or `w`, if the module defines it.
+        /// The schema of view `v`, `w` or `f`, if the module defines it.
         fn view_schema(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             let name = match table_id.idx() {
                 2 => "v",
                 3 => "w",
+                4 => "f",
                 _ => return None,
             };
             let def = self.0.view(name)?;
@@ -296,6 +310,7 @@ pub mod test_utils {
                 "s" => Some(TableId(1)),
                 "v" => Some(TableId(2)),
                 "w" => Some(TableId(3)),
+                "f" => Some(TableId(4)),
                 _ => None,
             }
         }
@@ -370,7 +385,8 @@ mod tests {
         ])
     }
 
-    /// A table, a view `v(id: u32)`, and a view `w(ids: [u32])` whose parameter SQL can't express.
+    /// A table, a view `v(id: u32)`, a view `w(ids: [u32])` whose parameter SQL can't express,
+    /// and a view `f(x: f64)`.
     fn module_def_with_views() -> ModuleDef {
         let row = || ProductType::from([("x", AlgebraicType::U32)]);
         build_module_def_with_views(
@@ -382,6 +398,7 @@ mod tests {
                     ProductType::from([("ids", AlgebraicType::array(AlgebraicType::U32))]),
                     row(),
                 ),
+                ("f", ProductType::from([("x", AlgebraicType::F64)]), row()),
             ],
         )
     }
@@ -744,6 +761,28 @@ mod tests {
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_err(), "{msg}");
+        }
+    }
+
+    /// `-0.0` and `+0.0` are one view instance, so float args must use one zero.
+    #[test]
+    fn view_args_use_positive_zero() {
+        let tx = SchemaViewer(module_def_with_views());
+
+        for sql in [
+            "select * from f(-0.0)",
+            "select * from f(-1e-1000)",
+            "select * from f(0.0)",
+        ] {
+            let Ok(ProjectName::None(RelExpr::RelVar(relvar))) = parse_and_type_sub(sql, &tx) else {
+                panic!("expected a relvar for `{sql}`");
+            };
+            let args = relvar.view_args.expect("f takes an arg").args;
+            let [AlgebraicValue::F64(x)] = &*args.elements else {
+                panic!("expected one f64 arg for `{sql}`");
+            };
+            let x = x.into_inner();
+            assert!(x == 0.0 && x.is_sign_positive(), "`{sql}` typed its arg as {x:?}");
         }
     }
 }
