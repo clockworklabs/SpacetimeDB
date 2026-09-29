@@ -98,7 +98,10 @@ async fn fetch(request: reqwest::RequestBuilder, query: Query) -> anyhow::Result
         .send()
         .await?;
     let response = response.error_for_status().context("failed to fetch environment")?;
-    // TODO(noa): what are we doing here. what. why are we manually buffering. help me
+    // Read the body incrementally so a misbehaving server cannot make us buffer an unbounded
+    // response, as `Response::bytes` would. The limit fits every variable at its maximum key and
+    // value size with worst-case JSON escaping (one byte becomes the six bytes of `\u00XX`),
+    // plus room for the rest of the SQL result.
     let mut body = Vec::new();
     let limit = MAX_ENV_VARS * (MAX_ENV_KEY_BYTES + MAX_ENV_VALUE_BYTES) * 6 + 64 * 1024;
     let mut stream = response.bytes_stream();

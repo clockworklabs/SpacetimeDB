@@ -3319,7 +3319,7 @@ impl ModuleHost {
     ) -> Result<UpdateEnvironmentResult, anyhow::Error> {
         call_instance!(
             self,
-            "<update_database>",
+            "<update_environment>",
             environment,
             |environment, inst| inst.update_environment(environment),
             |environment, inst| inst.update_environment(environment).await,

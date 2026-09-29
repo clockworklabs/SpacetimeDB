@@ -30,10 +30,12 @@ use futures::TryStreamExt;
 use http::StatusCode;
 use http_body_util::BodyExt;
 use log::{debug, info, warn};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited, UpdateEnvironmentResult};
+use spacetimedb::host::module_host::{
+    ClientConnectedError, DurabilityExited, DurableOffset, TransactionOffset, UpdateEnvironmentResult,
+};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
@@ -604,20 +606,30 @@ fn extract_environment_error(mut error: &anyhow::Error) -> Option<axum::response
     Some(res)
 }
 
-fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
+/// Converts `error` into a response, using `wrap` to put an [`EnvironmentPublishError`]
+/// into the body type that the endpoint's clients decode.
+fn environment_error_response<T: Serialize>(
+    error: anyhow::Error,
+    wrap: impl FnOnce(EnvironmentPublishError) -> T,
+    fallback: impl FnOnce(anyhow::Error) -> axum::response::ErrorResponse,
+) -> axum::response::ErrorResponse {
     match extract_environment_error(&error) {
-        Some(Ok(err)) => (err.status_code(), axum::Json(err)).into(),
+        Some(Ok(err)) => (err.status_code(), axum::Json(wrap(err))).into(),
         Some(Err(e)) => e,
-        None => log_and_500(error),
+        None => fallback(error),
     }
 }
 
+fn migration_error_fallback(error: anyhow::Error) -> axum::response::ErrorResponse {
+    bad_request(format!("Failed to create or update the database: {error}").into())
+}
+
+fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
+    environment_error_response(error, PublishResult::EnvironmentError, log_and_500)
+}
+
 fn publish_migration_error(error: anyhow::Error) -> axum::response::ErrorResponse {
-    match extract_environment_error(&error) {
-        Some(Ok(err)) => (err.status_code(), axum::Json(err)).into(),
-        Some(Err(e)) => e,
-        None => bad_request(format!("Failed to create or update the database: {error}").into()),
-    }
+    environment_error_response(error, PublishResult::EnvironmentError, migration_error_fallback)
 }
 
 pub async fn environment_metadata<S>(
@@ -666,7 +678,7 @@ where
         )
         .await;
 
-    environment_publish_result(result)
+    environment_publish_result(result).await
 }
 
 pub async fn environment_patch<S>(
@@ -681,11 +693,9 @@ where
     S: ControlStateDelegate + NodeDelegate + Authorization,
 {
     if remove == EnvironmentRemove::All {
-        // if you want to fully replace, just PUT /environment
         return Err(bad_request(
             format!(
-                "{} ({})",
-                headers::Error::invalid(),
+                "`{}: *` is not supported by PATCH. To replace the whole environment, use PUT instead.",
                 <SpacetimeEnvironmentRemove as headers::Header>::name()
             )
             .into(),
@@ -706,15 +716,28 @@ where
         )
         .await;
 
-    environment_publish_result(result)
+    environment_publish_result(result).await
 }
 
 type EnvironmentPublishResult = axum::response::Result<(StatusCode, axum::Json<Result<(), EnvironmentPublishError>>)>;
 
-fn environment_publish_result(result: anyhow::Result<UpdateEnvironmentResult>) -> EnvironmentPublishResult {
+async fn environment_publish_result(result: anyhow::Result<UpdateEnvironmentResult>) -> EnvironmentPublishResult {
     let result = match result {
-        Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e)) => return Err(publish_migration_error(e)),
-        Ok(UpdateEnvironmentResult::NoUpdateNeeded | UpdateEnvironmentResult::UpdatePerformed { .. }) => Ok(()),
+        Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e)) => {
+            return Err(environment_error_response(
+                e,
+                Err::<(), EnvironmentPublishError>,
+                migration_error_fallback,
+            ))
+        }
+        Ok(UpdateEnvironmentResult::NoUpdateNeeded) => Ok(()),
+        Ok(UpdateEnvironmentResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        }) => {
+            confirm_update(tx_offset, durable_offset, default_update_confirmation_timeout()).await?;
+            Ok(())
+        }
         Err(e) => match extract_environment_error(&e) {
             Some(Ok(e)) => Err(e),
             Some(Err(e)) => return Err(e),
@@ -1005,7 +1028,8 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         &auth.claims.identity,
         DatabaseResetDef {
             database_identity,
-            program_bytes: Some(program_bytes),
+            // An empty body resets the database but keeps the installed module.
+            program_bytes: (!program_bytes.is_empty()).then_some(program_bytes),
             num_replicas,
             host_type: Some(host_type),
         },
@@ -1230,21 +1254,30 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 durable_offset,
             },
         ) => {
-            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
-                let tx_offset = tx_offset.await?;
-                if let Some(mut durable_offset) = durable_offset {
-                    durable_offset.wait_for(tx_offset).await?;
-                }
-
-                Ok::<_, UpdateConfirmationError>(())
-            })
-            .await
-            .map_err(Into::into)
-            .flatten()?;
-
+            confirm_update(tx_offset, durable_offset, confirmation_timeout).await?;
             Ok(success())
         }
     }
+}
+
+/// Waits until the update committed at `tx_offset` is durable, so that a crash
+/// after we respond cannot lose an update we reported as successful.
+async fn confirm_update(
+    tx_offset: TransactionOffset,
+    durable_offset: Option<DurableOffset>,
+    confirmation_timeout: Duration,
+) -> Result<(), UpdateConfirmationError> {
+    timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
+        let tx_offset = tx_offset.await?;
+        if let Some(mut durable_offset) = durable_offset {
+            durable_offset.wait_for(tx_offset).await?;
+        }
+
+        Ok::<_, UpdateConfirmationError>(())
+    })
+    .await
+    .map_err(Into::into)
+    .flatten()
 }
 
 #[derive(From)]
@@ -1881,6 +1914,27 @@ mod tests {
     use tower::util::ServiceExt;
 
     #[tokio::test]
+    async fn environment_update_reports_success_only_after_confirmation() {
+        let performed = |tx_offset| {
+            Ok(UpdateEnvironmentResult::UpdatePerformed {
+                tx_offset,
+                durable_offset: None,
+            })
+        };
+
+        let (tx, rx) = oneshot::channel();
+        tx.send(7).unwrap();
+        let response = environment_publish_result(performed(rx)).await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // The transaction never reports its offset, so it cannot be confirmed.
+        let (tx, rx) = oneshot::channel();
+        drop(tx);
+        let response = environment_publish_result(performed(rx)).await.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
     async fn publish_environment_error_identifies_only_typed_missing_required_keys() {
         use spacetimedb_lib::environment::EnvironmentSchemaError;
         let missing = || EnvironmentSchemaError::MissingRequired { key: "API_KEY".into() };
@@ -1904,12 +1958,30 @@ mod tests {
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
             assert_eq!(response.headers()[http::header::CONTENT_TYPE], "application/json");
             let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
-            assert_eq!(
-                serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
-                serde_json::json!({
-                    "MissingRequiredEnvironment": { "keys": ["API_KEY"] }
-                })
-            );
+            // The CLI decodes publish and reset responses as `PublishResult`.
+            let decoded = serde_json::from_slice::<PublishResult>(&body).unwrap();
+            assert!(matches!(
+                decoded,
+                PublishResult::EnvironmentError(EnvironmentPublishError::MissingRequiredEnvironment { keys })
+                    if keys == ["API_KEY"]
+            ));
+        }
+        // The CLI decodes environment update responses as `Result<(), EnvironmentPublishError>`,
+        // including when the module fails while applying the new environment.
+        for result in [
+            Ok(UpdateEnvironmentResult::ErrorExecutingMigration(
+                spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
+            )),
+            Err(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
+        ] {
+            let response = environment_publish_result(result).await.into_response();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+            let decoded = serde_json::from_slice::<Result<(), EnvironmentPublishError>>(&body).unwrap();
+            assert!(matches!(
+                decoded,
+                Err(EnvironmentPublishError::MissingRequiredEnvironment { keys }) if keys == ["API_KEY"]
+            ));
         }
         for error in [
             anyhow::anyhow!("environment key API_KEY: required value is missing"),
