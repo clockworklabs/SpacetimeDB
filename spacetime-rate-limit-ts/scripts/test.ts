@@ -5,7 +5,7 @@ import {
   MAX_SWEEP_BATCH,
   sweepRateLimits,
   type RateLimitBucketRow,
-} from '../src/limit.ts';
+} from '../src/limit';
 
 let pass = 0;
 let fail = 0;

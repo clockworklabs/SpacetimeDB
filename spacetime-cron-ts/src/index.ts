@@ -1,5 +1,5 @@
-export { client, cronTable } from './cron';
-export { errors } from './errors';
+export { client, cronTable } from './cron.js';
+export { errors } from './errors.js';
 export type {
   CronArgsBuilder,
   CronClient,
@@ -19,7 +19,7 @@ export type {
   CronTx,
   ScheduleOpts,
   ScheduleSpec,
-} from './types';
+} from './types.js';
 export {
   parseCronExpression,
   nextFireAfter,
@@ -27,4 +27,4 @@ export {
   MAX_CRON_EXPRESSION_LENGTH,
   MAX_TIMEZONE_LENGTH,
   type ParsedCron,
-} from './parser';
+} from './parser.js';

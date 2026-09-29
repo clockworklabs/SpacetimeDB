@@ -7,4 +7,4 @@ export {
   type RateLimitResult,
   type RateLimitStatus,
   type RateLimitTxLike,
-} from './limit';
+} from './limit.js';

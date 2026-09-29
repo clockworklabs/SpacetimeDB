@@ -4,9 +4,9 @@ import {
   isValidTimezone,
   nextFireAfter,
   parseCronExpression,
-} from './parser';
-import { errors } from './errors';
-import type { CronSchedule, ScheduleSpec } from './types';
+} from './parser.js';
+import { errors } from './errors.js';
+import type { CronSchedule, ScheduleSpec } from './types.js';
 
 export const ONE_SECOND_MICROS = 1_000_000n;
 export const MAX_INTERVAL_SECONDS = 31_536_000;

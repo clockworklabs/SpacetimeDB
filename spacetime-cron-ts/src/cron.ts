@@ -10,7 +10,7 @@ import {
   type Infer,
   type VariantsObj,
 } from 'spacetimedb/server';
-import { errors } from './errors';
+import { errors } from './errors.js';
 import {
   boundedScheduleTime,
   CronInputError,
@@ -24,7 +24,7 @@ import {
   nextOccurrence,
   ONE_SECOND_MICROS,
   truncateError,
-} from './schedule';
+} from './schedule.js';
 import {
   cronFireTable,
   cronJobTable,
@@ -38,7 +38,7 @@ import {
   type CronTx,
   type FireRow,
   type JobRow,
-} from './tables';
+} from './tables.js';
 import type {
   CronArgsBuilder,
   CronClient,
@@ -52,7 +52,7 @@ import type {
   CronTableWithArgsOpts,
   CronTables,
   ScheduleSpec,
-} from './types';
+} from './types.js';
 
 const RECONCILE_REDUCER_NAME = 'cron_reconcile';
 const RECONCILE_TICK_KEY = 'cron';

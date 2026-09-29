@@ -1,6 +1,6 @@
 import { ScheduleAt } from 'spacetimedb';
-import { DEFAULT_SWEEP_BATCH } from '../limit';
-import type { ReducerModuleCtx } from './schema';
+import { DEFAULT_SWEEP_BATCH } from '../limit.js';
+import type { ReducerModuleCtx } from './schema.js';
 
 const SWEEP_INTERVAL_MICROS = 30_000_000n;
 

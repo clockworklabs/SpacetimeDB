@@ -1,5 +1,5 @@
-export { default } from './submodule/schema';
-export { install } from './submodule/install';
+export { default } from './submodule/schema.js';
+export { install } from './submodule/install.js';
 export {
   client,
   errors,
@@ -9,7 +9,7 @@ export {
   type RateLimitResult,
   type RateLimitStatus,
   type RateLimitTxLike,
-} from './limit';
+} from './limit.js';
 export {
   adminRateLimitBuckets,
   addRateLimitAdmin,
@@ -20,4 +20,4 @@ export {
   resetBuckets,
   runSweep,
   updateConfig,
-} from './submodule/operations';
+} from './submodule/operations.js';

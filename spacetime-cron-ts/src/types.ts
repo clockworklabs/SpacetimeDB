@@ -12,9 +12,9 @@ import type {
   CronRunTableDef,
   CronTx,
   FireRow,
-} from './tables';
+} from './tables.js';
 
-export type { CronProcedureCtx, CronTx } from './tables';
+export type { CronProcedureCtx, CronTx } from './tables.js';
 
 export type CronSchedule =
   | { tag: 'cron'; value: { expression: string; timezone: string } }

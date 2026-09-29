@@ -5,14 +5,14 @@ import {
   MAX_SWEEP_BATCH,
   sweepRateLimits,
   errors,
-} from '../limit';
+} from '../limit.js';
 import {
   rateLimitBucket,
   rateLimitSweepTick,
   spacetimedb,
   t,
   type ViewModuleCtx,
-} from './schema';
+} from './schema.js';
 
 /** Whether `identity` is a rate-limit administrator. */
 export function isAdmin(db: ViewModuleCtx['db'], identity: Identity): boolean {

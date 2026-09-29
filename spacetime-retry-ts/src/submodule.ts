@@ -10,7 +10,7 @@ import {
   type VariantsObj,
 } from 'spacetimedb/server';
 import type { Identity, Timestamp } from 'spacetimedb';
-import { retryFailed, type RetryResult } from './handler';
+import { retryFailed, type RetryResult } from './handler.js';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const MAX_ATTEMPTS = 10;

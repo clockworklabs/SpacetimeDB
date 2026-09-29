@@ -1,4 +1,4 @@
-export { retryFailed, retryOk, type RetryResult } from './handler';
+export { retryFailed, retryOk, type RetryResult } from './handler.js';
 export {
   client,
   errors,
@@ -12,4 +12,4 @@ export {
   type RetryTaskRow,
   type RetryTasks,
   type RetryViewCtx,
-} from './submodule';
+} from './submodule.js';
