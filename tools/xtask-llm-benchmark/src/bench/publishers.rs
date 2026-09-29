@@ -744,6 +744,9 @@ impl Publisher for SpacetimeRustPublisher {
             .current_dir(source);
         if let Some(target_dir) = env::var_os("LLM_BENCH_RUST_TARGET_DIR") {
             pubcmd.env("CARGO_TARGET_DIR", target_dir);
+        } else {
+            // Generated modules share a crate name, so they cannot safely share the workspace target directory.
+            pubcmd.env_remove("CARGO_TARGET_DIR");
         }
         run(&mut pubcmd, "spacetime publish")?;
 

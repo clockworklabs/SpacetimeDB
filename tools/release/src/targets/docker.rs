@@ -178,7 +178,7 @@ impl ReleaseTarget for DockerRelease {
 
         println!("=== Releasing Docker Container ===");
         println!("Version: {}", self.version);
-        println!("Target: {}", &docker_repo_url);
+        println!("Target: {}", docker_repo_url);
 
         let _local_registry_guard = if self.dry_run {
             let container_name = format!("spacetimedb-release-local-registry-{}", std::process::id());

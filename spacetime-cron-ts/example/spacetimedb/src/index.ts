@@ -1,27 +1,5 @@
-import {
-  schema,
-  table,
-  t,
-  SenderError,
-  toCamelCase,
-  type ReducerCtx,
-  type InferSchema,
-} from 'spacetimedb/server';
-import { ScheduleAt, Timestamp } from 'spacetimedb';
-import { spacetimeCron, type CronJobReference } from '@spacetimedb/cron';
-
-// One injection point: hand the library this module's own SDK objects so the
-// bundle contains exactly one copy of the spacetimedb SDK.
-const { cronTable, createCron, schedule, unschedule } = spacetimeCron({
-  table,
-  t,
-  toCamelCase,
-  ScheduleAt,
-  Timestamp,
-  SenderError,
-});
-
-// ── Jobs ─────────────────────────────────────────────────────────────────────
+import { schema, table, t, SenderError } from 'spacetimedb/server';
+import { client, cronTable, type CronJobReference } from '@spacetimedb/cron';
 
 const digest = cronTable({ name: 'digest' });
 const cleanup = cronTable({
@@ -29,12 +7,11 @@ const cleanup = cronTable({
   args: t.object('CleanupCronArgs', { keep: t.u32() }),
 });
 
-const cron = createCron([digest, cleanup], {
+const cron = client({
+  jobs: [digest, cleanup],
   publicTables: true,
   reconcileEverySeconds: 300,
 });
-
-// ── App tables ───────────────────────────────────────────────────────────────
 
 const activityLog = table(
   { name: 'activity_log', public: true },
@@ -49,12 +26,7 @@ const activityLog = table(
 const spacetimedb = schema({ ...cron.tables, activityLog });
 export default spacetimedb;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type Tx = ReducerCtx<Schema>;
-
-// ── Cron wiring ──────────────────────────────────────────────────────────────
-
-export const runDigest = digest.cronReducer(spacetimedb, (ctx: Tx) => {
+export const runDigest = digest.cronReducer(spacetimedb, ctx => {
   const entries = ctx.db.activityLog.count();
   ctx.db.activityLog.insert({
     id: 0n,
@@ -64,7 +36,7 @@ export const runDigest = digest.cronReducer(spacetimedb, (ctx: Tx) => {
   });
 });
 
-export const runCleanup = cleanup.cronReducer(spacetimedb, (ctx: Tx, args) => {
+export const runCleanup = cleanup.cronReducer(spacetimedb, (ctx, args) => {
   const total = Number(ctx.db.activityLog.count());
   if (total <= args.keep) return;
   const excess = total - args.keep + 1;
@@ -92,11 +64,9 @@ export const { jobs: cronJobs } = cron.publicViews(spacetimedb);
 export const init = spacetimedb.init(ctx => {
   // Code-declared defaults on first publish. Both are runtime state after
   // this: reschedule or disable them from the UI without republishing.
-  schedule(ctx, digest, '0 9 * * 1-5', { timezone: 'America/New_York' });
-  schedule(ctx, cleanup, { everySeconds: 300 }, { args: { keep: 50 } });
+  cron.schedule(ctx, digest, '0 9 * * 1-5', { timezone: 'America/New_York' });
+  cron.schedule(ctx, cleanup, { everySeconds: 300 }, { args: { keep: 50 } });
 });
-
-// ── Client-facing management ─────────────────────────────────────────────────
 
 // These reducers are open so the local browser can exercise the submodule.
 // Production applications must enforce their own admin policy.
@@ -105,7 +75,7 @@ const jobs: Record<string, CronJobReference> = { digest, cleanup };
 
 function jobByName(name: string): CronJobReference {
   const job = jobs[name];
-  if (!job) throw new SenderError(`cron.unknown_job:${name}`);
+  if (!job) throw new SenderError(`example.unknown_job:${name}`);
   return job;
 }
 
@@ -126,14 +96,16 @@ export const scheduleCron = spacetimedb.reducer(
   (ctx, args) => {
     try {
       if (args.name === 'cleanup') {
-        schedule(ctx, cleanup, args.expression, {
+        cron.schedule(ctx, cleanup, args.expression, {
           timezone: args.timezone,
           args: { keep: cleanupKeep(args.keep) },
         });
       } else if (args.name === 'digest') {
-        schedule(ctx, digest, args.expression, { timezone: args.timezone });
+        cron.schedule(ctx, digest, args.expression, {
+          timezone: args.timezone,
+        });
       } else {
-        throw new SenderError(`cron.unknown_job:${args.name}`);
+        throw new SenderError(`example.unknown_job:${args.name}`);
       }
     } catch (err) {
       throw err instanceof SenderError
@@ -148,16 +120,16 @@ export const scheduleEvery = spacetimedb.reducer(
   (ctx, args) => {
     try {
       if (args.name === 'cleanup') {
-        schedule(
+        cron.schedule(
           ctx,
           cleanup,
           { everySeconds: args.seconds },
           { args: { keep: cleanupKeep(args.keep) } }
         );
       } else if (args.name === 'digest') {
-        schedule(ctx, digest, { everySeconds: args.seconds });
+        cron.schedule(ctx, digest, { everySeconds: args.seconds });
       } else {
-        throw new SenderError(`cron.unknown_job:${args.name}`);
+        throw new SenderError(`example.unknown_job:${args.name}`);
       }
     } catch (err) {
       throw err instanceof SenderError
@@ -170,6 +142,6 @@ export const scheduleEvery = spacetimedb.reducer(
 export const unscheduleJob = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    unschedule(ctx, jobByName(name));
+    cron.unschedule(ctx, jobByName(name));
   }
 );

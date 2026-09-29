@@ -95,6 +95,24 @@ export default spacetimedb;
 
 `export default spacetimedb` is the only JS export required from the consumer. Registering the submodule adds all of its reducers, procedures, views, scheduled tables, and HTTP handlers automatically.
 
+### Accessor and canonical namespace names
+
+Like a table, a namespace has two names. The key you register the submodule under is its **accessor name**: the name module code and generated client bindings use, such as `ctx.db.myAuth` or `tables.myAuth.users`. The **canonical name** is what the database stores and what SQL, subscriptions, the CLI, and the HTTP API use, such as `my_auth.users`. By default the canonical name is derived from the accessor name by the module's case conversion policy, exactly as it is for tables and reducers: `myAuth` in TypeScript becomes `my_auth` in the database.
+
+To store a namespace under a specific canonical name instead, register the submodule as a `{ name, module }` object. `name` is used verbatim, and the key remains the accessor name:
+
+```typescript
+const spacetimedb = schema({
+  players,
+  myAuth: { name: 'myAuth', module: authLib },   // ctx.db.myAuth, stored as "myAuth"
+  payments: { name: 'billing', module: paymentLib },   // ctx.db.payments, stored as "billing"
+});
+```
+
+:::warning Changing a canonical namespace re-creates its tables
+The canonical namespace is part of every table's identity. Publishing a module whose namespace canonicalizes differently than before, for example after renaming the key from `myauth` to `myAuth` without a `name`, is a migration that removes the tables under the old namespace and creates empty ones under the new namespace. To rename the key without touching the tables, pin the canonical name with `name`: changing only the key while keeping the same `name` only updates the accessor aliases.
+:::
+
 :::warning Use `import * as`, not a default import
 ```typescript
 import authLib from 'auth_lib';        // ❌ misses all named exports
@@ -108,7 +126,7 @@ A default-only import exposes only the submodule's schema, not its named exports
 
 ## Accessing Submodule Tables and Views
 
-Submodule tables appear under a namespace field on `ctx.db`. The field matches the alias you chose. Views exported by a submodule behave like tables from the client's perspective: they are accessible as `<namespace>.<view_name>` in subscriptions and SQL queries, where `<view_name>` is the canonical snake_case name — `activeSessions` in TypeScript is `active_sessions` in SQL. The generated client bindings expose the camelCase accessor instead, as shown below.
+Submodule tables appear under a namespace field on `ctx.db`. The field matches the accessor name you chose, regardless of the canonical name stored in the database. Views exported by a submodule behave like tables from the client's perspective: they are accessible as `<namespace>.<view_name>` in subscriptions and SQL queries, where both parts are canonical snake_case names — `activeSessions` in TypeScript is `active_sessions` in SQL, and a submodule registered as `myAuth` is `my_auth`. The generated client bindings expose the camelCase accessors instead, as shown below.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -259,7 +277,7 @@ Submodules have no separate environment-variable namespace, and their host-dispa
 
 ## Client Subscriptions
 
-Client subscriptions use the same namespace structure as server-side access. Submodule tables and views are queried as `<namespace>.<name>`.
+Client subscriptions use the same namespace structure as server-side access. Submodule tables and views are queried as `<namespace>.<name>`, using canonical names on the wire and accessor names in generated bindings.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -337,15 +355,17 @@ POST /v1/database/my-database/call/myauth.verify_token
 spacetime call my-database "myauth.verify_token" '{"token": "abc123"}'
 ```
 
-The namespace prefix is the alias you chose, and the function name after `.` is the canonical
-snake_case form of the submodule's export name -- `verifyToken` in TypeScript is `verify_token`
-on the wire. Generated client bindings expose the camelCase accessor instead, as shown above.
+Both parts of the wire name are canonical: the namespace prefix is the canonical namespace name
+(`myauth` here, or `my_auth` for a submodule registered as `myAuth`), and the function name after
+`.` is the canonical snake_case form of the submodule's export name -- `verifyToken` in TypeScript
+is `verify_token` on the wire. Generated client bindings expose the camelCase accessors instead,
+as shown above.
 
 ## Namespace Name Rules
 
-The alias you choose becomes the SQL-level namespace name. It must be a valid SpacetimeDB identifier: starts with a letter or underscore, continues with letters, digits, or underscores, maximum 63 characters, case-insensitive for resolution. A submodule can be registered under at most one alias per consumer module.
+Both the accessor name (the key you register the submodule under) and the canonical name (derived from it, or given explicitly via `name`) must be valid SpacetimeDB identifiers: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 characters, case-insensitive for resolution. Two submodules cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered under the default policy. A submodule can be registered under at most one namespace per consumer module.
 
-The reserved namespaces `public`, `st`, `spacetimedb`, and `pg_*` cannot be used as submodule aliases.
+The reserved namespaces `public`, `st`, `spacetimedb`, and `pg_*` cannot be used as submodule namespaces.
 
 ## Limitations
 

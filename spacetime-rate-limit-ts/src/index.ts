@@ -1,14 +1,10 @@
 export {
   client,
   errors,
-  consumeRateLimit,
-  installRateLimitState,
-  sweepRateLimits,
-  type ConsumeRateLimitOpts,
+  type RateLimitClient,
   type RateLimitPolicy,
-  type RateLimitInstallOpts,
-  type RateLimitInitCtxLike,
+  type RateLimitReadDb,
   type RateLimitResult,
+  type RateLimitStatus,
   type RateLimitTxLike,
-} from './limit';
-export { buildRateLimitKey } from './key';
+} from './limit.js';
