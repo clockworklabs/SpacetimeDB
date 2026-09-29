@@ -496,10 +496,7 @@ function handleAuthedWorldAction(
     return jsonResponse({ ok: true, result: out?.value ?? null });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return errorResponse(
-      message,
-      message.startsWith('world.invalid') ? 400 : 500
-    );
+    return errorResponse(message, err instanceof SenderError ? 400 : 500);
   }
 }
 
