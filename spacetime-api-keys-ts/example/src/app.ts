@@ -243,7 +243,7 @@ function scheduleReconnect(): void {
     reconnectTimer = null;
     main().catch(err => {
       console.error(err);
-      setStatus(err instanceof Error ? err.message : String(err));
+      setStatus(errorMessage(err));
       scheduleReconnect();
     });
   }, 2000);
@@ -651,7 +651,7 @@ async function applyTool(x: number, y: number): Promise<void> {
     }
     flashTile(x, y, 'allow');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     const denied = /scope|denied|forbidden|401|403/i.test(message);
     const occupied = /occupied|nothing/i.test(message);
     flashTile(
@@ -681,7 +681,7 @@ async function removeAt(x: number, y: number): Promise<void> {
     }
     flashTile(x, y, 'allow');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     const denied = /scope|denied|forbidden|401|403/i.test(message);
     flashTile(x, y, 'deny', denied ? 'NO ACCESS' : 'FAILED');
     if (denied) toast('This key cannot remove that here.', 'error');
@@ -711,16 +711,16 @@ async function mutate(
     const x = requiredNumber(body, 'x');
     const y = requiredNumber(body, 'y');
     if (action === 'terraform')
-      r.terraform({ x, y, terrain: requiredString(body, 'terrain') });
+      await r.terraform({ x, y, terrain: requiredString(body, 'terrain') });
     else if (action === 'build') {
       const label = body.label;
       if (label !== undefined && typeof label !== 'string')
         throw new Error('invalid_label');
-      r.build({ x, y, kind: requiredString(body, 'kind'), label });
+      await r.build({ x, y, kind: requiredString(body, 'kind'), label });
     } else if (action === 'plant')
-      r.plant({ x, y, kind: requiredString(body, 'kind') });
-    else if (action === 'unbuild') r.unbuild({ x, y });
-    else if (action === 'clear') r.clear({ x, y });
+      await r.plant({ x, y, kind: requiredString(body, 'kind') });
+    else if (action === 'unbuild') await r.unbuild({ x, y });
+    else if (action === 'clear') await r.clear({ x, y });
     else throw new Error(`unknown_action:${action}`);
     return;
   }
@@ -802,7 +802,7 @@ async function createKey(): Promise<void> {
     toast(`${name} link created`);
     renderKeys();
   } catch (err) {
-    toast(err instanceof Error ? err.message : String(err), 'error');
+    toast(errorMessage(err), 'error');
   }
 }
 
@@ -840,14 +840,18 @@ async function rotateKey(keyId: string): Promise<void> {
     toast('Replacement link issued. Previous link revoked.');
     renderKeys();
   } catch (err) {
-    toast(err instanceof Error ? err.message : String(err), 'error');
+    toast(errorMessage(err), 'error');
   }
 }
 
 async function revokeKey(keyId: string): Promise<void> {
   if (!keyId) return;
-  requireConn().reducers['apiKeys.revokeApiKey']({ keyId });
-  toast('Access revoked');
+  try {
+    await requireConn().reducers['apiKeys.revokeApiKey']({ keyId });
+    toast('Access revoked');
+  } catch (err) {
+    toast(errorMessage(err), 'error');
+  }
 }
 
 function showAccessRemoved(reason: string): void {
@@ -903,12 +907,10 @@ function startPresence(): void {
   sendBeat();
   if (keepaliveTimer) window.clearInterval(keepaliveTimer);
   keepaliveTimer = window.setInterval(sendBeat, KEEPALIVE_MS);
+  // Best effort: the page is gone before a result could arrive, and the
+  // presence TTL removes the entry if this call is lost.
   window.addEventListener('beforeunload', () => {
-    try {
-      requireConn().reducers.presenceLeave({ scope: colonyId });
-    } catch {
-      /* best-effort disconnect cleanup */
-    }
+    void conn?.reducers.presenceLeave({ scope: colonyId });
   });
 }
 
@@ -1091,13 +1093,21 @@ function registerUiHandlers(): void {
   ($('joinInput') as HTMLInputElement).addEventListener('keydown', e => {
     if (e.key === 'Enter') joinColony();
   });
-  $('resetWorld').addEventListener('click', () => {
-    requireConn().reducers.resetWorld({});
-    toast('Colony reset');
+  $('resetWorld').addEventListener('click', async () => {
+    try {
+      await requireConn().reducers.resetWorld({});
+      toast('Colony reset');
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
   });
-  $('clearEvents').addEventListener('click', () => {
-    requireConn().reducers.clearWorldEvents({});
-    toast('Log cleared');
+  $('clearEvents').addEventListener('click', async () => {
+    try {
+      await requireConn().reducers.clearWorldEvents({});
+      toast('Log cleared');
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
   });
 
   document.addEventListener('pointerdown', event => {
@@ -1178,6 +1188,6 @@ async function main(): Promise<void> {
 
 main().catch(err => {
   console.error(err);
-  setStatus(err instanceof Error ? err.message : String(err));
-  toast(err instanceof Error ? err.message : String(err), 'error');
+  setStatus(errorMessage(err));
+  toast(errorMessage(err), 'error');
 });
