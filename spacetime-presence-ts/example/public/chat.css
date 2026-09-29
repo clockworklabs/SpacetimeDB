@@ -1,9 +1,5 @@
 /* Signed-in chat shell */
 
-body {
-  background: var(--color-shade7);
-  margin: 0;
-}
 .app:not(.signed-out) {
   background: var(--color-shade7);
   padding: 0 !important;
@@ -287,6 +283,13 @@ main.shell:not(.signed-out) > .sidebar {
 
 /* Categories */
 .category > summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--font-ibm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  user-select: none;
   padding: 16px 6px 4px;
   font-size: 12px;
   color: var(--color-n4);
@@ -333,6 +336,12 @@ main.shell:not(.signed-out) > .sidebar {
 
 /* Channel rows (Discord-tight) */
 .room-row {
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  position: relative;
   padding: 6px 8px;
   font-size: 15px;
   color: var(--color-n4);
@@ -351,6 +360,7 @@ main.shell:not(.signed-out) > .sidebar {
   color: var(--color-n1);
 }
 .channel-hash {
+  font-weight: 400;
   font-size: 20px;
   line-height: 1;
   color: var(--color-n4);
@@ -392,6 +402,9 @@ main.shell:not(.signed-out) > .sidebar > .user-panel > #openAuthBtn {
   width: 100%;
 }
 .user-bar {
+  color: var(--color-n1);
+  cursor: pointer;
+  text-align: left;
   width: 100%;
   display: flex;
   align-items: center;
@@ -453,6 +466,7 @@ main.shell:not(.signed-out) > .sidebar > .user-panel > #openAuthBtn {
   gap: 0;
 }
 .user-bar-name {
+  flex: 1;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-n1);
@@ -620,6 +634,9 @@ main.shell:not(.signed-out) .chat-body > .main > .message-scroll > .messages {
   display: block;
 }
 .msg {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 0 12px;
   position: relative;
   padding: 2px 16px 2px 72px;
   min-height: 22px;
@@ -634,6 +651,8 @@ main.shell:not(.signed-out) .chat-body > .main > .message-scroll > .messages {
   padding-right: 16px;
 }
 .msg.chunk-cont {
+  padding-top: 0;
+  padding-bottom: 0;
   display: block;
   padding-left: 72px;
 }
@@ -675,9 +694,16 @@ main.shell:not(.signed-out) .chat-body > .main > .message-scroll > .messages {
   word-break: break-word;
 }
 .react-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
   margin-top: 4px;
 }
 .react-btn {
+  color: var(--color-n3);
+  padding: 3px 8px;
+  cursor: pointer;
   background: var(--color-shade4);
   border: 1px solid var(--color-shade3);
   font-size: 13px;
