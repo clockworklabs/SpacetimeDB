@@ -179,7 +179,7 @@ function scheduleAiFallback(): void {
     if (!ticket || ticket.status.tag !== 'Queued') return;
     try {
       showToast('No rival found. Launching vs Arena AI.');
-      requireConn().reducers.fallbackToAi({});
+      await requireConn().reducers.fallbackToAi({});
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err), 'error');
     }
@@ -466,7 +466,7 @@ function renderShipCarousel(): void {
 async function chooseShip(ship: ShipClass): Promise<void> {
   selectedShip = ship;
   renderShipCarousel();
-  requireConn().reducers.selectShip({ shipClass: { tag: ship } });
+  await requireConn().reducers.selectShip({ shipClass: { tag: ship } });
 }
 
 function renderProfile(): void {
@@ -518,7 +518,7 @@ function renderRanked(): void {
           .join('');
 }
 
-function maybeAutoJoin(): void {
+async function maybeAutoJoin(): Promise<void> {
   if (screenOverride === 'setup') return;
   const room = activeRoom();
   if (!room) return;
@@ -530,7 +530,7 @@ function maybeAutoJoin(): void {
   if (autoJoinedRoom === key) return;
   autoJoinedRoom = key;
   try {
-    requireConn().reducers.joinDuelRoom({ roomId: room.roomId });
+    await requireConn().reducers.joinDuelRoom({ roomId: room.roomId });
   } catch (err) {
     autoJoinedRoom = null;
     if (!isBenignDuelError(err)) showToast(errorMessage(err), 'error');
@@ -540,7 +540,7 @@ function maybeAutoJoin(): void {
 function renderLobby(): void {
   const room = activeRoom();
   $('forfeitDuel').toggleAttribute('disabled', !room);
-  maybeAutoJoin();
+  void maybeAutoJoin();
 }
 
 function closeForfeitDialog(): void {
@@ -556,7 +556,7 @@ async function forfeitActiveDuel(): Promise<void> {
   render();
   if (!room) return;
   try {
-    requireConn().reducers.leaveDuel({ roomId: room.roomId });
+    await requireConn().reducers.leaveDuel({ roomId: room.roomId });
   } catch (err) {
     // Surface only actionable errors while leaving a room that may already be closed.
     if (!isBenignDuelError(err)) showToast(errorMessage(err), 'error');
@@ -948,7 +948,7 @@ function registerUiHandlers(): void {
     const value = input('displayName').value.trim();
     if (!value || value === currentProfile()?.displayName) return;
     try {
-      requireConn().reducers.setDisplayName({ displayName: value });
+      await requireConn().reducers.setDisplayName({ displayName: value });
     } catch (err) {
       showToast(errorMessage(err), 'error');
     }
@@ -964,11 +964,13 @@ function registerUiHandlers(): void {
     try {
       screenOverride = null;
       autoJoinedRoom = null;
-      requireConn().reducers.setDisplayName({
+      await requireConn().reducers.setDisplayName({
         displayName: input('displayName').value,
       });
-      requireConn().reducers.selectShip({ shipClass: { tag: selectedShip } });
-      requireConn().reducers.findDuel({});
+      await requireConn().reducers.selectShip({
+        shipClass: { tag: selectedShip },
+      });
+      await requireConn().reducers.findDuel({});
       showToast('Looking for match.');
       scheduleAiFallback();
     } catch (err) {
@@ -982,7 +984,7 @@ function registerUiHandlers(): void {
     const duel = latestDuel();
     if (!duel) return;
     try {
-      requireConn().reducers.chooseManeuver({
+      await requireConn().reducers.chooseManeuver({
         roomId: duel.roomId,
         slot: { tag: btn.dataset.slot as ManeuverSlot },
       });
@@ -1004,7 +1006,7 @@ function registerUiHandlers(): void {
     try {
       screenOverride = null;
       autoJoinedRoom = null;
-      requireConn().reducers.queueAgain({ roomId: duel?.roomId });
+      await requireConn().reducers.queueAgain({ roomId: duel?.roomId });
       showToast('Looking for match.');
       scheduleAiFallback();
     } catch (err) {
@@ -1023,7 +1025,7 @@ function registerUiHandlers(): void {
       t => t.status.tag === 'Queued'
     )) {
       try {
-        requireConn().reducers['lobby.cancelTicket']({
+        await requireConn().reducers['lobby.cancelTicket']({
           ticketId: ticket.ticketId,
         });
       } catch (err) {
