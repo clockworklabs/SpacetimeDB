@@ -11,26 +11,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./tables": {
-      "types": "./src/tables.ts",
-      "default": "./src/tables.ts"
-    },
-    "./handlers": {
-      "types": "./src/handlers/index.ts",
-      "default": "./src/handlers/index.ts"
-    },
-    "./crypto": {
-      "types": "./src/crypto.ts",
-      "default": "./src/crypto.ts"
-    },
-    "./jwt": {
-      "types": "./src/jwt.ts",
-      "default": "./src/jwt.ts"
-    },
-    "./keys": {
-      "types": "./src/keys.ts",
-      "default": "./src/keys.ts"
-    },
     "./submodule": {
       "types": "./src/submodule.ts",
       "default": "./src/submodule.ts"
@@ -69,9 +49,10 @@
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "dependencies": {
+    "@spacetimedb/crypto": "workspace:^",
     "@spacetimedb/rate-limit": "workspace:^",
     "@noble/curves": "^2.2.0",
-    "@noble/hashes": "^1.4.0"
+    "@noble/hashes": "^2.2.0"
   },
   "peerDependencies": {
     "spacetimedb": "workspace:^"

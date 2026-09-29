@@ -1,10 +1,5 @@
-import {
-  makeOAuthCallbackHandler,
-  makeOAuthStartHandler,
-  type OAuthProfile,
-  type OAuthProviderSpec,
-} from './oauth';
-import type { AuthHandlerCtx } from './http';
+import { type OAuthProfile, type OAuthProviderSpec } from './oauth';
+import type { AuthHandlerCtx } from '../context';
 
 const githubHeaders = {
   accept: 'application/vnd.github+json',
@@ -68,7 +63,7 @@ function resolveGithubProfile(
   };
 }
 
-const github: OAuthProviderSpec = {
+export const github: OAuthProviderSpec = {
   id: 'github',
   authorizeUrl: 'https://github.com/login/oauth/authorize',
   tokenUrl: 'https://github.com/login/oauth/access_token',
@@ -92,6 +87,3 @@ const github: OAuthProviderSpec = {
   },
   usePkce: false,
 };
-
-export const githubStartHandler = makeOAuthStartHandler(github);
-export const githubCallbackHandler = makeOAuthCallbackHandler(github);

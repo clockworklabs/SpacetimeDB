@@ -13,7 +13,6 @@ export const authUserRow = {
 export const authSessionRow = {
   sessionId: t.string().primaryKey(),
   userId: t.string().index(),
-  token: t.string().unique(),
   expiresAt: t.timestamp().index(),
   ipAddress: t.option(t.string()),
   userAgent: t.option(t.string()),
@@ -62,6 +61,8 @@ export const authConfigRow = {
   es256PrivateKeyPem: t.string(),
   es256PublicKeyPem: t.string(),
   keyId: t.string(),
+  // Advances on every secret draw. See tokens.ts.
+  tokenCounter: t.u64(),
   googleClientId: t.option(t.string()),
   googleClientSecret: t.option(t.string()),
   githubClientId: t.option(t.string()),
@@ -69,21 +70,21 @@ export const authConfigRow = {
   updatedAt: t.timestamp(),
 };
 
-// Maps STDB Identity to auth_user; populated by link_connection.
+// Maps an STDB Identity to the session it presented to link_connection.
+// Deleting a session deletes its bindings.
 export const authConnectionBindingRow = {
   stdbIdentity: t.identity().primaryKey(),
   userId: t.string().index(),
+  sessionId: t.string().index(),
   linkedAt: t.timestamp(),
 };
 
-// Operator allowlist. Seeded by the database owner; privileged calls
-// (re-config, revoke_session) must come from a seeded admin.
+// Operator allowlist. install seeds the publishing identity; privileged calls
+// (set_auth_config, revoke_session, admin changes) must come from an admin.
 export const authAdminIdentityRow = {
   identity: t.identity().primaryKey(),
   addedAtMicros: t.i64(),
 };
-
-// Scheduled-tick row: callers define their own scheduled table pointing to auth_sweep.
 
 export const authUserTable = table(
   { name: 'auth_user', public: false },
@@ -124,14 +125,3 @@ export const authAdminIdentityTable = table(
   { name: 'auth_admin_identity', public: false },
   authAdminIdentityRow
 );
-
-export const authTables = {
-  authUser: authUserTable,
-  authSession: authSessionTable,
-  authAccount: authAccountTable,
-  authVerification: authVerificationTable,
-  authOauthState: authOauthStateTable,
-  authConfig: authConfigTable,
-  authConnectionBinding: authConnectionBindingTable,
-  authAdminIdentity: authAdminIdentityTable,
-};

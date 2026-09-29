@@ -4,22 +4,23 @@
 import { p256 } from '@noble/curves/nist.js';
 import type { Request } from 'spacetimedb/server';
 
+import { generateKeyPairSync } from 'node:crypto';
 import {
-  generateEs256Keypair,
   fromPrivateKeyBytes,
   privateKeyFromPem,
   publicKeyFromPem,
 } from '../src/keys.ts';
-import { signJwt, verifyJwt, decodeJwtPayloadUnsafe } from '../src/jwt.ts';
+import { signJwt, verifyJwt } from '../src/jwt.ts';
 import {
+  DUMMY_PASSWORD_HASH,
+  base64UrlDecode,
+  deriveSecret,
   hashPassword,
   verifyPassword,
-  randomToken,
-  randomBytes,
   uuidV7,
   pkceChallenge,
-  newPkceVerifier,
 } from '../src/crypto.ts';
+
 import {
   clientKey,
   safeRedirectPath,
@@ -56,14 +57,9 @@ function bytesEq(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-// Test-only RandomSource compatible with STDB Random.
-
-const TEST_RNG: { fill<T extends Uint8Array>(a: T): T } = {
-  fill<T extends Uint8Array>(a: T): T {
-    for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256);
-    return a;
-  },
-};
+function generateEs256Keypair() {
+  return fromPrivateKeyBytes(p256.utils.randomSecretKey());
+}
 
 process.stdout.write('\nhttp trust\n');
 
@@ -171,6 +167,18 @@ process.stdout.write('\nkeys\n');
     'private key round-trips through PEM'
   );
 
+  // Operators generate the key outside the module, e.g. with node:crypto.
+  const { privateKey: nodePem } = generateKeyPairSync('ec', {
+    namedCurve: 'P-256',
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  assertEq(
+    privateKeyFromPem(nodePem).length,
+    32,
+    'node:crypto PKCS#8 PEM parses'
+  );
+
   // PEM round-trip public.
   const decodedPub = publicKeyFromPem(kp.publicKeyPem);
   assert(
@@ -203,7 +211,7 @@ process.stdout.write('\njwt\n');
 
   // Header decodes correctly.
   const header = JSON.parse(
-    new TextDecoder().decode(base64urlDecode(token.split('.')[0]))
+    new TextDecoder().decode(base64UrlDecode(token.split('.')[0]))
   );
   assertEq(header.alg, 'ES256', 'header alg is ES256');
   assertEq(header.typ, 'JWT', 'header typ is JWT');
@@ -263,12 +271,8 @@ process.stdout.write('\njwt\n');
     'malformed token fails with malformed'
   );
 
-  // Decode-unsafe extracts payload.
-  const payload = decodeJwtPayloadUnsafe(token);
-  assertEq(payload?.sub, 'user-1234', 'decodeJwtPayloadUnsafe returns sub');
-
   // Signature is 64 bytes (compact r||s).
-  const sigBytes = base64urlDecode(token.split('.')[2]);
+  const sigBytes = base64UrlDecode(token.split('.')[2]);
   assertEq(sigBytes.length, 64, 'ES256 signature is 64 bytes (r||s)');
 
   // Verify with noble directly to cross-check.
@@ -288,9 +292,11 @@ process.stdout.write('\ncrypto\n');
 {
   // Password hash + verify roundtrip. scrypt is SLOW, this takes ~1s.
   const password = 'correct horse battery staple';
-  // Low N so tests don't take forever.
-  const hash = hashPassword(TEST_RNG, password, { N: 1 << 10 });
-  assert(hash.startsWith('scrypt$1024$'), 'hashPassword encodes scrypt params');
+  const hash = hashPassword(password, new Uint8Array(16).fill(7));
+  assert(
+    hash.startsWith('scrypt$16384$'),
+    'hashPassword encodes scrypt params'
+  );
   assert(
     verifyPassword(password, hash),
     'verifyPassword accepts correct password'
@@ -299,18 +305,25 @@ process.stdout.write('\ncrypto\n');
     !verifyPassword('wrong', hash),
     'verifyPassword rejects wrong password'
   );
+  assert(
+    !verifyPassword(password, DUMMY_PASSWORD_HASH),
+    'dummy hash verifies and rejects'
+  );
 
-  // Random token shape.
-  const token = randomToken(TEST_RNG, 32);
-  assert(/^[A-Za-z0-9_-]+$/.test(token), 'randomToken is base64url-safe');
-  assert(token.length >= 40, 'randomToken has enough entropy bits');
-
-  // Random bytes length.
-  const bytes = randomBytes(TEST_RNG, 16);
-  assertEq(bytes.length, 16, 'randomBytes returns requested length');
+  // Secrets depend on the key, the counter, and the timestamp.
+  const key = p256.utils.randomSecretKey();
+  const a = deriveSecret(key, 1n, 100n);
+  assertEq(a.length, 32, 'derived secret is 32 bytes');
+  assert(bytesEq(a, deriveSecret(key, 1n, 100n)), 'derivation is stable');
+  assert(!bytesEq(a, deriveSecret(key, 2n, 100n)), 'counter changes secret');
+  assert(!bytesEq(a, deriveSecret(key, 1n, 101n)), 'timestamp changes secret');
+  assert(
+    !bytesEq(a, deriveSecret(p256.utils.randomSecretKey(), 1n, 100n)),
+    'key changes secret'
+  );
 
   // UUIDv7 shape.
-  const id = uuidV7(TEST_RNG, Date.now());
+  const id = uuidV7(BigInt(Date.now()), a);
   assert(
     /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
       id
@@ -319,8 +332,7 @@ process.stdout.write('\ncrypto\n');
   );
 
   // PKCE challenge.
-  const verifier = newPkceVerifier(TEST_RNG);
-  const challenge = pkceChallenge(verifier);
+  const challenge = pkceChallenge('verifier');
   assert(/^[A-Za-z0-9_-]+$/.test(challenge), 'pkceChallenge is base64url-safe');
   assertEq(
     challenge.length,
@@ -333,13 +345,3 @@ process.stdout.write('\ncrypto\n');
 
 process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);
-
-// helpers
-
-function base64urlDecode(s: string): Uint8Array {
-  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
-  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
