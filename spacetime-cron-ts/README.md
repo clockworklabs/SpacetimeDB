@@ -32,27 +32,8 @@ For the complete install, build, and publish workflow, see the repository's
 ### Integrate into an application
 
 ```ts
-import {
-  SenderError,
-  schema,
-  table,
-  t,
-  toCamelCase,
-  type InferSchema,
-  type ProcedureCtx,
-  type ReducerCtx,
-} from 'spacetimedb/server';
-import { ScheduleAt, Timestamp } from 'spacetimedb';
-import { spacetimeCron } from '@spacetimedb/cron';
-
-const { cronTable, createCron, schedule, unschedule } = spacetimeCron({
-  table,
-  t,
-  toCamelCase,
-  ScheduleAt,
-  Timestamp,
-  SenderError,
-});
+import { schema, table, t } from 'spacetimedb/server';
+import { client, cronTable } from '@spacetimedb/cron';
 
 const dailyReport = cronTable({
   name: 'daily_report',
@@ -64,7 +45,8 @@ const dailyReport = cronTable({
 const heartbeat = cronTable({ name: 'heartbeat' });
 const refreshCatalog = cronTable({ name: 'refresh_catalog' });
 
-const cron = createCron([dailyReport, heartbeat, refreshCatalog], {
+const cron = client({
+  jobs: [dailyReport, heartbeat, refreshCatalog],
   publicTables: true,
   reconcileEverySeconds: 300,
 });
@@ -80,13 +62,9 @@ const report = table(
 const spacetimedb = schema({ ...cron.tables, report });
 export default spacetimedb;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type Tx = ReducerCtx<Schema>;
-type Proc = ProcedureCtx<Schema>;
-
 export const generateReport = dailyReport.cronReducer(
   spacetimedb,
-  (ctx: Tx, args, invocation) => {
+  (ctx, args, invocation) => {
     ctx.db.report.insert({
       id: 0n,
       generatedAt: invocation.scheduledFor,
@@ -97,13 +75,13 @@ export const generateReport = dailyReport.cronReducer(
   }
 );
 
-export const beat = heartbeat.cronReducer(spacetimedb, (_ctx: Tx) => {
+export const beat = heartbeat.cronReducer(spacetimedb, _ctx => {
   // Perform deterministic database work here.
 });
 
 export const refresh = refreshCatalog.cronProcedure(
   spacetimedb,
-  (ctx: Proc, invocation) => {
+  (ctx, invocation) => {
     // Use invocation.id as the idempotency key for an external request.
     ctx.http.fetch('https://example.com/catalog');
   }
@@ -113,13 +91,13 @@ export const cronReconcile = cron.reconcileReducer(spacetimedb);
 export const { jobs: cronJobs } = cron.publicViews(spacetimedb);
 
 export const init = spacetimedb.init(ctx => {
-  schedule(ctx, dailyReport, '0 9 * * 1-5', {
+  cron.schedule(ctx, dailyReport, '0 9 * * 1-5', {
     timezone: 'America/New_York',
     maxFailures: 3,
     args: { workspaceId: 42n, format: 'summary' },
   });
-  schedule(ctx, heartbeat, { everySeconds: 30 });
-  schedule(ctx, refreshCatalog, '0 */15 * * * *');
+  cron.schedule(ctx, heartbeat, { everySeconds: 30 });
+  cron.schedule(ctx, refreshCatalog, '0 */15 * * * *');
 });
 ```
 
@@ -147,17 +125,18 @@ const archiveWorkspace = cronTable({
 });
 ```
 
-The handle carries the inferred argument type through `schedule()`,
+The handle carries the inferred argument type through `cron.schedule()`,
 `cronReducer()`, and `cronProcedure()`. The argument builder may be any
 SpacetimeDB type, although a named `t.object()` gives most jobs the clearest
 call site and database schema.
 
 Job names use lowercase snake_case and may contain up to 48 characters. Pass
-every handle to one `createCron()` call, register exactly one reducer or
-procedure for each handle. `schedule()` rejects a configuration with a missing
-handler. When `reconcileEverySeconds` is configured, export
-`cron.reconcileReducer()`. Applications that expose cron status export the
-`jobs` view returned by `cron.publicViews()`.
+every handle to one `client()` call when the module loads, then register
+exactly one reducer or procedure for each handle after `schema()`.
+`cron.schedule()` rejects a configuration with a missing handler. When
+`reconcileEverySeconds` is configured, export `cron.reconcileReducer()`.
+Applications that expose cron status export the `jobs` view returned by
+`cron.publicViews()`.
 
 Each reducer job handles its normal fires and its internal recovery calls. A
 handler failure schedules the same job reducer with a private recovery payload.
@@ -165,12 +144,15 @@ The second invocation records the failure and restores calendar scheduling in a
 fresh transaction. It does not call the application handler. Procedure jobs use
 their separate transaction flow and do not use volatile recovery.
 
-Use `cronReducer` for deterministic database work. The handler receives the consumer module's typed reducer context and a `CronInvocation`:
+Use `cronReducer` for deterministic database work. The handler receives the
+host module's reducer context, inferred from `spacetimedb`, and a
+`CronInvocation`. Registration fails to compile if the schema does not include
+`cron.tables`:
 
 ```ts
 export const runCleanup = cleanup.cronReducer(
   spacetimedb,
-  (ctx: Tx, invocation) => {
+  (ctx, invocation) => {
     console.log(invocation.id);
     // Database writes commit together when the handler succeeds.
   }
@@ -182,7 +164,7 @@ Use `cronProcedure` for HTTP requests and other procedure capabilities:
 ```ts
 export const syncRemote = remoteSync.cronProcedure(
   spacetimedb,
-  (ctx: Proc, invocation) => {
+  (ctx, invocation) => {
     sendRequest({ idempotencyKey: invocation.id });
   }
 );
@@ -196,7 +178,7 @@ metadata:
 ```ts
 export const runArchive = archiveWorkspace.cronReducer(
   spacetimedb,
-  (ctx: Tx, args, invocation) => {
+  (ctx, args, invocation) => {
     archiveRows(ctx, args.workspaceId, args.retainDays);
     console.log(invocation.id);
   }
@@ -205,15 +187,15 @@ export const runArchive = archiveWorkspace.cronReducer(
 
 ### Scheduling and cancellation
 
-`schedule()` first repairs any enabled jobs with missing triggers. It then
+`cron.schedule()` first repairs any enabled jobs with missing triggers. It then
 creates or replaces the requested schedule, clears failure state, increments
 the job generation, and enables the job.
 
 ```ts
-schedule(ctx, cleanup, '30 2 * * *', { timezone: 'UTC' });
-schedule(ctx, cleanup, { everySeconds: 300 });
+cron.schedule(ctx, cleanup, '30 2 * * *', { timezone: 'UTC' });
+cron.schedule(ctx, cleanup, { everySeconds: 300 });
 
-schedule(ctx, archiveWorkspace, '0 3 * * *', {
+cron.schedule(ctx, archiveWorkspace, '0 3 * * *', {
   timezone: 'UTC',
   args: { workspaceId: 42n, retainDays: 90 },
 });
@@ -225,15 +207,20 @@ handler receives the argument value read at the start of its fire.
 
 Cron expressions accept five fields or six fields when seconds are included. Fixed intervals accept whole seconds from 1 through 31,536,000.
 
-`unschedule()` runs the same opportunistic repair before removing the target
-fire, incrementing its generation, and leaving job and history rows available
-for inspection.
+`cron.unschedule()` runs the same opportunistic repair before removing the
+target fire, incrementing its generation, and leaving job and history rows
+available for inspection.
 
 ```ts
-unschedule(ctx, cleanup);
+cron.unschedule(ctx, cleanup);
 ```
 
 These helpers perform scheduling operations. Application reducers remain responsible for authorization.
+
+Input errors from `cron.schedule()` are thrown as `SenderError`s. Every code
+thrown by the package is exported as `errors`, for example
+`errors.invalidExpression` (`cron.invalid_expression`). Codes may be followed
+by `:` and detail text.
 
 ### Database state
 
@@ -297,11 +284,11 @@ application handler from running again during recovery.
 The volatile call is best effort and is not persisted. A process crash,
 uncatchable trap, or lost message can temporarily leave an enabled calendar job
 without a fire. The package detects that broken invariant during every
-`schedule()` and `unschedule()` operation. Set `reconcileEverySeconds` to add a
-low-frequency native interval sweep:
+`cron.schedule()` and `cron.unschedule()` operation. Set
+`reconcileEverySeconds` to add a low-frequency native interval sweep:
 
 ```ts
-const cron = createCron(jobs, { reconcileEverySeconds: 300 });
+const cron = client({ jobs, reconcileEverySeconds: 300 });
 
 // Export after registering the job handlers.
 export const cronReconcile = cron.reconcileReducer(spacetimedb);
@@ -350,8 +337,8 @@ Scheduled functions execute through SpacetimeDB's scheduler. A long-running proc
 
 Run statuses are:
 
-- `Ok`: work completed successfully
-- `Failed`: the handler returned an error
+- `Ok`: the handler completed without throwing
+- `Failed`: the handler threw, or reconciliation recorded a lost fire
 
 ### Parser exports
 

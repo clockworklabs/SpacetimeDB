@@ -36,18 +36,6 @@ export const RateLimitConfig = __t.object("RateLimitConfig", {
 });
 export type RateLimitConfig = __Infer<typeof RateLimitConfig>;
 
-export const RateLimitConsumeResult = __t.object("RateLimitConsumeResult", {
-  allowed: __t.bool(),
-  scope: __t.string(),
-  key: __t.string(),
-  limit: __t.u32(),
-  used: __t.u32(),
-  remaining: __t.u32(),
-  retryAfterSeconds: __t.u32(),
-  resetAt: __t.timestamp(),
-});
-export type RateLimitConsumeResult = __Infer<typeof RateLimitConsumeResult>;
-
 export const RateLimitSweepTick = __t.object("RateLimitSweepTick", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),

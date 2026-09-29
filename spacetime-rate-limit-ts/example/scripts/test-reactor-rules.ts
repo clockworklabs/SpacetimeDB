@@ -1,11 +1,13 @@
 import * as assert from 'node:assert/strict';
 import {
   COOLANT_UNLOCK_LEVEL,
+  MAX_BAY_LEVEL,
   SURGE_UNLOCK_LEVEL,
   hasCoolantFlush,
   hasSurgeBurst,
   roomTuning,
   tapLimitForState,
+  upgradeAvailable,
   upgradeOffer,
   upgradeWindowForState,
   type UpgradeState,
@@ -32,6 +34,12 @@ assert.deepEqual(roomTuning(state, 3), {
 assert.equal(upgradeOffer(state, 'power').cost, 12n);
 assert.equal(tapLimitForState({ chargeUpgradeCount: 2 }), 12);
 assert.equal(upgradeWindowForState({ bayUpgradeCount: 99 }), 5);
+assert.equal(upgradeWindowForState({ bayUpgradeCount: MAX_BAY_LEVEL }), 5);
+assert.equal(
+  upgradeAvailable({ ...state, bayUpgradeCount: MAX_BAY_LEVEL }, 'bay'),
+  false
+);
+assert.equal(upgradeAvailable(state, 'charges'), true);
 assert.equal(
   hasCoolantFlush({ coolingUpgradeCount: COOLANT_UNLOCK_LEVEL }),
   true

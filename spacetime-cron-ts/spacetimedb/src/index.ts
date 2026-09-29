@@ -1,32 +1,10 @@
+import { schema, table, t, SenderError } from 'spacetimedb/server';
 import {
-  schema,
-  table,
-  t,
-  SenderError,
-  toCamelCase,
-  type ReducerCtx,
-  type InferSchema,
-  type ProcedureCtx,
-} from 'spacetimedb/server';
-import { ScheduleAt, Timestamp } from 'spacetimedb';
-import {
-  spacetimeCron,
+  client,
+  cronTable,
   type CronJobHandle,
   type CronJobReference,
 } from '@spacetimedb/cron';
-
-// One injection point: hand the library this module's own SDK objects so the
-// bundle contains exactly one copy of the spacetimedb SDK.
-const { cronTable, createCron, schedule, unschedule } = spacetimeCron({
-  table,
-  t,
-  toCamelCase,
-  ScheduleAt,
-  Timestamp,
-  SenderError,
-});
-
-// ── Jobs ─────────────────────────────────────────────────────────────────────
 
 const heartbeat = cronTable({ name: 'heartbeat' });
 const report = cronTable({
@@ -43,12 +21,11 @@ const probe = cronTable({
 });
 const recoveryProbe = cronTable({ name: 'recovery_probe' });
 
-const cron = createCron([heartbeat, report, flaky, probe, recoveryProbe], {
+const cron = client({
+  jobs: [heartbeat, report, flaky, probe, recoveryProbe],
   publicTables: true,
   reconcileEverySeconds: 2,
 });
-
-// ── App tables ───────────────────────────────────────────────────────────────
 
 const tickLog = table(
   { name: 'tick_log', public: true },
@@ -95,19 +72,13 @@ const spacetimedb = schema({
 });
 export default spacetimedb;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type Tx = ReducerCtx<Schema>;
-type Proc = ProcedureCtx<Schema>;
-
-// ── Cron wiring ──────────────────────────────────────────────────────────────
-
-export const runHeartbeat = heartbeat.cronReducer(spacetimedb, (ctx: Tx) => {
+export const runHeartbeat = heartbeat.cronReducer(spacetimedb, ctx => {
   ctx.db.tickLog.insert({ id: 0n, jobName: 'heartbeat', at: ctx.timestamp });
 });
 
 export const runReport = report.cronReducer(
   spacetimedb,
-  (ctx: Tx, args, invocation) => {
+  (ctx, args, invocation) => {
     ctx.db.tickLog.insert({ id: 0n, jobName: 'report', at: ctx.timestamp });
     ctx.db.argumentLog.insert({
       id: 0n,
@@ -122,21 +93,14 @@ export const runReport = report.cronReducer(
 // Integration-only authorization probe. Direct calls must not execute a
 // reducer that is reserved for the scheduler.
 export const forgeReportFireForTest = spacetimedb.reducer(ctx => {
-  const fireTable = ctx.db.reportFire as unknown as {
-    iter(): Iterable<unknown>;
-  };
-  const fire = [...fireTable.iter()][0];
-  if (!fire) throw new SenderError('cron.test_missing_report_fire');
-  const invoke = runReport as unknown as (
-    ctx: Tx,
-    args: { arg: unknown }
-  ) => void;
-  invoke(ctx, { arg: fire });
+  const fire = ctx.db.reportFire.jobName.find('report');
+  if (!fire) throw new SenderError('test.missing_report_fire');
+  runReport(ctx, { arg: fire });
 });
 
 // Handler writes roll back on failure. Volatile recovery records the failure
 // and restores calendar jobs after the scheduled transaction aborts.
-export const runFlaky = flaky.cronReducer(spacetimedb, (ctx: Tx) => {
+export const runFlaky = flaky.cronReducer(spacetimedb, ctx => {
   ctx.db.tickLog.insert({ id: 0n, jobName: 'flaky', at: ctx.timestamp });
   const state = ctx.db.flakyState.singleton.find(true);
   if (state?.failing) throw new Error('flaky.failure');
@@ -146,12 +110,12 @@ export const runFlaky = flaky.cronReducer(spacetimedb, (ctx: Tx) => {
 // HTTP. Here it writes through withTx so the local suite can observe it.
 export const runProbe = probe.cronProcedure(
   spacetimedb,
-  (ctx: Proc, args, invocation) => {
+  (ctx, args, invocation) => {
     const failing = ctx.withTx(
-      (tx: Tx) => tx.db.flakyState.singleton.find(true)?.failing ?? false
+      tx => tx.db.flakyState.singleton.find(true)?.failing ?? false
     );
     if (failing) throw new Error('probe.failure');
-    ctx.withTx((tx: Tx) => {
+    ctx.withTx(tx => {
       tx.db.tickLog.insert({ id: 0n, jobName: 'probe', at: tx.timestamp });
       tx.db.argumentLog.insert({
         id: 0n,
@@ -175,9 +139,9 @@ function blockUntilHostStops(): never {
 // host. Its separate transactions prove what survives the interruption.
 export const runRecoveryProbe = recoveryProbe.cronProcedure(
   spacetimedb,
-  (ctx: Proc, run) => {
+  (ctx, run) => {
     if (run.sequence === 1n) {
-      ctx.withTx((tx: Tx) => {
+      ctx.withTx(tx => {
         tx.db.recoveryProbeState.insert({
           singleton: true,
           invocationId: run.id,
@@ -185,7 +149,7 @@ export const runRecoveryProbe = recoveryProbe.cronProcedure(
       });
       blockUntilHostStops();
     }
-    ctx.withTx((tx: Tx) => {
+    ctx.withTx(tx => {
       tx.db.tickLog.insert({
         id: 0n,
         jobName: 'recovery_probe',
@@ -201,10 +165,10 @@ export const { jobs: cronJobs } = cron.publicViews(spacetimedb);
 export const init = spacetimedb.init(ctx => {
   ctx.db.flakyState.insert({ singleton: true, failing: false });
   // Code-declared default for a fresh database.
-  schedule(ctx, heartbeat, { everySeconds: 30 });
+  cron.schedule(ctx, heartbeat, { everySeconds: 30 });
 });
 
-// ── CLI-facing management (thin wrappers over the library helpers) ───────────
+// CLI-facing management over the library helpers.
 
 const argumentlessJobs: Record<string, CronJobHandle> = {
   heartbeat,
@@ -220,13 +184,13 @@ const allJobs: Record<string, CronJobReference> = {
 
 function argumentlessJobByName(name: string): CronJobHandle {
   const job = argumentlessJobs[name];
-  if (!job) throw new SenderError(`cron.unknown_job:${name}`);
+  if (!job) throw new SenderError(`test.unknown_job:${name}`);
   return job;
 }
 
 function jobByName(name: string): CronJobReference {
   const job = allJobs[name];
-  if (!job) throw new SenderError(`cron.unknown_job:${name}`);
+  if (!job) throw new SenderError(`test.unknown_job:${name}`);
   return job;
 }
 
@@ -249,7 +213,7 @@ export const scheduleCron = spacetimedb.reducer(
   },
   (ctx, args) => {
     scheduleSafely(() => {
-      schedule(ctx, argumentlessJobByName(args.name), args.expression, {
+      cron.schedule(ctx, argumentlessJobByName(args.name), args.expression, {
         timezone: args.timezone,
         maxFailures: args.maxFailures,
       });
@@ -261,7 +225,7 @@ export const scheduleEvery = spacetimedb.reducer(
   { name: t.string(), seconds: t.u32(), maxFailures: t.u32() },
   (ctx, args) => {
     scheduleSafely(() => {
-      schedule(
+      cron.schedule(
         ctx,
         argumentlessJobByName(args.name),
         { everySeconds: args.seconds },
@@ -281,7 +245,7 @@ export const scheduleReport = spacetimedb.reducer(
   },
   (ctx, args) => {
     scheduleSafely(() => {
-      schedule(ctx, report, args.expression, {
+      cron.schedule(ctx, report, args.expression, {
         timezone: args.timezone,
         maxFailures: args.maxFailures,
         args: { label: args.label, batchSize: args.batchSize },
@@ -299,7 +263,7 @@ export const scheduleProbe = spacetimedb.reducer(
   },
   (ctx, args) => {
     scheduleSafely(() => {
-      schedule(ctx, probe, args.expression, {
+      cron.schedule(ctx, probe, args.expression, {
         timezone: args.timezone,
         maxFailures: args.maxFailures,
         args: { source: args.source },
@@ -311,7 +275,7 @@ export const scheduleProbe = spacetimedb.reducer(
 export const unscheduleJob = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    unschedule(ctx, jobByName(name));
+    cron.unschedule(ctx, jobByName(name));
   }
 );
 
@@ -325,12 +289,5 @@ export const setFlakyFailing = spacetimedb.reducer(
 
 // Integration-only fault injection for the lost-fire reconciler.
 export const dropHeartbeatFireForTest = spacetimedb.reducer(ctx => {
-  const fireTable = ctx.db.heartbeatFire as unknown as {
-    iter(): Iterable<{ jobName: string }>;
-    delete(row: { jobName: string }): void;
-  };
-  const pending = [...fireTable.iter()].find(
-    row => row.jobName === 'heartbeat'
-  );
-  if (pending) fireTable.delete(pending);
+  ctx.db.heartbeatFire.jobName.delete('heartbeat');
 });

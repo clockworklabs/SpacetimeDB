@@ -1,24 +1,25 @@
-export { spacetimeCron } from './cron';
+export { client, cronTable } from './cron.js';
+export { errors } from './errors.js';
 export type {
-  CreateCronOpts,
-  CronApi,
   CronArgsBuilder,
-  CronCore,
-  CronCorePublicViews,
+  CronClient,
+  CronConfig,
+  CronFunctionExport,
+  CronHandler,
   CronInvocation,
   CronJobHandle,
   CronJobReference,
-  CronProcedureHandler,
-  CronReducerHandler,
+  CronProcedureCtx,
+  CronPublicViews,
   CronSchedule,
   CronSchema,
-  CronSdk,
   CronTableOpts,
   CronTableWithArgsOpts,
-  CronTimestamp,
+  CronTables,
+  CronTx,
   ScheduleOpts,
   ScheduleSpec,
-} from './types';
+} from './types.js';
 export {
   parseCronExpression,
   nextFireAfter,
@@ -26,4 +27,4 @@ export {
   MAX_CRON_EXPRESSION_LENGTH,
   MAX_TIMEZONE_LENGTH,
   type ParsedCron,
-} from './parser';
+} from './parser.js';

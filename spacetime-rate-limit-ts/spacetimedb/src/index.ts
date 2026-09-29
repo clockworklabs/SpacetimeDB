@@ -4,7 +4,6 @@ export {
   adminRateLimitBuckets,
   addRateLimitAdmin,
   removeRateLimitAdmin,
-  consume,
   rateLimitSweep,
   resetBuckets,
   runSweep,

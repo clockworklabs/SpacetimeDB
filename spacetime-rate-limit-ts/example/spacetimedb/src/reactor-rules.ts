@@ -25,6 +25,11 @@ const CAPACITY_PER_UPGRADE = 30;
 const CHARGES_PER_UPGRADE = 2;
 const UPGRADE_WINDOW_REDUCTION_SECONDS = 3;
 const MIN_UPGRADE_WINDOW_SECONDS = 5;
+// Each level of these lanes has its own rate-limit policy, so they are capped.
+export const MAX_CHARGE_LEVEL = 5;
+export const MAX_BAY_LEVEL =
+  (UPGRADE_WINDOW_SECONDS - MIN_UPGRADE_WINDOW_SECONDS) /
+  UPGRADE_WINDOW_REDUCTION_SECONDS;
 
 export const PLAYER_COLORS = [
   '#22c7b8',
@@ -89,6 +94,16 @@ export function upgradeWindowForState(
     MIN_UPGRADE_WINDOW_SECONDS,
     UPGRADE_WINDOW_SECONDS - level * UPGRADE_WINDOW_REDUCTION_SECONDS
   );
+}
+
+export function upgradeAvailable(
+  state: UpgradeState,
+  lane: UpgradeLane
+): boolean {
+  const level = upgradeLevel(state, lane);
+  if (lane === 'charges') return level < MAX_CHARGE_LEVEL;
+  if (lane === 'bay') return level < MAX_BAY_LEVEL;
+  return true;
 }
 
 export function upgradeOffer(
