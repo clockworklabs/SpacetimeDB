@@ -852,13 +852,17 @@ export const ingestStripeWebhook = spacetimedb.reducer(
       throwSenderError(errors.webhookSecretNotConfigured);
     }
     const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
-    const sigOk = verifyStripeSignature({
+    const signature = verifyStripeSignature({
       rawBody: payloadJson,
       signatureHeader: signatureHeader ?? '',
       secret: cfg.webhookSigningSecret,
       nowSeconds,
     });
-    if (!sigOk) throwSenderError(errors.webhookSignatureMismatch);
+    if (!signature.ok) {
+      throwSenderError(
+        `${errors.webhookSignatureMismatch}:${signature.reason}`
+      );
+    }
 
     const signedMetadata = parseStripeEventMetadata(payloadJson);
     if (!signedMetadata) throwSenderError(errors.webhookPayloadMissingMetadata);

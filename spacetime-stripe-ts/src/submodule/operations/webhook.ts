@@ -54,14 +54,14 @@ export function handleStripeWebhook(
     });
   }
   const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
-  const sigOk = verifyStripeSignature({
+  const signature = verifyStripeSignature({
     rawBody: payloadJson,
     signatureHeader: signatureHeader ?? '',
     secret: webhookSecret,
     nowSeconds,
   });
-  if (!sigOk) {
-    return jsonResponse(401, { error: 'signature mismatch' });
+  if (!signature.ok) {
+    return jsonResponse(401, { error: signature.reason });
   }
 
   const metadata = parseStripeEventMetadata(payloadJson);
