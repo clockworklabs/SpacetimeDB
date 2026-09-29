@@ -299,17 +299,6 @@ export const getOrCreateCustomer = spacetimedb.procedure(
       return { customerId: existingByUser.stripeCustomerId, isNew: false };
     }
 
-    if (args.email) {
-      const existingByEmail = ctx.withTx(tx => {
-        for (const customer of tx.db.stripeCustomer.byEmail.filter(args.email))
-          return customer;
-        return undefined;
-      });
-      if (existingByEmail) {
-        return { customerId: existingByEmail.stripeCustomerId, isNew: false };
-      }
-    }
-
     const existingSub = ctx.withTx(tx => {
       for (const sub of tx.db.stripeSubscription.byUserId.filter(args.userId))
         return sub;
