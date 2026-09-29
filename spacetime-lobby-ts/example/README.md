@@ -11,7 +11,9 @@ maneuvers, combat resolution, and round logs.
 - Ranked queue matching, room joining, rematches, and rating updates.
 - Falling back from a public queue to a server-controlled AI opponent.
 - Keeping submodule matchmaking state separate from application game state.
-- Caller-scoped ticket, room, seat, rating, duel, and maneuver views.
+- Resolving forfeits, disconnects, and abandoned rooms so no duel stays open.
+- Using the submodule's caller-scoped ticket, room, seat, and rating views
+  alongside host duel views.
 - Driving a realtime UI entirely from SpacetimeDB subscriptions.
 
 ## Prerequisites
@@ -87,20 +89,44 @@ The Node process serves static files, `GET /api/health`, and browser-safe
 3. Once two compatible tickets are matched, both subjects join the resulting
    room and the host module creates duel state.
 4. Each pilot chooses a maneuver. The module resolves the round only when the
-   required choices exist, then records combat changes and a round log.
-5. A completed or abandoned duel reports its result to Lobby and closes the room.
-6. The submodule updates ratings; players can queue again.
+   required choices exist, then records combat changes and a round log. Dodge
+   and critical rolls come from the transaction's RNG.
+5. When a ship is destroyed, the module reports the winner with
+   `reportMatchResult`, which updates both ratings and closes the room.
+6. Players can queue again with `find_duel`.
 
-The fallback action cancels the player's public ticket and creates a match in an
-AI-specific pool with a server-controlled subject.
+A duel can also end early:
+
+- `leave_duel`, or calling `find_duel` during an unfinished duel, forfeits it.
+- A pilot whose last connection closes and does not reconnect within 30
+  seconds forfeits their unfinished duels and loses their queued ticket.
+- In an active room a forfeit reports the opponent as winner, so the loss is
+  rated. A room that is not active yet is left and abandoned without a rating
+  change.
+- A scheduled `duel_sweep` runs every 5 seconds. It abandons a duel whose lobby
+  room closed or timed out, forfeits a player who left an active room through
+  `lobby.leave_room`, and deletes finished duels after the lobby's
+  `retentionSeconds`.
+
+`fallback_to_ai` does nothing if the player already holds a seat in an open
+room, so a real match that formed just before the client's timer is kept.
+Otherwise it replaces the player's public ticket with a match against the Arena
+AI. Every AI match uses the same AI pilot and pool, so public views do not show
+who is playing the AI. The AI picks its maneuver from the RNG of the
+transaction that resolves the round. AI rooms close without a result, so AI
+duels never change ratings or appear on the leaderboard.
 
 ## Visibility and authority
 
-The browser subscribes to public catalogs and leaderboard summaries plus
-caller-scoped views including `my_lobby_tickets`, `my_lobby_rooms`,
-`my_lobby_room_seats`, `my_lobby_ratings`, `my_duels`, and
+The browser subscribes to the public ship and maneuver catalogs, the
+submodule's `lobby.lobby_ranked_leaderboard`, `lobby.my_lobby_tickets`,
+`lobby.my_lobby_rooms`, `lobby.my_lobby_room_seats`, and
+`lobby.my_lobby_ratings`, and the host views `my_profile`, `players`,
+`my_duels`, `my_duel_combatants`, `my_duel_round_logs`, and
 `my_duel_maneuvers`. Scoped views derive their subject from `ctx.sender`.
-The public display-name roster returns at most 1,000 pilots.
+`my_duel_maneuvers` returns the caller's own choices and choices from resolved
+rounds, so the opponent's choice for the current round stays hidden. The public
+display-name roster returns at most 1,000 pilots.
 
 Reducers repeat the membership, room, turn, and combat checks. A player cannot
 choose for the opponent, resolve an unrelated room, or read another room merely
@@ -137,7 +163,8 @@ For a release smoke test:
    combat state and logs.
 3. Finish a duel and verify room closure, winner state, and rating changes happen
    once.
-4. Exercise leave/abandon and queue-again behavior.
+4. Forfeit a duel, queue again mid-duel, and close one browser for 30 seconds;
+   confirm the opponent wins and ratings change once each time.
 5. Exercise AI fallback and complete a solo duel.
 6. Attempt to submit a maneuver or room action from an unrelated third identity
    and confirm the module rejects it.
@@ -147,7 +174,7 @@ For a release smoke test:
 - **Both windows appear as one pilot:** use independent browser profiles or an
   incognito window to give each player a separate SpacetimeDB token.
 - **A ticket never matches:** confirm both pilots selected the public duel pool and
-  inspect `lobby_queue_summary` for queued tickets.
+  inspect `lobby.lobby_queue_summary` for queued tickets.
 - **The page connects to stale state:** verify `STDB_URI` targets the server
   registered as `local` by the publish scripts.
 - **State disappears after republishing:** `build:module:fresh`
@@ -155,8 +182,10 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - Lobby registration, scoped views, matchmaking, combat,
-  ratings, and AI fallback.
+- `spacetimedb/src/schema.ts` - Lobby mount and host tables.
+- `spacetimedb/src/index.ts` - matchmaking, combat, result reporting, forfeits,
+  AI fallback, and the duel sweep.
+- `spacetimedb/src/views.ts` - caller-scoped duel views and the pilot roster.
 - `spacetimedb/src/catalog.ts` - ship and maneuver definitions used to seed the
   public catalogs.
 - `src/app.ts` - browser identity, subscriptions, rendering, and controls.
