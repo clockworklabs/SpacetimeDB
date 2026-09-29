@@ -1,17 +1,21 @@
-// Owner passed explicitly so the submodule is identity-scheme-agnostic.
-import type { Timestamp } from 'spacetimedb';
+// Owner passed explicitly so the submodule is identity-scheme-agnostic. Every
+// helper runs in the caller's transaction: pass `ctx.as.files` from a host
+// reducer, or `tx.as.files` inside a procedure's `withTx`.
 import {
   Range,
   t,
   SenderError,
   type InferTypeOfParams,
 } from 'spacetimedb/server';
+import { fileListPage } from './rows';
 import {
-  fileListPage,
+  errors,
+  FILE_BYTES_MAX,
+  FILE_LIST_PAGE_MAX,
+  FILE_OWNER_BYTES_MAX,
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
-} from './rows';
-import { FILE_BYTES_MAX, FILE_LIST_PAGE_MAX } from './constants';
+} from './constants';
 import { fileSha256Hex } from './hash';
 import {
   FileValidationError,
@@ -21,49 +25,12 @@ import {
   validateFilePrefix,
   validateMimeType,
 } from './validation';
-import type { TransactionModuleCtx } from './submodule/schema';
+import type { FilesCtx } from './submodule/schema';
 
-type FileTable = TransactionModuleCtx['db']['file'];
-type FileBlobTable = TransactionModuleCtx['db']['fileBlob'];
-
-interface FileDbLike {
-  file?: FileTable;
-  fileBlob?: FileBlobTable;
-  files?: {
-    file?: FileTable;
-    fileBlob?: FileBlobTable;
-  };
-}
-
-interface FileTransactionLike {
-  db: FileDbLike;
-}
-
-interface FileProcedureContext {
-  timestamp: Timestamp;
-  withTx<T>(body: (tx: FileTransactionLike) => T): T;
-}
-
-// Lowercase hex SHA-256, for consumers that write their own insert path.
-export { fileSha256Hex } from './hash';
-
-const VALID_VISIBILITIES = new Set([
+const VALID_VISIBILITIES = new Set<string>([
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
 ]);
-
-// Direct `file` table or submodule namespace layout, as in handlers.ts.
-function fileTable(db: FileDbLike): FileTable {
-  const table = db.file ?? db.files?.file;
-  if (!table) throw new Error('files.file table is unavailable');
-  return table;
-}
-
-function fileBlobTable(db: FileDbLike): FileBlobTable {
-  const table = db.fileBlob ?? db.files?.fileBlob;
-  if (!table) throw new Error('files.fileBlob table is unavailable');
-  return table;
-}
 
 function validated<T>(fn: () => T): T {
   try {
@@ -73,6 +40,12 @@ function validated<T>(fn: () => T): T {
       throw new SenderError(error.message);
     throw error;
   }
+}
+
+function validVisibility(visibility: string): string {
+  if (!VALID_VISIBILITIES.has(visibility))
+    throw new SenderError(errors.invalidVisibility);
+  return visibility;
 }
 
 function prefixUpperBound(prefix: string): string | undefined {
@@ -88,6 +61,12 @@ function prefixUpperBound(prefix: string): string | undefined {
   return undefined;
 }
 
+function requireFile(ctx: FilesCtx, owner: string, path: string) {
+  const row = ctx.db.file.ownerPathKey.find(ownerPathKey(owner, path));
+  if (!row) throw new SenderError(errors.notFound);
+  return row;
+}
+
 export const uploadFileParams = {
   path: t.string(),
   mimeType: t.string(),
@@ -95,55 +74,92 @@ export const uploadFileParams = {
   visibility: t.string(),
 };
 
+export interface UploadFileOpts {
+  /** Total bytes this owner may store. Default FILE_OWNER_BYTES_MAX. */
+  maxOwnerBytes?: number;
+}
+
+/** Creates or replaces the owner's file at `path`. Returns the file id. */
 export function uploadFile(
-  rawCtx: unknown,
+  ctx: FilesCtx,
   args: InferTypeOfParams<typeof uploadFileParams>,
-  owner: string
+  owner: string,
+  opts: UploadFileOpts = {}
 ): bigint {
-  const ctx = rawCtx as FileProcedureContext;
   owner = validated(() => validateFileOwner(owner));
   const path = validated(() => validateFilePath(args.path));
   const mimeType = validated(() => validateMimeType(args.mimeType));
+  const visibility = validVisibility(args.visibility);
+  const size = BigInt(args.bytes.length);
   if (args.bytes.length > FILE_BYTES_MAX) {
     throw new SenderError(
-      `files.too_large:${args.bytes.length}/${FILE_BYTES_MAX}`
+      `${errors.tooLarge}:${args.bytes.length}/${FILE_BYTES_MAX}`
     );
   }
-  if (!VALID_VISIBILITIES.has(args.visibility)) {
-    throw new SenderError(`files.invalid_visibility:${args.visibility}`);
-  }
-  const sha256Hex = fileSha256Hex(args.bytes);
   const key = ownerPathKey(owner, path);
-  return ctx.withTx(tx => {
-    const files = fileTable(tx.db);
-    const blobs = fileBlobTable(tx.db);
-    const existing = files.ownerPathKey.find(key);
-    if (existing) {
-      files.id.update({
-        ...existing,
-        mimeType,
-        size: BigInt(args.bytes.length),
-        sha256Hex,
-        visibility: args.visibility,
-        updatedAt: ctx.timestamp,
-      });
-      blobs.fileId.update({ fileId: existing.id, bytes: args.bytes });
-      return existing.id;
-    }
-    const row = files.insert({
-      id: 0n,
-      ownerPathKey: key,
-      path,
-      ownerUserId: owner,
+  // ponytail: sums the owner's rows on each upload; keep a running total if
+  // owners hold many thousands of files.
+  let total = size;
+  for (const row of ctx.db.file.ownerUserId.filter(owner)) {
+    if (row.ownerPathKey !== key) total += row.size;
+  }
+  if (total > BigInt(opts.maxOwnerBytes ?? FILE_OWNER_BYTES_MAX))
+    throw new SenderError(errors.quotaExceeded);
+
+  const sha256Hex = fileSha256Hex(args.bytes);
+  const existing = ctx.db.file.ownerPathKey.find(key);
+  if (existing) {
+    ctx.db.file.id.update({
+      ...existing,
       mimeType,
-      size: BigInt(args.bytes.length),
+      size,
       sha256Hex,
-      visibility: args.visibility,
-      createdAt: ctx.timestamp,
+      visibility,
       updatedAt: ctx.timestamp,
     });
-    blobs.insert({ fileId: row.id, bytes: args.bytes });
-    return row.id;
+    ctx.db.fileBlob.fileId.update({ fileId: existing.id, bytes: args.bytes });
+    return existing.id;
+  }
+  const row = ctx.db.file.insert({
+    id: 0n,
+    ownerPathKey: key,
+    path,
+    ownerUserId: owner,
+    mimeType,
+    size,
+    sha256Hex,
+    visibility,
+    createdAt: ctx.timestamp,
+    updatedAt: ctx.timestamp,
+  });
+  ctx.db.fileBlob.insert({ fileId: row.id, bytes: args.bytes });
+  return row.id;
+}
+
+export const renameFileParams = {
+  oldPath: t.string(),
+  newPath: t.string(),
+};
+
+/** Moves the owner's file to a free path. */
+export function renameFile(
+  ctx: FilesCtx,
+  args: InferTypeOfParams<typeof renameFileParams>,
+  owner: string
+): void {
+  owner = validated(() => validateFileOwner(owner));
+  const oldPath = validated(() => validateFilePath(args.oldPath));
+  const newPath = validated(() => validateFilePath(args.newPath));
+  if (oldPath === newPath) return;
+  const row = requireFile(ctx, owner, oldPath);
+  const key = ownerPathKey(owner, newPath);
+  if (ctx.db.file.ownerPathKey.find(key))
+    throw new SenderError(errors.pathTaken);
+  ctx.db.file.id.update({
+    ...row,
+    ownerPathKey: key,
+    path: newPath,
+    updatedAt: ctx.timestamp,
   });
 }
 
@@ -151,23 +167,18 @@ export const deleteFileParams = {
   path: t.string(),
 };
 
+/** Deletes the owner's file at `path`, if any. */
 export function deleteFile(
-  rawCtx: unknown,
+  ctx: FilesCtx,
   args: InferTypeOfParams<typeof deleteFileParams>,
   owner: string
 ): void {
-  const ctx = rawCtx as FileProcedureContext;
   owner = validated(() => validateFileOwner(owner));
   const path = validated(() => validateFilePath(args.path));
-  ctx.withTx(tx => {
-    const files = fileTable(tx.db);
-    const blobs = fileBlobTable(tx.db);
-    const row = files.ownerPathKey.find(ownerPathKey(owner, path));
-    if (!row) return;
-    const blob = blobs.fileId.find(row.id);
-    if (blob) blobs.delete(blob);
-    files.delete(row);
-  });
+  const row = ctx.db.file.ownerPathKey.find(ownerPathKey(owner, path));
+  if (!row) return;
+  ctx.db.fileBlob.fileId.delete(row.id);
+  ctx.db.file.id.delete(row.id);
 }
 
 export const listFilesParams = {
@@ -178,13 +189,12 @@ export const listFilesParams = {
 
 export const listFilesReturn = fileListPage;
 
-// Caller's own files; bytes omitted (fetch via HTTP handler).
+/** The owner's files under `prefix`, ordered by path, without bytes. */
 export function listFiles(
-  rawCtx: unknown,
+  ctx: FilesCtx,
   args: InferTypeOfParams<typeof listFilesParams>,
   owner: string
 ) {
-  const ctx = rawCtx as FileProcedureContext;
   owner = validated(() => validateFileOwner(owner));
   const prefix = validated(() => validateFilePrefix(args.prefix));
   const rawCursor = args.cursor;
@@ -193,55 +203,45 @@ export function listFiles(
       ? undefined
       : validated(() => validateFilePath(rawCursor));
   if (cursor !== undefined && !cursor.startsWith(prefix)) {
-    throw new SenderError('files.invalid_cursor');
+    throw new SenderError(errors.invalidCursor);
   }
   const limit = args.limit ?? 100;
   if (!Number.isInteger(limit) || limit < 1 || limit > FILE_LIST_PAGE_MAX) {
-    throw new SenderError('files.invalid_page_size');
+    throw new SenderError(errors.invalidPageSize);
   }
-  return ctx.withTx(tx => {
-    const out: Array<{
-      id: bigint;
-      path: string;
-      mimeType: string;
-      size: bigint;
-      sha256Hex: string;
-      visibility: string;
-      updatedAt: Timestamp;
-    }> = [];
-    const from =
-      cursor === undefined
-        ? prefix === ''
-          ? undefined
-          : { tag: 'included' as const, value: prefix }
-        : { tag: 'excluded' as const, value: cursor };
-    const upper = prefixUpperBound(prefix);
-    const to =
-      upper === undefined
+  const from =
+    cursor === undefined
+      ? prefix === ''
         ? undefined
-        : { tag: 'excluded' as const, value: upper };
-    for (const row of fileTable(tx.db).ownerPath.filter([
-      owner,
-      new Range(from, to),
-    ])) {
-      out.push({
-        id: row.id,
-        path: row.path,
-        mimeType: row.mimeType,
-        size: row.size,
-        sha256Hex: row.sha256Hex,
-        visibility: row.visibility,
-        updatedAt: row.updatedAt,
-      });
-      if (out.length > limit) break;
-    }
-    const hasMore = out.length > limit;
-    if (hasMore) out.pop();
-    return {
-      files: out,
-      nextCursor: hasMore ? out[out.length - 1]?.path : undefined,
-    };
-  });
+        : { tag: 'included' as const, value: prefix }
+      : { tag: 'excluded' as const, value: cursor };
+  const upper = prefixUpperBound(prefix);
+  const to =
+    upper === undefined
+      ? undefined
+      : { tag: 'excluded' as const, value: upper };
+  const files = [];
+  for (const row of ctx.db.file.ownerPath.filter([
+    owner,
+    new Range(from, to),
+  ])) {
+    files.push({
+      id: row.id,
+      path: row.path,
+      mimeType: row.mimeType,
+      size: row.size,
+      sha256Hex: row.sha256Hex,
+      visibility: row.visibility,
+      updatedAt: row.updatedAt,
+    });
+    if (files.length > limit) break;
+  }
+  const hasMore = files.length > limit;
+  if (hasMore) files.pop();
+  return {
+    files,
+    nextCursor: hasMore ? files[files.length - 1]?.path : undefined,
+  };
 }
 
 export const readFileBytesParams = {
@@ -253,23 +253,19 @@ export const readFileBytesReturn = t.object('FileBytes', {
   mimeType: t.string(),
 });
 
-// Owner-gated byte read. HTTP handlers never see the caller's identity, so
-// private files can only be read here, over the authenticated connection.
+// HTTP handlers never see the caller's identity, so private files are read
+// here, from a procedure that knows the sender.
 export function readFileBytes(
-  rawCtx: unknown,
+  ctx: FilesCtx,
   args: InferTypeOfParams<typeof readFileBytesParams>,
   owner: string
 ): { bytes: number[]; mimeType: string } {
-  const ctx = rawCtx as FileProcedureContext;
   owner = validated(() => validateFileOwner(owner));
   const path = validated(() => validateFilePath(args.path));
-  return ctx.withTx(tx => {
-    const row = fileTable(tx.db).ownerPathKey.find(ownerPathKey(owner, path));
-    if (!row) throw new SenderError(`files.not_found:${path}`);
-    const blob = fileBlobTable(tx.db).fileId.find(row.id);
-    if (!blob) throw new SenderError(`files.not_found:${path}`);
-    return { bytes: blob.bytes, mimeType: row.mimeType };
-  });
+  const row = requireFile(ctx, owner, path);
+  const blob = ctx.db.fileBlob.fileId.find(row.id);
+  if (!blob) throw new SenderError(errors.notFound);
+  return { bytes: blob.bytes, mimeType: row.mimeType };
 }
 
 export const setFileVisibilityParams = {
@@ -278,24 +274,13 @@ export const setFileVisibilityParams = {
 };
 
 export function setFileVisibility(
-  rawCtx: unknown,
+  ctx: FilesCtx,
   args: InferTypeOfParams<typeof setFileVisibilityParams>,
   owner: string
 ): void {
-  const ctx = rawCtx as FileProcedureContext;
   owner = validated(() => validateFileOwner(owner));
   const path = validated(() => validateFilePath(args.path));
-  if (!VALID_VISIBILITIES.has(args.visibility)) {
-    throw new SenderError(`files.invalid_visibility:${args.visibility}`);
-  }
-  ctx.withTx(tx => {
-    const files = fileTable(tx.db);
-    const row = files.ownerPathKey.find(ownerPathKey(owner, path));
-    if (!row) throw new SenderError(`files.not_found:${path}`);
-    files.id.update({
-      ...row,
-      visibility: args.visibility,
-      updatedAt: ctx.timestamp,
-    });
-  });
+  const visibility = validVisibility(args.visibility);
+  const row = requireFile(ctx, owner, path);
+  ctx.db.file.id.update({ ...row, visibility, updatedAt: ctx.timestamp });
 }

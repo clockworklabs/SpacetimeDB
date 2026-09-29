@@ -15,18 +15,6 @@
       "types": "./src/constants.ts",
       "default": "./src/constants.ts"
     },
-    "./rows": {
-      "types": "./src/rows.ts",
-      "default": "./src/rows.ts"
-    },
-    "./procedures": {
-      "types": "./src/procedures.ts",
-      "default": "./src/procedures.ts"
-    },
-    "./handlers": {
-      "types": "./src/handlers.ts",
-      "default": "./src/handlers.ts"
-    },
     "./submodule": {
       "types": "./src/submodule.ts",
       "default": "./src/submodule.ts"
