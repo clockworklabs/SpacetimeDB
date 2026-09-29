@@ -10,10 +10,10 @@ import {
   type ErrorContext,
   type EventContext,
 } from './module_bindings/app/index.ts';
+import type { AuthUser as AuthUserRow } from './module_bindings/app/auth/types.ts';
 import type {
   PresenceEntry,
   Server,
-  ChatAuthUser as AuthUserRow,
   ChatRateLimitStatus,
   MessageThread,
   ThreadMessage,
@@ -446,7 +446,7 @@ function subscribeToTables(connection: DbConnection): void {
       tables.myMessageThreads,
       tables.myThreadMessages,
       tables.myRoomReadCursors,
-      tables.myAuthUser,
+      tables.auth.myAuthUser,
       tables.myRateLimitStatus,
     ]);
 }
@@ -494,20 +494,22 @@ function registerRowCallbacks(connection: DbConnection): void {
     };
     emitAuthState();
   };
-  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
-    syncUserFromRow(row)
+  connection.db['auth.my_auth_user'].onInsert(
+    (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db.myAuthUser.onUpdate(
+  connection.db['auth.my_auth_user'].onUpdate(
     (_ctx: EventContext, _old: AuthUserRow, neu: AuthUserRow) =>
       syncUserFromRow(neu)
   );
-  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
-    if (!authUser || row.userId !== authUser.userId) return;
-    authUser = null;
-    sessionExpiresAt = undefined;
-    emitAuthState();
-    emitPresenceState();
-  });
+  connection.db['auth.my_auth_user'].onDelete(
+    (_ctx: EventContext, row: AuthUserRow) => {
+      if (!authUser || row.userId !== authUser.userId) return;
+      authUser = null;
+      sessionExpiresAt = undefined;
+      emitAuthState();
+      emitPresenceState();
+    }
+  );
 }
 
 async function bindSession(
@@ -517,7 +519,7 @@ async function bindSession(
 ): Promise<void> {
   saveAuthToken(sessionToken);
   const c = requireConn();
-  await c.reducers.linkConnection({ sessionToken });
+  await c.reducers['auth.linkConnection']({ sessionToken });
   const me = await c.procedures.whoami({});
   meHex = me.senderIdentityHex;
   if (!refreshedUser) {
@@ -691,7 +693,7 @@ function installApi(): void {
       const c = conn;
       if (c) {
         try {
-          await c.reducers.unlinkConnection({});
+          await c.reducers['auth.unlinkConnection']({});
         } catch {
           /* best-effort disconnect cleanup */
         }
@@ -720,7 +722,7 @@ function installApi(): void {
       };
     },
     setProfile: args => {
-      return requireConn().reducers.updateProfile({
+      return requireConn().reducers['auth.updateProfile']({
         name: args.name,
         image: args.image,
       });

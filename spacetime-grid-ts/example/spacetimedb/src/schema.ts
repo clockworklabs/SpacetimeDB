@@ -15,16 +15,6 @@ export const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
   );
 };
 
-export const authUserViewRow = t.object('GridAuthUser', {
-  userId: t.string(),
-  email: t.string(),
-  emailVerified: t.bool(),
-  name: t.option(t.string()),
-  image: t.option(t.string()),
-  createdAt: t.timestamp(),
-  updatedAt: t.timestamp(),
-});
-
 // Static unit catalog. Seeded once in init.
 export const unitType = table(
   { name: 'unit_type', public: true },

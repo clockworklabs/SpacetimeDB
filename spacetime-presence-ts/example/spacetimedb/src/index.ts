@@ -1,45 +1,13 @@
 import { ScheduleAt } from 'spacetimedb';
-import { Router, Range, t, type TransactionCtx } from 'spacetimedb/server';
+import { Router, Range, t } from 'spacetimedb/server';
 import {
   installPresenceConfig,
   removePresence,
   runPresenceSweep,
   upsertPresence,
 } from '@spacetimedb/presence';
-import {
-  getPublicKeyPemParams,
-  githubCallbackHandler,
-  githubStartHandler,
-  googleCallbackHandler,
-  googleStartHandler,
-  linkConnectionParams,
-  listMySessionsParams,
-  logoutHandler,
-  makeEmailVerifyHandler,
-  makeEmailVerifyRequestHandler,
-  makeForgotPasswordHandler,
-  meHandler,
-  passwordLoginHandler,
-  passwordSignupHandler,
-  parseCookies,
-  refreshHandler,
-  resetPasswordHandler,
-  revokeMySessionParams,
-  revokeSessionParams,
-  setAuthConfigParams,
-  unlinkConnectionParams,
-  updateProfileParams,
-  publicKeyFromPem,
-  verifyJwt,
-  type MailParams,
-  type SendMailFn,
-} from '@spacetimedb/auth/submodule';
 import * as auth from '@spacetimedb/auth/submodule';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
-import {
-  fileSha256Hex,
-  FILE_VISIBILITY_OWNER,
-} from '@spacetimedb/files/submodule';
 import * as files from '@spacetimedb/files/submodule';
 import {
   RATE_LIMIT_PROFILE,
@@ -68,7 +36,7 @@ const ATTACHMENT_FILENAME_MAX = 256;
 
 const ALLOWED_REACTIONS = new Set(['+1', 'heart', 'joy', 'wow', 'sad', 'fire']);
 
-const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
+const consoleSendMail: auth.SendMailFn = (_ctx, params) => {
   console.log(
     `[mail] to=${params.to} subject=${params.subject}\n${params.text}`
   );
@@ -121,7 +89,6 @@ export const {
   myThreadMessages,
   myRoomAttachments,
   myRoomReadCursors,
-  myAuthUser,
   myRateLimitStatus,
 } = registerChatViews(spacetimedb);
 export const init = spacetimedb.init(ctx => {
@@ -138,80 +105,6 @@ export const init = spacetimedb.init(ctx => {
     ),
   });
 });
-
-export const setAuthConfig = spacetimedb.reducer(
-  setAuthConfigParams,
-  (ctx, args) => {
-    auth.setAuthConfig(ctx.as.auth, args);
-  }
-);
-
-export const getAuthPublicKey = spacetimedb.procedure(
-  getPublicKeyPemParams,
-  t.object('AuthPubKey', {
-    publicKeyPem: t.string(),
-    keyId: t.string(),
-    issuerUrl: t.string(),
-  }),
-  (ctx, args) =>
-    auth.getAuthPublicKey(ctx.as.auth, args) as {
-      publicKeyPem: string;
-      keyId: string;
-      issuerUrl: string;
-    }
-);
-
-export const linkConnection = spacetimedb.reducer(
-  linkConnectionParams,
-  (ctx, args) => {
-    auth.linkConnection(ctx.as.auth, args);
-  }
-);
-
-export const unlinkConnection = spacetimedb.reducer(
-  unlinkConnectionParams,
-  (ctx, args) => {
-    auth.unlinkConnection(ctx.as.auth, args);
-  }
-);
-
-export const updateProfile = spacetimedb.reducer(
-  updateProfileParams,
-  (ctx, args) => {
-    auth.updateProfile(ctx.as.auth, args);
-  }
-);
-
-export const revokeSession = spacetimedb.reducer(
-  revokeSessionParams,
-  (ctx, args) => {
-    auth.revokeSession(ctx.as.auth, args);
-  }
-);
-
-export const listMySessions = spacetimedb.procedure(
-  listMySessionsParams,
-  t.object('MySessions', {
-    sessions: t.array(
-      t.object('MySession', {
-        sessionId: t.string(),
-        expiresAt: t.timestamp(),
-        createdAt: t.timestamp(),
-        ipAddress: t.option(t.string()),
-        userAgent: t.option(t.string()),
-        isCurrent: t.bool(),
-      })
-    ),
-  }),
-  (ctx, args) => auth.listMySessions(ctx.as.auth, args)
-);
-
-export const revokeMySession = spacetimedb.reducer(
-  revokeMySessionParams,
-  (ctx, args) => {
-    auth.revokeMySession(ctx.as.auth, args);
-  }
-);
 
 export const heartbeat = spacetimedb.reducer({}, ctx => {
   const userId = requireAuthenticatedUserId(ctx);
@@ -608,23 +501,20 @@ export const sendMessage = spacetimedb.reducer(
     for (let i = 0; i < args.attachments.length; i++) {
       const a = args.attachments[i]!;
       const path = `/room/${args.roomId}/msg/${msg.id}/${i}`;
-      const file = tx.db.files.file.insert({
-        id: 0n,
-        ownerPathKey: files.ownerPathKey(userId, path),
-        path,
-        ownerUserId: userId,
-        mimeType: a.mimeType,
-        size: BigInt(a.bytes.length),
-        sha256Hex: fileSha256Hex(a.bytes),
-        visibility: FILE_VISIBILITY_OWNER,
-        createdAt: tx.timestamp,
-        updatedAt: tx.timestamp,
-      });
-      tx.db.files.fileBlob.insert({ fileId: file.id, bytes: a.bytes });
+      const fileId = files.uploadFile(
+        tx.as.files,
+        {
+          path,
+          mimeType: a.mimeType,
+          bytes: a.bytes,
+          visibility: files.FILE_VISIBILITY_OWNER,
+        },
+        userId
+      );
       tx.db.attachment.insert({
         id: 0n,
         messageId: msg.id,
-        fileId: file.id,
+        fileId,
         ownerUserId: userId,
         ordinal: i,
         filename: a.filename,
@@ -955,119 +845,66 @@ export const chatSweep = spacetimedb.reducer(
   }
 );
 
+const authHttp = auth.client({
+  sendMail: consoleSendMail,
+  appName: 'Chat',
+  emailVerifiedRedirect: '/?verified=1',
+});
+
 export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
-  passwordSignupHandler(ctx.as.auth, req)
+  authHttp.passwordSignup(ctx.as.auth, req)
 );
 export const authPasswordLogin = spacetimedb.httpHandler((ctx, req) =>
-  passwordLoginHandler(ctx.as.auth, req)
+  authHttp.passwordLogin(ctx.as.auth, req)
 );
 export const authMe = spacetimedb.httpHandler((ctx, req) =>
-  meHandler(ctx.as.auth, req)
+  authHttp.me(ctx.as.auth, req)
 );
 export const authLogout = spacetimedb.httpHandler((ctx, req) =>
-  logoutHandler(ctx.as.auth, req)
+  authHttp.logout(ctx.as.auth, req)
 );
 export const authRefresh = spacetimedb.httpHandler((ctx, req) =>
-  refreshHandler(ctx.as.auth, req)
+  authHttp.refresh(ctx.as.auth, req)
 );
 export const authGoogleStart = spacetimedb.httpHandler((ctx, req) =>
-  googleStartHandler(ctx.as.auth, req)
+  authHttp.googleStart(ctx.as.auth, req)
 );
 export const authGoogleCallback = spacetimedb.httpHandler((ctx, req) =>
-  googleCallbackHandler(ctx.as.auth, req)
+  authHttp.googleCallback(ctx.as.auth, req)
 );
 export const authGithubStart = spacetimedb.httpHandler((ctx, req) =>
-  githubStartHandler(ctx.as.auth, req)
+  authHttp.githubStart(ctx.as.auth, req)
 );
 export const authGithubCallback = spacetimedb.httpHandler((ctx, req) =>
-  githubCallbackHandler(ctx.as.auth, req)
+  authHttp.githubCallback(ctx.as.auth, req)
 );
-
-const fileServeHandler = files.createFileHttpHandler({
-  getOwner: (ctx, req) =>
-    ctx.withTx((tx: TransactionCtx<DbSchema>) => {
-      const binding = tx.db.auth.authConnectionBinding.stdbIdentity.find(
-        tx.sender
-      );
-      if (binding) return binding.userId;
-
-      const cfg = tx.db.auth.authConfig.singleton.find(true);
-      if (!cfg) return undefined;
-      const bearer = req.headers.get('authorization');
-      const cookies = parseCookies(req.headers.get('cookie'));
-      const tokens = [
-        bearer && bearer.toLowerCase().startsWith('bearer ')
-          ? bearer.slice(7).trim()
-          : undefined,
-        cookies[cfg.cookieName],
-      ].filter((token): token is string => Boolean(token));
-      for (const token of tokens) {
-        const verified = verifyJwt(
-          publicKeyFromPem(cfg.es256PublicKeyPem),
-          token,
-          {
-            issuer: cfg.issuerUrl,
-            nowSeconds: Number(
-              (tx.timestamp.microsSinceUnixEpoch as bigint) / 1_000_000n
-            ),
-          }
-        );
-        if (!verified.ok || !verified.claims.jti) continue;
-
-        const session = tx.db.auth.authSession.sessionId.find(
-          verified.claims.jti
-        );
-        if (!session) continue;
-        if (
-          (session.expiresAt.microsSinceUnixEpoch as bigint) <=
-          (tx.timestamp.microsSinceUnixEpoch as bigint)
-        ) {
-          continue;
-        }
-        if (session.userId === verified.claims.sub) return session.userId;
-      }
-      return undefined;
-    }),
-  canAccess: (ctx, _req, file, userId) =>
-    ctx.withTx((tx: TransactionCtx<DbSchema>) => {
-      if (!userId) return false;
-      if (file.ownerUserId === userId) return true;
-      for (const a of tx.db.attachment.fileId.filter(file.id)) {
-        const msg = tx.db.message.id.find(a.messageId);
-        if (!msg) continue;
-        for (const member of tx.db.roomMember.roomId.filter(msg.roomId)) {
-          if (member.userId === userId) return true;
-        }
-      }
-      return false;
-    }),
-});
-export const fileServe = spacetimedb.httpHandler(fileServeHandler);
-
-const forgotHandler = makeForgotPasswordHandler({
-  sendMail: consoleSendMail,
-  appName: 'Chat',
-});
-const verifyRequestHandler = makeEmailVerifyRequestHandler({
-  sendMail: consoleSendMail,
-  appName: 'Chat',
-});
-const verifyHandler = makeEmailVerifyHandler({
-  successRedirect: '/?verified=1',
-});
-
 export const authPasswordForgot = spacetimedb.httpHandler((ctx, req) =>
-  forgotHandler(ctx.as.auth, req)
+  authHttp.forgotPassword(ctx.as.auth, req)
 );
 export const authPasswordReset = spacetimedb.httpHandler((ctx, req) =>
-  resetPasswordHandler(ctx.as.auth, req)
+  authHttp.resetPassword(ctx.as.auth, req)
 );
 export const authEmailVerifyRequest = spacetimedb.httpHandler((ctx, req) =>
-  verifyRequestHandler(ctx.as.auth, req)
+  authHttp.emailVerifyRequest(ctx.as.auth, req)
 );
 export const authEmailVerify = spacetimedb.httpHandler((ctx, req) =>
-  verifyHandler(ctx.as.auth, req)
+  authHttp.emailVerify(ctx.as.auth, req)
 );
+
+// Attachments are readable by their owner and by members of the room they
+// were posted in; the request's session cookie or bearer token identifies the
+// caller.
+export const fileServe = spacetimedb.httpHandler((ctx, req) => {
+  const userId = ctx.withTx(tx => auth.requestUserId(tx.as.auth, req));
+  return files.serveFile(
+    ctx.as.files,
+    req,
+    file =>
+      userId !== undefined &&
+      (file.ownerUserId === userId ||
+        ctx.withTx(tx => canReadAttachmentFile(tx, userId, file.id)))
+  );
+});
 
 export const router = spacetimedb.httpRouter(
   new Router()

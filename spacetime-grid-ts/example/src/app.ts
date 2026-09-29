@@ -361,7 +361,7 @@ async function bindSession(
   }
 
   try {
-    await currentConn.reducers.linkConnection({ sessionToken: token });
+    await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
   } catch (err) {
     console.warn('link_connection failed', err);
   }
@@ -405,7 +405,7 @@ async function logout(): Promise<void> {
   matchSub = null;
   if (currentConn) {
     try {
-      await currentConn.reducers.unlinkConnection({});
+      await currentConn.reducers['auth.unlinkConnection']({});
     } catch {
       /* ignore */
     }

@@ -1,7 +1,6 @@
-import { t, SenderError, type ProcedureCtx } from 'spacetimedb/server';
-import { Timestamp, type Identity } from 'spacetimedb';
+import { Router, t, SenderError, type ProcedureCtx } from 'spacetimedb/server';
+import { Timestamp } from 'spacetimedb';
 import * as auth from '@spacetimedb/auth/submodule';
-import { getCallerUserId } from '@spacetimedb/auth/submodule';
 import {
   GRID_KIND_HEX,
   GRID_ORIENTATION_FLAT,
@@ -15,19 +14,19 @@ import {
   MatchStatus,
   AI_BOT_USER_ID,
   AI_BOT_NAME,
+  consoleSendMail,
   spacetimedb,
   type Schema,
   type WriteCtx,
 } from './schema';
 export { default } from './schema';
-export * from './auth-adapter';
 
 function throwSenderError(msg: string): never {
   throw new SenderError(msg);
 }
 
 function requireUserId(ctx: ProcedureCtx<Schema>): string {
-  const userId = getCallerUserId(ctx.as.auth);
+  const userId = auth.getCallerUserId(ctx.as.auth);
   if (!userId) throwSenderError('grid.not_authenticated');
   return userId;
 }
@@ -81,19 +80,67 @@ export const init = spacetimedb.init(ctx => {
   }
 });
 
-export const whoami = spacetimedb.procedure(
-  {},
-  t.object('WhoAmI', {
-    userId: t.option(t.string()),
-    senderIdentityHex: t.string(),
-  }),
-  ctx => {
-    const userId = getCallerUserId(ctx.as.auth);
-    return {
-      userId: userId ?? undefined,
-      senderIdentityHex: (ctx.sender as Identity).toHexString(),
-    };
-  }
+const authHttp = auth.client({
+  sendMail: consoleSendMail,
+  appName: 'Grid',
+  emailVerifiedRedirect: '/?verified=1',
+});
+
+export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.passwordSignup(ctx.as.auth, req)
+);
+export const authPasswordLogin = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.passwordLogin(ctx.as.auth, req)
+);
+export const authMe = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.me(ctx.as.auth, req)
+);
+export const authLogout = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.logout(ctx.as.auth, req)
+);
+export const authRefresh = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.refresh(ctx.as.auth, req)
+);
+export const authGoogleStart = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.googleStart(ctx.as.auth, req)
+);
+export const authGoogleCallback = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.googleCallback(ctx.as.auth, req)
+);
+export const authGithubStart = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.githubStart(ctx.as.auth, req)
+);
+export const authGithubCallback = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.githubCallback(ctx.as.auth, req)
+);
+export const authPasswordForgot = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.forgotPassword(ctx.as.auth, req)
+);
+export const authPasswordReset = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.resetPassword(ctx.as.auth, req)
+);
+export const authEmailVerifyRequest = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.emailVerifyRequest(ctx.as.auth, req)
+);
+export const authEmailVerify = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.emailVerify(ctx.as.auth, req)
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .post('/auth/password/signup', authPasswordSignup)
+    .post('/auth/password/login', authPasswordLogin)
+    .post('/auth/session/refresh', authRefresh)
+    .get('/auth/me', authMe)
+    .post('/auth/logout', authLogout)
+    .get('/auth/google/start', authGoogleStart)
+    .get('/auth/google/callback', authGoogleCallback)
+    .get('/auth/github/start', authGithubStart)
+    .get('/auth/github/callback', authGithubCallback)
+    .post('/auth/password/forgot', authPasswordForgot)
+    .post('/auth/password/reset', authPasswordReset)
+    .post('/auth/email/verify-request', authEmailVerifyRequest)
+    .get('/auth/email/verify', authEmailVerify)
 );
 
 // The playable area is a HEXAGON of radius R centered at axial (R, R).
@@ -401,7 +448,6 @@ export const moveUnit = spacetimedb.procedure(
     const userId = requireUserId(ctx);
 
     // Validate ownership and turn state, then capture coordinates for pathfinding.
-    // computePath opens its own transaction, so run it after this transaction.
     let entityX = 0,
       entityY = 0;
     let gridId = 0n;
@@ -432,23 +478,21 @@ export const moveUnit = spacetimedb.procedure(
       typeMovement = type.movement;
     });
 
-    const path = computePath(
-      ctx.as.grid,
-      {
-        gridId,
-        startX: entityX,
-        startY: entityY,
-        endX: args.toX,
-        endY: args.toY,
-        storeFor: undefined,
-        maxExpansions: undefined,
-      },
-      userId
-    ) as {
-      found: boolean;
-      cells: Array<{ x: number; y: number }>;
-      cost: number;
-    };
+    const path = ctx.withTx(tx =>
+      computePath(
+        tx.as.grid,
+        {
+          gridId,
+          startX: entityX,
+          startY: entityY,
+          endX: args.toX,
+          endY: args.toY,
+          storeFor: undefined,
+          maxExpansions: undefined,
+        },
+        userId
+      )
+    );
     if (!path.found)
       throwSenderError(`grid.no_path_to:${args.toX},${args.toY}`);
     if (path.cost > typeMovement)
@@ -781,9 +825,9 @@ export const aiTakeTurn = spacetimedb.procedure(
       }
 
       if (!aiUnit.hasMoved && enemyUnits.length > 0) {
-        const cells = (
+        const { cells } = ctx.withTx(tx =>
           cellsInRange(
-            ctx.as.grid,
+            tx.as.grid,
             {
               gridId,
               originX: aiUnit.x,
@@ -791,8 +835,8 @@ export const aiTakeTurn = spacetimedb.procedure(
               maxCost: type.movement,
             },
             AI_BOT_USER_ID
-          ) as { cells: Array<{ x: number; y: number; cost: number }> }
-        ).cells;
+          )
+        );
 
         // Avoid stepping onto a tile occupied by another known unit (defensive;
         // blocksMovement on entities should already prevent this).
@@ -821,23 +865,21 @@ export const aiTakeTurn = spacetimedb.procedure(
           // Capture the A* path BEFORE the move so the client can animate it.
           const fromX = aiUnit.x,
             fromY = aiUnit.y;
-          const pathRes = computePath(
-            ctx.as.grid,
-            {
-              gridId,
-              startX: fromX,
-              startY: fromY,
-              endX: best.x,
-              endY: best.y,
-              storeFor: undefined,
-              maxExpansions: undefined,
-            },
-            AI_BOT_USER_ID
-          ) as {
-            found: boolean;
-            cells: Array<{ x: number; y: number }>;
-            cost: number;
-          };
+          const pathRes = ctx.withTx(tx =>
+            computePath(
+              tx.as.grid,
+              {
+                gridId,
+                startX: fromX,
+                startY: fromY,
+                endX: best.x,
+                endY: best.y,
+                storeFor: undefined,
+                maxExpansions: undefined,
+              },
+              AI_BOT_USER_ID
+            )
+          );
           ctx.withTx(tx => {
             const u = tx.db.playerUnit.entityId.find(aiUnit.entityId);
             const e = tx.db.grid.gridEntity.id.find(aiUnit.entityId);
@@ -921,8 +963,6 @@ export const getCellsInRange = spacetimedb.procedure(
   }),
   (ctx, args) => {
     const userId = requireUserId(ctx);
-    return cellsInRange(ctx.as.grid, args, userId) as {
-      cells: Array<{ x: number; y: number; cost: number }>;
-    };
+    return ctx.withTx(tx => cellsInRange(tx.as.grid, args, userId));
   }
 );

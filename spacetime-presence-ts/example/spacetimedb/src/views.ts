@@ -113,15 +113,6 @@ function myVisibleIdentitySubjects(
 }
 
 export function registerChatViews(spacetimedb: SpacetimeDb) {
-  const authUserViewRow = t.object('ChatAuthUser', {
-    userId: t.string(),
-    email: t.string(),
-    emailVerified: t.bool(),
-    name: t.option(t.string()),
-    image: t.option(t.string()),
-    createdAt: t.timestamp(),
-    updatedAt: t.timestamp(),
-  });
   const rateLimitStatusRow = t.object('ChatRateLimitStatus', {
     scope: t.string(),
     limit: t.u32(),
@@ -313,19 +304,6 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
     ctx => [...ctx.db.roomReadCursor.identity.filter(ctx.sender)]
   );
 
-  const myAuthUser = spacetimedb.view(
-    { name: 'my_auth_user', public: true },
-    t.array(authUserViewRow),
-    ctx => {
-      const binding = ctx.db.auth.authConnectionBinding.stdbIdentity.find(
-        ctx.sender
-      );
-      if (!binding) return [];
-      const row = ctx.db.auth.authUser.userId.find(binding.userId);
-      return row ? [row] : [];
-    }
-  );
-
   const myRateLimitStatus = spacetimedb.view(
     { name: 'my_rate_limit_status', public: true },
     t.array(rateLimitStatusRow),
@@ -371,7 +349,6 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
     myThreadMessages,
     myRoomAttachments,
     myRoomReadCursors,
-    myAuthUser,
     myRateLimitStatus,
   };
 }

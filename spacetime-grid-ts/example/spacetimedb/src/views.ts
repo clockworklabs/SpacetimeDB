@@ -2,7 +2,6 @@ import { t, type ViewCtx } from 'spacetimedb/server';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
 
 import {
-  authUserViewRow,
   MatchStatus,
   match,
   matchParticipant,
@@ -11,19 +10,6 @@ import {
   type Schema,
 } from './schema';
 export { default } from './schema';
-
-export const myAuthUser = spacetimedb.view(
-  { name: 'my_auth_user', public: true },
-  t.array(authUserViewRow),
-  ctx => {
-    const binding = ctx.db.auth.authConnectionBinding.stdbIdentity.find(
-      ctx.sender
-    );
-    if (!binding) return [];
-    const row = ctx.db.auth.authUser.userId.find(binding.userId);
-    return row ? [row] : [];
-  }
-);
 
 // Per-match scoping. Caller sees matches they participate in, the grid
 // state for those matches, and other seats' participant rows so the lobby
