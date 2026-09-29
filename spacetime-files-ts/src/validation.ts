@@ -1,4 +1,4 @@
-import { FILE_MIME_TYPE_MAX, FILE_PATH_MAX } from './constants';
+import { errors, FILE_MIME_TYPE_MAX, FILE_PATH_MAX } from './constants';
 
 const MIME_TYPE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
 
@@ -18,7 +18,7 @@ export function ownerPathKey(owner: string, path: string): string {
 
 export function validateFileOwner(owner: string): string {
   if (owner.length === 0 || owner.length > 512 || hasControlCharacter(owner)) {
-    throw new FileValidationError('files.invalid_owner');
+    throw new FileValidationError(errors.invalidOwner);
   }
   return owner;
 }
@@ -33,11 +33,11 @@ export function validateFilePath(path: string): string {
     path.includes('//') ||
     hasControlCharacter(path)
   ) {
-    throw new FileValidationError('files.invalid_path');
+    throw new FileValidationError(errors.invalidPath);
   }
   for (const segment of path.slice(1).split('/')) {
     if (segment === '.' || segment === '..' || segment.length > 255) {
-      throw new FileValidationError('files.invalid_path');
+      throw new FileValidationError(errors.invalidPath);
     }
   }
   return path;
@@ -52,7 +52,7 @@ export function validateFilePrefix(prefix: string): string {
     prefix.includes('//') ||
     hasControlCharacter(prefix)
   ) {
-    throw new FileValidationError('files.invalid_prefix');
+    throw new FileValidationError(errors.invalidPrefix);
   }
   return prefix;
 }
@@ -64,7 +64,7 @@ export function validateMimeType(mimeType: string): string {
     value.length > FILE_MIME_TYPE_MAX ||
     !MIME_TYPE.test(value)
   ) {
-    throw new FileValidationError('files.invalid_mime_type');
+    throw new FileValidationError(errors.invalidMimeType);
   }
   return value.toLowerCase();
 }

@@ -11,7 +11,8 @@ import {
   authUserTable as authUser,
   authVerificationTable as authVerification,
 } from '../tables';
-import * as auth from '../index';
+import * as auth from '../procedures';
+import { findCallerUser, getCallerUserId } from '../caller';
 
 const authSweeperTick = table(
   { name: 'auth_sweeper_tick' },
@@ -39,37 +40,33 @@ export const init = spacetimedb.init(ctx => {
   install(ctx);
 });
 
-// Generate an ES256 keypair when the first configuration has no PEM.
 export const setAuthConfig = spacetimedb.reducer(
   auth.setAuthConfigParams,
-  (ctx, args) => {
-    auth.setAuthConfig(ctx, args);
-  }
+  auth.setAuthConfig
+);
+
+export const addAuthAdmin = spacetimedb.reducer(
+  auth.adminParams,
+  auth.addAuthAdmin
+);
+
+export const removeAuthAdmin = spacetimedb.reducer(
+  auth.adminParams,
+  auth.removeAuthAdmin
 );
 
 export const getAuthPublicKey = spacetimedb.procedure(
-  auth.getPublicKeyPemParams,
-  t.object('AuthPubKey', {
-    publicKeyPem: t.string(),
-    keyId: t.string(),
-    issuerUrl: t.string(),
-  }),
-  auth.getPublicKeyPem
+  {},
+  auth.authPublicKey,
+  auth.getAuthPublicKey
 );
 
 export const linkConnection = spacetimedb.reducer(
   auth.linkConnectionParams,
-  (ctx, args) => {
-    auth.linkConnection(ctx, args);
-  }
+  auth.linkConnection
 );
 
-export const unlinkConnection = spacetimedb.reducer(
-  auth.unlinkConnectionParams,
-  (ctx, args) => {
-    auth.unlinkConnection(ctx, args);
-  }
-);
+export const unlinkConnection = spacetimedb.reducer({}, auth.unlinkConnection);
 
 export const updateProfile = spacetimedb.reducer(
   auth.updateProfileParams,
@@ -77,51 +74,32 @@ export const updateProfile = spacetimedb.reducer(
 );
 
 export const revokeSession = spacetimedb.reducer(
-  auth.revokeSessionParams,
-  (ctx, args) => {
-    auth.revokeSession(ctx, args);
-  }
+  auth.sessionIdParams,
+  auth.revokeSession
 );
 
 export const listMySessions = spacetimedb.procedure(
-  auth.listMySessionsParams,
-  t.object('MySessions', {
-    sessions: t.array(
-      t.object('MySession', {
-        sessionId: t.string(),
-        expiresAt: t.timestamp(),
-        createdAt: t.timestamp(),
-        ipAddress: t.option(t.string()),
-        userAgent: t.option(t.string()),
-        isCurrent: t.bool(),
-      })
-    ),
-  }),
+  {},
+  auth.mySessions,
   auth.listMySessions
 );
 
 export const revokeMySession = spacetimedb.reducer(
-  auth.revokeMySessionParams,
-  (ctx, args) => {
-    auth.revokeMySession(ctx, args);
-  }
+  auth.sessionIdParams,
+  auth.revokeMySession
 );
 
 export const authSweep = spacetimedb.reducer(
   { onSchedule: authSweeperTick },
   { arg: authSweeperTick.rowType },
-  (ctx, _arg) => {
-    auth.authSweep(ctx);
-  }
+  auth.authSweep
 );
 
 export const myAuthUser = spacetimedb.view(
   { name: 'my_auth_user', public: true },
   t.array(authUser.rowType),
   ctx => {
-    const binding = ctx.db.authConnectionBinding.stdbIdentity.find(ctx.sender);
-    if (!binding) return [];
-    const row = ctx.db.authUser.userId.find(binding.userId);
+    const row = findCallerUser(ctx);
     return row ? [row] : [];
   }
 );
@@ -132,11 +110,8 @@ export const whoami = spacetimedb.procedure(
     userId: t.option(t.string()),
     senderIdentityHex: t.string(),
   }),
-  (ctx, _args) => {
-    const userId = auth.getCallerUserId(ctx);
-    return {
-      userId: userId ?? undefined,
-      senderIdentityHex: ctx.sender.toHexString(),
-    };
-  }
+  ctx => ({
+    userId: getCallerUserId(ctx) ?? undefined,
+    senderIdentityHex: ctx.sender.toHexString(),
+  })
 );

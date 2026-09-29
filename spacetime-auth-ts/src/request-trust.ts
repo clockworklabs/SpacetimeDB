@@ -5,13 +5,6 @@ export type TrustedProxyHeader =
   | 'x-real-ip'
   | 'x-forwarded-for';
 
-export interface AuthHttpOptions {
-  /** Header set by a trusted proxy after it removes any client-supplied value. */
-  trustedProxyHeader?: TrustedProxyHeader;
-  /** Defaults to true. Set false only for local HTTP development. */
-  secureCookies?: boolean;
-}
-
 function hasControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);

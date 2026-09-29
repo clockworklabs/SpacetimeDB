@@ -6,11 +6,6 @@ import {
 import { errorResponse } from './handlers/http';
 import { clientKey, type TrustedProxyHeader } from './request-trust';
 import type { AuthHandlerCtx } from './context';
-export {
-  clientKey,
-  type AuthHttpOptions,
-  type TrustedProxyHeader,
-} from './request-trust';
 
 export type AuthRateLimitPolicy = ReturnType<typeof client>;
 
@@ -74,7 +69,6 @@ export function rateLimitResponse(result: RateLimitResult): SyncResponse {
 
 export function enforceRateLimits(
   ctx: AuthHandlerCtx,
-  _req: Request,
   checks: Array<{ policy: AuthRateLimitPolicy; actor: string }>
 ): SyncResponse | null {
   let blocked: RateLimitResult | null = null;
@@ -100,5 +94,5 @@ export function enforceIpRateLimit(
 ): SyncResponse | null {
   const key = clientKey(req, trustedProxyHeader);
   if (!key) return null;
-  return enforceRateLimits(ctx, req, [{ policy, actor: `ip:${key}` }]);
+  return enforceRateLimits(ctx, [{ policy, actor: `ip:${key}` }]);
 }

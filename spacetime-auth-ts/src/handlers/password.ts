@@ -1,31 +1,12 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
-import { Timestamp } from 'spacetimedb';
-import {
-  hashPassword,
-  verifyPassword,
-  newSessionToken,
-  uuidV7,
-} from '../crypto';
-import { signJwt } from '../jwt';
-import { privateKeyFromPem } from '../keys';
-import {
-  type AuthHandlerCtx,
-  shouldUseSecureCookies,
-  userAgent,
-  ConfigMissingError,
-  errorResponse,
-  jsonResponse,
-  makeCookie,
-  requireConfig,
-  safeJson,
-} from './http';
-import {
-  AUTH_RATE_LIMITS,
-  type AuthHttpOptions,
-  clientKey,
-  enforceRateLimits,
-} from '../rate_limit';
-import type { AuthAccount } from '../types';
+import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../crypto';
+import type { AuthHandlerCtx, AuthTransactionCtx } from '../context';
+import type { AuthHttpOptions } from '../client';
+import { HttpError, jsonResponse, requireConfig, safeJson } from './http';
+import { AUTH_RATE_LIMITS, enforceRateLimits } from '../rate_limit';
+import { clientKey } from '../request-trust';
+import { issueSession } from '../sessions';
+import { newId, secretBytes } from '../tokens';
 
 interface SignupBody {
   email: string;
@@ -38,30 +19,41 @@ interface LoginBody {
   password: string;
 }
 
-const MIN_PASSWORD_LEN = 8;
-const MAX_PASSWORD_LEN = 1024;
-const MAX_EMAIL_LEN = 320;
+export const MIN_PASSWORD_LEN = 8;
+export const MAX_PASSWORD_LEN = 1024;
+export const MAX_EMAIL_LEN = 320;
 const MAX_NAME_LEN = 128;
 
-export function passwordSignupHandler(
+export function passwordAccount(tx: AuthTransactionCtx, userId: string) {
+  for (const a of tx.db.authAccount.userId.filter(userId)) {
+    if (a.providerId === 'password') return a;
+  }
+  return undefined;
+}
+
+export function newSalt(tx: AuthTransactionCtx): Uint8Array {
+  return secretBytes(tx).slice(0, 16);
+}
+
+export function passwordSignup(
   ctx: AuthHandlerCtx,
   req: Request,
-  options: AuthHttpOptions = {}
+  options: AuthHttpOptions
 ): SyncResponse {
   const body = safeJson<SignupBody>(req);
   if (!body?.email || !body?.password)
-    return errorResponse('invalid_request', 400);
+    throw new HttpError('invalid_request', 400);
   if (body.password.length < MIN_PASSWORD_LEN)
-    return errorResponse('password_too_short', 400);
+    throw new HttpError('password_too_short', 400);
   if (body.password.length > MAX_PASSWORD_LEN)
-    return errorResponse('password_too_long', 400);
+    throw new HttpError('password_too_long', 400);
   const email = body.email.toLowerCase().trim();
   if (email.length === 0 || email.length > MAX_EMAIL_LEN)
-    return errorResponse('invalid_email', 400);
+    throw new HttpError('invalid_email', 400);
   if (body.name !== undefined && body.name.length > MAX_NAME_LEN)
-    return errorResponse('name_too_long', 400);
+    throw new HttpError('name_too_long', 400);
   const ipKey = clientKey(req, options.trustedProxyHeader);
-  const limited = enforceRateLimits(ctx, req, [
+  const limited = enforceRateLimits(ctx, [
     { policy: AUTH_RATE_LIMITS.passwordSignup, actor: `email:${email}` },
     ...(ipKey
       ? [{ policy: AUTH_RATE_LIMITS.passwordSignup, actor: `ip:${ipKey}` }]
@@ -69,114 +61,66 @@ export function passwordSignupHandler(
   ]);
   if (limited) return limited;
 
-  const hash = hashPassword(ctx.random, body.password);
-  const nowMs = Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
-  const userId = uuidV7(ctx.random, nowMs);
-  const accountId = uuidV7(ctx.random, nowMs);
-  const sessionId = uuidV7(ctx.random, nowMs);
-  const sessionToken = newSessionToken(ctx.random);
-
-  let issuerUrl: string;
-  let cookieName: string;
-  let sessionTtlSeconds: bigint;
-  let privateKeyPem: string;
-  let keyId: string;
-
-  try {
-    ({ issuerUrl, cookieName, sessionTtlSeconds, privateKeyPem, keyId } =
-      ctx.withTx(tx => {
-        const cfg = requireConfig(tx);
-        if (tx.db.authUser.email.find(email) != null)
-          throw new EmailTakenError();
-
-        tx.db.authUser.insert({
-          userId,
-          email,
-          emailVerified: false,
-          name: body.name,
-          image: undefined,
-          createdAt: ctx.timestamp,
-          updatedAt: ctx.timestamp,
-        });
-        tx.db.authAccount.insert({
-          accountId,
-          userId,
-          providerId: 'password',
-          providerAccountId: email,
-          passwordHash: hash,
-          accessToken: undefined,
-          refreshToken: undefined,
-          accessTokenExpiresAt: undefined,
-          createdAt: ctx.timestamp,
-          updatedAt: ctx.timestamp,
-        });
-        const ttlMicros = BigInt(cfg.sessionTtlSeconds) * 1_000_000n;
-        tx.db.authSession.insert({
-          sessionId,
-          userId,
-          token: sessionToken,
-          expiresAt: new Timestamp(
-            (ctx.timestamp.microsSinceUnixEpoch as bigint) + ttlMicros
-          ),
-          ipAddress: clientKey(req, options.trustedProxyHeader),
-          userAgent: userAgent(req),
-          createdAt: ctx.timestamp,
-        });
-
-        return {
-          issuerUrl: cfg.issuerUrl,
-          cookieName: cfg.cookieName,
-          sessionTtlSeconds: BigInt(cfg.sessionTtlSeconds),
-          privateKeyPem: cfg.es256PrivateKeyPem,
-          keyId: cfg.keyId,
-        };
-      }));
-  } catch (e) {
-    if (e instanceof EmailTakenError) return errorResponse('email_taken', 409);
-    if (e instanceof ConfigMissingError)
-      return errorResponse('config_missing', 500);
-    throw e;
-  }
-
-  const nowSec = Math.floor(nowMs / 1000);
-  const ttlSec = Number(sessionTtlSeconds);
-  const privateKey = privateKeyFromPem(privateKeyPem);
-  const jwt = signJwt(
-    privateKey,
-    {
-      iss: issuerUrl,
-      sub: userId,
-      aud: issuerUrl,
-      iat: nowSec,
-      exp: nowSec + ttlSec,
-      jti: sessionId,
-    },
-    keyId
-  );
-
-  return jsonResponse({ user: { userId, email }, token: jwt }, 200, {
-    'set-cookie': makeCookie(cookieName, jwt, {
-      maxAgeSeconds: ttlSec,
-      secure: shouldUseSecureCookies(options.secureCookies),
-    }),
+  const assertEmailFree = (tx: AuthTransactionCtx) => {
+    if (tx.db.authUser.email.find(email) != null)
+      throw new HttpError('email_taken', 409);
+  };
+  const salt = ctx.withTx(tx => {
+    assertEmailFree(tx);
+    return newSalt(tx);
   });
+  const passwordHash = hashPassword(body.password, salt);
+
+  const out = ctx.withTx(tx => {
+    const cfg = requireConfig(tx);
+    assertEmailFree(tx);
+    const userId = newId(tx);
+    tx.db.authUser.insert({
+      userId,
+      email,
+      emailVerified: false,
+      name: body.name,
+      image: undefined,
+      createdAt: tx.timestamp,
+      updatedAt: tx.timestamp,
+    });
+    tx.db.authAccount.insert({
+      accountId: newId(tx),
+      userId,
+      providerId: 'password',
+      providerAccountId: email,
+      passwordHash,
+      accessToken: undefined,
+      refreshToken: undefined,
+      accessTokenExpiresAt: undefined,
+      createdAt: tx.timestamp,
+      updatedAt: tx.timestamp,
+    });
+    return { userId, ...issueSession(tx, cfg, userId, req, options) };
+  });
+
+  return jsonResponse(
+    { user: { userId: out.userId, email }, token: out.token },
+    200,
+    [out.cookie]
+  );
 }
 
-export function passwordLoginHandler(
+export function passwordLogin(
   ctx: AuthHandlerCtx,
   req: Request,
-  options: AuthHttpOptions = {}
+  options: AuthHttpOptions
 ): SyncResponse {
   const body = safeJson<LoginBody>(req);
   if (!body?.email || !body?.password)
-    return errorResponse('invalid_request', 400);
+    throw new HttpError('invalid_request', 400);
   if (body.password.length > MAX_PASSWORD_LEN)
-    return errorResponse('invalid_credentials', 401);
+    throw new HttpError('invalid_credentials', 401);
   const email = body.email.toLowerCase().trim();
   if (email.length === 0 || email.length > MAX_EMAIL_LEN)
-    return errorResponse('invalid_credentials', 401);
+    throw new HttpError('invalid_credentials', 401);
   const ipKey = clientKey(req, options.trustedProxyHeader);
-  const limited = enforceRateLimits(ctx, req, [
+  const limited = enforceRateLimits(ctx, [
     ...(ipKey
       ? [{ policy: AUTH_RATE_LIMITS.passwordLoginIp, actor: `ip:${ipKey}` }]
       : []),
@@ -184,102 +128,31 @@ export function passwordLoginHandler(
   ]);
   if (limited) return limited;
 
-  const nowMs = Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
-  const sessionId = uuidV7(ctx.random, nowMs);
-  const sessionToken = newSessionToken(ctx.random);
-
-  let issuerUrl: string;
-  let cookieName: string;
-  let sessionTtlSeconds: bigint;
-  let privateKeyPem: string;
-  let keyId: string;
-  let loggedInUserId: string;
-
-  try {
-    ({
-      issuerUrl,
-      cookieName,
-      sessionTtlSeconds,
-      privateKeyPem,
-      keyId,
-      loggedInUserId,
-    } = ctx.withTx(tx => {
-      const cfg = requireConfig(tx);
-      const user = tx.db.authUser.email.find(email);
-      if (!user) throw new InvalidCredentialsError();
-
-      let acct: AuthAccount | undefined;
-      for (const a of tx.db.authAccount.providerAccountId.filter(email)) {
-        if (a.providerId === 'password' && a.userId === user.userId) {
-          acct = a;
-          break;
-        }
-      }
-      if (!acct?.passwordHash) throw new InvalidCredentialsError();
-      if (!verifyPassword(body.password, acct.passwordHash))
-        throw new InvalidCredentialsError();
-
-      tx.db.authSession.insert({
-        sessionId,
-        userId: user.userId,
-        token: sessionToken,
-        expiresAt: new Timestamp(
-          ctx.timestamp.microsSinceUnixEpoch +
-            BigInt(cfg.sessionTtlSeconds) * 1_000_000n
-        ),
-        ipAddress: clientKey(req, options.trustedProxyHeader),
-        userAgent: userAgent(req),
-        createdAt: ctx.timestamp,
-      });
-
-      return {
-        issuerUrl: cfg.issuerUrl,
-        cookieName: cfg.cookieName,
-        sessionTtlSeconds: BigInt(cfg.sessionTtlSeconds),
-        privateKeyPem: cfg.es256PrivateKeyPem,
-        keyId: cfg.keyId,
-        loggedInUserId: user.userId,
-      };
-    }));
-  } catch (e) {
-    if (e instanceof InvalidCredentialsError)
-      return errorResponse('invalid_credentials', 401);
-    if (e instanceof ConfigMissingError)
-      return errorResponse('config_missing', 500);
-    throw e;
-  }
-
-  const nowSec = Math.floor(nowMs / 1000);
-  const ttlSec = Number(sessionTtlSeconds);
-  const privateKey = privateKeyFromPem(privateKeyPem);
-  const jwt = signJwt(
-    privateKey,
-    {
-      iss: issuerUrl,
-      sub: loggedInUserId,
-      aud: issuerUrl,
-      iat: nowSec,
-      exp: nowSec + ttlSec,
-      jti: sessionId,
-    },
-    keyId
-  );
-
-  return jsonResponse({ userId: loggedInUserId, token: jwt }, 200, {
-    'set-cookie': makeCookie(cookieName, jwt, {
-      maxAgeSeconds: ttlSec,
-      secure: shouldUseSecureCookies(options.secureCookies),
-    }),
+  const stored = ctx.withTx(tx => {
+    requireConfig(tx);
+    const user = tx.db.authUser.email.find(email);
+    return user && passwordAccount(tx, user.userId);
   });
-}
+  // Hash outside the transaction, and hash a dummy for unknown accounts so
+  // the response time does not reveal which emails are registered.
+  const valid = verifyPassword(
+    body.password,
+    stored?.passwordHash ?? DUMMY_PASSWORD_HASH
+  );
+  if (!stored?.passwordHash || !valid)
+    throw new HttpError('invalid_credentials', 401);
 
-class EmailTakenError extends Error {
-  constructor() {
-    super('email_taken');
-  }
-}
-class InvalidCredentialsError extends Error {
-  constructor() {
-    super('invalid_credentials');
-  }
+  const session = ctx.withTx(tx => {
+    const cfg = requireConfig(tx);
+    // Reject a password that changed while it was being verified.
+    if (
+      passwordAccount(tx, stored.userId)?.passwordHash !== stored.passwordHash
+    )
+      throw new HttpError('invalid_credentials', 401);
+    return issueSession(tx, cfg, stored.userId, req, options);
+  });
+
+  return jsonResponse({ userId: stored.userId, token: session.token }, 200, [
+    session.cookie,
+  ]);
 }

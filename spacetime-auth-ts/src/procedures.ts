@@ -1,28 +1,20 @@
-import type { Timestamp } from 'spacetimedb';
 import {
   Range,
-  t,
   SenderError,
+  t,
+  type Infer,
   type InferTypeOfParams,
 } from 'spacetimedb/server';
-import {
-  generateEs256Keypair,
-  fromPrivateKeyBytes,
-  privateKeyFromPem,
-  publicKeyFromPem,
-} from './keys';
-import { verifyJwt } from './jwt';
-import { authAdminVerdict, denyIfNotAdmin } from './admin';
-import type {
-  AuthProcedureCtx,
-  AuthReducerCtx,
-  AuthTransactionCtx,
-} from './context';
+import type { Identity } from 'spacetimedb';
+import { fromPrivateKeyBytes, privateKeyFromPem } from './keys';
+import type { AuthProcedureCtx, AuthReducerCtx } from './context';
+import { requireCallerUserId } from './caller';
+import { errors } from './errors';
+import { deleteSession, isLive, tokenSession } from './sessions';
 
-type AuthWriteCtx = AuthReducerCtx | AuthProcedureCtx;
-
-function withCtx<T>(ctx: AuthWriteCtx, fn: (tx: AuthTransactionCtx) => T): T {
-  return 'withTx' in ctx ? ctx.withTx(fn) : fn(ctx);
+function requireAdmin(ctx: AuthReducerCtx): void {
+  if (ctx.db.authAdminIdentity.identity.find(ctx.sender) == null)
+    throw new SenderError(errors.notAuthorized);
 }
 
 export const setAuthConfigParams = {
@@ -30,7 +22,7 @@ export const setAuthConfigParams = {
   baseUrl: t.option(t.string()),
   cookieName: t.option(t.string()),
   sessionTtlSeconds: t.option(t.u64()),
-  /** If omitted on first call, a fresh keypair is generated. */
+  /** Required on the first call. Generate it outside the module. */
   es256PrivateKeyPem: t.option(t.string()),
   googleClientId: t.option(t.string()),
   googleClientSecret: t.option(t.string()),
@@ -41,209 +33,172 @@ export const setAuthConfigParams = {
 const DEFAULT_COOKIE_NAME = 'stdb_auth';
 const DEFAULT_SESSION_TTL_SECONDS = 60n * 60n * 24n * 7n;
 
+// Admin only: the signing key and OAuth secrets protect every session.
 export function setAuthConfig(
-  ctx: AuthWriteCtx,
+  ctx: AuthReducerCtx,
   args: InferTypeOfParams<typeof setAuthConfigParams>
 ): void {
-  // Requires an admin row seeded by the database owner. Without this, any
-  // client could rotate the signing keys / overwrite OAuth secrets and forge
-  // sessions. The verdict is read inside a tx but the denial is thrown outside
-  // it (a SenderError thrown inside ctx.withTx surfaces as a fatal instance
-  // error, not a clean rejection).
-  const verdict = withCtx(ctx, tx => authAdminVerdict(tx, ctx.sender));
-  denyIfNotAdmin(verdict);
+  requireAdmin(ctx);
+  const existing = ctx.db.authConfig.singleton.find(true);
 
-  withCtx(ctx, tx => {
-    const existing = tx.db.authConfig.singleton.find(true);
-
-    let privateKeyPem: string;
-    let publicKeyPem: string;
-    let keyId: string;
-
-    if (args.es256PrivateKeyPem) {
-      let raw: Uint8Array;
-      try {
-        raw = privateKeyFromPem(args.es256PrivateKeyPem);
-      } catch (e) {
-        throw new SenderError(
-          `auth.invalid_private_key_pem:${(e as Error).message}`
-        );
-      }
-      const kp = fromPrivateKeyBytes(raw);
-      privateKeyPem = kp.privateKeyPem;
-      publicKeyPem = kp.publicKeyPem;
-      keyId = kp.kid;
-    } else if (existing) {
-      privateKeyPem = existing.es256PrivateKeyPem;
-      publicKeyPem = existing.es256PublicKeyPem;
-      keyId = existing.keyId;
-    } else {
-      const kp = generateEs256Keypair(ctx.random);
-      privateKeyPem = kp.privateKeyPem;
-      publicKeyPem = kp.publicKeyPem;
-      keyId = kp.kid;
+  let key = existing && {
+    privateKeyPem: existing.es256PrivateKeyPem,
+    publicKeyPem: existing.es256PublicKeyPem,
+    kid: existing.keyId,
+  };
+  if (args.es256PrivateKeyPem) {
+    try {
+      key = fromPrivateKeyBytes(privateKeyFromPem(args.es256PrivateKeyPem));
+    } catch (e) {
+      throw new SenderError(
+        `${errors.invalidPrivateKeyPem}:${(e as Error).message}`
+      );
     }
+  }
+  if (!key) throw new SenderError(errors.signingKeyRequired);
 
-    if (existing) {
-      tx.db.authConfig.singleton.update({
-        ...existing,
-        issuerUrl: args.issuerUrl,
-        baseUrl: args.baseUrl ?? existing.baseUrl,
-        cookieName: args.cookieName ?? existing.cookieName,
-        sessionTtlSeconds: args.sessionTtlSeconds ?? existing.sessionTtlSeconds,
-        es256PrivateKeyPem: privateKeyPem,
-        es256PublicKeyPem: publicKeyPem,
-        keyId,
-        googleClientId: args.googleClientId ?? existing.googleClientId,
-        googleClientSecret:
-          args.googleClientSecret ?? existing.googleClientSecret,
-        githubClientId: args.githubClientId ?? existing.githubClientId,
-        githubClientSecret:
-          args.githubClientSecret ?? existing.githubClientSecret,
-        updatedAt: ctx.timestamp,
-      });
-      return;
-    }
-
-    tx.db.authConfig.insert({
-      singleton: true,
-      issuerUrl: args.issuerUrl,
-      baseUrl: args.baseUrl ?? args.issuerUrl,
-      cookieName: args.cookieName ?? DEFAULT_COOKIE_NAME,
-      sessionTtlSeconds: args.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS,
-      es256PrivateKeyPem: privateKeyPem,
-      es256PublicKeyPem: publicKeyPem,
-      keyId,
-      googleClientId: args.googleClientId,
-      googleClientSecret: args.googleClientSecret,
-      githubClientId: args.githubClientId,
-      githubClientSecret: args.githubClientSecret,
-      updatedAt: ctx.timestamp,
-    });
-  });
+  const row = {
+    singleton: true,
+    issuerUrl: args.issuerUrl,
+    baseUrl: args.baseUrl ?? existing?.baseUrl ?? args.issuerUrl,
+    cookieName: args.cookieName ?? existing?.cookieName ?? DEFAULT_COOKIE_NAME,
+    sessionTtlSeconds:
+      args.sessionTtlSeconds ??
+      existing?.sessionTtlSeconds ??
+      DEFAULT_SESSION_TTL_SECONDS,
+    es256PrivateKeyPem: key.privateKeyPem,
+    es256PublicKeyPem: key.publicKeyPem,
+    keyId: key.kid,
+    tokenCounter: existing?.tokenCounter ?? 0n,
+    googleClientId: args.googleClientId ?? existing?.googleClientId,
+    googleClientSecret: args.googleClientSecret ?? existing?.googleClientSecret,
+    githubClientId: args.githubClientId ?? existing?.githubClientId,
+    githubClientSecret: args.githubClientSecret ?? existing?.githubClientSecret,
+    updatedAt: ctx.timestamp,
+  };
+  if (existing) ctx.db.authConfig.singleton.update(row);
+  else ctx.db.authConfig.insert(row);
 }
 
-const SWEEP_BATCH = 500;
+export const adminParams = { identity: t.identity() };
 
-export function authSweep(ctx: AuthWriteCtx): void {
-  const nowMicros = ctx.timestamp.microsSinceUnixEpoch as bigint;
-  withCtx(ctx, tx => {
-    let n = 0;
-    for (const row of tx.db.authSession.expiresAt.filter(
-      new Range(undefined, { tag: 'excluded', value: ctx.timestamp })
-    )) {
-      if (n >= SWEEP_BATCH) break;
-      if ((row.expiresAt.microsSinceUnixEpoch as bigint) < nowMicros) {
-        tx.db.authSession.delete(row);
-        n++;
-      }
-    }
-    for (const row of tx.db.authVerification.expiresAt.filter(
-      new Range(undefined, { tag: 'excluded', value: ctx.timestamp })
-    )) {
-      if (n >= SWEEP_BATCH) break;
-      if ((row.expiresAt.microsSinceUnixEpoch as bigint) < nowMicros) {
-        tx.db.authVerification.delete(row);
-        n++;
-      }
-    }
-    for (const row of tx.db.authOauthState.expiresAt.filter(
-      new Range(undefined, { tag: 'excluded', value: ctx.timestamp })
-    )) {
-      if (n >= SWEEP_BATCH) break;
-      if ((row.expiresAt.microsSinceUnixEpoch as bigint) < nowMicros) {
-        tx.db.authOauthState.delete(row);
-        n++;
-      }
-    }
-  });
-}
-
-export const revokeSessionParams = { sessionId: t.string() };
-
-export function revokeSession(
-  ctx: AuthWriteCtx,
-  args: InferTypeOfParams<typeof revokeSessionParams>
+export function addAuthAdmin(
+  ctx: AuthReducerCtx,
+  { identity }: { identity: Identity }
 ): void {
-  // Admin action for revoking any user's session. Self-service revocation is
-  // revokeMySession is caller-scoped. Compute the verdict inside the transaction.
-  const verdict = withCtx(ctx, tx => authAdminVerdict(tx, ctx.sender));
-  denyIfNotAdmin(verdict);
+  requireAdmin(ctx);
+  if (ctx.db.authAdminIdentity.identity.find(identity) == null) {
+    ctx.db.authAdminIdentity.insert({
+      identity,
+      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+    });
+  }
+}
 
-  withCtx(ctx, tx => {
-    const s = tx.db.authSession.sessionId.find(args.sessionId);
-    if (s) tx.db.authSession.delete(s);
+export function removeAuthAdmin(
+  ctx: AuthReducerCtx,
+  { identity }: { identity: Identity }
+): void {
+  requireAdmin(ctx);
+  if (ctx.db.authAdminIdentity.identity.find(identity) == null) return;
+  if (ctx.db.authAdminIdentity.count() <= 1n)
+    throw new SenderError(errors.lastAdmin);
+  ctx.db.authAdminIdentity.identity.delete(identity);
+}
+
+/** Deletes every expired session, verification, and OAuth state. */
+export function authSweep(ctx: AuthReducerCtx): void {
+  const expired = new Range(undefined, {
+    tag: 'included' as const,
+    value: ctx.timestamp,
   });
+  for (const row of [...ctx.db.authSession.expiresAt.filter(expired)]) {
+    deleteSession(ctx, row);
+  }
+  for (const row of [...ctx.db.authVerification.expiresAt.filter(expired)]) {
+    ctx.db.authVerification.delete(row);
+  }
+  for (const row of [...ctx.db.authOauthState.expiresAt.filter(expired)]) {
+    ctx.db.authOauthState.delete(row);
+  }
 }
 
-export const listMySessionsParams = {};
+export const sessionIdParams = { sessionId: t.string() };
 
-export interface MySessionSummary {
-  sessionId: string;
-  expiresAt: Timestamp;
-  createdAt: Timestamp;
-  ipAddress: string | undefined;
-  userAgent: string | undefined;
-  isCurrent: boolean;
+/** Admin action for revoking any user's session. */
+export function revokeSession(
+  ctx: AuthReducerCtx,
+  args: { sessionId: string }
+): void {
+  requireAdmin(ctx);
+  const s = ctx.db.authSession.sessionId.find(args.sessionId);
+  if (s) deleteSession(ctx, s);
 }
+
+export function revokeMySession(
+  ctx: AuthReducerCtx,
+  args: { sessionId: string }
+): void {
+  const userId = requireCallerUserId(ctx);
+  const s = ctx.db.authSession.sessionId.find(args.sessionId);
+  if (!s) return;
+  if (s.userId !== userId) throw new SenderError(errors.sessionNotOwned);
+  deleteSession(ctx, s);
+}
+
+export const mySessions = t.object('MySessions', {
+  sessions: t.array(
+    t.object('MySession', {
+      sessionId: t.string(),
+      expiresAt: t.timestamp(),
+      createdAt: t.timestamp(),
+      ipAddress: t.option(t.string()),
+      userAgent: t.option(t.string()),
+      isCurrent: t.bool(),
+    })
+  ),
+});
 
 export function listMySessions(
-  ctx: AuthWriteCtx,
-  _args: Record<never, never>
-): { sessions: MySessionSummary[] } {
-  return withCtx(ctx, tx => {
+  ctx: AuthProcedureCtx
+): Infer<typeof mySessions> {
+  return ctx.withTx(tx => {
     const binding = tx.db.authConnectionBinding.stdbIdentity.find(ctx.sender);
-    if (!binding) return { sessions: [] };
-    const userId = binding.userId;
-    const nowMicros = ctx.timestamp.microsSinceUnixEpoch as bigint;
-    const sessions: MySessionSummary[] = [];
-    for (const s of tx.db.authSession.userId.filter(userId)) {
-      if ((s.expiresAt.microsSinceUnixEpoch as bigint) < nowMicros) continue;
-      sessions.push({
+    const current =
+      binding && tx.db.authSession.sessionId.find(binding.sessionId);
+    if (!binding || !current || !isLive(current, tx.timestamp))
+      return { sessions: [] };
+    const sessions = [...tx.db.authSession.userId.filter(binding.userId)]
+      .filter(s => isLive(s, tx.timestamp))
+      .map(s => ({
         sessionId: s.sessionId,
         expiresAt: s.expiresAt,
         createdAt: s.createdAt,
         ipAddress: s.ipAddress,
         userAgent: s.userAgent,
-        isCurrent: false,
-      });
-    }
+        isCurrent: s.sessionId === binding.sessionId,
+      }));
     sessions.sort((a, b) =>
       Number(
-        (b.createdAt.microsSinceUnixEpoch as bigint) -
-          (a.createdAt.microsSinceUnixEpoch as bigint)
+        b.createdAt.microsSinceUnixEpoch - a.createdAt.microsSinceUnixEpoch
       )
     );
     return { sessions };
   });
 }
 
-export const revokeMySessionParams = { sessionId: t.string() };
+export const authPublicKey = t.object('AuthPubKey', {
+  publicKeyPem: t.string(),
+  keyId: t.string(),
+  issuerUrl: t.string(),
+});
 
-export function revokeMySession(
-  ctx: AuthWriteCtx,
-  args: InferTypeOfParams<typeof revokeMySessionParams>
-): void {
-  withCtx(ctx, tx => {
-    const binding = tx.db.authConnectionBinding.stdbIdentity.find(ctx.sender);
-    if (!binding) throw new SenderError('auth.not_authenticated');
-    const s = tx.db.authSession.sessionId.find(args.sessionId);
-    if (!s) return;
-    if (s.userId !== binding.userId)
-      throw new SenderError('auth.session_not_owned');
-    tx.db.authSession.delete(s);
-  });
-}
-
-export const getPublicKeyPemParams = {};
-
-export function getPublicKeyPem(
-  ctx: AuthWriteCtx,
-  _args: Record<never, never>
-): { publicKeyPem: string; keyId: string; issuerUrl: string } {
-  return withCtx(ctx, tx => {
+export function getAuthPublicKey(
+  ctx: AuthProcedureCtx
+): Infer<typeof authPublicKey> {
+  return ctx.withTx(tx => {
     const cfg = tx.db.authConfig.singleton.find(true);
-    if (!cfg) throw new SenderError('auth.config_missing');
+    if (!cfg) throw new SenderError(errors.configMissing);
     return {
       publicKeyPem: cfg.es256PublicKeyPem,
       keyId: cfg.keyId,
@@ -255,74 +210,30 @@ export function getPublicKeyPem(
 /** Call once after each STDB connect. Idempotent. */
 export const linkConnectionParams = { sessionToken: t.string() };
 
-const RETRY_FAILED_MSG = 'transaction retry failed again';
-
 export function linkConnection(
-  ctx: AuthWriteCtx,
-  args: InferTypeOfParams<typeof linkConnectionParams>
-): { userId: string } {
-  try {
-    return withCtx(ctx, tx => {
-      const cfg = tx.db.authConfig.singleton.find(true);
-      if (!cfg) throw new SenderError('auth.config_missing');
+  ctx: AuthReducerCtx,
+  args: { sessionToken: string }
+): void {
+  const cfg = ctx.db.authConfig.singleton.find(true);
+  if (!cfg) throw new SenderError(errors.configMissing);
+  const session = tokenSession(ctx, cfg, args.sessionToken);
+  if (!session) throw new SenderError(errors.invalidToken);
 
-      const pub = publicKeyFromPem(cfg.es256PublicKeyPem);
-      const nowMicros = ctx.timestamp.microsSinceUnixEpoch as bigint;
-      const nowSec = Number(nowMicros / 1_000_000n);
-      const v = verifyJwt(pub, args.sessionToken, {
-        issuer: cfg.issuerUrl,
-        nowSeconds: nowSec,
-      });
-      if (!v.ok) throw new SenderError(`auth.invalid_token:${v.reason}`);
-
-      const userId = v.claims.sub;
-      if (!userId) throw new SenderError('auth.token_missing_sub');
-      const sessionId = v.claims.jti;
-      if (!sessionId) throw new SenderError('auth.token_missing_session');
-
-      const session = tx.db.authSession.sessionId.find(sessionId);
-      if (!session || session.userId !== userId)
-        throw new SenderError('auth.session_not_found');
-      if ((session.expiresAt.microsSinceUnixEpoch as bigint) < nowMicros) {
-        throw new SenderError('auth.session_expired');
-      }
-
-      const existing = tx.db.authConnectionBinding.stdbIdentity.find(
-        ctx.sender
-      );
-      if (existing) {
-        tx.db.authConnectionBinding.stdbIdentity.update({
-          ...existing,
-          userId,
-          linkedAt: ctx.timestamp,
-        });
-      } else {
-        tx.db.authConnectionBinding.insert({
-          stdbIdentity: ctx.sender,
-          userId,
-          linkedAt: ctx.timestamp,
-        });
-      }
-      return { userId };
-    });
-  } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes(RETRY_FAILED_MSG)) {
-      throw new SenderError('auth.link_busy_retry');
-    }
-    throw e;
+  const binding = {
+    stdbIdentity: ctx.sender,
+    userId: session.userId,
+    sessionId: session.sessionId,
+    linkedAt: ctx.timestamp,
+  };
+  if (ctx.db.authConnectionBinding.stdbIdentity.find(ctx.sender)) {
+    ctx.db.authConnectionBinding.stdbIdentity.update(binding);
+  } else {
+    ctx.db.authConnectionBinding.insert(binding);
   }
 }
 
-export const unlinkConnectionParams = {};
-
-export function unlinkConnection(
-  ctx: AuthWriteCtx,
-  _args: Record<never, never>
-): void {
-  withCtx(ctx, tx => {
-    const existing = tx.db.authConnectionBinding.stdbIdentity.find(ctx.sender);
-    if (existing) tx.db.authConnectionBinding.delete(existing);
-  });
+export function unlinkConnection(ctx: AuthReducerCtx): void {
+  ctx.db.authConnectionBinding.stdbIdentity.delete(ctx.sender);
 }
 
 const MAX_NAME_LEN = 64;
@@ -336,39 +247,28 @@ export const updateProfileParams = {
 };
 
 export function updateProfile(
-  ctx: AuthWriteCtx,
+  ctx: AuthReducerCtx,
   args: InferTypeOfParams<typeof updateProfileParams>
 ): void {
-  withCtx(ctx, tx => {
-    const binding = tx.db.authConnectionBinding.stdbIdentity.find(ctx.sender);
-    if (!binding) throw new SenderError('auth.not_authenticated');
-    const user = tx.db.authUser.userId.find(binding.userId);
-    if (!user) throw new SenderError('auth.user_not_found');
+  const userId = requireCallerUserId(ctx);
+  const user = ctx.db.authUser.userId.find(userId);
+  if (!user) throw new SenderError(errors.userNotFound);
 
-    const nextName =
-      args.name === undefined
-        ? user.name
-        : args.name.length === 0
-          ? undefined
-          : args.name.trim();
-    const nextImage =
-      args.image === undefined
-        ? user.image
-        : args.image.length === 0
-          ? undefined
-          : args.image.trim();
-    if (nextName !== undefined && nextName.length > MAX_NAME_LEN) {
-      throw new SenderError(`auth.name_too_long:max=${MAX_NAME_LEN}`);
-    }
-    if (nextImage !== undefined && nextImage.length > MAX_IMAGE_LEN) {
-      throw new SenderError(`auth.image_too_long:max=${MAX_IMAGE_LEN}`);
-    }
+  const next = (value: string | undefined, current: string | undefined) =>
+    value === undefined ? current : value.trim() || undefined;
+  const name = next(args.name, user.name);
+  const image = next(args.image, user.image);
+  if (name !== undefined && name.length > MAX_NAME_LEN) {
+    throw new SenderError(`${errors.nameTooLong}:max=${MAX_NAME_LEN}`);
+  }
+  if (image !== undefined && image.length > MAX_IMAGE_LEN) {
+    throw new SenderError(`${errors.imageTooLong}:max=${MAX_IMAGE_LEN}`);
+  }
 
-    tx.db.authUser.userId.update({
-      ...user,
-      name: nextName,
-      image: nextImage,
-      updatedAt: ctx.timestamp,
-    });
+  ctx.db.authUser.userId.update({
+    ...user,
+    name,
+    image,
+    updatedAt: ctx.timestamp,
   });
 }

@@ -1,11 +1,9 @@
 import {
   schema,
   table,
+  type HandlerContext,
   type InferSchema,
-  type ProcedureCtx,
   type ReducerCtx,
-  type TransactionCtx,
-  type ViewCtx,
 } from 'spacetimedb/server';
 import { fileBlobRow, fileRow } from '../rows';
 
@@ -29,14 +27,14 @@ export const fileBlob = table(
   fileBlobRow
 );
 
-export const spacetimedb = schema({
+const spacetimedb = schema({
   file,
   fileBlob,
 });
 export default spacetimedb;
 
 export type Schema = InferSchema<typeof spacetimedb>;
-export type ReducerModuleCtx = ReducerCtx<Schema>;
-export type ProcedureModuleCtx = ProcedureCtx<Schema>;
-export type TransactionModuleCtx = TransactionCtx<Schema>;
-export type ViewModuleCtx = ViewCtx<Schema>;
+/** `ctx.as.files` in a host reducer, or `tx.as.files` inside a procedure's `withTx`. */
+export type FilesCtx = ReducerCtx<Schema>;
+/** `ctx.as.files` in a host HTTP handler. */
+export type FilesHandlerCtx = HandlerContext<Schema>;

@@ -75,6 +75,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   'files.invalid_visibility': 'That visibility value is invalid.',
   'files.not_found': "That file doesn't exist.",
   'files.invalid_mime_type': 'That file type is invalid.',
+  'files.path_taken':
+    'A file with that name already exists at the destination.',
+  'files.quota_exceeded': 'Vault storage is full. Delete files to make room.',
 };
 
 function errorMessage(error: unknown): string {

@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { fileSha256Hex } from '../src/hash.ts';
+import { responseHeaders } from '../src/headers.ts';
 import { queryParam } from '../src/query.ts';
 import {
   ownerPathKey,
@@ -37,5 +38,14 @@ assert.throws(
   () => validateMimeType('text/plain\r\nx-injected: yes'),
   /files\.invalid_mime_type/
 );
+
+const served = (mimeType: string) =>
+  responseHeaders({ mimeType, size: 1n, sha256Hex: 'x', visibility: 'public' });
+assert.equal(served('image/png')['content-disposition'], undefined);
+for (const mimeType of ['text/html', 'image/svg+xml', 'application/pdf']) {
+  assert.equal(served(mimeType)['content-disposition'], 'attachment');
+}
+assert.equal(served('image/png')['x-content-type-options'], 'nosniff');
+assert.equal(served('text/html')['content-security-policy'], 'sandbox');
 
 console.log('files tests passed');

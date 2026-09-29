@@ -310,6 +310,8 @@ export type ProviderName = string;
 export interface AgentDefinition<TM extends ToolMap = ToolMap> {
   defaultProvider: ProviderName;
   defaultModel: string;
+  /** Models a thread may select instead of the default. */
+  models: string[];
   defaultSystemPrompt: string | undefined;
   defaultMaxTurns: number;
   defaultMaxHistoryMessages: number;
@@ -326,6 +328,7 @@ export interface AgentDefinition<TM extends ToolMap = ToolMap> {
 export function defineAgent<TM extends ToolMap>(config: {
   defaultProvider?: ProviderName;
   defaultModel: string;
+  models?: string[];
   defaultSystemPrompt?: string;
   defaultMaxTurns?: number;
   defaultMaxHistoryMessages?: number;
@@ -381,6 +384,9 @@ export function defineAgent<TM extends ToolMap>(config: {
   return {
     defaultProvider: provider,
     defaultModel: model,
+    models: (config.models ?? []).map(entry =>
+      validateConfigString(entry, 'models', 256)
+    ),
     defaultSystemPrompt: config.defaultSystemPrompt,
     defaultMaxTurns: maxTurns,
     defaultMaxHistoryMessages: maxHistory,

@@ -13,10 +13,12 @@ import {
 } from './module_bindings/app';
 import type {
   File as FileRow,
-  AgentAuthUser as AuthUserRow,
   AgentConfigStatus,
-  MySessions,
 } from './module_bindings/app/types';
+import type {
+  AuthUser as AuthUserRow,
+  MySessions,
+} from './module_bindings/app/auth/types';
 
 interface AuthUser {
   userId: string;
@@ -56,40 +58,26 @@ declare global {
       setProfile: (args: { name?: string; image?: string }) => void;
     };
     stdb?: {
-      setAgentSecret: (args: {
+      setAgentConfig: (args: {
         staleLockThresholdSecs: number | undefined;
         rateLimitTokensPerWindow: number | undefined;
         rateLimitWindowSecs: number | undefined;
       }) => Promise<void>;
       setApiKey: (provider: string, key: string) => Promise<void>;
       clearApiKey: (provider: string) => Promise<void>;
-      setAgentOverride: (args: {
-        agentName: string;
-        provider: string | undefined;
-        model: string | undefined;
-        systemPrompt: string | undefined;
-        maxTurns: number | undefined;
-        maxHistoryMessages: number | undefined;
-        maxTokens: number | undefined;
-        retries: number | undefined;
-      }) => Promise<void>;
-      clearAgentOverride: (agentName: string) => Promise<void>;
       getAgentConfigStatus: () => Promise<AgentConfigStatus>;
       setActiveThread: (threadId: bigint | null) => void;
       startThread: (args: {
         agentName: string;
         title: string | undefined;
-        systemPromptOverride: string | undefined;
         metadata: string | undefined;
       }) => Promise<bigint>;
       updateThread: (args: {
         threadId: bigint;
         title: string | undefined;
-        systemPromptOverride: string | undefined;
         modelOverride: string | undefined;
         metadata: string | undefined;
         clearTitle: boolean;
-        clearSystemPromptOverride: boolean;
         clearModelOverride: boolean;
         clearMetadata: boolean;
       }) => Promise<void>;
@@ -172,15 +160,6 @@ function emitThreadLocks(): void {
   for (const l of currentConn.db.myThreadLocks.iter())
     entries.push([l.threadId, l.cancelRequested]);
   emitAppEvent('stdb:locks', { locks: entries });
-}
-function emitAgentOverrides(): void {
-  if (!currentConn) {
-    emitAppEvent('stdb:overrides', { overrides: [] });
-    return;
-  }
-  emitAppEvent('stdb:overrides', {
-    overrides: [...currentConn.db.agentOverride.iter()],
-  });
 }
 function emitConfigState(): void {
   emitAppEvent('stdb:config', { state: configState });
@@ -355,22 +334,20 @@ function registerRowCallbacks(connection: DbConnection): void {
   connection.db.myThreadLocks.onUpdate(() => emitThreadLocks());
   connection.db.myThreadLocks.onDelete(() => emitThreadLocks());
 
-  connection.db.agentOverride.onInsert(() => emitAgentOverrides());
-  connection.db.agentOverride.onUpdate(() => emitAgentOverrides());
-  connection.db.agentOverride.onDelete(() => emitAgentOverrides());
-
-  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
-    syncUserFromRow(row)
+  connection.db['auth.my_auth_user'].onInsert(
+    (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db.myAuthUser.onUpdate(
+  connection.db['auth.my_auth_user'].onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
-    if (!currentUser || row.userId !== currentUser.userId) return;
-    currentUser = null;
-    currentExp = undefined;
-    emitAuthState();
-  });
+  connection.db['auth.my_auth_user'].onDelete(
+    (_ctx: EventContext, row: AuthUserRow) => {
+      if (!currentUser || row.userId !== currentUser.userId) return;
+      currentUser = null;
+      currentExp = undefined;
+      emitAuthState();
+    }
+  );
 }
 
 function subscribeToTables(connection: DbConnection): SubscriptionHandle {
@@ -379,7 +356,6 @@ function subscribeToTables(connection: DbConnection): SubscriptionHandle {
     .onApplied(() => {
       emitThreads();
       emitThreadLocks();
-      emitAgentOverrides();
       emitMessages();
     })
     .onError((ctx: ErrorContext) =>
@@ -388,9 +364,8 @@ function subscribeToTables(connection: DbConnection): SubscriptionHandle {
     .subscribe([
       tables.myThreads,
       tables.myThreadLocks,
-      tables.agentOverride,
       tables.myFiles,
-      tables.myAuthUser,
+      tables.auth.myAuthUser,
     ]);
 }
 
@@ -427,7 +402,6 @@ async function bindSession(
       emitThreads();
       emitMessages();
       emitThreadLocks();
-      emitAgentOverrides();
 
       registerRowCallbacks(conn);
     } catch (err) {
@@ -441,7 +415,7 @@ async function bindSession(
 
   // Link the connection before subscribing because views read the binding.
   try {
-    await currentConn.procedures.linkConnection({ sessionToken: token });
+    await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
   } catch (err) {
     console.warn('link_connection failed', err);
   }
@@ -492,7 +466,7 @@ async function login(args: { email: string; password: string }): Promise<void> {
 async function logout(): Promise<void> {
   if (currentConn) {
     try {
-      currentConn.reducers.unlinkConnection({});
+      currentConn.reducers['auth.unlinkConnection']({});
     } catch {
       /* ignore */
     }
@@ -507,7 +481,6 @@ async function logout(): Promise<void> {
   emitThreads();
   emitMessages();
   emitThreadLocks();
-  emitAgentOverrides();
   emitAuthState();
 }
 
@@ -529,10 +502,10 @@ async function requestEmailVerify(): Promise<void> {
 }
 
 async function listMySessions(): Promise<MySessions> {
-  return await requireConn().procedures.listMySessions({});
+  return await requireConn().procedures['auth.listMySessions']({});
 }
 async function revokeMySession(sessionId: string): Promise<void> {
-  requireConn().reducers.revokeMySession({ sessionId });
+  requireConn().reducers['auth.revokeMySession']({ sessionId });
 }
 
 const authResult = authUrlState(window.location);
@@ -570,7 +543,7 @@ async function main(): Promise<void> {
     listMySessions,
     revokeMySession,
     setProfile: args => {
-      requireConn().reducers.updateProfile({
+      requireConn().reducers['auth.updateProfile']({
         name: args.name,
         image: args.image,
       });
@@ -578,23 +551,24 @@ async function main(): Promise<void> {
   };
 
   window.stdb = {
-    setAgentSecret: async args => {
-      requireConn().reducers.setAgentSecret(args);
+    setAgentConfig: async args => {
+      const conn = requireConn();
+      conn.reducers['agents.setAgentConfig']({
+        staleLockThresholdSecs: args.staleLockThresholdSecs,
+      });
+      conn.reducers.setTokenLimit({
+        tokensPerWindow: args.rateLimitTokensPerWindow,
+        windowSecs: args.rateLimitWindowSecs,
+      });
       await refreshConfigStatus();
     },
     setApiKey: async (provider, key) => {
-      requireConn().reducers.setApiKey({ provider, key });
+      requireConn().reducers['agents.setApiKey']({ provider, key });
       await refreshConfigStatus();
     },
     clearApiKey: async provider => {
-      requireConn().reducers.clearApiKey({ provider });
+      requireConn().reducers['agents.clearApiKey']({ provider });
       await refreshConfigStatus();
-    },
-    setAgentOverride: async args => {
-      requireConn().reducers.setAgentOverride(args);
-    },
-    clearAgentOverride: async agentName => {
-      requireConn().reducers.clearAgentOverride({ agentName });
     },
     getAgentConfigStatus: () => refreshConfigStatus(),
     setActiveThread,
@@ -624,7 +598,7 @@ async function main(): Promise<void> {
       await requireConn().procedures.generateThreadTitle({ threadId });
     },
     clearThreadLock: async threadId => {
-      requireConn().reducers.clearThreadLock({ threadId });
+      requireConn().reducers['agents.clearThreadLock']({ threadId });
     },
   };
 

@@ -303,21 +303,13 @@
       </div>
     </div>
 
-    <!-- Update thread modal (rename + edit prompt override + metadata) -->
+    <!-- Update thread modal -->
     <div class="backdrop" id="rename-backdrop">
       <form class="modal" id="rename-form">
         <h2>Update thread</h2>
         <div class="field">
           <label for="rename-title">Title</label>
           <input id="rename-title" type="text" placeholder="Untitled" />
-        </div>
-        <div class="field">
-          <label for="rename-prompt">System prompt override</label>
-          <textarea
-            id="rename-prompt"
-            rows="3"
-            placeholder="leave blank to inherit from agent"
-          ></textarea>
         </div>
         <div class="actions">
           <button type="button" class="btn" id="rename-cancel">Cancel</button>

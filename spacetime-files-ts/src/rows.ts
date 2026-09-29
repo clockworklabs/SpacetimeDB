@@ -1,10 +1,7 @@
 import { t } from 'spacetimedb/server';
 
-export const FILE_VISIBILITY_OWNER = 'owner';
-export const FILE_VISIBILITY_PUBLIC = 'public';
-
-// Canonical submodule row shape. Applications with a custom file-like table may
-// reuse these fields; standard integrations register @spacetimedb/files/submodule.
+// Submodule row shapes. Applications that own a file-like table may reuse
+// these fields; standard integrations register @spacetimedb/files/submodule.
 export const fileRow = {
   id: t.u64().primaryKey().autoInc(),
   ownerPathKey: t.string().unique(),

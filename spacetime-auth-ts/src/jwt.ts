@@ -1,69 +1,10 @@
 import { p256 } from '@noble/curves/nist.js';
+import { base64UrlDecode, base64UrlEncode, utf8 } from './crypto';
 
-const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8');
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const B64_REV = (() => {
-  const m = new Int8Array(256).fill(-1);
-  for (let i = 0; i < B64.length; i++) m[B64.charCodeAt(i)] = i;
-  return m;
-})();
-
-function b64uEncode(bytes: Uint8Array): string {
-  let out = '';
-  let i = 0;
-  for (; i + 2 < bytes.length; i += 3) {
-    out += B64[bytes[i] >> 2];
-    out += B64[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
-    out += B64[((bytes[i + 1] & 15) << 2) | (bytes[i + 2] >> 6)];
-    out += B64[bytes[i + 2] & 63];
-  }
-  if (i < bytes.length) {
-    out += B64[bytes[i] >> 2];
-    if (i + 1 === bytes.length) {
-      out += B64[(bytes[i] & 3) << 4];
-    } else {
-      out += B64[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
-      out += B64[(bytes[i + 1] & 15) << 2];
-    }
-  }
-  return out.replace(/\+/g, '-').replace(/\//g, '_');
-}
-
-function b64uDecode(str: string): Uint8Array {
-  let s = '';
-  for (let i = 0; i < str.length; i++) {
-    const c = str[i] === '-' ? '+' : str[i] === '_' ? '/' : str[i];
-    if (B64_REV[c.charCodeAt(0)] >= 0) s += c;
-  }
-  const out = new Uint8Array((s.length * 3) >> 2);
-  let oi = 0;
-  for (let i = 0; i + 3 < s.length; i += 4) {
-    const a = B64_REV[s.charCodeAt(i)];
-    const b = B64_REV[s.charCodeAt(i + 1)];
-    const c = B64_REV[s.charCodeAt(i + 2)];
-    const d = B64_REV[s.charCodeAt(i + 3)];
-    out[oi++] = (a << 2) | (b >> 4);
-    out[oi++] = ((b & 15) << 4) | (c >> 2);
-    out[oi++] = ((c & 3) << 6) | d;
-  }
-  const tail = s.length & 3;
-  if (tail >= 2) {
-    const i = s.length - tail;
-    const a = B64_REV[s.charCodeAt(i)];
-    const b = B64_REV[s.charCodeAt(i + 1)];
-    out[oi++] = (a << 2) | (b >> 4);
-    if (tail === 3) {
-      const c = B64_REV[s.charCodeAt(i + 2)];
-      out[oi++] = ((b & 15) << 4) | (c >> 2);
-    }
-  }
-  return out.subarray(0, oi);
-}
-
 function b64uJson(obj: unknown): string {
-  return b64uEncode(textEncoder.encode(JSON.stringify(obj)));
+  return base64UrlEncode(utf8.encode(JSON.stringify(obj)));
 }
 
 export interface JwtHeader {
@@ -94,8 +35,8 @@ export function signJwt(
   const headPart = b64uJson(header);
   const payloadPart = b64uJson(claims);
   const signingInput = `${headPart}.${payloadPart}`;
-  const sig = p256.sign(textEncoder.encode(signingInput), privateKey);
-  return `${signingInput}.${b64uEncode(sig)}`;
+  const sig = p256.sign(utf8.encode(signingInput), privateKey);
+  return `${signingInput}.${base64UrlEncode(sig)}`;
 }
 
 export interface VerifyJwtOptions {
@@ -133,8 +74,8 @@ export function verifyJwt(
   let header: JwtHeader;
   let claims: JwtClaims;
   try {
-    header = JSON.parse(textDecoder.decode(b64uDecode(headPart)));
-    claims = JSON.parse(textDecoder.decode(b64uDecode(payloadPart)));
+    header = JSON.parse(textDecoder.decode(base64UrlDecode(headPart)));
+    claims = JSON.parse(textDecoder.decode(base64UrlDecode(payloadPart)));
   } catch {
     return { ok: false, reason: 'malformed' };
   }
@@ -142,7 +83,7 @@ export function verifyJwt(
 
   let sig: Uint8Array;
   try {
-    sig = b64uDecode(sigPart);
+    sig = base64UrlDecode(sigPart);
   } catch {
     return { ok: false, reason: 'malformed' };
   }
@@ -150,11 +91,7 @@ export function verifyJwt(
 
   let ok = false;
   try {
-    ok = p256.verify(
-      sig,
-      textEncoder.encode(`${headPart}.${payloadPart}`),
-      publicKey
-    );
+    ok = p256.verify(sig, utf8.encode(`${headPart}.${payloadPart}`), publicKey);
   } catch {
     ok = false;
   }
@@ -179,15 +116,4 @@ export function verifyJwt(
     if (!matches) return { ok: false, reason: 'bad-audience' };
   }
   return { ok: true, claims, header };
-}
-
-/** Unsafe: no verification. Use only on trusted input. */
-export function decodeJwtPayloadUnsafe(token: string): JwtClaims | null {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  try {
-    return JSON.parse(textDecoder.decode(b64uDecode(parts[1])));
-  } catch {
-    return null;
-  }
 }

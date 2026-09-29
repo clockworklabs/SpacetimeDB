@@ -3,6 +3,11 @@ import getTime from '../tools/getTime';
 
 export default defineAgent({
   defaultModel: 'anthropic/claude-haiku-4.5',
+  models: [
+    'anthropic/claude-haiku-4.5',
+    'anthropic/claude-sonnet-4.5',
+    'openai/gpt-4o-mini',
+  ],
   defaultSystemPrompt:
     'You are a helpful assistant. Use tools when they make the answer better.',
   defaultMaxTurns: 10,

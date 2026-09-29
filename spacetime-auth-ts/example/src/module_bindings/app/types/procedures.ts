@@ -6,14 +6,5 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
-import * as GetAuthPublicKeyProcedure from "../get_auth_public_key_procedure";
-import * as ListMySessionsProcedure from "../list_my_sessions_procedure";
-import * as WhoamiProcedure from "../whoami_procedure";
 
-export type GetAuthPublicKeyArgs = __Infer<typeof GetAuthPublicKeyProcedure.params>;
-export type GetAuthPublicKeyResult = __Infer<typeof GetAuthPublicKeyProcedure.returnType>;
-export type ListMySessionsArgs = __Infer<typeof ListMySessionsProcedure.params>;
-export type ListMySessionsResult = __Infer<typeof ListMySessionsProcedure.returnType>;
-export type WhoamiArgs = __Infer<typeof WhoamiProcedure.params>;
-export type WhoamiResult = __Infer<typeof WhoamiProcedure.returnType>;
 

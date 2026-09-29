@@ -1,5 +1,6 @@
 import { p256 } from '@noble/curves/nist.js';
-import { sha256 } from '@noble/hashes/sha2';
+import { base64ToBytes, sha256 } from '@spacetimedb/crypto';
+import { base64Encode, base64UrlEncode, utf8 } from './crypto';
 
 const PRIV_LEN = 32;
 const COORD_LEN = 32;
@@ -23,21 +24,6 @@ export interface PublicKeyJwk {
   kid?: string;
 }
 
-export interface RandomSource {
-  fill<T extends Uint8Array>(array: T): T;
-}
-
-/**
- * SECURITY: When called inside STDB modules with ctx.random, the resulting key
- * is DETERMINISTIC w.r.t. ctx.timestamp. Generate outside the module for prod.
- */
-export function generateEs256Keypair(rng?: RandomSource): Es256Keypair {
-  const seed = rng ? rng.fill(new Uint8Array(48)) : undefined;
-  const { secretKey } = p256.keygen(seed);
-  const publicKey = p256.getPublicKey(secretKey, false);
-  return assemble(secretKey, publicKey);
-}
-
 export function fromPrivateKeyBytes(privateKey: Uint8Array): Es256Keypair {
   if (privateKey.length !== PRIV_LEN) {
     throw new TypeError(`ES256 private key must be ${PRIV_LEN} bytes`);
@@ -53,8 +39,8 @@ function assemble(privateKey: Uint8Array, publicKey: Uint8Array): Es256Keypair {
     crv: 'P-256',
     alg: 'ES256',
     use: 'sig',
-    x: b64uEncode(x),
-    y: b64uEncode(y),
+    x: base64UrlEncode(x),
+    y: base64UrlEncode(y),
   };
   const kid = jwkThumbprint(publicKeyJwk);
   publicKeyJwk.kid = kid;
@@ -86,8 +72,7 @@ function jwkThumbprint(jwk: PublicKeyJwk): string {
     x: jwk.x,
     y: jwk.y,
   });
-  const hash = sha256(new TextEncoder().encode(canonical));
-  return b64uEncode(hash);
+  return base64UrlEncode(sha256(utf8.encode(canonical)));
 }
 
 // SPKI ECDSA P-256 algorithm OID prefix.
@@ -170,77 +155,10 @@ function concat(arrays: Uint8Array[]): Uint8Array {
 }
 
 function pemWrap(label: string, der: Uint8Array): string {
-  const b64 = btoaBytes(der);
+  const b64 = base64Encode(der);
   const lines: string[] = [];
   for (let i = 0; i < b64.length; i += 64) lines.push(b64.slice(i, i + 64));
   return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`;
-}
-
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-function btoaBytes(bytes: Uint8Array): string {
-  let out = '';
-  let i = 0;
-  for (; i + 2 < bytes.length; i += 3) {
-    out += B64[bytes[i] >> 2];
-    out += B64[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
-    out += B64[((bytes[i + 1] & 15) << 2) | (bytes[i + 2] >> 6)];
-    out += B64[bytes[i + 2] & 63];
-  }
-  if (i < bytes.length) {
-    out += B64[bytes[i] >> 2];
-    if (i + 1 === bytes.length) {
-      out += B64[(bytes[i] & 3) << 4];
-      out += '==';
-    } else {
-      out += B64[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
-      out += B64[(bytes[i + 1] & 15) << 2];
-      out += '=';
-    }
-  }
-  return out;
-}
-
-const B64_REV = (() => {
-  const m = new Int8Array(256).fill(-1);
-  for (let i = 0; i < B64.length; i++) m[B64.charCodeAt(i)] = i;
-  return m;
-})();
-function atobBytes(b64: string): Uint8Array {
-  let s = '';
-  for (let i = 0; i < b64.length; i++) {
-    const c = b64.charCodeAt(i);
-    if (B64_REV[c] >= 0) s += b64[i];
-  }
-  const out = new Uint8Array((s.length * 3) >> 2);
-  let oi = 0;
-  for (let i = 0; i + 3 < s.length; i += 4) {
-    const a = B64_REV[s.charCodeAt(i)];
-    const b = B64_REV[s.charCodeAt(i + 1)];
-    const c = B64_REV[s.charCodeAt(i + 2)];
-    const d = B64_REV[s.charCodeAt(i + 3)];
-    out[oi++] = (a << 2) | (b >> 4);
-    out[oi++] = ((b & 15) << 4) | (c >> 2);
-    out[oi++] = ((c & 3) << 6) | d;
-  }
-  const tail = s.length & 3;
-  if (tail >= 2) {
-    const i = s.length - tail;
-    const a = B64_REV[s.charCodeAt(i)];
-    const b = B64_REV[s.charCodeAt(i + 1)];
-    out[oi++] = (a << 2) | (b >> 4);
-    if (tail === 3) {
-      const c = B64_REV[s.charCodeAt(i + 2)];
-      out[oi++] = ((b & 15) << 4) | (c >> 2);
-    }
-  }
-  return out.subarray(0, oi);
-}
-
-function b64uEncode(bytes: Uint8Array): string {
-  return btoaBytes(bytes)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
 }
 
 function pemUnwrap(label: string, pem: string): Uint8Array {
@@ -250,7 +168,7 @@ function pemUnwrap(label: string, pem: string): Uint8Array {
   const end = pem.indexOf(suffix);
   if (start < 0 || end < 0) throw new TypeError(`PEM ${label} block not found`);
   const inner = pem.slice(start + prefix.length, end).replace(/\s+/g, '');
-  return atobBytes(inner);
+  return base64ToBytes(inner);
 }
 
 export function privateKeyFromPem(pem: string): Uint8Array {

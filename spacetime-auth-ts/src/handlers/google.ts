@@ -1,8 +1,4 @@
-import {
-  makeOAuthCallbackHandler,
-  makeOAuthStartHandler,
-  type OAuthProviderSpec,
-} from './oauth';
+import { type OAuthProviderSpec } from './oauth';
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -10,7 +6,7 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-const google: OAuthProviderSpec = {
+export const google: OAuthProviderSpec = {
   id: 'google',
   authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenUrl: 'https://oauth2.googleapis.com/token',
@@ -31,6 +27,3 @@ const google: OAuthProviderSpec = {
   },
   authorizeExtras: { access_type: 'offline', prompt: 'consent' },
 };
-
-export const googleStartHandler = makeOAuthStartHandler(google);
-export const googleCallbackHandler = makeOAuthCallbackHandler(google);

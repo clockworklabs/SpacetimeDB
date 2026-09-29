@@ -10,10 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-import {
-  MySessions,
-} from "./types";
-
-export const params = {
+export default {
+  tokensPerWindow: __t.option(__t.u32()),
+  windowSecs: __t.option(__t.u32()),
 };
-export const returnType = MySessions

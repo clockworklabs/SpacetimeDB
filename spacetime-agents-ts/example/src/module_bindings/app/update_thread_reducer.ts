@@ -13,11 +13,9 @@ import {
 export default {
   threadId: __t.u64(),
   title: __t.option(__t.string()),
-  systemPromptOverride: __t.option(__t.string()),
   modelOverride: __t.option(__t.string()),
   metadata: __t.option(__t.string()),
   clearTitle: __t.bool(),
-  clearSystemPromptOverride: __t.bool(),
   clearModelOverride: __t.bool(),
   clearMetadata: __t.bool(),
 };

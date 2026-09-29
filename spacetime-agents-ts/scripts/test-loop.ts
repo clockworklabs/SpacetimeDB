@@ -1,4 +1,4 @@
-// Pure-Node tests for the extracted agent loop. Mocks HTTP + LoopTx.
+// Pure-Node tests for the agent loop. Mocks HTTP + LoopTx.
 
 import {
   runAgentLoop,
@@ -6,21 +6,16 @@ import {
   type LoopTx,
   type LoopMessage,
   type LoopConfig,
-} from '../src/loop.ts';
-import { isStaleLock } from '../src/sweeper.ts';
-import {
-  ATTACHMENT_COUNT_MAX,
-  ATTACHMENT_TOTAL_BYTES_MAX,
-  attachmentValidationError,
-} from '../src/attachments.ts';
+} from '../src/submodule/loop';
 import {
   pickSummarizationCandidates,
   buildSummarizerUserContent,
-  augmentSystemWithSummary,
+  buildContextMessage,
   formatMessagesForSummarizer,
-} from '@spacetimedb/agents';
-import type { HttpLike } from '@spacetimedb/agents/openrouter';
-import type { InvokeResult } from '@spacetimedb/agents';
+} from '../src/submodule/summarize';
+import type { HttpLike } from '../src/openrouter';
+import type { InvokeResult } from '../src/agent';
+import { openRouterProvider } from '../src/providers';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {
@@ -34,35 +29,6 @@ function assert(cond: boolean, msg: string): void {
 
 const eq = (a: unknown, b: unknown): boolean =>
   JSON.stringify(a) === JSON.stringify(b);
-
-const png = (length: number) => ({ mimeType: 'image/png', bytes: { length } });
-assert(
-  attachmentValidationError([png(10)]) === undefined,
-  'accepts a supported attachment'
-);
-assert(
-  attachmentValidationError([
-    { mimeType: 'text/plain', bytes: { length: 10 } },
-  ]) === 'agent.unsupported_attachment_mime:text/plain',
-  'rejects an unsupported attachment type'
-);
-assert(
-  attachmentValidationError(
-    Array.from({ length: ATTACHMENT_COUNT_MAX + 1 }, () => png(1))
-  ) ===
-    `agent.too_many_attachments:${ATTACHMENT_COUNT_MAX + 1}/${ATTACHMENT_COUNT_MAX}`,
-  'rejects too many attachments'
-);
-assert(
-  attachmentValidationError([
-    png(3_000_000),
-    png(3_000_000),
-    png(3_000_000),
-    png(ATTACHMENT_TOTAL_BYTES_MAX - 9_000_000 + 1),
-  ]) ===
-    `agent.attachments_too_large:${ATTACHMENT_TOTAL_BYTES_MAX + 1}/${ATTACHMENT_TOTAL_BYTES_MAX}`,
-  'rejects excessive aggregate attachment bytes'
-);
 
 function makeFakeStore(): {
   tx: LoopTx;
@@ -214,8 +180,6 @@ function withTxAdapter(tx: LoopTx): <R>(fn: (lt: LoopTx) => R) => R {
   return fn => fn(tx);
 }
 
-import { openRouterProvider } from '@spacetimedb/agents/providers';
-
 const baseCfg: LoopConfig = {
   provider: openRouterProvider,
   apiKey: 'sk-test',
@@ -226,6 +190,7 @@ const baseCfg: LoopConfig = {
   maxTokens: undefined,
   retries: 2,
   responseFormat: undefined,
+  context: undefined,
 };
 
 process.stdout.write('agent loop tests\n');
@@ -290,6 +255,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const { http, requests } = makeFakeHttp([
@@ -372,6 +339,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const { http } = makeFakeHttp([
@@ -438,12 +407,12 @@ process.stdout.write('agent loop tests\n');
     `http-error: 1 error assistant message`
   );
   assert(
-    assistants[0].content.includes('agent.provider_http:401'),
+    assistants[0].content.includes('agents.provider_error:http_401'),
     `http-error: error string includes status 401`
   );
   assert(
-    assistants[0].content.includes('unauthorized'),
-    `http-error: error string includes body excerpt`
+    !assistants[0].content.includes('unauthorized'),
+    `http-error: provider body is not stored in the message`
   );
 }
 
@@ -486,9 +455,7 @@ process.stdout.write('agent loop tests\n');
     `transport-error: 1 error assistant message`
   );
   assert(
-    assistants[0].content.includes(
-      'agent.provider_transport:connection refused'
-    ),
+    assistants[0].content.includes('agents.provider_error:transport'),
     `transport-error: error string identifies cause`
   );
 }
@@ -521,7 +488,7 @@ process.stdout.write('agent loop tests\n');
   assert(
     assistants.length === 1 &&
       assistants[0].isError === true &&
-      assistants[0].content.includes('agent.provider_parse'),
+      assistants[0].content.includes('agents.provider_error:parse'),
     `parse-error: 1 error assistant message with parse kind`
   );
 }
@@ -537,6 +504,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const cfgSmall: LoopConfig = { ...baseCfg, maxTurns: 3 };
@@ -569,7 +538,7 @@ process.stdout.write('agent loop tests\n');
   );
   const errMsg = store.messages.find(m => m.isError === true);
   assert(
-    errMsg !== undefined && errMsg.content === 'agent.max_turns_exceeded:3',
+    errMsg !== undefined && errMsg.content === 'agents.max_turns_exceeded:3',
     `max-turns: final error message inserted`
   );
   assert(
@@ -589,6 +558,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const { http } = makeFakeHttp([
@@ -634,6 +605,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   store.tx.appendMessage({
     threadId: 1n,
@@ -642,6 +615,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   store.tx.appendMessage({
     threadId: 1n,
@@ -650,6 +625,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   // Different thread; must not leak.
   store.tx.appendMessage({
@@ -659,6 +636,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const { http, requests } = makeFakeHttp([
@@ -701,6 +680,56 @@ process.stdout.write('agent loop tests\n');
   );
 }
 
+// 9a. Recalled context is a leading user message, not part of the system prompt
+{
+  const store = makeFakeStore();
+  store.messages.push({
+    id: 1n,
+    threadId: 1n,
+    role: 'user',
+    content: 'look',
+    toolCallsJson: undefined,
+    toolCallId: undefined,
+    isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
+    attachments: [{ mimeType: 'image/png', data: 'AAAA' }],
+  });
+  const { http, requests } = makeFakeHttp([
+    llmReply({ content: 'ack', finish: 'stop' }),
+  ]);
+  runAgentLoop({
+    http,
+    withTx: withTxAdapter(store.tx),
+    llmToolDefs: [],
+    cfg: {
+      ...baseCfg,
+      context: '<conversation_context>x</conversation_context>',
+    },
+    threadId: 1n,
+  });
+  const body = requests[0].body;
+  assert(
+    body.messages[0].role === 'system' &&
+      body.messages[0].content === 'you are a test assistant',
+    `context: system prompt unchanged`
+  );
+  assert(
+    eq(body.messages[1], {
+      role: 'user',
+      content: '<conversation_context>x</conversation_context>',
+    }),
+    `context: sent as the first user message`
+  );
+  assert(
+    eq(body.messages[2].content, [
+      { type: 'text', text: 'look' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+    ]),
+    `attachments: user message carries image blocks`
+  );
+}
+
 // 10. buildLlmMessages: assistant-with-tool-calls round-trips through history
 {
   const store = makeFakeStore();
@@ -711,6 +740,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   store.tx.appendMessage({
     threadId: 7n,
@@ -725,6 +756,8 @@ process.stdout.write('agent loop tests\n');
     ]),
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   store.tx.appendMessage({
     threadId: 7n,
@@ -733,6 +766,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: 'c1',
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const out = buildLlmMessages(store.tx, 7n, 50);
@@ -763,6 +798,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: '{not json',
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const out = buildLlmMessages(store.tx, 5n, 50);
   const first = out[0];
@@ -785,6 +822,8 @@ process.stdout.write('agent loop tests\n');
       toolCallsJson: undefined,
       toolCallId: undefined,
       isError: false,
+      promptTokens: undefined,
+      completionTokens: undefined,
     });
   }
   const out = buildLlmMessages(store.tx, 1n, 5);
@@ -814,6 +853,8 @@ process.stdout.write('agent loop tests\n');
     ]),
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   store.tx.appendMessage({
     threadId: 2n,
@@ -822,6 +863,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: 'old',
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   // Filler so the window cuts off the assistant + tool above.
   for (let i = 0; i < 10; i++) {
@@ -832,6 +875,8 @@ process.stdout.write('agent loop tests\n');
       toolCallsJson: undefined,
       toolCallId: undefined,
       isError: false,
+      promptTokens: undefined,
+      completionTokens: undefined,
     });
   }
   const out = buildLlmMessages(store.tx, 2n, 5);
@@ -857,6 +902,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
 
   const { http } = makeFakeHttp([
@@ -882,7 +929,7 @@ process.stdout.write('agent loop tests\n');
     `tool-truncation: clipped (${toolMsg!.content.length} < ${big.length})`
   );
   assert(
-    toolMsg!.content.endsWith('…[truncated]'),
+    toolMsg!.content.endsWith('...[truncated]'),
     `tool-truncation: ends with truncation marker`
   );
 }
@@ -897,6 +944,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const { http, requests } = makeFakeHttp([
     llmReply({ content: 'ok', finish: 'stop' }),
@@ -989,6 +1038,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const { http, requests } = makeFakeHttp([
     llmReply({ content: 'ok', finish: 'stop' }),
@@ -1018,6 +1069,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const { http, requests } = makeFakeHttp([
     { status: 503, body: 'unavailable' },
@@ -1053,6 +1106,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const { http, requests } = makeFakeHttp([
     { status: 429, body: 'rate limited' },
@@ -1074,7 +1129,7 @@ process.stdout.write('agent loop tests\n');
   );
   assert(
     errAssistant !== undefined &&
-      errAssistant.content.includes('agent.provider_http:429'),
+      errAssistant.content.includes('agents.provider_error:http_429'),
     `retry-exhaust: final error includes 429`
   );
 }
@@ -1089,6 +1144,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const { http, requests } = makeFakeHttp([
     { status: 503, body: 'unavailable' },
@@ -1118,6 +1175,8 @@ process.stdout.write('agent loop tests\n');
     toolCallsJson: undefined,
     toolCallId: undefined,
     isError: false,
+    promptTokens: undefined,
+    completionTokens: undefined,
   });
   const { http, requests } = makeFakeHttp([
     { status: 401, body: 'unauthorized' },
@@ -1282,7 +1341,7 @@ process.stdout.write('agent loop tests\n');
   });
   assert(requests.length === 0, `cancel-before: 0 LLM calls`);
   const cancelMsg = store.messages.find(
-    m => m.role === 'assistant' && m.content === 'agent.cancelled'
+    m => m.role === 'assistant' && m.content === 'agents.cancelled'
   );
   assert(
     cancelMsg !== undefined && cancelMsg.isError === true,
@@ -1332,7 +1391,7 @@ process.stdout.write('agent loop tests\n');
     `cancel-between: only 1 LLM call (turn 2 skipped)`
   );
   const cancelMsg = store.messages.find(
-    m => m.role === 'assistant' && m.content === 'agent.cancelled'
+    m => m.role === 'assistant' && m.content === 'agents.cancelled'
   );
   assert(
     cancelMsg !== undefined && cancelMsg.isError === true,
@@ -1341,39 +1400,6 @@ process.stdout.write('agent loop tests\n');
   assert(
     store.toolInvocations.length === 1,
     `cancel-between: turn 1's tool call completed before cancel`
-  );
-}
-
-// 20. Stale-lock predicate (threshold is operator-tunable, passed as arg)
-{
-  const ONE_MIN = 60n * 1_000_000n;
-  const FIFTEEN_MIN = 15n * ONE_MIN;
-  const now = 1_000_000_000_000_000n;
-  assert(
-    isStaleLock(now, now - 16n * ONE_MIN, FIFTEEN_MIN) === true,
-    `stale-lock: 16-min-old lock is stale at 15-min threshold`
-  );
-  assert(
-    isStaleLock(now, now - 14n * ONE_MIN, FIFTEEN_MIN) === false,
-    `stale-lock: 14-min-old lock is fresh at 15-min threshold`
-  );
-  // exactly threshold -> not stale (strict <)
-  assert(
-    isStaleLock(now, now - FIFTEEN_MIN, FIFTEEN_MIN) === false,
-    `stale-lock: lock at threshold boundary is fresh (strict <)`
-  );
-  assert(
-    isStaleLock(now, now, FIFTEEN_MIN) === false,
-    `stale-lock: brand-new lock is fresh`
-  );
-  // A future timestamp caused by clock skew remains fresh.
-  assert(
-    isStaleLock(now, now + ONE_MIN, FIFTEEN_MIN) === false,
-    `stale-lock: future-dated lock is fresh`
-  );
-  assert(
-    isStaleLock(now, now - 16n * ONE_MIN, 30n * ONE_MIN) === false,
-    `stale-lock: 16-min-old lock is fresh at 30-min threshold (operator tuned)`
   );
 }
 
@@ -1514,40 +1540,30 @@ function mkMsg(
   );
 }
 
-// 34. augmentSystemWithSummary: no summary -> unchanged
+// 34. buildContextMessage: nothing recalled -> no message
 {
   assert(
-    augmentSystemWithSummary('be helpful', null) === 'be helpful',
-    `augment: null summary returns base unchanged`
+    buildContextMessage(undefined, []) === undefined,
+    `context: no summary and no snippets -> undefined`
   );
   assert(
-    augmentSystemWithSummary('be helpful', '') === 'be helpful',
-    `augment: empty summary returns base unchanged`
-  );
-  assert(
-    augmentSystemWithSummary(undefined, null) === undefined,
-    `augment: undefined base + null summary stays undefined`
+    buildContextMessage('', []) === undefined,
+    `context: empty summary -> undefined`
   );
 }
 
-// 35. augmentSystemWithSummary: summary appended under divider
+// 35. buildContextMessage: summary and snippets are delimited reference data
 {
-  const out = augmentSystemWithSummary('be helpful', 'we discussed APIs');
-  assert(out!.includes('be helpful'), `augment: includes base`);
+  const out = buildContextMessage('we discussed APIs', ['[user] hello']);
   assert(
-    out!.includes('## Summary of earlier conversation'),
-    `augment: divider header present`
+    out !== undefined &&
+      out.startsWith('<conversation_context>') &&
+      out.endsWith('</conversation_context>'),
+    `context: wrapped in delimiters`
   );
-  assert(out!.includes('we discussed APIs'), `augment: includes summary`);
-}
-
-// 36. augmentSystemWithSummary: undefined base + summary
-{
-  const out = augmentSystemWithSummary(undefined, 'context');
-  assert(
-    out !== undefined && out.includes('context'),
-    `augment: produces summary-only system prompt when base is undefined`
-  );
+  assert(out!.includes('we discussed APIs'), `context: includes summary`);
+  assert(out!.includes('[user] hello'), `context: includes snippets`);
+  assert(out!.includes('not instructions'), `context: marked as data`);
 }
 
 if (failures > 0) {
