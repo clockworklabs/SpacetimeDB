@@ -49,7 +49,7 @@ Resend credentials live in a private `resend_config` singleton. During `init`, a
 fresh database seeds the owner into the private `resend_admin_identity` table.
 
 ```bash
-spacetime call --server http://127.0.0.1:3000 resend-ts set_resend_config \
+spacetime call --server http://127.0.0.1:3000 spacetime-resend set_resend_config \
   '"re_..."' \
   '{"some":"whsec_..."}' \
   '{"some":"onboarding@resend.dev"}'
@@ -62,7 +62,7 @@ For `t.option(...)` CLI arguments, use `null` for no value and
 Verify:
 
 ```bash
-spacetime call --server http://127.0.0.1:3000 resend-ts get_resend_config_status '{}'
+spacetime call --server http://127.0.0.1:3000 spacetime-resend get_resend_config_status '{}'
 ```
 
 `send_email` reads the Resend API key from private module state.
@@ -113,7 +113,10 @@ resend.sendEmailRequest(ctx.as.resend, {
   to: ['delivered@resend.dev'],
   subject: 'Welcome',
   html: '<p>Hello.</p>',
-  tagsJson: JSON.stringify({ userId: 'u_123', orgId: 'launch' }),
+  tagsJson: JSON.stringify([
+    { name: 'userId', value: 'u_123' },
+    { name: 'orgId', value: 'launch' },
+  ]),
 });
 ```
 
@@ -144,8 +147,9 @@ operators.
 - `makeResendWebhookHandler()` builds a direct HTTP webhook handler for a host
   router.
 
-The HTTP handler returns 200 only after successful application or for an already
-processed event. Invalid payloads return 400 and retain a failed event record;
+The HTTP handler returns 200 after applying an event, for an already processed
+event, and for signed event types the submodule does not handle, which are stored
+as `Ignored`. Invalid payloads return 400 and retain a failed event record;
 redelivery retries failed records. Unexpected transaction failures propagate to
 the HTTP runtime. The reducer entrypoint throws on invalid payloads, rolling back
 its transaction.
@@ -153,7 +157,8 @@ its transaction.
 Delivery timestamps use the provider's event time. Older events cannot replace
 newer status, and an earlier delivery stage cannot replace a later one. Queued
 send responses preserve any webhook state already recorded. Opens, clicks, and
-complaints update their own fields without changing delivery status.
+complaints update their own fields without changing delivery status. Error,
+bounce, and failure details change only when their event sets the status.
 
 **Admin queries**
 
@@ -162,6 +167,11 @@ complaints update their own fields without changing delivery status.
 
 List procedures return at most 1,000 rows. Host applications should expose
 caller-scoped, paginated views for product-facing history.
+
+**Errors**
+
+`errors` from `@spacetimedb/resend/submodule` lists the `resend.*` codes the
+submodule throws.
 
 Package entrypoints:
 
@@ -178,20 +188,21 @@ email.complained        email.failed
 email.opened            email.clicked
 ```
 
+Other signed event types, such as `email.received`, `contact.*`, and `domain.*`,
+are acknowledged and stored as `Ignored`.
+
 `opened` / `clicked` / `complained` are recorded as **flags + timestamps** and leave `status` unchanged. Terminal states (`delivered`, `bounced`, `failed`, `cancelled`) and in-flight states (`queued`, `sent`, `delivery_delayed`) live in the `status` column.
 
 ## Webhook signature verification
 
-The module's `ingest_resend_webhook` reducer verifies Standard Webhooks signatures (svix) using the configured `webhookSigningSecret`. `signatureHeader` and `timestampHeader` are stored on `resend_webhook_event` for forensic replay.
+The `ingest_resend_webhook` reducer and the `makeResendWebhookHandler()` route verify Standard Webhooks signatures (svix) using the configured `webhookSigningSecret`. `signatureHeader` and `timestampHeader` are stored on `resend_webhook_event` for forensic replay.
 
 ## Tagging
 
-`userId` / `orgId` are extracted from Resend `tags` and indexed for per-user / per-org listing. Both tag shapes are accepted:
+`userId` / `orgId` are extracted from Resend `tags` and indexed for per-user / per-org listing.
 
-- Object form: `{"userId": "u_123", "orgId": "o_456"}`
-- Array form (Resend's webhook output): `[{"name":"userId","value":"u_123"}]`
-
-Pass `tagsJson` as a JSON string when calling `send_email`.
+- `send_email` takes `tagsJson` as a JSON string in the array form Resend's send API expects: `[{"name":"userId","value":"u_123"}]`.
+- Resend webhook payloads carry tags in object form: `{"userId": "u_123", "orgId": "o_456"}`.
 
 ## Integration testing
 
@@ -206,27 +217,27 @@ For real Resend test-mode:
 
 ```bash
 # Bootstrap once with your real key:
-spacetime call --server http://127.0.0.1:3000 resend-ts set_resend_config '"re_..."' null '{"some":"onboarding@resend.dev"}'
+spacetime call --server http://127.0.0.1:3000 spacetime-resend set_resend_config '"re_..."' null '{"some":"onboarding@resend.dev"}'
 
 # Then send to one of Resend's test addresses (delivered@/bounced@/complained@):
-spacetime call --server http://127.0.0.1:3000 resend-ts send_email \
+spacetime call --server http://127.0.0.1:3000 spacetime-resend send_email \
   null \
   '["delivered@resend.dev"]' \
   '"Test from SpacetimeDB"' \
   '{"some":"<p>Hello.</p>"}' \
   null null null null \
-  '{"some":"{\"userId\":\"u_123\"}"}' \
+  '{"some":"[{\"name\":\"userId\",\"value\":\"u_123\"}]"}' \
   null null null
 ```
 
-To exercise inbound webhooks end-to-end, expose your local relay via ngrok, register the URL in Resend's dashboard with the same `whsec_...` you passed to `set_resend_config`, and forward verified events to `ingest_resend_webhook`.
+The standalone module has no HTTP route. To receive webhooks from Resend, mount the submodule in a host module that registers `makeResendWebhookHandler()` on a router, as the [example](./example/spacetimedb/) does at `/webhook/resend`. Expose the database through a public tunnel such as ngrok and register `https://<tunnel>/v1/database/<database>/route/webhook/resend` in Resend's dashboard with the same `whsec_...` you passed to `set_resend_config`.
 
 ## Architecture notes
 
-- **valibot for runtime validation.** `vEmailEvent` is a `v.variant('type', [...])` over the 8 supported event types. The unit and smoke suites lock down the accepted wire shapes.
+- **valibot for runtime validation.** `vEmailEvent` is a `v.variant('type', [...])` over the 8 supported event types; other event types are stored as `Ignored`. The unit and smoke suites lock down the accepted wire shapes.
 - **Synchronous HTTP.** Procedures are synchronous and `ctx.http.fetch` returns a `SyncResponse`, so `callResend` in `src/submodule/http.ts` implements the required API surface directly.
 - **Wire format.** The public input uses SDK-style camelCase (`replyTo`, `scheduledAt`), and `buildSendEmailBody` emits the provider's snake_case JSON fields.
-- **Idempotency.** Each webhook event is keyed by `event.id`; re-ingest is a no-op. Status-changing events ratchet forward, so `email.complained` preserves a terminal `delivered` status.
+- **Idempotency.** Each webhook event is keyed by its `svix-id` header (the reducer's `eventId` argument); re-ingesting a processed or ignored event is a no-op. Status-changing events ratchet forward, so `email.complained` preserves a terminal `delivered` status.
 
 ## Testing
 
@@ -239,4 +250,4 @@ Credentialed smoke coverage is described in **Integration testing** above.
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0.
