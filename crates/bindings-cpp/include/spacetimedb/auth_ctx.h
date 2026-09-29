@@ -26,6 +26,8 @@ struct ConnectionId;
  * This class uses lazy loading - the JWT is only fetched and parsed when accessed.
  */
 class AuthCtx {
+    friend struct HandlerContext;
+
 private:
     bool is_internal_;
     mutable std::shared_ptr<std::optional<JwtClaims>> jwt_;

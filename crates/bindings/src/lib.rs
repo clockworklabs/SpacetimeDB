@@ -1341,6 +1341,7 @@ fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
     connection_id: Option<ConnectionId>,
+    is_http_handler: bool,
 ) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
@@ -1352,7 +1353,11 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        let tx = ReducerContext::new(crate::Local::__host(), identity, connection_id, timestamp);
+        let mut tx = ReducerContext::new(crate::Local::__host(), identity, connection_id, timestamp);
+        if is_http_handler {
+            // HTTP requests have no connection ID, but are not host-originated calls.
+            tx.sender_auth = AuthCtx::new(false, || None);
+        }
         let tx = TxContext(tx);
 
         struct DoOnDrop<F: Fn()>(F);
@@ -1385,9 +1390,14 @@ fn try_with_tx<T, E>(
     res
 }
 
-fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
+fn with_tx<T>(
+    body: impl Fn(&TxContext) -> T,
+    identity: Identity,
+    connection_id: Option<ConnectionId>,
+    is_http_handler: bool,
+) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id, is_http_handler) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1630,7 +1640,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id())
+        with_tx(body, self.sender(), self.connection_id(), false)
     }
 
     /// Acquire a mutable transaction
