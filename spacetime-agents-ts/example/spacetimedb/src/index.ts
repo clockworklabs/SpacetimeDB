@@ -310,11 +310,6 @@ export const authEmailVerify = spacetimedb.httpHandler((ctx, req) =>
 const fileServeHandler = files.createFileHttpHandler({
   getOwner: (ctx, req) =>
     ctx.withTx((tx: TransactionCtx<Schema>) => {
-      const binding = tx.db.auth.authConnectionBinding.stdbIdentity.find(
-        tx.sender
-      );
-      if (binding) return binding.userId;
-
       const cfg = tx.db.auth.authConfig.singleton.find(true);
       if (!cfg) return undefined;
       const bearer = req.headers.get('authorization');
