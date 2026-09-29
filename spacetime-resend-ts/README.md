@@ -195,7 +195,7 @@ are acknowledged and stored as `Ignored`.
 
 ## Webhook signature verification
 
-The `ingest_resend_webhook` reducer and the `makeResendWebhookHandler()` route verify Standard Webhooks signatures (svix) using the configured `webhookSigningSecret`. `signatureHeader` and `timestampHeader` are stored on `resend_webhook_event` for forensic replay.
+The `ingest_resend_webhook` reducer and the `makeResendWebhookHandler()` route verify Standard Webhooks signatures (svix) using the configured `webhookSigningSecret`. A rejected signature returns 401 with `resend.webhook_signature_mismatch:<reason>`, where the reason is a `@spacetimedb/crypto` `errors` code such as `crypto.timestamp_outside_tolerance`. `signatureHeader` and `timestampHeader` are stored on `resend_webhook_event` for forensic replay.
 
 ## Tagging
 

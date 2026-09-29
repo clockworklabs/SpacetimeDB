@@ -35,33 +35,20 @@ function takeRows<T>(rows: Iterable<T>): T[] {
   return out;
 }
 
-const vTagsForExtraction = v.union([
-  v.record(v.string(), v.string()),
-  v.array(v.object({ name: v.string(), value: v.string() })),
-]);
+// Resend's send API takes tags as `[{ name, value }]`.
+const vSendTags = v.array(v.object({ name: v.string(), value: v.string() }));
 
 function extractTagFieldsFromJson(tagsJson: string | undefined): {
   userId: string | undefined;
   orgId: string | undefined;
 } {
-  if (!tagsJson) return { userId: undefined, orgId: undefined };
-  const parsed = safeJsonParse(tagsJson);
-  if (parsed === undefined) return { userId: undefined, orgId: undefined };
-  const result = v.safeParse(vTagsForExtraction, parsed);
-  if (!result.success) {
-    return { userId: undefined, orgId: undefined };
-  }
+  const result = v.safeParse(vSendTags, tagsJson && safeJsonParse(tagsJson));
+  if (!result.success) return { userId: undefined, orgId: undefined };
   const tags = result.output;
-  if (Array.isArray(tags)) {
-    let userId: string | undefined;
-    let orgId: string | undefined;
-    for (const tag of tags) {
-      if (tag.name === 'userId') userId = tag.value;
-      if (tag.name === 'orgId') orgId = tag.value;
-    }
-    return { userId, orgId };
-  }
-  return { userId: tags['userId'], orgId: tags['orgId'] };
+  return {
+    userId: tags.find(tag => tag.name === 'userId')?.value,
+    orgId: tags.find(tag => tag.name === 'orgId')?.value,
+  };
 }
 
 // Resend expects snake_case fields in the POST /emails request body.

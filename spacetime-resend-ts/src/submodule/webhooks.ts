@@ -272,7 +272,7 @@ function applyResendWebhook(
     return { status: 500, code: errors.webhookSecretNotConfigured };
   }
   const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
-  const sigOk = verifySvixSignature({
+  const signature = verifySvixSignature({
     svixId: args.eventId,
     svixTimestamp: args.timestampHeader ?? '',
     svixSignature: args.signatureHeader ?? '',
@@ -280,7 +280,12 @@ function applyResendWebhook(
     secret: cfg.webhookSigningSecret,
     nowSeconds,
   });
-  if (!sigOk) return { status: 401, code: errors.webhookSignatureMismatch };
+  if (!signature.ok) {
+    return {
+      status: 401,
+      code: `${errors.webhookSignatureMismatch}:${signature.reason}`,
+    };
+  }
 
   const signedEventType = parseResendEventType(args.payloadJson);
   if (
