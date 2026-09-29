@@ -5,10 +5,12 @@ import {
   t,
   table,
   type Infer,
+  type ModuleExport,
+  type SumBuilder,
   type VariantsObj,
 } from 'spacetimedb/server';
 import type { Identity, Timestamp } from 'spacetimedb';
-import { retryFailed, type RetryHandler, type RetryResult } from './handler';
+import { retryFailed, type RetryResult } from './handler';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const MAX_ATTEMPTS = 10;
@@ -27,117 +29,136 @@ export const errors = {
   unknownHandler: 'retry.unknown_handler',
 } as const;
 
-export type RetryHandlers = Record<string, RetryHandler>;
-
-export interface RetryConfig<H extends RetryHandlers> {
-  /** Task variants keyed by tag. Each handler runs one attempt. */
-  handlers: H;
-}
-
-/** Tagged task arguments for the configured handlers. */
-export type RetryArgs<H extends RetryHandlers> = {
-  [K in keyof H & string]: H[K]['args'] extends ReturnType<typeof t.unit>
-    ? { tag: K }
-    : { tag: K; value: Infer<H[K]['args']> };
-}[keyof H & string];
-
-/** Create the retry tables, reducers, and views from the host's handlers. */
-export function client<const H extends RetryHandlers>({
-  handlers,
-}: RetryConfig<H>) {
-  const variants: VariantsObj = {};
-  for (const [tag, handler] of Object.entries(handlers)) {
-    variants[tag] = handler.args;
-  }
-  const retryArgs = t.enum('RetryArgs', variants);
-
-  const retryTask = table(
+function retryTaskTable(args: SumBuilder<VariantsObj>) {
+  return table(
     { name: 'retry_task', public: false },
     {
       scheduledId: t.u64().primaryKey().autoInc(),
       scheduledAt: t.scheduleAt(),
       name: t.string().index(),
-      args: retryArgs,
+      args,
       attempt: t.u8(),
       maxAttempts: t.u8(),
       backoffSecs: t.u32(),
     }
   );
+}
 
-  const retryHistory = table(
-    { name: 'retry_history', public: false },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      taskName: t.string(),
-      attempt: t.u8(),
-      status: t.enum('RetryHistoryStatus', ['Ok', 'Failed', 'GaveUp']),
-      error: t.option(t.string()),
-      ranAt: t.timestamp().index(),
-    }
-  );
+const retryHistory = table(
+  { name: 'retry_history', public: false },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    taskName: t.string(),
+    attempt: t.u8(),
+    status: t.enum('RetryHistoryStatus', ['Ok', 'Failed', 'GaveUp']),
+    error: t.option(t.string()),
+    ranAt: t.timestamp().index(),
+  }
+);
 
-  const retryAdminIdentity = table(
-    { name: 'retry_admin_identity', public: false },
-    {
-      identity: t.identity().primaryKey(),
-      addedAt: t.timestamp(),
-    }
-  );
+const retryAdminIdentity = table(
+  { name: 'retry_admin_identity', public: false },
+  {
+    identity: t.identity().primaryKey(),
+    addedAt: t.timestamp(),
+  }
+);
 
-  type TaskRow = Infer<typeof retryTask.rowType>;
-  type HistoryRow = Infer<typeof retryHistory.rowType>;
-  type AdminRow = Infer<typeof retryAdminIdentity.rowType>;
-  type TaskInput = Pick<
-    TaskRow,
-    'name' | 'args' | 'maxAttempts' | 'backoffSecs'
-  >;
+export type RetryTaskRow = Infer<ReturnType<typeof retryTaskTable>['rowType']>;
+export type RetryHistoryRow = Infer<typeof retryHistory.rowType>;
+type AdminRow = Infer<typeof retryAdminIdentity.rowType>;
+type TaskInput = Pick<
+  RetryTaskRow,
+  'name' | 'args' | 'maxAttempts' | 'backoffSecs'
+>;
 
-  /** The parts of a host view context that retry reads. */
-  interface RetryViewCtx {
-    readonly sender: Identity;
-    readonly db: {
-      readonly retryTask: { iter(): Iterable<TaskRow> };
-      readonly retryHistory: {
-        readonly ranAt: {
-          filter(range: Range<Timestamp>): Iterable<HistoryRow>;
-        };
-      };
-      readonly retryAdminIdentity: {
-        readonly identity: { find(identity: Identity): AdminRow | null };
+/** The retry tables of a host view context. */
+export interface RetryViewCtx {
+  readonly sender: Identity;
+  readonly db: {
+    readonly retryTask: { iter(): Iterable<RetryTaskRow> };
+    readonly retryHistory: {
+      readonly ranAt: {
+        filter(range: Range<Timestamp>): Iterable<RetryHistoryRow>;
       };
     };
-  }
-
-  /** The parts of a host reducer context that retry reads and writes. */
-  interface RetryCtx {
-    readonly sender: Identity;
-    readonly timestamp: Timestamp;
-    readonly db: {
-      readonly retryTask: {
-        iter(): Iterable<TaskRow>;
-        readonly name: {
-          filter(name: string): IteratorObject<TaskRow, undefined>;
-        };
-        insert(row: TaskRow): TaskRow;
-      };
-      readonly retryHistory: {
-        readonly ranAt: {
-          filter(
-            range: Range<Timestamp>
-          ): IteratorObject<HistoryRow, undefined>;
-        };
-        insert(row: HistoryRow): HistoryRow;
-        delete(row: HistoryRow): boolean;
-        count(): bigint;
-      };
-      readonly retryAdminIdentity: {
-        readonly identity: { find(identity: Identity): AdminRow | null };
-        insert(row: AdminRow): AdminRow;
-        delete(row: AdminRow): boolean;
-        count(): bigint;
-      };
+    readonly retryAdminIdentity: {
+      readonly identity: { find(identity: Identity): AdminRow | null };
     };
-  }
+  };
+}
+
+/** A host reducer context whose schema includes `retry.tables`. */
+export interface RetryCtx {
+  readonly sender: Identity;
+  readonly timestamp: Timestamp;
+  readonly db: {
+    readonly retryTask: {
+      iter(): Iterable<RetryTaskRow>;
+      readonly name: {
+        filter(name: string): IteratorObject<RetryTaskRow, undefined>;
+      };
+      insert(row: RetryTaskRow): RetryTaskRow;
+    };
+    readonly retryHistory: {
+      readonly ranAt: {
+        filter(
+          range: Range<Timestamp>
+        ): IteratorObject<RetryHistoryRow, undefined>;
+      };
+      insert(row: RetryHistoryRow): RetryHistoryRow;
+      delete(row: RetryHistoryRow): boolean;
+      count(): bigint;
+    };
+    readonly retryAdminIdentity: {
+      readonly identity: { find(identity: Identity): AdminRow | null };
+      insert(row: AdminRow): AdminRow;
+      delete(row: AdminRow): boolean;
+      count(): bigint;
+    };
+  };
+}
+
+/** Task argument types keyed by task tag. */
+export type RetryTasks = VariantsObj;
+
+export interface RetryConfig<Tasks extends RetryTasks> {
+  tasks: Tasks;
+}
+
+/** Tagged task arguments for the configured tasks. */
+export type RetryArgs<Tasks extends RetryTasks> = {
+  [K in keyof Tasks & string]: Tasks[K] extends ReturnType<typeof t.unit>
+    ? { tag: K }
+    : { tag: K; value: Infer<Tasks[K]> };
+}[keyof Tasks & string];
+
+/** One handler per task tag. Each call runs one attempt. */
+export type RetryHandlers<Tasks extends RetryTasks, Tx> = {
+  [K in keyof Tasks & string]: (ctx: Tx, args: Infer<Tasks[K]>) => RetryResult;
+};
+
+/** The scheduled reducer that runs attempts. */
+export type RetryReducerExport<Tx> = ModuleExport &
+  ((ctx: Tx, args: { arg: RetryTaskRow }) => unknown);
+
+/**
+ * The host schema returned by `schema()`. Handler contexts are inferred from
+ * its reducer exports.
+ */
+export interface RetrySchema<Tx extends RetryCtx = RetryCtx> {
+  reducer(...args: unknown[]): RetryReducerExport<Tx>;
+}
+
+type InternalHandler = (...args: unknown[]) => RetryResult;
+
+/** Create the retry tables and the functions that manage them. */
+export function client<const Tasks extends RetryTasks>({
+  tasks,
+}: RetryConfig<Tasks>) {
+  const variants: VariantsObj = tasks;
+  const retryArgs = t.enum('RetryArgs', variants);
+  const retryTask = retryTaskTable(retryArgs);
 
   function isAdmin(ctx: RetryViewCtx): boolean {
     return ctx.db.retryAdminIdentity.identity.find(ctx.sender) != null;
@@ -151,11 +172,6 @@ export function client<const H extends RetryHandlers>({
     if (ctx.db.retryAdminIdentity.identity.find(identity) == null) {
       ctx.db.retryAdminIdentity.insert({ identity, addedAt: ctx.timestamp });
     }
-  }
-
-  /** Call from the host's init reducer to seed the publishing identity as admin. */
-  function install(ctx: RetryCtx): void {
-    addAdmin(ctx, ctx.sender);
   }
 
   function submitTask(ctx: RetryCtx, task: TaskInput): void {
@@ -187,18 +203,18 @@ export function client<const H extends RetryHandlers>({
     });
   }
 
-  function dispatch(ctx: RetryCtx, args: TaskRow['args']): RetryResult {
-    if (!Object.prototype.hasOwnProperty.call(handlers, args.tag)) {
-      throw new Error(`${errors.unknownHandler}:${args.tag}`);
-    }
-    const value = 'value' in args ? args.value : undefined;
-    return handlers[args.tag].run(ctx, value);
-  }
-
-  function retryFire(ctx: RetryCtx, { arg }: { arg: TaskRow }): void {
+  function runAttempt(
+    handlers: Record<string, InternalHandler>,
+    ctx: RetryCtx,
+    arg: RetryTaskRow
+  ): void {
     let result: RetryResult;
     try {
-      result = dispatch(ctx, arg.args);
+      const { tag } = arg.args;
+      if (!Object.prototype.hasOwnProperty.call(handlers, tag)) {
+        throw new Error(`${errors.unknownHandler}:${tag}`);
+      }
+      result = handlers[tag](ctx, 'value' in arg.args ? arg.args.value : {});
     } catch (error) {
       // A caught exception does not roll back the handler's earlier writes.
       result = retryFailed(
@@ -216,7 +232,7 @@ export function client<const H extends RetryHandlers>({
       error: result.ok ? undefined : result.error.slice(0, MAX_ERROR_LENGTH),
       ranAt: ctx.timestamp,
     });
-    // Each fire adds one row, so removing the oldest keeps the bound.
+    // Each attempt adds one row, so removing the oldest keeps the bound.
     if (history.count() > MAX_ROWS) {
       const oldest = history.ranAt.filter(new Range<Timestamp>()).next().value;
       if (oldest) history.delete(oldest);
@@ -233,42 +249,64 @@ export function client<const H extends RetryHandlers>({
     });
   }
 
-  /** The latest pending tasks, newest first. */
-  function retryTasksAdmin(ctx: RetryViewCtx): TaskRow[] {
-    if (!isAdmin(ctx)) return [];
-    return [...ctx.db.retryTask.iter()]
-      .sort((a, b) =>
-        a.scheduledId > b.scheduledId
-          ? -1
-          : a.scheduledId < b.scheduledId
-            ? 1
-            : 0
-      )
-      .slice(0, MAX_ROWS);
-  }
-
-  /** Retained attempt history, newest first. */
-  function retryHistoryAdmin(ctx: RetryViewCtx): HistoryRow[] {
-    if (!isAdmin(ctx)) return [];
-    return [
-      ...ctx.db.retryHistory.ranAt.filter(new Range<Timestamp>()),
-    ].reverse();
+  /**
+   * Register the scheduled reducer that runs attempts. Call after `schema()`
+   * and export the result.
+   */
+  function retryReducer<Tx extends RetryCtx>(
+    spacetimedb: RetrySchema<Tx>,
+    handlers: RetryHandlers<Tasks, Tx>
+  ): RetryReducerExport<Tx> {
+    // Each stored task pairs a tag with a value of that tag's argument type,
+    // so the handler for the tag accepts the value.
+    const byTag = handlers as Record<string, InternalHandler>;
+    return spacetimedb.reducer(
+      { onSchedule: retryTask },
+      { arg: retryTask.rowType },
+      (ctx: Tx, { arg }: { arg: RetryTaskRow }) => {
+        runAttempt(byTag, ctx, arg);
+      }
+    );
   }
 
   return {
     tables: { retryTask, retryHistory, retryAdminIdentity },
-    install,
+    retryReducer,
+    /** Call from the host's init reducer to seed the publishing identity as admin. */
+    install(ctx: RetryCtx): void {
+      addAdmin(ctx, ctx.sender);
+    },
     /** Validate and schedule a task's first attempt. The caller authorizes. */
     submit(
       ctx: RetryCtx,
-      task: Omit<TaskInput, 'args'> & { args: RetryArgs<H> }
+      task: Omit<TaskInput, 'args'> & { args: RetryArgs<Tasks> }
     ): void {
       submitTask(ctx, task);
     },
     requireAdmin,
-    views: { retryTasksAdmin, retryHistoryAdmin },
+    views: {
+      /** The latest pending tasks, newest first. */
+      retryTasksAdmin(ctx: RetryViewCtx): RetryTaskRow[] {
+        if (!isAdmin(ctx)) return [];
+        return [...ctx.db.retryTask.iter()]
+          .sort((a, b) =>
+            a.scheduledId > b.scheduledId
+              ? -1
+              : a.scheduledId < b.scheduledId
+                ? 1
+                : 0
+          )
+          .slice(0, MAX_ROWS);
+      },
+      /** Retained attempt history, newest first. */
+      retryHistoryAdmin(ctx: RetryViewCtx): RetryHistoryRow[] {
+        if (!isAdmin(ctx)) return [];
+        return [
+          ...ctx.db.retryHistory.ranAt.filter(new Range<Timestamp>()),
+        ].reverse();
+      },
+    },
     reducers: {
-      retryFire,
       submitRetryTask: {
         params: {
           name: t.string(),
@@ -301,5 +339,5 @@ export function client<const H extends RetryHandlers>({
         },
       },
     },
-  } as const;
+  };
 }

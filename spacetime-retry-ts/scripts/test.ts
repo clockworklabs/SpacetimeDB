@@ -1,32 +1,47 @@
 import * as assert from 'node:assert/strict';
 import { Identity, Timestamp } from 'spacetimedb';
-import { ScheduleAt, t } from 'spacetimedb/server';
-import { client, errors, retryFailed, retryHandler, retryOk } from '../src';
+import { ScheduleAt, schema, t } from 'spacetimedb/server';
+import {
+  client,
+  errors,
+  retryFailed,
+  retryOk,
+  type RetryCtx,
+  type RetryTaskRow as Task,
+} from '../src';
 
 const calls: string[] = [];
+// One argument type may back several tasks.
 const sharedArgs = t.object('TestArgs', { value: t.string() });
 const retry = client({
-  handlers: {
-    throws: retryHandler(t.unit(), () => {
-      throw new Error('x'.repeat(3000));
-    }),
-    fails: retryHandler(t.unit(), () => retryFailed('unavailable')),
-    succeeds: retryHandler(t.unit(), () => retryOk()),
-    // One argument builder may back several handlers.
-    first: retryHandler(sharedArgs, (_ctx, args) => {
-      calls.push(`first:${args.value}`);
-      return retryOk();
-    }),
-    second: retryHandler(sharedArgs, (_ctx, args) => {
-      calls.push(`second:${args.value}`);
-      return retryOk();
-    }),
+  tasks: {
+    throws: t.unit(),
+    fails: t.unit(),
+    succeeds: t.unit(),
+    first: sharedArgs,
+    second: sharedArgs,
   },
 });
+const retryFire = retry.retryReducer(schema({ ...retry.tables }), {
+  throws() {
+    throw new Error('x'.repeat(3000));
+  },
+  fails: () => retryFailed('unavailable'),
+  succeeds: () => retryOk(),
+  first(_ctx, args) {
+    calls.push(`first:${args.value}`);
+    return retryOk();
+  },
+  second(_ctx, args) {
+    calls.push(`second:${args.value}`);
+    return retryOk();
+  },
+});
+// The mock context implements only the retry tables, not a full reducer
+// context.
+const fire = (arg: Task) => retryFire(ctx as never, { arg });
 
-type Task = Parameters<typeof retry.reducers.retryFire>[1]['arg'];
 type History = ReturnType<typeof retry.views.retryHistoryAdmin>[number];
-type Ctx = Parameters<typeof retry.install>[0];
 
 const admin = Identity.zero();
 const stranger = new Identity(1n);
@@ -47,7 +62,7 @@ const byRanAt = () =>
     )
     .values();
 
-const ctx: Ctx = {
+const ctx: RetryCtx = {
   get sender() {
     return sender;
   },
@@ -136,8 +151,8 @@ retry.submit(ctx, {
   backoffSecs: 1,
 });
 sender = admin;
-retry.reducers.retryFire(ctx, { arg: tasks.get(1n)! });
-retry.reducers.retryFire(ctx, { arg: tasks.get(2n)! });
+fire(tasks.get(1n)!);
+fire(tasks.get(2n)!);
 assert.deepEqual(calls, ['first:payload', 'second:b']);
 
 // Failures back off exponentially, then give up.
@@ -153,23 +168,23 @@ const task: Task = {
 };
 history.clear();
 nextHistoryId = 0n;
-retry.reducers.retryFire(ctx, { arg: task });
+fire(task);
 assert.equal(history.get(1n)?.status.tag, 'Failed');
 assert.equal(history.get(1n)?.error?.length, 2048);
 const [second] = tasks.values();
 assert.equal(second.attempt, 1);
 assert.deepEqual(second.scheduledAt, ScheduleAt.time(now + 2_000_000n));
-retry.reducers.retryFire(ctx, { arg: second });
+fire(second);
 const third = [...tasks.values()][1];
 assert.equal(third.attempt, 2);
 assert.deepEqual(third.scheduledAt, ScheduleAt.time(now + 4_000_000n));
-retry.reducers.retryFire(ctx, { arg: third });
+fire(third);
 assert.equal(history.get(3n)?.status.tag, 'GaveUp');
 assert.equal(tasks.size, 2);
 
-retry.reducers.retryFire(ctx, { arg: { ...task, args: { tag: 'fails' } } });
+fire({ ...task, args: { tag: 'fails' } });
 assert.equal(history.get(4n)?.error, 'unavailable');
-retry.reducers.retryFire(ctx, { arg: { ...task, args: { tag: 'toString' } } });
+fire({ ...task, args: { tag: 'toString' } });
 assert.equal(history.get(5n)?.error, `${errors.unknownHandler}:toString`);
 assert.equal(tasks.size, 4);
 
@@ -182,9 +197,7 @@ assert.deepEqual(
 // History keeps the latest 1,000 attempts.
 for (let i = 0; i < 1000; i++) {
   now += 1n;
-  retry.reducers.retryFire(ctx, {
-    arg: { ...task, args: { tag: 'succeeds' } },
-  });
+  fire({ ...task, args: { tag: 'succeeds' } });
 }
 assert.equal(tasks.size, 4);
 assert.equal(history.size, 1000);

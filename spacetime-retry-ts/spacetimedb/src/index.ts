@@ -1,56 +1,15 @@
 import { schema, table, t } from 'spacetimedb/server';
-import {
-  client,
-  retryFailed,
-  retryHandler,
-  retryOk,
-  type RetryResult,
-} from '@spacetimedb/retry';
+import { client, retryFailed, retryOk } from '@spacetimedb/retry';
 
-interface FlakyTransaction {
-  timestamp: import('spacetimedb').Timestamp;
-  db: {
-    retryTask: {
-      name: {
-        filter(name: string): IterableIterator<{ attempt: number }>;
-      };
-    };
-    retryMetric: {
-      insert(row: {
-        id: bigint;
-        name: string;
-        value: number;
-        recordedAt: import('spacetimedb').Timestamp;
-      }): unknown;
-    };
-  };
-}
-
-const flakyArgs = t.object('FlakyArgs', {
-  taskName: t.string(),
-  succeedAtAttempt: t.u8(),
-  throwOnFailure: t.bool(),
+const retry = client({
+  tasks: {
+    flaky: t.object('FlakyArgs', {
+      taskName: t.string(),
+      succeedAtAttempt: t.u8(),
+      throwOnFailure: t.bool(),
+    }),
+  },
 });
-
-const flaky = retryHandler(flakyArgs, (ctx, args): RetryResult => {
-  const tx = ctx as FlakyTransaction;
-  const task = tx.db.retryTask.name.filter(args.taskName).next().value;
-  const attempt = Number(task?.attempt ?? 0);
-  if (attempt < args.succeedAtAttempt) {
-    const message = `simulated failure at attempt ${attempt}`;
-    if (args.throwOnFailure) throw new Error(message);
-    return retryFailed(message);
-  }
-  tx.db.retryMetric.insert({
-    id: 0n,
-    name: `flaky-success-${args.taskName}`,
-    value: attempt,
-    recordedAt: tx.timestamp,
-  });
-  return retryOk();
-});
-
-const retry = client({ handlers: { flaky } });
 const { retryTask, retryHistory, retryAdminIdentity } = retry.tables;
 
 const retryMetric = table(
@@ -87,11 +46,24 @@ export const init = spacetimedb.init(ctx => {
   retry.install(ctx);
 });
 
-export const retryFire = spacetimedb.reducer(
-  { onSchedule: retryTask },
-  { arg: retryTask.rowType },
-  retry.reducers.retryFire
-);
+export const retryFire = retry.retryReducer(spacetimedb, {
+  flaky(ctx, args) {
+    const task = ctx.db.retryTask.name.filter(args.taskName).next().value;
+    const attempt = task?.attempt ?? 0;
+    if (attempt < args.succeedAtAttempt) {
+      const message = `simulated failure at attempt ${attempt}`;
+      if (args.throwOnFailure) throw new Error(message);
+      return retryFailed(message);
+    }
+    ctx.db.retryMetric.insert({
+      id: 0n,
+      name: `flaky-success-${args.taskName}`,
+      value: attempt,
+      recordedAt: ctx.timestamp,
+    });
+    return retryOk();
+  },
+});
 
 export const submitRetryTask = spacetimedb.reducer(
   retry.reducers.submitRetryTask.params,

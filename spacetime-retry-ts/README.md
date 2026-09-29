@@ -23,23 +23,19 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-The task variants and handlers belong to the host, so `client()` runs when the
-module loads, before `schema()`. The example below is a module-definition
-skeleton: replace `sendReceipt` with an idempotent application handler.
+Declare each task's argument type in `client()` when the module loads, before
+`schema()`. Register the handlers with `retry.retryReducer()` after
+`schema()`, so each handler receives the host's typed reducer context and its
+task's typed arguments. The example below is a module-definition skeleton:
+replace `sendReceipt` with an idempotent application function.
 
 ```ts
 import { schema, t } from 'spacetimedb/server';
-import { client, retryFailed, retryHandler, retryOk } from '@spacetimedb/retry';
+import { client, retryFailed, retryOk } from '@spacetimedb/retry';
 
 const retry = client({
-  handlers: {
-    sendReceipt: retryHandler(
-      t.object('SendReceiptArgs', { orderId: t.u64() }),
-      (ctx, { orderId }) => {
-        const result = sendReceipt(ctx, orderId);
-        return result.sent ? retryOk() : retryFailed(result.error);
-      }
-    ),
+  tasks: {
+    sendReceipt: t.object('SendReceiptArgs', { orderId: t.u64() }),
   },
 });
 
@@ -48,11 +44,12 @@ export default db;
 
 export const init = db.init(ctx => retry.install(ctx));
 
-export const retryFire = db.reducer(
-  { onSchedule: retry.tables.retryTask },
-  { arg: retry.tables.retryTask.rowType },
-  retry.reducers.retryFire
-);
+export const retryFire = retry.retryReducer(db, {
+  sendReceipt(ctx, { orderId }) {
+    const result = sendReceipt(ctx, orderId);
+    return result.sent ? retryOk() : retryFailed(result.error);
+  },
+});
 
 export const submitRetryTask = db.reducer(
   retry.reducers.submitRetryTask.params,
@@ -60,9 +57,8 @@ export const submitRetryTask = db.reducer(
 );
 ```
 
-Register the scheduled reducer after `schema()` so it can reference the
-scheduled table. Handlers receive the host's reducer context as `unknown`
-because it is defined after the handlers.
+`retryReducer` requires a handler for every task. Registration fails to
+compile if the schema does not include `retry.tables`.
 
 Submit tagged arguments with an attempt cap and base backoff. The first attempt
 is scheduled immediately; subsequent delays are `backoffSecs * 2^attempt`.
@@ -78,8 +74,11 @@ view returns these attempts newest first.
 
 ## API
 
-- `client({ handlers })` returns `tables`, `install`, `submit`,
+- `client({ tasks })` returns `tables`, `retryReducer`, `install`, `submit`,
   `requireAdmin`, `views`, and `reducers`.
+- `retryReducer(schema, handlers)` registers the scheduled reducer that runs
+  attempts. Export its result. Each handler returns `retryOk()` or
+  `retryFailed(error)`.
 - `install(ctx)` seeds the publishing identity as the initial admin. Call it
   from the host's `init` reducer.
 - `submit(ctx, task)` validates a task and schedules its first attempt without
@@ -88,8 +87,6 @@ view returns these attempts newest first.
   `reducers.removeRetryAdminIdentity` require a Retry admin.
 - `views.retryTasksAdmin` and `views.retryHistoryAdmin` return up to 1,000
   pending tasks and attempts, newest first, to Retry admins.
-- `retryHandler(args, run)` pairs a SpacetimeDB type builder with a task
-  handler. The handler returns `retryOk()` or `retryFailed(error)`.
 - `errors` holds the `retry.*` codes thrown by these operations.
 
 The generated client can submit a task when the host exports
@@ -126,8 +123,8 @@ Operational screens can subscribe to the admin task and history views.
 
 Package entrypoints:
 
-- `@spacetimedb/retry` exports `client`, `errors`, and the handler and result
-  helpers.
+- `@spacetimedb/retry` exports `client`, `errors`, `retryOk`, `retryFailed`,
+  and the related types.
 - `@spacetimedb/retry/submodule` exports `client` and `errors`.
 
 ## Testing
