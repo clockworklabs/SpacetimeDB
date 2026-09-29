@@ -39,7 +39,11 @@ const retryFire = retry.retryReducer(schema({ ...retry.tables }), {
 });
 // The mock context implements only the retry tables, not a full reducer
 // context.
-const fire = (arg: Task) => retryFire(ctx as never, { arg });
+const fire = (arg: Task) => {
+  txInserted.clear();
+  retryFire(ctx as never, { arg });
+  txInserted.clear();
+};
 
 type History = ReturnType<typeof retry.views.retryHistoryAdmin>[number];
 
@@ -53,14 +57,20 @@ let nextTaskId = 0n;
 let sender = admin;
 let now = 10_000_000n;
 
-const byRanAt = () =>
-  [...history.values()]
-    .sort((a, b) =>
-      a.ranAt.microsSinceUnixEpoch === b.ranAt.microsSinceUnixEpoch
-        ? Number(a.id - b.id)
-        : Number(a.ranAt.microsSinceUnixEpoch - b.ranAt.microsSinceUnixEpoch)
-    )
-    .values();
+// History rows inserted by the current attempt. Like the datastore, an index
+// scan yields them before committed rows.
+const txInserted = new Set<bigint>();
+const byRanAt = () => {
+  const sorted = [...history.values()].sort((a, b) =>
+    a.ranAt.microsSinceUnixEpoch === b.ranAt.microsSinceUnixEpoch
+      ? Number(a.id - b.id)
+      : Number(a.ranAt.microsSinceUnixEpoch - b.ranAt.microsSinceUnixEpoch)
+  );
+  return [
+    ...sorted.filter(row => txInserted.has(row.id)),
+    ...sorted.filter(row => !txInserted.has(row.id)),
+  ].values();
+};
 
 const ctx: RetryCtx = {
   get sender() {
@@ -87,6 +97,7 @@ const ctx: RetryCtx = {
       insert(row: History) {
         const inserted = { ...row, id: ++nextHistoryId };
         history.set(inserted.id, inserted);
+        txInserted.add(inserted.id);
         return inserted;
       },
       delete: (row: History) => history.delete(row.id),
