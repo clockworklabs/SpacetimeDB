@@ -1,7 +1,7 @@
 {
   "name": "@spacetimedb/cron",
   "description": "Calendar and interval scheduling for SpacetimeDB TypeScript modules.",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -47,7 +47,7 @@
     "test": "pnpm run test:parser && pnpm run test:schedule && pnpm run test:validation && pnpm run test:registration",
     "test:parser": "tsx scripts/test-cron-parser.ts",
     "test:module:local": "node scripts/test-module-local.mjs",
-    "test:registration": "node --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-registration.ts",
+    "test:registration": "node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-registration.ts",
     "test:recovery": "node scripts/test-recovery.mjs",
     "test:schedule": "tsx scripts/test-schedule.ts",
     "test:validation": "tsx scripts/test-validation.ts",

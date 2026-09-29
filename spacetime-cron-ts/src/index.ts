@@ -1,21 +1,22 @@
-export { spacetimeCron } from './cron';
+export { client, cronTable } from './cron';
+export { errors } from './errors';
 export type {
-  CreateCronOpts,
-  CronApi,
   CronArgsBuilder,
-  CronCore,
-  CronCorePublicViews,
+  CronClient,
+  CronConfig,
+  CronFunctionExport,
+  CronHandler,
   CronInvocation,
   CronJobHandle,
   CronJobReference,
-  CronProcedureHandler,
-  CronReducerHandler,
+  CronProcedureCtx,
+  CronPublicViews,
   CronSchedule,
   CronSchema,
-  CronSdk,
   CronTableOpts,
   CronTableWithArgsOpts,
-  CronTimestamp,
+  CronTables,
+  CronTx,
   ScheduleOpts,
   ScheduleSpec,
 } from './types';

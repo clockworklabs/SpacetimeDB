@@ -5,6 +5,7 @@ import {
   nextFireAfter,
   parseCronExpression,
 } from './parser';
+import { errors } from './errors';
 import type { CronSchedule, ScheduleSpec } from './types';
 
 export const ONE_SECOND_MICROS = 1_000_000n;
@@ -36,7 +37,7 @@ export function normalizeJobName(name: string): string {
     !JOB_NAME_PATTERN.test(normalized)
   ) {
     throw new CronInputError(
-      'cron.invalid_job_name:use 1-48 lowercase snake_case characters'
+      `${errors.invalidJobName}:use 1-48 lowercase snake_case characters`
     );
   }
   return normalized;
@@ -46,7 +47,7 @@ export function normalizeHistoryCap(value: number | undefined): number {
   const cap = value ?? 5;
   if (!Number.isSafeInteger(cap) || cap < 0 || cap > MAX_HISTORY_CAP) {
     throw new CronInputError(
-      `cron.invalid_history_cap:must be an integer between 0 and ${MAX_HISTORY_CAP}`
+      `${errors.invalidHistoryCap}:must be an integer between 0 and ${MAX_HISTORY_CAP}`
     );
   }
   return cap;
@@ -62,7 +63,7 @@ export function normalizeReconcileEverySeconds(
     value > MAX_INTERVAL_SECONDS
   ) {
     throw new CronInputError(
-      `cron.invalid_reconcile_interval:seconds must be an integer between 1 and ${MAX_INTERVAL_SECONDS}`
+      `${errors.invalidReconcileInterval}:seconds must be an integer between 1 and ${MAX_INTERVAL_SECONDS}`
     );
   }
   return value;
@@ -76,7 +77,7 @@ export function normalizeMaxFailures(value: number | undefined): number {
     failures > MAX_FAILURES
   ) {
     throw new CronInputError(
-      `cron.invalid_max_failures:must be an integer between 0 and ${MAX_FAILURES}`
+      `${errors.invalidMaxFailures}:must be an integer between 0 and ${MAX_FAILURES}`
     );
   }
   return failures;
@@ -89,10 +90,10 @@ export function normalizeJobArgs(
 ): unknown {
   const supplied = Object.prototype.hasOwnProperty.call(opts ?? {}, 'args');
   if (hasArgs && !supplied) {
-    throw new CronInputError(`cron.missing_args:${jobName}`);
+    throw new CronInputError(`${errors.missingArgs}:${jobName}`);
   }
   if (!hasArgs && supplied) {
-    throw new CronInputError(`cron.unexpected_args:${jobName}`);
+    throw new CronInputError(`${errors.unexpectedArgs}:${jobName}`);
   }
   return hasArgs ? opts?.args : {};
 }
@@ -110,7 +111,7 @@ export function normalizeSchedule(
       seconds > MAX_INTERVAL_SECONDS
     ) {
       throw new CronInputError(
-        `cron.invalid_interval:seconds must be an integer between 1 and ${MAX_INTERVAL_SECONDS}`
+        `${errors.invalidInterval}:seconds must be an integer between 1 and ${MAX_INTERVAL_SECONDS}`
       );
     }
     return {
@@ -122,16 +123,16 @@ export function normalizeSchedule(
   const expression = spec.trim();
   const timezone = (opts?.timezone ?? 'UTC').trim() || 'UTC';
   if (expression.length === 0) {
-    throw new CronInputError('cron.invalid_expression:empty');
+    throw new CronInputError(`${errors.invalidExpression}:empty`);
   }
   if (expression.length > MAX_CRON_EXPRESSION_LENGTH) {
-    throw new CronInputError('cron.invalid_expression:too_long');
+    throw new CronInputError(`${errors.invalidExpression}:too_long`);
   }
   if (timezone.length > MAX_TIMEZONE_LENGTH) {
-    throw new CronInputError('cron.invalid_timezone:too_long');
+    throw new CronInputError(`${errors.invalidTimezone}:too_long`);
   }
   if (!isValidTimezone(timezone)) {
-    throw new CronInputError(`cron.invalid_timezone:${timezone}`);
+    throw new CronInputError(`${errors.invalidTimezone}:${timezone}`);
   }
 
   let firstAt: bigint | undefined;
@@ -143,10 +144,10 @@ export function normalizeSchedule(
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new CronInputError(`cron.invalid_expression:${detail}`);
+    throw new CronInputError(`${errors.invalidExpression}:${detail}`);
   }
   if (firstAt === undefined) {
-    throw new CronInputError('cron.unsatisfiable_expression');
+    throw new CronInputError(errors.unsatisfiableExpression);
   }
   return {
     schedule: { tag: 'cron', value: { expression, timezone } },

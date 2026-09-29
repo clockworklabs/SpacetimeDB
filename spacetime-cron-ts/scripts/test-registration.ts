@@ -1,151 +1,119 @@
 import * as assert from 'node:assert/strict';
-import { spacetimeCron } from '../src/cron';
-import type { CronSchema, CronSdk } from '../src/types';
+import { schema } from 'spacetimedb/server';
+import { client, cronTable, publicDisabledReason } from '../src/cron';
+import { errors } from '../src/errors';
 
-interface DynamicValue {
-  (...args: unknown[]): DynamicValue;
-  readonly [key: PropertyKey]: DynamicValue;
-}
-
-function dynamicValue(): DynamicValue {
-  const callable = () => dynamicValue();
-  return new Proxy(callable, {
-    apply: () => dynamicValue(),
-    get: () => dynamicValue(),
-  }) as DynamicValue;
-}
-
-function toCamelCase(value: string): string {
-  const converted = value
-    .replace(/[-_]+/g, '_')
-    .replace(/_([a-zA-Z0-9])/g, (_match, character: string) =>
-      character.toUpperCase()
-    );
-  return converted.charAt(0).toLowerCase() + converted.slice(1);
-}
-
-const registrationSchema = {
-  reducer: (..._args: unknown[]) => ({}),
-  procedure: (..._args: unknown[]) => ({}),
-  anonymousView: (..._args: unknown[]) => ({}),
-} as unknown as CronSchema;
-
-function createApi() {
-  return spacetimeCron({
-    table: dynamicValue(),
-    t: dynamicValue(),
-    toCamelCase,
-    ScheduleAt: dynamicValue(),
-    Timestamp: dynamicValue(),
-    SenderError: dynamicValue(),
-  } as unknown as CronSdk);
-}
+const expectCode = (code: string) => ({
+  message: new RegExp(`^${code}(:|$)`),
+});
 
 {
-  const owner = createApi();
-  const foreign = createApi().cronTable({ name: 'foreign' });
-  assert.throws(() => owner.createCron([foreign]), /cron\.foreign_job_handle/);
-}
-
-{
-  const api = createApi();
-  const job = api.cronTable({ name: 'duplicate' });
+  const job = cronTable({ name: 'owned' });
+  const other = cronTable({ name: 'other' });
+  const cron = client({ jobs: [job] });
+  client({ jobs: [other] });
   assert.throws(
-    () => api.createCron([job, job]),
-    /cron\.duplicate_job:duplicate/
+    () => cron.unschedule({} as never, other),
+    expectCode(errors.foreignJobHandle)
+  );
+  assert.throws(
+    () => client({ jobs: [{ jobName: 'plain' }] }),
+    expectCode(errors.foreignJobHandle)
+  );
+}
+
+assert.throws(() => client({ jobs: [] }), expectCode(errors.noJobs));
+
+{
+  const job = cronTable({ name: 'duplicate' });
+  assert.throws(() => client({ jobs: [job, job] }), {
+    message: /^cron\.duplicate_job:duplicate$/,
+  });
+}
+
+{
+  const job = cronTable({ name: 'wired_once' });
+  client({ jobs: [job] });
+  assert.throws(() => client({ jobs: [job] }), {
+    message: /^cron\.job_already_wired:wired_once$/,
+  });
+}
+
+{
+  const job = cronTable({ name: 'not_wired' });
+  const other = client({ jobs: [cronTable({ name: 'other_client' })] });
+  const spacetimedb = schema({ ...other.tables });
+  assert.throws(() => job.cronReducer(spacetimedb, () => {}), {
+    message: /^cron\.not_wired:not_wired:/,
+  });
+}
+
+{
+  const job = cronTable({ name: 'missing_handler' });
+  const cron = client({ jobs: [job], reconcileEverySeconds: 60 });
+  const spacetimedb = schema({ ...cron.tables });
+  assert.throws(() => cron.reconcileReducer(spacetimedb), {
+    message: /^cron\.missing_handlers:missing_handler$/,
+  });
+}
+
+{
+  const job = cronTable({ name: 'unscheduled_handler' });
+  const cron = client({ jobs: [job] });
+  assert.throws(() => cron.schedule({} as never, job, { everySeconds: 60 }), {
+    message: /^cron\.missing_handlers:unscheduled_handler$/,
+  });
+}
+
+{
+  const job = cronTable({ name: 'duplicate_handler' });
+  const cron = client({ jobs: [job] });
+  const spacetimedb = schema({ ...cron.tables });
+  job.cronReducer(spacetimedb, () => {});
+  assert.throws(() => job.cronProcedure(spacetimedb, () => {}), {
+    message: /^cron\.handler_already_registered:duplicate_handler:reducer$/,
+  });
+}
+
+{
+  const job = cronTable({ name: 'no_reconciler' });
+  const cron = client({ jobs: [job] });
+  const spacetimedb = schema({ ...cron.tables });
+  job.cronReducer(spacetimedb, () => {});
+  assert.throws(
+    () => cron.reconcileReducer(spacetimedb),
+    expectCode(errors.reconcileNotConfigured)
   );
 }
 
 {
-  const api = createApi();
-  const first = api.cronTable({ name: 'first' });
-  const second = api.cronTable({ name: 'second' });
-  api.createCron([first]);
+  const job = cronTable({ name: 'reconcile_once' });
+  const cron = client({ jobs: [job], reconcileEverySeconds: 60 });
+  const spacetimedb = schema({ ...cron.tables });
+  job.cronReducer(spacetimedb, () => {});
+  cron.reconcileReducer(spacetimedb);
   assert.throws(
-    () => api.createCron([second]),
-    /cron\.multiple_cores_not_supported/
+    () => cron.reconcileReducer(spacetimedb),
+    expectCode(errors.reconcileReducerAlreadyRegistered)
   );
 }
 
 {
-  const api = createApi();
-  const job = api.cronTable({ name: 'not_wired' });
+  const job = cronTable({ name: 'views_once' });
+  const cron = client({ jobs: [job] });
+  const spacetimedb = schema({ ...cron.tables });
+  cron.publicViews(spacetimedb);
   assert.throws(
-    () => job.cronReducer(registrationSchema, () => {}),
-    /cron\.not_wired:not_wired/
+    () => cron.publicViews(spacetimedb),
+    expectCode(errors.publicViewsAlreadyRegistered)
   );
 }
 
 {
-  const api = createApi();
-  const job = api.cronTable({ name: 'missing_handler' });
-  const cron = api.createCron([job], { reconcileEverySeconds: 60 });
-  assert.throws(
-    () => cron.reconcileReducer(registrationSchema),
-    /cron\.missing_handlers:missing_handler/
-  );
-}
-
-{
-  const api = createApi();
-  const job = api.cronTable({ name: 'unscheduled_handler' });
-  api.createCron([job]);
-  assert.throws(
-    () => api.schedule({}, job, { everySeconds: 60 }),
-    /cron\.missing_handlers:unscheduled_handler/
-  );
-}
-
-{
-  const api = createApi();
-  const job = api.cronTable({ name: 'duplicate_handler' });
-  api.createCron([job]);
-  job.cronReducer(registrationSchema, () => {});
-  assert.throws(
-    () => job.cronProcedure(registrationSchema, () => {}),
-    /cron\.handler_already_registered:duplicate_handler:reducer/
-  );
-}
-
-{
-  const api = createApi();
-  const job = api.cronTable({ name: 'no_reconciler' });
-  const cron = api.createCron([job]);
-  job.cronReducer(registrationSchema, () => {});
-  assert.throws(
-    () => cron.reconcileReducer(registrationSchema),
-    /cron\.reconcile_not_configured/
-  );
-}
-
-{
-  const api = createApi();
-  const job = api.cronTable({ name: 'reconcile_once' });
-  const cron = api.createCron([job], { reconcileEverySeconds: 60 });
-  job.cronReducer(registrationSchema, () => {});
-  cron.reconcileReducer(registrationSchema);
-  assert.throws(
-    () => cron.reconcileReducer(registrationSchema),
-    /cron\.reconcile_reducer_already_registered/
-  );
-}
-
-{
-  const api = createApi();
-  const job = api.cronTable({ name: 'views_once' });
-  const cron = api.createCron([job]);
-  cron.publicViews(registrationSchema);
-  assert.throws(
-    () => cron.publicViews(registrationSchema),
-    /cron\.public_views_already_registered/
-  );
-}
-
-{
-  const api = createApi();
-  const firstJob = api.cronTable({ name: 'first_job' });
-  const secondJob = api.cronTable({ name: 'second_job' });
-  const cron = api.createCron([firstJob, secondJob], {
+  const firstJob = cronTable({ name: 'first_job' });
+  const secondJob = cronTable({ name: 'second_job' });
+  const cron = client({
+    jobs: [firstJob, secondJob],
     reconcileEverySeconds: 60,
   });
   assert.deepEqual(Object.keys(cron.tables).sort(), [
@@ -157,62 +125,23 @@ function createApi() {
   ]);
 }
 
-{
-  let viewBody: ((ctx: unknown) => unknown) | undefined;
-  const schemaWithInspectableView = {
-    ...registrationSchema,
-    anonymousView: (...args: unknown[]) => {
-      viewBody = args[2] as (ctx: unknown) => unknown;
-      return {};
-    },
-  } as unknown as CronSchema;
-  const api = createApi();
-  const job = api.cronTable({ name: 'sanitized_view' });
-  const cron = api.createCron([job]);
-  cron.publicViews(schemaWithInspectableView);
-  assert.ok(viewBody);
-
-  const baseRow = {
-    name: 'sanitized_view',
-    schedule: { tag: 'every', value: { seconds: 60 } },
-    args: { tag: 'sanitized_view', value: undefined },
-    enabled: false,
-    maxFailures: 1,
-    consecutiveFailures: 1,
-    fireCount: 1n,
-    generation: 1n,
-    lastRunAt: undefined,
-    nextRunAt: undefined,
-  };
-  const privateReasons = [
+assert.deepEqual(
+  [
     'failed_1_consecutive_times:secret application failure',
     'failed_1_consecutive_times:lost_fire',
-    'cron.invalid_schedule_state:secret parser detail',
+    `${errors.invalidScheduleState}:secret parser detail`,
     'disabled_by_operator',
     'unrecognized private detail',
-  ];
-  const publicRows = viewBody({
-    db: {
-      cronJob: {
-        iter: () =>
-          privateReasons.map(disabledReason => ({
-            ...baseRow,
-            disabledReason,
-          })),
-      },
-    },
-  }) as Array<{ disabledReason: string }>;
+    undefined,
+  ].map(publicDisabledReason),
+  [
+    'failure_threshold_reached',
+    'lost_fire_threshold_reached',
+    'invalid_schedule_state',
+    'disabled_by_operator',
+    'disabled',
+    undefined,
+  ]
+);
 
-  assert.deepEqual(
-    publicRows.map(row => row.disabledReason),
-    [
-      'failure_threshold_reached',
-      'lost_fire_threshold_reached',
-      'invalid_schedule_state',
-      'disabled_by_operator',
-      'disabled',
-    ]
-  );
-}
-
-console.log('cron registration tests passed');
+process.stdout.write('cron registration tests passed\n');
