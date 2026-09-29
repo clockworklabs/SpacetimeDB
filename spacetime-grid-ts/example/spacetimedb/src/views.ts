@@ -3,6 +3,7 @@ import * as gridSubmodule from '@spacetimedb/grid/submodule';
 
 import {
   MatchStatus,
+  aiTurnLog,
   match,
   matchParticipant,
   playerUnit,
@@ -116,6 +117,20 @@ export const myMatchParticipants = spacetimedb.view(
     const out = [];
     for (const mid of matchIds) {
       for (const p of ctx.db.matchParticipant.matchId.filter(mid)) out.push(p);
+    }
+    return out;
+  }
+);
+
+export const myAiTurns = spacetimedb.view(
+  { name: 'my_ai_turns', public: true },
+  t.array(aiTurnLog.rowType),
+  ctx => {
+    const { matchIds } = myMatchAndGridIds(ctx);
+    const out = [];
+    for (const mid of matchIds) {
+      const row = ctx.db.aiTurnLog.matchId.find(mid);
+      if (row) out.push(row);
     }
     return out;
   }

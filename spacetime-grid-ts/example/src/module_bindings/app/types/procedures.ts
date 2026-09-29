@@ -6,26 +6,14 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
-import * as AiTakeTurnProcedure from "../ai_take_turn_procedure";
-import * as AttackUnitProcedure from "../attack_unit_procedure";
 import * as CreateMatchProcedure from "../create_match_procedure";
-import * as EndTurnProcedure from "../end_turn_procedure";
 import * as GetCellsInRangeProcedure from "../get_cells_in_range_procedure";
-import * as JoinMatchProcedure from "../join_match_procedure";
 import * as MoveUnitProcedure from "../move_unit_procedure";
 
-export type AiTakeTurnArgs = __Infer<typeof AiTakeTurnProcedure.params>;
-export type AiTakeTurnResult = __Infer<typeof AiTakeTurnProcedure.returnType>;
-export type AttackUnitArgs = __Infer<typeof AttackUnitProcedure.params>;
-export type AttackUnitResult = __Infer<typeof AttackUnitProcedure.returnType>;
 export type CreateMatchArgs = __Infer<typeof CreateMatchProcedure.params>;
 export type CreateMatchResult = __Infer<typeof CreateMatchProcedure.returnType>;
-export type EndTurnArgs = __Infer<typeof EndTurnProcedure.params>;
-export type EndTurnResult = __Infer<typeof EndTurnProcedure.returnType>;
 export type GetCellsInRangeArgs = __Infer<typeof GetCellsInRangeProcedure.params>;
 export type GetCellsInRangeResult = __Infer<typeof GetCellsInRangeProcedure.returnType>;
-export type JoinMatchArgs = __Infer<typeof JoinMatchProcedure.params>;
-export type JoinMatchResult = __Infer<typeof JoinMatchProcedure.returnType>;
 export type MoveUnitArgs = __Infer<typeof MoveUnitProcedure.params>;
 export type MoveUnitResult = __Infer<typeof MoveUnitProcedure.returnType>;
 

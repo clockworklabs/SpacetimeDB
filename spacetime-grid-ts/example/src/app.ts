@@ -8,8 +8,10 @@ import {
   DbConnection,
   tables,
   type ErrorContext,
+  type EventContext,
   type SubscriptionHandle,
 } from './module_bindings/app';
+import type { AiTurnLog } from './module_bindings/app/types';
 interface AuthUser {
   userId: string;
   email: string;
@@ -47,6 +49,7 @@ declare global {
         vsAi: boolean
       ) => Promise<{ matchId: bigint; gridId: bigint }>;
       joinMatch: (matchId: bigint) => Promise<void>;
+      leaveMatch: (matchId: bigint) => Promise<void>;
       setActiveMatch: (matchId: bigint | null) => void;
       moveUnit: (
         entityId: bigint,
@@ -281,6 +284,7 @@ function setActiveMatch(matchId: bigint | null): void {
       tables.myGridEntities.where(row => row.gridId.eq(m.gridId)),
       tables.myCellStates.where(row => row.gridId.eq(m.gridId)),
       tables.myGrids.where(row => row.id.eq(m.gridId)),
+      tables.myAiTurns.where(row => row.matchId.eq(matchId)),
     ]);
 }
 
@@ -301,6 +305,15 @@ function registerRowCallbacks(connection: DbConnection): void {
     t.onUpdate(() => emitGridState());
     t.onDelete(() => emitGridState());
   }
+  // The server writes one ai_turn_log row per AI turn. Animate new turns in
+  // the active match, not rows delivered by the initial subscription.
+  const onAiTurn = (ctx: EventContext, row: AiTurnLog) => {
+    if (ctx.event.tag !== 'SubscribeApplied' && row.matchId === activeMatchId) {
+      emitAppEvent('grid:ai-events', { events: row.events });
+    }
+  };
+  connection.db.myAiTurns.onInsert(onAiTurn);
+  connection.db.myAiTurns.onUpdate((ctx, _old, row) => onAiTurn(ctx, row));
 }
 
 function subscribeToTables(connection: DbConnection): SubscriptionHandle {
@@ -473,43 +486,17 @@ async function main(): Promise<void> {
   window.grid = {
     aiBotUserId: 'ai-bot-001',
     createMatch: async vsAi => requireConn().procedures.createMatch({ vsAi }),
-    joinMatch: async matchId => {
-      await requireConn().procedures.joinMatch({ matchId });
-    },
+    joinMatch: matchId => requireConn().reducers.joinMatch({ matchId }),
+    leaveMatch: matchId => requireConn().reducers.leaveMatch({ matchId }),
     setActiveMatch,
     moveUnit: async (entityId, toX, toY) => {
       const r = await requireConn().procedures.moveUnit({ entityId, toX, toY });
       return { path: r.path };
     },
-    attackUnit: async (attackerId, targetId) => {
-      await requireConn().procedures.attackUnit({ attackerId, targetId });
-    },
-    endTurn: async matchId => {
-      await requireConn().procedures.endTurn({ matchId });
-      // If the new active seat belongs to the built-in AI, prod it to play.
-      // Pause briefly so the player can see the turn flip in the UI.
-      const conn = currentConn;
-      const m = conn
-        ? [...conn.db.myMatches.iter()].find(x => x.matchId === matchId)
-        : undefined;
-      const seatUserId =
-        conn && m
-          ? [...conn.db.myMatchParticipants.iter()].find(
-              p => p.matchId === matchId && p.seatIdx === m.currentSeatIdx
-            )?.userId
-          : undefined;
-      if (m && m.status.tag === 'Active' && seatUserId === 'ai-bot-001') {
-        await new Promise(r => setTimeout(r, 400));
-        try {
-          const result = await requireConn().procedures.aiTakeTurn({ matchId });
-          // Hand the events to the renderer so it can sequence:
-          // move animation → pause → attack flash → target HP drop / death.
-          emitAppEvent('grid:ai-events', { events: result.events });
-        } catch (err) {
-          console.error('ai_take_turn failed:', err);
-        }
-      }
-    },
+    attackUnit: (attackerId, targetId) =>
+      requireConn().reducers.attackUnit({ attackerId, targetId }),
+    // The server schedules the AI's turn when its seat becomes active.
+    endTurn: matchId => requireConn().reducers.endTurn({ matchId }),
     getCellsInRange: async (gridId, originX, originY, maxCost) => {
       const r = await requireConn().procedures.getCellsInRange({
         gridId,

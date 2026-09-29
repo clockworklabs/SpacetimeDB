@@ -48,13 +48,6 @@ export const AiPathStep = __t.object("AiPathStep", {
 });
 export type AiPathStep = __Infer<typeof AiPathStep>;
 
-export const AiTakeTurnResult = __t.object("AiTakeTurnResult", {
-  get events() {
-    return __t.array(AiTurnEvent);
-  },
-});
-export type AiTakeTurnResult = __Infer<typeof AiTakeTurnResult>;
-
 export const AiTurnEvent = __t.object("AiTurnEvent", {
   entityId: __t.u64(),
   get movePath() {
@@ -65,6 +58,21 @@ export const AiTurnEvent = __t.object("AiTurnEvent", {
   },
 });
 export type AiTurnEvent = __Infer<typeof AiTurnEvent>;
+
+export const AiTurnLog = __t.object("AiTurnLog", {
+  matchId: __t.u64(),
+  get events() {
+    return __t.array(AiTurnEvent);
+  },
+});
+export type AiTurnLog = __Infer<typeof AiTurnLog>;
+
+export const AiTurnSchedule = __t.object("AiTurnSchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  matchId: __t.u64(),
+});
+export type AiTurnSchedule = __Infer<typeof AiTurnSchedule>;
 
 export const CellState = __t.object("CellState", {
   id: __t.u64(),
@@ -143,6 +151,13 @@ export const Match = __t.object("Match", {
 });
 export type Match = __Infer<typeof Match>;
 
+export const MatchExpirySchedule = __t.object("MatchExpirySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  matchId: __t.u64(),
+});
+export type MatchExpirySchedule = __Infer<typeof MatchExpirySchedule>;
+
 export const MatchParticipant = __t.object("MatchParticipant", {
   id: __t.u64(),
   matchId: __t.u64(),
@@ -173,6 +188,9 @@ export const MoveUnitResult = __t.object("MoveUnitResult", {
   },
 });
 export type MoveUnitResult = __Infer<typeof MoveUnitResult>;
+
+export const MyAiTurns = __t.object("MyAiTurns", {});
+export type MyAiTurns = __Infer<typeof MyAiTurns>;
 
 export const MyCellStates = __t.object("MyCellStates", {});
 export type MyCellStates = __Infer<typeof MyCellStates>;

@@ -10,11 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-import {
-  AiTakeTurnResult,
-} from "./types";
-
-export const params = {
+export default {
   matchId: __t.u64(),
 };
-export const returnType = AiTakeTurnResult
