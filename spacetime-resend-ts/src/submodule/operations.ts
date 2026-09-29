@@ -17,6 +17,7 @@ import { upsertEmail } from './email_writes';
 import { loadConfigOrThrowFromProcedure } from './config';
 import { adminVerdict, denyIfNotAdmin } from './auth';
 import { validateEmailInput } from './email-input';
+import { errors } from './errors';
 
 function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
@@ -176,12 +177,12 @@ export function sendEmailRequest(ctx: ProcedureModuleCtx, args: SendEmailArgs) {
     validateEmailInput(args);
   } catch (error) {
     throwSenderError(
-      error instanceof Error ? error.message : 'resend.send_email_invalid_input'
+      error instanceof Error ? error.message : errors.sendEmailInvalidInput
     );
   }
   const cfg = loadConfigOrThrowFromProcedure(ctx);
   const fromAddress = args.from ?? cfg.defaultFrom;
-  if (!fromAddress) throwSenderError('resend.send_email_missing_from');
+  if (!fromAddress) throwSenderError(errors.sendEmailMissingFrom);
 
   const jsonBody = buildSendEmailBody({
     from: fromAddress,
@@ -204,15 +205,14 @@ export function sendEmailRequest(ctx: ProcedureModuleCtx, args: SendEmailArgs) {
     jsonBody,
     idempotencyKey: args.idempotencyKey,
   });
-  ensureOkOrThrow(response, 'resend.send_email_failed');
+  ensureOkOrThrow(response, errors.sendEmailFailed);
 
   const parsed = safeJsonParse(response.body);
-  if (parsed === undefined)
-    throwSenderError('resend.send_email_invalid_response');
+  if (parsed === undefined) throwSenderError(errors.sendEmailInvalidResponse);
   const result = v.safeParse(vSendEmailResponse, parsed);
   if (!result.success) {
     throwSenderError(
-      `resend.send_email_invalid_response:${summarizeIssues(result.issues)}`
+      `${errors.sendEmailInvalidResponse}:${summarizeIssues(result.issues)}`
     );
   }
 
@@ -270,7 +270,7 @@ export const cancelEmail = spacetimedb.procedure(
       jsonBody: undefined,
       idempotencyKey: undefined,
     });
-    ensureOkOrThrow(response, 'resend.cancel_email_failed');
+    ensureOkOrThrow(response, errors.cancelEmailFailed);
 
     ctx.withTx(tx => {
       const existing = tx.db.resendEmail.resendId.find(args.resendId);

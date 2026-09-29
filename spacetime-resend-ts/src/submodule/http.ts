@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { type ProcedureModuleCtx, vResendErrorBody } from './schema';
 import { safeJsonParse, throwSenderError } from './validation';
 import { buildResendHttpRequest } from './request';
+import { errors } from './errors';
 
 export type ResendHttpResponse = {
   status: number;
@@ -23,7 +24,7 @@ export function callResend(
     request = buildResendHttpRequest(args);
   } catch (error) {
     throwSenderError(
-      error instanceof Error ? error.message : 'resend.request_invalid'
+      error instanceof Error ? error.message : errors.requestInvalid
     );
   }
   const response = ctx.http.fetch(request.url, {

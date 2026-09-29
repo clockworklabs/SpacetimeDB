@@ -6,6 +6,7 @@ import {
 } from './schema';
 import { adminVerdict, denyIfNotAdmin } from './auth';
 import { throwSenderError } from './validation';
+import { errors } from './errors';
 
 export type ResendConfig = {
   apiKey: string;
@@ -17,7 +18,7 @@ export function loadConfigOrThrow(ctx: WriteCtx): ResendConfig {
   const row = ctx.db.resendConfig.singleton.find(true);
   if (!row) {
     throwSenderError(
-      'resend.config_not_set: call set_resend_config(...) first'
+      `${errors.configNotSet}: call set_resend_config(...) first`
     );
   }
   return {

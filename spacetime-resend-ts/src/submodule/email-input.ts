@@ -1,3 +1,4 @@
+import { errors } from './errors';
 import { hasControlCharacter } from './text-validation';
 
 export type EmailInput = {
@@ -15,76 +16,91 @@ export type EmailInput = {
 };
 
 function fail(code: string): never {
-  throw new Error(`resend.${code}`);
+  throw new Error(code);
 }
 
 function validateAddressList(
   values: string[] | undefined,
-  field: string
+  tooMany: string,
+  invalidAddress: string
 ): void {
   if (values === undefined) return;
-  if (values.length > 100) fail(`${field}_too_many`);
+  if (values.length > 100) fail(tooMany);
   for (const value of values) {
     if (
       value.length === 0 ||
       value.length > 320 ||
       hasControlCharacter(value)
     ) {
-      fail(`${field}_invalid_address`);
+      fail(invalidAddress);
     }
   }
 }
 
 function validateJson(
   value: string | undefined,
-  field: string,
+  tooLarge: string,
+  invalidJson: string,
   maxLength: number
 ): void {
   if (value === undefined) return;
-  if (value.length > maxLength) fail(`${field}_too_large`);
+  if (value.length > maxLength) fail(tooLarge);
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
   } catch {
-    fail(`${field}_invalid_json`);
+    fail(invalidJson);
   }
-  if (parsed === null || typeof parsed !== 'object')
-    fail(`${field}_invalid_json`);
+  if (parsed === null || typeof parsed !== 'object') fail(invalidJson);
 }
 
 export function validateEmailInput(args: EmailInput): void {
-  if (args.to.length === 0) fail('send_email_no_recipients');
-  validateAddressList(args.to, 'to');
-  validateAddressList(args.cc, 'cc');
-  validateAddressList(args.bcc, 'bcc');
-  validateAddressList(args.replyTo, 'reply_to');
+  if (args.to.length === 0) fail(errors.sendEmailNoRecipients);
+  validateAddressList(args.to, errors.toTooMany, errors.toInvalidAddress);
+  validateAddressList(args.cc, errors.ccTooMany, errors.ccInvalidAddress);
+  validateAddressList(args.bcc, errors.bccTooMany, errors.bccInvalidAddress);
+  validateAddressList(
+    args.replyTo,
+    errors.replyToTooMany,
+    errors.replyToInvalidAddress
+  );
   const recipientCount =
     args.to.length + (args.cc?.length ?? 0) + (args.bcc?.length ?? 0);
-  if (recipientCount > 100) fail('send_email_too_many_recipients');
+  if (recipientCount > 100) fail(errors.sendEmailTooManyRecipients);
   if (
     args.from !== undefined &&
     (args.from.length === 0 ||
       args.from.length > 320 ||
       hasControlCharacter(args.from))
   )
-    fail('send_email_invalid_from');
+    fail(errors.sendEmailInvalidFrom);
   if (
     args.subject.length === 0 ||
     args.subject.length > 998 ||
     hasControlCharacter(args.subject)
   ) {
-    fail('send_email_invalid_subject');
+    fail(errors.sendEmailInvalidSubject);
   }
   if (args.html === undefined && args.text === undefined)
-    fail('send_email_missing_content');
-  if ((args.html?.length ?? 0) > 200_000) fail('send_email_html_too_large');
-  if ((args.text?.length ?? 0) > 200_000) fail('send_email_text_too_large');
-  validateJson(args.tagsJson, 'tags', 16_384);
-  validateJson(args.headersJson, 'headers', 16_384);
+    fail(errors.sendEmailMissingContent);
+  if ((args.html?.length ?? 0) > 200_000) fail(errors.sendEmailHtmlTooLarge);
+  if ((args.text?.length ?? 0) > 200_000) fail(errors.sendEmailTextTooLarge);
+  validateJson(
+    args.tagsJson,
+    errors.tagsTooLarge,
+    errors.tagsInvalidJson,
+    16_384
+  );
+  validateJson(
+    args.headersJson,
+    errors.headersTooLarge,
+    errors.headersInvalidJson,
+    16_384
+  );
   if (
     (args.scheduledAt?.length ?? 0) > 128 ||
     hasControlCharacter(args.scheduledAt ?? '')
   ) {
-    fail('send_email_invalid_schedule');
+    fail(errors.sendEmailInvalidSchedule);
   }
 }

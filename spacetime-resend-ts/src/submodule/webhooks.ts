@@ -28,6 +28,7 @@ import {
   throwSenderError,
 } from './validation';
 import { parseResendEventType } from './webhook-metadata';
+import { errors } from './errors';
 
 type ResendTags = EmailEvent['data']['tags'];
 
@@ -260,21 +261,21 @@ function applyResendWebhook(
     args.eventType.length === 0 ||
     args.eventType.length > MAX_WEBHOOK_METADATA_LENGTH
   ) {
-    return { status: 400, code: 'resend.webhook_metadata_invalid' };
+    return { status: 400, code: errors.webhookMetadataInvalid };
   }
   if (args.payloadJson.length > MAX_WEBHOOK_BODY_LENGTH) {
-    return { status: 413, code: 'resend.webhook_payload_too_large' };
+    return { status: 413, code: errors.webhookPayloadTooLarge };
   }
   if (
     (args.signatureHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH ||
     (args.timestampHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH
   ) {
-    return { status: 400, code: 'resend.webhook_header_too_large' };
+    return { status: 400, code: errors.webhookHeaderTooLarge };
   }
 
   const cfg = ctx.db.resendConfig.singleton.find(true);
   if (!cfg?.webhookSigningSecret) {
-    return { status: 500, code: 'resend.webhook_secret_not_configured' };
+    return { status: 500, code: errors.webhookSecretNotConfigured };
   }
   const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
   const sigOk = verifySvixSignature({
@@ -285,11 +286,11 @@ function applyResendWebhook(
     secret: cfg.webhookSigningSecret,
     nowSeconds,
   });
-  if (!sigOk) return { status: 401, code: 'resend.webhook_signature_mismatch' };
+  if (!sigOk) return { status: 401, code: errors.webhookSignatureMismatch };
 
   const signedEventType = parseResendEventType(args.payloadJson);
   if (!signedEventType || signedEventType !== args.eventType) {
-    return { status: 400, code: 'resend.webhook_metadata_mismatch' };
+    return { status: 400, code: errors.webhookMetadataMismatch };
   }
 
   const existing = ctx.db.resendWebhookEvent.eventId.find(args.eventId);
@@ -323,7 +324,7 @@ function applyResendWebhook(
   );
   return outcome.status.tag === 'Processed'
     ? { status: 200, code: 'ok' }
-    : { status: 400, code: 'resend.webhook_payload_invalid' };
+    : { status: 400, code: errors.webhookPayloadInvalid };
 }
 
 export const ingestResendWebhook = spacetimedb.reducer(
@@ -398,7 +399,7 @@ export const replayWebhookEvent = spacetimedb.reducer(
     // Administrators may run this operation over stored events.
     requireAdmin(ctx, ctx.sender);
     const event = ctx.db.resendWebhookEvent.eventId.find(eventId);
-    if (!event) throwSenderError(`resend.webhook_event_not_found:${eventId}`);
+    if (!event) throwSenderError(`${errors.webhookEventNotFound}:${eventId}`);
     const outcome = applyResendEvent(ctx, eventId, event.payloadJson);
     updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
   }
