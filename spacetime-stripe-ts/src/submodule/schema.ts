@@ -368,7 +368,10 @@ const vInvoiceObject = v.object({
     v.union([
       v.object({
         subscription_details: v.optional(
-          v.union([v.object({ subscription: vExpandableId }), v.null()])
+          v.union([
+            v.object({ subscription: vExpandableId, metadata: vMetadata }),
+            v.null(),
+          ])
         ),
       }),
       v.null(),

@@ -543,6 +543,34 @@ async function main() {
     throw new Error(`invoice did not fill payment row: ${earlyPayment}`);
   }
 
+  step('invoice before its subscription, expect user from invoice metadata');
+  await ingest(opts, {
+    eventId: 'evt_smoke_inv_nosub',
+    eventType: 'invoice.paid',
+    payload: {
+      id: 'evt_smoke_inv_nosub',
+      type: 'invoice.paid',
+      created: EVENT_CREATED,
+      data: {
+        object: {
+          id: 'in_smoke_nosub',
+          customer: 'cus_smoke_3',
+          parent: {
+            subscription_details: {
+              subscription: 'sub_smoke_later',
+              metadata: { userId: 'u_smoke_3' },
+            },
+          },
+          status: 'paid',
+        },
+      },
+    },
+  });
+  const noSubInvoice = await call(opts, 'list_invoices', [q('cus_smoke_3')]);
+  if (!noSubInvoice.includes('u_smoke_3')) {
+    throw new Error(`invoice metadata user not recorded: ${noSubInvoice}`);
+  }
+
   step('checkout.session.async_payment_failed, expect paymentStatus=failed');
   for (const [eventId, eventType] of [
     ['evt_smoke_chk_async', 'checkout.session.completed'],

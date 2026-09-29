@@ -531,8 +531,13 @@ function syncInvoiceEvent(
   const subscription = subscriptionId
     ? ctx.db.stripeSubscription.stripeSubscriptionId.find(subscriptionId)
     : undefined;
-  const orgId = existing?.orgId ?? subscription?.orgId;
-  const userId = existing?.userId ?? subscription?.userId;
+  // Invoice events can arrive before the subscription. From 2025-03-31.basil
+  // the invoice carries the subscription's metadata.
+  const subscriptionMetadata = obj.parent?.subscription_details?.metadata;
+  const orgId =
+    existing?.orgId ?? subscription?.orgId ?? subscriptionMetadata?.orgId;
+  const userId =
+    existing?.userId ?? subscription?.userId ?? subscriptionMetadata?.userId;
   // A payment event can arrive before its invoice; fill what it could not resolve.
   for (const payment of [...ctx.db.stripePayment.byInvoice.filter(obj.id)]) {
     const filled = {
