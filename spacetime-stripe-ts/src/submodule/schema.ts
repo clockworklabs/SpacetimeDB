@@ -178,6 +178,11 @@ export const stripePaymentTable = table(
         algorithm: 'btree',
         columns: ['stripeCustomerId'],
       },
+      {
+        accessor: 'byInvoice',
+        algorithm: 'btree',
+        columns: ['stripeInvoiceId'],
+      },
       { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
       { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
     ],

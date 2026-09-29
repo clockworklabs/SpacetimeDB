@@ -498,6 +498,51 @@ async function main() {
     throw new Error(`payment_intent.succeeded did not produce row: ${payment}`);
   }
 
+  step('invoice_payment.paid before its invoice, expect user filled in');
+  await ingest(opts, {
+    eventId: 'evt_smoke_inpay_early',
+    eventType: 'invoice_payment.paid',
+    payload: {
+      id: 'evt_smoke_inpay_early',
+      type: 'invoice_payment.paid',
+      created: EVENT_CREATED,
+      data: {
+        object: {
+          invoice: 'in_smoke_early',
+          amount_paid: 999,
+          currency: 'usd',
+          created: EVENT_CREATED,
+          payment: { payment_intent: 'pi_smoke_early' },
+        },
+      },
+    },
+  });
+  await ingest(opts, {
+    eventId: 'evt_smoke_inv_early',
+    eventType: 'invoice.paid',
+    payload: {
+      id: 'evt_smoke_inv_early',
+      type: 'invoice.paid',
+      created: EVENT_CREATED,
+      data: {
+        object: {
+          id: 'in_smoke_early',
+          customer: 'cus_smoke_1',
+          parent: { subscription_details: { subscription: 'sub_smoke_1' } },
+          status: 'paid',
+          amount_paid: 999,
+        },
+      },
+    },
+  });
+  const earlyPayment = await call(opts, 'get_payment', [q('pi_smoke_early')]);
+  if (
+    !earlyPayment.includes('u_smoke_1') ||
+    !earlyPayment.includes('cus_smoke_1')
+  ) {
+    throw new Error(`invoice did not fill payment row: ${earlyPayment}`);
+  }
+
   step('negative: replay unknown event_id, expect failure');
   const replayMissing = await expectCallFails(opts, 'replay_webhook_event', [
     q('evt_does_not_exist_xyz'),

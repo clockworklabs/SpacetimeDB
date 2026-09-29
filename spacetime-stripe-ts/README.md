@@ -247,6 +247,9 @@ shapes:
   Endpoints on `2025-03-31.basil` or later must subscribe to
   `invoice_payment.paid`. Exclude rows with `stripeInvoiceId` when totaling
   payments alongside `stripe_invoice`.
+- A payment row linked to an invoice takes its `stripeCustomerId`, `userId`,
+  and `orgId` from the invoice when the payment event carries none. When the
+  payment event arrives first, the next invoice event fills the empty fields.
 
 ## Webhook signature verification
 

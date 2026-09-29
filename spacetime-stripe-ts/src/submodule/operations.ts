@@ -531,6 +531,23 @@ function syncInvoiceEvent(
   const subscription = subscriptionId
     ? ctx.db.stripeSubscription.stripeSubscriptionId.find(subscriptionId)
     : undefined;
+  const orgId = existing?.orgId ?? subscription?.orgId;
+  const userId = existing?.userId ?? subscription?.userId;
+  // A payment event can arrive before its invoice; fill what it could not resolve.
+  for (const payment of [...ctx.db.stripePayment.byInvoice.filter(obj.id)]) {
+    const filled = {
+      ...payment,
+      stripeCustomerId: payment.stripeCustomerId ?? customerId,
+      orgId: payment.orgId ?? orgId,
+      userId: payment.userId ?? userId,
+    };
+    if (
+      filled.stripeCustomerId !== payment.stripeCustomerId ||
+      filled.orgId !== payment.orgId ||
+      filled.userId !== payment.userId
+    )
+      ctx.db.stripePayment.stripePaymentIntentId.update(filled);
+  }
   upsertInvoice(ctx, ctx.timestamp, {
     stripeInvoiceId: obj.id,
     stripeCustomerId: customerId,
@@ -541,8 +558,8 @@ function syncInvoiceEvent(
       toBigIntOrUndefined(obj.amount_paid) ?? existing?.amountPaid ?? 0n,
     createdUnix:
       toBigIntOrUndefined(obj.created) ?? existing?.createdUnix ?? 0n,
-    orgId: existing?.orgId ?? subscription?.orgId,
-    userId: existing?.userId ?? subscription?.userId,
+    orgId,
+    userId,
     eventCreatedUnix,
   });
   return WebhookEventStatus.Processed;
