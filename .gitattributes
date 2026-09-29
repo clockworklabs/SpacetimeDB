@@ -26,3 +26,4 @@ tools/stack-bench/qualification-evidence/ecommerce-l3-cookie-session-20260928/**
 
 # Preserve exact measured combined-control evidence bytes.
 tools/stack-bench/qualification-evidence/ecommerce-l3-combined-20260929/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/** -text -whitespace

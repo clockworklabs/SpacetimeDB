@@ -202,7 +202,70 @@
       "spacetime",
       "convex"
     ],
-    "evidence": [],
+    "evidence": [
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/convex-reference.json",
+        "sha256": "eacd052bd5ca9d6d225c74b0b8676ebee1dd4c583350104c98a07bdbbdd14ba1"
+      },
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/convex-mutation.json",
+        "sha256": "dea18447d6e52f41d70525238d297ac2f346a103b11fda8de88af35c18bb5331"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/mongodb-reference.json",
+        "sha256": "f022cf0337b4fb72d4cd54d6b67938673e168140c1239d2dade58687a6459d06"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/mongodb-mutation.json",
+        "sha256": "8bf44d7fa502e7c6c542998cf4eb95d519c360690149fab54267babbd87f6e07"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/postgres-reference.json",
+        "sha256": "4c5c994f64667d12325437a803854f95a1f9c5314842a3822a4d3b7e4f64647b"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/postgres-mutation.json",
+        "sha256": "0c59c6223421ab41f3d2c0b22aaf516463041cac6cb9576466a302edcfb4acc1"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/spacetime-reference.json",
+        "sha256": "d59670d1d0cb206474838b8a7082da122110814dd72842ac4602b75d8e2e4edc"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/spacetime-mutation.json",
+        "sha256": "bda380a9e6af7f16a04173b8568cd8bdb5a39c55c39a2e807ae0bde2e5c97e52"
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/null.json",
+        "sha256": "6b714b17f8715871c7452b0b4ca96640cb69217e874bd00de888199944be0c21"
+      }
+    ],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
       "contentSha256": "81293ef69fefd55d3744d5adcbb3e70bd06d339f7810e2017f2efe229616d3e0",
