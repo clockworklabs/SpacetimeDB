@@ -304,4 +304,4 @@ Credentialed sandbox coverage is described in **Integration testing** above.
 
 ## License
 
-[Apache-2.0](./LICENSE).
+Apache-2.0.
