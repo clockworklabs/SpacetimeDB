@@ -27,7 +27,7 @@ function dosDateTime(ms: number | undefined): { time: number; date: number } {
 }
 export interface ZipEntry {
   name: string;
-  bytes?: Uint8Array;
+  bytes?: Uint8Array<ArrayBuffer>;
   mtimeMs?: number;
   isDir?: boolean; // dir names must end with '/'
 }
@@ -41,9 +41,9 @@ export function buildZip(entries: ZipEntry[]): Blob {
       (v >>> 16) & 255,
       (v >>> 24) & 255,
     ]);
-  const chunks: Uint8Array[] = [];
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
   const central: Array<{
-    name: Uint8Array;
+    name: Uint8Array<ArrayBuffer>;
     crc: number;
     size: number;
     time: number;
@@ -119,8 +119,7 @@ export function buildZip(entries: ZipEntry[]): Blob {
     u32(cdStart),
     u16(0)
   );
-  // BlobPart requires an ArrayBuffer-backed byte view under TS 5.7.
-  return new Blob(chunks as unknown as BlobPart[], { type: 'application/zip' });
+  return new Blob(chunks, { type: 'application/zip' });
 }
 export function zipStamp(): string {
   const d = new Date();
