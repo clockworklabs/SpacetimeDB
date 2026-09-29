@@ -118,6 +118,12 @@ Holder requests send the raw key as `Authorization: Bearer <key>`. The Node serv
 forwards `/api/colony/*` to the module's HTTP router. Owner actions use native
 reducers authenticated by the owner's SpacetimeDB identity.
 
+Each mutation adds an event to the owner's feed. A request rejected because the
+key is revoked, expired, or missing the scope adds a rejected event. Requests
+with an unknown or wrong secret are recorded only in the submodule's usage rows,
+so they cannot fill the feed. Snapshot reads add no event. Allowed and rejected
+events are each capped at the newest 120 per colony.
+
 ## Key handling
 
 - The module stores a hash and safe key metadata. Raw keys are recoverable only

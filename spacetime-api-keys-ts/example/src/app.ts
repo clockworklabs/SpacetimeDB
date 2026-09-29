@@ -887,10 +887,7 @@ function queueBeat(): void {
 function startPresence(): void {
   sendBeat();
   if (keepaliveTimer) window.clearInterval(keepaliveTimer);
-  keepaliveTimer = window.setInterval(() => {
-    if (mode === 'holder') void reverify();
-    sendBeat();
-  }, KEEPALIVE_MS);
+  keepaliveTimer = window.setInterval(sendBeat, KEEPALIVE_MS);
   window.addEventListener('beforeunload', () => {
     try {
       requireConn().reducers.presenceLeave({ scope: colonyId });
@@ -898,15 +895,6 @@ function startPresence(): void {
       /* best-effort disconnect cleanup */
     }
   });
-}
-
-async function reverify(): Promise<void> {
-  if (mode !== 'holder') return;
-  try {
-    await colonyRequest('/api/colony/snapshot');
-  } catch {
-    /* colonyRequest already shows the overlay on revoke/expire */
-  }
 }
 
 function tileFromEvent(

@@ -191,7 +191,11 @@ function insertEvent(
     createdAt: tx.timestamp,
   });
 
-  const rows = [...tx.db.worldEvent.ownerSubject.filter(ownerSubject)];
+  // Allowed and rejected events are retained separately, so rejected attempts
+  // cannot push real activity out of the feed.
+  const rows = [...tx.db.worldEvent.ownerSubject.filter(ownerSubject)].filter(
+    row => row.allowed === allowed
+  );
   if (rows.length <= EVENT_RETAIN) return;
   rows.sort((a, b) => {
     const av = a.createdAt.microsSinceUnixEpoch as bigint;
@@ -425,25 +429,34 @@ function readWorldSnapshot(tx: Tx, ownerSubject: string) {
   };
 }
 
-function verifyRequest(
+// Denials that prove the caller holds the real key. Wrong or unknown secrets
+// are left out of the owner's feed, since anyone who has seen a key prefix
+// could otherwise fill it.
+const LOGGED_DENIALS = new Set(['revoked', 'expired', 'scope_denied']);
+
+function verifyKey(
   tx: Tx,
-  req: Request,
+  key: string | undefined,
   requiredScope: string,
   action: string
 ) {
-  const key = readBearer(req);
-  if (!key)
-    return { allowed: false, reason: 'missing_bearer', status: 401 } as const;
+  if (!key) return { allowed: false, reason: 'missing_bearer' } as const;
   const result = apiKeys.verifyApiKey(tx.as.apiKeys, {
     key,
     requiredScope,
     action,
   });
   if (!result.allowed) {
-    if (result.ownerSubject) {
+    // verifyApiKey does not return the owner of a denied key, so the feed
+    // owner is looked up from the key row by its prefix.
+    const ownerSubject =
+      LOGGED_DENIALS.has(result.reason) && result.prefix
+        ? tx.db.apiKeys.apiKey.prefix.find(result.prefix)?.ownerSubject
+        : undefined;
+    if (ownerSubject) {
       insertEvent(
         tx,
-        result.ownerSubject,
+        ownerSubject,
         result.prefix ?? '',
         action,
         false,
@@ -451,18 +464,15 @@ function verifyRequest(
         `${action} denied: ${result.reason}`
       );
     }
-    return {
-      allowed: false,
-      reason: result.reason,
-      status: result.reason === 'scope_denied' ? 403 : 401,
-    } as const;
+    return { allowed: false, reason: result.reason } as const;
   }
-  if (!result.ownerSubject) {
-    return { allowed: false, reason: 'missing_owner', status: 401 } as const;
+  if (!result.ownerSubject || !result.keyId || !result.prefix) {
+    return { allowed: false, reason: 'missing_owner' } as const;
   }
   return {
     allowed: true,
-    keyPrefix: result.prefix ?? '',
+    keyId: result.keyId,
+    keyPrefix: result.prefix,
     ownerSubject: result.ownerSubject,
     scopesJson: result.scopesJson ?? '[]',
   } as const;
@@ -482,16 +492,16 @@ function handleAuthedWorldAction(
 ): SyncResponse {
   try {
     const out = ctx.withTx((tx: Tx) => {
-      const auth = verifyRequest(tx, req, requiredScope, action);
-      if (!auth.allowed) return { error: auth.reason, status: auth.status };
+      const auth = verifyKey(tx, readBearer(req), requiredScope, action);
+      if (!auth.allowed) {
+        return {
+          error: auth.reason,
+          status: auth.reason === 'scope_denied' ? 403 : 401,
+        };
+      }
       return {
         ok: true,
-        value: fn(
-          tx,
-          auth.ownerSubject,
-          auth.keyPrefix,
-          auth.scopesJson ?? '[]'
-        ),
+        value: fn(tx, auth.ownerSubject, auth.keyPrefix, auth.scopesJson),
       };
     });
     if (out?.error) return errorResponse(out.error, out.status);
@@ -715,17 +725,8 @@ export const colonySnapshot = spacetimedb.httpHandler((ctx, req) =>
     req,
     SCOPE_VIEW,
     'snapshot',
-    (tx, ownerSubject, keyPrefix, scopesJson) => {
+    (tx, ownerSubject, _keyPrefix, scopesJson) => {
       const snapshot = readWorldSnapshot(tx, ownerSubject);
-      insertEvent(
-        tx,
-        ownerSubject,
-        keyPrefix,
-        'snapshot',
-        true,
-        'allowed',
-        'Snapshot read'
-      );
       // The holder learns which world it is (owner subject + grid id) and what
       // this key can do (scopes) in one call, so it can subscribe and enable
       // only the allowed tools.
