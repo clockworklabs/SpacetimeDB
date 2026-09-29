@@ -174,8 +174,8 @@ For a release smoke test, use two accounts and verify:
 Useful owner-only diagnostics:
 
 ```powershell
-spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT user_id, email FROM auth_user"
-spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT * FROM auth_connection_binding"
+spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT user_id, email FROM auth.auth_user"
+spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT * FROM auth.auth_connection_binding"
 ```
 
 ## Troubleshooting
