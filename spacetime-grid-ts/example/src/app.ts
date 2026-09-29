@@ -332,68 +332,62 @@ function subscribeToTables(connection: DbConnection): SubscriptionHandle {
     ]);
 }
 
+// Throws if connecting or auth.linkConnection fails. A failed link leaves the
+// user signed out with the error shown on the auth panel.
 async function bindSession(
   token: string,
   user: AuthUser,
   exp: number
 ): Promise<void> {
-  currentUser = user;
-  currentExp = exp;
-
   if (!serverCfg) serverCfg = await loadServerConfig();
 
   if (!currentConn) {
     emitConnectionState('connecting');
-    try {
-      const conn = await connect(
-        serverCfg.spacetimeUri,
-        serverCfg.databaseName
-      );
-      currentConn = conn;
-      reconnectAttempt = 0;
-      emitConnectionState('connected');
+    const conn = await connect(serverCfg.spacetimeUri, serverCfg.databaseName);
+    currentConn = conn;
+    reconnectAttempt = 0;
+    emitConnectionState('connected');
 
-      emitGridState();
+    registerRowCallbacks(conn);
 
-      registerRowCallbacks(conn);
+    globalSub = subscribeToTables(conn);
 
-      globalSub = subscribeToTables(conn);
-
-      // Re-open per-match subscription if a match was active before reconnect.
-      const previousActive = activeMatchId;
-      activeMatchId = null;
-      matchSub = null;
-      if (previousActive !== null) setActiveMatch(previousActive);
-    } catch (err) {
-      emitConnectionState(
-        'error',
-        err instanceof Error ? err.message : String(err)
-      );
-      return;
-    }
+    // Re-open per-match subscription if a match was active before reconnect.
+    const previousActive = activeMatchId;
+    activeMatchId = null;
+    matchSub = null;
+    if (previousActive !== null) setActiveMatch(previousActive);
   }
 
   try {
     await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
   } catch (err) {
-    console.warn('link_connection failed', err);
+    currentUser = null;
+    currentExp = undefined;
+    emitAuthState();
+    const reason = err instanceof Error ? err.message : String(err);
+    const message = `Could not link this connection to your session: ${reason}`;
+    authPanel.showMessage('error', message);
+    throw new Error(message);
   }
 
+  currentUser = user;
+  currentExp = exp;
   emitAuthState();
   emitGridState();
 }
 
-async function restoreSession(): Promise<boolean> {
+async function restoreSession(): Promise<void> {
+  let r: { user: AuthUser; token: string; sessionExpiresAt: number };
   try {
-    const r = await callJson<{
-      user: AuthUser;
-      token: string;
-      sessionExpiresAt: number;
-    }>('/auth/session/refresh', {});
-    await bindSession(r.token, r.user, r.sessionExpiresAt);
-    return true;
+    r = await callJson('/auth/session/refresh', {});
   } catch {
-    return false;
+    return; // No session to restore.
+  }
+  try {
+    await bindSession(r.token, r.user, r.sessionExpiresAt);
+  } catch (err) {
+    console.error('Session restore failed:', err);
   }
 }
 
