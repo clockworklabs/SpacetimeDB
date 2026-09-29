@@ -123,3 +123,10 @@ export const TokenLimit = __t.object("TokenLimit", {
 });
 export type TokenLimit = __Infer<typeof TokenLimit>;
 
+export const TokenUsage = __t.object("TokenUsage", {
+  owner: __t.string(),
+  tokens: __t.u64(),
+  windowEndsAt: __t.timestamp(),
+});
+export type TokenUsage = __Infer<typeof TokenUsage>;
+

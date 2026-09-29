@@ -12,7 +12,6 @@
     "@spacetimedb/agents": "workspace:*",
     "@spacetimedb/auth": "workspace:*",
     "@spacetimedb/files": "workspace:*",
-    "@spacetimedb/rate-limit": "workspace:*",
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {

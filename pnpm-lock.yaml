@@ -403,9 +403,6 @@ importers:
       '@spacetimedb/files':
         specifier: workspace:*
         version: link:../../../spacetime-files-ts
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:../../../spacetime-rate-limit-ts
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript
