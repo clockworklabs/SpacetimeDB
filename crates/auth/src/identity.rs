@@ -55,26 +55,47 @@ pub struct SpacetimeIdentityClaims {
     pub container: Option<ContainerClaim>,
 }
 
-/// The JWT claim naming the database container a cluster issued a token to.
-pub const CONTAINER_CLAIM: &str = "spacetimedb_container";
+/// The prefix of the audience (`aud`) naming the database container a cluster issued a token to.
+pub const CONTAINER_AUDIENCE_PREFIX: &str = "spacetimedb-container:";
 
 /// A token issued by this cluster to the container of `database`, for one `generation`.
 /// Its holder authenticates as `database`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContainerClaim {
     pub database: Identity,
     pub generation: u64,
 }
 
 impl ContainerClaim {
-    /// Parse the container claim from a token's remaining claims, if present.
-    pub fn from_extra(extra: &Option<HashMap<Box<str>, serde_json::Value>>) -> anyhow::Result<Option<Self>> {
-        let Some(value) = extra.as_ref().and_then(|extra| extra.get(CONTAINER_CLAIM)) else {
+    /// The audience that names this container: `spacetimedb-container:<database>:<generation>`.
+    pub fn audience(&self) -> String {
+        format!(
+            "{CONTAINER_AUDIENCE_PREFIX}{}:{}",
+            self.database.to_hex(),
+            self.generation
+        )
+    }
+
+    /// Whether any audience names a container.
+    pub fn in_audience(audience: &[Box<str>]) -> bool {
+        audience.iter().any(|aud| aud.starts_with(CONTAINER_AUDIENCE_PREFIX))
+    }
+
+    /// Parse the container named by a token's audience, if any. At most one may be named.
+    pub fn from_audience(audience: &[Box<str>]) -> anyhow::Result<Option<Self>> {
+        let mut containers = audience
+            .iter()
+            .filter_map(|aud| aud.strip_prefix(CONTAINER_AUDIENCE_PREFIX));
+        let Some(container) = containers.next() else {
             return Ok(None);
         };
-        serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|e| anyhow::anyhow!("invalid {CONTAINER_CLAIM} claim: {e}"))
+        anyhow::ensure!(containers.next().is_none(), "a token may name at most one container");
+        let invalid = || anyhow::anyhow!("invalid container audience `{CONTAINER_AUDIENCE_PREFIX}{container}`");
+        let (database, generation) = container.split_once(':').ok_or_else(invalid)?;
+        Ok(Some(Self {
+            database: Identity::from_hex(database).map_err(|_| invalid())?,
+            generation: generation.parse().map_err(|_| invalid())?,
+        }))
     }
 }
 
