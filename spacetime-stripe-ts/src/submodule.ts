@@ -1,58 +1,10 @@
 export { default } from './submodule/schema';
+export * from './submodule/api';
 export { install } from './submodule/install';
 export { errors } from './submodule/errors';
 export {
-  upsertCustomer,
-  upsertSubscription,
-  updatePaymentCustomer,
-  updateSubscriptionQuantityInternal,
-  ingestStripeWebhook,
-  replayWebhookEvent,
-  pruneWebhookEvents,
-} from './submodule/operations';
-export {
-  validateStripePrice,
-  getRemoteCheckoutSession,
-  getWebhookEventCount,
-  stripeApiRequest,
-  createCustomer,
-  createOrUpdateCustomer,
-  updateSubscriptionMetadata,
-  getOrCreateCustomer,
-  createCheckoutSession,
-  createCustomerPortalSession,
-  cancelSubscription,
-  reactivateSubscription,
-  updateSubscriptionQuantity,
+  getOrCreateUserCustomer,
+  createUserCheckoutSession,
+  stripeRequest,
 } from './submodule/operations/billing';
-export {
-  getCustomer,
-  getCustomerByEmail,
-  getCustomerByUserId,
-  getSubscription,
-  listSubscriptions,
-  listSubscriptionsWithCreationTime,
-  getSubscriptionByOrgId,
-  listSubscriptionsByOrgId,
-  listSubscriptionsByUserId,
-  getPayment,
-  listPayments,
-  listPaymentsByUserId,
-  listPaymentsByOrgId,
-  listInvoices,
-  listInvoicesByOrgId,
-  listInvoicesByUserId,
-  getCheckoutSession,
-  listCheckoutSessions,
-} from './submodule/operations/queries';
-export {
-  handleStripeWebhook,
-  stripeWebhookHandler,
-} from './submodule/operations/webhook';
-
-export {
-  setStripeConfig,
-  setStripeWebhookSigningSecret,
-  getStripeConfigStatus,
-} from './submodule/config';
-export { addAdminIdentity, removeAdminIdentity } from './submodule/auth';
+export { handleStripeWebhook } from './submodule/operations/webhook';

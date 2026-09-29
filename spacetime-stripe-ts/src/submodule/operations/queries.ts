@@ -7,7 +7,6 @@ import {
   stripeCheckoutSessionTable,
   stripePaymentTable,
   stripeInvoiceTable,
-  subscriptionWithCreationTime,
 } from '../schema';
 import { withAdminTx, takeRows } from '../operations';
 import { latestSubscription } from '../subscription-order';
@@ -22,17 +21,6 @@ export const getCustomer = spacetimedb.procedure(
         tx.db.stripeCustomer.stripeCustomerId.find(stripeCustomerId) ??
         undefined
     )
-);
-
-export const getCustomerByEmail = spacetimedb.procedure(
-  { email: t.string() },
-  t.option(stripeCustomerTable.rowType),
-  (ctx, { email }) =>
-    withAdminTx(ctx, tx => {
-      for (const customer of tx.db.stripeCustomer.byEmail.filter(email))
-        return customer;
-      return undefined;
-    })
 );
 
 export const getCustomerByUserId = spacetimedb.procedure(
@@ -65,25 +53,6 @@ export const listSubscriptions = spacetimedb.procedure(
   (ctx, { stripeCustomerId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripeSubscription.byCustomer.filter(stripeCustomerId))
-    )
-);
-
-export const listSubscriptionsWithCreationTime = spacetimedb.procedure(
-  { stripeCustomerId: t.string() },
-  t.array(subscriptionWithCreationTime),
-  (ctx, { stripeCustomerId }) =>
-    withAdminTx(ctx, tx =>
-      takeRows(
-        tx.db.stripeSubscription.byCustomerInsertedAt.filter([
-          stripeCustomerId,
-          new Range(),
-        ])
-      ).map(sub => ({
-        insertedAtMicros: sub.insertedAt.microsSinceUnixEpoch,
-        stripeSubscriptionId: sub.stripeSubscriptionId,
-        stripeCustomerId: sub.stripeCustomerId,
-        status: sub.status,
-      }))
     )
 );
 

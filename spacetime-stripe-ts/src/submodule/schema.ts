@@ -123,7 +123,6 @@ export const stripeCustomerTable = table(
     name: 'stripe_customer',
     public: false,
     indexes: [
-      { accessor: 'byEmail', algorithm: 'btree', columns: ['email'] },
       { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
     ],
   },
@@ -138,11 +137,6 @@ export const stripeSubscriptionTable = table(
         accessor: 'byCustomer',
         algorithm: 'btree',
         columns: ['stripeCustomerId'],
-      },
-      {
-        accessor: 'byCustomerInsertedAt',
-        algorithm: 'btree',
-        columns: ['stripeCustomerId', 'insertedAt'],
       },
       { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
       {
@@ -283,18 +277,9 @@ export type WriteCtx = ReducerModuleCtx | TransactionModuleCtx;
 export type JsonRecord = Record<string, unknown>;
 export type ModuleTimestamp = ReducerModuleCtx['timestamp'];
 
-export const stripeHttpResponse = t.object('StripeHttpResponse', {
-  status: t.u16(),
-  body: t.string(),
-});
-
 export const checkoutSessionResult = t.object('CheckoutSessionResult', {
   sessionId: t.string(),
   url: t.option(t.string()),
-});
-
-export const createCustomerResult = t.object('CreateCustomerResult', {
-  customerId: t.string(),
 });
 
 export const getOrCreateCustomerResult = t.object('GetOrCreateCustomerResult', {
@@ -305,16 +290,6 @@ export const getOrCreateCustomerResult = t.object('GetOrCreateCustomerResult', {
 export const portalSessionResult = t.object('PortalSessionResult', {
   url: t.string(),
 });
-
-export const subscriptionWithCreationTime = t.object(
-  'SubscriptionWithCreationTime',
-  {
-    insertedAtMicros: t.i64(),
-    stripeSubscriptionId: t.string(),
-    stripeCustomerId: t.string(),
-    status: t.string(),
-  }
-);
 
 export { Range, SenderError, t };
 

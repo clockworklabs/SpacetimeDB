@@ -24,61 +24,76 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Register Stripe in the application schema and initialize its private tables. The
-host must place authorization in front of customer, Checkout, portal, and
-billing procedures and expose only caller-scoped billing views:
+Register Stripe in the application schema, initialize it, and route Stripe
+webhooks to it:
 
 ```ts
-import { schema } from 'spacetimedb/server';
+import { Router, SenderError, schema, t } from 'spacetimedb/server';
 import * as stripe from '@spacetimedb/stripe/submodule';
 
-const spacetimedb = schema({ stripe });
+const spacetimedb = schema({ stripe, storeProduct });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
   stripe.install(ctx.as.stripe);
 });
+
+export const stripeWebhook = spacetimedb.httpHandler((ctx, req) =>
+  stripe.handleStripeWebhook(ctx.as.stripe, req)
+);
+export const router = spacetimedb.httpRouter(
+  new Router().post('/stripe/webhook', stripeWebhook)
+);
 ```
 
-Configure credentials through an administrator-only startup path. See the
-[Premium Store host module](./example/spacetimedb/)
-for service-identity delegation, safe return URLs, catalog synchronization, and
-webhook routing.
-
-Expose a product-facing Checkout procedure that resolves the application user,
-validates every price against a server-owned catalog, fixes the allowed return
-URL origins, and delegates to Stripe:
+The submodule's procedures are admin-only. Signed-in users reach Stripe through
+host procedures that call the host helpers with `ctx.as.stripe`. The helpers do
+no authorization, so the host procedure resolves the user from `ctx.sender`,
+takes prices from a server-owned catalog, and fixes the return URLs:
 
 ```ts
+const APP_ORIGIN = 'https://store.example.com';
+
 export const createStoreCheckoutSession = spacetimedb.procedure(
-  storeCheckoutParams,
-  storeCheckoutResult,
-  (ctx, args) => {
-    const checkout = authorizeStoreCheckout(ctx, args);
-    return stripe.createCheckoutSession(ctx.as.stripe, checkout);
+  { productId: t.string() },
+  t.object('StoreCheckoutSession', { url: t.option(t.string()) }),
+  (ctx, { productId }) => {
+    const product = ctx.withTx(tx =>
+      tx.db.storeProduct.productId.find(productId)
+    );
+    if (!product?.active || !product.stripePriceId) {
+      throw new SenderError('store.product_unavailable');
+    }
+    const session = stripe.createUserCheckoutSession(ctx.as.stripe, {
+      userId: ctx.sender.toHexString(),
+      items: [{ priceId: product.stripePriceId, quantity: 1n }],
+      mode: 'payment',
+      successUrl: `${APP_ORIGIN}/?checkout=success`,
+      cancelUrl: `${APP_ORIGIN}/?checkout=cancelled`,
+    });
+    return { url: session.url };
   }
 );
 ```
 
-`storeCheckoutParams`, `storeCheckoutResult`, and `authorizeStoreCheckout`
-belong to the host application. The generated client calls that wrapper and
-navigates only to the returned Stripe URL:
+`createUserCheckoutSession` reuses or creates the user's Stripe customer and
+writes `userId` into the session, subscription, and PaymentIntent metadata, so
+the mirrored rows can be filtered by user. The client calls the host procedure
+and navigates to the returned URL:
 
 ```ts
-const checkout = await conn.procedures.createStoreCheckoutSession({
-  items: [{ priceId, quantity: 1n }],
-  customerId,
-  mode: 'payment',
-  successUrl: `${location.origin}/?checkout=success`,
-  cancelUrl: `${location.origin}/?checkout=cancelled`,
-  metadataJson: JSON.stringify({ cartId }),
-  subscriptionMetadataJson: undefined,
-  paymentIntentMetadataJson: undefined,
-});
-
-if (!checkout.url) throw new Error('stripe.checkout_url_missing');
-location.assign(checkout.url);
+const { url } = await conn.procedures.createStoreCheckoutSession({ productId });
+if (url) location.assign(url);
 ```
+
+Fulfill from webhook state, not from the redirect. See
+[Checkout fulfillment](#checkout-fulfillment).
+
+Administrators are the identities in `stripe_admin_identity`. `install` seeds
+the publishing identity; `stripe.add_admin_identity` adds more. Host procedures
+that need an administrator check read the same table through
+`ctx.db.stripe.stripeAdminIdentity` instead of keeping a second list. The
+[Premium Store example](./example/) shows a complete host module.
 
 ### Standalone configuration
 
@@ -101,10 +116,8 @@ Verify:
 spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status '{}'
 ```
 
-The Stripe secret stays in private module state. Every provider-backed,
-billing-state, configuration, and query procedure is admin-gated. A host module
-can perform application-specific authorization and then call the helpers through
-its submodule-scoped `ctx.as.stripe` context.
+The Stripe secret stays in private module state. Every procedure other than
+`ingest_stripe_webhook` is admin-gated.
 
 ## Private tables
 
@@ -131,18 +144,29 @@ trusted application context.
 
 ## API
 
-**Setup**
+**Host helpers** (`@spacetimedb/stripe/submodule`, plain functions that do no
+authorization; pass `ctx.as.stripe`)
+
+- `install(ctx)`: call from the host `init` reducer
+- `createUserCheckoutSession(ctx, { userId, email?, name?, items, mode, successUrl, cancelUrl, metadata? })`
+- `getOrCreateUserCustomer(ctx, { userId, email?, name? })`: matches customers
+  by `userId` only
+- `stripeRequest(ctx, { method, path, formBody?, idempotencyKey? })`: request to
+  a relative `/v1/` path on `api.stripe.com`; accepted methods are `GET`,
+  `POST`, and `DELETE`
+- `handleStripeWebhook(ctx, req)`: HTTP webhook handler for a host route
+- `errors`: error code constants thrown by the submodule
+
+**Setup** (admin)
 
 - `set_stripe_config(secretKey, stripeVersion, webhookSigningSecret)`
 - `set_stripe_webhook_signing_secret(webhookSigningSecret)`: rotates only the webhook secret
 - `get_stripe_config_status()`: returns `{ isConfigured, hasWebhookSecret, secretKeyLength, ... }`
 - `add_admin_identity(identity)` / `remove_admin_identity(identity)`
 
-**Customer / billing flows**
+**Billing** (admin)
 
-- `create_customer({ email, name, metadataJson, idempotencyKey })`
-- `create_or_update_customer({ stripeCustomerId, email, name, metadataJson })`
-- `get_or_create_customer({ userId, email, name})`
+- `get_or_create_customer({ userId, email, name })`
 - `create_checkout_session({ items, mode, successUrl, cancelUrl, customerId, ...metadata })`
 - `validate_stripe_price({ priceId })`: confirms a price exists and is active
 - `get_remote_checkout_session({ sessionId })`: fetch session state from Stripe
@@ -151,24 +175,19 @@ trusted application context.
 - `reactivate_subscription({ stripeSubscriptionId })`
 - `update_subscription_quantity({ stripeSubscriptionId, quantity })`
 - `update_subscription_metadata({ stripeSubscriptionId, metadataJson, orgId, userId })`
-- `stripe_api_request({ method, path, formBody, idempotencyKey })`: admin-gated
-  request to a relative `/v1/` path on `api.stripe.com`; accepted methods are
-  `GET`, `POST`, and `DELETE`
 
-**Webhook ingest / replay**
+**Webhooks**
 
-- `ingest_stripe_webhook(eventId, eventType, livemode, payloadJson, signatureHeader)`: idempotent
-- `replay_webhook_event(eventId)`: re-applies a stored event
-- `get_webhook_event_count()`: observability
-- `stripe_webhook_handler` and `handleStripeWebhook` support direct host HTTP
-  routing.
-- `upsert_customer`, `upsert_subscription`, `update_payment_customer`, and
-  `update_subscription_quantity_internal` apply trusted synchronization data.
+- `ingest_stripe_webhook(eventId, eventType, livemode, payloadJson, signatureHeader)`:
+  signature-verified relay ingest, idempotent
+- `replay_webhook_event(eventId)` (admin): re-applies a stored event
+- `prune_webhook_events`: scheduled retention sweep
+- `get_webhook_event_count()` (admin): observability
 
-**Admin queries**
+**Queries** (admin)
 
-- `get_customer`, `get_customer_by_email`, `get_customer_by_user_id`
-- `get_subscription`, `list_subscriptions`, `list_subscriptions_with_creation_time`, `get_subscription_by_org_id`, `list_subscriptions_by_org_id`, `list_subscriptions_by_user_id`
+- `get_customer`, `get_customer_by_user_id`
+- `get_subscription`, `list_subscriptions`, `get_subscription_by_org_id`, `list_subscriptions_by_org_id`, `list_subscriptions_by_user_id`
 - `get_payment`, `list_payments`, `list_payments_by_org_id`, `list_payments_by_user_id`
 - `list_invoices`, `list_invoices_by_org_id`, `list_invoices_by_user_id`
 - `get_checkout_session`, `list_checkout_sessions`
@@ -178,9 +197,10 @@ views in the host module when a UI needs a larger history.
 
 Package entrypoints:
 
-- `@spacetimedb/stripe` can run as a standalone billing database.
-- `@spacetimedb/stripe/submodule` supplies submodule billing, webhook,
-  configuration, and query operations.
+- `@spacetimedb/stripe` publishes the procedures and reducers above as a
+  standalone billing database with a `/stripe/webhook` HTTP route.
+- `@spacetimedb/stripe/submodule` registers the same procedures and reducers
+  under the host's namespace and adds the host helpers.
 
 ## Webhook events handled
 

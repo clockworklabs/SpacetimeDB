@@ -10,7 +10,6 @@ import { throwSenderError } from './validation';
 // Admin gate. Fresh publishes seed the owner via init. Public submodule calls
 // never bootstrap admin state from "first caller wins".
 type Sender = WriteCtx['sender'];
-type ModuleTimestamp = WriteCtx['timestamp'];
 
 export type AdminVerdict = 'admin' | 'denied';
 
@@ -28,19 +27,6 @@ export function denyIfNotAdmin(verdict: AdminVerdict): void {
 
 export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
   if (!isAdmin(ctx, sender)) throwSenderError(errors.notAuthorized);
-}
-
-// For owner-gated repair/setup code only. Do not call from a public bootstrap path.
-export function seedAdmin(
-  ctx: WriteCtx,
-  sender: Sender,
-  timestamp: ModuleTimestamp
-) {
-  if (ctx.db.stripeAdminIdentity.identity.find(sender) != null) return;
-  ctx.db.stripeAdminIdentity.insert({
-    identity: sender,
-    addedAtMicros: timestamp.microsSinceUnixEpoch,
-  });
 }
 
 export const addAdminIdentity = spacetimedb.procedure(

@@ -261,11 +261,8 @@ async function main() {
   step('negative: anonymous callers cannot read or mutate Stripe state');
   for (const [name, args] of [
     ['get_customer', [q('cus_smoke_1')]],
-    ['create_customer', ['null', 'null', 'null', 'null']],
-    [
-      'upsert_customer',
-      [q('cus_anonymous'), 'null', 'null', 'null', 'null', 'null'],
-    ],
+    ['get_or_create_customer', [q('u_anonymous'), 'null', 'null']],
+    ['replay_webhook_event', [q('evt_smoke_cust_1')]],
   ] as const) {
     const unauthorized = await expectCallFails(opts, name, [...args], true);
     if (!unauthorized.toLowerCase().includes('not_authorized')) {

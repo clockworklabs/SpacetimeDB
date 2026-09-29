@@ -2,9 +2,7 @@ import * as v from 'valibot';
 import {
   t,
   spacetimedb,
-  stripeHttpResponse,
   checkoutSessionResult,
-  createCustomerResult,
   getOrCreateCustomerResult,
   portalSessionResult,
   vStripeCheckoutSessionResponse,
@@ -13,7 +11,6 @@ import {
   type JsonRecord,
 } from '../schema';
 import { loadConfigOrThrowFromProcedure } from '../config';
-import { adminVerdict, denyIfNotAdmin } from '../auth';
 import {
   safeJsonParse,
   summarizeIssues,
@@ -35,7 +32,6 @@ import {
   deriveCancelAtPeriodEnd,
   formPairsToBody,
   metadataJsonToFormPairs,
-  upsertCustomerRow,
   upsertSubscriptionRow,
   unixSeconds,
   callStripe,
@@ -176,78 +172,6 @@ export const getWebhookEventCount = spacetimedb.procedure({}, t.i64(), ctx =>
   withAdminTx(ctx, tx => BigInt(tx.db.stripeWebhookEvent.count()))
 );
 
-export const stripeApiRequest = spacetimedb.procedure(
-  {
-    method: t.string(),
-    path: t.string(),
-    formBody: t.option(t.string()),
-    idempotencyKey: t.option(t.string()),
-  },
-  stripeHttpResponse,
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    return callStripe(ctx, {
-      method: args.method,
-      path: args.path,
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      formBody: args.formBody,
-      idempotencyKey: args.idempotencyKey,
-    });
-  }
-);
-
-export const createCustomer = spacetimedb.procedure(
-  {
-    email: t.option(t.string()),
-    name: t.option(t.string()),
-    metadataJson: t.option(t.string()),
-    idempotencyKey: t.option(t.string()),
-  },
-  createCustomerResult,
-  (ctx, args) => {
-    requireProcedureAdmin(ctx);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const customerId = createCustomerInStripeAndSync(ctx, {
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      email: args.email,
-      name: args.name,
-      metadataJson: args.metadataJson,
-      idempotencyKey: args.idempotencyKey,
-    });
-    return { customerId };
-  }
-);
-
-export const createOrUpdateCustomer = spacetimedb.procedure(
-  {
-    stripeCustomerId: t.string(),
-    email: t.option(t.string()),
-    name: t.option(t.string()),
-    metadataJson: t.option(t.string()),
-  },
-  t.string(),
-  (ctx, args) => {
-    requireProcedureAdmin(ctx);
-    const details = coerceMetadataFromJson(args.metadataJson);
-    ctx.withTx(tx => {
-      upsertCustomerRow(tx, ctx.timestamp, {
-        stripeCustomerId: args.stripeCustomerId,
-        appUserId: undefined,
-        email: args.email,
-        name: args.name,
-        metadataJson: details.metadataJson,
-        userId: details.userId,
-        eventCreatedUnix: unixSeconds(ctx.timestamp),
-      });
-    });
-    return args.stripeCustomerId;
-  }
-);
-
 export const updateSubscriptionMetadata = spacetimedb.procedure(
   {
     stripeSubscriptionId: t.string(),
@@ -284,6 +208,189 @@ export const updateSubscriptionMetadata = spacetimedb.procedure(
     return {};
   }
 );
+type CheckoutSessionArgs = {
+  items: Array<{ priceId: string; quantity: bigint }>;
+  customerId?: string;
+  mode: string;
+  successUrl: string;
+  cancelUrl: string;
+  metadataJson?: string;
+  subscriptionMetadataJson?: string;
+  paymentIntentMetadataJson?: string;
+};
+
+export type CheckoutSessionResult = {
+  sessionId: string;
+  url: string | undefined;
+};
+
+function findUserCustomerId(
+  ctx: ProcedureModuleCtx,
+  userId: string
+): string | undefined {
+  return ctx.withTx(tx => {
+    for (const customer of tx.db.stripeCustomer.byUserId.filter(userId))
+      return customer.stripeCustomerId;
+    for (const sub of tx.db.stripeSubscription.byUserId.filter(userId))
+      return sub.stripeCustomerId;
+    for (const payment of tx.db.stripePayment.byUserId.filter(userId)) {
+      if (payment.stripeCustomerId) return payment.stripeCustomerId;
+    }
+    return undefined;
+  });
+}
+
+/**
+ * Returns the Stripe customer for an application user, creating it with
+ * `metadata.userId` when none exists. Customers are matched by `userId` only.
+ * Performs no authorization: the host resolves `userId` from trusted context.
+ */
+export function getOrCreateUserCustomer(
+  ctx: ProcedureModuleCtx,
+  args: { userId: string; email?: string; name?: string }
+): { customerId: string; isNew: boolean } {
+  const existing = findUserCustomerId(ctx, args.userId);
+  if (existing) return { customerId: existing, isNew: false };
+
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const customerId = createCustomerInStripeAndSync(ctx, {
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    email: args.email,
+    name: args.name,
+    metadataJson: JSON.stringify({ userId: args.userId }),
+    idempotencyKey: args.userId,
+  });
+  return { customerId, isNew: true };
+}
+
+// Stripe enforces one mode per session; all items must share mode.
+function createCheckoutSessionInStripe(
+  ctx: ProcedureModuleCtx,
+  args: CheckoutSessionArgs
+): CheckoutSessionResult {
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  if (args.items.length === 0) {
+    throwSenderError(errors.checkoutSessionRequiresItems);
+  }
+  const formPairs: Array<[string, string | undefined]> = [
+    ['mode', args.mode],
+    ['success_url', args.successUrl],
+    ['cancel_url', args.cancelUrl],
+    ['customer', args.customerId],
+  ];
+  args.items.forEach((item, i) => {
+    formPairs.push([`line_items[${i}][price]`, item.priceId]);
+    formPairs.push([`line_items[${i}][quantity]`, String(item.quantity)]);
+  });
+  formPairs.push(...metadataJsonToFormPairs('metadata', args.metadataJson));
+  if (args.mode === 'subscription') {
+    formPairs.push(
+      ...metadataJsonToFormPairs(
+        'subscription_data[metadata]',
+        args.subscriptionMetadataJson
+      )
+    );
+  }
+  if (args.mode === 'payment') {
+    formPairs.push(
+      ...metadataJsonToFormPairs(
+        'payment_intent_data[metadata]',
+        args.paymentIntentMetadataJson
+      )
+    );
+  }
+
+  const response = callStripe(ctx, {
+    method: 'POST',
+    path: '/v1/checkout/sessions',
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    idempotencyKey: undefined,
+    formBody: formPairsToBody(formPairs),
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throwSenderError(
+      `${errors.checkoutSessionFailed}:${response.status}${stripeErrorSuffix(response.body)}`
+    );
+  }
+
+  const sessionResult = v.safeParse(
+    vStripeCheckoutSessionResponse,
+    safeJsonParse(response.body)
+  );
+  if (!sessionResult.success) {
+    throwSenderError(
+      `${errors.checkoutSessionInvalidResponse}:${summarizeIssues(sessionResult.issues)}`
+    );
+  }
+  return {
+    sessionId: sessionResult.output.id,
+    url: sessionResult.output.url ?? undefined,
+  };
+}
+
+/**
+ * Creates a Checkout session for an application user's own Stripe customer.
+ * `userId` is written to the session metadata and to the resulting
+ * subscription or PaymentIntent metadata, so webhook rows carry it. Performs
+ * no authorization: the host resolves `userId` from trusted context and
+ * supplies server-owned price IDs and return URLs.
+ */
+export function createUserCheckoutSession(
+  ctx: ProcedureModuleCtx,
+  args: {
+    userId: string;
+    email?: string;
+    name?: string;
+    items: Array<{ priceId: string; quantity: bigint }>;
+    mode: 'payment' | 'subscription';
+    successUrl: string;
+    cancelUrl: string;
+    metadata?: Record<string, string>;
+  }
+): CheckoutSessionResult {
+  const { customerId } = getOrCreateUserCustomer(ctx, args);
+  const metadataJson = JSON.stringify({
+    ...args.metadata,
+    userId: args.userId,
+  });
+  return createCheckoutSessionInStripe(ctx, {
+    items: args.items,
+    customerId,
+    mode: args.mode,
+    successUrl: args.successUrl,
+    cancelUrl: args.cancelUrl,
+    metadataJson,
+    subscriptionMetadataJson: metadataJson,
+    paymentIntentMetadataJson: metadataJson,
+  });
+}
+
+/**
+ * Sends a request to a relative `/v1/` path on api.stripe.com with the stored
+ * secret key. Performs no authorization.
+ */
+export function stripeRequest(
+  ctx: ProcedureModuleCtx,
+  args: {
+    method: 'GET' | 'POST' | 'DELETE';
+    path: string;
+    formBody?: string;
+    idempotencyKey?: string;
+  }
+): { status: number; body: string } {
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  return callStripe(ctx, {
+    method: args.method,
+    path: args.path,
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    formBody: args.formBody,
+    idempotencyKey: args.idempotencyKey,
+  });
+}
+
 export const getOrCreateCustomer = spacetimedb.procedure(
   {
     userId: t.string(),
@@ -293,50 +400,10 @@ export const getOrCreateCustomer = spacetimedb.procedure(
   getOrCreateCustomerResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
-    const existingByUser = ctx.withTx(tx => {
-      for (const customer of tx.db.stripeCustomer.byUserId.filter(args.userId))
-        return customer;
-      return undefined;
-    });
-    if (existingByUser) {
-      return { customerId: existingByUser.stripeCustomerId, isNew: false };
-    }
-
-    const existingSub = ctx.withTx(tx => {
-      for (const sub of tx.db.stripeSubscription.byUserId.filter(args.userId))
-        return sub;
-      return undefined;
-    });
-    if (existingSub) {
-      return { customerId: existingSub.stripeCustomerId, isNew: false };
-    }
-
-    const existingPayment = ctx.withTx(tx => {
-      for (const payment of tx.db.stripePayment.byUserId.filter(args.userId)) {
-        if (payment.userId === args.userId && payment.stripeCustomerId)
-          return payment;
-      }
-      return undefined;
-    });
-    if (existingPayment?.stripeCustomerId) {
-      return { customerId: existingPayment.stripeCustomerId, isNew: false };
-    }
-
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const metadataJson = JSON.stringify({ userId: args.userId });
-    const customerId = createCustomerInStripeAndSync(ctx, {
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      email: args.email,
-      name: args.name,
-      metadataJson,
-      idempotencyKey: args.userId,
-    });
-    return { customerId, isNew: true };
+    return getOrCreateUserCustomer(ctx, args);
   }
 );
 
-// Stripe enforces one mode per session; all items must share mode.
 export const createCheckoutSession = spacetimedb.procedure(
   {
     items: t.array(
@@ -356,70 +423,7 @@ export const createCheckoutSession = spacetimedb.procedure(
   checkoutSessionResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    if (args.items.length === 0) {
-      throwSenderError(errors.checkoutSessionRequiresItems);
-    }
-    const formPairs: Array<[string, string | undefined]> = [
-      ['mode', args.mode],
-      ['success_url', args.successUrl],
-      ['cancel_url', args.cancelUrl],
-      ['customer', args.customerId],
-    ];
-    args.items.forEach((item, i) => {
-      formPairs.push([`line_items[${i}][price]`, item.priceId]);
-      formPairs.push([`line_items[${i}][quantity]`, String(item.quantity)]);
-    });
-    for (const [k, v] of metadataJsonToFormPairs(
-      'metadata',
-      args.metadataJson
-    )) {
-      formPairs.push([k, v]);
-    }
-    if (args.mode === 'subscription') {
-      for (const [k, v] of metadataJsonToFormPairs(
-        'subscription_data[metadata]',
-        args.subscriptionMetadataJson
-      )) {
-        formPairs.push([k, v]);
-      }
-    }
-    if (args.mode === 'payment') {
-      for (const [k, v] of metadataJsonToFormPairs(
-        'payment_intent_data[metadata]',
-        args.paymentIntentMetadataJson
-      )) {
-        formPairs.push([k, v]);
-      }
-    }
-
-    const response = callStripe(ctx, {
-      method: 'POST',
-      path: '/v1/checkout/sessions',
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      idempotencyKey: undefined,
-      formBody: formPairsToBody(formPairs),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throwSenderError(
-        `${errors.checkoutSessionFailed}:${response.status}${stripeErrorSuffix(response.body)}`
-      );
-    }
-
-    const sessionResult = v.safeParse(
-      vStripeCheckoutSessionResponse,
-      safeJsonParse(response.body)
-    );
-    if (!sessionResult.success) {
-      throwSenderError(
-        `${errors.checkoutSessionInvalidResponse}:${summarizeIssues(sessionResult.issues)}`
-      );
-    }
-    return {
-      sessionId: sessionResult.output.id,
-      url: sessionResult.output.url ?? undefined,
-    };
+    return createCheckoutSessionInStripe(ctx, args);
   }
 );
 
