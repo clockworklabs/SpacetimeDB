@@ -143,14 +143,6 @@ export type MyServers = __Infer<typeof MyServers>;
 export const MyThreadMessages = __t.object("MyThreadMessages", {});
 export type MyThreadMessages = __Infer<typeof MyThreadMessages>;
 
-export const PresenceConfig = __t.object("PresenceConfig", {
-  singleton: __t.bool(),
-  defaultTtlSeconds: __t.u32(),
-  sweepBatch: __t.u32(),
-  updatedAt: __t.timestamp(),
-});
-export type PresenceConfig = __Infer<typeof PresenceConfig>;
-
 export const PresenceEntry = __t.object("PresenceEntry", {
   key: __t.string(),
   scope: __t.string(),

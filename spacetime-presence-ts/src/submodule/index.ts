@@ -10,7 +10,6 @@ import {
 } from 'spacetimedb/server';
 import { errors } from '../errors.js';
 import {
-  DEFAULT_PRESENCE_STATUS,
   removePresence,
   runPresenceSweep,
   updatePresenceConfig,
@@ -103,7 +102,7 @@ export const heartbeat = spacetimedb.procedure(
       const row = upsertPresence(tx, {
         scope: GLOBAL_SCOPE,
         subject: ctx.sender.toHexString(),
-        status: args.status ?? DEFAULT_PRESENCE_STATUS,
+        status: args.status,
         activity: args.activity,
         payloadJson: args.payloadJson,
         ttlSeconds: args.ttlSeconds,

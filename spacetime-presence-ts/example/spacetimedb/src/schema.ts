@@ -1,5 +1,6 @@
 import * as auth from '@spacetimedb/auth/submodule';
 import * as files from '@spacetimedb/files/submodule';
+import * as presence from '@spacetimedb/presence/submodule';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import { schema, table, t, type InferSchema } from 'spacetimedb/server';
 import {
@@ -8,7 +9,6 @@ import {
   message,
   messageReaction,
   messageThread,
-  presenceEntry,
   room,
   roomActivityEvent,
   roomMember,
@@ -17,16 +17,6 @@ import {
   serverMember,
   threadMessage,
 } from './model';
-
-export const presenceConfig = table(
-  { name: 'presence_config', public: false },
-  {
-    singleton: t.bool().primaryKey(),
-    defaultTtlSeconds: t.u32(),
-    sweepBatch: t.u32(),
-    updatedAt: t.timestamp(),
-  }
-);
 
 export const chatSweepTick = table(
   { name: 'chat_sweep_tick' },
@@ -40,6 +30,7 @@ export const spacetimedb = schema({
   auth,
   files,
   rateLimit,
+  presence,
   chatUser,
   server,
   serverMember,
@@ -52,8 +43,6 @@ export const spacetimedb = schema({
   attachment,
   roomReadCursor,
   roomActivityEvent,
-  presenceEntry,
-  presenceConfig,
   chatSweepTick,
 });
 

@@ -4,10 +4,10 @@ import { errors } from './errors.js';
 const ONE_SECOND_MICROS = 1_000_000n;
 const U32_MAX = 0xffff_ffff;
 
-export const DEFAULT_PRESENCE_TTL_SECONDS = 30;
-export const DEFAULT_PRESENCE_SWEEP_BATCH = 500;
-export const MAX_PRESENCE_SWEEP_BATCH = 10_000;
-export const DEFAULT_PRESENCE_STATUS = 'online';
+const DEFAULT_PRESENCE_TTL_SECONDS = 30;
+const DEFAULT_PRESENCE_SWEEP_BATCH = 500;
+const MAX_PRESENCE_SWEEP_BATCH = 10_000;
+const DEFAULT_PRESENCE_STATUS = 'online';
 const MAX_SCOPE_LENGTH = 128;
 const MAX_SUBJECT_LENGTH = 256;
 const MAX_STATUS_LENGTH = 64;

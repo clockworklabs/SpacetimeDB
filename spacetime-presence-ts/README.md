@@ -17,8 +17,7 @@ This package provides:
 
 - a `./submodule` namespace with private presence tables, a scheduled expiry
   sweep, and client operations for global presence,
-- helpers for heartbeats and status/activity updates in host-chosen scopes,
-- bounded sweep helpers for expired presence rows.
+- helpers for heartbeats and status/activity updates in host-chosen scopes.
 
 ## Usage
 
@@ -106,19 +105,12 @@ Invalid input throws a `SenderError` with a code from the exported `errors`
 object. Leases last at most one hour, payloads at most 4,096 characters, and
 sweep batches at most 10,000 rows.
 
-The root entrypoint also supports host-declared tables of the same shape:
-`createPresenceEntryTable`, `createPresenceConfigTable`, `presenceEntryRow`,
-and `presenceConfigRow` build the tables, `installPresenceConfig` seeds the
-config row, and `runPresenceSweep(tx, rows)` deletes up to the configured batch
-of expired rows from `rows`, typically the `expiresAt` index filtered to rows
-at or before now. The host schedules that sweep itself.
-
 Package entrypoints:
 
-- `@spacetimedb/presence` exports `errors`, the helpers, and the table
-  builders.
+- `@spacetimedb/presence` exports `errors` and the helpers.
 - `@spacetimedb/presence/presence` exports the helpers.
-- `@spacetimedb/presence/tables` exports the table builders.
+- `@spacetimedb/presence/tables` exports the presence entry and config row
+  definitions.
 - `@spacetimedb/presence/submodule` exports the submodule namespace,
   `install`, operations, and helpers.
 - [`spacetimedb/`](./spacetimedb/) publishes the submodule as a standalone

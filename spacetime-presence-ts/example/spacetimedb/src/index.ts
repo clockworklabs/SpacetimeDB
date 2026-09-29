@@ -1,11 +1,6 @@
 import { ScheduleAt } from 'spacetimedb';
-import { Router, Range, t } from 'spacetimedb/server';
-import {
-  installPresenceConfig,
-  removePresence,
-  runPresenceSweep,
-  upsertPresence,
-} from '@spacetimedb/presence';
+import { Router, t } from 'spacetimedb/server';
+import * as presence from '@spacetimedb/presence/submodule';
 import * as auth from '@spacetimedb/auth/submodule';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import * as files from '@spacetimedb/files/submodule';
@@ -22,7 +17,6 @@ import { chatSweepTick, spacetimedb, type DbSchema } from './schema';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const TYPING_TTL_SECONDS = 4;
-const GLOBAL_PRESENCE_TTL_SECONDS = 35;
 const CHAT_SWEEP_INTERVAL_SECONDS = 10n;
 const ACTIVITY_WINDOW_SECONDS = 5 * 60;
 const ACTIVITY_CLEANUP_BATCH = 1000;
@@ -94,10 +88,7 @@ export const {
 export const init = spacetimedb.init(ctx => {
   auth.install(ctx.as.auth);
   rateLimit.install(ctx.as.rateLimit);
-  installPresenceConfig(ctx, {
-    defaultTtlSeconds: GLOBAL_PRESENCE_TTL_SECONDS,
-    sweepBatch: 1000,
-  });
+  presence.install(ctx.as.presence);
   ctx.db.chatSweepTick.insert({
     scheduledId: 0n,
     scheduledAt: ScheduleAt.interval(
@@ -393,7 +384,11 @@ export const deleteRoom = spacetimedb.reducer(
       tx.db.roomMember.id.delete(mem.id);
     for (const ev of [...tx.db.roomActivityEvent.roomId.filter(roomId)])
       tx.db.roomActivityEvent.id.delete(ev.id);
-    removePresence(tx, typingScope(roomId), identityHex(tx.sender));
+    presence.removePresence(
+      tx.as.presence,
+      typingScope(roomId),
+      identityHex(tx.sender)
+    );
     tx.db.room.id.delete(roomId);
   }
 );
@@ -685,7 +680,7 @@ export const startTyping = spacetimedb.reducer(
     const user = ensureUser(tx, userId);
     requireRoom(tx, roomId);
     requireMembership(tx, roomId, userId);
-    upsertPresence(tx, {
+    presence.upsertPresence(tx.as.presence, {
       scope: typingScope(roomId),
       subject: identityHex(tx.sender),
       status: 'typing',
@@ -819,13 +814,6 @@ export const chatSweep = spacetimedb.reducer(
   { onSchedule: chatSweepTick },
   { arg: chatSweepTick.rowType },
   ctx => {
-    runPresenceSweep(
-      ctx,
-      ctx.db.presenceEntry.expiresAt.filter(
-        new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      )
-    );
-
     const cutoff =
       (ctx.timestamp.microsSinceUnixEpoch as bigint) -
       BigInt(ACTIVITY_WINDOW_SECONDS) * ONE_SECOND_MICROS;

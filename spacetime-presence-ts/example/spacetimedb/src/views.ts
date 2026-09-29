@@ -1,4 +1,5 @@
 import { t, type ViewCtx } from 'spacetimedb/server';
+import * as presence from '@spacetimedb/presence/submodule';
 import {
   RATE_LIMIT_PROFILE,
   RATE_LIMIT_REACTION,
@@ -14,7 +15,6 @@ import {
   message,
   messageReaction,
   messageThread,
-  presenceEntry,
   room,
   roomMember,
   roomReadCursor,
@@ -161,7 +161,7 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
 
   const myPresenceEntries = spacetimedb.view(
     { name: 'my_presence_entries', public: true },
-    t.array(presenceEntry.rowType),
+    t.array(presence.presenceEntry.rowType),
     ctx => {
       const roomIds = myRoomIds(ctx);
       const visibleSubjects = myVisibleIdentitySubjects(
@@ -170,12 +170,14 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
       );
       const out = [];
       for (const subject of visibleSubjects) {
-        for (const entry of ctx.db.presenceEntry.subject.filter(subject)) {
+        for (const entry of ctx.db.presence.presenceEntry.subject.filter(
+          subject
+        )) {
           if (entry.scope === PRESENCE_SCOPE_GLOBAL) out.push(entry);
         }
       }
       for (const roomId of roomIds) {
-        for (const entry of ctx.db.presenceEntry.scope.filter(
+        for (const entry of ctx.db.presence.presenceEntry.scope.filter(
           typingScope(roomId)
         )) {
           if (visibleSubjects.has(entry.subject)) out.push(entry);

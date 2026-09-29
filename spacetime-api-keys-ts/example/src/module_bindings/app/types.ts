@@ -69,11 +69,8 @@ export type ColonyEntities = __Infer<typeof ColonyEntities>;
 export const ColonyGrid = __t.object("ColonyGrid", {});
 export type ColonyGrid = __Infer<typeof ColonyGrid>;
 
-export const ColonySweepTick = __t.object("ColonySweepTick", {
-  scheduledId: __t.u64(),
-  scheduledAt: __t.scheduleAt(),
-});
-export type ColonySweepTick = __Infer<typeof ColonySweepTick>;
+export const ColonyPresence = __t.object("ColonyPresence", {});
+export type ColonyPresence = __Infer<typeof ColonyPresence>;
 
 export const EnsureWorldResult = __t.object("EnsureWorldResult", {
   ownerSubject: __t.string(),
@@ -113,14 +110,6 @@ export type GridEntity = __Infer<typeof GridEntity>;
 
 export const MyAccessKeys = __t.object("MyAccessKeys", {});
 export type MyAccessKeys = __Infer<typeof MyAccessKeys>;
-
-export const PresenceConfig = __t.object("PresenceConfig", {
-  singleton: __t.bool(),
-  defaultTtlSeconds: __t.u32(),
-  sweepBatch: __t.u32(),
-  updatedAt: __t.timestamp(),
-});
-export type PresenceConfig = __Infer<typeof PresenceConfig>;
 
 export const PresenceEntry = __t.object("PresenceEntry", {
   key: __t.string(),

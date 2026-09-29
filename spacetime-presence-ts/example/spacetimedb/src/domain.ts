@@ -7,7 +7,7 @@ import {
 } from 'spacetimedb/server';
 import { getCallerUserId } from '@spacetimedb/auth/submodule';
 import type { client } from '@spacetimedb/rate-limit/submodule';
-import { removePresence, upsertPresence } from '@spacetimedb/presence';
+import * as presence from '@spacetimedb/presence/submodule';
 import { PRESENCE_SCOPE_GLOBAL, typingScope } from './chat-policy';
 import { ChatUserStatus } from './model';
 import type { DbSchema } from './schema';
@@ -101,7 +101,7 @@ export function updateGlobalPresence(
   tx: Tx,
   user: ReturnType<typeof ensureUser>
 ): void {
-  upsertPresence(tx, {
+  presence.upsertPresence(tx.as.presence, {
     scope: PRESENCE_SCOPE_GLOBAL,
     subject: identityHex(user.identity),
     status: chatStatusToString(user.status),
@@ -223,7 +223,11 @@ export function removeTypingPresence(
   roomId: bigint,
   identity: Identity
 ): void {
-  removePresence(tx, typingScope(roomId), identityHex(identity));
+  presence.removePresence(
+    tx.as.presence,
+    typingScope(roomId),
+    identityHex(identity)
+  );
 }
 
 export function insertRoom(

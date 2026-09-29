@@ -144,7 +144,7 @@ function events(): WorldEvent[] {
   );
 }
 function presenceRows(): PresenceEntry[] {
-  return [...requireConn().db.presenceEntry.iter()].filter(
+  return [...requireConn().db.colonyPresence.iter()].filter(
     p => p.scope === colonyId
   );
 }
@@ -267,7 +267,7 @@ function subscribeToTables(): void {
       tables.colonyGrid.where(row => row.id.eq(gridId)),
       tables.colonyCells.where(row => row.gridId.eq(gridId)),
       tables.colonyEntities.where(row => row.gridId.eq(gridId)),
-      tables.presenceEntry.where(row => row.scope.eq(colonyId)),
+      tables.colonyPresence.where(row => row.scope.eq(colonyId)),
       ...(mode === 'owner' ? [tables.myAccessKeys] : []),
     ]);
 }
@@ -292,9 +292,9 @@ function registerRowCallbacks(): void {
   connection.db.myAccessKeys.onInsert(() => renderWorld());
   connection.db.myAccessKeys.onUpdate(() => renderWorld());
   connection.db.myAccessKeys.onDelete(() => renderWorld());
-  connection.db.presenceEntry.onInsert(() => renderPresence());
-  connection.db.presenceEntry.onUpdate(() => renderPresence());
-  connection.db.presenceEntry.onDelete(() => renderPresence());
+  connection.db.colonyPresence.onInsert(() => renderPresence());
+  connection.db.colonyPresence.onUpdate(() => renderPresence());
+  connection.db.colonyPresence.onDelete(() => renderPresence());
 }
 
 function terrainFor(x: number, y: number): string {

@@ -54,8 +54,8 @@ import * as RotateAccessKeyProcedure from "./rotate_access_key_procedure";
 import ColonyCellsRow from "./colony_cells_table";
 import ColonyEntitiesRow from "./colony_entities_table";
 import ColonyGridRow from "./colony_grid_table";
+import ColonyPresenceRow from "./colony_presence_table";
 import MyAccessKeysRow from "./my_access_keys_table";
-import PresenceEntryRow from "./presence_entry_table";
 import WorldRow from "./world_table";
 import WorldEventRow from "./world_event_table";
 
@@ -63,6 +63,8 @@ import WorldEventRow from "./world_event_table";
 import ApiKeys_ApiKeyUsageAdminRow from "./apiKeys/api_key_usage_admin_table";
 import ApiKeys_ApiKeysAdminRow from "./apiKeys/api_keys_admin_table";
 import ApiKeys_MyApiKeysRow from "./apiKeys/my_api_keys_table";
+import Presence_PresenceEntriesAdminRow from "./presence/presence_entries_admin_table";
+import Presence_PresenceOnlineRow from "./presence/presence_online_table";
 
 // Import namespace reducer arg schemas
 import ApiKeys_AddApiKeysAdminReducer from "./apiKeys/add_api_keys_admin_reducer";
@@ -70,45 +72,22 @@ import ApiKeys_RemoveApiKeysAdminReducer from "./apiKeys/remove_api_keys_admin_r
 import ApiKeys_RevokeApiKeyReducer from "./apiKeys/revoke_api_key_reducer";
 import ApiKeys_RevokeApiKeyForSubjectReducer from "./apiKeys/revoke_api_key_for_subject_reducer";
 import ApiKeys_SetApiKeysConfigReducer from "./apiKeys/set_api_keys_config_reducer";
+import Presence_AddPresenceAdminReducer from "./presence/add_presence_admin_reducer";
+import Presence_ClearPresenceReducer from "./presence/clear_presence_reducer";
+import Presence_RemovePresenceAdminReducer from "./presence/remove_presence_admin_reducer";
+import Presence_UpdateConfigReducer from "./presence/update_config_reducer";
 
 // Import namespace procedure arg schemas
 import * as ApiKeys_CreateApiKeyProcedure from "./apiKeys/create_api_key_procedure";
 import * as ApiKeys_CreateApiKeyForSubjectProcedure from "./apiKeys/create_api_key_for_subject_procedure";
 import * as ApiKeys_RotateApiKeyProcedure from "./apiKeys/rotate_api_key_procedure";
+import * as Presence_HeartbeatProcedure from "./presence/heartbeat_procedure";
+import * as Presence_RunSweepProcedure from "./presence/run_sweep_procedure";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
-  presenceEntry: __table({
-    name: 'presence_entry',
-    indexes: [
-      { accessor: 'expiresAt', name: 'presence_entry_expires_at_idx_btree', algorithm: 'btree', columns: [
-        'expiresAt',
-      ] },
-      { accessor: 'joinedAt', name: 'presence_entry_joined_at_idx_btree', algorithm: 'btree', columns: [
-        'joinedAt',
-      ] },
-      { accessor: 'key', name: 'presence_entry_key_idx_btree', algorithm: 'btree', columns: [
-        'key',
-      ] },
-      { accessor: 'lastSeenAt', name: 'presence_entry_last_seen_at_idx_btree', algorithm: 'btree', columns: [
-        'lastSeenAt',
-      ] },
-      { accessor: 'scope', name: 'presence_entry_scope_idx_btree', algorithm: 'btree', columns: [
-        'scope',
-      ] },
-      { accessor: 'status', name: 'presence_entry_status_idx_btree', algorithm: 'btree', columns: [
-        'status',
-      ] },
-      { accessor: 'subject', name: 'presence_entry_subject_idx_btree', algorithm: 'btree', columns: [
-        'subject',
-      ] },
-    ],
-    constraints: [
-      { name: 'presence_entry_key_key', constraint: 'unique', columns: ['key'] },
-    ],
-  }, PresenceEntryRow),
   world: __table({
     name: 'world',
     indexes: [
@@ -167,6 +146,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ColonyGridRow),
+  colonyPresence: __table({
+    name: 'colony_presence',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ColonyPresenceRow),
   myAccessKeys: __table({
     name: 'my_access_keys',
     indexes: [
@@ -195,6 +181,20 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ApiKeys_MyApiKeysRow),
+  "presence.presence_entries_admin": __table({
+    name: 'presence.presence_entries_admin',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, Presence_PresenceEntriesAdminRow),
+  "presence.presence_online": __table({
+    name: 'presence.presence_online',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, Presence_PresenceOnlineRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -214,6 +214,10 @@ const reducersSchema = __reducers(
   __reducerSchema("api_keys.revoke_api_key", ApiKeys_RevokeApiKeyReducer, "apiKeys.revokeApiKey"),
   __reducerSchema("api_keys.revoke_api_key_for_subject", ApiKeys_RevokeApiKeyForSubjectReducer, "apiKeys.revokeApiKeyForSubject"),
   __reducerSchema("api_keys.set_api_keys_config", ApiKeys_SetApiKeysConfigReducer, "apiKeys.setApiKeysConfig"),
+  __reducerSchema("presence.add_presence_admin", Presence_AddPresenceAdminReducer, "presence.addPresenceAdmin"),
+  __reducerSchema("presence.clear_presence", Presence_ClearPresenceReducer, "presence.clearPresence"),
+  __reducerSchema("presence.remove_presence_admin", Presence_RemovePresenceAdminReducer, "presence.removePresenceAdmin"),
+  __reducerSchema("presence.update_config", Presence_UpdateConfigReducer, "presence.updateConfig"),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
@@ -224,6 +228,8 @@ const proceduresSchema = __procedures(
   __procedureSchema("api_keys.create_api_key", ApiKeys_CreateApiKeyProcedure.params, ApiKeys_CreateApiKeyProcedure.returnType, "apiKeys.createApiKey"),
   __procedureSchema("api_keys.create_api_key_for_subject", ApiKeys_CreateApiKeyForSubjectProcedure.params, ApiKeys_CreateApiKeyForSubjectProcedure.returnType, "apiKeys.createApiKeyForSubject"),
   __procedureSchema("api_keys.rotate_api_key", ApiKeys_RotateApiKeyProcedure.params, ApiKeys_RotateApiKeyProcedure.returnType, "apiKeys.rotateApiKey"),
+  __procedureSchema("presence.heartbeat", Presence_HeartbeatProcedure.params, Presence_HeartbeatProcedure.returnType, "presence.heartbeat"),
+  __procedureSchema("presence.run_sweep", Presence_RunSweepProcedure.params, Presence_RunSweepProcedure.returnType, "presence.runSweep"),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */
@@ -243,17 +249,21 @@ const REMOTE_MODULE = {
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
 const __qb = __makeQueryBuilder(tablesSchema.schemaType);
 export const tables = {
-  presenceEntry: __qb.presenceEntry,
   world: __qb.world,
   worldEvent: __qb.worldEvent,
   colonyCells: __qb.colonyCells,
   colonyEntities: __qb.colonyEntities,
   colonyGrid: __qb.colonyGrid,
+  colonyPresence: __qb.colonyPresence,
   myAccessKeys: __qb.myAccessKeys,
   apiKeys: {
     apiKeyUsageAdmin: __qb["api_keys.api_key_usage_admin"],
     apiKeysAdmin: __qb["api_keys.api_keys_admin"],
     myApiKeys: __qb["api_keys.my_api_keys"],
+  },
+  presence: {
+    presenceEntriesAdmin: __qb["presence.presence_entries_admin"],
+    presenceOnline: __qb["presence.presence_online"],
   },
 } as const;
 
@@ -277,6 +287,12 @@ export const reducers = {
     revokeApiKeyForSubject: __reducerAccessors["apiKeys.revokeApiKeyForSubject"],
     setApiKeysConfig: __reducerAccessors["apiKeys.setApiKeysConfig"],
   },
+  presence: {
+    addPresenceAdmin: __reducerAccessors["presence.addPresenceAdmin"],
+    clearPresence: __reducerAccessors["presence.clearPresence"],
+    removePresenceAdmin: __reducerAccessors["presence.removePresenceAdmin"],
+    updateConfig: __reducerAccessors["presence.updateConfig"],
+  },
 } as const;
 
 /** The procedures available in this remote SpacetimeDB module. */
@@ -289,6 +305,10 @@ export const procedures = {
     createApiKey: __procedureAccessors["apiKeys.createApiKey"],
     createApiKeyForSubject: __procedureAccessors["apiKeys.createApiKeyForSubject"],
     rotateApiKey: __procedureAccessors["apiKeys.rotateApiKey"],
+  },
+  presence: {
+    heartbeat: __procedureAccessors["presence.heartbeat"],
+    runSweep: __procedureAccessors["presence.runSweep"],
   },
 } as const;
 

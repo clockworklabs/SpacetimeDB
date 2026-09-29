@@ -88,6 +88,8 @@ import RateLimit_RateLimitConfigRow from "./rateLimit/rate_limit_config_table";
 import Auth_MyAuthUserRow from "./auth/my_auth_user_table";
 import AuthRateLimit_AdminRateLimitBucketsRow from "./auth/rateLimit/admin_rate_limit_buckets_table";
 import RateLimit_AdminRateLimitBucketsRow from "./rateLimit/admin_rate_limit_buckets_table";
+import Presence_PresenceEntriesAdminRow from "./presence/presence_entries_admin_table";
+import Presence_PresenceOnlineRow from "./presence/presence_online_table";
 
 // Import namespace reducer arg schemas
 import Auth_AddAuthAdminReducer from "./auth/add_auth_admin_reducer";
@@ -106,6 +108,10 @@ import RateLimit_AddRateLimitAdminReducer from "./rateLimit/add_rate_limit_admin
 import RateLimit_RemoveRateLimitAdminReducer from "./rateLimit/remove_rate_limit_admin_reducer";
 import RateLimit_ResetBucketsReducer from "./rateLimit/reset_buckets_reducer";
 import RateLimit_UpdateConfigReducer from "./rateLimit/update_config_reducer";
+import Presence_AddPresenceAdminReducer from "./presence/add_presence_admin_reducer";
+import Presence_ClearPresenceReducer from "./presence/clear_presence_reducer";
+import Presence_RemovePresenceAdminReducer from "./presence/remove_presence_admin_reducer";
+import Presence_UpdateConfigReducer from "./presence/update_config_reducer";
 
 // Import namespace procedure arg schemas
 import * as Auth_GetAuthPublicKeyProcedure from "./auth/get_auth_public_key_procedure";
@@ -113,6 +119,8 @@ import * as Auth_ListMySessionsProcedure from "./auth/list_my_sessions_procedure
 import * as Auth_WhoamiProcedure from "./auth/whoami_procedure";
 import * as AuthRateLimit_RunSweepProcedure from "./auth/rateLimit/run_sweep_procedure";
 import * as RateLimit_RunSweepProcedure from "./rateLimit/run_sweep_procedure";
+import * as Presence_HeartbeatProcedure from "./presence/heartbeat_procedure";
+import * as Presence_RunSweepProcedure from "./presence/run_sweep_procedure";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -252,6 +260,20 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, RateLimit_AdminRateLimitBucketsRow),
+  "presence.presence_entries_admin": __table({
+    name: 'presence.presence_entries_admin',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, Presence_PresenceEntriesAdminRow),
+  "presence.presence_online": __table({
+    name: 'presence.presence_online',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, Presence_PresenceOnlineRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -299,6 +321,10 @@ const reducersSchema = __reducers(
   __reducerSchema("rate_limit.remove_rate_limit_admin", RateLimit_RemoveRateLimitAdminReducer, "rateLimit.removeRateLimitAdmin"),
   __reducerSchema("rate_limit.reset_buckets", RateLimit_ResetBucketsReducer, "rateLimit.resetBuckets"),
   __reducerSchema("rate_limit.update_config", RateLimit_UpdateConfigReducer, "rateLimit.updateConfig"),
+  __reducerSchema("presence.add_presence_admin", Presence_AddPresenceAdminReducer, "presence.addPresenceAdmin"),
+  __reducerSchema("presence.clear_presence", Presence_ClearPresenceReducer, "presence.clearPresence"),
+  __reducerSchema("presence.remove_presence_admin", Presence_RemovePresenceAdminReducer, "presence.removePresenceAdmin"),
+  __reducerSchema("presence.update_config", Presence_UpdateConfigReducer, "presence.updateConfig"),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
@@ -311,6 +337,8 @@ const proceduresSchema = __procedures(
   __procedureSchema("auth.whoami", Auth_WhoamiProcedure.params, Auth_WhoamiProcedure.returnType, "auth.whoami"),
   __procedureSchema("auth.rate_limit.run_sweep", AuthRateLimit_RunSweepProcedure.params, AuthRateLimit_RunSweepProcedure.returnType, "auth.rateLimit.runSweep"),
   __procedureSchema("rate_limit.run_sweep", RateLimit_RunSweepProcedure.params, RateLimit_RunSweepProcedure.returnType, "rateLimit.runSweep"),
+  __procedureSchema("presence.heartbeat", Presence_HeartbeatProcedure.params, Presence_HeartbeatProcedure.returnType, "presence.heartbeat"),
+  __procedureSchema("presence.run_sweep", Presence_RunSweepProcedure.params, Presence_RunSweepProcedure.returnType, "presence.runSweep"),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */
@@ -349,6 +377,10 @@ export const tables = {
       rateLimitConfig: __qb["auth.rate_limit.rate_limit_config"],
       adminRateLimitBuckets: __qb["auth.rate_limit.admin_rate_limit_buckets"],
     },
+  },
+  presence: {
+    presenceEntriesAdmin: __qb["presence.presence_entries_admin"],
+    presenceOnline: __qb["presence.presence_online"],
   },
   rateLimit: {
     rateLimitConfig: __qb["rate_limit.rate_limit_config"],
@@ -402,6 +434,12 @@ export const reducers = {
       updateConfig: __reducerAccessors["auth.rateLimit.updateConfig"],
     },
   },
+  presence: {
+    addPresenceAdmin: __reducerAccessors["presence.addPresenceAdmin"],
+    clearPresence: __reducerAccessors["presence.clearPresence"],
+    removePresenceAdmin: __reducerAccessors["presence.removePresenceAdmin"],
+    updateConfig: __reducerAccessors["presence.updateConfig"],
+  },
   rateLimit: {
     addRateLimitAdmin: __reducerAccessors["rateLimit.addRateLimitAdmin"],
     removeRateLimitAdmin: __reducerAccessors["rateLimit.removeRateLimitAdmin"],
@@ -423,6 +461,10 @@ export const procedures = {
     rateLimit: {
       runSweep: __procedureAccessors["auth.rateLimit.runSweep"],
     },
+  },
+  presence: {
+    heartbeat: __procedureAccessors["presence.heartbeat"],
+    runSweep: __procedureAccessors["presence.runSweep"],
   },
   rateLimit: {
     runSweep: __procedureAccessors["rateLimit.runSweep"],

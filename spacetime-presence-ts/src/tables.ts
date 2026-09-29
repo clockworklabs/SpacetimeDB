@@ -1,4 +1,4 @@
-import { table, t } from 'spacetimedb/server';
+import { t } from 'spacetimedb/server';
 
 export const presenceEntryRow = {
   key: t.string().primaryKey(),
@@ -19,29 +19,3 @@ export const presenceConfigRow = {
   sweepBatch: t.u32(),
   updatedAt: t.timestamp(),
 };
-
-export function createPresenceEntryTable(options?: {
-  name?: string;
-  public?: boolean;
-}) {
-  return table(
-    {
-      name: options?.name ?? 'presence_entry',
-      public: options?.public ?? false,
-    },
-    presenceEntryRow
-  );
-}
-
-export function createPresenceConfigTable(options?: {
-  name?: string;
-  public?: boolean;
-}) {
-  return table(
-    {
-      name: options?.name ?? 'presence_config',
-      public: options?.public ?? false,
-    },
-    presenceConfigRow
-  );
-}

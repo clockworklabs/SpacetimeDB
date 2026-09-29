@@ -174,19 +174,3 @@ export const roomActivityEvent = table(
     createdAt: t.timestamp().index(),
   }
 );
-
-export const presenceEntry = table(
-  { name: 'presence_entry', public: false },
-  {
-    key: t.string().primaryKey(),
-    scope: t.string().index(),
-    subject: t.string().index(),
-    status: t.string().index(),
-    activity: t.option(t.string()),
-    payloadJson: t.option(t.string()),
-    joinedAt: t.timestamp().index(),
-    lastSeenAt: t.timestamp().index(),
-    expiresAt: t.timestamp().index(),
-    updatedAt: t.timestamp(),
-  }
-);

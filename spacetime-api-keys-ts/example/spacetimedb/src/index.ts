@@ -1,13 +1,11 @@
 import {
   Router,
-  Range,
   SenderError,
   t,
   type Infer,
   type Request,
   type SyncResponse,
 } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
 import * as apiKeys from '@spacetimedb/api-keys/submodule';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
 import {
@@ -15,15 +13,9 @@ import {
   GRID_MODE_OWNER,
   GRID_ORIENTATION_FLAT,
 } from '@spacetimedb/grid/submodule';
-import {
-  installPresenceConfig,
-  removePresence,
-  runPresenceSweep,
-  upsertPresence,
-} from '@spacetimedb/presence';
+import * as presence from '@spacetimedb/presence/submodule';
 import {
   accessKeySummary,
-  colonySweepTick,
   spacetimedb,
   type HttpCtx,
   type ReadCtx,
@@ -57,7 +49,6 @@ const PRESENCE_ROLES = new Set([
   'Viewer',
   'Editor',
 ]);
-const SWEEP_INTERVAL_MICROS = 10n * 1_000_000n;
 
 // Scopes a share key can carry. view is read; the three edit scopes are the
 // granular powers a share link can grant.
@@ -87,14 +78,7 @@ const NATURE_KINDS = new Set(['tree', 'shrub', 'boulder']);
 
 export const init = spacetimedb.init(ctx => {
   apiKeys.install(ctx.as.apiKeys);
-  installPresenceConfig(ctx, {
-    defaultTtlSeconds: PRESENCE_TTL_SECONDS,
-    sweepBatch: 500,
-  });
-  ctx.db.colonySweepTick.insert({
-    scheduledId: 0n,
-    scheduledAt: ScheduleAt.interval(SWEEP_INTERVAL_MICROS),
-  });
+  presence.install(ctx.as.presence);
 });
 
 function senderSubject(ctx: { sender: unknown }): string {
@@ -656,7 +640,7 @@ export const presenceHeartbeat = spacetimedb.reducer(
     ) {
       throw new SenderError('presence.invalid_cursor');
     }
-    upsertPresence(ctx, {
+    presence.upsertPresence(ctx.as.presence, {
       scope,
       subject: senderSubject(ctx),
       status: 'online',
@@ -677,27 +661,18 @@ export const presenceHeartbeat = spacetimedb.reducer(
 export const presenceLeave = spacetimedb.reducer(
   { scope: t.string() },
   (ctx, args) => {
-    removePresence(ctx, args.scope.trim(), senderSubject(ctx));
-  }
-);
-
-export const colonySweep = spacetimedb.reducer(
-  { onSchedule: colonySweepTick },
-  { arg: colonySweepTick.rowType },
-  ctx => {
-    runPresenceSweep(
-      ctx,
-      ctx.db.presenceEntry.expiresAt.filter(
-        new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      )
+    presence.removePresence(
+      ctx.as.presence,
+      args.scope.trim(),
+      senderSubject(ctx)
     );
   }
 );
 
-// Reads. world, world_event, and presence_entry are public tables the
-// client subscribes to with a WHERE on the colony id. The grid submodule's
-// tables are reached through these public projection views, filtered by
-// grid_id. A holder learns the colony id (owner subject) from verifyApiKey,
+// Reads. world and world_event are public tables the client subscribes to
+// with a WHERE on the colony id. The grid and presence submodules' tables are
+// reached through these public projection views, filtered by grid_id or
+// colony id. A holder learns the colony id (owner subject) from verifyApiKey,
 // then the grid id from the world row.
 
 function allGridIds(ctx: ReadCtx): Set<bigint> {
@@ -738,6 +713,22 @@ export const colonyEntities = spacetimedb.view(
     const out = [];
     for (const id of allGridIds(ctx)) {
       for (const e of ctx.db.grid.gridEntity.gridId.filter(id)) out.push(e);
+    }
+    return out;
+  }
+);
+
+export const colonyPresence = spacetimedb.view(
+  { name: 'colony_presence', public: true },
+  t.array(presence.presenceEntry.rowType),
+  ctx => {
+    const out = [];
+    for (const w of ctx.db.world.iter()) {
+      for (const p of ctx.db.presence.presenceEntry.scope.filter(
+        w.ownerSubject
+      )) {
+        out.push(p);
+      }
     }
     return out;
   }

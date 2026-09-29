@@ -2,7 +2,6 @@ import { SenderError, Timestamp } from 'spacetimedb';
 import {
   buildPresenceKey,
   installPresenceConfig,
-  MAX_PRESENCE_SWEEP_BATCH,
   removePresence,
   runPresenceSweep,
   touchPresence,
@@ -218,7 +217,7 @@ process.stdout.write('\npresence config\n');
     () =>
       updatePresenceConfig(ctx, {
         defaultTtlSeconds: 45,
-        sweepBatch: MAX_PRESENCE_SWEEP_BATCH + 1,
+        sweepBatch: 10_001,
       }),
     'presence.invalid_sweep_batch',
     'configuration rejects an excessive batch size'

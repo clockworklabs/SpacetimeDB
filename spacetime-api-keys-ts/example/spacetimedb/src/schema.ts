@@ -1,5 +1,6 @@
 import * as apiKeys from '@spacetimedb/api-keys/submodule';
 import * as grid from '@spacetimedb/grid/submodule';
+import * as presence from '@spacetimedb/presence/submodule';
 import {
   schema,
   table,
@@ -53,50 +54,13 @@ export const accessKeySummary = table(
   }
 );
 
-// The public presence table supplies the colony roster and cursors.
-export const presenceEntry = table(
-  { name: 'presence_entry', public: true },
-  {
-    key: t.string().primaryKey(),
-    scope: t.string().index(),
-    subject: t.string().index(),
-    status: t.string().index(),
-    activity: t.option(t.string()),
-    payloadJson: t.option(t.string()),
-    joinedAt: t.timestamp().index(),
-    lastSeenAt: t.timestamp().index(),
-    expiresAt: t.timestamp().index(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-export const presenceConfig = table(
-  { name: 'presence_config', public: false },
-  {
-    singleton: t.bool().primaryKey(),
-    defaultTtlSeconds: t.u32(),
-    sweepBatch: t.u32(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-export const colonySweepTick = table(
-  { name: 'colony_sweep_tick' },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
-);
-
 export const spacetimedb = schema({
   apiKeys,
   grid,
+  presence,
   world,
   worldEvent,
   accessKeySummary,
-  presenceEntry,
-  presenceConfig,
-  colonySweepTick,
 });
 
 export type Schema = InferSchema<typeof spacetimedb>;
