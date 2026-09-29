@@ -18,7 +18,7 @@
   },
   "files": [
     "src",
-    "LICENSE.txt",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
@@ -41,6 +41,8 @@
     "webhooks"
   ],
   "scripts": {
+    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\"",
     "build": "spacetime build",
     "format": "prettier . --write --ignore-path ../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
