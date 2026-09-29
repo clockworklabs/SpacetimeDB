@@ -10,6 +10,7 @@
     "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-stripe-example"
   },
   "dependencies": {
+    "@spacetimedb/rate-limit": "workspace:*",
     "@spacetimedb/stripe": "workspace:*",
     "spacetimedb": "workspace:*"
   },

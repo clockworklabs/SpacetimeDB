@@ -8,6 +8,7 @@ import {
   type ReducerCtx,
   type TransactionCtx,
 } from 'spacetimedb/server';
+import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import * as stripe from '@spacetimedb/stripe/submodule';
 
 export const storeProductRow = {
@@ -63,12 +64,14 @@ export const storeConfigTable = table(
 
 export const spacetimedb = schema({
   stripe,
+  rateLimit,
   storeProduct: storeProductTable,
   storeConfig: storeConfigTable,
 });
 
 export const init = spacetimedb.init(ctx => {
   stripe.install(ctx.as.stripe);
+  rateLimit.install(ctx.as.rateLimit);
 });
 
 export default spacetimedb;

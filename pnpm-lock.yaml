@@ -635,6 +635,9 @@ importers:
 
   spacetime-stripe-ts/example/spacetimedb:
     dependencies:
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:../../../spacetime-rate-limit-ts
       '@spacetimedb/stripe':
         specifier: workspace:*
         version: link:../..

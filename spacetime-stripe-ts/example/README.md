@@ -16,6 +16,8 @@ sessions, but it cannot configure Stripe or mutate administrative catalog state.
   server-owned state.
 - One administrator list: the store checks the Stripe submodule's
   `stripe_admin_identity` table.
+- Composing submodules: `@spacetimedb/rate-limit` limits each buyer identity to
+  five buyer procedure calls per 10 minutes, since each call reaches Stripe.
 - Seeding an application catalog independently of Stripe provider records.
 - Creating or linking idempotent Stripe test prices during explicit server setup.
 - Receiving Stripe webhooks through the module's native HTTP route.
@@ -173,8 +175,8 @@ updated.
   Production and externally bound development servers default to disabled. Set
   `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS=1` only when required.
 - The buyer procedures create Stripe customers and Checkout sessions for any
-  connected identity. Add application authentication and rate limiting (for
-  example with `@spacetimedb/rate-limit`) before exposing them publicly.
+  connected identity, limited per identity. A client can open new anonymous
+  identities, so add application authentication before exposing them publicly.
 - The module owns Checkout return URLs. Set `STRIPE_RETURN_BASE_URL` to the public
   HTTPS origin in production; the browser cannot supply redirect URLs.
 - Checkout success in the UI is a redirect result. Fulfill from verified
@@ -200,6 +202,8 @@ create a test Checkout session.
 - **`stripe.not_authorized` or `store.not_authorized`:** publish with the
   logged-in CLI identity and restart so it can grant the server identity through
   `stripe.add_admin_identity`.
+- **`store.rate_limited`:** the buyer identity used its five Stripe calls for
+  the current 10-minute window; wait for the window to reset.
 - **Connection targets disagree:** make `STDB_URI`, `STDB_HTTP`, and the publish
   target refer to the same server.
 - **Webhook state is stale:** verify the forwarding URL and

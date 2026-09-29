@@ -6,6 +6,7 @@ import {
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema';
+import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import * as stripe from '@spacetimedb/stripe/submodule';
 import { requireAdmin } from './auth';
 import { stringArrayFromJson, throwSenderError } from './validation';
@@ -358,16 +359,34 @@ export const setStoreReturnOrigin = spacetimedb.reducer(
 
 // Signed-in buyers call these procedures directly. The Stripe customer belongs
 // to the caller's identity, and prices, modes, and return URLs come from
-// server-owned state.
+// server-owned state. Each call reaches Stripe, so every identity shares one
+// budget across both procedures.
+const buyerStripeCalls = rateLimit.client({
+  scope: 'store.buyer_stripe_calls',
+  limit: 5,
+  windowSeconds: 10 * 60,
+});
+
+function consumeBuyerStripeCall(ctx: ProcedureModuleCtx): void {
+  const result = ctx.withTx(tx =>
+    buyerStripeCalls.consume(tx.as.rateLimit, {
+      key: ctx.sender.toHexString(),
+    })
+  );
+  if (!result.allowed) throwSenderError('store.rate_limited');
+}
+
 export const getOrCreateStoreCustomer = spacetimedb.procedure(
   { email: t.option(t.string()), name: t.option(t.string()) },
   storeCustomerResult,
-  (ctx, { email, name }) =>
-    stripe.getOrCreateUserCustomer(ctx.as.stripe, {
+  (ctx, { email, name }) => {
+    consumeBuyerStripeCall(ctx);
+    return stripe.getOrCreateUserCustomer(ctx.as.stripe, {
       userId: ctx.sender.toHexString(),
       email,
       name,
-    })
+    });
+  }
 );
 
 export const createStoreCheckoutSession = spacetimedb.procedure(
@@ -377,6 +396,7 @@ export const createStoreCheckoutSession = spacetimedb.procedure(
     if (items.length === 0 || items.length > MAX_CHECKOUT_ITEMS) {
       throwSenderError('store.invalid_items');
     }
+    consumeBuyerStripeCall(ctx);
     const checkout = ctx.withTx(tx => {
       const returnOrigin = tx.db.storeConfig.singleton.find(true)?.returnOrigin;
       if (!returnOrigin) throwSenderError('store.return_origin_not_set');
