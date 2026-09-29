@@ -1,0 +1,158 @@
+[
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-spacetime.json",
+    "sha256": "81d25ea91def32c4e6a8b4c5936f8ac1a719f239ef344e4f11f80e224e3ffa6d"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+    "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-postgres.json",
+    "sha256": "e1e4d86925d8abe9c574a7cc29020a70824d85fc6347d734fc69cbc00ee2ff70"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-mongodb.json",
+    "sha256": "3fd63750d357435540e5a989404cdce9c51351f4a4c5a4b92bd9dd0b68b03425"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-convex.json",
+    "sha256": "27dda27a3702382a491c609fc0f82343d9e7ce8bd4d9a0cddb3832b8b09316d1"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-spacetime.json",
+    "sha256": "ab5a24025ee66a4b5c927d00183e2883d0f061951a0fc2959228669cb20dc192"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-postgres.json",
+    "sha256": "bc9a7bf6da8d4a487ee72359e1b8d3abf810f352089bdabd6b92427c6f436d5b"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-mongodb.json",
+    "sha256": "ef3f81491fc63938171cf308706104ebbb0255ac210077bf7aee754a3ea76c76"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-convex.json",
+    "sha256": "e9d8e817cc13235d52ee17de71c47392fbd2c3d2a5852e379930816d5785ad6a"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/null.json",
+    "sha256": "dd17c93c64cb5fcea2271f1d929bc29d3cfbd124a84855b6ec307647beaa19ba"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/control-proof.json",
+    "sha256": "1121dd3af6c79f67c5d7143389203f5a68ebae136a123d8e289db34f29bf6a73"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/image-verification.json",
+    "sha256": "23e36d95393fea1289b45a1cb17e8d97446376e5bb3d700211e879f576106369"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-spacetime.json",
+    "sha256": "a8a0656d95d1186ae6ee69699f2ac9c714835f212214c6ed91a98fb0f666e86e"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+    "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-postgres.json",
+    "sha256": "1c53670f7260aee677388d480e5a359f64ba11eeeb1b9baeb94aa74d0c039043"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-mongodb.json",
+    "sha256": "8fc6f9c175a9ff2967814e8d3bab04bd9e4ec4c35c7e600e2de0ae73bc8e98f2"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-convex.json",
+    "sha256": "3855e5b08ed97993511f573fad8510b0421e862fb30a72f8c16323f5219ca639"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/null.json",
+    "sha256": "72abee8cfad634aa70db07065af17d20958d3a40f078f68944c0ba304923587e"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-spacetime.json",
+    "sha256": "4e343487a371ef0c207a3205c48937da5e20ca39c5bb36100cf9bdff36add639"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-postgres.json",
+    "sha256": "c836807b6e7c8d8bb34f669bf375c6d51d0e4f4351102bcd8697c002446dd785"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-mongodb.json",
+    "sha256": "0b6daf7c4bbffd21243cfddb6c24cfd47eae57758d0c09b71852fa85ddc3639a"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-convex.json",
+    "sha256": "fb11e2105ce1fce8909205b5b56c72fc4ac72de7a903b0520100fdec9bfdacd7"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/control-proof.json",
+    "sha256": "a6b6f6a9847b6c3512c2971224053ccea0573afe4d72a2cf22f8fb519a6dd723"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/image-verification.json",
+    "sha256": "2bd4b8d3e0e66c4501796d4964252f3df755f197f8fd46603ae3f9cea36fffb5"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-spacetime.json",
+    "sha256": "b3142f88a49fe816774126d642dd517e571691a9480f2d4e3b8fe76c79f5966b"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+    "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-postgres.json",
+    "sha256": "cdcc56c8a5ec57de4082782a62697b0ca2ad36f9747c6ab82127f44590cfb38f"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-mongodb.json",
+    "sha256": "8e8ea7a980187f5e68fb28d1c783317e11f67a6478e2fb16c008ef23b6ee6513"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-convex.json",
+    "sha256": "4d53cb258feaf82e52ccb35488906614eb8bdeb2037e0955867accc90faa632e"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/null.json",
+    "sha256": "e938e80f05ddaf650c42a818106c52287ebf89de82b63942d5e4844d2adde621"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-spacetime.json",
+    "sha256": "9ea3e68814e74ad9df0213dfd96dee4606a82f15c4a41b0834dc91275a90632d"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-postgres.json",
+    "sha256": "98a53c11bd02afe960d74f615b6e49774930369326c84a280efc15f442ad4f52"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-mongodb.json",
+    "sha256": "0d2c3ac83377997b98c91d00c2e5cdb77c23e6e1f9b277d72d47aadc0ad689e2"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-convex.json",
+    "sha256": "dbbaff87baebda385e5d74f64004b2d7483e1a32207519ff69344d78e8b6febc"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/control-proof.json",
+    "sha256": "4f9852b4a93d800300d1b6fff05e424c2b56bd366a9f9745c2763f707a7dd1c7"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/image-verification.json",
+    "sha256": "7482ca3c21e7e8424e8d89aba41507f90fd829db4ed2da71f7963afabdd86760"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/source-runtime-review.json",
+    "sha256": "818fe238f4e5ac0aa256ce2745e3cba310237c16d862d7b454fa89ce720e895d"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/recipe-metadata-plan.json",
+    "sha256": "11633b00d04a6ec87c3f195adc4164910c8e205f7e2e1e83be0dfea137f8b41f"
+  },
+  {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/promotion-approval.json",
+    "sha256": "dac61b38e06b461a67119003bda2aa1608875af5c7898e389631461eb4d3c559"
+  }
+]

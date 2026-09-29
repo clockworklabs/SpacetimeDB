@@ -1,0 +1,31 @@
+{
+  "approved": true,
+  "reviewer": "root",
+  "candidate": "fae0df803d79b2068c725d46d77b3d6bab05b17e",
+  "image": "sha256:eae464547eeab8f04f012cc188b61835b549080e7de3473cb2736395854fd194",
+  "destination": "qualification-evidence/ecommerce-l3-combined-20260929",
+  "planSha256": "047db53c84a5edd0f33037a4b7848a6025740dbef9a4b547a00d93bba7438abd",
+  "draftSha256": "4cc7aa371957e4a92e35a06548e31f26ed278e03907e3f56954f1fd5caa31223",
+  "reviewSha256": "45aeba1e57427f3eed20003bedf6d0a446ca15df1cc0d699d2158f8fe1332569",
+  "metadataSha256": "11633b00d04a6ec87c3f195adc4164910c8e205f7e2e1e83be0dfea137f8b41f",
+  "normalSliceValidation": true,
+  "fullCoverage": true,
+  "controls": [
+    {
+      "name": "support",
+      "sha256": "3f8c5926e4f5526f370f3205ce64647642997693a9c1f3c1dbc4319b380360c1"
+    },
+    {
+      "name": "purchase",
+      "sha256": "5a045a19ceb3121040528de143f130c21001e391b8133327a849aaf7ee1f5a1a"
+    },
+    {
+      "name": "status",
+      "sha256": "3cde3511632b052b3b6b22687401cc961065a73cd3250b5bab8517fa3a3c13f6"
+    }
+  ],
+  "review": "Reviewed complete source delta and opt-in runtime behavior; exact two fixed-reference contract insertions; prior retained checks validated against approved baseline; 17 fresh/95 retained normal slice and full coverage validation. Current mappings replace stale targets and retain historical review evidence. Only27 original reports and3 byte-identical shared snapshots plus compact proofs are promoted. Historical studies unchanged; no paid launch.",
+  "prepareScriptSha256": "abda610f78b6a18b19572b65330c4892a7c9700cce3e129619d41d20aa057d75",
+  "promotionScriptSha256": "0630a34a2709a009f487b953836081f8b021ad4112d630d1e748f27cb252c263",
+  "copyScopeAuditSha256": "83490e561b1efab9eac427db63ce256f29ee1fe156844a6540767af2d0f69d25"
+}
