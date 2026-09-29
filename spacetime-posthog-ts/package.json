@@ -17,13 +17,25 @@
     }
   },
   "files": [
-    "src",
+    "dist",
     "LICENSE",
     "README.md"
   ],
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./submodule": {
+        "types": "./dist/submodule.d.ts",
+        "default": "./dist/submodule.js"
+      }
+    }
   },
   "repository": {
     "type": "git",
@@ -41,16 +53,12 @@
     "typescript"
   ],
   "scripts": {
-    "build": "spacetime build",
     "format": "prettier . --write --ignore-path ../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/test.ts",
-    "spacetime:generate": "spacetime generate --lang typescript --out-dir ts-codegen",
-    "publish:module": "spacetime publish",
-    "publish:local": "spacetime publish --server local --yes spacetime-posthog",
-    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-posthog",
-    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "peerDependencies": {

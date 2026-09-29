@@ -5,7 +5,7 @@ import {
   truncateForLog,
   featureFlagValue,
   posthogFetch,
-} from '../src/submodule/http.ts';
+} from '../src/submodule/http';
 import {
   MAX_DELIVERY_ATTEMPTS,
   claimHasExpired,
@@ -15,7 +15,7 @@ import {
   requeueFailedRow,
   retryDelayMicros,
   settleOutboxClaim,
-} from '../src/submodule/outbox-state.ts';
+} from '../src/submodule/outbox-state';
 
 assert.equal(isOkStatus(200), true);
 assert.equal(isOkStatus(299), true);

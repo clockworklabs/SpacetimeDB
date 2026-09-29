@@ -3,9 +3,9 @@ import {
   t,
   type ProcedureModuleCtx,
   type WriteCtx,
-} from './schema';
-import { requireAdmin } from './auth';
-import { errors, normalizeHost, throwSenderError } from './validation';
+} from './schema.js';
+import { requireAdmin } from './auth.js';
+import { errors, normalizeHost, throwSenderError } from './validation.js';
 
 export type PostHogConfig = {
   host: string;

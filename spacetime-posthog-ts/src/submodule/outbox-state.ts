@@ -1,4 +1,4 @@
-import { truncateForLog } from './http';
+import { truncateForLog } from './http.js';
 
 export const MAX_DELIVERY_ATTEMPTS = 5;
 const INITIAL_RETRY_DELAY_MICROS = 1_000_000n;

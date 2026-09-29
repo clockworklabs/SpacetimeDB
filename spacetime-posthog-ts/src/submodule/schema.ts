@@ -8,7 +8,7 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { install } from './install';
+import { install } from './install.js';
 
 export const outboxStatus = t.enum('PostHogOutboxStatus', [
   'Queued',

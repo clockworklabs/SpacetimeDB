@@ -11,20 +11,20 @@ import {
   type ProcedureModuleCtx,
   type ViewModuleCtx,
   type WriteCtx,
-} from './schema';
+} from './schema.js';
 import {
   loadConfig,
   loadConfigOrThrowFromProcedure,
   type PostHogConfig,
-} from './config';
+} from './config.js';
 import {
   featureFlagValue,
   posthogFetch,
   truncateForLog,
   type PostHogHttpResult,
-} from './http';
-import { isAdmin, requireAdmin } from './auth';
-import { errors, parseJsonObject, throwSenderError } from './validation';
+} from './http.js';
+import { isAdmin, requireAdmin } from './auth.js';
+import { errors, parseJsonObject, throwSenderError } from './validation.js';
 import {
   claimHasExpired,
   claimOutboxRow,
@@ -32,7 +32,7 @@ import {
   requeueFailedRow,
   retryDelayMicros,
   settleOutboxClaim,
-} from './outbox-state';
+} from './outbox-state.js';
 
 const MAX_FLUSH_LIMIT = 100;
 const MAX_FLUSH_BATCHES_PER_TICK = 10;

@@ -3,8 +3,8 @@ import {
   t,
   type ProcedureModuleCtx,
   type WriteCtx,
-} from './schema';
-import { errors, throwSenderError } from './validation';
+} from './schema.js';
+import { errors, throwSenderError } from './validation.js';
 
 type Sender = WriteCtx['sender'];
 type AdminReadableCtx = {

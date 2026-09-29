@@ -1,8 +1,11 @@
-export { default } from './submodule/schema';
-export { install } from './submodule/install';
-export { errors } from './submodule/validation';
-export { setPosthogConfig, getPosthogConfigStatus } from './submodule/config';
-export { addAdminIdentity, removeAdminIdentity } from './submodule/auth';
+export { default } from './submodule/schema.js';
+export { install } from './submodule/install.js';
+export { errors } from './submodule/validation.js';
+export {
+  setPosthogConfig,
+  getPosthogConfigStatus,
+} from './submodule/config.js';
+export { addAdminIdentity, removeAdminIdentity } from './submodule/auth.js';
 export {
   enqueueEventInTx,
   type EnqueueEventArgs,
@@ -16,4 +19,4 @@ export {
   posthogOutboxAdmin,
   requeueFailedEvents,
   scheduledFlush,
-} from './submodule/operations';
+} from './submodule/operations.js';

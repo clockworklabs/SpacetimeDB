@@ -1,4 +1,4 @@
-import type { PostHogConfig } from './config';
+import type { PostHogConfig } from './config.js';
 
 const MAX_LOG_BODY_LENGTH = 2048;
 

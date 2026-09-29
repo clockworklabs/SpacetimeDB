@@ -1,5 +1,5 @@
 import { ScheduleAt } from 'spacetimedb';
-import type { ReducerModuleCtx } from './schema';
+import type { ReducerModuleCtx } from './schema.js';
 
 const FLUSH_INTERVAL_MICROS = 5n * 1_000_000n;
 

@@ -17,7 +17,13 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-This submodule can be published directly as its own SpacetimeDB module from the root entry point.
+This submodule can also run as its own SpacetimeDB database. The standalone
+module in `spacetimedb/` publishes the root entry point:
+
+```bash
+pnpm --dir spacetimedb run build
+pnpm --dir spacetimedb run publish:local
+```
 
 ## Usage
 
@@ -78,7 +84,7 @@ PostHog credentials live in a private `posthog_config` singleton. During
 `posthog_admin_identity` table.
 
 ```bash
-spacetime call --server http://127.0.0.1:3000 posthog-ts set_posthog_config \
+spacetime call --server http://127.0.0.1:3000 spacetime-posthog set_posthog_config \
   '"https://us.i.posthog.com"' \
   '"phc_..."'
 ```
@@ -86,7 +92,7 @@ spacetime call --server http://127.0.0.1:3000 posthog-ts set_posthog_config \
 Verify:
 
 ```bash
-spacetime call --server http://127.0.0.1:3000 posthog-ts get_posthog_config_status '{}'
+spacetime call --server http://127.0.0.1:3000 spacetime-posthog get_posthog_config_status '{}'
 ```
 
 `get_posthog_config_status` is admin-only. The project token stays in private
@@ -171,12 +177,15 @@ Package entrypoints:
 
 ```bash
 pnpm test
-pnpm exec tsc --noEmit
+pnpm run typecheck
 pnpm run build
-npm pack --dry-run --json
+pnpm --dir spacetimedb run build
 ```
 
-The example app in `example/` mounts the submodule under the `posthog` namespace and subscribes to the admin views.
+`pnpm run build` compiles `src` to `dist`, which is what the published package
+contains.
+
+The example app in `example/` mounts the submodule under the `posthog` namespace.
 
 ## License
 
