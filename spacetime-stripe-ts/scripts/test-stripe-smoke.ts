@@ -97,6 +97,7 @@ async function expectCallFails(
 const q = (s: string) => JSON.stringify(s);
 const some = (s: string) => JSON.stringify({ some: s });
 const STRIPE_WEBHOOK_SECRET = 'whsec_smoke_test_secret';
+const EVENT_CREATED = 1735000000;
 
 function stripeSignature(rawBody: string): string {
   const ts = Math.floor(Date.now() / 1000);
@@ -199,7 +200,12 @@ async function main() {
     ] as const) {
       for (let attempt = 0; attempt < 2; attempt++) {
         await post(
-          { id: eventId, type: eventType, data: { object } },
+          {
+            id: eventId,
+            type: eventType,
+            created: EVENT_CREATED,
+            data: { object },
+          },
           expectedStatus
         );
       }
@@ -207,6 +213,7 @@ async function main() {
     const paid = {
       id: 'evt_http_paid',
       type: 'invoice.paid',
+      created: EVENT_CREATED,
       data: { object: { id: 'in_http_retry', customer: null } },
     };
     await post(paid, 400);
@@ -216,6 +223,7 @@ async function main() {
       payload: {
         id: 'evt_http_invoice',
         type: 'invoice.created',
+        created: EVENT_CREATED,
         data: {
           object: {
             id: 'in_http_retry',
@@ -235,6 +243,7 @@ async function main() {
   const invalidPayload = JSON.stringify({
     id: 'evt_relay_invalid',
     type: 'customer.created',
+    created: EVENT_CREATED,
     data: { object: {} },
   });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -270,6 +279,7 @@ async function main() {
   const mismatchPayload = JSON.stringify({
     id: 'evt_smoke_signed_id',
     type: 'customer.created',
+    created: EVENT_CREATED,
     data: { object: { id: 'cus_should_not_exist' } },
   });
   const mismatch = await expectCallFails(opts, 'ingest_stripe_webhook', [
@@ -292,6 +302,7 @@ async function main() {
     payload: {
       id: 'evt_smoke_cust_1',
       type: 'customer.created',
+      created: EVENT_CREATED,
       data: {
         object: {
           id: 'cus_smoke_1',
@@ -318,6 +329,7 @@ async function main() {
     payload: {
       id: 'evt_smoke_sub_1',
       type: 'customer.subscription.created',
+      created: EVENT_CREATED,
       data: {
         object: {
           id: 'sub_smoke_1',
@@ -353,9 +365,12 @@ async function main() {
     payload: {
       id: 'evt_smoke_chk_1',
       type: 'checkout.session.completed',
+      created: EVENT_CREATED,
       data: {
         object: {
           id: 'cs_smoke_1',
+          status: 'complete',
+          payment_status: 'paid',
           mode: 'subscription',
           customer: 'cus_smoke_1',
           metadata: { userId: 'u_smoke_1' },
@@ -377,6 +392,7 @@ async function main() {
     payload: {
       id: 'evt_smoke_inv_1',
       type: 'invoice.created',
+      created: EVENT_CREATED,
       data: {
         object: {
           id: 'in_smoke_1',
@@ -402,6 +418,7 @@ async function main() {
     payload: {
       id: 'evt_smoke_inv_2',
       type: 'invoice.paid',
+      created: EVENT_CREATED,
       data: {
         object: {
           id: 'in_smoke_1',
@@ -417,6 +434,47 @@ async function main() {
     throw new Error(`invoice.paid did not flip status: ${invoice}`);
   }
 
+  step('late invoice.finalized cannot reopen a paid invoice');
+  await ingest(opts, {
+    eventId: 'evt_smoke_inv_late',
+    eventType: 'invoice.finalized',
+    payload: {
+      id: 'evt_smoke_inv_late',
+      type: 'invoice.finalized',
+      created: EVENT_CREATED,
+      data: {
+        object: { id: 'in_smoke_1', customer: 'cus_smoke_1', status: 'open' },
+      },
+    },
+  });
+  invoice = await call(opts, 'list_invoices', [q('cus_smoke_1')]);
+  if (!invoice.includes('"paid"')) {
+    throw new Error(`late invoice.finalized reopened invoice: ${invoice}`);
+  }
+
+  step('late customer.subscription.updated cannot revive a canceled one');
+  for (const [eventId, eventType, created, status] of [
+    ['evt_smoke_sub_del', 'customer.subscription.deleted', 20, 'canceled'],
+    ['evt_smoke_sub_late', 'customer.subscription.updated', 10, 'active'],
+  ] as const) {
+    await ingest(opts, {
+      eventId,
+      eventType,
+      payload: {
+        id: eventId,
+        type: eventType,
+        created: EVENT_CREATED + created,
+        data: {
+          object: { id: 'sub_smoke_1', customer: 'cus_smoke_1', status },
+        },
+      },
+    });
+  }
+  const canceled = await call(opts, 'get_subscription', [q('sub_smoke_1')]);
+  if (!canceled.includes('"canceled"')) {
+    throw new Error(`late subscription event revived row: ${canceled}`);
+  }
+
   step('ingest payment_intent.succeeded standalone, expect payment row');
   await ingest(opts, {
     eventId: 'evt_smoke_pay_1',
@@ -424,6 +482,7 @@ async function main() {
     payload: {
       id: 'evt_smoke_pay_1',
       type: 'payment_intent.succeeded',
+      created: EVENT_CREATED,
       data: {
         object: {
           id: 'pi_smoke_1',
@@ -459,6 +518,7 @@ async function main() {
     payload: {
       id: 'evt_smoke_cust_1',
       type: 'customer.created',
+      created: EVENT_CREATED,
       data: { object: { id: 'cus_smoke_1', email: 'CHANGED@example.com' } },
     },
   });

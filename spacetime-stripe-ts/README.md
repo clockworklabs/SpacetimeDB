@@ -180,15 +180,48 @@ Package entrypoints:
 ## Webhook events handled
 
 ```
-customer.created                customer.updated
-customer.subscription.created   customer.subscription.updated
-customer.subscription.deleted   checkout.session.completed
-invoice.created                 invoice.finalized
-invoice.paid                    invoice.payment_succeeded
-invoice.payment_failed          payment_intent.succeeded
+customer.created                           customer.updated
+customer.subscription.created              customer.subscription.updated
+customer.subscription.deleted              checkout.session.completed
+checkout.session.async_payment_succeeded   checkout.session.async_payment_failed
+invoice.created                            invoice.finalized
+invoice.paid                               invoice.payment_succeeded
+invoice.payment_failed                     invoice_payment.paid
+payment_intent.succeeded
 ```
 
-Other event types are accepted but stored with `status = 'ignored'`.
+Other event types are accepted and stored with status `Ignored`.
+
+Stripe does not deliver events in order. Each customer, subscription, Checkout
+session, and invoice row stores the `created` time of the event it reflects in
+`eventCreatedUnix`. An event older than that, or one that would move the status
+backward (a canceled subscription to active, a paid invoice to open, a paid
+Checkout session to unpaid), is stored as `Ignored` without changing the row.
+`replay_webhook_event` follows the same rule.
+
+### Checkout fulfillment
+
+`checkout.session.completed` also fires for asynchronous payment methods before
+the payment settles. Grant access only when `stripe_checkout_session.paymentStatus`
+is `paid` or `no_payment_required`. Subscribe the webhook endpoint to
+`checkout.session.async_payment_succeeded` and
+`checkout.session.async_payment_failed` so delayed payments update that field.
+
+### Stripe API versions
+
+Webhook payloads use the API version configured on the webhook endpoint, not
+the `stripeVersion` sent with API requests. The submodule reads both payload
+shapes:
+
+- Invoice subscriptions come from `invoice.subscription` before
+  `2025-03-31.basil` and from `invoice.parent.subscription_details.subscription`
+  from that version on.
+- `stripe_payment` mirrors every succeeded PaymentIntent. `stripeInvoiceId` is
+  set when the PaymentIntent paid an invoice, from `payment_intent.invoice`
+  before `2025-03-31.basil` and from `invoice_payment.paid` from that version on.
+  Endpoints on `2025-03-31.basil` or later must subscribe to
+  `invoice_payment.paid`. Exclude rows with `stripeInvoiceId` when totaling
+  payments alongside `stripe_invoice`.
 
 ## Webhook signature verification
 

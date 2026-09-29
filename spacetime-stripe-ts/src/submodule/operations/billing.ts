@@ -37,6 +37,7 @@ import {
   metadataJsonToFormPairs,
   upsertCustomerRow,
   upsertSubscriptionRow,
+  unixSeconds,
   callStripe,
   createCustomerInStripeAndSync,
 } from '../operations';
@@ -240,6 +241,7 @@ export const createOrUpdateCustomer = spacetimedb.procedure(
         name: args.name,
         metadataJson: details.metadataJson,
         userId: details.userId,
+        eventCreatedUnix: unixSeconds(ctx.timestamp),
       });
     });
     return args.stripeCustomerId;
@@ -276,6 +278,7 @@ export const updateSubscriptionMetadata = spacetimedb.procedure(
         metadataJson: parsedDetails.metadataJson ?? args.metadataJson,
         orgId: args.orgId ?? parsedDetails.orgId ?? existing.orgId,
         userId: args.userId ?? parsedDetails.userId ?? existing.userId,
+        eventCreatedUnix: existing.eventCreatedUnix,
       });
     });
     return {};
@@ -529,6 +532,7 @@ function syncSubscriptionObjectFromStripe(
       metadataJson: meta.metadataJson,
       orgId: meta.orgId,
       userId: meta.userId,
+      eventCreatedUnix: unixSeconds(ctx.timestamp),
     });
   });
 }
@@ -659,6 +663,7 @@ export const updateSubscriptionQuantity = spacetimedb.procedure(
         metadataJson: localSub.metadataJson,
         orgId: localSub.orgId,
         userId: localSub.userId,
+        eventCreatedUnix: localSub.eventCreatedUnix,
       });
     });
     return {};

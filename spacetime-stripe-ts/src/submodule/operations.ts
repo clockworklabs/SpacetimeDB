@@ -20,6 +20,12 @@ import {
 import { verifyStripeSignature } from '@spacetimedb/crypto';
 import { adminVerdict, denyIfNotAdmin, requireAdmin } from './auth';
 import { parseStripeEventMetadata } from './webhook-metadata';
+import {
+  checkoutPaymentStatusRank,
+  invoiceStatusRank,
+  isStale,
+  subscriptionStatusRank,
+} from './event-order';
 import { buildStripeHttpRequest } from './http';
 import {
   MAX_WEBHOOK_BODY_LENGTH,
@@ -203,6 +209,7 @@ export function upsertCustomerRow(
     name: string | undefined;
     metadataJson: string | undefined;
     userId: string | undefined;
+    eventCreatedUnix: bigint;
   }
 ) {
   const existing = ctx.db.stripeCustomer.stripeCustomerId.find(
@@ -215,6 +222,7 @@ export function upsertCustomerRow(
     name: args.name ?? existing?.name,
     metadataJson: args.metadataJson ?? existing?.metadataJson,
     userId: args.userId ?? existing?.userId,
+    eventCreatedUnix: args.eventCreatedUnix,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -241,6 +249,7 @@ export function upsertSubscriptionRow(
     metadataJson: string | undefined;
     orgId: string | undefined;
     userId: string | undefined;
+    eventCreatedUnix: bigint;
   }
 ) {
   const existing = ctx.db.stripeSubscription.stripeSubscriptionId.find(
@@ -258,6 +267,7 @@ export function upsertSubscriptionRow(
     metadataJson: args.metadataJson ?? existing?.metadataJson,
     orgId: args.orgId ?? existing?.orgId,
     userId: args.userId ?? existing?.userId,
+    eventCreatedUnix: args.eventCreatedUnix,
     insertedAt: existing?.insertedAt ?? now,
     updatedAt: now,
   };
@@ -276,8 +286,10 @@ export function upsertCheckoutSession(
     stripeCheckoutSessionId: string;
     stripeCustomerId: string | undefined;
     status: string;
+    paymentStatus: string;
     mode: string;
     metadataJson: string | undefined;
+    eventCreatedUnix: bigint;
   }
 ) {
   const existing = ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.find(
@@ -287,8 +299,10 @@ export function upsertCheckoutSession(
     stripeCheckoutSessionId: args.stripeCheckoutSessionId,
     stripeCustomerId: args.stripeCustomerId ?? existing?.stripeCustomerId,
     status: args.status,
+    paymentStatus: args.paymentStatus,
     mode: args.mode,
     metadataJson: args.metadataJson ?? existing?.metadataJson,
+    eventCreatedUnix: args.eventCreatedUnix,
     insertedAt: existing?.insertedAt ?? now,
     updatedAt: now,
   };
@@ -306,6 +320,7 @@ export function upsertPayment(
   args: {
     stripePaymentIntentId: string;
     stripeCustomerId: string | undefined;
+    stripeInvoiceId: string | undefined;
     amount: bigint;
     currency: string;
     status: string;
@@ -321,6 +336,7 @@ export function upsertPayment(
   const row = {
     stripePaymentIntentId: args.stripePaymentIntentId,
     stripeCustomerId: args.stripeCustomerId ?? existing?.stripeCustomerId,
+    stripeInvoiceId: args.stripeInvoiceId ?? existing?.stripeInvoiceId,
     amount: args.amount,
     currency: args.currency,
     status: args.status,
@@ -352,6 +368,7 @@ export function upsertInvoice(
     createdUnix: bigint;
     orgId: string | undefined;
     userId: string | undefined;
+    eventCreatedUnix: bigint;
   }
 ) {
   const existing = ctx.db.stripeInvoice.stripeInvoiceId.find(
@@ -368,6 +385,7 @@ export function upsertInvoice(
     createdUnix: args.createdUnix,
     orgId: args.orgId ?? existing?.orgId,
     userId: args.userId ?? existing?.userId,
+    eventCreatedUnix: args.eventCreatedUnix,
     insertedAt: existing?.insertedAt ?? now,
     updatedAt: now,
   };
@@ -418,6 +436,10 @@ export function metadataInfoFromRecord(
   };
 }
 
+export function unixSeconds(timestamp: ModuleTimestamp): bigint {
+  return timestamp.microsSinceUnixEpoch / 1_000_000n;
+}
+
 export function toBigIntOrZero(n: number | undefined | null): bigint {
   return n === undefined || n === null ? 0n : BigInt(n);
 }
@@ -428,20 +450,9 @@ export function toBigIntOrUndefined(
   return n === undefined || n === null ? undefined : BigInt(n);
 }
 
-const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'customer.created',
-  'customer.updated',
-  'customer.subscription.created',
-  'customer.subscription.updated',
-  'customer.subscription.deleted',
-  'checkout.session.completed',
-  'invoice.created',
-  'invoice.finalized',
-  'invoice.paid',
-  'invoice.payment_succeeded',
-  'invoice.payment_failed',
-  'payment_intent.succeeded',
-]);
+const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set(
+  vStripeEvent.options.map(option => option.entries.type.literal)
+);
 
 export function applyStripeEvent(
   ctx: ReducerModuleCtx,
@@ -478,21 +489,40 @@ type ParsedInvoiceObject = Extract<
   { type: 'invoice.paid' }
 >['data']['object'];
 
+function invoiceSubscriptionId(obj: ParsedInvoiceObject): string | undefined {
+  const legacy =
+    obj.subscription === undefined
+      ? null
+      : extractExpandableIdOrNull(obj.subscription);
+  const parent = obj.parent?.subscription_details?.subscription;
+  return (
+    legacy ?? (parent === undefined ? undefined : extractExpandableId(parent))
+  );
+}
+
 function syncInvoiceEvent(
   ctx: ReducerModuleCtx,
   obj: ParsedInvoiceObject,
-  status: string
+  status: string,
+  eventCreatedUnix: bigint
 ): WebhookEventStatusValue {
   const existing = ctx.db.stripeInvoice.stripeInvoiceId.find(obj.id);
+  if (
+    existing &&
+    isStale(
+      {
+        createdUnix: existing.eventCreatedUnix,
+        rank: invoiceStatusRank(existing.status),
+      },
+      { createdUnix: eventCreatedUnix, rank: invoiceStatusRank(status) }
+    )
+  )
+    return WebhookEventStatus.Ignored;
   const payloadCustomerId = extractExpandableIdOrNull(obj.customer);
   const customerId = existing?.stripeCustomerId ?? payloadCustomerId;
   if (customerId === null) return WebhookEventStatus.Failed;
-  const payloadSubscriptionId =
-    obj.subscription === undefined
-      ? undefined
-      : (extractExpandableIdOrNull(obj.subscription) ?? undefined);
   const subscriptionId =
-    existing?.stripeSubscriptionId ?? payloadSubscriptionId;
+    existing?.stripeSubscriptionId ?? invoiceSubscriptionId(obj);
   const subscription = subscriptionId
     ? ctx.db.stripeSubscription.stripeSubscriptionId.find(subscriptionId)
     : undefined;
@@ -508,6 +538,7 @@ function syncInvoiceEvent(
       toBigIntOrUndefined(obj.created) ?? existing?.createdUnix ?? 0n,
     orgId: existing?.orgId ?? subscription?.orgId,
     userId: existing?.userId ?? subscription?.userId,
+    eventCreatedUnix,
   });
   return WebhookEventStatus.Processed;
 }
@@ -516,10 +547,14 @@ function dispatchEvent(
   ctx: ReducerModuleCtx,
   event: ParsedStripeEvent
 ): WebhookEventStatusValue {
+  const eventCreatedUnix = BigInt(event.created);
   switch (event.type) {
     case 'customer.created':
     case 'customer.updated': {
       const obj = event.data.object;
+      const existing = ctx.db.stripeCustomer.stripeCustomerId.find(obj.id);
+      if (existing && eventCreatedUnix < existing.eventCreatedUnix)
+        return WebhookEventStatus.Ignored;
       const meta = metadataInfoFromRecord(obj.metadata);
       upsertCustomerRow(ctx, ctx.timestamp, {
         stripeCustomerId: obj.id,
@@ -528,6 +563,7 @@ function dispatchEvent(
         name: obj.name ?? undefined,
         metadataJson: meta.metadataJson,
         userId: meta.userId,
+        eventCreatedUnix,
       });
       return WebhookEventStatus.Processed;
     }
@@ -539,6 +575,23 @@ function dispatchEvent(
         event.type === 'customer.subscription.deleted'
           ? 'canceled'
           : obj.status;
+      const existing = ctx.db.stripeSubscription.stripeSubscriptionId.find(
+        obj.id
+      );
+      if (
+        existing &&
+        isStale(
+          {
+            createdUnix: existing.eventCreatedUnix,
+            rank: subscriptionStatusRank(existing.status),
+          },
+          {
+            createdUnix: eventCreatedUnix,
+            rank: subscriptionStatusRank(status),
+          }
+        )
+      )
+        return WebhookEventStatus.Ignored;
       const customerId = extractExpandableId(obj.customer);
       const firstItem = obj.items?.data[0];
       const currentPeriodEnd =
@@ -562,11 +615,30 @@ function dispatchEvent(
         metadataJson: meta.metadataJson,
         orgId: meta.orgId,
         userId: meta.userId,
+        eventCreatedUnix,
       });
       return WebhookEventStatus.Processed;
     }
-    case 'checkout.session.completed': {
+    case 'checkout.session.completed':
+    case 'checkout.session.async_payment_succeeded':
+    case 'checkout.session.async_payment_failed': {
       const obj = event.data.object;
+      const existing =
+        ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.find(obj.id);
+      if (
+        existing &&
+        isStale(
+          {
+            createdUnix: existing.eventCreatedUnix,
+            rank: checkoutPaymentStatusRank(existing.paymentStatus),
+          },
+          {
+            createdUnix: eventCreatedUnix,
+            rank: checkoutPaymentStatusRank(obj.payment_status),
+          }
+        )
+      )
+        return WebhookEventStatus.Ignored;
       const meta = metadataInfoFromRecord(obj.metadata);
       const customerId =
         obj.customer === undefined
@@ -575,34 +647,64 @@ function dispatchEvent(
       upsertCheckoutSession(ctx, ctx.timestamp, {
         stripeCheckoutSessionId: obj.id,
         stripeCustomerId: customerId,
-        status: 'complete',
+        status: obj.status ?? 'complete',
+        paymentStatus: obj.payment_status,
         mode: obj.mode ?? 'payment',
         metadataJson: meta.metadataJson,
+        eventCreatedUnix,
       });
       return WebhookEventStatus.Processed;
     }
-    case 'invoice.created':
-    case 'invoice.finalized': {
+    case 'invoice.created': {
       const obj = event.data.object;
-      return syncInvoiceEvent(ctx, obj, obj.status ?? 'open');
+      return syncInvoiceEvent(
+        ctx,
+        obj,
+        obj.status ?? 'draft',
+        eventCreatedUnix
+      );
+    }
+    case 'invoice.finalized':
+    case 'invoice.payment_failed': {
+      const obj = event.data.object;
+      return syncInvoiceEvent(ctx, obj, obj.status ?? 'open', eventCreatedUnix);
     }
     case 'invoice.paid':
     case 'invoice.payment_succeeded': {
-      return syncInvoiceEvent(ctx, event.data.object, 'paid');
+      const obj = event.data.object;
+      return syncInvoiceEvent(ctx, obj, obj.status ?? 'paid', eventCreatedUnix);
     }
-    case 'invoice.payment_failed': {
-      return syncInvoiceEvent(ctx, event.data.object, 'open');
+    case 'invoice_payment.paid': {
+      // API versions from 2025-03-31.basil link invoice payments here instead
+      // of `payment_intent.invoice`.
+      const obj = event.data.object;
+      if (obj.payment.payment_intent === undefined)
+        return WebhookEventStatus.Ignored;
+      const paymentIntentId = extractExpandableId(obj.payment.payment_intent);
+      const invoiceId = extractExpandableId(obj.invoice);
+      const existing =
+        ctx.db.stripePayment.stripePaymentIntentId.find(paymentIntentId);
+      const invoice = ctx.db.stripeInvoice.stripeInvoiceId.find(invoiceId);
+      upsertPayment(ctx, ctx.timestamp, {
+        stripePaymentIntentId: paymentIntentId,
+        stripeCustomerId: invoice?.stripeCustomerId,
+        stripeInvoiceId: invoiceId,
+        amount: existing?.amount ?? toBigIntOrZero(obj.amount_paid),
+        currency: existing?.currency ?? obj.currency,
+        status: existing?.status ?? 'succeeded',
+        createdUnix: existing?.createdUnix ?? BigInt(obj.created),
+        metadataJson: undefined,
+        orgId: invoice?.orgId,
+        userId: invoice?.userId,
+      });
+      return WebhookEventStatus.Processed;
     }
     case 'payment_intent.succeeded': {
       const obj = event.data.object;
-      // Invoice events own invoice-attached payment state.
       const invoiceId =
         obj.invoice === undefined
-          ? null
-          : extractExpandableIdOrNull(obj.invoice);
-      if (invoiceId !== null && invoiceId !== undefined)
-        return WebhookEventStatus.Ignored;
-
+          ? undefined
+          : (extractExpandableIdOrNull(obj.invoice) ?? undefined);
       const customerId =
         obj.customer === undefined
           ? null
@@ -611,6 +713,7 @@ function dispatchEvent(
       upsertPayment(ctx, ctx.timestamp, {
         stripePaymentIntentId: obj.id,
         stripeCustomerId: customerId ?? undefined,
+        stripeInvoiceId: invoiceId,
         amount: toBigIntOrZero(obj.amount),
         currency: obj.currency ?? 'unknown',
         status: obj.status ?? 'succeeded',
@@ -709,6 +812,7 @@ export function createCustomerInStripeAndSync(
       name: args.name,
       metadataJson: details.metadataJson,
       userId: details.userId,
+      eventCreatedUnix: unixSeconds(ctx.timestamp),
     });
   });
   return customerId;
@@ -732,6 +836,7 @@ export const upsertCustomer = spacetimedb.reducer(
       name: args.name,
       metadataJson: args.metadataJson,
       userId: args.userId,
+      eventCreatedUnix: unixSeconds(ctx.timestamp),
     });
   }
 );
@@ -764,6 +869,7 @@ export const upsertSubscription = spacetimedb.reducer(
       metadataJson: args.metadataJson,
       orgId: args.orgId,
       userId: args.userId,
+      eventCreatedUnix: unixSeconds(ctx.timestamp),
     });
   }
 );
@@ -782,6 +888,7 @@ export const updatePaymentCustomer = spacetimedb.reducer(
     upsertPayment(ctx, ctx.timestamp, {
       stripePaymentIntentId: existing.stripePaymentIntentId,
       stripeCustomerId,
+      stripeInvoiceId: existing.stripeInvoiceId,
       amount: existing.amount,
       currency: existing.currency,
       status: existing.status,
@@ -815,6 +922,7 @@ export const updateSubscriptionQuantityInternal = spacetimedb.reducer(
       metadataJson: existing.metadataJson,
       orgId: existing.orgId,
       userId: existing.userId,
+      eventCreatedUnix: existing.eventCreatedUnix,
     });
   }
 );

@@ -12,8 +12,9 @@ import * as v from 'valibot';
 import { install } from './install';
 
 // Internal ingest lifecycle for webhook rows. Received = stored. Processed =
-// applied to the data model. Ignored = duplicate or unhandled event type.
-// Failed = signature/format error.
+// applied to the data model. Ignored = unhandled event type or an event older
+// than the stored state. Failed = a handled event type whose payload could not
+// be applied. Requests with an invalid signature are rejected and never stored.
 //
 // The other status columns on this schema (subscription, checkout, invoice,
 // and payment) stay as t.string() because they reflect Stripe-owned vocabulary
@@ -42,6 +43,7 @@ export const stripeCustomerRow = {
   name: t.option(t.string()),
   metadataJson: t.option(t.string()),
   userId: t.option(t.string()),
+  eventCreatedUnix: t.i64(),
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
 };
@@ -58,6 +60,7 @@ export const stripeSubscriptionRow = {
   metadataJson: t.option(t.string()),
   orgId: t.option(t.string()),
   userId: t.option(t.string()),
+  eventCreatedUnix: t.i64(),
   insertedAt: t.timestamp(),
   updatedAt: t.timestamp(),
 };
@@ -66,8 +69,10 @@ export const stripeCheckoutSessionRow = {
   stripeCheckoutSessionId: t.string().primaryKey(),
   stripeCustomerId: t.option(t.string()),
   status: t.string(),
+  paymentStatus: t.string(),
   mode: t.string(),
   metadataJson: t.option(t.string()),
+  eventCreatedUnix: t.i64(),
   insertedAt: t.timestamp(),
   updatedAt: t.timestamp(),
 };
@@ -75,6 +80,7 @@ export const stripeCheckoutSessionRow = {
 export const stripePaymentRow = {
   stripePaymentIntentId: t.string().primaryKey(),
   stripeCustomerId: t.option(t.string()),
+  stripeInvoiceId: t.option(t.string()),
   amount: t.i64(),
   currency: t.string(),
   status: t.string(),
@@ -96,6 +102,7 @@ export const stripeInvoiceRow = {
   createdUnix: t.i64(),
   orgId: t.option(t.string()),
   userId: t.option(t.string()),
+  eventCreatedUnix: t.i64(),
   insertedAt: t.timestamp(),
   updatedAt: t.timestamp(),
 };
@@ -354,6 +361,8 @@ const vSubscriptionObject = v.object({
 
 const vCheckoutSessionObject = v.object({
   id: v.string(),
+  status: v.optional(v.union([v.string(), v.null()])),
+  payment_status: v.string(),
   mode: v.optional(v.string()),
   customer: v.optional(vExpandableIdOrNull),
   metadata: vMetadata,
@@ -363,7 +372,19 @@ const vInvoiceObject = v.object({
   id: v.string(),
   // Stripe.Invoice.customer is nullable; the apply function rejects null.
   customer: vExpandableIdOrNull,
+  // API versions before 2025-03-31.basil.
   subscription: v.optional(vExpandableIdOrNull),
+  // API versions from 2025-03-31.basil.
+  parent: v.optional(
+    v.union([
+      v.object({
+        subscription_details: v.optional(
+          v.union([v.object({ subscription: vExpandableId }), v.null()])
+        ),
+      }),
+      v.null(),
+    ])
+  ),
   status: v.optional(v.union([v.string(), v.null()])),
   amount_due: v.optional(v.number()),
   amount_paid: v.optional(v.number()),
@@ -373,6 +394,7 @@ const vInvoiceObject = v.object({
 const vPaymentIntentObject = v.object({
   id: v.string(),
   customer: v.optional(vExpandableIdOrNull),
+  // Removed in 2025-03-31.basil; `invoice_payment.paid` links newer payloads.
   invoice: v.optional(vExpandableIdOrNull),
   amount: v.optional(v.number()),
   currency: v.optional(v.string()),
@@ -381,56 +403,42 @@ const vPaymentIntentObject = v.object({
   metadata: vMetadata,
 });
 
+const vInvoicePaymentObject = v.object({
+  invoice: vExpandableId,
+  amount_paid: v.union([v.number(), v.null()]),
+  currency: v.string(),
+  created: v.number(),
+  payment: v.object({ payment_intent: v.optional(vExpandableId) }),
+});
+
+function vEvent<const T extends string, const O extends v.GenericSchema>(
+  type: T,
+  object: O
+) {
+  return v.object({
+    type: v.literal(type),
+    created: v.number(),
+    data: v.object({ object }),
+  });
+}
+
 // Unknown event types are acknowledged as Ignored.
 export const vStripeEvent = v.variant('type', [
-  v.object({
-    type: v.literal('customer.created'),
-    data: v.object({ object: vCustomerObject }),
-  }),
-  v.object({
-    type: v.literal('customer.updated'),
-    data: v.object({ object: vCustomerObject }),
-  }),
-  v.object({
-    type: v.literal('customer.subscription.created'),
-    data: v.object({ object: vSubscriptionObject }),
-  }),
-  v.object({
-    type: v.literal('customer.subscription.updated'),
-    data: v.object({ object: vSubscriptionObject }),
-  }),
-  v.object({
-    type: v.literal('customer.subscription.deleted'),
-    data: v.object({ object: vSubscriptionObject }),
-  }),
-  v.object({
-    type: v.literal('checkout.session.completed'),
-    data: v.object({ object: vCheckoutSessionObject }),
-  }),
-  v.object({
-    type: v.literal('invoice.created'),
-    data: v.object({ object: vInvoiceObject }),
-  }),
-  v.object({
-    type: v.literal('invoice.finalized'),
-    data: v.object({ object: vInvoiceObject }),
-  }),
-  v.object({
-    type: v.literal('invoice.paid'),
-    data: v.object({ object: vInvoiceObject }),
-  }),
-  v.object({
-    type: v.literal('invoice.payment_succeeded'),
-    data: v.object({ object: vInvoiceObject }),
-  }),
-  v.object({
-    type: v.literal('invoice.payment_failed'),
-    data: v.object({ object: vInvoiceObject }),
-  }),
-  v.object({
-    type: v.literal('payment_intent.succeeded'),
-    data: v.object({ object: vPaymentIntentObject }),
-  }),
+  vEvent('customer.created', vCustomerObject),
+  vEvent('customer.updated', vCustomerObject),
+  vEvent('customer.subscription.created', vSubscriptionObject),
+  vEvent('customer.subscription.updated', vSubscriptionObject),
+  vEvent('customer.subscription.deleted', vSubscriptionObject),
+  vEvent('checkout.session.completed', vCheckoutSessionObject),
+  vEvent('checkout.session.async_payment_succeeded', vCheckoutSessionObject),
+  vEvent('checkout.session.async_payment_failed', vCheckoutSessionObject),
+  vEvent('invoice.created', vInvoiceObject),
+  vEvent('invoice.finalized', vInvoiceObject),
+  vEvent('invoice.paid', vInvoiceObject),
+  vEvent('invoice.payment_succeeded', vInvoiceObject),
+  vEvent('invoice.payment_failed', vInvoiceObject),
+  vEvent('invoice_payment.paid', vInvoicePaymentObject),
+  vEvent('payment_intent.succeeded', vPaymentIntentObject),
 ]);
 
 export type ParsedStripeEvent = v.InferOutput<typeof vStripeEvent>;

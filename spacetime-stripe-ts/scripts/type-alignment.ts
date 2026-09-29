@@ -17,11 +17,14 @@ type _StripeEvents = Assert<
     | Stripe.CustomerSubscriptionUpdatedEvent
     | Stripe.CustomerSubscriptionDeletedEvent
     | Stripe.CheckoutSessionCompletedEvent
+    | Stripe.CheckoutSessionAsyncPaymentSucceededEvent
+    | Stripe.CheckoutSessionAsyncPaymentFailedEvent
     | Stripe.InvoiceCreatedEvent
     | Stripe.InvoiceFinalizedEvent
     | Stripe.InvoicePaidEvent
     | Stripe.InvoicePaymentSucceededEvent
     | Stripe.InvoicePaymentFailedEvent
+    | Stripe.InvoicePaymentPaidEvent
     | Stripe.PaymentIntentSucceededEvent,
     ParsedStripeEvent
   >

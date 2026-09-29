@@ -1,6 +1,12 @@
 import * as assert from 'node:assert/strict';
 import { Timestamp } from 'spacetimedb';
 import { latestSubscription } from '../src/submodule/subscription-order.ts';
+import {
+  checkoutPaymentStatusRank,
+  invoiceStatusRank,
+  isStale,
+  subscriptionStatusRank,
+} from '../src/submodule/event-order.ts';
 import { buildStripeHttpRequest } from '../src/submodule/http.ts';
 import { parseStripeEventMetadata } from '../src/submodule/webhook-metadata.ts';
 import {
@@ -111,6 +117,55 @@ assert.equal(
     { stripeSubscriptionId: 'sub_a', insertedAt: new Timestamp(1n) },
   ])?.stripeSubscriptionId,
   'sub_b'
+);
+
+const state = (createdUnix: bigint, rank: number) => ({ createdUnix, rank });
+assert.equal(isStale(undefined, state(1n, 0)), false);
+assert.equal(isStale(state(10n, 1), state(9n, 1)), true);
+assert.equal(isStale(state(10n, 1), state(10n, 1)), false);
+assert.equal(isStale(state(10n, 1), state(11n, 1)), false);
+// A newer event cannot move a status backward.
+assert.equal(
+  isStale(
+    state(10n, subscriptionStatusRank('canceled')),
+    state(11n, subscriptionStatusRank('active'))
+  ),
+  true
+);
+assert.equal(
+  isStale(
+    state(10n, subscriptionStatusRank('active')),
+    state(10n, subscriptionStatusRank('incomplete'))
+  ),
+  true
+);
+assert.equal(
+  isStale(
+    state(10n, subscriptionStatusRank('active')),
+    state(11n, subscriptionStatusRank('past_due'))
+  ),
+  false
+);
+assert.equal(
+  isStale(
+    state(10n, invoiceStatusRank('paid')),
+    state(10n, invoiceStatusRank('open'))
+  ),
+  true
+);
+assert.equal(
+  isStale(
+    state(10n, invoiceStatusRank('uncollectible')),
+    state(11n, invoiceStatusRank('paid'))
+  ),
+  false
+);
+assert.equal(
+  isStale(
+    state(10n, checkoutPaymentStatusRank('paid')),
+    state(10n, checkoutPaymentStatusRank('unpaid'))
+  ),
+  true
 );
 
 console.log('stripe unit tests passed');
