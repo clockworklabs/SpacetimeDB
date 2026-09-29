@@ -1,3 +1,5 @@
+import { errors } from './errors';
+
 const STRIPE_API_ORIGIN = 'https://api.stripe.com';
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'DELETE']);
 const MAX_PATH_LENGTH = 2048;
@@ -22,17 +24,17 @@ export type StripeHttpRequest = {
 function validatePath(path: string): string {
   const normalized = path.trim();
   if (!normalized.startsWith('/v1/')) {
-    throw new Error('stripe.request_path_invalid');
+    throw new Error(errors.requestPathInvalid);
   }
   if (
     normalized.startsWith('//') ||
     normalized.includes('\\') ||
     normalized.includes('#')
   ) {
-    throw new Error('stripe.request_path_invalid');
+    throw new Error(errors.requestPathInvalid);
   }
   if (normalized.length > MAX_PATH_LENGTH || hasControlCharacter(normalized)) {
-    throw new Error('stripe.request_path_invalid');
+    throw new Error(errors.requestPathInvalid);
   }
   return normalized;
 }
@@ -47,19 +49,19 @@ export function buildStripeHttpRequest(args: {
 }): StripeHttpRequest {
   const method = args.method.trim().toUpperCase();
   if (!ALLOWED_METHODS.has(method)) {
-    throw new Error('stripe.request_method_invalid');
+    throw new Error(errors.requestMethodInvalid);
   }
 
   const path = validatePath(args.path);
   const body = args.formBody?.length ? args.formBody : undefined;
   if (body !== undefined && body.length > MAX_FORM_BODY_LENGTH) {
-    throw new Error('stripe.request_body_too_large');
+    throw new Error(errors.requestBodyTooLarge);
   }
   if (
     args.idempotencyKey &&
     args.idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH
   ) {
-    throw new Error('stripe.idempotency_key_too_long');
+    throw new Error(errors.idempotencyKeyTooLong);
   }
 
   const headers: Record<string, string> = {

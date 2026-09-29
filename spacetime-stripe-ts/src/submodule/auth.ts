@@ -4,6 +4,7 @@ import {
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema';
+import { errors } from './errors';
 import { throwSenderError } from './validation';
 
 // Admin gate. Fresh publishes seed the owner via init. Public submodule calls
@@ -22,11 +23,11 @@ export function adminVerdict(ctx: WriteCtx, sender: Sender): AdminVerdict {
 }
 
 export function denyIfNotAdmin(verdict: AdminVerdict): void {
-  if (verdict === 'denied') throwSenderError('stripe.not_authorized');
+  if (verdict === 'denied') throwSenderError(errors.notAuthorized);
 }
 
 export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
-  if (!isAdmin(ctx, sender)) throwSenderError('stripe.not_authorized');
+  if (!isAdmin(ctx, sender)) throwSenderError(errors.notAuthorized);
 }
 
 // For owner-gated repair/setup code only. Do not call from a public bootstrap path.
@@ -70,7 +71,7 @@ export const removeAdminIdentity = spacetimedb.procedure(
       const existing = tx.db.stripeAdminIdentity.identity.find(identity);
       if (!existing) return;
       if (tx.db.stripeAdminIdentity.count() <= 1n) {
-        throwSenderError('stripe.cannot_remove_last_admin');
+        throwSenderError(errors.cannotRemoveLastAdmin);
       }
       tx.db.stripeAdminIdentity.delete(existing);
     });

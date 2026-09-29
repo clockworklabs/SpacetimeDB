@@ -5,6 +5,7 @@ import {
   type WriteCtx,
 } from './schema';
 import { adminVerdict, denyIfNotAdmin } from './auth';
+import { errors } from './errors';
 import { throwSenderError } from './validation';
 
 export type StripeConfig = {
@@ -16,9 +17,7 @@ export type StripeConfig = {
 export function loadConfigOrThrow(ctx: WriteCtx): StripeConfig {
   const row = ctx.db.stripeConfig.singleton.find(true);
   if (!row) {
-    throwSenderError(
-      'stripe.config_not_set: call set_stripe_config(...) first'
-    );
+    throwSenderError(errors.configNotSet);
   }
   return {
     secretKey: row.secretKey,
@@ -85,13 +84,11 @@ export const setStripeWebhookSigningSecret = spacetimedb.procedure(
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
     const secret = webhookSigningSecret.trim();
-    if (!secret) throwSenderError('stripe.invalid_webhook_signing_secret');
+    if (!secret) throwSenderError(errors.invalidWebhookSigningSecret);
     ctx.withTx(tx => {
       const existing = tx.db.stripeConfig.singleton.find(true);
       if (!existing) {
-        throwSenderError(
-          'stripe.config_not_set: call set_stripe_config(...) first'
-        );
+        throwSenderError(errors.configNotSet);
       }
       tx.db.stripeConfig.singleton.update({
         ...existing,

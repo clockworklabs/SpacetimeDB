@@ -1,5 +1,6 @@
 export { default } from './submodule/schema';
 export { install } from './submodule/install';
+export { errors } from './submodule/errors';
 export {
   upsertCustomer,
   upsertSubscription,

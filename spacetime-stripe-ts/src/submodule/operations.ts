@@ -32,6 +32,7 @@ import {
   summarizeIssues,
   throwSenderError,
 } from './validation';
+import { errors } from './errors';
 
 export function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
@@ -641,7 +642,7 @@ export function callStripe(
     request = buildStripeHttpRequest(args);
   } catch (error) {
     throw new SenderError(
-      error instanceof Error ? error.message : 'stripe.request_invalid'
+      error instanceof Error ? error.message : errors.requestInvalid
     );
   }
   const response = ctx.http.fetch(request.url, {
@@ -686,7 +687,7 @@ export function createCustomerInStripeAndSync(
   });
   if (result.status < 200 || result.status >= 300) {
     throwSenderError(
-      `stripe.create_customer_failed:${result.status}${stripeErrorSuffix(result.body)}`
+      `${errors.createCustomerFailed}:${result.status}${stripeErrorSuffix(result.body)}`
     );
   }
 
@@ -694,7 +695,7 @@ export function createCustomerInStripeAndSync(
   const idResult = v.safeParse(vStripeIdResponse, parsedBody);
   if (!idResult.success) {
     throwSenderError(
-      `stripe.create_customer_invalid_response:${summarizeIssues(idResult.issues)}`
+      `${errors.createCustomerInvalidResponse}:${summarizeIssues(idResult.issues)}`
     );
   }
   const customerId = idResult.output.id;
@@ -833,18 +834,18 @@ export const ingestStripeWebhook = spacetimedb.reducer(
       eventType.length === 0 ||
       eventType.length > MAX_WEBHOOK_METADATA_LENGTH
     ) {
-      throwSenderError('stripe.webhook_metadata_invalid');
+      throwSenderError(errors.webhookMetadataInvalid);
     }
     if (payloadJson.length > MAX_WEBHOOK_BODY_LENGTH) {
-      throwSenderError('stripe.webhook_payload_too_large');
+      throwSenderError(errors.webhookPayloadTooLarge);
     }
     if ((signatureHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH) {
-      throwSenderError('stripe.webhook_signature_too_large');
+      throwSenderError(errors.webhookSignatureTooLarge);
     }
 
     const cfg = ctx.db.stripeConfig.singleton.find(true);
     if (!cfg?.webhookSigningSecret) {
-      throwSenderError('stripe.webhook_secret_not_configured');
+      throwSenderError(errors.webhookSecretNotConfigured);
     }
     const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
     const sigOk = verifyStripeSignature({
@@ -853,17 +854,16 @@ export const ingestStripeWebhook = spacetimedb.reducer(
       secret: cfg.webhookSigningSecret,
       nowSeconds,
     });
-    if (!sigOk) throwSenderError('stripe.webhook_signature_mismatch');
+    if (!sigOk) throwSenderError(errors.webhookSignatureMismatch);
 
     const signedMetadata = parseStripeEventMetadata(payloadJson);
-    if (!signedMetadata)
-      throwSenderError('stripe.webhook_payload_missing_metadata');
+    if (!signedMetadata) throwSenderError(errors.webhookPayloadMissingMetadata);
     if (
       eventId !== signedMetadata.eventId ||
       eventType !== signedMetadata.eventType ||
       livemode !== signedMetadata.livemode
     ) {
-      throwSenderError('stripe.webhook_metadata_mismatch');
+      throwSenderError(errors.webhookMetadataMismatch);
     }
 
     const existing = ctx.db.stripeWebhookEvent.eventId.find(
@@ -890,7 +890,7 @@ export const ingestStripeWebhook = spacetimedb.reducer(
 
     const outcome = applyStripeEvent(ctx, existing?.payloadJson ?? payloadJson);
     if (outcome.status.tag === 'Failed')
-      throwSenderError('stripe.webhook_payload_invalid');
+      throwSenderError(errors.webhookPayloadInvalid);
     updateWebhookStatus(
       ctx,
       signedMetadata.eventId,
@@ -906,7 +906,7 @@ export const replayWebhookEvent = spacetimedb.reducer(
     // Administrators may run this operation over stored events.
     requireAdmin(ctx, ctx.sender);
     const event = ctx.db.stripeWebhookEvent.eventId.find(eventId);
-    if (!event) throwSenderError(`stripe.webhook_event_not_found:${eventId}`);
+    if (!event) throwSenderError(errors.webhookEventNotFound);
     const outcome = applyStripeEvent(ctx, event.payloadJson);
     updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
   }

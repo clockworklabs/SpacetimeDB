@@ -19,6 +19,7 @@ import {
   summarizeIssues,
   throwSenderError,
 } from '../validation';
+import { errors } from '../errors';
 
 import {
   requireProcedureAdmin,
@@ -261,9 +262,7 @@ export const updateSubscriptionMetadata = spacetimedb.procedure(
         args.stripeSubscriptionId
       );
       if (!existing) {
-        throwSenderError(
-          `stripe.subscription_not_found:${args.stripeSubscriptionId}`
-        );
+        throwSenderError(errors.subscriptionNotFound);
       }
       upsertSubscriptionRow(tx, ctx.timestamp, {
         stripeSubscriptionId: existing.stripeSubscriptionId,
@@ -367,7 +366,7 @@ export const createCheckoutSession = spacetimedb.procedure(
     requireProcedureAdmin(ctx);
     const cfg = loadConfigOrThrowFromProcedure(ctx);
     if (args.items.length === 0) {
-      throwSenderError('stripe.checkout_session_requires_items');
+      throwSenderError(errors.checkoutSessionRequiresItems);
     }
     const formPairs: Array<[string, string | undefined]> = [
       ['mode', args.mode],
@@ -412,7 +411,7 @@ export const createCheckoutSession = spacetimedb.procedure(
     });
     if (response.status < 200 || response.status >= 300) {
       throwSenderError(
-        `stripe.checkout_session_failed:${response.status}${stripeErrorSuffix(response.body)}`
+        `${errors.checkoutSessionFailed}:${response.status}${stripeErrorSuffix(response.body)}`
       );
     }
 
@@ -422,7 +421,7 @@ export const createCheckoutSession = spacetimedb.procedure(
     );
     if (!sessionResult.success) {
       throwSenderError(
-        `stripe.checkout_session_invalid_response:${summarizeIssues(sessionResult.issues)}`
+        `${errors.checkoutSessionInvalidResponse}:${summarizeIssues(sessionResult.issues)}`
       );
     }
     return {
@@ -454,7 +453,7 @@ export const createCustomerPortalSession = spacetimedb.procedure(
     });
     if (response.status < 200 || response.status >= 300) {
       throwSenderError(
-        `stripe.portal_session_failed:${response.status}${stripeErrorSuffix(response.body)}`
+        `${errors.portalSessionFailed}:${response.status}${stripeErrorSuffix(response.body)}`
       );
     }
 
@@ -464,7 +463,7 @@ export const createCustomerPortalSession = spacetimedb.procedure(
     );
     if (!portalResult.success) {
       throwSenderError(
-        `stripe.portal_session_invalid_response:${summarizeIssues(portalResult.issues)}`
+        `${errors.portalSessionInvalidResponse}:${summarizeIssues(portalResult.issues)}`
       );
     }
     return { url: portalResult.output.url };
@@ -490,12 +489,12 @@ function patchSubscriptionFromStripe(
   });
   if (response.status < 200 || response.status >= 300) {
     throwSenderError(
-      `stripe.subscription_update_failed:${response.status}${stripeErrorSuffix(response.body)}`
+      `${errors.subscriptionUpdateFailed}:${response.status}${stripeErrorSuffix(response.body)}`
     );
   }
   const parsed = safeJsonParse(response.body);
   if (!isRecord(parsed))
-    throwSenderError('stripe.subscription_update_invalid_response');
+    throwSenderError(errors.subscriptionUpdateInvalidResponse);
   return parsed;
 }
 
@@ -507,7 +506,7 @@ function syncSubscriptionObjectFromStripe(
   const customerId = maybeId(stripeSubscription.customer);
   const status = maybeString(stripeSubscription.status);
   if (!subscriptionId || !customerId || !status) {
-    throwSenderError('stripe.subscription_payload_missing_fields');
+    throwSenderError(errors.subscriptionPayloadMissingFields);
   }
 
   const items = isRecord(stripeSubscription.items)
@@ -573,12 +572,12 @@ export const cancelSubscription = spacetimedb.procedure(
           });
           if (response.status < 200 || response.status >= 300) {
             throwSenderError(
-              `stripe.subscription_cancel_failed:${response.status}${stripeErrorSuffix(response.body)}`
+              `${errors.subscriptionCancelFailed}:${response.status}${stripeErrorSuffix(response.body)}`
             );
           }
           const parsed = safeJsonParse(response.body);
           if (!isRecord(parsed)) {
-            throwSenderError('stripe.subscription_cancel_invalid_response');
+            throwSenderError(errors.subscriptionCancelInvalidResponse);
           }
           return parsed;
         })();
@@ -626,19 +625,19 @@ export const updateSubscriptionQuantity = spacetimedb.procedure(
     });
     if (getResponse.status < 200 || getResponse.status >= 300) {
       throwSenderError(
-        `stripe.subscription_lookup_failed:${getResponse.status}${stripeErrorSuffix(getResponse.body)}`
+        `${errors.subscriptionLookupFailed}:${getResponse.status}${stripeErrorSuffix(getResponse.body)}`
       );
     }
 
     const existing = safeJsonParse(getResponse.body);
     if (!isRecord(existing))
-      throwSenderError('stripe.subscription_lookup_invalid_response');
+      throwSenderError(errors.subscriptionLookupInvalidResponse);
     const items = isRecord(existing.items) ? existing.items : undefined;
     const firstItem = Array.isArray(items?.data) ? items.data[0] : undefined;
     const firstRecord = isRecord(firstItem) ? firstItem : undefined;
     const subscriptionItemId = maybeString(firstRecord?.id);
     if (!subscriptionItemId)
-      throwSenderError('stripe.subscription_missing_line_items');
+      throwSenderError(errors.subscriptionMissingLineItems);
 
     const updateResponse = callStripe(ctx, {
       method: 'POST',
@@ -650,7 +649,7 @@ export const updateSubscriptionQuantity = spacetimedb.procedure(
     });
     if (updateResponse.status < 200 || updateResponse.status >= 300) {
       throwSenderError(
-        `stripe.subscription_item_update_failed:${updateResponse.status}${stripeErrorSuffix(updateResponse.body)}`
+        `${errors.subscriptionItemUpdateFailed}:${updateResponse.status}${stripeErrorSuffix(updateResponse.body)}`
       );
     }
 
