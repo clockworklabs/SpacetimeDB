@@ -417,7 +417,11 @@ async function bindSession(
   try {
     await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
   } catch (err) {
-    console.warn('link_connection failed', err);
+    emitConnectionState(
+      'error',
+      err instanceof Error ? err.message : String(err)
+    );
+    return;
   }
 
   if (!globalSub) {
