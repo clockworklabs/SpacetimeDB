@@ -26,7 +26,7 @@
   },
   "files": [
     "src",
-    "LICENSE.txt",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
@@ -52,7 +52,9 @@
     "format": "prettier . --write --ignore-path ../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test.ts"
+    "test": "tsx scripts/test.ts",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "peerDependencies": {
     "spacetimedb": "workspace:^"

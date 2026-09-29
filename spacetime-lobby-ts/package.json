@@ -18,7 +18,7 @@
   },
   "files": [
     "src",
-    "LICENSE.txt",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
@@ -49,7 +49,9 @@
     "spacetime:generate": "spacetime generate --lang typescript --out-dir ts-codegen",
     "publish:module": "spacetime publish",
     "publish:local": "spacetime publish --server local --yes spacetime-lobby",
-    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-lobby"
+    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-lobby",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "peerDependencies": {
     "spacetimedb": "workspace:^"
