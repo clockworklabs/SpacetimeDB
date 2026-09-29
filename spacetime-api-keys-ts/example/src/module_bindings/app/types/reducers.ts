@@ -13,7 +13,6 @@ import PlantReducer from "../plant_reducer";
 import PresenceHeartbeatReducer from "../presence_heartbeat_reducer";
 import PresenceLeaveReducer from "../presence_leave_reducer";
 import ResetWorldReducer from "../reset_world_reducer";
-import RevokeAccessKeyReducer from "../revoke_access_key_reducer";
 import TerraformReducer from "../terraform_reducer";
 import UnbuildReducer from "../unbuild_reducer";
 
@@ -24,7 +23,6 @@ export type PlantParams = __Infer<typeof PlantReducer>;
 export type PresenceHeartbeatParams = __Infer<typeof PresenceHeartbeatReducer>;
 export type PresenceLeaveParams = __Infer<typeof PresenceLeaveReducer>;
 export type ResetWorldParams = __Infer<typeof ResetWorldReducer>;
-export type RevokeAccessKeyParams = __Infer<typeof RevokeAccessKeyReducer>;
 export type TerraformParams = __Infer<typeof TerraformReducer>;
 export type UnbuildParams = __Infer<typeof UnbuildReducer>;
 

@@ -11,14 +11,10 @@ import {
 } from "spacetimedb";
 
 import {
-  ApiKeyCreateResult,
+  JoinColonyResult,
 } from "./types";
 
 export const params = {
-  name: __t.string(),
-  scopesJson: __t.string(),
-  metadataJson: __t.option(__t.string()),
-  expiresInSeconds: __t.option(__t.u32()),
-  keyPrefix: __t.option(__t.string()),
+  key: __t.string(),
 };
-export const returnType = ApiKeyCreateResult
+export const returnType = JoinColonyResult

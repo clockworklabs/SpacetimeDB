@@ -2,10 +2,10 @@ import {
   Router,
   SenderError,
   t,
-  type Infer,
   type Request,
   type SyncResponse,
 } from 'spacetimedb/server';
+import type { Identity } from 'spacetimedb';
 import * as apiKeys from '@spacetimedb/api-keys/submodule';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
 import {
@@ -14,13 +14,7 @@ import {
   GRID_ORIENTATION_FLAT,
 } from '@spacetimedb/grid/submodule';
 import * as presence from '@spacetimedb/presence/submodule';
-import {
-  accessKeySummary,
-  spacetimedb,
-  type HttpCtx,
-  type ReadCtx,
-  type Tx,
-} from './schema';
+import { spacetimedb, type HttpCtx, type ReadCtx, type Tx } from './schema';
 import {
   asI32,
   asObject,
@@ -31,35 +25,23 @@ import {
   readBearer,
   safeJson,
 } from './http';
+import {
+  SCOPE_BUILD,
+  SCOPE_PLANT,
+  SCOPE_TERRAFORM,
+  SCOPE_VIEW,
+  parseScopes,
+  roleLabel,
+} from './roles';
 
 const COLONY_WIDTH = 12;
 const COLONY_HEIGHT = 8;
 const EVENT_RETAIN = 120;
 const PRESENCE_TTL_SECONDS = 35;
-const PRESENCE_SCOPE_MAX = 128;
 const PRESENCE_NAME_MAX = 64;
-const PRESENCE_ROLE_MAX = 32;
 const PRESENCE_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const PRESENCE_ROLES = new Set([
-  'Owner',
-  'Collaborator',
-  'Terraformer',
-  'Builder',
-  'Planter',
-  'Viewer',
-  'Editor',
-]);
-
-// Scopes a share key can carry. view is read; the three edit scopes are the
-// granular powers a share link can grant.
-const SCOPE_VIEW = 'colony:view';
-const SCOPE_TERRAFORM = 'colony:terraform';
-const SCOPE_BUILD = 'colony:build';
-const SCOPE_PLANT = 'colony:plant';
 
 export default spacetimedb;
-
-type ApiKeyCreateResult = Infer<typeof apiKeys.apiKeyCreateResult>;
 
 // Surface terrain. regolith is the default (no row); the rest are stored.
 const DEFAULT_TERRAIN = 'regolith';
@@ -81,11 +63,8 @@ export const init = spacetimedb.init(ctx => {
   presence.install(ctx.as.presence);
 });
 
-function senderSubject(ctx: { sender: unknown }): string {
-  const sender = ctx.sender as { toHexString?: () => string };
-  return typeof sender?.toHexString === 'function'
-    ? sender.toHexString()
-    : String(ctx.sender);
+function senderSubject(ctx: { sender: Identity }): string {
+  return ctx.sender.toHexString();
 }
 
 function assertInBounds(x: number, y: number): void {
@@ -200,7 +179,11 @@ function insertEvent(
     createdAt: tx.timestamp,
   });
 
-  const rows = [...tx.db.worldEvent.ownerSubject.filter(ownerSubject)];
+  // Allowed and rejected events are retained separately, so rejected attempts
+  // cannot push real activity out of the feed.
+  const rows = [...tx.db.worldEvent.ownerSubject.filter(ownerSubject)].filter(
+    row => row.allowed === allowed
+  );
   if (rows.length <= EVENT_RETAIN) return;
   rows.sort((a, b) => {
     const av = a.createdAt.microsSinceUnixEpoch as bigint;
@@ -311,7 +294,7 @@ function doBuild(
     throw new SenderError(`world.cell_occupied:${x},${y}`);
   }
   // Roads carry a connection mask (which sides link) in label, computed as you
-  // draw; other structures store their kind.
+  // draw and reduced to the n/e/s/w letters; other structures store their kind.
   const entity = tx.db.grid.gridEntity.insert({
     id: 0n,
     gridId: w.gridId,
@@ -320,7 +303,7 @@ function doBuild(
     y,
     kind,
     blocksMovement: false,
-    label: label ?? kind,
+    label: kind === 'road' ? mergeRoadMask('', label ?? '') : kind,
     createdAt: tx.timestamp,
     updatedAt: tx.timestamp,
   });
@@ -434,44 +417,34 @@ function readWorldSnapshot(tx: Tx, ownerSubject: string) {
   };
 }
 
-function mirrorAccessKey(tx: Tx, row: ApiKeyCreateResult): void {
-  const summary = {
-    keyId: row.keyId,
-    prefix: row.prefix,
-    ownerSubject: row.ownerSubject,
-    name: row.name,
-    scopesJson: row.scopesJson,
-    metadataJson: row.metadataJson,
-    status: row.status,
-    createdAt: row.createdAt,
-    expiresAt: row.expiresAt,
-    lastUsedAt: undefined,
-    revokedAt: undefined,
-  };
-  const existing = tx.db.accessKeySummary.keyId.find(summary.keyId);
-  if (existing) tx.db.accessKeySummary.keyId.update(summary);
-  else tx.db.accessKeySummary.insert(summary);
-}
+// Denials that prove the caller holds the real key. Wrong or unknown secrets
+// are left out of the owner's feed, since anyone who has seen a key prefix
+// could otherwise fill it.
+const LOGGED_DENIALS = new Set(['revoked', 'expired', 'scope_denied']);
 
-function verifyRequest(
+function verifyKey(
   tx: Tx,
-  req: Request,
+  key: string | undefined,
   requiredScope: string,
   action: string
 ) {
-  const key = readBearer(req);
-  if (!key)
-    return { allowed: false, reason: 'missing_bearer', status: 401 } as const;
+  if (!key) return { allowed: false, reason: 'missing_bearer' } as const;
   const result = apiKeys.verifyApiKey(tx.as.apiKeys, {
     key,
     requiredScope,
     action,
   });
   if (!result.allowed) {
-    if (result.ownerSubject) {
+    // verifyApiKey does not return the owner of a denied key, so the feed
+    // owner is looked up from the key row by its prefix.
+    const ownerSubject =
+      LOGGED_DENIALS.has(result.reason) && result.prefix
+        ? tx.db.apiKeys.apiKey.prefix.find(result.prefix)?.ownerSubject
+        : undefined;
+    if (ownerSubject) {
       insertEvent(
         tx,
-        result.ownerSubject,
+        ownerSubject,
         result.prefix ?? '',
         action,
         false,
@@ -479,18 +452,15 @@ function verifyRequest(
         `${action} denied: ${result.reason}`
       );
     }
-    return {
-      allowed: false,
-      reason: result.reason,
-      status: result.reason === 'scope_denied' ? 403 : 401,
-    } as const;
+    return { allowed: false, reason: result.reason } as const;
   }
-  if (!result.ownerSubject) {
-    return { allowed: false, reason: 'missing_owner', status: 401 } as const;
+  if (!result.ownerSubject || !result.keyId || !result.prefix) {
+    return { allowed: false, reason: 'missing_owner' } as const;
   }
   return {
     allowed: true,
-    keyPrefix: result.prefix ?? '',
+    keyId: result.keyId,
+    keyPrefix: result.prefix,
     ownerSubject: result.ownerSubject,
     scopesJson: result.scopesJson ?? '[]',
   } as const;
@@ -510,16 +480,16 @@ function handleAuthedWorldAction(
 ): SyncResponse {
   try {
     const out = ctx.withTx((tx: Tx) => {
-      const auth = verifyRequest(tx, req, requiredScope, action);
-      if (!auth.allowed) return { error: auth.reason, status: auth.status };
+      const auth = verifyKey(tx, readBearer(req), requiredScope, action);
+      if (!auth.allowed) {
+        return {
+          error: auth.reason,
+          status: auth.reason === 'scope_denied' ? 403 : 401,
+        };
+      }
       return {
         ok: true,
-        value: fn(
-          tx,
-          auth.ownerSubject,
-          auth.keyPrefix,
-          auth.scopesJson ?? '[]'
-        ),
+        value: fn(tx, auth.ownerSubject, auth.keyPrefix, auth.scopesJson),
       };
     });
     if (out?.error) return errorResponse(out.error, out.status);
@@ -604,11 +574,71 @@ export const clear = spacetimedb.reducer(
 // the caller identity to prevent spoofing. Scope is the colony id, so presence is
 // per-colony. cx/cy are fractional tile coordinates.
 
+// A holder browser opens a colony by sending its share key here over its
+// SpacetimeDB connection. The membership row lets presenceHeartbeat derive the
+// holder's role from that key on every beat.
+export const joinColony = spacetimedb.procedure(
+  { key: t.string() },
+  t.object('JoinColonyResult', {
+    ownerSubject: t.string(),
+    gridId: t.u64(),
+    scopesJson: t.string(),
+  }),
+  (ctx, args) => {
+    // A denial returns from the transaction so its usage row and feed event
+    // commit, then fails the call.
+    const out = ctx.withTx(tx => {
+      const auth = verifyKey(tx, args.key.trim(), SCOPE_VIEW, 'join');
+      if (!auth.allowed) return { error: auth.reason };
+      const w = ensureWorldTx(tx, auth.ownerSubject);
+      const member = {
+        memberKey: `${senderSubject(ctx)}/${auth.ownerSubject}`,
+        keyId: auth.keyId,
+        prefix: auth.keyPrefix,
+      };
+      if (tx.db.colonyMember.memberKey.find(member.memberKey)) {
+        tx.db.colonyMember.memberKey.update(member);
+      } else {
+        tx.db.colonyMember.insert(member);
+      }
+      return {
+        result: {
+          ownerSubject: auth.ownerSubject,
+          gridId: w.gridId,
+          scopesJson: auth.scopesJson,
+        },
+      };
+    });
+    if (!out.result) throw new SenderError(`world.access_denied:${out.error}`);
+    return out.result;
+  }
+);
+
+// The owner is shown as Owner. A holder must have joined this colony with a
+// key that is still active, unexpired, and not rotated; its role comes from
+// that key's scopes.
+function presenceRole(ctx: Tx, scope: string): string {
+  const subject = senderSubject(ctx);
+  if (subject === scope) return 'Owner';
+  const member = ctx.db.colonyMember.memberKey.find(`${subject}/${scope}`);
+  if (!member) throw new SenderError('presence.not_member');
+  const key = ctx.db.apiKeys.apiKey.keyId.find(member.keyId);
+  if (!key || key.prefix !== member.prefix || key.status.tag !== 'Active') {
+    throw new SenderError('presence.key_revoked');
+  }
+  if (
+    key.expiresAt &&
+    key.expiresAt.microsSinceUnixEpoch <= ctx.timestamp.microsSinceUnixEpoch
+  ) {
+    throw new SenderError('presence.key_expired');
+  }
+  return roleLabel(parseScopes(key.scopesJson));
+}
+
 export const presenceHeartbeat = spacetimedb.reducer(
   {
     scope: t.string(),
     name: t.string(),
-    role: t.string(),
     color: t.string(),
     cx: t.f64(),
     cy: t.f64(),
@@ -617,15 +647,9 @@ export const presenceHeartbeat = spacetimedb.reducer(
   (ctx, args) => {
     const scope = args.scope.trim();
     const name = args.name.trim();
-    const role = args.role.trim();
-    if (!scope || scope.length > PRESENCE_SCOPE_MAX) {
-      throw new SenderError('presence.invalid_scope');
-    }
+    const role = presenceRole(ctx, scope);
     if (!name || name.length > PRESENCE_NAME_MAX) {
       throw new SenderError('presence.invalid_name');
-    }
-    if (!role || role.length > PRESENCE_ROLE_MAX || !PRESENCE_ROLES.has(role)) {
-      throw new SenderError('presence.invalid_role');
     }
     if (!PRESENCE_COLOR_PATTERN.test(args.color)) {
       throw new SenderError('presence.invalid_color');
@@ -734,77 +758,6 @@ export const colonyPresence = spacetimedb.view(
   }
 );
 
-export const myAccessKeys = spacetimedb.view(
-  { name: 'my_access_keys', public: true },
-  t.array(accessKeySummary.rowType),
-  ctx => {
-    const subject = senderSubject(ctx);
-    return [...ctx.db.accessKeySummary.ownerSubject.filter(subject)];
-  }
-);
-
-export const createAccessKey = spacetimedb.procedure(
-  {
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
-  apiKeys.apiKeyCreateResult,
-  (ctx, args) =>
-    ctx.withTx(tx => {
-      const result = apiKeys.createApiKeyInTx(tx.as.apiKeys, {
-        ownerSubject: senderSubject(ctx),
-        name: args.name,
-        scopesJson: args.scopesJson,
-        metadataJson: args.metadataJson,
-        expiresInSeconds: args.expiresInSeconds,
-        keyPrefix: args.keyPrefix,
-      });
-      mirrorAccessKey(tx, result);
-      return result;
-    })
-);
-
-export const rotateAccessKey = spacetimedb.procedure(
-  {
-    keyId: t.string(),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
-  apiKeys.apiKeyCreateResult,
-  (ctx, args) =>
-    ctx.withTx(tx => {
-      const result = apiKeys.rotateApiKeyInTx(tx.as.apiKeys, {
-        keyId: args.keyId,
-        ownerSubject: senderSubject(ctx),
-        expiresInSeconds: args.expiresInSeconds,
-        keyPrefix: args.keyPrefix,
-      });
-      mirrorAccessKey(tx, result);
-      return result;
-    })
-);
-
-export const revokeAccessKey = spacetimedb.reducer(
-  { keyId: t.string() },
-  (ctx, args) => {
-    const ownerSubject = senderSubject(ctx);
-    apiKeys.revokeApiKeyInTx(ctx.as.apiKeys, {
-      keyId: args.keyId,
-      ownerSubject,
-    });
-    const row = ctx.db.accessKeySummary.keyId.find(args.keyId);
-    if (!row || row.ownerSubject !== ownerSubject) return;
-    ctx.db.accessKeySummary.keyId.update({
-      ...row,
-      status: apiKeys.ApiKeyStatus.Revoked,
-      revokedAt: ctx.timestamp,
-    });
-  }
-);
-
 // Scoped HTTP routes. A share-key holder calls these with the key as a
 // bearer token; verifyApiKey checks the scope and resolves the colony owner.
 
@@ -814,17 +767,8 @@ export const colonySnapshot = spacetimedb.httpHandler((ctx, req) =>
     req,
     SCOPE_VIEW,
     'snapshot',
-    (tx, ownerSubject, keyPrefix, scopesJson) => {
+    (tx, ownerSubject, _keyPrefix, scopesJson) => {
       const snapshot = readWorldSnapshot(tx, ownerSubject);
-      insertEvent(
-        tx,
-        ownerSubject,
-        keyPrefix,
-        'snapshot',
-        true,
-        'allowed',
-        'Snapshot read'
-      );
       // The holder learns which world it is (owner subject + grid id) and what
       // this key can do (scopes) in one call, so it can subscribe and enable
       // only the allowed tools.

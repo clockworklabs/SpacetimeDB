@@ -37,20 +37,14 @@ export const worldEvent = table(
   }
 );
 
-export const accessKeySummary = table(
-  { name: 'access_key_summary', public: false },
+// The key each holder connection joined a colony with. memberKey is
+// `${identity hex}/${colony owner subject}`.
+export const colonyMember = table(
+  { name: 'colony_member', public: false },
   {
-    keyId: t.string().primaryKey(),
+    memberKey: t.string().primaryKey(),
+    keyId: t.string(),
     prefix: t.string(),
-    ownerSubject: t.string().index(),
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    status: apiKeys.apiKeyStatus.index(),
-    createdAt: t.timestamp().index(),
-    expiresAt: t.option(t.timestamp()),
-    lastUsedAt: t.option(t.timestamp()),
-    revokedAt: t.option(t.timestamp()),
   }
 );
 
@@ -60,7 +54,7 @@ export const spacetimedb = schema({
   presence,
   world,
   worldEvent,
-  accessKeySummary,
+  colonyMember,
 });
 
 export type Schema = InferSchema<typeof spacetimedb>;

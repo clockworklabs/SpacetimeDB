@@ -79,19 +79,28 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ ok: true, databaseName: DB_NAME });
 });
 
-app.use('/api/colony', async (req: Request, res: Response) => {
-  const fullPath = `/api/colony${req.url}`;
-  const qIdx = fullPath.indexOf('?');
-  const subpath = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
-  const query = qIdx < 0 ? '' : fullPath.slice(qIdx);
-  const upstreamUrl = `${STDB_HTTP}/v1/database/${DB_NAME}/route${subpath}${query}`;
-  const headers: Record<string, string> = {};
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (typeof value === 'string') headers[key] = value;
-    else if (Array.isArray(value)) headers[key] = value.join(', ');
+// Only the module's colony routes are forwarded. The action is matched
+// against this list, so no request path reaches another upstream endpoint.
+const COLONY_ROUTES = new Set([
+  'snapshot',
+  'terraform',
+  'build',
+  'unbuild',
+  'plant',
+  'clear',
+]);
+
+app.all('/api/colony/:action', async (req: Request, res: Response) => {
+  const { action } = req.params;
+  if (!COLONY_ROUTES.has(action)) {
+    res.status(404).json({ ok: false, error: 'not_found' });
+    return;
   }
-  delete headers.host;
-  delete headers['content-length'];
+  const upstreamUrl = `${STDB_HTTP}/v1/database/${DB_NAME}/route/api/colony/${action}`;
+  const headers: Record<string, string> = {};
+  if (req.headers.authorization) {
+    headers.authorization = req.headers.authorization;
+  }
 
   const init: RequestInit = {
     method: req.method,

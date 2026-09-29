@@ -41,21 +41,18 @@ import PlantReducer from "./plant_reducer";
 import PresenceHeartbeatReducer from "./presence_heartbeat_reducer";
 import PresenceLeaveReducer from "./presence_leave_reducer";
 import ResetWorldReducer from "./reset_world_reducer";
-import RevokeAccessKeyReducer from "./revoke_access_key_reducer";
 import TerraformReducer from "./terraform_reducer";
 import UnbuildReducer from "./unbuild_reducer";
 
 // Import all procedure arg schemas
-import * as CreateAccessKeyProcedure from "./create_access_key_procedure";
 import * as EnsureWorldProcedure from "./ensure_world_procedure";
-import * as RotateAccessKeyProcedure from "./rotate_access_key_procedure";
+import * as JoinColonyProcedure from "./join_colony_procedure";
 
 // Import all table schema definitions
 import ColonyCellsRow from "./colony_cells_table";
 import ColonyEntitiesRow from "./colony_entities_table";
 import ColonyGridRow from "./colony_grid_table";
 import ColonyPresenceRow from "./colony_presence_table";
-import MyAccessKeysRow from "./my_access_keys_table";
 import WorldRow from "./world_table";
 import WorldEventRow from "./world_event_table";
 
@@ -153,13 +150,6 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ColonyPresenceRow),
-  myAccessKeys: __table({
-    name: 'my_access_keys',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyAccessKeysRow),
   "api_keys.api_key_usage_admin": __table({
     name: 'api_keys.api_key_usage_admin',
     indexes: [
@@ -206,7 +196,6 @@ const reducersSchema = __reducers(
   __reducerSchema("presence_heartbeat", PresenceHeartbeatReducer),
   __reducerSchema("presence_leave", PresenceLeaveReducer),
   __reducerSchema("reset_world", ResetWorldReducer),
-  __reducerSchema("revoke_access_key", RevokeAccessKeyReducer),
   __reducerSchema("terraform", TerraformReducer),
   __reducerSchema("unbuild", UnbuildReducer),
   __reducerSchema("api_keys.add_api_keys_admin", ApiKeys_AddApiKeysAdminReducer, "apiKeys.addApiKeysAdmin"),
@@ -222,9 +211,8 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
-  __procedureSchema("create_access_key", CreateAccessKeyProcedure.params, CreateAccessKeyProcedure.returnType),
   __procedureSchema("ensure_world", EnsureWorldProcedure.params, EnsureWorldProcedure.returnType),
-  __procedureSchema("rotate_access_key", RotateAccessKeyProcedure.params, RotateAccessKeyProcedure.returnType),
+  __procedureSchema("join_colony", JoinColonyProcedure.params, JoinColonyProcedure.returnType),
   __procedureSchema("api_keys.create_api_key", ApiKeys_CreateApiKeyProcedure.params, ApiKeys_CreateApiKeyProcedure.returnType, "apiKeys.createApiKey"),
   __procedureSchema("api_keys.create_api_key_for_subject", ApiKeys_CreateApiKeyForSubjectProcedure.params, ApiKeys_CreateApiKeyForSubjectProcedure.returnType, "apiKeys.createApiKeyForSubject"),
   __procedureSchema("api_keys.rotate_api_key", ApiKeys_RotateApiKeyProcedure.params, ApiKeys_RotateApiKeyProcedure.returnType, "apiKeys.rotateApiKey"),
@@ -255,7 +243,6 @@ export const tables = {
   colonyEntities: __qb.colonyEntities,
   colonyGrid: __qb.colonyGrid,
   colonyPresence: __qb.colonyPresence,
-  myAccessKeys: __qb.myAccessKeys,
   apiKeys: {
     apiKeyUsageAdmin: __qb["api_keys.api_key_usage_admin"],
     apiKeysAdmin: __qb["api_keys.api_keys_admin"],
@@ -277,7 +264,6 @@ export const reducers = {
   presenceHeartbeat: __reducerAccessors.presenceHeartbeat,
   presenceLeave: __reducerAccessors.presenceLeave,
   resetWorld: __reducerAccessors.resetWorld,
-  revokeAccessKey: __reducerAccessors.revokeAccessKey,
   terraform: __reducerAccessors.terraform,
   unbuild: __reducerAccessors.unbuild,
   apiKeys: {
@@ -298,9 +284,8 @@ export const reducers = {
 /** The procedures available in this remote SpacetimeDB module. */
 const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures);
 export const procedures = {
-  createAccessKey: __procedureAccessors.createAccessKey,
   ensureWorld: __procedureAccessors.ensureWorld,
-  rotateAccessKey: __procedureAccessors.rotateAccessKey,
+  joinColony: __procedureAccessors.joinColony,
   apiKeys: {
     createApiKey: __procedureAccessors["apiKeys.createApiKey"],
     createApiKeyForSubject: __procedureAccessors["apiKeys.createApiKeyForSubject"],
