@@ -1,0 +1,115 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-28T23-41-22-189Z",
+  "attempt": {
+    "id": "null-control-2026-09-28T23-41-22-189Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:41:22.190Z",
+    "completedAt": "2026-09-28T23:41:50.554Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "eafc0d64ec059d1708ce99fd22c99dc454a9029bd0c2c4971475048fe0444a46"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 28364,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 62,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "a67eebea3bd1e1f1b0d9e71fd03d55c2e8d49318ab6c0f5a711d25ed988e336d",
+      "executableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "8ea930a12870bd49e177883be194be61afd68ec90517ddeac760d8ab0a5561d8"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 1,
+      "points": 2,
+      "expectedFailures": {
+        "criteria": 1,
+        "points": 2
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 1,
+          "points": 2
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-022",
+        "scenario": "scenarios/01-purchase-session.json",
+        "feature": 101,
+        "featureName": "Purchase requires an account",
+        "criterion": "101a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

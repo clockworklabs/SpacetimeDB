@@ -1,0 +1,178 @@
+2026-09-28T23:41:23.992479448Z 
+2026-09-28T23:41:23.992547005Z qualifying ecommerce-reference-mongodb: clean run 1/1
+2026-09-28T23:41:25.957727672Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-28T23:41:28.026184615Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-28T23:41:47.886729029Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-28T23:41:47.889124893Z 
+2026-09-28T23:41:47.889147966Z ================ mongodb — level 3 ================
+2026-09-28T23:42:21.436322685Z   kept the unaided source at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/first-build-l3
+2026-09-28T23:42:24.090950202Z 
+2026-09-28T23:42:24.090982985Z === mongodb-l3 (mongodb) ===
+2026-09-28T23:42:24.092977465Z   app: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-K8jVoQ/app
+2026-09-28T23:42:24.095247807Z   url: http://localhost:7539
+2026-09-28T23:42:24.095264609Z   recipe: L3 -> ecommerce.progression-catalog (46e1fecb340c)
+2026-09-28T23:42:24.095267489Z   scope: 1 check(s), 2 point(s)
+2026-09-28T23:42:24.095271039Z     features: ecommerce.feature.accounts, ecommerce.feature.cart, ecommerce.feature.catalog-discovery, ecommerce.feature.catalog-items, ecommerce.feature.checkout, ecommerce.feature.purchasing, ecommerce.feature.reviews, ecommerce.feature.warehouse-admin, ecommerce.l2.inventory-dashboard, ecommerce.l2.order-cancellation-features, ecommerce.l2.recommendations, ecommerce.l2.sales-dashboard, ecommerce.l2.stock-transfers-features, ecommerce.l3.scheduled-restocks-features, ecommerce.progression.catalog-management, ecommerce.progression.customer-profile, ecommerce.progression.faceted-search, ecommerce.progression.fulfilment-queue, ecommerce.progression.managed-support, ecommerce.progression.notification-preferences, ecommerce.progression.promotion-rules, ecommerce.progression.staff-access, ecommerce.progression.staff-roles, ecommerce.progression.stock-alerts, ecommerce.progression.support-history, ecommerce.progression.support-intake, ecommerce.progression.support-triage
+2026-09-28T23:42:24.095275990Z     extra checks: ecommerce.spec.access-control.purchase-session.101a
+2026-09-28T23:42:24.095281170Z   code        ... 2320 server LOC in 12 files, 4360 total LOC, 9 runtime deps
+2026-09-28T23:42:24.095764571Z   database    ... leased database requires runtime marker verification
+2026-09-28T23:42:26.510182619Z   stop application ... ok
+2026-09-28T23:42:28.037380573Z   reset database ... ok
+2026-09-28T23:42:37.039203561Z   restart     ... ok
+2026-09-28T23:42:44.522125901Z   stop application ... ok
+2026-09-28T23:42:46.116119188Z   reset database ... ok
+2026-09-28T23:42:52.515242358Z   restart     ... ok
+2026-09-28T23:42:52.515282641Z   db runtime  ... the application marker exists in the leased MongoDB database
+2026-09-28T23:42:53.154293520Z   contract lint ... DEFERRED (31 interfaces checked during feature grading)
+2026-09-28T23:42:54.407071285Z   selected-source-001 ... not selected
+2026-09-28T23:42:54.407131821Z   selected-source-002 ... not selected
+2026-09-28T23:42:54.407133931Z   selected-source-003 ... not selected
+2026-09-28T23:42:54.407135181Z   selected-source-004 ... not selected
+2026-09-28T23:42:54.407136201Z   selected-source-005 ... not selected
+2026-09-28T23:42:54.407137192Z   selected-source-006 ... not selected
+2026-09-28T23:42:54.407138192Z   selected-source-007 ... not selected
+2026-09-28T23:42:54.407144932Z   selected-source-008 ... not selected
+2026-09-28T23:42:54.407146022Z   selected-source-009 ... not selected
+2026-09-28T23:42:54.407235472Z   selected-source-010 ... not selected
+2026-09-28T23:42:54.407243773Z   selected-source-011 ... not selected
+2026-09-28T23:42:54.407245703Z   selected-source-012 ... not selected
+2026-09-28T23:42:54.407246823Z   selected-source-013 ... not selected
+2026-09-28T23:42:54.407247933Z   selected-source-014 ... not selected
+2026-09-28T23:42:54.407248913Z   selected-source-015 ... not selected
+2026-09-28T23:42:54.407249933Z   selected-source-016 ... not selected
+2026-09-28T23:42:54.407250923Z   selected-source-017 ... not selected
+2026-09-28T23:42:54.407252073Z   selected-source-018 ... not selected
+2026-09-28T23:42:54.407392658Z   selected-source-019 ... not selected
+2026-09-28T23:42:54.407401129Z   selected-source-020 ... not selected
+2026-09-28T23:42:54.407402649Z   selected-source-021 ... not selected
+2026-09-28T23:42:56.716657685Z   stop application ... ok
+2026-09-28T23:42:57.971043642Z   reset database ... ok
+2026-09-28T23:43:06.078398452Z   restart     ... ok
+2026-09-28T23:44:10.487708397Z   selected-source-022 ... 2/2
+2026-09-28T23:44:10.492860522Z   selected-source-023 ... not selected
+2026-09-28T23:44:10.492916467Z   selected-source-024 ... not selected
+2026-09-28T23:44:10.492924128Z   selected-source-025 ... not selected
+2026-09-28T23:44:10.492927268Z   selected-source-026 ... not selected
+2026-09-28T23:44:10.492929418Z   selected-source-027 ... not selected
+2026-09-28T23:44:10.492931259Z   selected-source-028 ... not selected
+2026-09-28T23:44:10.492938889Z   selected-source-029 ... not selected
+2026-09-28T23:44:10.492941870Z   selected-source-030 ... not selected
+2026-09-28T23:44:10.492943850Z   selected-source-031 ... not selected
+2026-09-28T23:44:10.492945820Z   selected-source-032 ... not selected
+2026-09-28T23:44:10.492947610Z   selected-source-033 ... not selected
+2026-09-28T23:44:10.492949400Z   selected-source-034 ... not selected
+2026-09-28T23:44:10.492951501Z   selected-source-035 ... not selected
+2026-09-28T23:44:10.492953251Z   selected-source-036 ... not selected
+2026-09-28T23:44:10.492998501Z   selected-source-037 ... not selected
+2026-09-28T23:44:10.493007111Z   selected-source-038 ... not selected
+2026-09-28T23:44:10.493226873Z   selected-source-039 ... not selected
+2026-09-28T23:44:10.493245204Z   selected-source-040 ... not selected
+2026-09-28T23:44:10.493250995Z   selected-source-041 ... not selected
+2026-09-28T23:44:10.493253495Z   selected-source-042 ... not selected
+2026-09-28T23:44:10.493254725Z   selected-source-043 ... not selected
+2026-09-28T23:44:10.493255845Z   selected-source-044 ... not selected
+2026-09-28T23:44:10.493256875Z   selected-source-045 ... not selected
+2026-09-28T23:44:10.493258076Z   selected-source-046 ... not selected
+2026-09-28T23:44:10.493259026Z   selected-source-047 ... not selected
+2026-09-28T23:44:10.493259996Z   selected-source-048 ... not selected
+2026-09-28T23:44:10.493261376Z   selected-source-049 ... not selected
+2026-09-28T23:44:10.493262376Z   selected-source-050 ... not selected
+2026-09-28T23:44:10.493263336Z   selected-source-051 ... not selected
+2026-09-28T23:44:10.493266276Z   selected-source-052 ... not selected
+2026-09-28T23:44:10.493267306Z   selected-source-053 ... not selected
+2026-09-28T23:44:10.493268277Z   selected-source-054 ... not selected
+2026-09-28T23:44:10.493269327Z   selected-source-055 ... not selected
+2026-09-28T23:44:10.493270277Z   selected-source-056 ... not selected
+2026-09-28T23:44:10.493271357Z   selected-source-057 ... not selected
+2026-09-28T23:44:10.493272807Z   selected-source-058 ... not selected
+2026-09-28T23:44:10.493273777Z   selected-source-059 ... not selected
+2026-09-28T23:44:10.493274837Z   selected-source-060 ... not selected
+2026-09-28T23:44:10.493276377Z   selected-source-061 ... not selected
+2026-09-28T23:44:10.493277577Z   selected-source-062 ... not selected
+2026-09-28T23:44:10.493278838Z   selected-source-063 ... not selected
+2026-09-28T23:44:10.493279988Z   selected-source-064 ... not selected
+2026-09-28T23:44:10.493281168Z   selected-source-065 ... not selected
+2026-09-28T23:44:10.493282138Z   selected-source-066 ... not selected
+2026-09-28T23:44:10.493283198Z   selected-source-067 ... not selected
+2026-09-28T23:44:10.493284378Z   selected-source-068 ... not selected
+2026-09-28T23:44:10.493343544Z   selected-source-069 ... not selected
+2026-09-28T23:44:10.493352165Z   selected-source-070 ... not selected
+2026-09-28T23:44:10.493358406Z   selected-source-071 ... not selected
+2026-09-28T23:44:10.493360216Z   selected-source-072 ... not selected
+2026-09-28T23:44:10.493361576Z   selected-source-073 ... not selected
+2026-09-28T23:44:10.493362626Z   selected-source-074 ... not selected
+2026-09-28T23:44:10.493379338Z   selected-source-075 ... not selected
+2026-09-28T23:44:10.493384778Z   selected-source-076 ... not selected
+2026-09-28T23:44:10.493386179Z   selected-source-077 ... not selected
+2026-09-28T23:44:10.493387219Z   selected-source-078 ... not selected
+2026-09-28T23:44:10.493388249Z   selected-source-079 ... not selected
+2026-09-28T23:44:10.493389219Z   selected-source-080 ... not selected
+2026-09-28T23:44:10.493390409Z   selected-source-081 ... not selected
+2026-09-28T23:44:10.493452833Z   selected-source-082 ... not selected
+2026-09-28T23:44:10.493462344Z   selected-source-083 ... not selected
+2026-09-28T23:44:10.493463694Z   selected-source-084 ... not selected
+2026-09-28T23:44:10.493464754Z   selected-source-085 ... not selected
+2026-09-28T23:44:10.493465794Z   selected-source-086 ... not selected
+2026-09-28T23:44:10.493466684Z   selected-source-087 ... not selected
+2026-09-28T23:44:10.493467624Z   selected-source-088 ... not selected
+2026-09-28T23:44:10.493468554Z   selected-source-089 ... not selected
+2026-09-28T23:44:10.493469474Z   selected-source-090 ... not selected
+2026-09-28T23:44:10.493470465Z   selected-source-091 ... not selected
+2026-09-28T23:44:10.493471405Z   selected-source-092 ... not selected
+2026-09-28T23:44:10.493472315Z   selected-source-093 ... not selected
+2026-09-28T23:44:10.493473665Z   selected-source-094 ... not selected
+2026-09-28T23:44:10.493475465Z   selected-source-095 ... not selected
+2026-09-28T23:44:10.493477655Z   selected-source-096 ... not selected
+2026-09-28T23:44:10.493478605Z   selected-source-097 ... not selected
+2026-09-28T23:44:10.493479625Z   selected-source-098 ... not selected
+2026-09-28T23:44:10.493480536Z   selected-source-099 ... not selected
+2026-09-28T23:44:10.493481426Z   selected-source-100 ... not selected
+2026-09-28T23:44:10.493482436Z   selected-source-101 ... not selected
+2026-09-28T23:44:10.493483336Z   selected-source-102 ... not selected
+2026-09-28T23:44:10.493484316Z   selected-source-103 ... not selected
+2026-09-28T23:44:10.493485246Z   selected-source-104 ... not selected
+2026-09-28T23:44:10.493486406Z   selected-source-105 ... not selected
+2026-09-28T23:44:10.493488376Z   selected-source-106 ... not selected
+2026-09-28T23:44:10.493493907Z   selected-source-107 ... not selected
+2026-09-28T23:44:10.493495767Z   selected-source-108 ... not selected
+2026-09-28T23:44:10.493496917Z   selected-source-109 ... not selected
+2026-09-28T23:44:10.493497897Z   selected-source-110 ... not selected
+2026-09-28T23:44:10.493498967Z   selected-source-111 ... not selected
+2026-09-28T23:44:10.493509088Z   selected-source-112 ... not selected
+2026-09-28T23:44:10.493510218Z   selected-source-113 ... not selected
+2026-09-28T23:44:10.493511199Z   selected-source-114 ... not selected
+2026-09-28T23:44:10.720655766Z   evidence write and source verification ... 60.3ms
+2026-09-28T23:44:10.720687759Z   TOTAL      ... 2/2
+2026-09-28T23:44:10.720689439Z   bundle: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-K8jVoQ/app-grading/bundle.json
+2026-09-28T23:44:10.839866093Z   kept the unaided grading at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/first-build-l3-grading
+2026-09-28T23:44:10.886078187Z   kept the L3 source checkpoint at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/level-l3-source
+2026-09-28T23:44:10.896378197Z   mongodb-ecom-run816-ecommerce-mongodb-run816-20260928234125-c9846678: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-28T23:44:10.925190692Z   source kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/source
+2026-09-28T23:44:10.925236876Z   grading detail kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/grading
+2026-09-28T23:44:10.933260007Z 
+2026-09-28T23:44:10.933305202Z ================ mongodb summary ================
+2026-09-28T23:44:10.933496416Z   L3: 2/2 unaided -> 2/2 | 0 repairs | $0.00 total ($0.00 repairs) | not needed | 143s
+2026-09-28T23:44:10.933513797Z   TOTAL 2/2  $0  0 repair(s)  143s
+2026-09-28T23:44:10.933663707Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/run.json
+2026-09-28T23:44:11.436144915Z   removed the leased run container sb-688386e46587ef82-browser
+2026-09-28T23:44:12.281744752Z   removed the leased run container sb-688386e46587ef82-build
+2026-09-28T23:44:13.390032073Z   removed the leased run container sb-688386e46587ef82-backend
+2026-09-28T23:44:15.335394489Z {
+2026-09-28T23:44:15.335437162Z   "ok": true,
+2026-09-28T23:44:15.335440313Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.json",
+2026-09-28T23:44:15.335442373Z   "stable": true,
+2026-09-28T23:44:15.335444393Z   "sameImage": true,
+2026-09-28T23:44:15.335446083Z   "sameHarness": true,
+2026-09-28T23:44:15.335447693Z   "diagnostic": true,
+2026-09-28T23:44:15.335449404Z   "runs": [
+2026-09-28T23:44:15.335451404Z     {
+2026-09-28T23:44:15.335453034Z       "repetition": 1,
+2026-09-28T23:44:15.335454654Z       "ok": true,
+2026-09-28T23:44:15.335456234Z       "score": "2/2",
+2026-09-28T23:44:15.335465015Z       "criteria": 1,
+2026-09-28T23:44:15.335466385Z       "zeroPointCriteria": 0,
+2026-09-28T23:44:15.335467505Z       "mutations": null,
+2026-09-28T23:44:15.335468515Z       "failures": []
+2026-09-28T23:44:15.335469595Z     }
+2026-09-28T23:44:15.335470966Z   ]
+2026-09-28T23:44:15.335472286Z }

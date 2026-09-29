@@ -1,0 +1,71 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "recovery",
+  "id": "ecommerce-mongodb-run816-20260928234957-ad451ae2-recovery",
+  "attempt": {
+    "id": "ecommerce-mongodb-run816-20260928234957-ad451ae2-recovery",
+    "parentId": "ecommerce-mongodb-run816-20260928234957-ad451ae2"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:57:30.517Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-mongodb-run816-20260928234957-ad451ae2",
+    "backend": "mongodb",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "176185d03b51dd092f67fa68b37eff195f70eeb160b27ec0046e341a14db5535",
+        "name": "sb-fa931b47414ce3b4-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "port:7217",
+          "released": true
+        },
+        {
+          "key": "port:7539",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:mongodb:run816",
+          "released": true
+        },
+        {
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-N1k5y1/app",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "9111d48e322cf98e561010e06f9c2d42ed85a085beced557be941c8ae9fe5abc"
+  }
+}

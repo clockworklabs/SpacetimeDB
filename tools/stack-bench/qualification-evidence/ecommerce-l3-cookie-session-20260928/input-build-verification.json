@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-28T23:34:33.229Z",
+  "candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+  "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+  "baseImage": "sha256:3e9015436ba039637abdfa768213d0fe1707a4f6506f6f24b5a419eb28ee1db7",
+  "baseLayersMatch": true,
+  "inputsSha256": "93e7fb015821348de16f11b4e33c1465d024431e9e79f330acbec0d069b47b57",
+  "filesVerified": 25,
+  "removedPathsVerified": [
+    "/opt/stack-bench/commands/check-actions.ts",
+    "/opt/stack-bench/dist/commands/check-actions.js",
+    "/opt/stack-bench/dist/commands/check-actions.js.map"
+  ],
+  "qualified": false,
+  "output": "Verified25files and3absent paths\n"
+}
