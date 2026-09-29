@@ -310,6 +310,18 @@ async function main() {
     );
   }
 
+  step('signed event types the submodule does not handle are acknowledged');
+  await ingestWebhook(
+    opts,
+    evt('contact'),
+    'contact.created',
+    JSON.stringify({
+      type: 'contact.created',
+      created_at: '2026-05-04T00:00:00Z',
+      data: { id: 'contact_smoke' },
+    })
+  );
+
   // Email A happy path: queued -> sent -> delivered, then flag overlays must not roll status back.
   step(`ingest email.sent for ${em('a')}`);
   await ingestWebhook(

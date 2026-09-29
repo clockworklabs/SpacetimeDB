@@ -12,7 +12,7 @@ import * as v from 'valibot';
 import { install } from './install';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
-// Ignored = duplicate/unknown event type. Failed = signature/format error.
+// Ignored = event type this submodule does not handle. Failed = invalid payload.
 export const webhookEventStatus = t.enum('WebhookEventStatus', [
   'Received',
   'Processed',

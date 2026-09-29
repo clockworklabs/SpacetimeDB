@@ -80,7 +80,7 @@ function updateWebhookStatus(
   const existing = ctx.db.resendWebhookEvent.eventId.find(eventId);
   if (!existing) return;
 
-  const isTerminal = status.tag === 'Processed' || status.tag === 'Failed';
+  const isTerminal = status.tag !== 'Received';
   const updated = {
     ...existing,
     status,
@@ -181,6 +181,14 @@ function detailJsonForEvent(event: EmailEvent): string | undefined {
   }
 }
 
+// Resend also sends event types this submodule does not track, such as
+// `contact.*`, `domain.*`, and `email.received`. Those are acknowledged as Ignored.
+const vHandledEventType = v.object({
+  type: v.picklist(
+    vEmailEvent.options.map(option => option.entries.type.literal)
+  ),
+});
+
 function applyResendEvent(
   ctx: ReducerModuleCtx,
   eventId: string,
@@ -193,6 +201,9 @@ function applyResendEvent(
 
   const result = v.safeParse(vEmailEvent, parsed);
   if (!result.success) {
+    if (!v.is(vHandledEventType, parsed)) {
+      return { status: WebhookEventStatus.Ignored, error: undefined };
+    }
     return {
       status: WebhookEventStatus.Failed,
       error: `payload validation failed: ${summarizeIssues(result.issues)}`,
@@ -238,13 +249,11 @@ const MAX_WEBHOOK_METADATA_LENGTH = 255;
 // The reducer and HTTP route verify, store, and apply events in one transaction.
 function applyResendWebhook(
   ctx: WriteCtx,
-  args: ResendWebhookIngestArgs
+  args: Omit<ResendWebhookIngestArgs, 'eventType'>
 ): { status: number; code: string } {
   if (
     args.eventId.length === 0 ||
-    args.eventId.length > MAX_WEBHOOK_METADATA_LENGTH ||
-    args.eventType.length === 0 ||
-    args.eventType.length > MAX_WEBHOOK_METADATA_LENGTH
+    args.eventId.length > MAX_WEBHOOK_METADATA_LENGTH
   ) {
     return { status: 400, code: errors.webhookMetadataInvalid };
   }
@@ -274,12 +283,18 @@ function applyResendWebhook(
   if (!sigOk) return { status: 401, code: errors.webhookSignatureMismatch };
 
   const signedEventType = parseResendEventType(args.payloadJson);
-  if (!signedEventType || signedEventType !== args.eventType) {
-    return { status: 400, code: errors.webhookMetadataMismatch };
+  if (
+    !signedEventType ||
+    signedEventType.length > MAX_WEBHOOK_METADATA_LENGTH
+  ) {
+    return { status: 400, code: errors.webhookPayloadInvalid };
   }
 
   const existing = ctx.db.resendWebhookEvent.eventId.find(args.eventId);
-  if (existing?.status.tag === 'Processed') {
+  if (
+    existing?.status.tag === 'Processed' ||
+    existing?.status.tag === 'Ignored'
+  ) {
     return { status: 200, code: 'ok' };
   }
 
@@ -307,9 +322,9 @@ function applyResendWebhook(
     outcome.status,
     outcome.error
   );
-  return outcome.status.tag === 'Processed'
-    ? { status: 200, code: 'ok' }
-    : { status: 400, code: errors.webhookPayloadInvalid };
+  return outcome.status.tag === 'Failed'
+    ? { status: 400, code: errors.webhookPayloadInvalid }
+    : { status: 200, code: 'ok' };
 }
 
 export const ingestResendWebhook = spacetimedb.reducer(
@@ -320,7 +335,10 @@ export const ingestResendWebhook = spacetimedb.reducer(
     signatureHeader: t.option(t.string()),
     timestampHeader: t.option(t.string()),
   },
-  (ctx, args) => {
+  (ctx, { eventType, ...args }) => {
+    if (eventType !== parseResendEventType(args.payloadJson)) {
+      throwSenderError(errors.webhookMetadataMismatch);
+    }
     const result = applyResendWebhook(ctx, args);
     if (result.status !== 200) throwSenderError(result.code);
   }
@@ -342,35 +360,19 @@ export function makeResendWebhookHandler() {
     req: Request
   ): SyncResponse {
     if (req.method.toUpperCase() !== 'POST') {
-      return webhookJson({ error: 'method_not_allowed' }, 405);
+      return webhookJson(
+        { ok: false, code: errors.webhookMethodNotAllowed },
+        405
+      );
     }
 
-    const rawBody = req.text();
-    const svixId = req.headers.get('svix-id') ?? '';
-    const svixTimestamp = req.headers.get('svix-timestamp') ?? undefined;
-    const svixSignature = req.headers.get('svix-signature') ?? undefined;
-    if (!svixId) return webhookJson({ error: 'missing_svix_id' }, 400);
-
-    let eventType: string | undefined;
-    const parsed = safeJsonParse(rawBody);
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      typeof (parsed as { type?: unknown }).type === 'string'
-    ) {
-      eventType = (parsed as { type: string }).type;
-    }
-    if (!eventType) return webhookJson({ error: 'missing_event_type' }, 400);
-
-    const result = ctx.withTx(tx =>
-      applyResendWebhook(tx as WriteCtx, {
-        eventId: svixId,
-        eventType,
-        payloadJson: rawBody,
-        signatureHeader: svixSignature,
-        timestampHeader: svixTimestamp,
-      })
-    );
+    const args = {
+      eventId: req.headers.get('svix-id') ?? '',
+      payloadJson: req.text(),
+      signatureHeader: req.headers.get('svix-signature') ?? undefined,
+      timestampHeader: req.headers.get('svix-timestamp') ?? undefined,
+    };
+    const result = ctx.withTx(tx => applyResendWebhook(tx as WriteCtx, args));
     return webhookJson(
       { ok: result.status === 200, code: result.code },
       result.status
