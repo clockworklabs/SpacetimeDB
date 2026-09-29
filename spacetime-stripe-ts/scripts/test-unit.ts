@@ -1,18 +1,18 @@
 import * as assert from 'node:assert/strict';
 import { Timestamp } from 'spacetimedb';
-import { latestSubscription } from '../src/submodule/subscription-order.ts';
+import { latestSubscription } from '../src/submodule/subscription-order';
 import {
   checkoutPaymentStatusRank,
   invoiceStatusRank,
   isStale,
   subscriptionStatusRank,
-} from '../src/submodule/event-order.ts';
-import { buildStripeHttpRequest } from '../src/submodule/http.ts';
-import { parseStripeEventMetadata } from '../src/submodule/webhook-metadata.ts';
+} from '../src/submodule/event-order';
+import { buildStripeHttpRequest } from '../src/submodule/http';
+import { parseStripeEventMetadata } from '../src/submodule/webhook-metadata';
 import {
   validateWebhookRequestBody,
   validateWebhookRequestHeaders,
-} from '../src/submodule/webhook-request.ts';
+} from '../src/submodule/webhook-request';
 
 const customerEvent = {
   id: 'evt_1',

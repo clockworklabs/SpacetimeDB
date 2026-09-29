@@ -4,7 +4,7 @@ import type {
   ParsedStripeEvent,
   vStripeBillingPortalSessionResponse,
   vStripeCheckoutSessionResponse,
-} from '../src/submodule/schema.ts';
+} from '../src/submodule/schema';
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
