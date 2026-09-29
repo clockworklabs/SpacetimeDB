@@ -167,5 +167,19 @@ assert.equal(
   ),
   true
 );
+assert.equal(
+  isStale(
+    state(10n, checkoutPaymentStatusRank('failed')),
+    state(9n, checkoutPaymentStatusRank('unpaid'))
+  ),
+  true
+);
+assert.equal(
+  isStale(
+    state(10n, checkoutPaymentStatusRank('paid')),
+    state(11n, checkoutPaymentStatusRank('failed'))
+  ),
+  true
+);
 
 console.log('stripe unit tests passed');

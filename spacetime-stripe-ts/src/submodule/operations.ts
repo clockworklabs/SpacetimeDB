@@ -645,6 +645,12 @@ function dispatchEvent(
     case 'checkout.session.async_payment_succeeded':
     case 'checkout.session.async_payment_failed': {
       const obj = event.data.object;
+      // Stripe reports a failed delayed payment as `unpaid`, the same as a
+      // pending one, so the failure is recorded as `failed`.
+      const paymentStatus =
+        event.type === 'checkout.session.async_payment_failed'
+          ? 'failed'
+          : obj.payment_status;
       const existing =
         ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.find(obj.id);
       if (
@@ -656,7 +662,7 @@ function dispatchEvent(
           },
           {
             createdUnix: eventCreatedUnix,
-            rank: checkoutPaymentStatusRank(obj.payment_status),
+            rank: checkoutPaymentStatusRank(paymentStatus),
           }
         )
       )
@@ -670,7 +676,7 @@ function dispatchEvent(
         stripeCheckoutSessionId: obj.id,
         stripeCustomerId: customerId,
         status: obj.status ?? 'complete',
-        paymentStatus: obj.payment_status,
+        paymentStatus,
         mode: obj.mode ?? 'payment',
         metadataJson: meta.metadataJson,
         eventCreatedUnix,

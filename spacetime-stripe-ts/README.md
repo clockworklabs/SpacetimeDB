@@ -221,8 +221,8 @@ Stripe does not deliver events in order. Each customer, subscription, Checkout
 session, and invoice row stores the `created` time of the event it reflects in
 `eventCreatedUnix`. An event older than that, or one that would move the status
 backward (a canceled subscription to active, a paid invoice to open, a paid
-Checkout session to unpaid), is stored as `Ignored` without changing the row.
-`replay_webhook_event` follows the same rule.
+Checkout session to unpaid or failed), is stored as `Ignored` without changing
+the row. `replay_webhook_event` follows the same rule.
 
 ### Checkout fulfillment
 
@@ -231,6 +231,9 @@ the payment settles. Grant access only when `stripe_checkout_session.paymentStat
 is `paid` or `no_payment_required`. Subscribe the webhook endpoint to
 `checkout.session.async_payment_succeeded` and
 `checkout.session.async_payment_failed` so delayed payments update that field.
+Stripe reports a failed delayed payment as `unpaid`, the same as a pending one,
+so the submodule records `checkout.session.async_payment_failed` as
+`paymentStatus` `failed`.
 
 ### Stripe API versions
 

@@ -35,8 +35,12 @@ export function invoiceStatusRank(status: string): number {
   }
 }
 
-// Checkout `payment_status` moves from `unpaid` to `paid` or
-// `no_payment_required`.
+// Checkout `payment_status` moves from `unpaid` to `paid`,
+// `no_payment_required`, or `failed` (recorded for
+// `checkout.session.async_payment_failed`). A paid session never moves to
+// `failed`.
 export function checkoutPaymentStatusRank(paymentStatus: string): number {
-  return paymentStatus === 'unpaid' ? 0 : 1;
+  if (paymentStatus === 'unpaid') return 0;
+  if (paymentStatus === 'failed') return 1;
+  return 2;
 }

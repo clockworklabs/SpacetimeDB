@@ -543,6 +543,36 @@ async function main() {
     throw new Error(`invoice did not fill payment row: ${earlyPayment}`);
   }
 
+  step('checkout.session.async_payment_failed, expect paymentStatus=failed');
+  for (const [eventId, eventType] of [
+    ['evt_smoke_chk_async', 'checkout.session.completed'],
+    ['evt_smoke_chk_failed', 'checkout.session.async_payment_failed'],
+  ] as const) {
+    await ingest(opts, {
+      eventId,
+      eventType,
+      payload: {
+        id: eventId,
+        type: eventType,
+        created: EVENT_CREATED,
+        data: {
+          object: {
+            id: 'cs_smoke_async',
+            status: 'complete',
+            payment_status: 'unpaid',
+            mode: 'payment',
+          },
+        },
+      },
+    });
+  }
+  const failedSession = await call(opts, 'get_checkout_session', [
+    q('cs_smoke_async'),
+  ]);
+  if (!failedSession.includes('"failed"')) {
+    throw new Error(`async payment failure not recorded: ${failedSession}`);
+  }
+
   step('negative: replay unknown event_id, expect failure');
   const replayMissing = await expectCallFails(opts, 'replay_webhook_event', [
     q('evt_does_not_exist_xyz'),
