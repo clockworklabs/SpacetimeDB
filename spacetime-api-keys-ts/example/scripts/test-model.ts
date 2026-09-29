@@ -16,7 +16,7 @@ import {
   stepDirection,
   toolAllowedFor,
   worldPixelSize,
-} from '../src/model.ts';
+} from '../src/model';
 
 assert.equal(safePresenceColor('#59C6D6'), '#59c6d6');
 assert.equal(safePresenceColor('" onload="alert(1)', '#59c6d6'), '#59c6d6');

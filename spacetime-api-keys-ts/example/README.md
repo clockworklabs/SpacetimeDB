@@ -187,7 +187,7 @@ confidential.
 ```powershell
 pnpm --dir spacetimedb run build
 pnpm run build
-pnpm exec tsc -p tsconfig.json
+pnpm test
 ```
 
 For a release smoke test:
@@ -216,9 +216,14 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - colony schema, submodule mounts, views, reducers,
-  and HTTP handlers.
+- `spacetimedb/src/schema.ts` - colony tables and submodule mounts.
+- `spacetimedb/src/index.ts` - reducers, procedures, views, and HTTP handlers.
+- `spacetimedb/src/http.ts` - JSON responses, bearer parsing, and body
+  validation for the HTTP handlers.
+- `spacetimedb/src/roles.ts` - scopes and role names shared by the module and
+  the client.
 - `server.ts` - static server and colony-route proxy.
 - `src/app.ts` - owner/holder modes, key handling, subscriptions, and UI logic.
+- `src/model.ts` and `src/share-key.ts` - client helpers covered by `pnpm test`.
 - `public/index.html` - colony interface.
 - `public/styles.css` - colony presentation.
