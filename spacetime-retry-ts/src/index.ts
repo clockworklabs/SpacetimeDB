@@ -1,9 +1,15 @@
+export { retryFailed, retryOk, type RetryResult } from './handler.js';
 export {
-  makeRetryDispatch,
-  retryFailed,
-  retryHandler,
-  retryOk,
-  type RetryHandler,
-  type RetryResult,
-} from './handler';
-export { createRetrySubmodule, type RetryHandlers } from './submodule';
+  client,
+  errors,
+  type RetryArgs,
+  type RetryConfig,
+  type RetryCtx,
+  type RetryHandlers,
+  type RetryHistoryRow,
+  type RetryReducerExport,
+  type RetrySchema,
+  type RetryTaskRow,
+  type RetryTasks,
+  type RetryViewCtx,
+} from './submodule.js';

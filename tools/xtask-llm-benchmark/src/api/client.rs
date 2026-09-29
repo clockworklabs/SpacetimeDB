@@ -256,9 +256,10 @@ impl ApiClient {
                 }
                 let task_name = task_entry.file_name().to_string_lossy().to_string();
 
-                // Humanize task_name for title
                 let title = task_name
-                    .trim_start_matches(|c: char| c == 't' || c == '_' || c.is_ascii_digit())
+                    .strip_prefix("t_")
+                    .and_then(|name| name.split_once('_'))
+                    .map_or(task_name.as_str(), |(_, name)| name)
                     .replace('_', " ")
                     .trim()
                     .to_string();

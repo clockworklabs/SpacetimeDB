@@ -1,23 +1,23 @@
-export { default } from './submodule/schema';
-export { install } from './submodule/install';
+export { default } from './submodule/schema.js';
+export { install } from './submodule/install.js';
 export {
   client,
   errors,
-  consumeRateLimit,
-  type ConsumeRateLimitOpts,
+  type RateLimitClient,
   type RateLimitPolicy,
-  type RateLimitInstallOpts,
+  type RateLimitReadDb,
   type RateLimitResult,
+  type RateLimitStatus,
   type RateLimitTxLike,
-} from './limit';
-export { buildRateLimitKey } from './key';
+} from './limit.js';
 export {
   adminRateLimitBuckets,
   addRateLimitAdmin,
   removeRateLimitAdmin,
-  consume,
+  isAdmin,
+  requireAdmin,
   rateLimitSweep,
   resetBuckets,
   runSweep,
   updateConfig,
-} from './submodule/operations';
+} from './submodule/operations.js';

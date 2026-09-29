@@ -1,12 +1,13 @@
-import { t, Range, SenderError, type ViewCtx } from 'spacetimedb/server';
+import { t, Range, SenderError } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import { ScheduleAt, Timestamp } from 'spacetimedb';
 import {
   COOLANT_UNLOCK_LEVEL,
+  MAX_BAY_LEVEL,
+  MAX_CHARGE_LEVEL,
   PLAYER_COLORS,
   POWER_PER_UPGRADE,
   SURGE_UNLOCK_LEVEL,
-  TAP_LIMIT,
   hasCoolantFlush,
   hasSurgeBurst,
   overheatRecoverAt,
@@ -14,10 +15,19 @@ import {
   playerName,
   roomTuning,
   tapLimitForState,
+  upgradeAvailable,
   upgradeOffer,
   upgradeWindowForState,
   type UpgradeLane,
 } from './reactor-rules';
+import {
+  rateLimitEvent,
+  reactorEvent,
+  reactorRoomState,
+  rateLimitDemoSweepTick,
+  spacetimedb,
+  type Tx,
+} from './schema';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 
@@ -34,26 +44,42 @@ const UPGRADE_LIMIT = 2;
 const REPAIR_LIMIT = 1;
 const REPAIR_WINDOW_SECONDS = 18;
 
-const tapLimiter = rateLimit.client({
-  scope: TAP_SCOPE,
-  limit: TAP_LIMIT,
-  windowSeconds: TAP_WINDOW_SECONDS,
-});
+// Tap Batteries and Upgrade Bay levels change a policy, so each level has its
+// own limiter and scope. Buying a level starts a fresh bucket.
+const tapLimiters = Array.from({ length: MAX_CHARGE_LEVEL + 1 }, (_, level) =>
+  rateLimit.client({
+    scope: `${TAP_SCOPE}.${level}`,
+    limit: tapLimitForState({ chargeUpgradeCount: level }),
+    windowSeconds: TAP_WINDOW_SECONDS,
+  })
+);
 const overchargeLimiter = rateLimit.client({
   scope: OVERCHARGE_SCOPE,
   limit: OVERCHARGE_LIMIT,
   windowSeconds: OVERCHARGE_WINDOW_SECONDS,
 });
-const upgradeLimiter = rateLimit.client({
-  scope: UPGRADE_SCOPE,
-  limit: UPGRADE_LIMIT,
-  windowSeconds: upgradeWindowForState(null),
-});
+const upgradeLimiters = Array.from({ length: MAX_BAY_LEVEL + 1 }, (_, level) =>
+  rateLimit.client({
+    scope: `${UPGRADE_SCOPE}.${level}`,
+    limit: UPGRADE_LIMIT,
+    windowSeconds: upgradeWindowForState({ bayUpgradeCount: level }),
+  })
+);
 const repairLimiter = rateLimit.client({
   scope: REPAIR_SCOPE,
   limit: REPAIR_LIMIT,
   windowSeconds: REPAIR_WINDOW_SECONDS,
 });
+
+function tapLimiter(state: { chargeUpgradeCount: number } | null) {
+  return tapLimiters[
+    Math.min(state?.chargeUpgradeCount ?? 0, MAX_CHARGE_LEVEL)
+  ];
+}
+
+function upgradeLimiter(state: { bayUpgradeCount: number } | null) {
+  return upgradeLimiters[Math.min(state?.bayUpgradeCount ?? 0, MAX_BAY_LEVEL)];
+}
 
 const DEFAULT_RETAIN_EVENTS = 2000;
 const DEFAULT_EVENT_PRUNE_BATCH = 500;
@@ -62,15 +88,6 @@ const ACTIVE_CREW_WINDOW_SECONDS = 60;
 const MAX_CREW_SCALING = 6;
 const ADMIN_EVENT_VIEW_LIMIT = 1000;
 
-import {
-  rateLimitEvent,
-  reactorEvent,
-  reactorRoomState,
-  rateLimitDemoSweepTick,
-  spacetimedb,
-  type Schema,
-  type Tx,
-} from './schema';
 export default spacetimedb;
 
 type ReactorStateRow = NonNullable<
@@ -132,33 +149,8 @@ const reactorActionResult = t.object('ReactorActionResult', {
   resetAt: t.timestamp(),
 });
 
-function isAdmin(ctx: ViewCtx<Schema>): boolean {
-  return (
-    ctx.db.rateLimit.rateLimitAdminIdentity.identity.find(ctx.sender) != null
-  );
-}
-
-function requireAdmin(ctx: Tx): void {
-  if (
-    ctx.as.rateLimit.db.rateLimitAdminIdentity.identity.find(ctx.sender) == null
-  ) {
-    throw new SenderError('rate_limit.not_authorized');
-  }
-}
-
 function actorKey(ctx: { sender: { toHexString(): string } }): string {
   return ctx.sender.toHexString();
-}
-
-function limitKeyForScope(
-  scope: string,
-  ctx: { sender: { toHexString(): string } }
-): string {
-  return scope === UPGRADE_SCOPE ? SHARED_REACTOR_KEY : actorKey(ctx);
-}
-
-function bucketKey(scope: string, key: string): string {
-  return rateLimit.buildRateLimitKey(scope, key);
 }
 
 function clampU32(value: number, min = 0, max = 0xffff_ffff): number {
@@ -337,40 +329,28 @@ function pruneReactorEvents(tx: Tx): void {
   for (let i = 0; i < extra; i++) tx.db.reactorEvent.delete(rows[i]);
 }
 
-function toU32(name: string, value: number): number {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
-    throw new Error(`rate_limit.invalid_${name}`);
-  }
+function requirePositive(code: string, value: number): number {
+  if (value <= 0) throw new SenderError(code);
   return value;
 }
 
 function recordLimitHit(
   tx: Tx,
-  args: {
-    scope: string;
-    key: string;
-    limit: number;
-    windowSeconds: number;
-    cost: number;
-    allowed: boolean;
-    used: number;
-    remaining: number;
-    retryAfterSeconds: number;
-    resetAt: Tx['timestamp'];
-  }
+  limiter: rateLimit.RateLimitClient,
+  result: rateLimit.RateLimitResult
 ) {
   tx.db.rateLimitEvent.insert({
     id: 0n,
-    scope: args.scope,
-    key: args.key,
-    allowed: args.allowed,
-    limit: args.limit,
-    used: args.used,
-    remaining: args.remaining,
-    retryAfterSeconds: args.retryAfterSeconds,
-    windowSeconds: args.windowSeconds,
-    cost: args.cost,
-    resetAt: args.resetAt,
+    scope: result.scope,
+    key: result.key,
+    allowed: result.allowed,
+    limit: result.limit,
+    used: result.used,
+    remaining: result.remaining,
+    retryAfterSeconds: result.retryAfterSeconds,
+    windowSeconds: limiter.windowSeconds,
+    cost: 1,
+    resetAt: result.resetAt,
     createdAt: tx.timestamp,
   });
 }
@@ -470,47 +450,30 @@ export const reactorLimitStatus = spacetimedb.view(
   t.array(reactorLimitStatusRow),
   ctx => {
     const state = ctx.db.reactorRoomState.singleton.find(true);
-    const tapLimit = state ? tapLimitForState(state) : TAP_LIMIT;
-    const upgradeWindowSeconds = upgradeWindowForState(state);
-    const specs = [
+    const db = ctx.db.rateLimit;
+    const actor = actorKey(ctx);
+    return [
       {
         scope: TAP_SCOPE,
         label: 'Tap Coils',
-        limit: tapLimit,
-        windowSeconds: TAP_WINDOW_SECONDS,
+        ...tapLimiter(state).peek(db, actor),
       },
       {
         scope: OVERCHARGE_SCOPE,
         label: 'Overcharger',
-        limit: OVERCHARGE_LIMIT,
-        windowSeconds: OVERCHARGE_WINDOW_SECONDS,
+        ...overchargeLimiter.peek(db, actor),
       },
       {
         scope: UPGRADE_SCOPE,
         label: 'Upgrade Bay',
-        limit: UPGRADE_LIMIT,
-        windowSeconds: upgradeWindowSeconds,
+        ...upgradeLimiter(state).peek(db, SHARED_REACTOR_KEY),
       },
       {
         scope: REPAIR_SCOPE,
         label: 'Repair Drones',
-        limit: REPAIR_LIMIT,
-        windowSeconds: REPAIR_WINDOW_SECONDS,
+        ...repairLimiter.peek(db, actor),
       },
     ];
-    return specs.map(spec => {
-      const key = limitKeyForScope(spec.scope, ctx);
-      const bucket = ctx.db.rateLimit.rateLimitBucket.key.find(
-        bucketKey(spec.scope, key)
-      );
-      const used = Number(bucket?.count ?? 0);
-      return {
-        ...spec,
-        used,
-        remaining: clampU32(spec.limit - used),
-        resetAt: bucket?.expiresAt,
-      };
-    });
   }
 );
 
@@ -536,7 +499,7 @@ export const reactorShop = spacetimedb.view(
           description: offer.description,
           effect: offer.effect,
           cost: offer.cost,
-          available: true,
+          available: upgradeAvailable(base, lane),
         };
       }
     );
@@ -547,7 +510,7 @@ export const rateLimitEventsAdmin = spacetimedb.view(
   { name: 'rate_limit_events_admin', public: true },
   t.array(rateLimitEvent.rowType),
   ctx =>
-    isAdmin(ctx)
+    rateLimit.isAdmin(ctx.db.rateLimit, ctx.sender)
       ? takeRows(ctx.db.rateLimitEvent.iter(), ADMIN_EVENT_VIEW_LIMIT)
       : []
 );
@@ -573,17 +536,9 @@ export const tapReactor = spacetimedb.procedure(
     const key = actorKey(ctx);
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
-      const tapLimit = tapLimitForState(currentState(tx));
-      const result = tapLimiter.consume(tx.as.rateLimit, {
-        key,
-        limit: tapLimit,
-      });
-      recordLimitHit(tx, {
-        ...result,
-        limit: tapLimit,
-        windowSeconds: TAP_WINDOW_SECONDS,
-        cost: 1,
-      });
+      const limiter = tapLimiter(currentState(tx));
+      const result = limiter.consume(tx.as.rateLimit, { key });
+      recordLimitHit(tx, limiter, result);
       const state = currentState(tx);
       if (!result.allowed) {
         const next = putState(tx, {
@@ -715,11 +670,7 @@ export const overcharge = spacetimedb.procedure(
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
       const result = overchargeLimiter.consume(tx.as.rateLimit, { key });
-      recordLimitHit(tx, {
-        ...result,
-        windowSeconds: OVERCHARGE_WINDOW_SECONDS,
-        cost: 1,
-      });
+      recordLimitHit(tx, overchargeLimiter, result);
       const state = currentState(tx);
       if (!result.allowed || state.overheated) {
         const message = result.allowed
@@ -799,22 +750,17 @@ export const buyUpgrade = spacetimedb.procedure(
   reactorActionResult,
   (ctx, args) => {
     const lane = requireUpgradeLane(args.upgradeId);
-    const key = limitKeyForScope(UPGRADE_SCOPE, ctx);
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
-      const upgradeWindowSeconds = upgradeWindowForState(
-        tx.db.reactorRoomState.singleton.find(true)
-      );
-      const result = upgradeLimiter.consume(tx.as.rateLimit, {
-        key,
-        windowSeconds: upgradeWindowSeconds,
-      });
-      recordLimitHit(tx, {
-        ...result,
-        windowSeconds: upgradeWindowSeconds,
-        cost: 1,
-      });
       const state = currentState(tx);
+      if (!upgradeAvailable(state, lane)) {
+        throw new SenderError('reactor.upgrade_maxed');
+      }
+      const limiter = upgradeLimiter(state);
+      const result = limiter.consume(tx.as.rateLimit, {
+        key: SHARED_REACTOR_KEY,
+      });
+      recordLimitHit(tx, limiter, result);
       const offer = upgradeOffer(state, lane);
       const cost = offer.cost;
       if (!result.allowed) {
@@ -962,11 +908,7 @@ export const repairReactor = spacetimedb.procedure(
     let out: ReturnType<typeof emptyActionResult> | null = null;
     ctx.withTx(tx => {
       const result = repairLimiter.consume(tx.as.rateLimit, { key });
-      recordLimitHit(tx, {
-        ...result,
-        windowSeconds: REPAIR_WINDOW_SECONDS,
-        cost: 1,
-      });
+      recordLimitHit(tx, repairLimiter, result);
       const state = currentState(tx);
       if (!result.allowed) {
         const message = `Coolant system cooling down for ${result.retryAfterSeconds}s.`;
@@ -1029,11 +971,9 @@ export const runSweep = spacetimedb.procedure(
   { maxRows: t.option(t.u32()) },
   t.u32(),
   (ctx, args) => {
-    const maxRows =
-      args.maxRows === undefined
-        ? undefined
-        : toU32('sweep_batch', Number(args.maxRows));
-    const deleted = rateLimit.runSweep(ctx.as.rateLimit, { maxRows });
+    const deleted = rateLimit.runSweep(ctx.as.rateLimit, {
+      maxRows: args.maxRows,
+    });
     ctx.withTx(tx => {
       const demo = tx.db.rateLimitDemoConfig.singleton.find(true);
       const retainEvents = Number(demo?.retainEvents ?? DEFAULT_RETAIN_EVENTS);
@@ -1059,7 +999,7 @@ export const setPlayerColor = spacetimedb.reducer(
 );
 
 export const resetDemo = spacetimedb.reducer({}, ctx => {
-  requireAdmin(ctx);
+  rateLimit.requireAdmin(ctx.as.rateLimit);
   rateLimit.resetBuckets(ctx.as.rateLimit, {});
   for (const row of ctx.db.rateLimitEvent.iter())
     ctx.db.rateLimitEvent.delete(row);
@@ -1077,25 +1017,29 @@ export const updateConfig = spacetimedb.reducer(
     eventPruneBatch: t.option(t.u32()),
   },
   (ctx, args) => {
-    requireAdmin(ctx);
+    rateLimit.requireAdmin(ctx.as.rateLimit);
     if (args.sweepBatch !== undefined) {
-      rateLimit.updateConfig(ctx.as.rateLimit, {
-        sweepBatch: toU32('sweep_batch', Number(args.sweepBatch)),
-      });
+      rateLimit.updateConfig(ctx.as.rateLimit, { sweepBatch: args.sweepBatch });
     }
     if (args.retainEvents !== undefined || args.eventPruneBatch !== undefined) {
       const demo = ctx.db.rateLimitDemoConfig.singleton.find(true);
-      if (!demo) throw new Error('rate_limit.demo_config_missing');
+      if (!demo) throw new Error('reactor.demo_config_missing');
       ctx.db.rateLimitDemoConfig.singleton.update({
         ...demo,
         retainEvents:
           args.retainEvents === undefined
             ? demo.retainEvents
-            : toU32('retain_events', Number(args.retainEvents)),
+            : requirePositive(
+                'reactor.invalid_retain_events',
+                args.retainEvents
+              ),
         eventPruneBatch:
           args.eventPruneBatch === undefined
             ? demo.eventPruneBatch
-            : toU32('event_prune_batch', Number(args.eventPruneBatch)),
+            : requirePositive(
+                'reactor.invalid_event_prune_batch',
+                args.eventPruneBatch
+              ),
         updatedAt: ctx.timestamp,
       });
     }

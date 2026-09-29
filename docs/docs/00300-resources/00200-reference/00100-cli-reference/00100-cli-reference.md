@@ -285,18 +285,24 @@ Run `spacetime help call` for more detailed information.
 
 Describe the structure of a database or entities within it. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime describe [OPTIONS] --json [describe_parts]...`
+**Usage:** `spacetime describe [OPTIONS] [describe_parts]...`
 
 Run `spacetime help describe` for more detailed information.
 
 
 ###### **Arguments:**
 
-* `<DESCRIBE_PARTS>` — Describe arguments: [DATABASE] [ENTITY_TYPE ENTITY_NAME]
+* `<DESCRIBE_PARTS>` — Describe arguments: [DATABASE] [ENTITY_TYPE [ENTITY_NAME]]. ENTITY_TYPE is one of tables, views, reducers, procedures, routes, env or types. A route is named by its path, and an environment variable by its key.
 
 ###### **Options:**
 
-* `--json` — Output the schema in JSON format. Currently required; in the future, omitting this will give human-readable output.
+* `--format <FORMAT>` — Output format for the schema
+
+  Default value: `text`
+
+  Possible values: `text`, `json`
+
+* `--json` — Output the schema in JSON format. Shorthand for `--format json`.
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).

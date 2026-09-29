@@ -233,18 +233,14 @@ fn auto_migrate_database(
                     .ty
                     .clone();
 
-                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                // Convert `SequenceSchema` min/max to `AlgebraicValue`s of the correct type.
                 let min = ty
-                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .saturating_value_from_i128(SequenceSchema::MIN_VALUE)
                     .ok_or_else(|| {
                         anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let max = match sequence_def.max_value {
-                    Some(max) => ty.saturating_value_from_i128(max),
-                    None => ty.saturating_value_from_i128(i128::MAX),
-                }
-                .ok_or_else(|| {
+                let max = ty.saturating_value_from_i128(i128::MAX).ok_or_else(|| {
                     anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
                 })?;
 
@@ -339,9 +335,14 @@ fn auto_migrate_database(
 
                 let mut index_schema = IndexSchema::from_module_def(owning_def, index_def, table_id, 0.into());
 
-                // Apply namespace prefix for submodule indexes
+                // Apply namespace prefix for submodule indexes. The canonical name gets the
+                // canonical namespace; the alias gets the accessor namespace, since that is
+                // what module code looks the index up by.
                 index_schema.index_name = namespace.join_raw(&index_schema.index_name);
-                index_schema.alias = index_schema.alias.as_ref().map(|alias| namespace.join_raw(alias));
+                index_schema.alias = index_schema
+                    .alias
+                    .as_ref()
+                    .map(|alias| owning_def.accessor_path().join_raw(alias));
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
@@ -368,13 +369,13 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeTableAccessorName(table_name_key) => {
                 let (namespace, local) = table_name_key;
                 let table_name = joined(namespace, local);
-                let (_, new_table_def): (&ModuleDef, &spacetimedb_schema::def::TableDef) =
+                let (new_owning_def, new_table_def): (&ModuleDef, &spacetimedb_schema::def::TableDef) =
                     plan.new.find_table(table_name_key).ok_or_else(|| {
                         anyhow::anyhow!("ChangeTableAccessorName: `{table_name}` not found in new module def")
                     })?;
 
                 let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
-                let new_alias = namespace.join(new_table_def.accessor_name.clone());
+                let new_alias = new_owning_def.accessor_path().join(new_table_def.accessor_name.clone());
 
                 log!(
                     logger,
@@ -418,7 +419,7 @@ fn auto_migrate_database(
                     plan.old.find_storing_table(namespace, index_name).ok_or_else(|| {
                         anyhow::anyhow!("ChangeIndexSourceName: `{index_name}` not found in old module def")
                     })?;
-                let (_new_owning_def, new_table_def) =
+                let (new_owning_def, new_table_def) =
                     plan.new.find_storing_table(namespace, index_name).ok_or_else(|| {
                         anyhow::anyhow!("ChangeIndexSourceName: `{index_name}` not found in new module def")
                     })?;
@@ -436,7 +437,9 @@ fn auto_migrate_database(
                     .iter()
                     .find(|index| index.index_name == stored_name)
                     .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{table_full_name}`"))?;
-                let new_source_name = namespace.join_raw(&new_index_def.source_name.clone().into());
+                let new_source_name = new_owning_def
+                    .accessor_path()
+                    .join_raw(&new_index_def.source_name.clone().into());
 
                 log!(
                     logger,
@@ -650,7 +653,8 @@ pub fn create_table_from_def(
 }
 
 /// Creates a submodule table in `stdb`, applying the namespace to its canonical name.
-/// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
+/// `name_prefix` is the canonical namespace path the table is mounted under (e.g. `"my_lib."`);
+/// aliases use `owning_def`'s accessor path instead (e.g. `"myLib."`).
 pub fn create_table_from_def_with_prefix(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
@@ -661,12 +665,14 @@ pub fn create_table_from_def_with_prefix(
     let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
     if !name_prefix.is_empty() {
         // Store submodule tables under their namespaced *canonical* name, exactly as root
-        // tables are stored. The accessor name is a codegen concern and lives on as a
-        // namespaced alias in `st_table_accessor`; it must not become the host's identity
-        // for the table, and it must not be dropped (namespacing it keeps it unique across
-        // mounts that share a local name).
+        // tables are stored. The accessor name lives on as a namespaced alias in
+        // `st_table_accessor`, qualified by the *accessor* namespace: that is the name
+        // module code resolves the table by (`ctx.db.myLib.myTable` looks up `myLib.myTable`).
+        // It must not become the host's identity for the table, and it must not be dropped
+        // (namespacing it keeps it unique across mounts that share a local name).
+        let accessor_prefix = owning_def.accessor_path();
         schema.table_name = TableName::from(name_prefix.join(table_def.name.clone()));
-        schema.alias = Some(name_prefix.join(table_def.accessor_name.clone()));
+        schema.alias = Some(accessor_prefix.join(table_def.accessor_name.clone()));
 
         // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
         // resolve it via the namespaced reducer_by_name / procedure_by_name.
@@ -681,7 +687,7 @@ pub fn create_table_from_def_with_prefix(
         // Apply the namespace to index canonical names and aliases for global uniqueness.
         for index in &mut schema.indexes {
             index.index_name = name_prefix.join_raw(&index.index_name);
-            index.alias = index.alias.as_ref().map(|alias| name_prefix.join_raw(alias));
+            index.alias = index.alias.as_ref().map(|alias| accessor_prefix.join_raw(alias));
         }
 
         // Same for constraint and sequence names.
@@ -705,7 +711,7 @@ pub fn create_table_from_view_def(
     view_def: &ViewDef,
 ) -> anyhow::Result<()> {
     stdb.create_view(tx, module_def, view_def)
-        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+        .with_context(|| format!("failed to create table for view {}", view_def.name))?;
     Ok(())
 }
 
@@ -719,7 +725,7 @@ pub fn create_table_from_view_def_with_prefix(
     name_prefix: &NamespacePath,
 ) -> anyhow::Result<()> {
     stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
-        .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
+        .with_context(|| format!("failed to create table for view {}{}", name_prefix, view_def.name))?;
     Ok(())
 }
 
@@ -1066,6 +1072,65 @@ mod test {
                 module: sub.finish(),
             }]));
         root.try_into().expect("should be a valid module definition")
+    }
+
+    /// A submodule mounted under a camelCase accessor key, so the canonical namespace
+    /// (`my_lib`) differs from the accessor namespace (`myLib`).
+    fn submodule_case_converted_namespace_module() -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("FruitBasket", ProductType::from([("id", U64)]), true)
+            .with_index(btree(0), "basket_id_idx", "basket_id_idx")
+            .finish();
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myLib", sub.finish());
+        root.finish().try_into().expect("should be a valid module definition")
+    }
+
+    /// Table and index aliases must be qualified by the *accessor* namespace, since that is
+    /// the name module code resolves them by (`ctx.db.myLib.FruitBasket` looks up
+    /// `myLib.FruitBasket`), while the canonical name is qualified by the canonical namespace.
+    #[test]
+    fn submodule_aliases_use_accessor_namespace() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = submodule_case_converted_namespace_module();
+
+        let (prefix, owning_def, table_def) = module_def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("submodule table should exist");
+        assert_eq!(prefix.to_string(), "my_lib.", "canonical namespace");
+        assert_eq!(owning_def.accessor_path().to_string(), "myLib.", "accessor namespace");
+
+        let mut tx = begin_mut_tx(&stdb);
+        create_table_from_def_with_prefix(&stdb, &mut tx, owning_def, table_def, &prefix)?;
+
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "my_lib.fruit_basket")?
+            .expect("table should be stored under its canonical namespace");
+        assert!(
+            stdb.table_id_from_name_mut(&tx, "myLib.fruit_basket")?.is_none(),
+            "the accessor namespace must not qualify the canonical name"
+        );
+        // The alias resolves through the datastore's name-or-alias lookup, as the module does.
+        assert_eq!(
+            stdb.table_id_from_name_mut(&tx, "myLib.FruitBasket")?,
+            Some(table_id),
+            "accessor path + accessor name must resolve to the table"
+        );
+
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert_eq!(schema.alias.as_deref(), Some("myLib.FruitBasket"));
+        let index = schema.indexes.first().expect("index should exist");
+        assert!(
+            index.index_name.starts_with("my_lib."),
+            "index canonical name should be qualified by the canonical namespace: {}",
+            index.index_name
+        );
+        assert_eq!(index.alias.as_deref(), Some("myLib.basket_id_idx"));
+
+        stdb.commit_tx(tx)?;
+        Ok(())
     }
 
     /// Submodule tables must be stored under their namespaced *canonical* name, with the
@@ -1640,11 +1705,13 @@ mod test {
         let stdb = stdb.reopen()?;
 
         // After replay, the allocation cursor should be preserved.
+        // We only care that the next value is strictly higher than all the previous ones,
+        // but we happen to get the value 4 here because we do not perform any sequence allocation batching.
         {
             let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
             assert!(
-                ids.iter().last().unwrap() == &4097,
-                "expected id 4097 after reopen, got {ids:?}"
+                ids.iter().last().unwrap() == &4,
+                "expected id 4 after reopen, got {ids:?}"
             );
         }
 
