@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "backend-lifecycle"],
   "evidence": ["browser-observation", "database-observation"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 300000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 287000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l3.server-timed-restocks", "path": "prompts/modular/l3-specifications.md", "order": 3120, "from": "## Server-timed restocks", "until": "## Server-timed reservations", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },

@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "concurrent-actors", "direct-server-call"],
   "evidence": ["browser-observation", "concurrent-outcome", "database-observation"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 46000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.cancellation-accounting", "path": "prompts/modular/order-accounting.md", "order": 2100, "from": "## Cancellation accounting", "until": "## Price accounting", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] }],
     "contracts": []

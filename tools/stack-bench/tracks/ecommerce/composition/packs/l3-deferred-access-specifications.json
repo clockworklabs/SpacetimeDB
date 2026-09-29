@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "direct-server-call", "request-replay"],
   "evidence": ["browser-observation", "server-refusal", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 56000 },
   "task": {
     "requirements": [{ "id": "ecommerce.l3.deferred-access", "path": "prompts/modular/l3-specifications.md", "order": 3130, "from": "## Deferred-work access", "until": "## Stock conservation", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] }],
     "contracts": []

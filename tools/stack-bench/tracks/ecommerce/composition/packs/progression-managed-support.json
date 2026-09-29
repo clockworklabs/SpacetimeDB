@@ -12,7 +12,7 @@
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 55000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 29000 },
   "task": {
     "requirements": [
       {
