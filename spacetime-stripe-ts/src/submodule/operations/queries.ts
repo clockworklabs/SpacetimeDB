@@ -7,9 +7,9 @@ import {
   stripeCheckoutSessionTable,
   stripePaymentTable,
   stripeInvoiceTable,
-} from '../schema';
-import { withAdminTx, takeRows } from '../operations';
-import { latestSubscription } from '../subscription-order';
+} from '../schema.js';
+import { withAdminTx, takeRows } from '../operations.js';
+import { latestSubscription } from '../subscription-order.js';
 
 export const getCustomer = spacetimedb.procedure(
   { stripeCustomerId: t.string() },

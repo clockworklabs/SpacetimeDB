@@ -1,17 +1,17 @@
-import { WebhookEventStatus, spacetimedb } from '../schema';
+import { WebhookEventStatus, spacetimedb } from '../schema.js';
 import {
   SyncResponse,
   type HandlerContext,
   type Request as StdbRequest,
 } from 'spacetimedb/server';
 import { verifyStripeSignature } from '@spacetimedb/crypto';
-import { parseStripeEventMetadata } from '../webhook-metadata';
-import { MAX_WEBHOOK_METADATA_LENGTH } from '../limits';
-import { applyStripeEvent, updateWebhookStatus } from '../operations';
+import { parseStripeEventMetadata } from '../webhook-metadata.js';
+import { MAX_WEBHOOK_METADATA_LENGTH } from '../limits.js';
+import { applyStripeEvent, updateWebhookStatus } from '../operations.js';
 import {
   validateWebhookRequestBody,
   validateWebhookRequestHeaders,
-} from '../webhook-request';
+} from '../webhook-request.js';
 
 // POST $STDB_URI/v1/database/<db>/route/stripe/webhook
 function jsonResponse(status: number, body: unknown): SyncResponse {

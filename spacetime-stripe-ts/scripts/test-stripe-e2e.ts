@@ -417,7 +417,9 @@ async function main() {
 
     if (!options.skipBuildPublish) {
       step('Build module');
-      await runChecked(pnpmCommand, ['run', 'build'], { cwd: moduleRoot });
+      await runChecked(pnpmCommand, ['run', 'build:module'], {
+        cwd: moduleRoot,
+      });
 
       step('Publish module locally');
       await runChecked(

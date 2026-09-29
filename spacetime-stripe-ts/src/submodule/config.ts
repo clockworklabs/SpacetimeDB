@@ -3,10 +3,10 @@ import {
   t,
   type ProcedureModuleCtx,
   type WriteCtx,
-} from './schema';
-import { adminVerdict, denyIfNotAdmin } from './auth';
-import { errors } from './errors';
-import { throwSenderError } from './validation';
+} from './schema.js';
+import { adminVerdict, denyIfNotAdmin } from './auth.js';
+import { errors } from './errors.js';
+import { throwSenderError } from './validation.js';
 
 export type StripeConfig = {
   secretKey: string;

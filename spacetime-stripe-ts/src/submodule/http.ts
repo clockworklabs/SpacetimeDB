@@ -1,4 +1,4 @@
-import { errors } from './errors';
+import { errors } from './errors.js';
 
 const STRIPE_API_ORIGIN = 'https://api.stripe.com';
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'DELETE']);

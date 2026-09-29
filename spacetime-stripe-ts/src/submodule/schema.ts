@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
-import { install } from './install';
+import { install } from './install.js';
 
 // Internal ingest lifecycle for webhook rows. Received = stored. Processed =
 // applied to the data model. Ignored = unhandled event type or an event older

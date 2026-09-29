@@ -3,9 +3,9 @@ import {
   t,
   type ProcedureModuleCtx,
   type WriteCtx,
-} from './schema';
-import { errors } from './errors';
-import { throwSenderError } from './validation';
+} from './schema.js';
+import { errors } from './errors.js';
+import { throwSenderError } from './validation.js';
 
 // Admin gate. Fresh publishes seed the owner via init. Public submodule calls
 // never bootstrap admin state from "first caller wins".

@@ -17,13 +17,25 @@
     }
   },
   "files": [
-    "src",
+    "dist",
     "LICENSE",
     "README.md"
   ],
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./submodule": {
+        "types": "./dist/submodule.d.ts",
+        "default": "./dist/submodule.js"
+      }
+    }
   },
   "repository": {
     "type": "git",
@@ -41,7 +53,8 @@
     "webhooks"
   ],
   "scripts": {
-    "build": "spacetime build",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "build:module": "spacetime build",
     "format": "prettier . --write --ignore-path ../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
     "typecheck": "tsc --noEmit",
@@ -53,7 +66,7 @@
     "test:smoke": "tsx scripts/test-stripe-smoke.ts",
     "test:stripe:e2e": "tsx scripts/test-stripe-e2e.ts",
     "test:gate:local": "spacetime build && spacetime publish --server local --yes spacetime-stripe && tsx scripts/test-stripe-e2e.ts --skip-build-publish --skip-checkout-trigger --events customer.created --kill-existing-stripe-listeners",
-    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "dependencies": {

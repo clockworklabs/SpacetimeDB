@@ -4,7 +4,7 @@ export {
   ingestStripeWebhook,
   replayWebhookEvent,
   pruneWebhookEvents,
-} from './operations';
+} from './operations.js';
 export {
   validateStripePrice,
   getRemoteCheckoutSession,
@@ -16,7 +16,7 @@ export {
   cancelSubscription,
   reactivateSubscription,
   updateSubscriptionQuantity,
-} from './operations/billing';
+} from './operations/billing.js';
 export {
   getCustomer,
   getCustomerByUserId,
@@ -34,10 +34,10 @@ export {
   listInvoicesByUserId,
   getCheckoutSession,
   listCheckoutSessions,
-} from './operations/queries';
+} from './operations/queries.js';
 export {
   setStripeConfig,
   setStripeWebhookSigningSecret,
   getStripeConfigStatus,
-} from './config';
-export { addAdminIdentity, removeAdminIdentity } from './auth';
+} from './config.js';
+export { addAdminIdentity, removeAdminIdentity } from './auth.js';

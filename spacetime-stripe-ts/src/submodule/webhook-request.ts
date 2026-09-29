@@ -1,4 +1,7 @@
-import { MAX_WEBHOOK_BODY_LENGTH, MAX_WEBHOOK_HEADER_LENGTH } from './limits';
+import {
+  MAX_WEBHOOK_BODY_LENGTH,
+  MAX_WEBHOOK_HEADER_LENGTH,
+} from './limits.js';
 
 export type WebhookRequestRejection = {
   status: number;

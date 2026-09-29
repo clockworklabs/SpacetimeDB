@@ -1,10 +1,10 @@
-export { default } from './submodule/schema';
-export * from './submodule/api';
-export { install } from './submodule/install';
-export { errors } from './submodule/errors';
+export { default } from './submodule/schema.js';
+export * from './submodule/api.js';
+export { install } from './submodule/install.js';
+export { errors } from './submodule/errors.js';
 export {
   getOrCreateUserCustomer,
   createUserCheckoutSession,
   stripeRequest,
-} from './submodule/operations/billing';
-export { handleStripeWebhook } from './submodule/operations/webhook';
+} from './submodule/operations/billing.js';
+export { handleStripeWebhook } from './submodule/operations/webhook.js';

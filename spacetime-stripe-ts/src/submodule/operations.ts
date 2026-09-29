@@ -19,31 +19,31 @@ import {
   type WriteCtx,
   type JsonRecord,
   type ModuleTimestamp,
-} from './schema';
+} from './schema.js';
 import { verifyStripeSignature } from '@spacetimedb/crypto';
-import { adminVerdict, denyIfNotAdmin, requireAdmin } from './auth';
-import { parseStripeEventMetadata } from './webhook-metadata';
+import { adminVerdict, denyIfNotAdmin, requireAdmin } from './auth.js';
+import { parseStripeEventMetadata } from './webhook-metadata.js';
 import {
   checkoutPaymentStatusRank,
   invoiceStatusRank,
   isStale,
   subscriptionStatusRank,
-} from './event-order';
-import { buildStripeHttpRequest } from './http';
+} from './event-order.js';
+import { buildStripeHttpRequest } from './http.js';
 import {
   MAX_WEBHOOK_BODY_LENGTH,
   MAX_WEBHOOK_HEADER_LENGTH,
   MAX_WEBHOOK_METADATA_LENGTH,
   WEBHOOK_EVENT_RETENTION_MICROS,
   WEBHOOK_PRUNE_BATCH,
-} from './limits';
+} from './limits.js';
 import {
   assertExhaustive,
   safeJsonParse,
   summarizeIssues,
   throwSenderError,
-} from './validation';
-import { errors } from './errors';
+} from './validation.js';
+import { errors } from './errors.js';
 
 export function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));

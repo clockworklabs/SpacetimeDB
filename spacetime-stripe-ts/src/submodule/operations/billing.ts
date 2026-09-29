@@ -9,14 +9,14 @@ import {
   vStripeBillingPortalSessionResponse,
   type ProcedureModuleCtx,
   type JsonRecord,
-} from '../schema';
-import { loadConfigOrThrowFromProcedure } from '../config';
+} from '../schema.js';
+import { loadConfigOrThrowFromProcedure } from '../config.js';
 import {
   safeJsonParse,
   summarizeIssues,
   throwSenderError,
-} from '../validation';
-import { errors } from '../errors';
+} from '../validation.js';
+import { errors } from '../errors.js';
 
 import {
   requireProcedureAdmin,
@@ -36,7 +36,7 @@ import {
   unixSeconds,
   callStripe,
   createCustomerInStripeAndSync,
-} from '../operations';
+} from '../operations.js';
 
 export const validateStripePrice = spacetimedb.procedure(
   { priceId: t.string() },
