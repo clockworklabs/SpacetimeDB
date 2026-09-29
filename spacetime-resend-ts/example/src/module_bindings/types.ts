@@ -48,6 +48,11 @@ export type MyDispatchDeliveryEvents = __Infer<typeof MyDispatchDeliveryEvents>;
 export const MyDispatchEmails = __t.object("MyDispatchEmails", {});
 export type MyDispatchEmails = __Infer<typeof MyDispatchEmails>;
 
+export const RemovedDispatch = __t.object("RemovedDispatch", {
+  resendId: __t.string(),
+});
+export type RemovedDispatch = __Infer<typeof RemovedDispatch>;
+
 export const ResendDeliveryEvent = __t.object("ResendDeliveryEvent", {
   eventId: __t.string(),
   resendId: __t.string(),

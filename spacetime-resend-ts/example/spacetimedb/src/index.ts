@@ -17,10 +17,18 @@ const dispatchPolicy = table(
   }
 );
 
+// Removed dispatches stay in the Resend tables so later webhooks update the
+// existing row instead of recreating it. The views skip these ids.
+const removedDispatch = table(
+  { name: 'removed_dispatch', public: false },
+  { resendId: t.string().primaryKey() }
+);
+
 const spacetimedb = schema({
   resend,
   rateLimit,
   dispatchPolicy,
+  removedDispatch,
 });
 
 function subjectFor(ctx: { sender: { toHexString(): string } }): string {
@@ -30,7 +38,10 @@ function subjectFor(ctx: { sender: { toHexString(): string } }): string {
 export const myDispatchEmails = spacetimedb.view(
   { name: 'my_dispatch_emails', public: true },
   resend.t.array(resend.resendEmailTable.rowType),
-  ctx => [...ctx.db.resend.resendEmail.byUserId.filter(subjectFor(ctx))]
+  ctx =>
+    [...ctx.db.resend.resendEmail.byUserId.filter(subjectFor(ctx))].filter(
+      email => !ctx.db.removedDispatch.resendId.find(email.resendId)
+    )
 );
 
 export const myDispatchDeliveryEvents = spacetimedb.view(
@@ -41,6 +52,7 @@ export const myDispatchDeliveryEvents = spacetimedb.view(
     for (const email of ctx.db.resend.resendEmail.byUserId.filter(
       subjectFor(ctx)
     )) {
+      if (ctx.db.removedDispatch.resendId.find(email.resendId)) continue;
       for (const event of ctx.db.resend.resendDeliveryEvent.byResendId.filter(
         email.resendId
       )) {
@@ -204,25 +216,22 @@ const dispatchDeleteResult = t.object('DispatchDeleteResult', {
   removed: t.u32(),
 });
 
-// Remove a single dispatch and any delivery events it collected. This is a demo
-// convenience so the log can be pruned; it writes directly to the submodule tables.
+// Remove dispatches from the caller's log. This is a demo convenience so the
+// log can be pruned.
 export const deleteDispatch = spacetimedb.procedure(
   { resendId: t.string() },
   dispatchDeleteResult,
   (ctx, args) => {
     return ctx.withTx(tx => {
-      let removed = 0;
       const row = tx.db.resend.resendEmail.resendId.find(args.resendId);
-      if (row && row.userId === subjectFor(ctx)) {
-        tx.db.resend.resendEmail.delete(row);
-        removed += 1;
-        for (const event of tx.db.resend.resendDeliveryEvent.byResendId.filter(
-          args.resendId
-        )) {
-          tx.db.resend.resendDeliveryEvent.delete(event);
-        }
+      if (
+        row?.userId !== subjectFor(ctx) ||
+        tx.db.removedDispatch.resendId.find(args.resendId)
+      ) {
+        return { ok: true, removed: 0 };
       }
-      return { ok: true, removed };
+      tx.db.removedDispatch.insert({ resendId: args.resendId });
+      return { ok: true, removed: 1 };
     });
   }
 );
@@ -233,16 +242,11 @@ export const clearDispatches = spacetimedb.procedure(
   ctx => {
     return ctx.withTx(tx => {
       let removed = 0;
-      const owned = [
-        ...tx.db.resend.resendEmail.byUserId.filter(subjectFor(ctx)),
-      ];
-      for (const row of owned) {
-        for (const event of tx.db.resend.resendDeliveryEvent.byResendId.filter(
-          row.resendId
-        )) {
-          tx.db.resend.resendDeliveryEvent.delete(event);
-        }
-        tx.db.resend.resendEmail.delete(row);
+      for (const row of tx.db.resend.resendEmail.byUserId.filter(
+        subjectFor(ctx)
+      )) {
+        if (tx.db.removedDispatch.resendId.find(row.resendId)) continue;
+        tx.db.removedDispatch.insert({ resendId: row.resendId });
         removed += 1;
       }
       return { ok: true, removed };
