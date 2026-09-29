@@ -1052,6 +1052,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-new-script-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
 name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
