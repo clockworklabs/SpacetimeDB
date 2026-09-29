@@ -10,11 +10,11 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default {
-  scope: __t.string(),
-  name: __t.string(),
-  color: __t.string(),
-  cx: __t.f64(),
-  cy: __t.f64(),
-  onGrid: __t.bool(),
+import {
+  JoinColonyResult,
+} from "./types";
+
+export const params = {
+  key: __t.string(),
 };
+export const returnType = JoinColonyResult

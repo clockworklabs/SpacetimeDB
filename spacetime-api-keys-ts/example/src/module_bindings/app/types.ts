@@ -29,6 +29,13 @@ export type ColonyEntities = __Infer<typeof ColonyEntities>;
 export const ColonyGrid = __t.object("ColonyGrid", {});
 export type ColonyGrid = __Infer<typeof ColonyGrid>;
 
+export const ColonyMember = __t.object("ColonyMember", {
+  memberKey: __t.string(),
+  keyId: __t.string(),
+  prefix: __t.string(),
+});
+export type ColonyMember = __Infer<typeof ColonyMember>;
+
 export const ColonyPresence = __t.object("ColonyPresence", {});
 export type ColonyPresence = __Infer<typeof ColonyPresence>;
 
@@ -67,6 +74,13 @@ export const GridEntity = __t.object("GridEntity", {
   updatedAt: __t.timestamp(),
 });
 export type GridEntity = __Infer<typeof GridEntity>;
+
+export const JoinColonyResult = __t.object("JoinColonyResult", {
+  ownerSubject: __t.string(),
+  gridId: __t.u64(),
+  scopesJson: __t.string(),
+});
+export type JoinColonyResult = __Infer<typeof JoinColonyResult>;
 
 export const PresenceEntry = __t.object("PresenceEntry", {
   key: __t.string(),

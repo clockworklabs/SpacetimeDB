@@ -94,6 +94,7 @@ let lastBeatAt = 0;
 let beatTimer: number | null = null;
 let cursor = { cx: 0, cy: 0, onGrid: false };
 let keepaliveTimer: number | null = null;
+let accessLost = false;
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -726,26 +727,37 @@ async function mutate(
   await colonyRequest(`/api/colony/${action}`, body);
 }
 
-async function colonyRequest(path: string, body?: unknown): Promise<unknown> {
+async function colonyRequest(path: string, body: unknown): Promise<void> {
   const res = await fetch(path, {
-    method: body === undefined ? 'GET' : 'POST',
+    method: 'POST',
     headers: {
       authorization: `Bearer ${holderKey}`,
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      'content-type': 'application/json',
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
     const error =
       data && typeof data === 'object' && 'error' in data
         ? String((data as { error: unknown }).error)
         : `http_${res.status}`;
-    if (/revoked|expired|unknown_key|invalid_key/i.test(error))
-      showAccessRemoved(error);
+    checkAccessLost(error);
     throw new Error(error);
   }
-  return data;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// Shows the access overlay when an error means the share key no longer works.
+function checkAccessLost(message: string): boolean {
+  if (!/revoked|expired|unknown_key|invalid_key|not_member/i.test(message)) {
+    return false;
+  }
+  showAccessRemoved(message);
+  return true;
 }
 
 let selectedRole = 'collaborator';
@@ -846,28 +858,31 @@ function showAccessRemoved(reason: string): void {
     ? 'This share link has expired. Ask the owner for a new one.'
     : 'The owner revoked this share link. Colony access is unavailable.';
   overlay.classList.add('show');
+  accessLost = true;
   if (keepaliveTimer) {
     window.clearInterval(keepaliveTimer);
     keepaliveTimer = null;
   }
 }
 
+// The module derives the role shown to others from the owner identity or the
+// holder's key, and rejects the beat once that key is revoked, rotated, or
+// expired. The keepalive beat therefore also surfaces lost access.
 function sendBeat(): void {
-  if (!conn || !colonyId) return;
+  if (!conn || !colonyId || accessLost) return;
   lastBeatAt = Date.now();
-  try {
-    requireConn().reducers.presenceHeartbeat({
+  conn.reducers
+    .presenceHeartbeat({
       scope: colonyId,
       name: myName,
-      role: myRole(),
       color: myColor,
       cx: cursor.cx,
       cy: cursor.cy,
       onGrid: cursor.onGrid,
+    })
+    .catch(err => {
+      if (!checkAccessLost(errorMessage(err))) console.error(err);
     });
-  } catch {
-    /* connection churn, keepalive will retry */
-  }
 }
 
 function queueBeat(): void {
@@ -1123,22 +1138,17 @@ async function main(): Promise<void> {
     mode = 'holder';
     holderKey = urlKey;
     setStatus('Opening colony');
-    // Snapshot resolves which colony, its grid, and this key's scopes at once.
-    const data = (await colonyRequest('/api/colony/snapshot')) as {
-      result?: {
-        ownerSubject?: unknown;
-        world?: { ownerSubject?: unknown; gridId?: string | number | bigint };
-        grid?: { id?: string | number | bigint };
-        scopesJson?: unknown;
-      };
-    };
-    const result = data.result ?? {};
-    colonyId = String(result.ownerSubject ?? result.world?.ownerSubject ?? '');
-    gridId = BigInt(result.world?.gridId ?? result.grid?.id ?? 0);
-    myScopes = parseScopes(
-      typeof result.scopesJson === 'string' ? result.scopesJson : '[]'
-    );
-    if (!colonyId) throw new Error('could not resolve colony');
+    // Joining verifies the key, resolves the colony, its grid, and this key's
+    // scopes, and registers this connection for presence.
+    const joined = await requireConn()
+      .procedures.joinColony({ key: holderKey })
+      .catch(err => {
+        checkAccessLost(errorMessage(err));
+        throw err;
+      });
+    colonyId = joined.ownerSubject;
+    gridId = joined.gridId;
+    myScopes = parseScopes(joined.scopesJson);
   } else {
     mode = 'owner';
     setStatus('Preparing colony');

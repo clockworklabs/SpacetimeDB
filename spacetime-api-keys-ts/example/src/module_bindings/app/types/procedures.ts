@@ -7,7 +7,10 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
 import * as EnsureWorldProcedure from "../ensure_world_procedure";
+import * as JoinColonyProcedure from "../join_colony_procedure";
 
 export type EnsureWorldArgs = __Infer<typeof EnsureWorldProcedure.params>;
 export type EnsureWorldResult = __Infer<typeof EnsureWorldProcedure.returnType>;
+export type JoinColonyArgs = __Infer<typeof JoinColonyProcedure.params>;
+export type JoinColonyResult = __Infer<typeof JoinColonyProcedure.returnType>;
 

@@ -5,6 +5,7 @@ import {
   type Request,
   type SyncResponse,
 } from 'spacetimedb/server';
+import type { Identity } from 'spacetimedb';
 import * as apiKeys from '@spacetimedb/api-keys/submodule';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
 import {
@@ -24,31 +25,21 @@ import {
   readBearer,
   safeJson,
 } from './http';
+import {
+  SCOPE_BUILD,
+  SCOPE_PLANT,
+  SCOPE_TERRAFORM,
+  SCOPE_VIEW,
+  parseScopes,
+  roleLabel,
+} from './roles';
 
 const COLONY_WIDTH = 12;
 const COLONY_HEIGHT = 8;
 const EVENT_RETAIN = 120;
 const PRESENCE_TTL_SECONDS = 35;
-const PRESENCE_SCOPE_MAX = 128;
 const PRESENCE_NAME_MAX = 64;
-const PRESENCE_ROLE_MAX = 32;
 const PRESENCE_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const PRESENCE_ROLES = new Set([
-  'Owner',
-  'Collaborator',
-  'Terraformer',
-  'Builder',
-  'Planter',
-  'Viewer',
-  'Editor',
-]);
-
-// Scopes a share key can carry. view is read; the three edit scopes are the
-// granular powers a share link can grant.
-const SCOPE_VIEW = 'colony:view';
-const SCOPE_TERRAFORM = 'colony:terraform';
-const SCOPE_BUILD = 'colony:build';
-const SCOPE_PLANT = 'colony:plant';
 
 export default spacetimedb;
 
@@ -72,11 +63,8 @@ export const init = spacetimedb.init(ctx => {
   presence.install(ctx.as.presence);
 });
 
-function senderSubject(ctx: { sender: unknown }): string {
-  const sender = ctx.sender as { toHexString?: () => string };
-  return typeof sender?.toHexString === 'function'
-    ? sender.toHexString()
-    : String(ctx.sender);
+function senderSubject(ctx: { sender: Identity }): string {
+  return ctx.sender.toHexString();
 }
 
 function assertInBounds(x: number, y: number): void {
@@ -306,7 +294,7 @@ function doBuild(
     throw new SenderError(`world.cell_occupied:${x},${y}`);
   }
   // Roads carry a connection mask (which sides link) in label, computed as you
-  // draw; other structures store their kind.
+  // draw and reduced to the n/e/s/w letters; other structures store their kind.
   const entity = tx.db.grid.gridEntity.insert({
     id: 0n,
     gridId: w.gridId,
@@ -315,7 +303,7 @@ function doBuild(
     y,
     kind,
     blocksMovement: false,
-    label: label ?? kind,
+    label: kind === 'road' ? mergeRoadMask('', label ?? '') : kind,
     createdAt: tx.timestamp,
     updatedAt: tx.timestamp,
   });
@@ -586,11 +574,71 @@ export const clear = spacetimedb.reducer(
 // the caller identity to prevent spoofing. Scope is the colony id, so presence is
 // per-colony. cx/cy are fractional tile coordinates.
 
+// A holder browser opens a colony by sending its share key here over its
+// SpacetimeDB connection. The membership row lets presenceHeartbeat derive the
+// holder's role from that key on every beat.
+export const joinColony = spacetimedb.procedure(
+  { key: t.string() },
+  t.object('JoinColonyResult', {
+    ownerSubject: t.string(),
+    gridId: t.u64(),
+    scopesJson: t.string(),
+  }),
+  (ctx, args) => {
+    // A denial returns from the transaction so its usage row and feed event
+    // commit, then fails the call.
+    const out = ctx.withTx(tx => {
+      const auth = verifyKey(tx, args.key.trim(), SCOPE_VIEW, 'join');
+      if (!auth.allowed) return { error: auth.reason };
+      const w = ensureWorldTx(tx, auth.ownerSubject);
+      const member = {
+        memberKey: `${senderSubject(ctx)}/${auth.ownerSubject}`,
+        keyId: auth.keyId,
+        prefix: auth.keyPrefix,
+      };
+      if (tx.db.colonyMember.memberKey.find(member.memberKey)) {
+        tx.db.colonyMember.memberKey.update(member);
+      } else {
+        tx.db.colonyMember.insert(member);
+      }
+      return {
+        result: {
+          ownerSubject: auth.ownerSubject,
+          gridId: w.gridId,
+          scopesJson: auth.scopesJson,
+        },
+      };
+    });
+    if (!out.result) throw new SenderError(`world.access_denied:${out.error}`);
+    return out.result;
+  }
+);
+
+// The owner is shown as Owner. A holder must have joined this colony with a
+// key that is still active, unexpired, and not rotated; its role comes from
+// that key's scopes.
+function presenceRole(ctx: Tx, scope: string): string {
+  const subject = senderSubject(ctx);
+  if (subject === scope) return 'Owner';
+  const member = ctx.db.colonyMember.memberKey.find(`${subject}/${scope}`);
+  if (!member) throw new SenderError('presence.not_member');
+  const key = ctx.db.apiKeys.apiKey.keyId.find(member.keyId);
+  if (!key || key.prefix !== member.prefix || key.status.tag !== 'Active') {
+    throw new SenderError('presence.key_revoked');
+  }
+  if (
+    key.expiresAt &&
+    key.expiresAt.microsSinceUnixEpoch <= ctx.timestamp.microsSinceUnixEpoch
+  ) {
+    throw new SenderError('presence.key_expired');
+  }
+  return roleLabel(parseScopes(key.scopesJson));
+}
+
 export const presenceHeartbeat = spacetimedb.reducer(
   {
     scope: t.string(),
     name: t.string(),
-    role: t.string(),
     color: t.string(),
     cx: t.f64(),
     cy: t.f64(),
@@ -599,15 +647,9 @@ export const presenceHeartbeat = spacetimedb.reducer(
   (ctx, args) => {
     const scope = args.scope.trim();
     const name = args.name.trim();
-    const role = args.role.trim();
-    if (!scope || scope.length > PRESENCE_SCOPE_MAX) {
-      throw new SenderError('presence.invalid_scope');
-    }
+    const role = presenceRole(ctx, scope);
     if (!name || name.length > PRESENCE_NAME_MAX) {
       throw new SenderError('presence.invalid_name');
-    }
-    if (!role || role.length > PRESENCE_ROLE_MAX || !PRESENCE_ROLES.has(role)) {
-      throw new SenderError('presence.invalid_role');
     }
     if (!PRESENCE_COLOR_PATTERN.test(args.color)) {
       throw new SenderError('presence.invalid_color');

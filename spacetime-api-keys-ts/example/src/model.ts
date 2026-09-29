@@ -1,3 +1,23 @@
+import {
+  SCOPE_BUILD,
+  SCOPE_PLANT,
+  SCOPE_TERRAFORM,
+  SCOPE_VIEW,
+  hasScope,
+  parseScopes,
+  roleLabel,
+} from '../spacetimedb/src/roles';
+
+export {
+  SCOPE_BUILD,
+  SCOPE_PLANT,
+  SCOPE_TERRAFORM,
+  SCOPE_VIEW,
+  hasScope,
+  parseScopes,
+  roleLabel,
+};
+
 export type TimestampLike = { microsSinceUnixEpoch: bigint };
 export type EnumTag<T extends string = string> = { tag: T };
 
@@ -103,41 +123,7 @@ export function safePresenceCoordinate(
     : 0;
 }
 
-export const SCOPE_VIEW = 'colony:view';
-export const SCOPE_TERRAFORM = 'colony:terraform';
-export const SCOPE_BUILD = 'colony:build';
-export const SCOPE_PLANT = 'colony:plant';
-
 export type AccessMode = 'owner' | 'holder';
-
-export function parseScopes(json: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(json);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function hasScope(scopes: string[], scope: string): boolean {
-  return (
-    scopes.includes('*') ||
-    scopes.includes('colony:*') ||
-    scopes.includes(scope)
-  );
-}
-
-export function roleLabel(scopes: string[]): string {
-  const canTerraform = hasScope(scopes, SCOPE_TERRAFORM);
-  const canBuild = hasScope(scopes, SCOPE_BUILD);
-  const canPlant = hasScope(scopes, SCOPE_PLANT);
-  if (canTerraform && canBuild && canPlant) return 'Collaborator';
-  if (canTerraform && !canBuild && !canPlant) return 'Terraformer';
-  if (canBuild && !canTerraform && !canPlant) return 'Builder';
-  if (canPlant && !canTerraform && !canBuild) return 'Planter';
-  if (!canTerraform && !canBuild && !canPlant) return 'Viewer';
-  return 'Editor';
-}
 
 export function permissionsFor(mode: AccessMode, scopes: string[]) {
   const owner = mode === 'owner';

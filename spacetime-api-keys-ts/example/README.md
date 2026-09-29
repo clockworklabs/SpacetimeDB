@@ -8,9 +8,10 @@ can issue scoped bearer links that allow another browser to view or modify it.
 
 - Mounting the API Keys submodule under the `apiKeys` namespace.
 - Creating, rotating, validating, and revoking scoped bearer keys.
-- Validating keys in native SpacetimeDB HTTP handlers.
+- Validating keys in native SpacetimeDB HTTP handlers and in a host procedure.
 - Composing the API Keys, Grid, and Presence submodules.
-- Giving owners native reducer access while routing key holders through HTTP.
+- Giving owners native reducer access while routing key holder edits through HTTP.
+- Deriving each holder's presence role from its key on the server.
 - Recording allowed and rejected holder actions in an audit-style world event log.
 - Returning a raw key only at creation or rotation time.
 
@@ -89,12 +90,12 @@ the browser and proxy may use a different database from the published module.
 
 The example combines four scopes into a small set of roles:
 
-| Scope              | Allows                       |
-| ------------------ | ---------------------------- |
-| `colony:view`      | Load the colony snapshot.    |
-| `colony:terraform` | Change cell terrain.         |
-| `colony:build`     | Place and remove structures. |
-| `colony:plant`     | Place natural objects.       |
+| Scope              | Allows                                 |
+| ------------------ | -------------------------------------- |
+| `colony:view`      | Open the colony and load its snapshot. |
+| `colony:terraform` | Change cell terrain.                   |
+| `colony:build`     | Place and remove structures.           |
+| `colony:plant`     | Place natural objects.                 |
 
 The owner may reset the colony, clear its event log, and manage access keys. A key
 holder can perform only the actions represented by the key's current scopes. Key
@@ -115,8 +116,16 @@ POST /api/colony/clear
 ```
 
 Holder requests send the raw key as `Authorization: Bearer <key>`. The Node server
-forwards `/api/colony/*` to the module's HTTP router. Owner actions use native
+forwards exactly these paths to the module's HTTP router. Owner actions use native
 reducers authenticated by the owner's SpacetimeDB identity.
+
+A holder browser opens the colony by calling the `join_colony` procedure with its
+key over its SpacetimeDB connection. The procedure verifies the `colony:view`
+scope, returns the colony, grid, and scopes, and records which key that
+connection joined with. `presence_heartbeat` shows the owner as `Owner` and a
+holder with the role named by its key's scopes. It rejects a holder whose key is
+revoked, rotated, or expired, so the open holder page shows that access was
+removed within one keepalive interval.
 
 Each mutation adds an event to the owner's feed. A request rejected because the
 key is revoked, expired, or missing the scope adds a rejected event. Requests
@@ -134,7 +143,8 @@ events are each capped at the newest 120 per colony.
   reconstructed. This is intentional.
 - Share links place the key in the URL fragment (`#key=...`), which browsers do
   not include in the initial HTTP request. The browser reads the fragment and sends
-  the key only in the authorization header for colony API calls.
+  the key only to `join_colony` and in the authorization header for colony API
+  calls.
 - Anyone with a share link has its permissions until the key expires, is rotated,
   or is revoked. Treat the link as a secret.
 
@@ -143,6 +153,7 @@ events are each capped at the newest 120 per colony.
 ```text
 Owner browser -> SpacetimeDB reducers/procedures -> colony state + key management
 
+Holder browser -> join_colony procedure -> API-key validation + membership
 Holder browser -> Node /api/colony proxy -> module HTTP handler
                                       -> API-key validation + scope check
                                       -> colony mutation
@@ -182,11 +193,13 @@ pnpm exec tsc -p tsconfig.json
 For a release smoke test:
 
 1. Create one key for each role and capture each link when shown.
-2. Confirm each holder can load the snapshot and perform only its allowed actions.
+2. Confirm each holder can open the colony, load `GET /api/colony/snapshot` with
+   its key, and perform only its allowed actions.
 3. Confirm a disallowed action returns an authorization failure, records a
    rejected world event, and leaves the grid unchanged.
 4. Rotate a key and verify the previous link is rejected and the replacement is accepted.
-5. Revoke the new key and verify subsequent snapshot and mutation requests fail.
+5. Revoke the new key and verify the open holder page shows that access was
+   removed and subsequent snapshot and mutation requests fail.
 6. Reload the owner and confirm no raw key can be recovered or copied from the key
    list.
 

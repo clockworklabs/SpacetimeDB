@@ -46,6 +46,7 @@ import UnbuildReducer from "./unbuild_reducer";
 
 // Import all procedure arg schemas
 import * as EnsureWorldProcedure from "./ensure_world_procedure";
+import * as JoinColonyProcedure from "./join_colony_procedure";
 
 // Import all table schema definitions
 import ColonyCellsRow from "./colony_cells_table";
@@ -211,6 +212,7 @@ const reducersSchema = __reducers(
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
   __procedureSchema("ensure_world", EnsureWorldProcedure.params, EnsureWorldProcedure.returnType),
+  __procedureSchema("join_colony", JoinColonyProcedure.params, JoinColonyProcedure.returnType),
   __procedureSchema("api_keys.create_api_key", ApiKeys_CreateApiKeyProcedure.params, ApiKeys_CreateApiKeyProcedure.returnType, "apiKeys.createApiKey"),
   __procedureSchema("api_keys.create_api_key_for_subject", ApiKeys_CreateApiKeyForSubjectProcedure.params, ApiKeys_CreateApiKeyForSubjectProcedure.returnType, "apiKeys.createApiKeyForSubject"),
   __procedureSchema("api_keys.rotate_api_key", ApiKeys_RotateApiKeyProcedure.params, ApiKeys_RotateApiKeyProcedure.returnType, "apiKeys.rotateApiKey"),
@@ -283,6 +285,7 @@ export const reducers = {
 const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures);
 export const procedures = {
   ensureWorld: __procedureAccessors.ensureWorld,
+  joinColony: __procedureAccessors.joinColony,
   apiKeys: {
     createApiKey: __procedureAccessors["apiKeys.createApiKey"],
     createApiKeyForSubject: __procedureAccessors["apiKeys.createApiKeyForSubject"],

@@ -37,12 +37,24 @@ export const worldEvent = table(
   }
 );
 
+// The key each holder connection joined a colony with. memberKey is
+// `${identity hex}/${colony owner subject}`.
+export const colonyMember = table(
+  { name: 'colony_member', public: false },
+  {
+    memberKey: t.string().primaryKey(),
+    keyId: t.string(),
+    prefix: t.string(),
+  }
+);
+
 export const spacetimedb = schema({
   apiKeys,
   grid,
   presence,
   world,
   worldEvent,
+  colonyMember,
 });
 
 export type Schema = InferSchema<typeof spacetimedb>;
