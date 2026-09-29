@@ -1,14 +1,11 @@
 import { Timestamp } from 'spacetimedb';
 import {
-  consumeRateLimit,
   client,
-  DEFAULT_SWEEP_BATCH,
+  errors,
   MAX_SWEEP_BATCH,
-  resolveRateLimitSweepBatch,
   sweepRateLimits,
   type RateLimitBucketRow,
 } from '../src/limit.ts';
-import { buildRateLimitKey } from '../src/key.ts';
 
 let pass = 0;
 let fail = 0;
@@ -46,16 +43,6 @@ function makeTx(nowMicros = 0n) {
         },
         insert: (row: RateLimitBucketRow) => rows.set(row.key, row),
         delete: (row: RateLimitBucketRow) => rows.delete(row.key),
-        expiresAt: {
-          filter: function* () {
-            yield* [...rows.values()].sort((a, b) =>
-              a.expiresAt.microsSinceUnixEpoch <
-              b.expiresAt.microsSinceUnixEpoch
-                ? -1
-                : 1
-            );
-          },
-        },
       },
     },
     rows,
@@ -63,34 +50,10 @@ function makeTx(nowMicros = 0n) {
   return tx;
 }
 
-{
-  const tx = makeTx();
-  consumeRateLimit(tx, {
-    key: 'fresh-a',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 100,
-  });
-  consumeRateLimit(tx, {
-    key: 'fresh-b',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 100,
-  });
-  consumeRateLimit(tx, {
-    key: 'expired',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 1,
-  });
-  tx.timestamp = new Timestamp(2_000_000n);
-  const deleted = sweepRateLimits(
-    tx,
-    tx.db.rateLimitBucket.expiresAt.filter(),
-    2
+function byExpiry(rows: Map<string, RateLimitBucketRow>) {
+  return [...rows.values()].sort((a, b) =>
+    a.expiresAt.microsSinceUnixEpoch < b.expiresAt.microsSinceUnixEpoch ? -1 : 1
   );
-  assert(deleted === 1, 'sweep reaches expired buckets beyond fresh inserts');
-  assert(!tx.rows.has('expired'), 'indexed sweep removes the expired bucket');
 }
 
 process.stdout.write('\nrate limiter\n');
@@ -99,14 +62,8 @@ process.stdout.write('\nrate limiter\n');
   const tx = makeTx();
   const tap = client({ scope: 'tap', windowSeconds: 60, limit: 1 });
   const other = client({ scope: 'other', windowSeconds: 60, limit: 1 });
-  assert(
-    tap.consume(tx, { key: 'alice' }).allowed,
-    'configured policy allows first call'
-  );
-  assert(
-    !tap.consume(tx, { key: 'alice' }).allowed,
-    'configured policy enforces limit'
-  );
+  assert(tap.consume(tx, { key: 'alice' }).allowed, 'first call allowed');
+  assert(!tap.consume(tx, { key: 'alice' }).allowed, 'limit enforced');
   assert(
     other.consume(tx, { key: 'alice' }).allowed,
     'scopes have independent buckets'
@@ -115,115 +72,77 @@ process.stdout.write('\nrate limiter\n');
     tap.consume(tx, { key: 'bob' }).allowed,
     'actors have independent buckets'
   );
-  assert(
-    tap.consume(tx, { key: 'alice', limit: 2 }).allowed,
-    'dynamic limit is supported'
-  );
-}
-
-{
-  const tx = makeTx();
-  consumeRateLimit(tx, {
-    key: 'fresh',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 100,
-  });
-  consumeRateLimit(tx, {
-    key: 'expired',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 1,
-  });
-  tx.timestamp = new Timestamp(2_000_000n);
-  assert(
-    sweepRateLimits(tx, tx.rows.values()) === 1,
-    'sweep accepts unordered rows'
-  );
-}
-
-{
-  const tx = makeTx();
   assertThrows(
-    () => sweepRateLimits(tx, [], MAX_SWEEP_BATCH + 1),
-    'rate_limit.invalid_sweep_batch',
-    'sweep rejects an excessive batch size'
+    () => client({ scope: 'tap', windowSeconds: 30, limit: 5 }),
+    errors.duplicateScope,
+    'a scope can be configured once'
   );
-  const batch = resolveRateLimitSweepBatch({
-    db: {
-      rateLimitConfig: {
-        singleton: { find: () => ({ sweepBatch: MAX_SWEEP_BATCH + 1 }) },
-      },
-    },
-  });
-  assert(
-    batch === DEFAULT_SWEEP_BATCH,
-    'invalid stored sweep batch uses the default'
+  assertThrows(
+    () => tap.consume(tx, { key: '' }),
+    errors.invalidActorKey,
+    'empty actor key rejected'
   );
 }
 
-assert(
-  buildRateLimitKey('a:actor:b', 'c') !== buildRateLimitKey('a', 'b:actor:c'),
-  'compound keys cannot collide through delimiters'
-);
-
 {
   const tx = makeTx();
-  const one = consumeRateLimit(tx, {
-    key: 'auth.login:ip:1',
-    scope: 'auth.login',
-    limit: 2,
-    windowSeconds: 60,
-  });
-  const two = consumeRateLimit(tx, {
-    key: 'auth.login:ip:1',
-    scope: 'auth.login',
-    limit: 2,
-    windowSeconds: 60,
-  });
-  const three = consumeRateLimit(tx, {
-    key: 'auth.login:ip:1',
-    scope: 'auth.login',
-    limit: 2,
-    windowSeconds: 60,
-  });
+  const login = client({ scope: 'auth.login', limit: 2, windowSeconds: 60 });
+  const one = login.consume(tx, { key: 'ip:1' });
+  const two = login.consume(tx, { key: 'ip:1' });
+  const three = login.consume(tx, { key: 'ip:1' });
   assert(one.allowed && one.remaining === 1, 'first request allowed');
   assert(two.allowed && two.remaining === 0, 'second request allowed');
   assert(
     !three.allowed && three.retryAfterSeconds === 60,
     'third request blocked'
   );
-}
-
-{
-  const tx = makeTx();
-  consumeRateLimit(tx, {
-    key: 'k',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 60,
-  });
+  const status = login.peek(tx.db, 'ip:1', tx.timestamp);
+  assert(
+    status.used === 2 && status.remaining === 0 && status.limit === 2,
+    'peek reports the open window'
+  );
+  assert(
+    login.peek(tx.db, 'ip:2').used === 0,
+    'peek reports an unused bucket as fresh'
+  );
   tx.timestamp = new Timestamp(61_000_000n);
-  const next = consumeRateLimit(tx, {
-    key: 'k',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 60,
-  });
+  const expired = login.peek(tx.db, 'ip:1', tx.timestamp);
+  assert(
+    expired.used === 0 && expired.resetAt === undefined,
+    'peek reports an expired window as fresh'
+  );
+  const next = login.consume(tx, { key: 'ip:1' });
   assert(next.allowed && next.used === 1, 'expired window resets');
 }
 
 {
   const tx = makeTx();
-  consumeRateLimit(tx, {
-    key: 'k',
-    scope: 's',
-    limit: 1,
-    windowSeconds: 1,
-  });
+  const a = client({ scope: 'a:actor:b', limit: 1, windowSeconds: 1 });
+  const b = client({ scope: 'a', limit: 1, windowSeconds: 1 });
+  assert(
+    a.consume(tx, { key: 'c' }).key !== b.consume(tx, { key: 'b:actor:c' }).key,
+    'compound keys cannot collide through delimiters'
+  );
+}
+
+{
+  const tx = makeTx();
+  const long = client({ scope: 'sweep.long', limit: 1, windowSeconds: 100 });
+  const short = client({ scope: 'sweep.short', limit: 1, windowSeconds: 1 });
+  long.consume(tx, { key: 'a' });
+  long.consume(tx, { key: 'b' });
+  const expiredKey = short.consume(tx, { key: 'a' }).key;
   tx.timestamp = new Timestamp(2_000_000n);
-  const deleted = sweepRateLimits(tx, tx.db.rateLimitBucket.expiresAt.filter());
-  assert(deleted === 1 && tx.rows.size === 0, 'sweep removes expired buckets');
+  assert(
+    sweepRateLimits(tx, byExpiry(tx.rows), 2) === 1,
+    'sweep removes only expired buckets'
+  );
+  assert(!tx.rows.has(expiredKey), 'sweep removes the expired bucket');
+  assertThrows(
+    () => sweepRateLimits(tx, [], MAX_SWEEP_BATCH + 1),
+    errors.invalidSweepBatch,
+    'sweep rejects an excessive batch size'
+  );
 }
 
 process.stdout.write(`\n${pass} passed, ${fail} failed\n`);

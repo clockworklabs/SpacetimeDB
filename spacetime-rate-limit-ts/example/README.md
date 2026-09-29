@@ -80,12 +80,17 @@ The Node process serves static files, `GET /api/health`, and browser-safe
 
 ## Limiting model
 
-Each protected action calls
-`rateLimit.consumeRateLimit(ctx.as.rateLimit, ...)` with a server-selected scope,
-an actor key derived from `ctx.sender`, a limit, a window, and an optional cost.
-The returned result includes remaining capacity, reset time, and retry delay.
-The submodule `consume` procedure is reserved for administrators; normal gameplay
-uses the lower-level helper inside the host procedure's transaction.
+Each protected action has a limiter configured once with
+`rateLimit.client({ scope, limit, windowSeconds })`. The host procedure calls
+`limiter.consume(tx.as.rateLimit, { key })` inside its transaction with an actor
+key derived from `ctx.sender`. The returned result includes remaining capacity,
+reset time, and retry delay. The `reactor_limit_status` view reads the same
+limiters with `limiter.peek(ctx.db.rateLimit, key)`.
+
+Tap Batteries and Upgrade Bay levels change the tap limit and the shop window.
+Each level has its own limiter and scope (`reactor.tap.0`, `reactor.tap.1`, and so
+on), so buying a level starts a fresh bucket. Those lanes are capped at the last
+level that has a limiter.
 
 The submodule implements fixed-window limiting. Application heat and cooldown
 mechanics are separate game rules layered over the rate limit, so a request may
@@ -115,7 +120,7 @@ ordinary browser identity. To exercise those controls locally, grant the browser
 identity from the logged-in owner identity:
 
 ```powershell
-spacetime call --server local spacetime-rate-limit-example rateLimit.add_rate_limit_admin 0x<BROWSER_IDENTITY_HEX>
+spacetime call --server local spacetime-rate-limit-example rate_limit.add_rate_limit_admin 0x<BROWSER_IDENTITY_HEX>
 ```
 
 Admin resets and sweeps are bounded. Do not turn an unbounded delete into an

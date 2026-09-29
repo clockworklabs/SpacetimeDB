@@ -3,19 +3,19 @@ export { install } from './submodule/install';
 export {
   client,
   errors,
-  consumeRateLimit,
-  type ConsumeRateLimitOpts,
+  type RateLimitClient,
   type RateLimitPolicy,
-  type RateLimitInstallOpts,
+  type RateLimitReadDb,
   type RateLimitResult,
+  type RateLimitStatus,
   type RateLimitTxLike,
 } from './limit';
-export { buildRateLimitKey } from './key';
 export {
   adminRateLimitBuckets,
   addRateLimitAdmin,
   removeRateLimitAdmin,
-  consume,
+  isAdmin,
+  requireAdmin,
   rateLimitSweep,
   resetBuckets,
   runSweep,

@@ -1,9 +1,8 @@
 import { Range, SenderError } from 'spacetimedb/server';
+import type { Identity } from 'spacetimedb';
 import {
-  consumeRateLimit,
   DEFAULT_SWEEP_BATCH,
   MAX_SWEEP_BATCH,
-  runRateLimitSweep,
   sweepRateLimits,
   errors,
 } from '../limit';
@@ -12,108 +11,39 @@ import {
   rateLimitSweepTick,
   spacetimedb,
   t,
-  type ReducerModuleCtx,
   type ViewModuleCtx,
 } from './schema';
-import { buildRateLimitKey } from '../key';
 
-const MAX_SCOPE_LENGTH = 128;
-const MAX_ACTOR_KEY_LENGTH = 256;
-
-export const consumeResult = t.object('RateLimitConsumeResult', {
-  allowed: t.bool(),
-  scope: t.string(),
-  key: t.string(),
-  limit: t.u32(),
-  used: t.u32(),
-  remaining: t.u32(),
-  retryAfterSeconds: t.u32(),
-  resetAt: t.timestamp(),
-});
-
-function isAdmin(ctx: ViewModuleCtx): boolean {
-  return ctx.db.rateLimitAdminIdentity.identity.find(ctx.sender) != null;
+/** Whether `identity` is a rate-limit administrator. */
+export function isAdmin(db: ViewModuleCtx['db'], identity: Identity): boolean {
+  return db.rateLimitAdminIdentity.identity.find(identity) != null;
 }
 
-function requireAdmin(ctx: ReducerModuleCtx): void {
-  if (ctx.db.rateLimitAdminIdentity.identity.find(ctx.sender) == null) {
+/** Throw `errors.notAuthorized` unless the caller is a rate-limit administrator. */
+export function requireAdmin(ctx: Pick<ViewModuleCtx, 'db' | 'sender'>): void {
+  if (!isAdmin(ctx.db, ctx.sender)) {
     throw new SenderError(errors.notAuthorized);
   }
 }
 
-function toU32(code: string, value: number, max = 0xffff_ffff): number {
+function positiveU32(code: string, value: number, max: number): number {
   if (!Number.isInteger(value) || value <= 0 || value > max) {
     throw new SenderError(code);
   }
   return value;
 }
 
-function sanitizePart(s: string): string {
-  return s.trim().replace(/\s+/g, ' ');
+function maxRowsArg(value: number | undefined): number {
+  return value === undefined
+    ? DEFAULT_SWEEP_BATCH
+    : positiveU32(errors.invalidMaxRows, value, MAX_SWEEP_BATCH);
 }
-
-export const consume = spacetimedb.procedure(
-  {
-    scope: t.string(),
-    actorKey: t.string(),
-    limit: t.u32(),
-    windowSeconds: t.u32(),
-    cost: t.option(t.u32()),
-  },
-  consumeResult,
-  (ctx, args) => {
-    const scope = sanitizePart(args.scope);
-    const actorKey = sanitizePart(args.actorKey);
-    if (scope.length === 0 || scope.length > MAX_SCOPE_LENGTH) {
-      throw new SenderError(errors.invalidScope);
-    }
-    if (actorKey.length === 0 || actorKey.length > MAX_ACTOR_KEY_LENGTH) {
-      throw new SenderError(errors.invalidActorKey);
-    }
-    const limit = toU32(errors.invalidLimit, Number(args.limit));
-    const windowSeconds = toU32(
-      errors.invalidWindow,
-      Number(args.windowSeconds)
-    );
-    const cost = toU32(errors.invalidCost, Number(args.cost ?? 1));
-    const key = buildRateLimitKey(scope, actorKey);
-
-    const out = ctx.withTx(tx => {
-      requireAdmin(tx);
-      const r = consumeRateLimit(tx, {
-        key,
-        scope,
-        limit,
-        windowSeconds,
-        cost,
-      });
-      return {
-        allowed: r.allowed,
-        scope: r.scope,
-        key: r.key,
-        limit,
-        used: r.used,
-        remaining: r.remaining,
-        retryAfterSeconds: r.retryAfterSeconds,
-        resetAt: r.resetAt,
-      };
-    });
-    return out;
-  }
-);
 
 export const runSweep = spacetimedb.procedure(
   { maxRows: t.option(t.u32()) },
   t.u32(),
   (ctx, args) => {
-    const maxRows =
-      args.maxRows === undefined
-        ? undefined
-        : toU32(
-            errors.invalidSweepBatch,
-            Number(args.maxRows),
-            MAX_SWEEP_BATCH
-          );
+    const maxRows = maxRowsArg(args.maxRows);
     return ctx.withTx(tx => {
       requireAdmin(tx);
       return sweepRateLimits(
@@ -121,7 +51,7 @@ export const runSweep = spacetimedb.procedure(
         tx.db.rateLimitBucket.expiresAt.filter(
           new Range(undefined, { tag: 'included', value: tx.timestamp })
         ),
-        maxRows ?? DEFAULT_SWEEP_BATCH
+        maxRows
       );
     });
   }
@@ -144,7 +74,12 @@ export const removeRateLimitAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, { identity }) => {
     requireAdmin(ctx);
-    ctx.db.rateLimitAdminIdentity.identity.delete(identity);
+    const existing = ctx.db.rateLimitAdminIdentity.identity.find(identity);
+    if (!existing) return;
+    if (ctx.db.rateLimitAdminIdentity.count() <= 1n) {
+      throw new SenderError(errors.cannotRemoveLastAdmin);
+    }
+    ctx.db.rateLimitAdminIdentity.delete(existing);
   }
 );
 
@@ -156,9 +91,9 @@ export const updateConfig = spacetimedb.reducer(
     if (!cfg) throw new Error(errors.configMissing);
     ctx.db.rateLimitConfig.singleton.update({
       ...cfg,
-      sweepBatch: toU32(
+      sweepBatch: positiveU32(
         errors.invalidSweepBatch,
-        Number(args.sweepBatch),
+        args.sweepBatch,
         MAX_SWEEP_BATCH
       ),
       updatedAt: ctx.timestamp,
@@ -170,7 +105,7 @@ export const resetBuckets = spacetimedb.reducer(
   { maxRows: t.option(t.u32()) },
   (ctx, args) => {
     requireAdmin(ctx);
-    const maxRows = Math.min(Number(args.maxRows ?? 1000), 10_000);
+    const maxRows = maxRowsArg(args.maxRows);
     let removed = 0;
     for (const row of ctx.db.rateLimitBucket.iter()) {
       if (removed >= maxRows) break;
@@ -184,7 +119,7 @@ export const adminRateLimitBuckets = spacetimedb.view(
   { name: 'admin_rate_limit_buckets', public: true },
   t.array(rateLimitBucket.rowType),
   ctx => {
-    if (!isAdmin(ctx)) return [];
+    if (!isAdmin(ctx.db, ctx.sender)) return [];
     const rows = [];
     for (const row of ctx.db.rateLimitBucket.iter()) {
       if (rows.length >= 1000) break;
@@ -198,11 +133,13 @@ export const rateLimitSweep = spacetimedb.reducer(
   { onSchedule: rateLimitSweepTick },
   { arg: rateLimitSweepTick.rowType },
   (ctx, _args) => {
-    runRateLimitSweep(
+    sweepRateLimits(
       ctx,
       ctx.db.rateLimitBucket.expiresAt.filter(
         new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      )
+      ),
+      ctx.db.rateLimitConfig.singleton.find(true)?.sweepBatch ??
+        DEFAULT_SWEEP_BATCH
     );
   }
 );
