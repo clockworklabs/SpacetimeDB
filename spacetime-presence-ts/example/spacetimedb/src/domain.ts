@@ -54,8 +54,7 @@ export function ensureUser(tx: Tx, userId: string) {
   const authUser = tx.db.auth.authUser.userId.find(userId);
   const row = tx.db.chatUser.insert({
     userId,
-    displayName:
-      authUser?.name ?? `User-${userId.slice(-6)}`,
+    displayName: authUser?.name ?? `User-${userId.slice(-6)}`,
     status: ChatUserStatus.Online,
   });
   updateGlobalPresence(tx, row);

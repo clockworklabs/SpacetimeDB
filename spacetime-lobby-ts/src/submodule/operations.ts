@@ -4,7 +4,6 @@ import {
   RoomStatus,
   SeatStatus,
   TicketStatus,
-  lobbyQueueTicket,
   lobbyRoom,
   lobbyStatus,
   lobbySubjectRating,
@@ -35,7 +34,6 @@ const MAX_MATCH_CANDIDATES = 5000;
 const SWEEP_BATCH = 500;
 const ONE_SECOND_MICROS = 1_000_000n;
 
-type QueueTicketRow = Infer<typeof lobbyQueueTicket.rowType>;
 type RoomRow = Infer<typeof lobbyRoom.rowType>;
 type SubjectRatingRow = Infer<typeof lobbySubjectRating.rowType>;
 
