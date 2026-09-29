@@ -24,6 +24,9 @@ function parseArray<T>(json: string, field: string): T[] {
 export const syncCatalog = spacetimedb.reducer(
   { productsJson: t.string(), scenariosJson: t.string() },
   (ctx, args) => {
+    if (!ctx.db.posthog.posthogAdminIdentity.identity.find(ctx.sender)) {
+      fail('not_authorized');
+    }
     const products = parseArray<ProductInput & { variants?: VariantInput[] }>(
       args.productsJson,
       'products'

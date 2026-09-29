@@ -1,8 +1,12 @@
-import { t } from 'spacetimedb/server';
+import { Range, t } from 'spacetimedb/server';
+import { Timestamp } from 'spacetimedb';
 import * as posthog from '@spacetimedb/posthog/submodule';
 
 import {
   MAX_TICKS_PER_CALL,
+  MIN_TICK_INTERVAL_MICROS,
+  SESSION_IDLE_MICROS,
+  MAX_SESSIONS_PRUNED_PER_INIT,
   MAX_ACTIVITY_ROWS,
   MAX_SESSION_ROWS,
   MAX_PURCHASE_ROWS,
@@ -44,7 +48,20 @@ import {
 } from './economy';
 import { clampU32, fail, requireId } from './validation';
 export { default } from './schema';
-export * from './catalog';
+export { syncCatalog } from './catalog';
+export {
+  cafeAnalyticsSummary,
+  cafeConfig,
+  cafeEcon,
+  cafeMetrics,
+  cafeProducts,
+  cafeQueue,
+  cafeRecentActivity,
+  cafeRecentPurchases,
+  cafeRecentSessions,
+  cafeScenarios,
+  cafeVariants,
+} from './views';
 
 function keyFor(owner: string, id: string): string {
   return `${owner}|${id}`;
@@ -188,8 +205,48 @@ function trimRecent(ctx: WriteCtx, owner: string): void {
     ctx.db.purchase.delete(row);
 }
 
-// Seed this caller's per-session catalog + config/metrics. Idempotent.
+function clearSessionHistory(ctx: WriteCtx, owner: string): void {
+  for (const row of [...ctx.db.botSession.owner.filter(owner)])
+    ctx.db.botSession.delete(row);
+  for (const row of [...ctx.db.purchase.owner.filter(owner)])
+    ctx.db.purchase.delete(row);
+  for (const row of [...ctx.db.activity.owner.filter(owner)])
+    ctx.db.activity.delete(row);
+  for (const row of [...ctx.db.waitingBot.owner.filter(owner)])
+    ctx.db.waitingBot.delete(row);
+}
+
+function deleteSession(ctx: WriteCtx, owner: string): void {
+  clearSessionHistory(ctx, owner);
+  for (const row of [...ctx.db.product.byOwner.filter(owner)])
+    ctx.db.product.delete(row);
+  for (const row of [...ctx.db.variant.byOwner.filter(owner)])
+    ctx.db.variant.delete(row);
+  ctx.db.simConfig.owner.delete(owner);
+  ctx.db.metrics.owner.delete(owner);
+  ctx.db.econ.owner.delete(owner);
+}
+
+function pruneIdleSessions(ctx: WriteCtx): void {
+  const idleOwners: string[] = [];
+  for (const row of ctx.db.simConfig.updatedAt.filter(
+    new Range(undefined, {
+      tag: 'excluded',
+      value: new Timestamp(
+        ctx.timestamp.microsSinceUnixEpoch - SESSION_IDLE_MICROS
+      ),
+    })
+  )) {
+    if (idleOwners.length >= MAX_SESSIONS_PRUNED_PER_INIT) break;
+    idleOwners.push(row.owner);
+  }
+  for (const owner of idleOwners) deleteSession(ctx, owner);
+}
+
+// Delete a few idle sessions, then seed this caller's per-session catalog +
+// config/metrics. Idempotent for active sessions.
 export const initSession = spacetimedb.reducer({}, ctx => {
+  pruneIdleSessions(ctx);
   const owner = ctx.sender.toHexString();
   const alreadySeeded = [...ctx.db.product.byOwner.filter(owner)].length > 0;
   if (!alreadySeeded) {
@@ -238,14 +295,7 @@ export const resetSimulation = spacetimedb.reducer(
     const owner = ctx.sender.toHexString();
     const scenarioId = requireId(args.scenarioId, 'scenario_id');
     if (!ctx.db.scenario.scenarioId.find(scenarioId)) fail('unknown_scenario');
-    for (const row of [...ctx.db.botSession.owner.filter(owner)])
-      ctx.db.botSession.delete(row);
-    for (const row of [...ctx.db.purchase.owner.filter(owner)])
-      ctx.db.purchase.delete(row);
-    for (const row of [...ctx.db.activity.owner.filter(owner)])
-      ctx.db.activity.delete(row);
-    for (const row of [...ctx.db.waitingBot.owner.filter(owner)])
-      ctx.db.waitingBot.delete(row);
+    clearSessionHistory(ctx, owner);
     const config = ensureConfig(ctx, owner);
     ctx.db.simConfig.owner.update({
       ...config,
@@ -580,6 +630,12 @@ export const simulateTick = spacetimedb.reducer(
     const owner = ctx.sender.toHexString();
     const tickCount = clampU32(args.ticks, 'ticks', 1, MAX_TICKS_PER_CALL);
     const config = ensureConfig(ctx, owner);
+    // Calls that arrive faster than the per-caller tick rate are ignored so a
+    // fast client does not error. This bounds the analytics each caller queues.
+    const elapsedMicros =
+      ctx.timestamp.microsSinceUnixEpoch -
+      config.updatedAt.microsSinceUnixEpoch;
+    if (elapsedMicros < BigInt(tickCount) * MIN_TICK_INTERVAL_MICROS) return;
     const scenarioRow = ctx.db.scenario.scenarioId.find(config.scenarioId);
     if (!scenarioRow) fail('unknown_scenario');
     let metric = ensureMetrics(ctx, owner);
@@ -998,8 +1054,6 @@ export const simulateTick = spacetimedb.reducer(
     trimRecent(ctx, owner);
   }
 );
-
-export * from './views';
 
 export const init = spacetimedb.init(ctx => {
   posthog.install(ctx.as.posthog);

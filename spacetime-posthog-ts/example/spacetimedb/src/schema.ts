@@ -10,6 +10,11 @@ import * as posthog from '@spacetimedb/posthog/submodule';
 
 export const MAX_SYNC_ROWS = 100;
 export const MAX_TICKS_PER_CALL = 25;
+// Each simulated tick needs this much wall time since the caller's last config update.
+export const MIN_TICK_INTERVAL_MICROS = 250_000n;
+// Sessions whose config has not changed for this long are deleted by init_session.
+export const SESSION_IDLE_MICROS = 7n * 24n * 60n * 60n * 1_000_000n;
+export const MAX_SESSIONS_PRUNED_PER_INIT = 10;
 export const MAX_ACTIVITY_ROWS = 120;
 export const MAX_SESSION_ROWS = 250;
 export const MAX_PURCHASE_ROWS = 120;
@@ -115,7 +120,7 @@ export const simConfig = table(
     tick: t.u64(),
     experimentKey: t.string(),
     experimentVariant: t.option(t.string()),
-    updatedAt: t.timestamp(),
+    updatedAt: t.timestamp().index(),
   }
 );
 

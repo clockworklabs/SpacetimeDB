@@ -122,6 +122,11 @@ Submodule administrator grants are available only through module operations.
 - `POSTHOG_PROJECT_API_KEY` is loaded by the server and written to the submodule's
   private configuration table through the authenticated CLI owner.
 - `.env` and logs are ignored and must not be committed.
+- `sync_catalog` requires a PostHog submodule administrator.
+- `simulate_tick` ignores calls that arrive faster than one simulated tick per
+  250 ms per caller, which bounds the events each caller queues.
+- `init_session` deletes up to 10 sessions whose configuration has not changed
+  for 7 days.
 - The development server binds to loopback by default. Setting `HOST` to another
   address expands its network exposure.
 - The example server is scoped to local development. Production deployments
