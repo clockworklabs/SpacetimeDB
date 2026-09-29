@@ -5,7 +5,7 @@ import {
   type InferSchema,
   type ReducerCtx,
 } from 'spacetimedb/server';
-import { fileBlobRow, fileRow } from '../rows';
+import { fileBlobRow, fileRow } from '../rows.js';
 
 export const file = table(
   {

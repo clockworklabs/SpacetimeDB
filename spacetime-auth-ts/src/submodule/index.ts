@@ -1,6 +1,6 @@
 import { schema, t, table } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
-import { install } from './install';
+import { install } from './install.js';
 import {
   authAccountTable as authAccount,
   authAdminIdentityTable as authAdminIdentity,
@@ -10,9 +10,9 @@ import {
   authSessionTable as authSession,
   authUserTable as authUser,
   authVerificationTable as authVerification,
-} from '../tables';
-import * as auth from '../procedures';
-import { findCallerUser, getCallerUserId } from '../caller';
+} from '../tables.js';
+import * as auth from '../procedures.js';
+import { findCallerUser, getCallerUserId } from '../caller.js';
 
 const authSweeperTick = table(
   { name: 'auth_sweeper_tick' },

@@ -1,17 +1,17 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
-import { buildVerifyEmail } from '../mailer';
-import type { AuthHandlerCtx } from '../context';
-import type { AuthHttpOptions } from '../client';
+import { buildVerifyEmail } from '../mailer.js';
+import type { AuthHandlerCtx } from '../context.js';
+import type { AuthHttpOptions } from '../client.js';
 import {
   HttpError,
   jsonResponse,
   parseQueryString,
   redirectResponse,
   requireConfig,
-} from './http';
-import { AUTH_RATE_LIMITS, enforceIpRateLimit } from '../rate_limit';
-import { requestSession } from '../sessions';
-import { findVerification, newVerification } from './password_reset';
+} from './http.js';
+import { AUTH_RATE_LIMITS, enforceIpRateLimit } from '../rate_limit.js';
+import { requestSession } from '../sessions.js';
+import { findVerification, newVerification } from './password_reset.js';
 
 const PURPOSE = 'email_verify';
 const TOKEN_TTL_SECONDS = 60n * 60n * 24n;

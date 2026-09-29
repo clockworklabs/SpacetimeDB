@@ -1,7 +1,7 @@
-import type { AuthTransactionCtx } from './context';
-import { base64UrlEncode, deriveSecret, uuidV7 } from './crypto';
-import { requireConfig } from './handlers/http';
-import { privateKeyFromPem } from './keys';
+import type { AuthTransactionCtx } from './context.js';
+import { base64UrlEncode, deriveSecret, uuidV7 } from './crypto.js';
+import { requireConfig } from './handlers/http.js';
+import { privateKeyFromPem } from './keys.js';
 
 /** 32 bytes that are unpredictable without the signing key. */
 export function secretBytes(tx: AuthTransactionCtx): Uint8Array {

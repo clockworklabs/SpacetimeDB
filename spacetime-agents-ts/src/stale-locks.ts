@@ -1,4 +1,4 @@
-import { errors } from './errors';
+import { errors } from './errors.js';
 
 export const DEFAULT_STALE_LOCK_SWEEP_BATCH = 500;
 

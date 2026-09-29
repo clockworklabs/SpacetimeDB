@@ -1,19 +1,19 @@
 import type { Timestamp } from 'spacetimedb';
 import { SenderError } from 'spacetimedb/server';
-import { makeAgentRegistry, type AgentDefinition } from '../agent';
-import { callChat, type HttpLike } from '../openrouter';
-import { BUILT_IN_PROVIDERS } from '../providers';
+import { makeAgentRegistry, type AgentDefinition } from '../agent.js';
+import { callChat, type HttpLike } from '../openrouter.js';
+import { BUILT_IN_PROVIDERS } from '../providers.js';
 import {
   BUILT_IN_EMBEDDING_PROVIDERS,
   cosineSimilarity,
   topKByScore,
-} from '../embeddings';
-import { errors } from '../errors';
+} from '../embeddings.js';
+import { errors } from '../errors.js';
 import {
   DEFAULT_STALE_LOCK_THRESHOLD_SECS,
   isAgentAdmin,
   type AgentsTx,
-} from './index';
+} from './index.js';
 import {
   runAgentLoop,
   USER_CONTENT_MAX,
@@ -21,12 +21,12 @@ import {
   type LoopConfig,
   type LoopMessage,
   type LoopTx,
-} from './loop';
+} from './loop.js';
 import {
   buildContextMessage,
   buildSummarizerUserContent,
   pickSummarizationCandidates,
-} from './summarize';
+} from './summarize.js';
 
 const DEFAULT_MAX_THREADS_PER_OWNER = 100;
 const TITLE_SYSTEM_PROMPT =

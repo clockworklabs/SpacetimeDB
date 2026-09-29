@@ -1,13 +1,17 @@
 import { Timestamp } from 'spacetimedb';
 import type { Request } from 'spacetimedb/server';
-import type { AuthTransactionCtx } from './context';
-import { makeCookie, readBearer } from './handlers/http';
-import { signJwt, verifyJwt } from './jwt';
-import { privateKeyFromPem, publicKeyFromPem } from './keys';
-import { clientKey, shouldUseSecureCookies, userAgent } from './request-trust';
-import { newToken } from './tokens';
-import type { AuthConfig, AuthSession } from './types';
-import type { AuthHttpOptions } from './client';
+import type { AuthTransactionCtx } from './context.js';
+import { makeCookie, readBearer } from './handlers/http.js';
+import { signJwt, verifyJwt } from './jwt.js';
+import { privateKeyFromPem, publicKeyFromPem } from './keys.js';
+import {
+  clientKey,
+  shouldUseSecureCookies,
+  userAgent,
+} from './request-trust.js';
+import { newToken } from './tokens.js';
+import type { AuthConfig, AuthSession } from './types.js';
+import type { AuthHttpOptions } from './client.js';
 
 /** Deletes a session and every connection bound to it. */
 export function deleteSession(tx: AuthTransactionCtx, session: AuthSession) {

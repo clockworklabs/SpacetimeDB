@@ -1,6 +1,6 @@
 import { p256 } from '@noble/curves/nist.js';
 import { base64ToBytes, sha256 } from '@spacetimedb/crypto';
-import { base64Encode, base64UrlEncode, utf8 } from './crypto';
+import { base64Encode, base64UrlEncode, utf8 } from './crypto.js';
 
 const PRIV_LEN = 32;
 const COORD_LEN = 32;

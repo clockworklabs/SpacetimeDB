@@ -1,8 +1,8 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
 import { Timestamp } from 'spacetimedb';
-import { pkceChallenge } from '../crypto';
-import type { AuthHandlerCtx } from '../context';
-import type { AuthHttpOptions } from '../client';
+import { pkceChallenge } from '../crypto.js';
+import type { AuthHandlerCtx } from '../context.js';
+import type { AuthHttpOptions } from '../client.js';
 import {
   clearCookie,
   HttpError,
@@ -11,16 +11,16 @@ import {
   parseQueryString,
   redirectResponse,
   requireConfig,
-} from './http';
-import { AUTH_RATE_LIMITS, enforceRateLimits } from '../rate_limit';
+} from './http.js';
+import { AUTH_RATE_LIMITS, enforceRateLimits } from '../rate_limit.js';
 import {
   clientKey,
   safeRedirectPath,
   shouldUseSecureCookies,
-} from '../request-trust';
-import { issueSession } from '../sessions';
-import { newId, newToken } from '../tokens';
-import type { AuthAccount, AuthConfig } from '../types';
+} from '../request-trust.js';
+import { issueSession } from '../sessions.js';
+import { newId, newToken } from '../tokens.js';
+import type { AuthAccount, AuthConfig } from '../types.js';
 
 const OAUTH_STATE_TTL_SECONDS = 600n;
 const MAX_OAUTH_CODE_LENGTH = 4096;

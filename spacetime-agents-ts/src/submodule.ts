@@ -10,8 +10,8 @@ export {
   setApiKey,
   threadLockSweep,
   type AgentsTx,
-} from './submodule/index';
-export { install } from './submodule/install';
+} from './submodule/index.js';
+export { install } from './submodule/install.js';
 export {
   client,
   type AgentInfo,
@@ -19,7 +19,7 @@ export {
   type AgentUsage,
   type AgentsClientConfig,
   type AgentsProcedureCtx,
-} from './submodule/client';
-export type { LoopAttachment } from './submodule/loop';
-export { message, thread, threadLock } from './submodule/model';
-export { errors } from './errors';
+} from './submodule/client.js';
+export type { LoopAttachment } from './submodule/loop.js';
+export { message, thread, threadLock } from './submodule/model.js';
+export { errors } from './errors.js';

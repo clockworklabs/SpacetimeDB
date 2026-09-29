@@ -1,4 +1,4 @@
-export { fileRow, fileBlobRow, fileSummary } from './rows';
+export { fileRow, fileBlobRow, fileSummary } from './rows.js';
 export {
   errors,
   FILE_BYTES_MAX,
@@ -8,4 +8,4 @@ export {
   FILE_PATH_MAX,
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
-} from './constants';
+} from './constants.js';

@@ -1,5 +1,5 @@
-import { type OAuthProfile, type OAuthProviderSpec } from './oauth';
-import type { AuthHandlerCtx } from '../context';
+import { type OAuthProfile, type OAuthProviderSpec } from './oauth.js';
+import type { AuthHandlerCtx } from '../context.js';
 
 const githubHeaders = {
   accept: 'application/vnd.github+json',

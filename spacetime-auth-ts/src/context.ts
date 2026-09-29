@@ -6,7 +6,7 @@ import type {
   TransactionCtx,
   ViewCtx,
 } from 'spacetimedb/server';
-import type spacetimedb from './submodule/index';
+import type spacetimedb from './submodule/index.js';
 
 export type AuthSchema = InferSchema<typeof spacetimedb>;
 export type AuthReducerCtx = ReducerCtx<AuthSchema>;

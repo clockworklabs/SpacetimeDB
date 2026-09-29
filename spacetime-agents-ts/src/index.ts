@@ -4,16 +4,16 @@ export {
   defineAgent,
   makeAgentRegistry,
   typeBuilderToJsonSchema,
-} from './agent';
+} from './agent.js';
 export type {
   AgentTool,
   AgentDefinition,
   AgentRegistry,
   InvokeResult,
   ToolMap,
-} from './agent';
+} from './agent.js';
 
-export { callChat, isRetryableError } from './openrouter';
+export { callChat, isRetryableError } from './openrouter.js';
 export type {
   HttpLike,
   ChatMessage,
@@ -26,14 +26,14 @@ export type {
   ChatResult,
   ResponseFormat,
   Provider,
-} from './openrouter';
+} from './openrouter.js';
 
 export {
   openRouterProvider,
   openAiProvider,
   anthropicProvider,
   BUILT_IN_PROVIDERS,
-} from './providers';
+} from './providers.js';
 
 export {
   cosineSimilarity,
@@ -41,7 +41,7 @@ export {
   openAiEmbeddingsProvider,
   openRouterEmbeddingsProvider,
   BUILT_IN_EMBEDDING_PROVIDERS,
-} from './embeddings';
-export type { EmbeddingProvider, EmbeddingResult } from './embeddings';
+} from './embeddings.js';
+export type { EmbeddingProvider, EmbeddingResult } from './embeddings.js';
 
-export { errors } from './errors';
+export { errors } from './errors.js';

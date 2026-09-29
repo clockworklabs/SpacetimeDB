@@ -1,5 +1,5 @@
-export { default } from './submodule/index';
-export { install } from './submodule/install';
+export { default } from './submodule/index.js';
+export { install } from './submodule/install.js';
 export {
   addAuthAdmin,
   authSweep,
@@ -14,7 +14,7 @@ export {
   unlinkConnection,
   updateProfile,
   whoami,
-} from './submodule/index';
+} from './submodule/index.js';
 export {
   client,
   errors,
@@ -30,4 +30,4 @@ export {
   type OAuthProviderSpec,
   type SendMailFn,
   type TrustedProxyHeader,
-} from './index';
+} from './index.js';

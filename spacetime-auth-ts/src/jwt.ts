@@ -1,5 +1,5 @@
 import { p256 } from '@noble/curves/nist.js';
-import { base64UrlDecode, base64UrlEncode, utf8 } from './crypto';
+import { base64UrlDecode, base64UrlEncode, utf8 } from './crypto.js';
 
 const textDecoder = new TextDecoder('utf-8');
 

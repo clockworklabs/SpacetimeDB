@@ -1,10 +1,10 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
-import type { AuthHandlerCtx } from '../context';
-import type { AuthHttpOptions } from '../client';
-import { clearCookie, HttpError, jsonResponse, requireConfig } from './http';
-import { shouldUseSecureCookies } from '../request-trust';
-import { deleteSession, issueSession, requestSession } from '../sessions';
-import type { AuthUser } from '../types';
+import type { AuthHandlerCtx } from '../context.js';
+import type { AuthHttpOptions } from '../client.js';
+import { clearCookie, HttpError, jsonResponse, requireConfig } from './http.js';
+import { shouldUseSecureCookies } from '../request-trust.js';
+import { deleteSession, issueSession, requestSession } from '../sessions.js';
+import type { AuthUser } from '../types.js';
 
 function publicUser(user: AuthUser) {
   return {

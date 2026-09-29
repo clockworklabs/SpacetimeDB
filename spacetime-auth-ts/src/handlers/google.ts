@@ -1,4 +1,4 @@
-import { type OAuthProviderSpec } from './oauth';
+import { type OAuthProviderSpec } from './oauth.js';
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null

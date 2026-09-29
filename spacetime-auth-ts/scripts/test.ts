@@ -9,8 +9,8 @@ import {
   fromPrivateKeyBytes,
   privateKeyFromPem,
   publicKeyFromPem,
-} from '../src/keys.ts';
-import { signJwt, verifyJwt } from '../src/jwt.ts';
+} from '../src/keys';
+import { signJwt, verifyJwt } from '../src/jwt';
 import {
   DUMMY_PASSWORD_HASH,
   base64UrlDecode,
@@ -19,14 +19,14 @@ import {
   verifyPassword,
   uuidV7,
   pkceChallenge,
-} from '../src/crypto.ts';
+} from '../src/crypto';
 
 import {
   clientKey,
   safeRedirectPath,
   shouldUseSecureCookies,
   userAgent,
-} from '../src/request-trust.ts';
+} from '../src/request-trust';
 
 let pass = 0;
 let fail = 0;

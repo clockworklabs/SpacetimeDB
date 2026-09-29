@@ -7,9 +7,12 @@ import {
   type ReducerCtx,
 } from 'spacetimedb/server';
 import { Timestamp } from 'spacetimedb';
-import { errors } from '../errors';
-import { BUILT_IN_PROVIDERS } from '../providers';
-import { deleteStaleThreadLocks, staleLockCutoffMicros } from '../stale-locks';
+import { errors } from '../errors.js';
+import { BUILT_IN_PROVIDERS } from '../providers.js';
+import {
+  deleteStaleThreadLocks,
+  staleLockCutoffMicros,
+} from '../stale-locks.js';
 import {
   apiKey,
   agentConfig,
@@ -20,7 +23,7 @@ import {
   threadLock,
   threadLockSweeperTick,
   messageEmbedding,
-} from './model';
+} from './model.js';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 export const DEFAULT_STALE_LOCK_THRESHOLD_SECS = 15 * 60;

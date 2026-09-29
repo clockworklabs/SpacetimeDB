@@ -6,11 +6,11 @@ import {
   type InferTypeOfParams,
 } from 'spacetimedb/server';
 import type { Identity } from 'spacetimedb';
-import { fromPrivateKeyBytes, privateKeyFromPem } from './keys';
-import type { AuthProcedureCtx, AuthReducerCtx } from './context';
-import { requireCallerUserId } from './caller';
-import { errors } from './errors';
-import { deleteSession, isLive, tokenSession } from './sessions';
+import { fromPrivateKeyBytes, privateKeyFromPem } from './keys.js';
+import type { AuthProcedureCtx, AuthReducerCtx } from './context.js';
+import { requireCallerUserId } from './caller.js';
+import { errors } from './errors.js';
+import { deleteSession, isLive, tokenSession } from './sessions.js';
 
 function requireAdmin(ctx: AuthReducerCtx): void {
   if (ctx.db.authAdminIdentity.identity.find(ctx.sender) == null)

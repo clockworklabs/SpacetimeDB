@@ -1,5 +1,5 @@
 import { ScheduleAt } from 'spacetimedb';
-import type { AgentsTx } from './index';
+import type { AgentsTx } from './index.js';
 
 const SWEEPER_INTERVAL_MICROS = 60_000_000n;
 

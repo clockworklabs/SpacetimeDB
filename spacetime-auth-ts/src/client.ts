@@ -1,19 +1,19 @@
 import type { Request, SyncResponse } from 'spacetimedb/server';
-import type { AuthHandlerCtx } from './context';
-import type { SendMailFn } from './mailer';
-import type { TrustedProxyHeader } from './request-trust';
-import { errorResponse, HttpError } from './handlers/http';
-import { passwordLogin, passwordSignup } from './handlers/password';
-import { forgotPassword, resetPassword } from './handlers/password_reset';
-import { emailVerify, emailVerifyRequest } from './handlers/email_verify';
-import { logout, me, refresh } from './handlers/session';
+import type { AuthHandlerCtx } from './context.js';
+import type { SendMailFn } from './mailer.js';
+import type { TrustedProxyHeader } from './request-trust.js';
+import { errorResponse, HttpError } from './handlers/http.js';
+import { passwordLogin, passwordSignup } from './handlers/password.js';
+import { forgotPassword, resetPassword } from './handlers/password_reset.js';
+import { emailVerify, emailVerifyRequest } from './handlers/email_verify.js';
+import { logout, me, refresh } from './handlers/session.js';
 import {
   oauthCallback,
   oauthStart,
   type OAuthProviderSpec,
-} from './handlers/oauth';
-import { google } from './handlers/google';
-import { github } from './handlers/github';
+} from './handlers/oauth.js';
+import { google } from './handlers/google.js';
+import { github } from './handlers/github.js';
 
 export interface AuthHttpOptions {
   /** Header set by a trusted proxy after it removes any client-supplied value. */

@@ -1,4 +1,4 @@
-import { FILE_VISIBILITY_PUBLIC } from './constants';
+import { FILE_VISIBILITY_PUBLIC } from './constants.js';
 
 // Rendered in the browser. Everything else downloads, so stored HTML or SVG
 // never runs on the serving origin.

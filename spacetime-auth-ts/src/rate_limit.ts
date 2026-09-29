@@ -3,9 +3,9 @@ import {
   client,
   type RateLimitResult,
 } from '@spacetimedb/rate-limit/submodule';
-import { errorResponse } from './handlers/http';
-import { clientKey, type TrustedProxyHeader } from './request-trust';
-import type { AuthHandlerCtx } from './context';
+import { errorResponse } from './handlers/http.js';
+import { clientKey, type TrustedProxyHeader } from './request-trust.js';
+import type { AuthHandlerCtx } from './context.js';
 
 export type AuthRateLimitPolicy = ReturnType<typeof client>;
 

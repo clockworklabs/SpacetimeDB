@@ -1,4 +1,4 @@
-import type { AuthHandlerCtx } from './context';
+import type { AuthHandlerCtx } from './context.js';
 
 export interface MailParams {
   to: string;
