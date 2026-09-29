@@ -18,7 +18,7 @@
   },
   "files": [
     "src",
-    "LICENSE.txt",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
@@ -52,7 +52,9 @@
     "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-stripe",
     "test:smoke": "tsx scripts/test-stripe-smoke.ts",
     "test:stripe:e2e": "tsx scripts/test-stripe-e2e.ts",
-    "test:gate:local": "spacetime build && spacetime publish --server local --yes spacetime-stripe && tsx scripts/test-stripe-e2e.ts --skip-build-publish --skip-checkout-trigger --events customer.created --kill-existing-stripe-listeners"
+    "test:gate:local": "spacetime build && spacetime publish --server local --yes spacetime-stripe && tsx scripts/test-stripe-e2e.ts --skip-build-publish --skip-checkout-trigger --events customer.created --kill-existing-stripe-listeners",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "dependencies": {
     "@spacetimedb/crypto": "workspace:^",
