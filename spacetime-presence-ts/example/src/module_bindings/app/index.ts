@@ -34,6 +34,7 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddRoomMemberReducer from "./add_room_member_reducer";
 import CreateRoomReducer from "./create_room_reducer";
 import CreateServerReducer from "./create_server_reducer";
 import DeleteMessageReducer from "./delete_message_reducer";
@@ -65,7 +66,6 @@ import UnpinMessageReducer from "./unpin_message_reducer";
 // Import all procedure arg schemas
 import * as GetAttachmentFileProcedure from "./get_attachment_file_procedure";
 import * as SearchMessagesProcedure from "./search_messages_procedure";
-import * as WhoamiProcedure from "./whoami_procedure";
 
 // Import all table schema definitions
 import MyChatUsersRow from "./my_chat_users_table";
@@ -81,6 +81,7 @@ import MyRoomsRow from "./my_rooms_table";
 import MyServerMembersRow from "./my_server_members_table";
 import MyServersRow from "./my_servers_table";
 import MyThreadMessagesRow from "./my_thread_messages_table";
+import ServerDirectoryRow from "./server_directory_table";
 
 // Import namespace table schema definitions
 import AuthRateLimit_RateLimitConfigRow from "./auth/rateLimit/rate_limit_config_table";
@@ -217,6 +218,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyThreadMessagesRow),
+  serverDirectory: __table({
+    name: 'server_directory',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ServerDirectoryRow),
   "auth.rate_limit.rate_limit_config": __table({
     name: 'auth.rate_limit.rate_limit_config',
     indexes: [
@@ -278,6 +286,7 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_room_member", AddRoomMemberReducer),
   __reducerSchema("create_room", CreateRoomReducer),
   __reducerSchema("create_server", CreateServerReducer),
   __reducerSchema("delete_message", DeleteMessageReducer),
@@ -331,7 +340,6 @@ const reducersSchema = __reducers(
 const proceduresSchema = __procedures(
   __procedureSchema("get_attachment_file", GetAttachmentFileProcedure.params, GetAttachmentFileProcedure.returnType),
   __procedureSchema("search_messages", SearchMessagesProcedure.params, SearchMessagesProcedure.returnType),
-  __procedureSchema("whoami", WhoamiProcedure.params, WhoamiProcedure.returnType),
   __procedureSchema("auth.get_auth_public_key", Auth_GetAuthPublicKeyProcedure.params, Auth_GetAuthPublicKeyProcedure.returnType, "auth.getAuthPublicKey"),
   __procedureSchema("auth.list_my_sessions", Auth_ListMySessionsProcedure.params, Auth_ListMySessionsProcedure.returnType, "auth.listMySessions"),
   __procedureSchema("auth.whoami", Auth_WhoamiProcedure.params, Auth_WhoamiProcedure.returnType, "auth.whoami"),
@@ -371,6 +379,7 @@ export const tables = {
   myServerMembers: __qb.myServerMembers,
   myServers: __qb.myServers,
   myThreadMessages: __qb.myThreadMessages,
+  serverDirectory: __qb.serverDirectory,
   auth: {
     myAuthUser: __qb["auth.my_auth_user"],
     rateLimit: {
@@ -391,6 +400,7 @@ export const tables = {
 /** The reducers available in this remote SpacetimeDB module. */
 const __reducerAccessors = __convertToAccessorMap(reducersSchema.reducersType.reducers);
 export const reducers = {
+  addRoomMember: __reducerAccessors.addRoomMember,
   createRoom: __reducerAccessors.createRoom,
   createServer: __reducerAccessors.createServer,
   deleteMessage: __reducerAccessors.deleteMessage,
@@ -453,7 +463,6 @@ const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures)
 export const procedures = {
   getAttachmentFile: __procedureAccessors.getAttachmentFile,
   searchMessages: __procedureAccessors.searchMessages,
-  whoami: __procedureAccessors.whoami,
   auth: {
     getAuthPublicKey: __procedureAccessors["auth.getAuthPublicKey"],
     listMySessions: __procedureAccessors["auth.listMySessions"],

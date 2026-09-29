@@ -9,15 +9,14 @@ import {
   tables,
   type ErrorContext,
   type EventContext,
-} from './module_bindings/app/index.ts';
-import type { AuthUser as AuthUserRow } from './module_bindings/app/auth/types.ts';
+} from './module_bindings/app';
+import type { AuthUser as AuthUserRow } from './module_bindings/app/auth/types';
 import type {
-  PresenceEntry,
   Server,
   ChatRateLimitStatus,
   MessageThread,
   ThreadMessage,
-} from './module_bindings/app/types.ts';
+} from './module_bindings/app/types';
 
 interface AttachmentInput {
   mimeType: string;
@@ -45,6 +44,7 @@ declare global {
         category?: string
       ) => Promise<void>;
       joinRoom: (roomId: bigint) => Promise<void>;
+      addRoomMember: (roomId: bigint, userId: string) => Promise<void>;
       leaveRoom: (roomId: bigint) => Promise<void>;
       sendMessage: (
         roomId: bigint,
@@ -90,10 +90,6 @@ declare global {
       forgotPassword: (email: string) => Promise<void>;
       resetPassword: (token: string, newPassword: string) => Promise<void>;
       requestEmailVerify: () => Promise<void>;
-      whoami: () => Promise<{
-        userId: string | undefined;
-        senderIdentityHex: string;
-      }>;
       setProfile: (args: { name?: string; image?: string }) => Promise<void>;
     };
   }
@@ -127,14 +123,11 @@ interface AuthMeResponse {
   sessionExpiresAt: number;
 }
 
-const PRESENCE_SCOPE_GLOBAL = 'chat.global';
-const PRESENCE_SCOPE_TYPING_PREFIX = 'chat.typing:';
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000];
 
 let config: ServerConfig | null = null;
 let conn: DbConnection | null = null;
-let meHex = '';
 let activeServerId: bigint | null = null;
 let activeRoomId: bigint | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -163,7 +156,6 @@ function emitAuthState(): void {
       detail: {
         user: authUser,
         sessionExpiresAt,
-        senderIdentityHex: meHex,
       },
     })
   );
@@ -174,10 +166,10 @@ function emitPresenceState(): void {
     window.dispatchEvent(
       new CustomEvent('chat:data', {
         detail: {
-          meHex,
           activeServerId,
           activeRoomId,
           servers: [],
+          directory: [],
           serverMembers: [],
           rooms: [],
           users: [],
@@ -232,10 +224,10 @@ function emitPresenceState(): void {
   window.dispatchEvent(
     new CustomEvent('chat:data', {
       detail: {
-        meHex,
         activeServerId,
         activeRoomId,
         servers: serverRows,
+        directory: [...c.db.serverDirectory.iter()],
         serverMembers: [...c.db.myServerMembers.iter()],
         rooms: roomRows,
         users: userRows,
@@ -370,7 +362,6 @@ function scheduleReconnect(): void {
 }
 
 const STDB_TOKEN_KEY = 'chat:stdb_token';
-const AUTH_TOKEN_KEY = 'chat:auth_token';
 
 function loadStdbToken(): string | undefined {
   try {
@@ -383,22 +374,6 @@ function loadStdbToken(): string | undefined {
 function saveStdbToken(token: string): void {
   try {
     localStorage.setItem(STDB_TOKEN_KEY, token);
-  } catch {
-    /* Storage can be unavailable. */
-  }
-}
-
-function saveAuthToken(token: string): void {
-  try {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-  } catch {
-    /* Storage can be unavailable. */
-  }
-}
-
-function clearAuthToken(): void {
-  try {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
   } catch {
     /* Storage can be unavailable. */
   }
@@ -436,6 +411,7 @@ function subscribeToTables(connection: DbConnection): void {
     .subscribe([
       tables.myChatUsers,
       tables.myServers,
+      tables.serverDirectory,
       tables.myServerMembers,
       tables.myPresenceEntries,
       tables.myRooms,
@@ -461,6 +437,7 @@ function registerRowCallbacks(connection: DbConnection): void {
     connection.db.myRoomMessageReactions,
     connection.db.myRoomAttachments,
     connection.db.myServerMembers,
+    connection.db.serverDirectory,
     connection.db.myMessageThreads,
     connection.db.myThreadMessages,
     connection.db.myRoomReadCursors,
@@ -517,11 +494,8 @@ async function bindSession(
   refreshedUser?: AuthUser,
   exp?: number
 ): Promise<void> {
-  saveAuthToken(sessionToken);
   const c = requireConn();
   await c.reducers['auth.linkConnection']({ sessionToken });
-  const me = await c.procedures.whoami({});
-  meHex = me.senderIdentityHex;
   if (!refreshedUser) {
     const meRes = await callJson<AuthMeResponse>('/auth/me');
     refreshedUser = meRes.user;
@@ -550,7 +524,6 @@ async function restoreSession(): Promise<boolean> {
   } catch {
     authUser = null;
     sessionExpiresAt = undefined;
-    clearAuthToken();
     emitAuthState();
     clearHeartbeat();
     return false;
@@ -606,6 +579,9 @@ function installApi(): void {
     },
     joinRoom: (roomId: bigint) => {
       return requireConn().reducers.joinRoom({ roomId });
+    },
+    addRoomMember: (roomId: bigint, userId: string) => {
+      return requireConn().reducers.addRoomMember({ roomId, userId });
     },
     leaveRoom: (roomId: bigint) => {
       return requireConn().reducers.leaveRoom({ roomId });
@@ -690,36 +666,26 @@ function installApi(): void {
     signup,
     login,
     logout: async () => {
-      const c = conn;
-      if (c) {
-        try {
-          await c.reducers['auth.unlinkConnection']({});
-        } catch {
-          /* best-effort disconnect cleanup */
-        }
+      try {
+        await conn?.reducers['auth.unlinkConnection']({});
+      } catch {
+        /* The reload below drops this connection either way. */
       }
       await callJson('/auth/logout', {});
-      authUser = null;
-      sessionExpiresAt = undefined;
-      clearAuthToken();
-      clearHeartbeat();
-      emitAuthState();
-      emitPresenceState();
+      // Reconnect with a new SpacetimeDB identity so the next sign-in on this
+      // browser starts from a fresh connection.
+      try {
+        localStorage.removeItem(STDB_TOKEN_KEY);
+      } catch {
+        /* Storage can be unavailable. */
+      }
+      window.location.reload();
     },
     oauthStart,
     forgotPassword,
     resetPassword,
     requestEmailVerify: async () => {
       await callJson('/auth/email/verify-request', {});
-    },
-    whoami: async () => {
-      const r = await requireConn().procedures.whoami({});
-      meHex = r.senderIdentityHex;
-      emitAuthState();
-      return {
-        userId: r.userId,
-        senderIdentityHex: r.senderIdentityHex,
-      };
     },
     setProfile: args => {
       return requireConn().reducers['auth.updateProfile']({
@@ -753,45 +719,6 @@ if (authResult.verified) {
 }
 clearAuthResultParams(window.location, window.history);
 
-function typingScopeForRoom(roomId: bigint): string {
-  return `${PRESENCE_SCOPE_TYPING_PREFIX}${roomId.toString()}`;
-}
-
-function derivePresenceSnapshot() {
-  if (!conn)
-    return {
-      global: [] as PresenceEntry[],
-      typingByRoom: {} as Record<string, string[]>,
-    };
-  const entries = [...conn.db.myPresenceEntries.iter()];
-  const global = entries.filter(row => row.scope === PRESENCE_SCOPE_GLOBAL);
-  const typingByRoom: Record<string, string[]> = {};
-  for (const row of entries) {
-    if (!row.scope.startsWith(PRESENCE_SCOPE_TYPING_PREFIX)) continue;
-    const roomId = row.scope.slice(PRESENCE_SCOPE_TYPING_PREFIX.length);
-    if (!typingByRoom[roomId]) typingByRoom[roomId] = [];
-    typingByRoom[roomId].push(row.subject);
-  }
-  return { global, typingByRoom };
-}
-
-async function loadCurrentIdentity(connection: DbConnection): Promise<void> {
-  const me = await connection.procedures.whoami({});
-  meHex = me.senderIdentityHex;
-  const snap = derivePresenceSnapshot();
-  window.dispatchEvent(
-    new CustomEvent('chat:me', {
-      detail: {
-        meHex,
-        globalPresence: snap.global,
-        typingByRoom: snap.typingByRoom,
-        typingScopeForRoom,
-      },
-    })
-  );
-  emitAuthState();
-}
-
 async function main(): Promise<void> {
   emitConnectionState('connecting');
   if (!config) config = await loadServerConfig();
@@ -803,7 +730,6 @@ async function main(): Promise<void> {
   registerRowCallbacks(connection);
   subscribeToTables(connection);
   installApi();
-  await loadCurrentIdentity(connection);
   await restoreSession();
   window.dispatchEvent(new CustomEvent('chat:ready'));
 }

@@ -387,7 +387,7 @@
     >
       <section class="modal-card">
         <header class="modal-head">
-          <h3 id="createServerTitle">Create server</h3>
+          <h3 id="createServerTitle">Add a server</h3>
           <button id="closeCreateServerBtn" class="btn tiny ghost">
             Close
           </button>
@@ -404,6 +404,8 @@
               Create
             </button>
           </div>
+          <h4>Join a server</h4>
+          <ul id="serverDirectoryList" class="directory-list"></ul>
         </div>
       </section>
     </div>
@@ -503,6 +505,10 @@
             <option value="public">public</option>
             <option value="private">private</option>
           </select>
+          <div id="csAddMemberRow" class="modal-actions">
+            <select id="csAddMember" aria-label="Server member to add"></select>
+            <button id="csAddMemberBtn" class="btn">Add to channel</button>
+          </div>
           <div class="modal-actions">
             <button id="csSaveBtn" class="btn primary">Save</button>
             <button id="csDeleteBtn" class="btn danger">Delete channel</button>

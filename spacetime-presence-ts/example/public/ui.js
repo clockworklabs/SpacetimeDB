@@ -5,8 +5,8 @@ import {
   attachmentsByMessage,
   canDeleteMessage,
   canEditMessage,
+  canModerateRoom,
   globalPresenceBySubject,
-  hex,
   latestMessageByRoom,
   messageAuthorName,
   messageById,
@@ -20,7 +20,6 @@ import {
   threadMessageById,
   threadMessagesForRoot,
   typingForRoom,
-  userByHex,
   userByUserId,
 } from './chat-model.js';
 import { applyChatData, chatState as state } from './chat-state.js';
@@ -46,8 +45,6 @@ let threadEditTargetId = null;
 let composerRateLimitTimer = null;
 const ATT_MAX_BYTES = 4_000_000;
 const ATT_MAX_COUNT = 5;
-const AUTH_TOKEN_KEY = 'chat:auth_token';
-const STDB_TOKEN_KEY = 'chat:stdb_token';
 const attachmentBlobUrls = new Map();
 
 function fmtBytes(n) {
@@ -57,42 +54,14 @@ function fmtBytes(n) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function authHeaderCandidates() {
-  try {
-    const tokens = [
-      localStorage.getItem(AUTH_TOKEN_KEY),
-      localStorage.getItem(STDB_TOKEN_KEY),
-    ].filter((token, idx, arr) => token && arr.indexOf(token) === idx);
-    return tokens.map(token => ({ authorization: `Bearer ${token}` }));
-  } catch {
-    return [];
-  }
-}
-
-async function attachmentBlobUrl(fileId, url) {
-  const cacheKey = `file:${fileId}`;
-  let blobUrl = attachmentBlobUrls.get(cacheKey);
+async function attachmentBlobUrl(fileId) {
+  let blobUrl = attachmentBlobUrls.get(fileId);
   if (blobUrl) return blobUrl;
-  if (window.chat?.getAttachmentFile) {
-    const file = await window.chat.getAttachmentFile(BigInt(fileId));
-    blobUrl = URL.createObjectURL(
-      new Blob([file.bytes], { type: file.mimeType })
-    );
-  } else if (url) {
-    const attempts = [...authHeaderCandidates(), {}];
-    let res = null;
-    for (const headers of attempts) {
-      res = await fetch(url, { headers, credentials: 'same-origin' });
-      if (res.ok) break;
-      if (res.status !== 401 && res.status !== 403) break;
-    }
-    if (!res) throw new Error('no_response');
-    if (!res.ok) throw new Error(`http_${res.status}`);
-    blobUrl = URL.createObjectURL(await res.blob());
-  } else {
-    throw new Error('missing_file_url');
-  }
-  attachmentBlobUrls.set(cacheKey, blobUrl);
+  const file = await window.chat.getAttachmentFile(BigInt(fileId));
+  blobUrl = URL.createObjectURL(
+    new Blob([file.bytes], { type: file.mimeType })
+  );
+  attachmentBlobUrls.set(fileId, blobUrl);
   return blobUrl;
 }
 
@@ -100,11 +69,10 @@ async function hydrateAttachmentImages(root = document) {
   const imgs = [...root.querySelectorAll('img[data-file-id]')];
   for (const img of imgs) {
     const fileId = img.dataset.fileId;
-    const url = img.dataset.fileUrl;
     if (!fileId || img.dataset.loaded === '1') continue;
     img.dataset.loaded = '1';
     try {
-      const blobUrl = await attachmentBlobUrl(fileId, url);
+      const blobUrl = await attachmentBlobUrl(fileId);
       img.src = blobUrl;
       const preview = img.closest('[data-preview-file-id]');
       if (preview) preview.dataset.previewSrc = blobUrl;
@@ -112,7 +80,7 @@ async function hydrateAttachmentImages(root = document) {
       img.dataset.loaded = '0';
       img.classList.add('broken');
       img.alt = `${img.alt || 'attachment'} (failed to load)`;
-      console.warn('attachment image load failed', url, err);
+      console.warn('attachment image load failed', fileId, err);
     }
   }
 }
@@ -134,12 +102,10 @@ function showImageLightbox(src, name) {
 
 async function openAttachmentPreview(button) {
   const fileId = button.dataset.previewFileId;
-  const url = button.dataset.previewUrl;
   const name = button.dataset.previewName || 'attachment';
   if (!fileId) return;
   try {
-    const src =
-      button.dataset.previewSrc || (await attachmentBlobUrl(fileId, url));
+    const src = button.dataset.previewSrc || (await attachmentBlobUrl(fileId));
     button.dataset.previewSrc = src;
     showImageLightbox(src, name);
   } catch (err) {
@@ -225,11 +191,8 @@ function updateRateLimitTicker() {
 }
 function renderUserBar() {
   if (!state.authenticated) return;
-  const users = userByHex();
-  const me = users.get(state.meHex);
-  const fallback =
-    state.userEmail || (state.meHex ? state.meHex.slice(-6) : '');
-  const label = me?.displayName || fallback;
+  const me = userByUserId().get(state.userId);
+  const label = me?.displayName || state.userEmail;
   const avatarSeed = label || '?';
   $('userBarName').textContent = label;
   $('userAvatar').textContent = (avatarSeed[0] || '?').toUpperCase();
@@ -404,7 +367,7 @@ function renderThreadPanel() {
     closeThreadPanel();
     return;
   }
-  const users = userByHex();
+  const users = userByUserId();
   const threadMessages = threadMessagesForRoot(root.id);
   if (threadEditTargetId !== null && !threadMessageById(threadEditTargetId))
     clearThreadEditTarget();
@@ -547,7 +510,7 @@ function renderMessageAttachments(
       const url = `/files?id=${encodeURIComponent(a.fileId.toString())}`;
       const fname = a.filename || `attachment-${a.id.toString()}`;
       if (isImg) {
-        return `<button type="button" class="msg-att-preview" data-preview-file-id="${a.fileId.toString()}" data-preview-url="${url}" data-preview-name="${escapeHtml(fname)}" aria-label="Preview ${escapeHtml(fname)}"><img class="msg-att-img" data-file-id="${a.fileId.toString()}" data-file-url="${url}" alt="${escapeHtml(fname)}"></button>`;
+        return `<button type="button" class="msg-att-preview" data-preview-file-id="${a.fileId.toString()}" data-preview-name="${escapeHtml(fname)}" aria-label="Preview ${escapeHtml(fname)}"><img class="msg-att-img" data-file-id="${a.fileId.toString()}" alt="${escapeHtml(fname)}"></button>`;
       }
       return `<a class="msg-att-file" href="${url}" download="${escapeHtml(fname)}" target="_blank" rel="noopener">
       <span>${escapeHtml(fname)}</span>
@@ -623,9 +586,7 @@ function renderRooms() {
     return a.localeCompare(b);
   });
 
-  const isAdmin =
-    (state.admins || []).length === 0 ||
-    (state.admins || []).includes(state.meHex);
+  const joined = new Set(myMemberships());
   const renderRow = r => {
     const latest = latestByRoom.get(r.id);
     const read = myCursor.get(r.id) ?? 0n;
@@ -633,16 +594,16 @@ function renderRooms() {
     const lockIcon = r.isPrivate
       ? '<span class="lock-icon" title="private">🔒</span>'
       : '';
-    const ownsRoom = r.createdByUserId === state.userId;
-    const canEdit = ownsRoom || isAdmin;
+    const canEdit = canModerateRoom(r);
     const gearSvg =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
     const settingsBtn = canEdit
       ? `<button class="btn tiny ghost" data-action="settings" title="Channel settings" aria-label="Channel settings">${gearSvg}</button>`
       : '';
-    const leaveBtn = !canEdit
-      ? '<button class="btn tiny ghost" data-action="leave" title="Leave channel">×</button>'
-      : '';
+    const leaveBtn =
+      !canEdit && joined.has(r.id)
+        ? '<button class="btn tiny ghost" data-action="leave" title="Leave channel">×</button>'
+        : '';
     const action = `${settingsBtn}${leaveBtn}`;
     const badge = unread ? '<span class="unread-dot"></span>' : '';
     return `<li class="room-row${state.activeRoomId === r.id ? ' active' : ''}${unread ? ' has-unread' : ''}" data-room-id="${r.id.toString()}" data-action="open">
@@ -657,7 +618,7 @@ function renderRooms() {
     if (myServers().length === 0) {
       roomList.innerHTML = `<div class="sidebar-empty">
         <p>No servers yet.</p>
-        <button type="button" class="btn primary block" id="sidebarCreateFirstServer">Create your first server</button>
+        <button type="button" class="btn primary block" id="sidebarCreateFirstServer">Add a server</button>
       </div>`;
       $('sidebarCreateFirstServer')?.addEventListener(
         'click',
@@ -705,7 +666,7 @@ function renderMessages() {
   if (!room) {
     const mine = myServers();
     if (mine.length === 0) {
-      ul.innerHTML = `<li class="empty-state"><h3>Welcome</h3><p>Create your first server to start chatting.</p><button type="button" class="btn primary" id="emptyCreateBtn">Create a server</button></li>`;
+      ul.innerHTML = `<li class="empty-state"><h3>Welcome</h3><p>Create or join a server to start chatting.</p><button type="button" class="btn primary" id="emptyCreateBtn">Add a server</button></li>`;
       $('emptyCreateBtn')?.addEventListener('click', openCreateServerModal);
       $('roomTitle').textContent = '';
     } else if (state.activeServerId === null) {
@@ -726,7 +687,7 @@ function renderMessages() {
   const hashEl = document.getElementById('channelHashIcon');
   if (hashEl) hashEl.hidden = false;
   $('roomTitle').textContent = room.name;
-  const users = userByHex();
+  const users = userByUserId();
   const roomMessages = state.messages
     .filter(m => m.roomId === room.id)
     .slice(-300);
@@ -748,7 +709,7 @@ function renderMessages() {
       byEmoji.set(r.emoji, entry);
     }
     entry.count++;
-    if (hex(r.identity) === state.meHex) entry.mine = true;
+    if (r.userId === state.userId) entry.mine = true;
   }
 
   const groupedAtts = attachmentsByMessage();
@@ -758,11 +719,10 @@ function renderMessages() {
   let prev = null;
   const html = roomMessages
     .map(m => {
-      const authorHex = hex(m.author);
-      const author = users.get(authorHex);
-      const name = author?.displayName || authorHex.slice(-6);
+      const authorId = m.authorUserId;
+      const name = messageAuthorName(m, users);
 
-      const sameAuthor = prev && hex(prev.author) === authorHex;
+      const sameAuthor = prev && prev.authorUserId === authorId;
       const gap = prev
         ? m.createdAt.microsSinceUnixEpoch - prev.createdAt.microsSinceUnixEpoch
         : null;
@@ -826,7 +786,7 @@ function renderMessages() {
 
       if (chunkStart) {
         return `<li class="msg chunk-start${isPinned ? ' pinned' : ''}" data-message-id="${m.id.toString()}">
-        ${avatarSwatch(authorHex, name, 36)}
+        ${avatarSwatch(authorId, name, 36)}
         <div class="msg-col">
           <div class="msg-head">
             <span class="msg-author">${escapeHtml(name)}</span>
@@ -935,7 +895,7 @@ function renderPinnedPanel() {
     list.innerHTML = '<li class="overlay-empty">No channel selected.</li>';
     return;
   }
-  const users = userByHex();
+  const users = userByUserId();
   const pinned = state.messages
     .filter(m => m.roomId === room.id && m.pinnedAt)
     .sort((a, b) =>
@@ -949,11 +909,9 @@ function renderPinnedPanel() {
   const groupedAtts = attachmentsByMessage();
   list.innerHTML = pinned
     .map(m => {
-      const author = users.get(hex(m.author));
-      const name = author?.displayName || hex(m.author).slice(-6);
       return `<li class="overlay-msg" data-mid="${m.id.toString()}">
       <div class="overlay-msg-head">
-        <span class="overlay-msg-author">${escapeHtml(name)}</span>
+        <span class="overlay-msg-author">${escapeHtml(messageAuthorName(m, users))}</span>
         <span class="overlay-msg-time">${fmtTime(m.createdAt)}</span>
       </div>
       <div class="overlay-msg-body">${escapeHtml(m.content)}</div>
@@ -991,18 +949,16 @@ $('searchForm').addEventListener('submit', async e => {
   $('searchPanel').hidden = false;
   try {
     const results = await window.chat.searchMessages(room.id, q);
-    const users = userByHex();
+    const users = userByUserId();
     if (!results || results.length === 0) {
       $('searchList').innerHTML = '<li class="overlay-empty">No matches.</li>';
       return;
     }
     $('searchList').innerHTML = results
       .map(m => {
-        const author = users.get(hex(m.author));
-        const name = author?.displayName || hex(m.author).slice(-6);
         return `<li class="overlay-msg" data-mid="${m.id.toString()}">
         <div class="overlay-msg-head">
-          <span class="overlay-msg-author">${escapeHtml(name)}</span>
+          <span class="overlay-msg-author">${escapeHtml(messageAuthorName(m, users))}</span>
           <span class="overlay-msg-time">${fmtTime(m.createdAt)}</span>
         </div>
         <div class="overlay-msg-body">${escapeHtml(m.content)}</div>
@@ -1022,9 +978,9 @@ function renderTyping() {
     $('typingLine').textContent = '';
     return;
   }
-  const users = userByHex();
+  const users = userByUserId();
   const typing = typingForRoom(room.id)
-    .filter(id => id !== state.meHex)
+    .filter(id => id !== state.userId)
     .map(id => users.get(id)?.displayName || id.slice(-6));
   if (typing.length === 0) $('typingLine').textContent = '';
   else if (typing.length === 1)
@@ -1046,30 +1002,21 @@ function renderMembers() {
   const presenceMap = globalPresenceBySubject();
   const usersByUid = userByUserId();
   const rows = roomMembers(room.id)
-    .map(m => {
-      const user = usersByUid.get(m.userId);
-      const h = user ? hex(user.identity) : '';
-      const status = statusOf(h, presenceMap);
-      return {
-        hex: h,
-        name: user?.displayName || m.userId.slice(-6),
-        status,
-        mine: m.userId === state.userId,
-      };
-    })
+    .map(m => ({
+      userId: m.userId,
+      name: usersByUid.get(m.userId)?.displayName || m.userId.slice(-6),
+      status: statusOf(m.userId, presenceMap),
+      mine: m.userId === state.userId,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const online = rows.filter(
-    m => m.status !== 'invisible' && m.status !== 'offline'
-  );
-  const offline = rows.filter(
-    m => m.status === 'invisible' || m.status === 'offline'
-  );
+  const online = rows.filter(m => m.status !== 'offline');
+  const offline = rows.filter(m => m.status === 'offline');
 
   const renderRow =
-    m => `<li class="member-row${m.status === 'invisible' || m.status === 'offline' ? ' offline' : ''}">
+    m => `<li class="member-row${m.status === 'offline' ? ' offline' : ''}">
     <span class="member-avatar-wrap">
-      ${avatarSwatch(m.hex, m.name, 32)}
+      ${avatarSwatch(m.userId, m.name, 32)}
       <span class="presence-pip ${m.status}"></span>
     </span>
     <span class="member-name">${escapeHtml(m.name)}${m.mine ? " <span class='member-you'>(you)</span>" : ''}</span>
@@ -1094,8 +1041,20 @@ function scrollMessagesToBottom() {
   const node = $('messageScroll');
   node.scrollTop = node.scrollHeight;
 }
+function renderServerDirectory() {
+  $('serverDirectoryList').innerHTML =
+    state.directory.length === 0
+      ? '<li class="empty">No other servers yet.</li>'
+      : state.directory
+          .map(
+            s =>
+              `<li><span>${escapeHtml(s.name)}</span><button type="button" class="btn tiny" data-join-server="${s.id.toString()}">Join</button></li>`
+          )
+          .join('');
+}
 function renderAll() {
   renderServerRail();
+  renderServerDirectory();
   renderSidebarHead();
   renderRooms();
   renderMessages();
@@ -1203,9 +1162,6 @@ window.addEventListener('chat:data', e => {
   if (roomChanged) scrollMessagesToBottom();
 });
 
-window.addEventListener('chat:me', e => {
-  state.meHex = e.detail.meHex;
-});
 window.addEventListener('chat:auth', e => {
   const user = e.detail.user || null;
   state.authenticated = Boolean(user);
@@ -1327,6 +1283,18 @@ $('createServerBtn')?.addEventListener('click', openCreateServerModal);
 $('closeCreateServerBtn')?.addEventListener('click', closeCreateServerModal);
 $('createServerModal')?.addEventListener('click', e => {
   if (e.target.id === 'createServerModal') closeCreateServerModal();
+});
+$('serverDirectoryList').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-join-server]');
+  if (!btn || !requireAuthAction()) return;
+  const serverId = BigInt(btn.dataset.joinServer);
+  try {
+    await window.chat.joinServer(serverId);
+    closeCreateServerModal();
+    window.chat.setActiveServer(serverId);
+  } catch (err) {
+    setResult(`join failed: ${err.message ?? err}`, false);
+  }
 });
 $('createServerSubmitBtn')?.addEventListener('click', async () => {
   if (!requireAuthAction()) return;
@@ -1462,6 +1430,19 @@ function openChannelSettings(roomId) {
   $('csPrivacy').disabled = false;
   $('csDeleteBtn').disabled = false;
   $('csDeleteBtn').title = '';
+  // Private rooms gain members only through this list.
+  const inRoom = new Set(roomMembers(roomId).map(m => m.userId));
+  const users = userByUserId();
+  const candidates = state.serverMembers.filter(
+    m => m.serverId === room.serverId && !inRoom.has(m.userId)
+  );
+  $('csAddMemberRow').hidden = !room.isPrivate || candidates.length === 0;
+  $('csAddMember').innerHTML = candidates
+    .map(
+      m =>
+        `<option value="${escapeHtml(m.userId)}">${escapeHtml(users.get(m.userId)?.displayName || m.userId.slice(-6))}</option>`
+    )
+    .join('');
   $('channelSettingsModal').classList.add('open');
   $('csName').focus();
 }
@@ -1493,6 +1474,17 @@ $('csSaveBtn')?.addEventListener('click', async () => {
     closeChannelSettings();
   } catch (err) {
     setResult(`save failed: ${err.message ?? err}`, false);
+  }
+});
+$('csAddMemberBtn')?.addEventListener('click', async () => {
+  const userId = $('csAddMember').value;
+  if (csRoomId === null || !userId) return;
+  try {
+    await window.chat.addRoomMember(csRoomId, userId);
+    closeChannelSettings();
+    setResult('Member added.');
+  } catch (err) {
+    setResult(`add member failed: ${err.message ?? err}`, false);
   }
 });
 $('csDeleteBtn')?.addEventListener('click', async () => {

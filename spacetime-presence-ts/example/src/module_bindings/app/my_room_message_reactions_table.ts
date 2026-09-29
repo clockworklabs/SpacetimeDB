@@ -13,7 +13,7 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   messageId: __t.u64().name("message_id"),
-  identity: __t.identity(),
+  userId: __t.string().name("user_id"),
   emoji: __t.string(),
   createdAt: __t.timestamp().name("created_at"),
 });

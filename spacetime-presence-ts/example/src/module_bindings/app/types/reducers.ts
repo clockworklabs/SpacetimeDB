@@ -6,6 +6,7 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddRoomMemberReducer from "../add_room_member_reducer";
 import CreateRoomReducer from "../create_room_reducer";
 import CreateServerReducer from "../create_server_reducer";
 import DeleteMessageReducer from "../delete_message_reducer";
@@ -34,6 +35,7 @@ import StopTypingReducer from "../stop_typing_reducer";
 import ToggleReactionReducer from "../toggle_reaction_reducer";
 import UnpinMessageReducer from "../unpin_message_reducer";
 
+export type AddRoomMemberParams = __Infer<typeof AddRoomMemberReducer>;
 export type CreateRoomParams = __Infer<typeof CreateRoomReducer>;
 export type CreateServerParams = __Infer<typeof CreateServerReducer>;
 export type DeleteMessageParams = __Infer<typeof DeleteMessageReducer>;

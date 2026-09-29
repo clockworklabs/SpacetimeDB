@@ -13,7 +13,7 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
-  identity: __t.identity(),
+  userId: __t.string().name("user_id"),
   lastReadMessageId: __t.u64().name("last_read_message_id"),
   lastReadAt: __t.timestamp().name("last_read_at"),
 });

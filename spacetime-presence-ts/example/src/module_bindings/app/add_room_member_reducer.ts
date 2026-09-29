@@ -10,10 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-import {
-  WhoAmI,
-} from "./types";
-
-export const params = {
+export default {
+  roomId: __t.u64(),
+  userId: __t.string(),
 };
-export const returnType = WhoAmI

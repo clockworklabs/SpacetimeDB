@@ -120,6 +120,13 @@ function proxyStdbRoute(prefix: string) {
     const routePath = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
     const query = qIdx < 0 ? '' : fullPath.slice(qIdx);
     const upstreamUrl = `${STDB_HTTP}/v1/database/${DB_NAME}/route${routePath}${query}`;
+    // fetch resolves `..` and `%2e%2e`, so reject paths that leave this route.
+    const routeBase = `/v1/database/${DB_NAME}/route${prefix}`;
+    const { pathname } = new URL(upstreamUrl);
+    if (pathname !== routeBase && !pathname.startsWith(`${routeBase}/`)) {
+      res.status(400).end();
+      return;
+    }
 
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {

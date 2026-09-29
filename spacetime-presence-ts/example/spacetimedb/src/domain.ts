@@ -1,25 +1,19 @@
-import { Identity } from 'spacetimedb';
 import {
   SenderError,
-  type ProcedureCtx,
   type ReducerCtx,
   type TransactionCtx,
 } from 'spacetimedb/server';
-import { getCallerUserId } from '@spacetimedb/auth/submodule';
 import type { client } from '@spacetimedb/rate-limit/submodule';
 import * as presence from '@spacetimedb/presence/submodule';
 import { PRESENCE_SCOPE_GLOBAL, typingScope } from './chat-policy';
 import { ChatUserStatus } from './model';
 import type { DbSchema } from './schema';
 
-const ONE_SECOND_MICROS = 1_000_000n;
-const GLOBAL_PRESENCE_TTL_SECONDS = 35;
-const ACTIVITY_WINDOW_SECONDS = 5 * 60;
+export const ACTIVITY_WINDOW_MICROS = 5n * 60n * 1_000_000n;
 const ROOM_ACTIVITY_HOT_THRESHOLD = 20;
 const ROOM_ACTIVITY_ACTIVE_THRESHOLD = 5;
 
 export type Tx = ReducerCtx<DbSchema>;
-type CallerCtx = ProcedureCtx<DbSchema> | ReducerCtx<DbSchema>;
 
 export function senderError(message: string): never {
   throw new SenderError(message);
@@ -34,20 +28,6 @@ export function normalizeText(
   if (!normalized) senderError(`chat.invalid_${name}`);
   if (normalized.length > maxLength) senderError(`chat.${name}_too_long`);
   return normalized;
-}
-
-export function identityHex(identity: Identity): string {
-  return identity.toHexString();
-}
-
-export function identitiesEqual(left: Identity, right: Identity): boolean {
-  return left.isEqual(right);
-}
-
-export function requireAuthenticatedUserId(ctx: CallerCtx): string {
-  const userId = getCallerUserId(ctx.as.auth);
-  if (!userId) senderError('auth.not_authenticated');
-  return userId;
 }
 
 export function enforceChatRateLimit(
@@ -69,47 +49,32 @@ export function chatStatusToString(status: { tag: string }): string {
 }
 
 export function ensureUser(tx: Tx, userId: string) {
-  const existing = tx.db.chatUser.identity.find(tx.sender);
+  const existing = tx.db.chatUser.userId.find(userId);
+  if (existing) return existing;
   const authUser = tx.db.auth.authUser.userId.find(userId);
-  if (existing) {
-    if (existing.userId !== userId && authUser) {
-      tx.db.chatUser.identity.update({
-        ...existing,
-        userId,
-        displayName: authUser.name ?? existing.displayName,
-      });
-    }
-    return tx.db.chatUser.identity.find(tx.sender) ?? existing;
-  }
-
-  const hex = identityHex(tx.sender);
-  const suffix = hex.slice(Math.max(0, hex.length - 6));
   const row = tx.db.chatUser.insert({
-    identity: tx.sender,
     userId,
-    displayName: authUser?.name ?? authUser?.email ?? `User-${suffix}`,
+    displayName:
+      authUser?.name ?? authUser?.email ?? `User-${userId.slice(-6)}`,
     status: ChatUserStatus.Online,
-    createdAt: tx.timestamp,
-    lastActiveAt: tx.timestamp,
-    lastMessageAt: tx.timestamp,
   });
   updateGlobalPresence(tx, row);
   return row;
 }
 
+/** Publishes the user's global presence, or removes it while invisible. */
 export function updateGlobalPresence(
   tx: Tx,
   user: ReturnType<typeof ensureUser>
 ): void {
+  if (user.status.tag === 'Invisible') {
+    presence.removePresence(tx.as.presence, PRESENCE_SCOPE_GLOBAL, user.userId);
+    return;
+  }
   presence.upsertPresence(tx.as.presence, {
     scope: PRESENCE_SCOPE_GLOBAL,
-    subject: identityHex(user.identity),
+    subject: user.userId,
     status: chatStatusToString(user.status),
-    payloadJson: JSON.stringify({
-      displayName: user.displayName,
-      userId: user.userId,
-    }),
-    ttlSeconds: GLOBAL_PRESENCE_TTL_SECONDS,
   });
 }
 
@@ -133,9 +98,7 @@ export function requireMembership(tx: Tx, roomId: bigint, userId: string) {
 }
 
 function countRecentActivityEvents(tx: Tx, roomId: bigint): number {
-  const cutoff =
-    tx.timestamp.microsSinceUnixEpoch -
-    BigInt(ACTIVITY_WINDOW_SECONDS) * ONE_SECOND_MICROS;
+  const cutoff = tx.timestamp.microsSinceUnixEpoch - ACTIVITY_WINDOW_MICROS;
   let count = 0;
   for (const event of tx.db.roomActivityEvent.roomId.filter(roomId)) {
     if (event.createdAt.microsSinceUnixEpoch >= cutoff) count++;
@@ -197,9 +160,10 @@ export function deleteMessageTree(tx: Tx, message: { id: bigint }): void {
 export function upsertRoomReadCursor(
   tx: Tx,
   roomId: bigint,
+  userId: string,
   lastReadMessageId: bigint
 ): void {
-  for (const cursor of tx.db.roomReadCursor.identity.filter(tx.sender)) {
+  for (const cursor of tx.db.roomReadCursor.userId.filter(userId)) {
     if (cursor.roomId !== roomId) continue;
     if (cursor.lastReadMessageId >= lastReadMessageId) return;
     tx.db.roomReadCursor.id.update({
@@ -212,7 +176,7 @@ export function upsertRoomReadCursor(
   tx.db.roomReadCursor.insert({
     id: 0n,
     roomId,
-    identity: tx.sender,
+    userId,
     lastReadMessageId,
     lastReadAt: tx.timestamp,
   });
@@ -221,13 +185,9 @@ export function upsertRoomReadCursor(
 export function removeTypingPresence(
   tx: Tx,
   roomId: bigint,
-  identity: Identity
+  userId: string
 ): void {
-  presence.removePresence(
-    tx.as.presence,
-    typingScope(roomId),
-    identityHex(identity)
-  );
+  presence.removePresence(tx.as.presence, typingScope(roomId), userId);
 }
 
 export function insertRoom(

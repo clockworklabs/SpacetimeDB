@@ -16,15 +16,18 @@ export const ChatUserStatus = {
 export const chatUser = table(
   { name: 'chat_user', public: false },
   {
-    identity: t.identity().primaryKey(),
-    userId: t.string().index(),
+    userId: t.string().primaryKey(),
     displayName: t.string(),
-    status: chatUserStatus.index(),
-    createdAt: t.timestamp().index(),
-    lastActiveAt: t.timestamp().index(),
-    lastMessageAt: t.timestamp(),
+    status: chatUserStatus,
   }
 );
+
+// Clients see a user's status only through presence rows, which are removed
+// while the user is invisible.
+export const chatUserProfile = t.object('ChatUserProfile', {
+  userId: t.string(),
+  displayName: t.string(),
+});
 
 export const server = table(
   { name: 'server', public: false },
@@ -81,13 +84,13 @@ export const message = table(
   {
     id: t.u64().primaryKey().autoInc(),
     roomId: t.u64().index(),
-    author: t.identity().index(),
+    authorUserId: t.string().index(),
     content: t.string(),
     createdAt: t.timestamp().index(),
     editedAt: t.option(t.timestamp()),
     replyToMessageId: t.option(t.u64()),
     pinnedAt: t.option(t.timestamp()),
-    pinnedBy: t.option(t.identity()),
+    pinnedByUserId: t.option(t.string()),
   }
 );
 
@@ -96,7 +99,7 @@ export const messageReaction = table(
   {
     id: t.u64().primaryKey().autoInc(),
     messageId: t.u64().index(),
-    identity: t.identity().index(),
+    userId: t.string().index(),
     emoji: t.string().index(),
     createdAt: t.timestamp(),
   }
@@ -108,7 +111,7 @@ export const messageThread = table(
     id: t.u64().primaryKey().autoInc(),
     rootMessageId: t.u64().unique(),
     roomId: t.u64().index(),
-    createdBy: t.identity().index(),
+    createdByUserId: t.string().index(),
     createdAt: t.timestamp().index(),
     updatedAt: t.timestamp().index(),
   }
@@ -119,7 +122,7 @@ export const threadMessage = table(
   {
     id: t.u64().primaryKey().autoInc(),
     threadId: t.u64().index(),
-    author: t.identity().index(),
+    authorUserId: t.string().index(),
     content: t.string(),
     createdAt: t.timestamp().index(),
     editedAt: t.option(t.timestamp()),
@@ -160,7 +163,7 @@ export const roomReadCursor = table(
   {
     id: t.u64().primaryKey().autoInc(),
     roomId: t.u64().index(),
-    identity: t.identity().index(),
+    userId: t.string().index(),
     lastReadMessageId: t.u64(),
     lastReadAt: t.timestamp().index(),
   }

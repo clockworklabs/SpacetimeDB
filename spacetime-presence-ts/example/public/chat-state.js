@@ -1,12 +1,11 @@
 export const chatState = {
-  meHex: '',
   userId: null,
   userEmail: '',
   activeServerId: null,
   activeRoomId: null,
   authenticated: false,
-  admins: [],
   servers: [],
+  directory: [],
   serverMembers: [],
   rooms: [],
   users: [],
