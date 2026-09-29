@@ -563,9 +563,17 @@ function abortableSleep(ms: number, signal: AbortSignal | null = null): Promise<
   });
 }
 
+// One accessor per run: per-run action state (such as proven routes) is keyed by it.
+const actorAccessors = new WeakMap<Map<string, Actor>, Readonly<{ get(name: string): Actor | undefined }>>();
+function actorAccessFor(actors: Map<string, Actor>): Readonly<{ get(name: string): Actor | undefined }> {
+  let access = actorAccessors.get(actors);
+  if (!access) actorAccessors.set(actors, access = Object.freeze({ get: (name: string) => actors.get(name) }));
+  return access;
+}
+
 function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunContext): Readonly<Record<string, unknown>> {
   const defaultWithin = ctx.defaultWithin ?? DEFAULT_WITHIN;
-  const actorAccess = Object.freeze({ get: (name: string) => actors.get(name) });
+  const actorAccess = actorAccessFor(actors);
   const runtimeValues = Object.freeze({
     sequenceScopeFallback: ctx.contractIds?.includes('ecommerce.progression.faceted-search-hooks')
       ? { testid: 'item-name', from: 'item-list', to: 'search-results' } : undefined,
