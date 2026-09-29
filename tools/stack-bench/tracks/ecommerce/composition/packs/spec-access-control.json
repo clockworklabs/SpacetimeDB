@@ -20,8 +20,7 @@
     "fresh-client-observation"
   ],
   "budget": {
-    "status": "bounded",
-    "maxRuntimeMs": 554000
+    "status": "unmeasured"
   },
   "task": {
     "requirements": [

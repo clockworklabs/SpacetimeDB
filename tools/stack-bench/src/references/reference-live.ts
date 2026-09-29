@@ -583,7 +583,8 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
       ? auditMutationWorkerRun(output, fixture)
       : auditReferenceRun(output, fixture, {
         requireMutationControl: args.mutations,
-        release: context.binding.release,
+        // The release document omits pack budgets; the timing-only audit needs them.
+        release: { ...context.binding.release, packs: context.binding.plan.packs },
         level: args.level,
         selectedCheckKeys: context.selectedCheckKeys,
         timingOnly: args.timingOnly,
