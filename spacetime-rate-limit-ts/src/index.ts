@@ -1,10 +1,10 @@
 export {
   client,
   errors,
-  consumeRateLimit,
-  type ConsumeRateLimitOpts,
+  type RateLimitClient,
   type RateLimitPolicy,
+  type RateLimitReadDb,
   type RateLimitResult,
+  type RateLimitStatus,
   type RateLimitTxLike,
 } from './limit';
-export { buildRateLimitKey } from './key';
