@@ -2,6 +2,9 @@
 // SpacetimeDB instance so force-stopping it cannot disturb another server. The
 // probe procedure remains in flight while the host is killed. The procedure's
 // first transaction must preserve the calendar chain before the interruption.
+// Procedures run in a pool of instances, so later occurrences can execute while
+// the probe blocks. The two-second schedule leaves time for the pre-kill checks
+// and the kill before the next occurrence.
 import * as assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -80,12 +83,18 @@ function statusTag(value) {
   return tag;
 }
 
+function timestampMillis(value) {
+  return Number(BigInt(value[0]) / 1000n);
+}
+
 function runs() {
   return sql(
-    "SELECT invocationId, sequence, status FROM cron_run WHERE jobName = 'recovery_probe'"
-  ).map(([invocationId, sequence, status]) => ({
+    "SELECT invocationId, sequence, scheduledFor, completedAt, status FROM cron_run WHERE jobName = 'recovery_probe'"
+  ).map(([invocationId, sequence, scheduledFor, completedAt, status]) => ({
     invocationId,
     sequence: BigInt(sequence),
+    scheduledFor: timestampMillis(scheduledFor),
+    completedAt: timestampMillis(completedAt),
     status: statusTag(status),
   }));
 }
@@ -214,7 +223,7 @@ try {
   call(
     'schedule_cron',
     JSON.stringify('recovery_probe'),
-    JSON.stringify('*/1 * * * * *'),
+    JSON.stringify('*/2 * * * * *'),
     JSON.stringify('UTC'),
     '0'
   );
@@ -254,6 +263,7 @@ try {
 
   await stopServer(server);
   server = undefined;
+  const stoppedAt = Date.now();
 
   // Leave several calendar occurrences behind us. Recovery should execute at
   // most one overdue occurrence before resuming from the current time.
@@ -261,23 +271,23 @@ try {
 
   server = startServer();
   await waitForServer(server);
+  const restartedAt = Date.now();
   await poll('a successful post-restart recovery probe', () => {
-    const observed = runs();
-    const recovered = observed.some(
-      run => run.sequence > 1n && run.status === 'Ok'
+    const recovered = runs().some(
+      run => run.completedAt >= restartedAt && run.status === 'Ok'
     );
     const state = job();
-    return (
-      recovered &&
-      state.enabled &&
-      state.fireCount >= 2n &&
-      state.consecutiveFailures === 0
-    );
+    return recovered && state.enabled && state.consecutiveFailures === 0;
   });
   await wait(500);
+  const overdue = runs().filter(
+    run => run.completedAt >= stoppedAt && run.scheduledFor < restartedAt
+  );
   assert.ok(
-    job().fireCount <= 3n,
-    'calendar recovery must not replay every occurrence missed during downtime'
+    overdue.length <= 1,
+    `calendar recovery must not replay every occurrence missed during downtime: ${overdue
+      .map(run => run.invocationId)
+      .join(', ')}`
   );
   assert.equal(
     Number(
