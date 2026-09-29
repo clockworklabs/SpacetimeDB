@@ -40,6 +40,12 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime server clear`↴](#spacetime-server-clear)
 * [`spacetime subscribe`↴](#spacetime-subscribe)
 * [`spacetime start`↴](#spacetime-start)
+* [`spacetime container`↴](#spacetime-container)
+* [`spacetime container set`↴](#spacetime-container-set)
+* [`spacetime container status`↴](#spacetime-container-status)
+* [`spacetime container start`↴](#spacetime-container-start)
+* [`spacetime container stop`↴](#spacetime-container-stop)
+* [`spacetime container remove`↴](#spacetime-container-remove)
 * [`spacetime lock`↴](#spacetime-lock)
 * [`spacetime unlock`↴](#spacetime-unlock)
 * [`spacetime version`↴](#spacetime-version)
@@ -69,6 +75,7 @@ This document contains the help content for the `spacetime` command-line program
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
+* `container` — Manage the container attached to a database
 * `lock` — Lock a database to prevent accidental deletion
 * `unlock` — Unlock a database to allow deletion
 * `version` — Manage installed spacetime versions
@@ -749,6 +756,129 @@ Run `spacetime start --help` to see all options.
 
   Possible values: `standalone`, `cloud`
 
+
+
+
+## `spacetime container`
+
+Manage the container attached to a database
+
+**Usage:** `spacetime container <COMMAND>`
+
+###### **Subcommands:**
+
+* `set` — Attach a container to a database, replacing any existing one
+* `status` — Show the database's container
+* `start` — Start the database's container
+* `stop` — Stop the database's container
+* `remove` — Detach the container from the database, stopping it
+
+
+
+## `spacetime container set`
+
+Attach a container to a database, replacing any existing one
+
+**Usage:** `spacetime container set [OPTIONS] --image <image> [database] [-- <command>...]`
+
+###### **Arguments:**
+
+* `<COMMAND>` — Replaces the image's entrypoint and command
+* `<DATABASE>` — The name or identity of the database
+
+###### **Options:**
+
+* `--image <IMAGE>` — An OCI image reference pinned to a digest, like `name@sha256:<hex>`
+* `--env-key <ENV_KEY>` — A database environment key to set in the container (repeatable)
+* `--port <PORT>` — A port the container serves, as `name=port` (repeatable)
+* `--cpu-millicores <CPU_MILLICORES>` — CPU limit, in thousandths of a CPU
+
+  Default value: `1000`
+* `--memory-bytes <MEMORY_BYTES>` — Memory limit, in bytes; swap is disabled
+
+  Default value: `1073741824`
+* `--scratch-bytes <SCRATCH_BYTES>` — Limit on the writable layer, including /tmp, in bytes
+
+  Default value: `1073741824`
+* `--pids-max <PIDS_MAX>` — Limit on Linux tasks, including threads
+
+  Default value: `512`
+* `--restart <RESTART>` — When to restart the main command after it exits
+
+  Default value: `on-failure`
+
+  Possible values: `on-failure`, `always`, `never`
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime container status`
+
+Show the database's container
+
+**Usage:** `spacetime container status [OPTIONS] [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime container start`
+
+Start the database's container
+
+**Usage:** `spacetime container start [OPTIONS] [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime container stop`
+
+Stop the database's container
+
+**Usage:** `spacetime container stop [OPTIONS] [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime container remove`
+
+Detach the container from the database, stopping it
+
+**Usage:** `spacetime container remove [OPTIONS] [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
