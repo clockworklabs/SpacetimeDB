@@ -9,19 +9,8 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "spacetimedb";
-import {
-  ChatUserStatus,
-} from "./types";
-
 
 export default __t.row({
-  identity: __t.identity().primaryKey(),
   userId: __t.string().name("user_id"),
   displayName: __t.string().name("display_name"),
-  get status() {
-    return ChatUserStatus;
-  },
-  createdAt: __t.timestamp().name("created_at"),
-  lastActiveAt: __t.timestamp().name("last_active_at"),
-  lastMessageAt: __t.timestamp().name("last_message_at"),
 });

@@ -13,12 +13,10 @@ import {
   typingScope,
 } from './chat-policy';
 import { registerChatViews } from './views';
-import { chatSweepTick, spacetimedb, type DbSchema } from './schema';
+import { chatSweepTick, spacetimedb } from './schema';
 
-const ONE_SECOND_MICROS = 1_000_000n;
 const TYPING_TTL_SECONDS = 4;
-const CHAT_SWEEP_INTERVAL_SECONDS = 10n;
-const ACTIVITY_WINDOW_SECONDS = 5 * 60;
+const CHAT_SWEEP_INTERVAL_MICROS = 10n * 1_000_000n;
 const ACTIVITY_CLEANUP_BATCH = 1000;
 const ROOM_NAME_MAX = 64;
 const DISPLAY_NAME_MAX = 32;
@@ -41,20 +39,17 @@ const consoleSendMail: auth.SendMailFn = (_ctx, params) => {
 // pins down the exact set of values this app supports.
 import { chatUserStatus, message } from './model';
 import {
+  ACTIVITY_WINDOW_MICROS,
   canModerateRoom,
   canReadAttachmentFile,
   deleteMessageTree,
-  chatStatusToString,
   enforceChatRateLimit,
   ensureUser,
   findMembership,
   findServerMembership,
-  identitiesEqual as eqIdentity,
-  identityHex,
   insertRoom,
   normalizeText,
   removeTypingPresence,
-  requireAuthenticatedUserId,
   requireMembership,
   requireRoom,
   requireRoomAdminOrOwner,
@@ -72,6 +67,7 @@ export default spacetimedb;
 export type { DbSchema } from './schema';
 export const {
   myServers,
+  serverDirectory,
   myServerMembers,
   myChatUsers,
   myPresenceEntries,
@@ -91,49 +87,19 @@ export const init = spacetimedb.init(ctx => {
   presence.install(ctx.as.presence);
   ctx.db.chatSweepTick.insert({
     scheduledId: 0n,
-    scheduledAt: ScheduleAt.interval(
-      CHAT_SWEEP_INTERVAL_SECONDS * ONE_SECOND_MICROS
-    ),
+    scheduledAt: ScheduleAt.interval(CHAT_SWEEP_INTERVAL_MICROS),
   });
 });
 
 export const heartbeat = spacetimedb.reducer({}, ctx => {
-  const userId = requireAuthenticatedUserId(ctx);
-  const tx: Tx = ctx;
-  const user = ensureUser(tx, userId);
-  const next = { ...user, lastActiveAt: tx.timestamp };
-  tx.db.chatUser.identity.update(next);
-  updateGlobalPresence(tx, next);
+  const userId = auth.requireCallerUserId(ctx.as.auth);
+  updateGlobalPresence(ctx, ensureUser(ctx, userId));
 });
-
-export const whoami = spacetimedb.procedure(
-  {},
-  t.object('WhoAmI', {
-    userId: t.option(t.string()),
-    senderIdentityHex: t.string(),
-    userDisplayName: t.option(t.string()),
-    userStatus: t.option(t.string()),
-  }),
-  ctx =>
-    ctx.withTx(tx => {
-      const binding = tx.db.auth.authConnectionBinding.stdbIdentity.find(
-        tx.sender
-      );
-      const userId = binding?.userId ?? undefined;
-      const user = tx.db.chatUser.identity.find(tx.sender);
-      return {
-        userId,
-        senderIdentityHex: identityHex(tx.sender),
-        userDisplayName: user?.displayName,
-        userStatus: user ? chatStatusToString(user.status) : undefined,
-      };
-    })
-);
 
 export const setDisplayName = spacetimedb.reducer(
   { displayName: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const displayName = normalizeText(
       'display_name',
       args.displayName,
@@ -142,21 +108,18 @@ export const setDisplayName = spacetimedb.reducer(
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_PROFILE);
     const user = ensureUser(tx, userId);
-    const next = { ...user, displayName, lastActiveAt: tx.timestamp };
-    tx.db.chatUser.identity.update(next);
-    updateGlobalPresence(tx, next);
+    tx.db.chatUser.userId.update({ ...user, displayName });
   }
 );
 
 export const setStatus = spacetimedb.reducer(
   { status: chatUserStatus },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_PROFILE);
-    const user = ensureUser(tx, userId);
-    const next = { ...user, status: args.status, lastActiveAt: tx.timestamp };
-    tx.db.chatUser.identity.update(next);
+    const next = { ...ensureUser(tx, userId), status: args.status };
+    tx.db.chatUser.userId.update(next);
     updateGlobalPresence(tx, next);
   }
 );
@@ -164,7 +127,7 @@ export const setStatus = spacetimedb.reducer(
 export const createServer = spacetimedb.reducer(
   { name: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const name = normalizeText('server_name', args.name, ROOM_NAME_MAX);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
@@ -195,7 +158,7 @@ export const createServer = spacetimedb.reducer(
 export const renameServer = spacetimedb.reducer(
   { serverId: t.u64(), name: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const name = normalizeText('server_name', args.name, ROOM_NAME_MAX);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
@@ -208,7 +171,7 @@ export const renameServer = spacetimedb.reducer(
 export const deleteServer = spacetimedb.reducer(
   { serverId: t.u64() },
   (ctx, { serverId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const srv = requireServer(tx, serverId);
@@ -235,7 +198,7 @@ export const deleteServer = spacetimedb.reducer(
 export const joinServer = spacetimedb.reducer(
   { serverId: t.u64() },
   (ctx, { serverId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     ensureUser(tx, userId);
@@ -254,7 +217,7 @@ export const joinServer = spacetimedb.reducer(
 export const leaveServer = spacetimedb.reducer(
   { serverId: t.u64() },
   (ctx, { serverId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     const srv = requireServer(tx, serverId);
     if (srv.createdByUserId === userId)
@@ -276,7 +239,7 @@ export const createRoom = spacetimedb.reducer(
     category: t.option(t.string()),
   },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const name = normalizeText('room_name', args.name, ROOM_NAME_MAX);
     const category = args.category
       ? normalizeText('room_category', args.category, ROOM_NAME_MAX)
@@ -300,12 +263,13 @@ export const createRoom = spacetimedb.reducer(
 export const joinRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     ensureUser(tx, userId);
     const targetRoom = requireRoom(tx, roomId);
     if (targetRoom.isPrivate) senderError('chat.room_private');
+    requireServerMembership(tx, targetRoom.serverId, userId);
     const existing = findMembership(tx, roomId, userId);
     if (existing) return;
     tx.db.roomMember.insert({
@@ -318,22 +282,43 @@ export const joinRoom = spacetimedb.reducer(
   }
 );
 
+// Room admins add server members to a room; this is how private rooms gain
+// members.
+export const addRoomMember = spacetimedb.reducer(
+  { roomId: t.u64(), userId: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const targetRoom = requireRoomAdminOrOwner(tx, args.roomId, userId);
+    requireServerMembership(tx, targetRoom.serverId, args.userId);
+    if (findMembership(tx, args.roomId, args.userId)) return;
+    tx.db.roomMember.insert({
+      id: 0n,
+      roomId: args.roomId,
+      userId: args.userId,
+      role: 'member',
+      joinedAt: tx.timestamp,
+    });
+  }
+);
+
 export const leaveRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     requireRoom(tx, roomId);
     const membership = requireMembership(tx, roomId, userId);
     tx.db.roomMember.id.delete(membership.id);
-    removeTypingPresence(tx, roomId, tx.sender);
+    removeTypingPresence(tx, roomId, userId);
   }
 );
 
 export const renameRoom = spacetimedb.reducer(
   { roomId: t.u64(), name: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const name = normalizeText('room_name', args.name, ROOM_NAME_MAX);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
@@ -345,7 +330,7 @@ export const renameRoom = spacetimedb.reducer(
 export const setRoomCategory = spacetimedb.reducer(
   { roomId: t.u64(), category: t.option(t.string()) },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const category = args.category
       ? normalizeText('room_category', args.category, ROOM_NAME_MAX)
       : undefined;
@@ -359,7 +344,7 @@ export const setRoomCategory = spacetimedb.reducer(
 export const setRoomPrivacy = spacetimedb.reducer(
   { roomId: t.u64(), isPrivate: t.bool() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
@@ -370,7 +355,7 @@ export const setRoomPrivacy = spacetimedb.reducer(
 export const deleteRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
     requireRoomAdminOrOwner(tx, roomId, userId);
@@ -384,11 +369,6 @@ export const deleteRoom = spacetimedb.reducer(
       tx.db.roomMember.id.delete(mem.id);
     for (const ev of [...tx.db.roomActivityEvent.roomId.filter(roomId)])
       tx.db.roomActivityEvent.id.delete(ev.id);
-    presence.removePresence(
-      tx.as.presence,
-      typingScope(roomId),
-      identityHex(tx.sender)
-    );
     tx.db.room.id.delete(roomId);
   }
 );
@@ -410,10 +390,8 @@ export const getAttachmentFile = spacetimedb.procedure(
   attachmentFileResult,
   (ctx, args) =>
     ctx.withTx(tx => {
-      const binding = tx.db.auth.authConnectionBinding.stdbIdentity.find(
-        tx.sender
-      );
-      if (!binding || !canReadAttachmentFile(tx, binding.userId, args.fileId)) {
+      const userId = auth.getCallerUserId(tx.as.auth);
+      if (!userId || !canReadAttachmentFile(tx, userId, args.fileId)) {
         senderError('chat.attachment_not_found');
       }
       const file = tx.db.files.file.id.find(args.fileId);
@@ -441,7 +419,7 @@ export const sendMessage = spacetimedb.reducer(
     attachments: t.array(attachmentInput),
   },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const trimmedContent = args.content.trim().replace(/\s+/g, ' ');
     const hasAttachments = args.attachments.length > 0;
     if (!hasAttachments && trimmedContent.length === 0)
@@ -471,7 +449,7 @@ export const sendMessage = spacetimedb.reducer(
 
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
-    const user = ensureUser(tx, userId);
+    ensureUser(tx, userId);
     requireRoom(tx, args.roomId);
     requireMembership(tx, args.roomId, userId);
 
@@ -484,13 +462,13 @@ export const sendMessage = spacetimedb.reducer(
     const msg = tx.db.message.insert({
       id: 0n,
       roomId: args.roomId,
-      author: tx.sender,
+      authorUserId: userId,
       content: trimmedContent,
       createdAt: tx.timestamp,
       editedAt: undefined,
       replyToMessageId: args.replyToMessageId,
       pinnedAt: undefined,
-      pinnedBy: undefined,
+      pinnedByUserId: undefined,
     });
 
     for (let i = 0; i < args.attachments.length; i++) {
@@ -523,21 +501,14 @@ export const sendMessage = spacetimedb.reducer(
       createdAt: tx.timestamp,
     });
     updateRoomActivity(tx, args.roomId);
-    removeTypingPresence(tx, args.roomId, tx.sender);
-    const nextUser = {
-      ...user,
-      lastActiveAt: tx.timestamp,
-      lastMessageAt: tx.timestamp,
-    };
-    tx.db.chatUser.identity.update(nextUser);
-    updateGlobalPresence(tx, nextUser);
+    removeTypingPresence(tx, args.roomId, userId);
   }
 );
 
 export const editMessage = spacetimedb.reducer(
   { messageId: t.u64(), content: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const content = normalizeText('message', args.content, MESSAGE_MAX);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
@@ -545,8 +516,7 @@ export const editMessage = spacetimedb.reducer(
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');
     requireMembership(tx, msg.roomId, userId);
-    if (!eqIdentity(msg.author, tx.sender))
-      senderError('chat.not_message_author');
+    if (msg.authorUserId !== userId) senderError('chat.not_message_author');
     tx.db.message.id.update({
       ...msg,
       content,
@@ -558,17 +528,14 @@ export const editMessage = spacetimedb.reducer(
 export const deleteMessage = spacetimedb.reducer(
   { messageId: t.u64() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     ensureUser(tx, userId);
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');
     requireMembership(tx, msg.roomId, userId);
-    if (
-      !eqIdentity(msg.author, tx.sender) &&
-      !canModerateRoom(tx, msg.roomId, userId)
-    )
+    if (msg.authorUserId !== userId && !canModerateRoom(tx, msg.roomId, userId))
       senderError('chat.not_message_author');
     deleteMessageTree(tx, msg);
   }
@@ -577,11 +544,11 @@ export const deleteMessage = spacetimedb.reducer(
 export const sendThreadMessage = spacetimedb.reducer(
   { rootMessageId: t.u64(), content: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const content = normalizeText('thread_message', args.content, MESSAGE_MAX);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
-    const user = ensureUser(tx, userId);
+    ensureUser(tx, userId);
     const root = tx.db.message.id.find(args.rootMessageId);
     if (!root) senderError('chat.message_not_found');
     requireMembership(tx, root.roomId, userId);
@@ -592,7 +559,7 @@ export const sendThreadMessage = spacetimedb.reducer(
         id: 0n,
         rootMessageId: root.id,
         roomId: root.roomId,
-        createdBy: tx.sender,
+        createdByUserId: userId,
         createdAt: tx.timestamp,
         updatedAt: tx.timestamp,
       });
@@ -603,26 +570,18 @@ export const sendThreadMessage = spacetimedb.reducer(
     tx.db.threadMessage.insert({
       id: 0n,
       threadId: thread.id,
-      author: tx.sender,
+      authorUserId: userId,
       content,
       createdAt: tx.timestamp,
       editedAt: undefined,
     });
-
-    const nextUser = {
-      ...user,
-      lastActiveAt: tx.timestamp,
-      lastMessageAt: tx.timestamp,
-    };
-    tx.db.chatUser.identity.update(nextUser);
-    updateGlobalPresence(tx, nextUser);
   }
 );
 
 export const editThreadMessage = spacetimedb.reducer(
   { threadMessageId: t.u64(), content: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const content = normalizeText('thread_message', args.content, MESSAGE_MAX);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
@@ -632,8 +591,7 @@ export const editThreadMessage = spacetimedb.reducer(
     const thread = tx.db.messageThread.id.find(msg.threadId);
     if (!thread) senderError('chat.thread_not_found');
     requireMembership(tx, thread.roomId, userId);
-    if (!eqIdentity(msg.author, tx.sender))
-      senderError('chat.not_message_author');
+    if (msg.authorUserId !== userId) senderError('chat.not_message_author');
     tx.db.threadMessage.id.update({ ...msg, content, editedAt: tx.timestamp });
   }
 );
@@ -641,7 +599,7 @@ export const editThreadMessage = spacetimedb.reducer(
 export const deleteThreadMessage = spacetimedb.reducer(
   { threadMessageId: t.u64() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
     ensureUser(tx, userId);
@@ -651,7 +609,7 @@ export const deleteThreadMessage = spacetimedb.reducer(
     if (!thread) senderError('chat.thread_not_found');
     requireMembership(tx, thread.roomId, userId);
     if (
-      !eqIdentity(msg.author, tx.sender) &&
+      msg.authorUserId !== userId &&
       !canModerateRoom(tx, thread.roomId, userId)
     )
       senderError('chat.not_message_author');
@@ -674,21 +632,17 @@ export const deleteThreadMessage = spacetimedb.reducer(
 export const startTyping = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     enforceChatRateLimit(tx, userId, RATE_LIMIT_TYPING);
     const user = ensureUser(tx, userId);
     requireRoom(tx, roomId);
     requireMembership(tx, roomId, userId);
+    if (user.status.tag === 'Invisible') return;
     presence.upsertPresence(tx.as.presence, {
       scope: typingScope(roomId),
-      subject: identityHex(tx.sender),
+      subject: userId,
       status: 'typing',
-      activity: 'typing',
-      payloadJson: JSON.stringify({
-        displayName: user.displayName,
-        userId: user.userId,
-      }),
       ttlSeconds: TYPING_TTL_SECONDS,
     });
   }
@@ -697,16 +651,14 @@ export const startTyping = spacetimedb.reducer(
 export const stopTyping = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
-    requireAuthenticatedUserId(ctx);
-    const tx: Tx = ctx;
-    removeTypingPresence(tx, roomId, tx.sender);
+    removeTypingPresence(ctx, roomId, auth.requireCallerUserId(ctx.as.auth));
   }
 );
 
 export const markRoomRead = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     requireRoom(tx, roomId);
     requireMembership(tx, roomId, userId);
@@ -719,14 +671,14 @@ export const markRoomRead = spacetimedb.reducer(
         latestMessageId = msg.id;
       }
     }
-    upsertRoomReadCursor(tx, roomId, latestMessageId);
+    upsertRoomReadCursor(tx, roomId, userId, latestMessageId);
   }
 );
 
 export const toggleReaction = spacetimedb.reducer(
   { messageId: t.u64(), emoji: t.string() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const emoji = args.emoji.trim();
     if (!ALLOWED_REACTIONS.has(emoji))
       senderError('chat.invalid_reaction_emoji');
@@ -737,7 +689,7 @@ export const toggleReaction = spacetimedb.reducer(
     if (!msg) senderError('chat.message_not_found');
     requireMembership(tx, msg.roomId, userId);
     for (const r of tx.db.messageReaction.messageId.filter(msg.id)) {
-      if (eqIdentity(r.identity, tx.sender) && r.emoji === emoji) {
+      if (r.userId === userId && r.emoji === emoji) {
         tx.db.messageReaction.id.delete(r.id);
         return;
       }
@@ -745,7 +697,7 @@ export const toggleReaction = spacetimedb.reducer(
     tx.db.messageReaction.insert({
       id: 0n,
       messageId: msg.id,
-      identity: tx.sender,
+      userId,
       emoji,
       createdAt: tx.timestamp,
     });
@@ -755,7 +707,7 @@ export const toggleReaction = spacetimedb.reducer(
 export const pinMessage = spacetimedb.reducer(
   { messageId: t.u64() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');
@@ -764,7 +716,7 @@ export const pinMessage = spacetimedb.reducer(
     tx.db.message.id.update({
       ...msg,
       pinnedAt: tx.timestamp,
-      pinnedBy: tx.sender,
+      pinnedByUserId: userId,
     });
   }
 );
@@ -772,7 +724,7 @@ export const pinMessage = spacetimedb.reducer(
 export const unpinMessage = spacetimedb.reducer(
   { messageId: t.u64() },
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const tx: Tx = ctx;
     const msg = tx.db.message.id.find(args.messageId);
     if (!msg) senderError('chat.message_not_found');
@@ -781,7 +733,7 @@ export const unpinMessage = spacetimedb.reducer(
     tx.db.message.id.update({
       ...msg,
       pinnedAt: undefined,
-      pinnedBy: undefined,
+      pinnedByUserId: undefined,
     });
   }
 );
@@ -792,7 +744,7 @@ export const searchMessages = spacetimedb.procedure(
   { roomId: t.u64(), query: t.string() },
   t.array(message.rowType),
   (ctx, args) => {
-    const userId = requireAuthenticatedUserId(ctx);
+    const userId = auth.requireCallerUserId(ctx.as.auth);
     const q = args.query.trim().slice(0, SEARCH_QUERY_MAX).toLowerCase();
     if (q.length === 0) return [];
     return ctx.withTx(tx => {
@@ -814,9 +766,7 @@ export const chatSweep = spacetimedb.reducer(
   { onSchedule: chatSweepTick },
   { arg: chatSweepTick.rowType },
   ctx => {
-    const cutoff =
-      (ctx.timestamp.microsSinceUnixEpoch as bigint) -
-      BigInt(ACTIVITY_WINDOW_SECONDS) * ONE_SECOND_MICROS;
+    const cutoff = ctx.timestamp.microsSinceUnixEpoch - ACTIVITY_WINDOW_MICROS;
     let deleted = 0;
     const affectedRoomIds = new Set<bigint>();
     for (const evt of ctx.db.roomActivityEvent.iter()) {

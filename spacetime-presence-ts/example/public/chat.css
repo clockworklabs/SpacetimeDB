@@ -1396,3 +1396,23 @@ main.shell:not(.signed-out) .chat-body > .main {
 .search-submit:hover {
   color: var(--color-n1);
 }
+
+.modal-body h4 {
+  margin: 8px 0 0;
+  color: var(--color-n3);
+  font-size: 13px;
+}
+.directory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.directory-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-n2);
+}

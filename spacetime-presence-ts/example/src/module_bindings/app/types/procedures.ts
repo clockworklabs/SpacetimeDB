@@ -8,12 +8,9 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all procedure arg schemas
 import * as GetAttachmentFileProcedure from "../get_attachment_file_procedure";
 import * as SearchMessagesProcedure from "../search_messages_procedure";
-import * as WhoamiProcedure from "../whoami_procedure";
 
 export type GetAttachmentFileArgs = __Infer<typeof GetAttachmentFileProcedure.params>;
 export type GetAttachmentFileResult = __Infer<typeof GetAttachmentFileProcedure.returnType>;
 export type SearchMessagesArgs = __Infer<typeof SearchMessagesProcedure.params>;
 export type SearchMessagesResult = __Infer<typeof SearchMessagesProcedure.returnType>;
-export type WhoamiArgs = __Infer<typeof WhoamiProcedure.params>;
-export type WhoamiResult = __Infer<typeof WhoamiProcedure.returnType>;
 

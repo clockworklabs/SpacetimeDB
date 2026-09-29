@@ -15,41 +15,37 @@ import {
   myServers,
   roomsInServer,
   threadMessagesForRoot,
+  statusOf,
   typingForRoom,
-  userByHex,
+  userByUserId,
 } from '../public/chat-model.js';
 import { applyChatData, chatState } from '../public/chat-state.js';
 
-const identity = value => ({ toHexString: () => value });
-const me = identity('me');
-const other = identity('other');
-
 Object.assign(chatState, {
-  meHex: 'me',
-  userId: 10n,
+  userId: 'me',
   userEmail: 'me@example.com',
   activeServerId: 1n,
   activeRoomId: 2n,
-  servers: [{ id: 1n, name: 'Server', createdByUserId: 10n }],
+  servers: [{ id: 1n, name: 'Server', createdByUserId: 'me' }],
   serverMembers: [
-    { serverId: 1n, userId: 10n },
-    { serverId: 3n, userId: 20n },
+    { serverId: 1n, userId: 'me' },
+    { serverId: 3n, userId: 'other' },
   ],
   rooms: [
-    { id: 2n, serverId: 1n, createdByUserId: 20n },
-    { id: 4n, serverId: 3n, createdByUserId: 20n },
+    { id: 2n, serverId: 1n, createdByUserId: 'other' },
+    { id: 4n, serverId: 3n, createdByUserId: 'other' },
   ],
   users: [
-    { userId: 10n, identity: me, displayName: 'Me' },
-    { userId: 20n, identity: other, displayName: 'Other' },
+    { userId: 'me', displayName: 'Me' },
+    { userId: 'other', displayName: 'Other' },
   ],
   members: [
-    { roomId: 2n, userId: 10n },
-    { roomId: 4n, userId: 20n },
+    { roomId: 2n, userId: 'me' },
+    { roomId: 4n, userId: 'other' },
   ],
   messages: [
-    { id: 5n, roomId: 2n, author: other, content: 'First' },
-    { id: 8n, roomId: 2n, author: me, content: '' },
+    { id: 5n, roomId: 2n, authorUserId: 'other', content: 'First' },
+    { id: 8n, roomId: 2n, authorUserId: 'me', content: '' },
   ],
   attachments: [
     { id: 2n, fileId: 2n, messageId: 8n, ordinal: 2 },
@@ -61,8 +57,8 @@ Object.assign(chatState, {
     { id: 10n, threadId: 8n },
   ],
   cursors: [
-    { identity: me, roomId: 2n, lastReadMessageId: 5n },
-    { identity: other, roomId: 2n, lastReadMessageId: 8n },
+    { userId: 'me', roomId: 2n, lastReadMessageId: 5n },
+    { userId: 'other', roomId: 2n, lastReadMessageId: 8n },
   ],
   presence: [
     { scope: 'chat.global', subject: 'me', status: 'online' },
@@ -94,8 +90,10 @@ assert.deepEqual(
 assert.equal(latestMessageByRoom().get(2n)?.id, 8n);
 assert.equal(myReadCursorByRoom().get(2n), 5n);
 assert.equal(globalPresenceBySubject().get('me')?.status, 'online');
+assert.equal(statusOf('me', globalPresenceBySubject()), 'online');
+assert.equal(statusOf('other', globalPresenceBySubject()), 'offline');
 assert.deepEqual(typingForRoom(2n), ['other']);
-assert.equal(userByHex().get('me')?.displayName, 'Me');
+assert.equal(userByUserId().get('me')?.displayName, 'Me');
 assert.deepEqual(
   attachmentsByMessage()
     .get(8n)
@@ -105,7 +103,7 @@ assert.deepEqual(
 
 applyChatData({ activeServerId: 3n, activeRoomId: 4n, rooms: [] });
 assert.equal(chatState.activeServerId, 3n);
-assert.equal(chatState.userId, 10n);
+assert.equal(chatState.userId, 'me');
 assert.equal(chatState.userEmail, 'me@example.com');
 
 console.log('presence UI model tests passed');

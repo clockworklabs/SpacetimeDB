@@ -11,7 +11,7 @@ import {
 } from './chat-policy';
 import {
   attachmentViewRow,
-  chatUser,
+  chatUserProfile,
   message,
   messageReaction,
   messageThread,
@@ -26,13 +26,18 @@ import type { DbSchema } from './schema';
 
 type SpacetimeDb = typeof import('./schema').spacetimedb;
 
+const MAX_DIRECTORY_ROWS = 200;
+
+function callerUserId(ctx: ViewCtx<DbSchema>): string | undefined {
+  return ctx.db.auth.authConnectionBinding.stdbIdentity.find(ctx.sender)
+    ?.userId;
+}
+
 function myRoomIds(ctx: ViewCtx<DbSchema>): Set<bigint> {
   const out = new Set<bigint>();
-  const binding = ctx.db.auth.authConnectionBinding.stdbIdentity.find(
-    ctx.sender
-  );
-  if (!binding) return out;
-  for (const membership of ctx.db.roomMember.userId.filter(binding.userId)) {
+  const userId = callerUserId(ctx);
+  if (!userId) return out;
+  for (const membership of ctx.db.roomMember.userId.filter(userId)) {
     out.add(membership.roomId);
   }
   return out;
@@ -40,16 +45,10 @@ function myRoomIds(ctx: ViewCtx<DbSchema>): Set<bigint> {
 
 function myServerIds(ctx: ViewCtx<DbSchema>): Set<bigint> {
   const out = new Set<bigint>();
-  const binding = ctx.db.auth.authConnectionBinding.stdbIdentity.find(
-    ctx.sender
-  );
-  if (!binding) return out;
-  for (const membership of ctx.db.serverMember.userId.filter(binding.userId)) {
+  const userId = callerUserId(ctx);
+  if (!userId) return out;
+  for (const membership of ctx.db.serverMember.userId.filter(userId)) {
     out.add(membership.serverId);
-  }
-  for (const roomId of myRoomIds(ctx)) {
-    const roomRow = ctx.db.room.id.find(roomId);
-    if (roomRow) out.add(roomRow.serverId);
   }
   return out;
 }
@@ -77,36 +76,16 @@ function myThreadIds(
   return out;
 }
 
-function myVisibleUserIds(
-  ctx: ViewCtx<DbSchema>,
-  serverIds = myServerIds(ctx),
-  roomIds = myRoomIds(ctx)
-): Set<string> {
+// The caller and everyone who shares a server with them. Room members are
+// always members of the room's server.
+function myVisibleUserIds(ctx: ViewCtx<DbSchema>): Set<string> {
   const out = new Set<string>();
-  const binding = ctx.db.auth.authConnectionBinding.stdbIdentity.find(
-    ctx.sender
-  );
-  if (binding) out.add(binding.userId);
-  for (const serverId of serverIds) {
+  const userId = callerUserId(ctx);
+  if (!userId) return out;
+  out.add(userId);
+  for (const serverId of myServerIds(ctx)) {
     for (const row of ctx.db.serverMember.serverId.filter(serverId))
       out.add(row.userId);
-  }
-  for (const roomId of roomIds) {
-    for (const row of ctx.db.roomMember.roomId.filter(roomId))
-      out.add(row.userId);
-  }
-  return out;
-}
-
-function myVisibleIdentitySubjects(
-  ctx: ViewCtx<DbSchema>,
-  userIds: Set<string>
-): Set<string> {
-  const out = new Set<string>();
-  for (const userId of userIds) {
-    for (const user of ctx.db.chatUser.userId.filter(userId)) {
-      out.add(user.identity.toHexString());
-    }
   }
   return out;
 }
@@ -134,6 +113,22 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
     }
   );
 
+  // Servers a signed-in caller can join.
+  const serverDirectory = spacetimedb.view(
+    { name: 'server_directory', public: true },
+    t.array(server.rowType),
+    ctx => {
+      if (!callerUserId(ctx)) return [];
+      const joined = myServerIds(ctx);
+      const out = [];
+      for (const row of ctx.db.server.iter()) {
+        if (out.length >= MAX_DIRECTORY_ROWS) break;
+        if (!joined.has(row.id)) out.push(row);
+      }
+      return out;
+    }
+  );
+
   const myServerMembers = spacetimedb.view(
     { name: 'my_server_members', public: true },
     t.array(serverMember.rowType),
@@ -149,11 +144,12 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
 
   const myChatUsers = spacetimedb.view(
     { name: 'my_chat_users', public: true },
-    t.array(chatUser.rowType),
+    t.array(chatUserProfile),
     ctx => {
       const out = [];
       for (const userId of myVisibleUserIds(ctx)) {
-        for (const row of ctx.db.chatUser.userId.filter(userId)) out.push(row);
+        const row = ctx.db.chatUser.userId.find(userId);
+        if (row) out.push({ userId: row.userId, displayName: row.displayName });
       }
       return out;
     }
@@ -163,38 +159,36 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
     { name: 'my_presence_entries', public: true },
     t.array(presence.presenceEntry.rowType),
     ctx => {
-      const roomIds = myRoomIds(ctx);
-      const visibleSubjects = myVisibleIdentitySubjects(
-        ctx,
-        myVisibleUserIds(ctx, myServerIds(ctx), roomIds)
-      );
       const out = [];
-      for (const subject of visibleSubjects) {
+      for (const userId of myVisibleUserIds(ctx)) {
         for (const entry of ctx.db.presence.presenceEntry.subject.filter(
-          subject
+          userId
         )) {
           if (entry.scope === PRESENCE_SCOPE_GLOBAL) out.push(entry);
         }
       }
-      for (const roomId of roomIds) {
+      for (const roomId of myRoomIds(ctx)) {
         for (const entry of ctx.db.presence.presenceEntry.scope.filter(
           typingScope(roomId)
-        )) {
-          if (visibleSubjects.has(entry.subject)) out.push(entry);
-        }
+        ))
+          out.push(entry);
       }
       return out;
     }
   );
 
+  // Joined rooms plus the public rooms of the caller's servers, which the
+  // caller can join.
   const myRooms = spacetimedb.view(
     { name: 'my_rooms', public: true },
     t.array(room.rowType),
     ctx => {
+      const joined = myRoomIds(ctx);
       const out = [];
-      for (const roomId of myRoomIds(ctx)) {
-        const row = ctx.db.room.id.find(roomId);
-        if (row) out.push(row);
+      for (const serverId of myServerIds(ctx)) {
+        for (const row of ctx.db.room.serverId.filter(serverId)) {
+          if (!row.isPrivate || joined.has(row.id)) out.push(row);
+        }
       }
       return out;
     }
@@ -302,17 +296,18 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
   const myRoomReadCursors = spacetimedb.view(
     { name: 'my_room_read_cursors', public: true },
     t.array(roomReadCursor.rowType),
-    ctx => [...ctx.db.roomReadCursor.identity.filter(ctx.sender)]
+    ctx => {
+      const userId = callerUserId(ctx);
+      return userId ? [...ctx.db.roomReadCursor.userId.filter(userId)] : [];
+    }
   );
 
   const myRateLimitStatus = spacetimedb.view(
     { name: 'my_rate_limit_status', public: true },
     t.array(rateLimitStatusRow),
     ctx => {
-      const binding = ctx.db.auth.authConnectionBinding.stdbIdentity.find(
-        ctx.sender
-      );
-      if (!binding) return [];
+      const userId = callerUserId(ctx);
+      if (!userId) return [];
       const out = [];
       for (const limit of [
         RATE_LIMIT_SEND,
@@ -321,7 +316,7 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
         RATE_LIMIT_REACTION,
         RATE_LIMIT_PROFILE,
       ]) {
-        const status = limit.peek(ctx.db.rateLimit, binding.userId);
+        const status = limit.peek(ctx.db.rateLimit, userId);
         if (status.resetAt === undefined) continue;
         out.push({
           scope: limit.scope,
@@ -337,6 +332,7 @@ export function registerChatViews(spacetimedb: SpacetimeDb) {
 
   return {
     myServers,
+    serverDirectory,
     myServerMembers,
     myChatUsers,
     myPresenceEntries,

@@ -51,17 +51,19 @@ export const ChatSweepTick = __t.object("ChatSweepTick", {
 export type ChatSweepTick = __Infer<typeof ChatSweepTick>;
 
 export const ChatUser = __t.object("ChatUser", {
-  identity: __t.identity(),
   userId: __t.string(),
   displayName: __t.string(),
   get status() {
     return ChatUserStatus;
   },
-  createdAt: __t.timestamp(),
-  lastActiveAt: __t.timestamp(),
-  lastMessageAt: __t.timestamp(),
 });
 export type ChatUser = __Infer<typeof ChatUser>;
+
+export const ChatUserProfile = __t.object("ChatUserProfile", {
+  userId: __t.string(),
+  displayName: __t.string(),
+});
+export type ChatUserProfile = __Infer<typeof ChatUserProfile>;
 
 // The tagged union or sum type for the algebraic type `ChatUserStatus`.
 export const ChatUserStatus = __t.enum("ChatUserStatus", {
@@ -75,20 +77,20 @@ export type ChatUserStatus = __Infer<typeof ChatUserStatus>;
 export const Message = __t.object("Message", {
   id: __t.u64(),
   roomId: __t.u64(),
-  author: __t.identity(),
+  authorUserId: __t.string(),
   content: __t.string(),
   createdAt: __t.timestamp(),
   editedAt: __t.option(__t.timestamp()),
   replyToMessageId: __t.option(__t.u64()),
   pinnedAt: __t.option(__t.timestamp()),
-  pinnedBy: __t.option(__t.identity()),
+  pinnedByUserId: __t.option(__t.string()),
 });
 export type Message = __Infer<typeof Message>;
 
 export const MessageReaction = __t.object("MessageReaction", {
   id: __t.u64(),
   messageId: __t.u64(),
-  identity: __t.identity(),
+  userId: __t.string(),
   emoji: __t.string(),
   createdAt: __t.timestamp(),
 });
@@ -98,7 +100,7 @@ export const MessageThread = __t.object("MessageThread", {
   id: __t.u64(),
   rootMessageId: __t.u64(),
   roomId: __t.u64(),
-  createdBy: __t.identity(),
+  createdByUserId: __t.string(),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
 });
@@ -207,7 +209,7 @@ export type RoomMember = __Infer<typeof RoomMember>;
 export const RoomReadCursor = __t.object("RoomReadCursor", {
   id: __t.u64(),
   roomId: __t.u64(),
-  identity: __t.identity(),
+  userId: __t.string(),
   lastReadMessageId: __t.u64(),
   lastReadAt: __t.timestamp(),
 });
@@ -221,6 +223,9 @@ export const Server = __t.object("Server", {
 });
 export type Server = __Infer<typeof Server>;
 
+export const ServerDirectory = __t.object("ServerDirectory", {});
+export type ServerDirectory = __Infer<typeof ServerDirectory>;
+
 export const ServerMember = __t.object("ServerMember", {
   id: __t.u64(),
   serverId: __t.u64(),
@@ -233,18 +238,10 @@ export type ServerMember = __Infer<typeof ServerMember>;
 export const ThreadMessage = __t.object("ThreadMessage", {
   id: __t.u64(),
   threadId: __t.u64(),
-  author: __t.identity(),
+  authorUserId: __t.string(),
   content: __t.string(),
   createdAt: __t.timestamp(),
   editedAt: __t.option(__t.timestamp()),
 });
 export type ThreadMessage = __Infer<typeof ThreadMessage>;
-
-export const WhoAmI = __t.object("WhoAmI", {
-  userId: __t.option(__t.string()),
-  senderIdentityHex: __t.string(),
-  userDisplayName: __t.option(__t.string()),
-  userStatus: __t.option(__t.string()),
-});
-export type WhoAmI = __Infer<typeof WhoAmI>;
 

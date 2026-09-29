@@ -12,9 +12,7 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  rootMessageId: __t.u64().name("root_message_id"),
-  roomId: __t.u64().name("room_id"),
+  name: __t.string(),
   createdByUserId: __t.string().name("created_by_user_id"),
   createdAt: __t.timestamp().name("created_at"),
-  updatedAt: __t.timestamp().name("updated_at"),
 });

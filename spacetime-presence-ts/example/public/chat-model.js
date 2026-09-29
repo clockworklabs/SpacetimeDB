@@ -1,9 +1,5 @@
 import { chatState as state } from './chat-state.js';
 
-export function hex(identity) {
-  return identity.toHexString();
-}
-
 export function activeRoom() {
   return state.rooms.find(room => room.id === state.activeRoomId);
 }
@@ -30,13 +26,12 @@ export function myMemberships() {
     .map(member => member.roomId);
 }
 
-function isOwnIdentity(identity) {
-  return Boolean(state.meHex) && hex(identity) === state.meHex;
+function isMine(message) {
+  return Boolean(state.userId) && message.authorUserId === state.userId;
 }
 
-function canModerateActiveRoom() {
-  const room = activeRoom();
-  const server = activeServer();
+export function canModerateRoom(room) {
+  const server = state.servers.find(s => s.id === room?.serverId);
   return Boolean(
     state.userId &&
       room &&
@@ -46,19 +41,11 @@ function canModerateActiveRoom() {
 }
 
 export function canEditMessage(message) {
-  return Boolean(message && isOwnIdentity(message.author));
+  return Boolean(message && isMine(message));
 }
 
 export function canDeleteMessage(message) {
-  return Boolean(
-    message && (isOwnIdentity(message.author) || canModerateActiveRoom())
-  );
-}
-
-export function userByHex() {
-  const users = new Map();
-  for (const user of state.users) users.set(hex(user.identity), user);
-  return users;
+  return Boolean(message && (isMine(message) || canModerateRoom(activeRoom())));
 }
 
 export function userByUserId() {
@@ -67,10 +54,10 @@ export function userByUserId() {
   return users;
 }
 
-export function messageAuthorName(message, users = userByHex()) {
+export function messageAuthorName(message, users = userByUserId()) {
   if (!message) return 'message';
-  const authorHex = hex(message.author);
-  return users.get(authorHex)?.displayName || authorHex.slice(-6);
+  const userId = message.authorUserId;
+  return users.get(userId)?.displayName || userId.slice(-6);
 }
 
 export function messageSummary(message) {
@@ -130,7 +117,7 @@ export function latestMessageByRoom() {
 export function myReadCursorByRoom() {
   const cursors = new Map();
   for (const cursor of state.cursors) {
-    if (hex(cursor.identity) === state.meHex) {
+    if (cursor.userId === state.userId) {
       cursors.set(cursor.roomId, cursor.lastReadMessageId);
     }
   }
@@ -152,8 +139,8 @@ export function typingForRoom(roomId) {
     .map(row => row.subject);
 }
 
-export function statusOf(subjectHex, presence) {
-  return presence.get(subjectHex)?.status || 'invisible';
+export function statusOf(userId, presence) {
+  return presence.get(userId)?.status || 'offline';
 }
 
 export function attachmentsByMessage() {

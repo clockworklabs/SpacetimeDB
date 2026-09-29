@@ -13,11 +13,11 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
-  author: __t.identity(),
+  authorUserId: __t.string().name("author_user_id"),
   content: __t.string(),
   createdAt: __t.timestamp().name("created_at"),
   editedAt: __t.option(__t.timestamp()).name("edited_at"),
   replyToMessageId: __t.option(__t.u64()).name("reply_to_message_id"),
   pinnedAt: __t.option(__t.timestamp()).name("pinned_at"),
-  pinnedBy: __t.option(__t.identity()).name("pinned_by"),
+  pinnedByUserId: __t.option(__t.string()).name("pinned_by_user_id"),
 });
