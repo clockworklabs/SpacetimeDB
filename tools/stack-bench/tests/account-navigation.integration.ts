@@ -392,21 +392,24 @@ test('saved views and purchase history work after confirmation or closing and st
       // registered backend controls retain responsibility for writes and privacy.
       const steps = item.navigationOnly ? actorSteps.slice(0, actorSteps.findIndex(step => step.do === 'expect') + 1) : actorSteps;
       const support = item.opener === 'support-link';
-      for (const layout of ['inline', 'closed', 'history-dialog', 'confirmation', 'menu', 'missing-menu', 'broken-menu',
+      for (const layout of ['inline', 'inline-load-on-click', 'inline-load-on-click-menu', 'closed', 'history-dialog', 'confirmation', 'menu', 'missing-menu', 'broken-menu',
         ...(support ? ['restored-dialog'] : [])]) for (const missing of [false, true]) {
+        if (layout.startsWith('inline-load-on-click') && !support) continue;
         const history = ['history-dialog', 'restored-dialog'].includes(layout);
-        const menu = ['menu', 'missing-menu', 'broken-menu'].includes(layout);
+        const menu = ['menu', 'missing-menu', 'broken-menu', 'inline-load-on-click-menu'].includes(layout);
         await page.unrouteAll();
         await page.route('http://saved.test/**', route => route.fulfill({ contentType: 'text/html', body: `
           ${layout === 'missing-menu' ? '' : `<button id="current-user" onclick="${layout === 'broken-menu' ? '' : "document.querySelector('#menu').hidden=false"}">${item.user}</button>`}
           <button id="catalog-link">Catalog</button>
-          <nav id="menu" ${menu ? 'hidden' : ''}><button id="${item.opener}" onclick="document.querySelector('#panel').hidden = ${history ? 'false' : "!document.querySelector('#panel').hidden"};
+          <nav id="menu" ${menu ? 'hidden' : ''}><button id="${item.opener}" onclick="${layout.startsWith('inline-load-on-click')
+            ? `document.querySelectorAll('[data-role=support-ticket], #${item.target}').forEach(node => node.hidden = false)`
+            : `document.querySelector('#panel').hidden = ${history ? 'false' : "!document.querySelector('#panel').hidden"}`};
             ${history ? "document.querySelector('#history').showModal()" : ''}">Open</button></nav>
           ${history ? `<dialog id="history"><button data-role="overlay-close" onclick="document.querySelector('#history').close()">Close</button>` : ''}
-          <section id="panel" ${['inline', 'restored-dialog'].includes(layout) || support && layout === 'confirmation' ? '' : 'hidden'}>
+          <section id="panel" ${['inline', 'inline-load-on-click', 'inline-load-on-click-menu', 'restored-dialog'].includes(layout) || support && layout === 'confirmation' ? '' : 'hidden'}>
             ${support ? '<input id="support-email">' : ''}
-            ${item.ticket ? `<div data-role="support-ticket">${item.ticket}` : ''}
-            ${missing ? '' : `<span id="${item.target}" data-state="${item.value}">${item.value}${item.detail ?? ''}</span>`}
+            ${item.ticket ? `<div data-role="support-ticket" ${layout.startsWith('inline-load-on-click') ? 'hidden' : ''}>${item.ticket}` : ''}
+            ${missing ? '' : `<span id="${item.target}" ${layout.startsWith('inline-load-on-click') ? 'hidden' : ''} data-state="${item.value}">${item.value}${item.detail ?? ''}</span>`}
             ${item.ticket ? '</div>' : ''}
           </section>${history ? '</dialog>' : ''}<dialog id="confirmation"><p id="support-reference">Saved reference</p>
             <button id="overlay-close" onclick="document.querySelector('#confirmation').close()">Close</button></dialog>
