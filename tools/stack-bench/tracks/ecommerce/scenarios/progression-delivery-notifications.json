@@ -51,7 +51,7 @@
         {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
         {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"delivered","ignoreCase":true}
+        {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"statusText":"delivered","ignoreCase":true}
       ],
       "criteria": [
         {

@@ -25,7 +25,7 @@
             {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Coffee Grinder" } },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "value": "cancelled", "ignoreCase": true, "within": 10000 }
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "statusText": "cancelled", "ignoreCase": true, "within": 10000 }
           ]
         }
       ]

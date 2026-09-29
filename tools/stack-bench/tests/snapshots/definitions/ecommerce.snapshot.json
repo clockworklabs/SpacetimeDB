@@ -5240,8 +5240,8 @@
                       "contains": "Desk Lamp",
                       "testid": "order-item"
                     },
+                    "statusText": "pending",
                     "testid": "order-status",
-                    "value": "pending",
                     "within": 10000
                   },
                   {

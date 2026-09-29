@@ -40,7 +40,7 @@
             {"do":"expect","actor":"owner","testid":"support-status","in":{"testid":"support-ticket","contains":"Access refund case"},"notContains":"resolved"},
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"owner","testid":"orders-toggle"},
-            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending"},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"pending"},
             {"do":"expect","actor":"owner","testid":"refund-entry","contains":"Keyboard","absent":true}
           ]
         }

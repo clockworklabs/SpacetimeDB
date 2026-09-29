@@ -872,3 +872,84 @@ test('failed disappearance identifies the matched entry and scope', async () => 
   assert.match(result.summary!, /Coffee Grinder/);
   assert.match(result.summary!, /search-results/);
 });
+
+test('statusText accepts only boundary list decoration and keeps other values strict', async t => {
+  const browser = await chromium.launch({ headless: true });
+  const observations: unknown[] = [];
+  t.after(async () => {
+    await browser.close();
+    if (process.env.STACK_BENCH_STATUS_TEXT_EVIDENCE) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(process.env.STACK_BENCH_STATUS_TEXT_EVIDENCE,
+        JSON.stringify({ browser: browser.version(), observations }, null, 2));
+    }
+  });
+  const cases = [
+    ['plain', 'pending', 'passed'],
+    ['middle-dot', ' · pending', 'passed'],
+    ['bullet-and-case', '\u00a0• PENDING ·\u00a0', 'passed'],
+    ['negation', 'not pending', 'failed'],
+    ['mixed-state', 'pending/shipped', 'failed'],
+    ['word-prefix', 'Status: pending', 'failed'],
+    ['number-prefix', '1 pending', 'failed'],
+    ['semantic-icon', '❌ pending', 'failed'],
+    ['unknown-symbol', '? pending', 'failed'],
+    ['wrong-state', '· shipped', 'failed'],
+    ['internal-separator', 'pen·ding', 'failed'],
+    ['empty-decoration', ' · • ', 'failed'],
+  ] as const;
+  for (const [name, text, expected] of cases) {
+    await t.test(name, async () => {
+      const page = await browser.newPage();
+      try {
+        await page.setContent('<article data-testid="order">Keyboard<span data-testid="order-status"></span></article>'
+          + '<article data-testid="order">Other<span data-testid="order-status">pending</span></article>');
+        await page.locator('[data-testid="order"]').first().locator('[data-testid="order-status"]').evaluate(
+          (node, value) => { node.textContent = value; }, text);
+        const actor = { page, loc: (id: string, options: { scope?: { contains?: string } }) => {
+          assert.equal(options.scope?.contains, 'Keyboard');
+          return page.locator('[data-testid="order"]').filter({ hasText: 'Keyboard' })
+            .locator(`[data-testid="${id}"]`);
+        } };
+        const result = await run({ do: 'expect', actor: 'a', testid: 'order-status', statusText: 'pending',
+          ignoreCase: true, in: { testid: 'order', contains: 'Keyboard' }, within: 250 }, services(actor));
+        observations.push({ name, text, expected, status: result.status, finding: result.finding ?? null,
+          observation: result.observation });
+        assert.equal(result.status, expected, result.summary ?? name);
+        const visibleText = await page.locator('[data-testid="order"]').first()
+          .locator('[data-testid="order-status"]').innerText();
+        if (expected === 'failed') {
+          assert.equal(result.finding?.kind, 'value-mismatch');
+          assert.equal(result.finding?.fields.observed, visibleText);
+        } else assert.deepEqual(result.observation, { visible: true, statusText: 'pending', observedText: visibleText });
+      } finally { await page.close(); }
+    });
+  }
+  for (const [name, markup, step] of [
+    ['strict-text', '<span data-testid="field">· pending</span>', { value: 'pending' }],
+    ['strict-input', '<input data-testid="field" value="· pending">', { value: 'pending' }],
+    ['strict-protocol', '<span data-testid="field" data-state="· pending">pending</span>',
+      { value: 'pending', attribute: 'data-state' }],
+  ] as const) {
+    await t.test(name, async () => {
+      const page = await browser.newPage();
+      try {
+        await page.setContent(markup);
+        const result = await run({ do: 'expect', actor: 'a', testid: 'field', ...step, within: 250 },
+          services({ page, loc: () => page.locator('[data-testid="field"]') }));
+        observations.push({ name, status: result.status, finding: result.finding ?? null });
+        assert.equal(result.status, 'failed');
+        assert.equal(result.finding?.kind, 'value-mismatch');
+      } finally { await page.close(); }
+    });
+  }
+});
+
+test('statusText is explicit and cannot replace input or protocol expectations', () => {
+  const step = { do: 'expect', actor: 'a', testid: 'order-status', statusText: 'pending', ignoreCase: true };
+  assert.doesNotThrow(() => compileActionInput(step));
+  for (const conflict of [{ value: 'pending' }, { containsText: 'pending' }, { attribute: 'data-state' },
+    { absent: true }, { statusText: '' }]) {
+    assert.throws(() => compileActionInput({ ...step, ...conflict }));
+  }
+});

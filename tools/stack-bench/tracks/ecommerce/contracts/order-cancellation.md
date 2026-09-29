@@ -4,6 +4,8 @@ Use `order-status` for an order's state inside its `order-item`. Use `cancel-ord
 order. Use `catalog-link` to return to the catalog.
 `order-status` reads `pending` until the order ships, `shipped` once it has, and `cancelled`
 after a cancellation. Later features may add further states after `shipped`.
+The visible `order-status` text may have whitespace, a middle dot (`·`), or a bullet (`•`)
+before or after the state name. Do not add other words or state names to this element.
 
 Each customer `order-item` must have `data-cancel-input` containing a JSON object with
 exactly `orderId`. Use the identifier representation required by the selected stack.

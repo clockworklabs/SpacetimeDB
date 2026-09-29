@@ -117,7 +117,7 @@
             "testid": "order-item",
             "contains": "Gaming Mouse"
           },
-          "value": "shipped",
+          "statusText": "shipped",
           "ignoreCase": true,
           "within": 10000
         }
@@ -166,7 +166,7 @@
               "testid": "order-item",
               "contains": "Gaming Mouse"
             },
-            "value": "delivered",
+            "statusText": "delivered",
             "ignoreCase": true,
             "within": 15000
           },
@@ -221,7 +221,7 @@
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "customer", "testid": "orders-toggle" },
         { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Keyboard" } },
-        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "cancelled", "ignoreCase": true, "within": 10000 }
+        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "statusText": "cancelled", "ignoreCase": true, "within": 10000 }
       ],
       "criteria": [{
         "id": "305a",
@@ -235,7 +235,7 @@
           {"do":"ensureSignedIn","actor":"customer","name":"delivery-cancel","readyTestid":"current-user"},
           {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
           {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-          {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"cancelled","ignoreCase":true}
+          {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"cancelled","ignoreCase":true}
         ]
       }]
     }

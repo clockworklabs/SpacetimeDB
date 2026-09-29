@@ -131,7 +131,7 @@
                 "testid": "order-item",
                 "contains": "Keyboard"
               },
-              "value": "pending",
+              "statusText": "pending",
               "ignoreCase": true
             },
             {
@@ -185,7 +185,7 @@
                 "testid": "order-item",
                 "contains": "Keyboard"
               },
-              "value": "shipped",
+              "statusText": "shipped",
               "ignoreCase": true
             },
             {
@@ -501,7 +501,7 @@
                 "testid": "order-item",
                 "contains": "Desk Lamp"
               },
-              "value": "pending",
+              "statusText": "pending",
               "ignoreCase": true
             },
             {
@@ -555,7 +555,7 @@
                 "testid": "order-item",
                 "contains": "Desk Lamp"
               },
-              "value": "shipped",
+              "statusText": "shipped",
               "ignoreCase": true
             },
             {

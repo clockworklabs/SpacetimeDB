@@ -114,6 +114,7 @@ type ExpectInput = CommonInput & {
   readonly count?: number;
   readonly value?: string;
   readonly containsText?: string;
+  readonly statusText?: string;
   readonly ignoreCase?: boolean;
   readonly notContains?: string;
   readonly nonEmpty?: boolean;
@@ -457,14 +458,16 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   }
   if (!visible) return { visible: false };
 
-  const expectedText = input.value ?? input.containsText;
+  const expectedText = input.value ?? input.containsText ?? input.statusText;
+  let observedStatusText: string | undefined;
   if (expectedText !== undefined) {
     const deadline = Date.now() + within;
     const read = async () => input.attribute
       ? await loc.getAttribute(input.attribute) ?? ''
-      : readValue(loc);
+      : input.statusText === undefined ? readValue(loc) : loc.innerText();
     const matches = (value: string) => {
-      const actual = input.ignoreCase ? value.toLowerCase() : value;
+      const text = input.statusText === undefined ? value : value.replace(/^[\s\u00b7\u2022]+|[\s\u00b7\u2022]+$/g, '');
+      const actual = input.ignoreCase ? text.toLowerCase() : text;
       const expected = input.ignoreCase ? expectedText.toLowerCase() : expectedText;
       return input.containsText === undefined ? actual === expected : actual.includes(expected);
     };
@@ -473,6 +476,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       await browser.sleep(250, signal);
       value = await read();
     }
+    if (input.statusText !== undefined) observedStatusText = value;
     if (!matches(value)) {
       const sensitive = /^password$/i.test(await loc.getAttribute('type') ?? '') || /password|secret|token/i.test(input.testid);
       fail(input.containsText === undefined ? 'value-mismatch' : 'text-missing', { control: input.testid,
@@ -491,7 +495,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   }
   return { visible: true, ...(input.value === undefined ? {} : {
     ...(input.attribute ? { attribute: input.attribute } : {}), value: input.value,
-  }) };
+  }), ...(input.statusText === undefined ? {} : { statusText: input.statusText, observedText: observedStatusText }) };
 }
 
 async function waitUntilAbsent({ input, capabilities }: BrowserArguments<CommonInput>) {

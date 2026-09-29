@@ -39,7 +39,7 @@
         {"do":"ensureSignedIn","actor":"customer","name":"return-complete","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","ignoreCase":true,"within":10000}
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"shipped","ignoreCase":true,"within":10000}
       ],
       "criteria": [
         {

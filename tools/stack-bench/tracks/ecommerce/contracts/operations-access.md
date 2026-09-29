@@ -16,6 +16,8 @@ on the panel when the shipped row disappears. A new submission must replace the 
 
 `order-status` reads `pending` until the order ships, `shipped` once it has, and `cancelled`
 after a cancellation. Later features may add further states after `shipped`.
+The visible `order-status` text may have whitespace, a middle dot (`·`), or a bullet (`•`)
+before or after the state name. Do not add other words or state names to this element.
 
 Each customer `order-item` must have `data-ship-input` containing a JSON object with
 exactly `orderId`.

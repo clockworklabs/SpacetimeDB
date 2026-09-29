@@ -18,7 +18,7 @@
         {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true}
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"statusText":"pending","ignoreCase":true}
       ],
       "criteria": [
         {
@@ -49,7 +49,7 @@
         {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"statusText":"pending","ignoreCase":true},
         {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
         {"do":"reload","actor":"customer","settleMs":1000},
         {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
@@ -67,20 +67,20 @@
         {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","ignoreCase":true},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"shipped","ignoreCase":true},
         {"do":"callAction","actor":"customer","action":"returnItem","namedAction":{"id":"returnItem","path":"/api/orders/{orderId}/items/{itemId}/return","method":"POST","reducer":"return_order_item","args":[0,0],"params":[{"name":"orderId","in":"path","placeholder":"{orderId}","wireType":"u64"},{"name":"itemId","in":"path","placeholder":"{itemId}","wireType":"u64"}]},"input":{"testid":"order-line","contains":"Keyboard","attribute":"data-return-input"}},
         {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
         {"do":"reload","actor":"customer","settleMs":1000},
         {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"returned","ignoreCase":true},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"returned","ignoreCase":true},
         {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
         {"do":"click","actor":"admin","testid":"admin-link"},
         {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"pending-revenue"},
         {"do":"dbRecordStock","item":"Desk Lamp","warehouse":"East","as":"pending-East"},
         {"do":"dbRecordStock","item":"Desk Lamp","warehouse":"West","as":"pending-West"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true}
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"statusText":"pending","ignoreCase":true}
       ],
       "criteria": [
         {
@@ -96,7 +96,7 @@
             {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"statusText":"pending","ignoreCase":true},
             {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","relativeTo":"pending-East","plus":0},
             {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"West","relativeTo":"pending-West","plus":0},
             {"do":"reload","actor":"admin","settleMs":1000},

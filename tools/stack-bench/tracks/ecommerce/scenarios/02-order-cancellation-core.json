@@ -35,7 +35,7 @@
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 2000, "unlessVisible": "order-item" },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "value": "pending", "ignoreCase": true },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "statusText": "pending", "ignoreCase": true },
             { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Coffee Grinder" } },
             { "do": "reload", "actor": "admin", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },

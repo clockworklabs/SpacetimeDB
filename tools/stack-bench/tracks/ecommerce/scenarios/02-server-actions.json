@@ -44,7 +44,7 @@
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"shipped", "ignoreCase": true,"within":10000},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"statusText":"shipped", "ignoreCase": true,"within":10000},
             {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":2000},
             {"do":"expectActionOutcome","actor":"customer","outcome":"refused","routeProvenBy":"staff"},
             {"do":"reload","actor":"customer","settleMs":2000},
@@ -53,7 +53,7 @@
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"pending", "ignoreCase": true},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"statusText":"pending", "ignoreCase": true},
             {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0,"staff"],"params":[{"name":"orderId","in":"body","wireType":"u64"},{"name":"role","in":"body"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":0},
             {"do":"expectActionOutcome","actor":"customer","outcome":"completed","routeProvenBy":"staff"},
             {"do":"reload","actor":"customer","settleMs":1000},
@@ -62,7 +62,7 @@
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"pending","ignoreCase":true},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"statusText":"pending","ignoreCase":true},
             {"do":"expectActionOutcome","actor":"customer","outcome":"application-refused","routeProvenBy":"staff"},
             {"do":"callAction","actor":"staff","from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":0},
             {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
@@ -72,7 +72,7 @@
             { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": ["item-list", "order-item"] },
             {"do": "click", "actor": "customer", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"shipped","ignoreCase":true,"within":10000}
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"statusText":"shipped","ignoreCase":true,"within":10000}
           ]
         }
       ]
@@ -193,7 +193,7 @@
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"pending","ignoreCase":true},
             {"do":"expectActionOutcome","actor":"other","outcome":"application-refused","routeProvenBy":"owner"},
             {"do":"callAction","actor":"other","from":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0,"direct-owner"],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"},{"name":"username","in":"body"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":0},
             {"do":"expectActionOutcome","actor":"other","outcome":"completed","routeProvenBy":"owner"},
@@ -203,7 +203,7 @@
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"pending","ignoreCase":true},
             {"do":"expectActionOutcome","actor":"other","outcome":"application-refused","routeProvenBy":"owner"},
             {"do":"callAction","actor":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":0},
             {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
@@ -213,7 +213,7 @@
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
             {"do": "click", "actor": "owner", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["orders-toggle", "order-item"]},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"cancelled","ignoreCase":true}
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"cancelled","ignoreCase":true}
           ]
         }
       ]

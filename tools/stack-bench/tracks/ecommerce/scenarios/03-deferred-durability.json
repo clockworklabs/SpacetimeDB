@@ -115,7 +115,7 @@
         {"do":"ensureSignedIn","actor":"customer","name":"durable-delivery","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
         {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","ignoreCase":true,"within":10000},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"shipped","ignoreCase":true,"within":10000},
         {"do":"recordTime","as":"delivery-start-accepted"},
         {"do":"wait","actor":"customer","ms":20000},
         {"do":"restartBackend","settleMs":15000},
@@ -137,7 +137,7 @@
             {"do":"ensureSignedIn","actor":"customer","name":"durable-delivery","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"delivered","ignoreCase":true,"within":10000}
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"statusText":"delivered","ignoreCase":true,"within":10000}
           ]
         }
       ]
