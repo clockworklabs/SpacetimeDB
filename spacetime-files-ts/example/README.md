@@ -74,9 +74,9 @@ and file-manager UI are application code in the example.
 | `STDB_HTTP`           | `http://127.0.0.1:3000`   | Upstream endpoint for public file HTTP requests. |
 | `SPACETIMEDB_DB_NAME` | `spacetime-files-example` | Published database name.                         |
 
-The Node server hosts the bundle and proxies `/files?id=<fileId>` to the module HTTP router.
-It receives metadata for authorization decisions. Private bytes travel through
-the authenticated SpacetimeDB connection.
+The Node server hosts the bundle and proxies `/files?id=<fileId>` to the module
+HTTP router, which serves public files only. Private bytes travel through the
+authenticated SpacetimeDB connection.
 
 ## Read and write paths
 

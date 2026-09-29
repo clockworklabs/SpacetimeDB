@@ -8,26 +8,10 @@ import {
   type ReducerCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import {
-  FILE_VISIBILITY_OWNER,
-  FILE_VISIBILITY_PUBLIC,
-  FILE_BYTES_MAX,
-  fileSummary,
-  fileSha256Hex,
-  createFileHttpHandler,
-  ownerPathKey,
-  readFileBytesParams,
-  readFileBytesReturn,
-  validateMimeType,
-} from '@spacetimedb/files/submodule';
 import * as files from '@spacetimedb/files/submodule';
 
 const PATH_MAX = 1024;
 const NAME_MAX = 128;
-const VALID_VISIBILITIES = new Set([
-  FILE_VISIBILITY_OWNER,
-  FILE_VISIBILITY_PUBLIC,
-]);
 
 const folder = table(
   {
@@ -120,20 +104,13 @@ function assertNoFolderCollision(tx: Tx, path: string, owner: string): void {
 }
 
 function assertNoOwnedFileCollision(tx: Tx, path: string, owner: string): void {
-  if (tx.db.files.file.ownerPathKey.find(ownerPathKey(owner, path))) {
-    senderError(`vault.file_exists:${path}`);
-  }
+  for (const row of tx.db.files.file.ownerPath.filter([owner, path]))
+    senderError(`vault.file_exists:${row.path}`);
 }
 
 function requireOwnedFolder(tx: Tx, path: string, owner: string) {
   const row = findOwnedFolder(tx, path, owner);
   if (!row) senderError(`vault.folder_not_found:${path}`);
-  return row;
-}
-
-function requireOwnedFile(tx: Tx, path: string, owner: string) {
-  const row = tx.db.files.file.ownerPathKey.find(ownerPathKey(owner, path));
-  if (!row) senderError(`vault.file_not_found:${path}`);
   return row;
 }
 
@@ -159,16 +136,9 @@ function renameOwnedFile(
   newPath: string
 ): void {
   if (oldPath === newPath) return;
-  const row = requireOwnedFile(tx, oldPath, owner);
   assertParentFolderExists(tx, newPath, owner);
   assertNoFolderCollision(tx, newPath, owner);
-  assertNoOwnedFileCollision(tx, newPath, owner);
-  tx.db.files.file.id.update({
-    ...row,
-    ownerPathKey: ownerPathKey(owner, newPath),
-    path: newPath,
-    updatedAt: tx.timestamp,
-  });
+  files.renameFile(tx.as.files, { oldPath, newPath }, owner);
 }
 
 export const myFolders = spacetimedb.view(
@@ -184,7 +154,7 @@ export const myFolders = spacetimedb.view(
 
 export const myFileSummaries = spacetimedb.view(
   { name: 'my_file_summaries', public: true },
-  t.array(fileSummary),
+  t.array(files.fileSummary),
   (ctx: ViewCtx<Schema>) => {
     const owner = ownerUserId(ctx);
     const out = [];
@@ -294,85 +264,42 @@ export const renameFolder = spacetimedb.reducer(
       });
     }
     for (const f of childFiles) {
-      const path = rePath(f.path);
-      ctx.db.files.file.id.update({
-        ...f,
-        ownerPathKey: ownerPathKey(owner, path),
-        path,
-        updatedAt: ctx.timestamp,
-      });
+      files.renameFile(
+        ctx.as.files,
+        { oldPath: f.path, newPath: rePath(f.path) },
+        owner
+      );
     }
   }
 );
 
 export const uploadFile = spacetimedb.reducer(
-  {
-    path: t.string(),
-    mimeType: t.string(),
-    bytes: t.array(t.u8()),
-    visibility: t.string(),
-  },
+  files.uploadFileParams,
   (ctx, args) => {
     const owner = ownerUserId(ctx);
     const path = normalizePath(args.path, 'file');
-    if (!VALID_VISIBILITIES.has(args.visibility))
-      senderError(`vault.invalid_visibility:${args.visibility}`);
-    if (args.bytes.length > FILE_BYTES_MAX)
-      senderError(`files.too_large:${args.bytes.length}/${FILE_BYTES_MAX}`);
     assertParentFolderExists(ctx, path, owner);
     assertNoFolderCollision(ctx, path, owner);
-    const key = ownerPathKey(owner, path);
-    const existing = ctx.db.files.file.ownerPathKey.find(key);
-    let mimeType: string;
-    try {
-      mimeType = validateMimeType(args.mimeType || 'application/octet-stream');
-    } catch (error) {
-      senderError(
-        error instanceof Error ? error.message : 'files.invalid_mime_type'
-      );
-    }
-    const sha256Hex = fileSha256Hex(args.bytes);
-    if (existing) {
-      ctx.db.files.file.id.update({
-        ...existing,
-        mimeType,
-        size: BigInt(args.bytes.length),
-        sha256Hex,
-        visibility: args.visibility,
-        updatedAt: ctx.timestamp,
-      });
-      ctx.db.files.fileBlob.fileId.update({
-        fileId: existing.id,
-        bytes: args.bytes,
-      });
-      return;
-    }
-    const row = ctx.db.files.file.insert({
-      id: 0n,
-      ownerPathKey: key,
-      path,
-      ownerUserId: owner,
-      mimeType,
-      size: BigInt(args.bytes.length),
-      sha256Hex,
-      visibility: args.visibility,
-      createdAt: ctx.timestamp,
-      updatedAt: ctx.timestamp,
-    });
-    ctx.db.files.fileBlob.insert({ fileId: row.id, bytes: args.bytes });
+    files.uploadFile(
+      ctx.as.files,
+      {
+        ...args,
+        path,
+        mimeType: args.mimeType || 'application/octet-stream',
+      },
+      owner
+    );
   }
 );
 
 export const deleteFile = spacetimedb.reducer(
   { path: t.string() },
   (ctx, args) => {
-    const owner = ownerUserId(ctx);
-    const path = normalizePath(args.path, 'file');
-    const row = ctx.db.files.file.ownerPathKey.find(ownerPathKey(owner, path));
-    if (!row) return;
-    const blob = ctx.db.files.fileBlob.fileId.find(row.id);
-    if (blob) ctx.db.files.fileBlob.delete(blob);
-    ctx.db.files.file.id.delete(row.id);
+    files.deleteFile(
+      ctx.as.files,
+      { path: normalizePath(args.path, 'file') },
+      ownerUserId(ctx)
+    );
   }
 );
 
@@ -401,42 +328,35 @@ export const moveFile = spacetimedb.reducer(
 );
 
 export const setFileVisibility = spacetimedb.reducer(
-  { path: t.string(), visibility: t.string() },
+  files.setFileVisibilityParams,
   (ctx, args) => {
-    if (!VALID_VISIBILITIES.has(args.visibility))
-      senderError(`files.invalid_visibility:${args.visibility}`);
-    const owner = ownerUserId(ctx);
-    const path = normalizePath(args.path, 'file');
-    const row = ctx.db.files.file.ownerPathKey.find(ownerPathKey(owner, path));
-    if (!row) senderError(`files.not_found:${path}`);
-    ctx.db.files.file.id.update({
-      ...row,
-      visibility: args.visibility,
-      updatedAt: ctx.timestamp,
-    });
+    files.setFileVisibility(
+      ctx.as.files,
+      { ...args, path: normalizePath(args.path, 'file') },
+      ownerUserId(ctx)
+    );
   }
 );
 
 // Private bytes travel over the authenticated connection. HTTP handlers
 // never see the caller's identity.
 export const readFileBytes = spacetimedb.procedure(
-  readFileBytesParams,
-  readFileBytesReturn,
+  files.readFileBytesParams,
+  files.readFileBytesReturn,
   (ctx, args) =>
-    files.readFileBytes(
-      ctx,
-      { path: normalizePath(args.path, 'file') },
-      ctx.sender.toHexString()
+    ctx.withTx(tx =>
+      files.readFileBytes(
+        tx.as.files,
+        { path: normalizePath(args.path, 'file') },
+        ownerUserId(ctx)
+      )
     )
 );
 
-const serveFile = createFileHttpHandler({
-  getOwner: ctx => ctx.identity?.toHexString?.(),
-});
-
-export const fileServe = spacetimedb.httpHandler((ctx, req) => {
-  return serveFile(ctx, req);
-});
+// Serves public files only; private files go through readFileBytes.
+export const fileServe = spacetimedb.httpHandler((ctx, req) =>
+  files.serveFile(ctx.as.files, req)
+);
 
 export const router = spacetimedb.httpRouter(
   new Router().get('/files', fileServe).head('/files', fileServe)

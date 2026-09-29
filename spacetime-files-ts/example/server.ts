@@ -38,14 +38,7 @@ app.use(express.json({ limit: '256kb' }));
 function proxyStdbRoute(prefix: string) {
   return async (req: Request, res: Response) => {
     const mountedUrl = req.url.startsWith('/?') ? req.url.slice(1) : req.url;
-    let fullPath = `${prefix}${mountedUrl}`;
-    if (prefix === '/files' && mountedUrl.startsWith('/')) {
-      const qIdx = mountedUrl.indexOf('?');
-      const rawPath = qIdx < 0 ? mountedUrl : mountedUrl.slice(0, qIdx);
-      const originalQuery = qIdx < 0 ? '' : mountedUrl.slice(qIdx + 1);
-      const pathQuery = `path=${encodeURIComponent(decodeURIComponent(rawPath))}`;
-      fullPath = `/files?${originalQuery ? `${pathQuery}&${originalQuery}` : pathQuery}`;
-    }
+    const fullPath = `${prefix}${mountedUrl}`;
     const qIdx = fullPath.indexOf('?');
     const routePath = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
     const query = qIdx < 0 ? '' : fullPath.slice(qIdx);
@@ -101,6 +94,6 @@ app.get('/api/config', (_req: Request, res: Response) => {
 app.listen(PORT, HOST, () => {
   console.log(`Vault example running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
-  console.log(`  STDB http-> ${STDB_HTTP} (proxy /files/*)`);
+  console.log(`  STDB http-> ${STDB_HTTP} (proxy /files?id=)`);
   console.log(`  Database -> ${DB_NAME}`);
 });
