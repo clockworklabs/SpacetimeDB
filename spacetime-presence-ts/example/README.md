@@ -8,7 +8,8 @@ limiting in one SpacetimeDB module and uses caller-scoped views for the browser.
 
 - Email/password accounts and optional Google or GitHub OAuth.
 - Online, away, do-not-disturb, and invisible presence states.
-- Servers, public or private rooms, membership, and room categories.
+- A server directory, public rooms that server members join, and private rooms
+  whose admins add members.
 - Messages, replies, reactions, pins, attachments, edits, and deletion.
 - Typing indicators, read cursors, unread badges, and room activity labels.
 - Procedure and reducer rate limits for user-generated activity.
@@ -48,9 +49,10 @@ pnpm run build:module:fresh
 pnpm run dev
 ```
 
-Open <http://localhost:8794>, create an account, and create or join a server and
-room. Open a private/incognito window with a second account to exercise presence,
-typing, unread counts, and isolation between users.
+Open <http://localhost:8794>, create an account, and create a server. Open a
+private/incognito window with a second account, join that server from **Add a
+server**, and open its `general` room to exercise presence, typing, unread
+counts, and isolation between users.
 
 `build:module:fresh` deletes and recreates only the local `spacetime-presence-example`
 database. Use `pnpm run build:module` when existing local data must be preserved.
@@ -107,15 +109,21 @@ SpacetimeDB module
   -> my_* views filtered for the linked user and room membership
 ```
 
-The browser subscribes only to views such as `my_servers`, `my_rooms`,
-`my_room_messages`, `my_presence_entries`, and `my_rate_limit_status`. Server-side
-view logic determines which rows the linked user may see. Client-side filters
-provide presentation behavior only.
+The browser subscribes only to views such as `my_servers`, `server_directory`,
+`my_rooms`, `my_room_messages`, `my_presence_entries`, and
+`my_rate_limit_status`. Server-side view logic determines which rows the linked
+user may see. Client-side filters provide presentation behavior only.
+`server_directory` lists servers the caller has not joined, and `my_rooms`
+lists the caller's rooms plus the public rooms of their servers.
 
-Presence is connection-sensitive. The client sends heartbeats while active and
-uses explicit status changes for away, do-not-disturb, and invisible states. The
-presence submodule's scheduled sweep deletes expired presence rows, and the
-scheduled `chat_sweep` reducer prunes room activity events.
+Presence is lease-based and keyed by the auth user ID. The client sends a
+heartbeat every 15 seconds, and each heartbeat renews the user's `chat.global`
+presence row for the presence submodule's configured TTL (30 seconds by
+default). A closed tab stops heartbeating and its row expires; there is no
+disconnect handler. Invisible users have no presence row and publish no typing
+state, so other users see them as offline. The presence submodule's scheduled
+sweep deletes expired rows, and the scheduled `chat_sweep` reducer prunes room
+activity events.
 
 ## Authentication flow
 
@@ -127,8 +135,11 @@ scheduled `chat_sweep` reducer prunes room activity events.
    that token before subscribing to user-scoped views.
 
 The SpacetimeDB connection identity and the authenticated application user are
-different concepts. Authorization in this example derives from linked auth users
-and membership tables.
+different concepts. Chat users, messages, reactions, read cursors, and presence
+are keyed by the auth user ID, and authorization derives from linked auth users
+and membership tables. Signing out unlinks the connection and discards the
+stored SpacetimeDB token, so the next sign-in in that browser uses a new
+connection identity.
 
 ## Security and deployment boundaries
 
@@ -151,11 +162,15 @@ pnpm exec tsc -p tsconfig.json
 
 For a release smoke test, use two accounts and verify:
 
-1. Signup, login, refresh after reload, and logout all work.
-2. Both users can join a public room and see messages, typing state, reactions,
-   presence changes, and read progress in real time.
+1. Signup, login, refresh after reload, and logout all work. Signing in as the
+   second user in the same browser after logout shows only that user's
+   authorship.
+2. The second user joins the first user's server from **Add a server**. Both
+   users can join a public room and see messages, typing state, reactions,
+   presence changes, and read progress in real time. An invisible user appears
+   offline to the other.
 3. A user outside a private room cannot subscribe to its messages or retrieve its
-   attachments.
+   attachments until a room admin adds them from the channel settings.
 4. Edits, deletes, pins, room administration, and server administration reject
    unauthorized users.
 5. Repeated writes eventually expose the expected rate-limit status and recover
@@ -176,10 +191,19 @@ For a release smoke test, use two accounts and verify:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - host schema, scoped views, chat operations, and
-  submodule registration.
+- `spacetimedb/src/index.ts` - reducers, procedures, HTTP handlers, and
+  submodule installation.
+- `spacetimedb/src/schema.ts` - the schema, including the mounted auth, files,
+  rate-limit, and presence submodules.
+- `spacetimedb/src/model.ts` - chat tables and row types.
+- `spacetimedb/src/views.ts` - the caller-scoped `my_*` and `server_directory`
+  views.
+- `spacetimedb/src/domain.ts` - shared chat helpers and authorization checks.
+- `spacetimedb/src/chat-policy.ts` - presence scopes and rate-limit policies.
 - `server.ts` - environment loading, auth bootstrap, and HTTP proxy.
 - `src/app.ts` - browser connection, linked-session setup, and subscriptions.
 - `public/index.html` - the example interface.
-- `public/ui.js` - chat state, rendering, and interaction handling.
-- `public/styles.css` - chat presentation.
+- `public/ui.js` - rendering and interaction handling.
+- `public/chat-model.js` and `public/chat-state.js` - client state and derived
+  data, tested by `scripts/test-ui-model.mjs`.
+- `public/styles.css` and `public/chat.css` - chat presentation.
