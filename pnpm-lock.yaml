@@ -511,6 +511,22 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  spacetime-api-keys-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/api-keys':
+        specifier: workspace:*
+        version: link:..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   spacetime-auth-ts:
     dependencies:
       '@noble/curves':

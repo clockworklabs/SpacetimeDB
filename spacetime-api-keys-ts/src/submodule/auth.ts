@@ -1,19 +1,11 @@
-import type {
-  ReducerModuleCtx,
-  TransactionModuleCtx,
-  ViewModuleCtx,
-} from './schema';
-import { SenderError } from './schema';
+import { SenderError } from 'spacetimedb/server';
+import { errors } from '../errors';
+import type { ViewModuleCtx, WriteCtx } from './schema';
 
-type AdminCtx = ReducerModuleCtx | TransactionModuleCtx | ViewModuleCtx;
-
-export function isAdmin(ctx: AdminCtx, sender = ctx.sender): boolean {
-  return ctx.db.apiKeyAdminIdentity.identity.find(sender) != null;
+export function isAdmin(ctx: WriteCtx | ViewModuleCtx): boolean {
+  return ctx.db.apiKeyAdminIdentity.identity.find(ctx.sender) != null;
 }
 
-export function requireAdmin(
-  ctx: ReducerModuleCtx | TransactionModuleCtx,
-  sender = ctx.sender
-): void {
-  if (!isAdmin(ctx, sender)) throw new SenderError('api_keys.not_authorized');
+export function requireAdmin(ctx: WriteCtx): void {
+  if (!isAdmin(ctx)) throw new SenderError(errors.notAuthorized);
 }

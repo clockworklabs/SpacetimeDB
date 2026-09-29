@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
@@ -27,6 +29,41 @@ const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
 const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-api-keys-example';
+const STDB_SERVER = process.env.STDB_SERVER ?? STDB_HTTP;
+
+function setApiKeysSecret(secret: string | undefined): boolean {
+  const arg =
+    secret === undefined
+      ? JSON.stringify([1, []])
+      : JSON.stringify([0, secret]);
+  const result = spawnSync(
+    'spacetime',
+    [
+      'call',
+      '--server',
+      STDB_SERVER,
+      DB_NAME,
+      'api_keys.set_api_keys_config',
+      arg,
+      JSON.stringify([1, []]),
+    ],
+    { stdio: 'inherit', shell: false }
+  );
+  return result.status === 0;
+}
+
+// The secret keys every API key the module mints, so it is generated here
+// rather than inside the module. Without API_KEYS_SECRET the database keeps
+// the secret it already stores; after a fresh publish a new one is generated.
+function configureApiKeysSecret(): void {
+  const secret = process.env.API_KEYS_SECRET?.trim() || undefined;
+  if (setApiKeysSecret(secret)) return;
+  if (!secret) {
+    console.log('[api-keys] no stored secret; generating one');
+    if (setApiKeysSecret(randomBytes(32).toString('hex'))) return;
+  }
+  throw new Error('api-keys secret bootstrap failed');
+}
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -90,6 +127,15 @@ app.use('/api/colony', async (req: Request, res: Response) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+try {
+  configureApiKeysSecret();
+} catch (err) {
+  console.error(
+    `[api-keys] ${err instanceof Error ? err.message : String(err)}; is the SpacetimeDB host running and the Colony module published?`
+  );
+  process.exit(1);
+}
 
 app.listen(PORT, HOST, () => {
   console.log(`Colony running at http://${HOST}:${PORT}`);

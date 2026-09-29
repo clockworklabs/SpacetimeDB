@@ -1,34 +1,40 @@
 import {
   bytesToHex,
   hexToBytes,
+  hmacSha256,
   sha256,
   timingSafeEqual,
 } from '@spacetimedb/crypto';
 
-export const LOOKUP_SECRET_CHARS = 10;
+// Hex characters of the secret stored as the lookup prefix (64 bits).
+const LOOKUP_SECRET_CHARS = 16;
 const textEncoder = new TextEncoder();
 
-export function base64Url(bytes: Uint8Array): string {
-  const alphabet =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  let out = '';
-  let i = 0;
-  for (; i + 2 < bytes.length; i += 3) {
-    out += alphabet[bytes[i] >> 2];
-    out += alphabet[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
-    out += alphabet[((bytes[i + 1] & 15) << 2) | (bytes[i + 2] >> 6)];
-    out += alphabet[bytes[i + 2] & 63];
-  }
-  if (i < bytes.length) {
-    out += alphabet[bytes[i] >> 2];
-    if (i + 1 === bytes.length) {
-      out += alphabet[(bytes[i] & 3) << 4];
-    } else {
-      out += alphabet[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
-      out += alphabet[(bytes[i + 1] & 15) << 2];
-    }
-  }
-  return out;
+// ctx.random is seeded from the call timestamp, so it cannot produce secrets.
+// Key material is HMAC-SHA256 keyed by the operator's secret over a
+// database-wide counter and the transaction timestamp. The counter makes each
+// draw unique; the timestamp separates databases recreated with one secret.
+export function deriveKeySecret(
+  operatorSecret: string,
+  counter: bigint,
+  micros: bigint
+): Uint8Array {
+  return hmacSha256(
+    textEncoder.encode(operatorSecret),
+    textEncoder.encode(`spacetimedb-api-keys secret ${counter} ${micros}`)
+  );
+}
+
+/** Formats a key as `${keyPrefix}_${hex secret}` with its stored lookup prefix. */
+export function formatApiKey(
+  keyPrefix: string,
+  secret: Uint8Array
+): { key: string; prefix: string } {
+  const hex = bytesToHex(secret);
+  return {
+    key: `${keyPrefix}_${hex}`,
+    prefix: `${keyPrefix}_${hex.slice(0, LOOKUP_SECRET_CHARS)}`,
+  };
 }
 
 export function extractLookupPrefix(key: string): string | undefined {

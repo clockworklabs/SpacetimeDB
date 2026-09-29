@@ -1,27 +1,26 @@
 import { Timestamp } from 'spacetimedb';
-import { Range, type Infer } from 'spacetimedb/server';
+import { Range, SenderError, type Infer } from 'spacetimedb/server';
 import {
   ApiKeyStatus,
   apiKey,
   apiKeyCreateResult,
   apiKeySummary,
+  apiKeySweepTick,
   apiKeyUsageSummary,
   spacetimedb,
   t,
-  SenderError,
-  type ReducerModuleCtx,
   type ViewModuleCtx,
   type WriteCtx,
 } from './schema';
 import { isAdmin, requireAdmin } from './auth';
-import { sha256 } from '@spacetimedb/crypto';
+import { errors } from '../errors';
 import {
-  base64Url,
+  deriveKeySecret,
   extractLookupPrefix,
+  formatApiKey,
   hashApiKey,
   matchesApiKeyHash,
   hasScope,
-  LOOKUP_SECRET_CHARS,
 } from '../keys';
 
 const DEFAULT_KEY_PREFIX = 'stdb_live';
@@ -33,10 +32,11 @@ const MAX_METADATA_JSON_LENGTH = 8192;
 const MAX_RAW_KEY_LENGTH = 128;
 const MAX_ACTIVE_KEYS_PER_OWNER = 50;
 const MAX_EXPIRATION_SECONDS = 60 * 60 * 24 * 365 * 10;
-const MAX_USAGE_SWEEP_ROWS = 1000;
+const MIN_SECRET_LENGTH = 32;
+const MIN_USAGE_RETENTION_SECONDS = 60 * 60;
+const DEFAULT_USAGE_RETENTION_SECONDS = 60 * 60 * 24 * 30;
+const USAGE_SWEEP_BATCH = 1000;
 const ONE_SECOND_MICROS = 1_000_000n;
-
-const textEncoder = new TextEncoder();
 
 type ApiKeyRow = Infer<typeof apiKey.rowType>;
 
@@ -78,40 +78,29 @@ function takeRows<T>(rows: Iterable<T>, limit: number): T[] {
   return out;
 }
 
-function uniqueSecret(ctx: WriteCtx): string {
-  const material = [
-    ctx.newUuidV7().toString(),
-    ctx.newUuidV7().toString(),
-    ctx.timestamp.microsSinceUnixEpoch.toString(),
-  ].join(':');
-  // The key is `${keyPrefix}_${secret}` and lookup splits on the last '_', so
-  // the secret must not contain '_' or the prefix lookup lands mid-secret and
-  // verification fails. base64url can emit '_', so fold it to '-'.
-  return base64Url(sha256(textEncoder.encode(material))).replace(/_/g, '-');
+function generateRawKey(ctx: WriteCtx, keyPrefix: string) {
+  const cfg = ctx.db.apiKeyConfig.singleton.find(true);
+  if (!cfg) throwSenderError(errors.configMissing);
+  const counter = cfg.counter + 1n;
+  ctx.db.apiKeyConfig.singleton.update({ ...cfg, counter });
+  return formatApiKey(
+    keyPrefix,
+    deriveKeySecret(cfg.secret, counter, ctx.timestamp.microsSinceUnixEpoch)
+  );
 }
 
 function normalizeKeyPrefix(prefix: string | undefined): string {
   const value = (prefix ?? DEFAULT_KEY_PREFIX).trim();
   if (!/^[A-Za-z][A-Za-z0-9_]{1,31}$/.test(value)) {
-    throwSenderError('api_keys.invalid_key_prefix');
+    throwSenderError(errors.invalidKeyPrefix);
   }
   return value;
-}
-
-function generateRawKey(
-  ctx: WriteCtx,
-  keyPrefix: string
-): { key: string; prefix: string } {
-  const secret = uniqueSecret(ctx);
-  const key = `${keyPrefix}_${secret}`;
-  const prefix = `${keyPrefix}_${secret.slice(0, LOOKUP_SECRET_CHARS)}`;
-  return { key, prefix };
 }
 
 function normalizeName(name: string): string {
   const value = name.trim().replace(/\s+/g, ' ');
   if (value.length === 0 || value.length > MAX_NAME_LENGTH) {
-    throwSenderError('api_keys.invalid_name');
+    throwSenderError(errors.invalidName);
   }
   return value;
 }
@@ -119,7 +108,7 @@ function normalizeName(name: string): string {
 function normalizeOwnerSubject(ownerSubject: string): string {
   const value = ownerSubject.trim();
   if (value.length === 0 || value.length > MAX_OWNER_SUBJECT_LENGTH) {
-    throwSenderError('api_keys.invalid_owner_subject');
+    throwSenderError(errors.invalidOwnerSubject);
   }
   return value;
 }
@@ -130,7 +119,7 @@ function normalizeAction(
 ): string {
   const value = (action ?? requiredScope ?? 'verify').trim();
   if (value.length === 0 || value.length > MAX_SCOPE_LENGTH) {
-    throwSenderError('api_keys.invalid_action');
+    throwSenderError(errors.invalidAction);
   }
   return value;
 }
@@ -145,7 +134,7 @@ function normalizeRequiredScope(
     value.length > MAX_SCOPE_LENGTH ||
     !/^[A-Za-z0-9:_*.-]+$/.test(value)
   ) {
-    throwSenderError('api_keys.invalid_required_scope');
+    throwSenderError(errors.invalidRequiredScope);
   }
   return value;
 }
@@ -155,23 +144,22 @@ function normalizeScopesJson(scopesJson: string): string {
   try {
     parsed = JSON.parse(scopesJson);
   } catch {
-    throwSenderError('api_keys.invalid_scopes_json');
+    throwSenderError(errors.invalidScopesJson);
   }
-  if (!Array.isArray(parsed)) throwSenderError('api_keys.invalid_scopes_json');
+  if (!Array.isArray(parsed)) throwSenderError(errors.invalidScopesJson);
   if (parsed.length === 0 || parsed.length > MAX_SCOPES) {
-    throwSenderError('api_keys.invalid_scopes_json');
+    throwSenderError(errors.invalidScopesJson);
   }
   const seen = new Set<string>();
   const scopes: string[] = [];
   for (const raw of parsed) {
-    if (typeof raw !== 'string')
-      throwSenderError('api_keys.invalid_scopes_json');
+    if (typeof raw !== 'string') throwSenderError(errors.invalidScopesJson);
     const scope = raw.trim();
     if (scope.length === 0 || scope.length > MAX_SCOPE_LENGTH) {
-      throwSenderError('api_keys.invalid_scopes_json');
+      throwSenderError(errors.invalidScopesJson);
     }
     if (!/^[A-Za-z0-9:_*.-]+$/.test(scope)) {
-      throwSenderError('api_keys.invalid_scopes_json');
+      throwSenderError(errors.invalidScopesJson);
     }
     if (!seen.has(scope)) {
       seen.add(scope);
@@ -188,27 +176,17 @@ function normalizeMetadataJson(
   const value = metadataJson.trim();
   if (value.length === 0) return undefined;
   if (value.length > MAX_METADATA_JSON_LENGTH)
-    throwSenderError('api_keys.invalid_metadata_json');
+    throwSenderError(errors.invalidMetadataJson);
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
   } catch {
-    throwSenderError('api_keys.invalid_metadata_json');
+    throwSenderError(errors.invalidMetadataJson);
   }
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throwSenderError('api_keys.invalid_metadata_json');
+    throwSenderError(errors.invalidMetadataJson);
   }
   return JSON.stringify(parsed);
-}
-
-function senderSubject(sender: unknown): string {
-  if (
-    sender &&
-    typeof (sender as { toHexString?: unknown }).toHexString === 'function'
-  ) {
-    return (sender as { toHexString: () => string }).toHexString();
-  }
-  return String(sender);
 }
 
 function expiresAtFromSeconds(
@@ -221,10 +199,10 @@ function expiresAtFromSeconds(
     expiresInSeconds <= 0 ||
     expiresInSeconds > MAX_EXPIRATION_SECONDS
   ) {
-    throwSenderError('api_keys.invalid_expires_in_seconds');
+    throwSenderError(errors.invalidExpiresInSeconds);
   }
   return new Timestamp(
-    (ctx.timestamp.microsSinceUnixEpoch as bigint) +
+    ctx.timestamp.microsSinceUnixEpoch +
       BigInt(expiresInSeconds) * ONE_SECOND_MICROS
   );
 }
@@ -232,8 +210,7 @@ function expiresAtFromSeconds(
 function isExpired(row: ApiKeyRow, now: Timestamp): boolean {
   return (
     row.expiresAt !== undefined &&
-    (row.expiresAt.microsSinceUnixEpoch as bigint) <=
-      (now.microsSinceUnixEpoch as bigint)
+    row.expiresAt.microsSinceUnixEpoch <= now.microsSinceUnixEpoch
   );
 }
 
@@ -304,7 +281,7 @@ export function createApiKeyInTx(ctx: WriteCtx, args: CreateApiKeyArgs) {
     if (row.status.tag === 'Active' && !isExpired(row, ctx.timestamp)) {
       activeKeys++;
       if (activeKeys >= MAX_ACTIVE_KEYS_PER_OWNER) {
-        throwSenderError('api_keys.active_key_limit_reached');
+        throwSenderError(errors.activeKeyLimitReached);
       }
     }
   }
@@ -384,10 +361,11 @@ export function verifyApiKey(
   }
   if (!matchesApiKeyHash(key, row.hash)) {
     return denied(ctx, {
-      prefix,
+      keyId: row.keyId,
+      prefix: row.prefix,
+      ownerSubject: row.ownerSubject,
       action,
       reason: 'invalid_key',
-      record: false,
     });
   }
   if (row.status.tag !== 'Active') {
@@ -440,12 +418,8 @@ export function verifyApiKey(
   };
 }
 
-function canManageKey(
-  ctx: ReducerModuleCtx | WriteCtx,
-  row: ApiKeyRow,
-  subject: string
-): boolean {
-  return row.ownerSubject === subject || isAdmin(ctx, ctx.sender);
+function canManageKey(ctx: WriteCtx, row: ApiKeyRow, subject: string) {
+  return row.ownerSubject === subject || isAdmin(ctx);
 }
 
 export function revokeApiKeyInTx(
@@ -453,14 +427,13 @@ export function revokeApiKeyInTx(
   args: { keyId: string; ownerSubject?: string | undefined }
 ): void {
   const keyId = args.keyId.trim();
-  if (!keyId) throwSenderError('api_keys.invalid_key_id');
+  if (!keyId) throwSenderError(errors.invalidKeyId);
   const row = ctx.db.apiKey.keyId.find(keyId);
-  if (!row) throwSenderError('api_keys.not_found');
+  if (!row) throwSenderError(errors.notFound);
   const subject = normalizeOwnerSubject(
-    args.ownerSubject ?? senderSubject(ctx.sender)
+    args.ownerSubject ?? ctx.sender.toHexString()
   );
-  if (!canManageKey(ctx, row, subject))
-    throwSenderError('api_keys.not_authorized');
+  if (!canManageKey(ctx, row, subject)) throwSenderError(errors.notAuthorized);
   if (row.status.tag === 'Revoked') return;
   ctx.db.apiKey.keyId.update({
     ...row,
@@ -487,28 +460,28 @@ export function rotateApiKeyInTx(
   }
 ) {
   const keyId = args.keyId.trim();
-  if (!keyId) throwSenderError('api_keys.invalid_key_id');
+  if (!keyId) throwSenderError(errors.invalidKeyId);
   const row = ctx.db.apiKey.keyId.find(keyId);
-  if (!row) throwSenderError('api_keys.not_found');
+  if (!row) throwSenderError(errors.notFound);
   const subject = normalizeOwnerSubject(
-    args.ownerSubject ?? senderSubject(ctx.sender)
+    args.ownerSubject ?? ctx.sender.toHexString()
   );
-  if (!canManageKey(ctx, row, subject))
-    throwSenderError('api_keys.not_authorized');
+  if (!canManageKey(ctx, row, subject)) throwSenderError(errors.notAuthorized);
+  // Only live keys rotate, so rotation never revives a key or exceeds the cap.
+  if (row.status.tag !== 'Active') throwSenderError(errors.keyRevoked);
+  if (isExpired(row, ctx.timestamp)) throwSenderError(errors.keyExpired);
   const keyPrefix = normalizeKeyPrefix(args.keyPrefix);
-  const { key, prefix } = generateRawKey(ctx, keyPrefix);
   const expiresAt =
     args.expiresInSeconds === undefined
       ? row.expiresAt
       : expiresAtFromSeconds(ctx, args.expiresInSeconds);
+  const { key, prefix } = generateRawKey(ctx, keyPrefix);
   const updated = {
     ...row,
     prefix,
     hash: hashApiKey(key),
-    status: ApiKeyStatus.Active,
     expiresAt,
     lastUsedAt: undefined,
-    revokedAt: undefined,
   };
   ctx.db.apiKey.keyId.update(updated);
   recordUsage(ctx, {
@@ -534,7 +507,7 @@ export const createApiKey = spacetimedb.procedure(
   (ctx, args) =>
     ctx.withTx(tx =>
       createApiKeyInTx(tx, {
-        ownerSubject: senderSubject(ctx.sender),
+        ownerSubject: ctx.sender.toHexString(),
         name: args.name,
         scopesJson: args.scopesJson,
         metadataJson: args.metadataJson,
@@ -556,7 +529,7 @@ export const createApiKeyForSubject = spacetimedb.procedure(
   apiKeyCreateResult,
   (ctx, args) =>
     ctx.withTx(tx => {
-      requireAdmin(tx, ctx.sender);
+      requireAdmin(tx);
       return createApiKeyInTx(tx, args);
     })
 );
@@ -572,7 +545,7 @@ export const rotateApiKey = spacetimedb.procedure(
     ctx.withTx(tx =>
       rotateApiKeyInTx(tx, {
         keyId: args.keyId,
-        ownerSubject: senderSubject(ctx.sender),
+        ownerSubject: ctx.sender.toHexString(),
         expiresInSeconds: args.expiresInSeconds,
         keyPrefix: args.keyPrefix,
       })
@@ -584,7 +557,7 @@ export const revokeApiKey = spacetimedb.reducer(
   (ctx, args) => {
     revokeApiKeyInTx(ctx, {
       keyId: args.keyId,
-      ownerSubject: senderSubject(ctx.sender),
+      ownerSubject: ctx.sender.toHexString(),
     });
   }
 );
@@ -597,7 +570,43 @@ export const revokeApiKeyForSubject = spacetimedb.reducer(
   }
 );
 
-export const addAdminIdentity = spacetimedb.reducer(
+export const setApiKeysConfig = spacetimedb.reducer(
+  {
+    /** Required on the first call. Generate it outside the module. */
+    secret: t.option(t.string()),
+    usageRetentionSeconds: t.option(t.u32()),
+  },
+  (ctx, args) => {
+    requireAdmin(ctx);
+    const existing = ctx.db.apiKeyConfig.singleton.find(true);
+    const secret = args.secret ?? existing?.secret;
+    if (secret === undefined) throwSenderError(errors.secretRequired);
+    if (secret.length < MIN_SECRET_LENGTH) {
+      throwSenderError(errors.invalidSecret);
+    }
+    const usageRetentionSeconds =
+      args.usageRetentionSeconds ??
+      existing?.usageRetentionSeconds ??
+      DEFAULT_USAGE_RETENTION_SECONDS;
+    if (
+      usageRetentionSeconds < MIN_USAGE_RETENTION_SECONDS ||
+      usageRetentionSeconds > MAX_EXPIRATION_SECONDS
+    ) {
+      throwSenderError(errors.invalidUsageRetention);
+    }
+    const row = {
+      singleton: true,
+      secret,
+      counter: existing?.counter ?? 0n,
+      usageRetentionSeconds,
+      updatedAt: ctx.timestamp,
+    };
+    if (existing) ctx.db.apiKeyConfig.singleton.update(row);
+    else ctx.db.apiKeyConfig.insert(row);
+  }
+);
+
+export const addApiKeysAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -610,43 +619,37 @@ export const addAdminIdentity = spacetimedb.reducer(
   }
 );
 
-export const removeAdminIdentity = spacetimedb.reducer(
+export const removeApiKeysAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
     const row = ctx.db.apiKeyAdminIdentity.identity.find(args.identity);
     if (!row) return;
     if (ctx.db.apiKeyAdminIdentity.count() <= 1n) {
-      throwSenderError('api_keys.cannot_remove_last_admin');
+      throwSenderError(errors.cannotRemoveLastAdmin);
     }
     ctx.db.apiKeyAdminIdentity.delete(row);
   }
 );
 
-export const sweepApiKeyUsage = spacetimedb.reducer(
-  { maxAgeSeconds: t.u32(), maxRows: t.u32() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (
-      args.maxAgeSeconds < 3600 ||
-      args.maxAgeSeconds > MAX_EXPIRATION_SECONDS ||
-      args.maxRows < 1 ||
-      args.maxRows > MAX_USAGE_SWEEP_ROWS
-    ) {
-      throwSenderError('api_keys.invalid_sweep_args');
-    }
+/** Deletes a bounded batch of usage rows older than the retention window. */
+export const apiKeysSweep = spacetimedb.reducer(
+  { onSchedule: apiKeySweepTick },
+  { arg: apiKeySweepTick.rowType },
+  ctx => {
+    const retention =
+      ctx.db.apiKeyConfig.singleton.find(true)?.usageRetentionSeconds ??
+      DEFAULT_USAGE_RETENTION_SECONDS;
     const cutoff = new Timestamp(
-      (ctx.timestamp.microsSinceUnixEpoch as bigint) -
-        BigInt(args.maxAgeSeconds) * ONE_SECOND_MICROS
+      ctx.timestamp.microsSinceUnixEpoch - BigInt(retention) * ONE_SECOND_MICROS
     );
-    let examined = 0;
-    for (const row of ctx.db.apiKeyUsage.usedAt.filter(
-      new Range(undefined, { tag: 'included', value: cutoff })
-    )) {
-      if (examined >= args.maxRows) break;
-      examined++;
-      ctx.db.apiKeyUsage.usageId.delete(row.usageId);
-    }
+    const expired = takeRows(
+      ctx.db.apiKeyUsage.usedAt.filter(
+        new Range(undefined, { tag: 'included', value: cutoff })
+      ),
+      USAGE_SWEEP_BATCH
+    );
+    for (const row of expired) ctx.db.apiKeyUsage.delete(row);
   }
 );
 
@@ -654,7 +657,7 @@ export const myApiKeys = spacetimedb.view(
   { name: 'my_api_keys', public: true },
   t.array(apiKeySummary),
   ctx => {
-    const subject = senderSubject(ctx.sender);
+    const subject = ctx.sender.toHexString();
     return takeRows(ctx.db.apiKey.ownerSubject.filter(subject), 500).map(
       toSummary
     );

@@ -1,5 +1,4 @@
 import {
-  SenderError,
   schema,
   table,
   t,
@@ -9,7 +8,6 @@ import {
   type TransactionCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
-import { install } from './install';
 
 export const apiKeyStatus = t.enum('ApiKeyStatus', ['Active', 'Revoked']);
 
@@ -42,6 +40,26 @@ export const apiKeyAdminIdentity = table(
   {
     identity: t.identity().primaryKey(),
     addedAtMicros: t.i64(),
+  }
+);
+
+// Created by setApiKeysConfig. `counter` advances with every derived secret.
+export const apiKeyConfig = table(
+  { name: 'api_key_config', public: false },
+  {
+    singleton: t.bool().primaryKey(),
+    secret: t.string(),
+    counter: t.u64(),
+    usageRetentionSeconds: t.u32(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+export const apiKeySweepTick = table(
+  { name: 'api_key_sweep_tick' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
   }
 );
 
@@ -111,11 +129,9 @@ export const apiKeyVerifyResult = t.object('ApiKeyVerifyResult', {
 export const spacetimedb = schema({
   apiKey,
   apiKeyAdminIdentity,
+  apiKeyConfig,
+  apiKeySweepTick,
   apiKeyUsage,
-});
-
-export const init = spacetimedb.init(ctx => {
-  install(ctx);
 });
 
 export default spacetimedb;
@@ -127,4 +143,4 @@ export type TransactionModuleCtx = TransactionCtx<Schema>;
 export type ViewModuleCtx = ViewCtx<Schema>;
 export type WriteCtx = ReducerModuleCtx | TransactionModuleCtx;
 
-export { SenderError, t };
+export { t };

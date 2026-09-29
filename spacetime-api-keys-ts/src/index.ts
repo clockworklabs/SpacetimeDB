@@ -1,14 +1,10 @@
-export { default, init } from './submodule/schema';
+export { errors } from './errors';
 export {
-  addAdminIdentity,
-  apiKeyUsageAdmin,
-  apiKeysAdmin,
-  createApiKey,
-  createApiKeyForSubject,
-  myApiKeys,
-  removeAdminIdentity,
-  revokeApiKey,
-  revokeApiKeyForSubject,
-  rotateApiKey,
-  sweepApiKeyUsage,
+  createApiKeyInTx,
+  revokeApiKeyInTx,
+  rotateApiKeyInTx,
+  verifyApiKey,
+  type ApiKeyVerifyResult,
+  type CreateApiKeyArgs,
+  type VerifyApiKeyArgs,
 } from './submodule/operations';
