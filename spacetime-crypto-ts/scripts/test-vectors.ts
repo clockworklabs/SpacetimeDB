@@ -5,19 +5,21 @@
 //   SHA-256 vectors: NIST CAVS examples + RFC 6234 §8.5
 //   HMAC-SHA256 vectors: RFC 4231 §4
 
-import { sha256 } from '../src/sha256.ts';
-import { hmacSha256 } from '../src/hmac.ts';
+import { sha256 } from '../src/sha256';
+import { hmacSha256 } from '../src/hmac';
 import {
   bytesToHex,
   hexToBytes,
   timingSafeEqual,
   base64ToBytes,
-} from '../src/timing.ts';
+} from '../src/timing';
 import {
+  errors,
   verifyStripeSignature,
   verifyGithubSignature,
   verifySvixSignature,
-} from '../src/vendors.ts';
+  type VerifyResult,
+} from '../src/vendors';
 
 const enc = new TextEncoder();
 
@@ -45,6 +47,20 @@ function assert(label: string, cond: boolean): void {
     fail++;
   }
 }
+
+function assertResult(
+  label: string,
+  got: VerifyResult,
+  expected: VerifyResult
+): void {
+  assertEq(label, JSON.stringify(got), JSON.stringify(expected));
+}
+
+const ok: VerifyResult = { ok: true };
+const fails = (reason: keyof typeof errors): VerifyResult => ({
+  ok: false,
+  reason: errors[reason],
+});
 
 // SHA-256
 process.stdout.write('SHA-256\n');
@@ -217,51 +233,52 @@ const stripeMac = hmacSha256(
   enc.encode(`${stripeTs}.${stripeBody}`)
 );
 const stripeHeader = `t=${stripeTs},v1=${bytesToHex(stripeMac)}`;
-assert(
-  'valid signature passes (tolerance bypass)',
-  verifyStripeSignature({
-    rawBody: stripeBody,
-    signatureHeader: stripeHeader,
-    secret: stripeSecret,
-    toleranceSeconds: Infinity,
-  })
-);
-assert(
+const stripe = {
+  rawBody: stripeBody,
+  signatureHeader: stripeHeader,
+  secret: stripeSecret,
+  toleranceSeconds: Infinity,
+};
+assertResult('valid signature passes', verifyStripeSignature(stripe), ok);
+assertResult(
   'mutated body fails',
-  !verifyStripeSignature({
-    rawBody: stripeBody + 'x',
-    signatureHeader: stripeHeader,
-    secret: stripeSecret,
-    toleranceSeconds: Infinity,
-  })
+  verifyStripeSignature({ ...stripe, rawBody: stripeBody + 'x' }),
+  fails('signatureMismatch')
 );
-assert(
+assertResult(
   'wrong secret fails',
-  !verifyStripeSignature({
-    rawBody: stripeBody,
-    signatureHeader: stripeHeader,
-    secret: 'whsec_wrong',
-    toleranceSeconds: Infinity,
-  })
+  verifyStripeSignature({ ...stripe, secret: 'whsec_wrong' }),
+  fails('signatureMismatch')
 );
-assert(
+assertResult(
+  'missing v1 entry fails',
+  verifyStripeSignature({ ...stripe, signatureHeader: `t=${stripeTs}` }),
+  fails('missingSignature')
+);
+assertResult(
+  'non-numeric timestamp fails',
+  verifyStripeSignature({
+    ...stripe,
+    signatureHeader: `t=soon,v1=${bytesToHex(stripeMac)}`,
+  }),
+  fails('invalidTimestamp')
+);
+assertResult(
   'old timestamp rejected when tolerance enforced',
-  !verifyStripeSignature({
-    rawBody: stripeBody,
-    signatureHeader: stripeHeader,
-    secret: stripeSecret,
+  verifyStripeSignature({
+    ...stripe,
     toleranceSeconds: 300,
     nowSeconds: Number(stripeTs) + 1000,
-  })
+  }),
+  fails('timestampOutsideTolerance')
 );
-assert(
+assertResult(
   'multiple v1 entries: any match wins',
   verifyStripeSignature({
-    rawBody: stripeBody,
+    ...stripe,
     signatureHeader: `t=${stripeTs},v1=deadbeef,v1=${bytesToHex(stripeMac)}`,
-    secret: stripeSecret,
-    toleranceSeconds: Infinity,
-  })
+  }),
+  ok
 );
 
 // GitHub signature round-trip
@@ -269,13 +286,21 @@ process.stdout.write('\nGitHub webhook signature\n');
 const ghSecret = "It's a Secret to Everybody";
 const ghBody = 'Hello, World!';
 const ghMac = hmacSha256(enc.encode(ghSecret), enc.encode(ghBody));
-assert(
-  'roundtrip passes',
-  verifyGithubSignature({
-    rawBody: ghBody,
-    signatureHeader: `sha256=${bytesToHex(ghMac)}`,
-    secret: ghSecret,
-  })
+const github = {
+  rawBody: ghBody,
+  signatureHeader: `sha256=${bytesToHex(ghMac)}`,
+  secret: ghSecret,
+};
+assertResult('roundtrip passes', verifyGithubSignature(github), ok);
+assertResult(
+  'missing prefix fails',
+  verifyGithubSignature({ ...github, signatureHeader: bytesToHex(ghMac) }),
+  fails('missingSignature')
+);
+assertResult(
+  'wrong secret fails',
+  verifyGithubSignature({ ...github, secret: 'wrong' }),
+  fails('signatureMismatch')
 );
 // Known vector from GitHub docs.
 assertEq(
@@ -286,26 +311,8 @@ assertEq(
 
 // Svix (Resend) signature round-trip
 process.stdout.write('\nsvix (Resend) signature\n');
-// Construct as svix would.
-const svixSecretRaw = new Uint8Array(32);
-svixSecretRaw.fill(0x42);
-// Helper to base64-encode (mirror of base64ToBytes).
-function bytesToBase64(b: Uint8Array): string {
-  const ALPHABET =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let s = '';
-  for (let i = 0; i < b.length; i += 3) {
-    const b0 = b[i];
-    const b1 = i + 1 < b.length ? b[i + 1] : 0;
-    const b2 = i + 2 < b.length ? b[i + 2] : 0;
-    s += ALPHABET[b0 >> 2];
-    s += ALPHABET[((b0 & 3) << 4) | (b1 >> 4)];
-    s += i + 1 < b.length ? ALPHABET[((b1 & 0xf) << 2) | (b2 >> 6)] : '=';
-    s += i + 2 < b.length ? ALPHABET[b2 & 0x3f] : '=';
-  }
-  return s;
-}
-const svixSecret = 'whsec_' + bytesToBase64(svixSecretRaw);
+const svixSecretRaw = new Uint8Array(32).fill(0x42);
+const toBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 const svixId = 'msg_test_123';
 const svixTs = '1700000000';
 const svixBody = '{"event":"email.delivered"}';
@@ -313,28 +320,38 @@ const svixMac = hmacSha256(
   svixSecretRaw,
   enc.encode(`${svixId}.${svixTs}.${svixBody}`)
 );
-const svixSig = 'v1,' + bytesToBase64(svixMac);
-assert(
-  'valid svix signature passes',
-  verifySvixSignature({
-    rawBody: svixBody,
-    svixId,
-    svixTimestamp: svixTs,
-    svixSignature: svixSig,
-    secret: svixSecret,
-    toleranceSeconds: Infinity,
-  })
-);
-assert(
+const svix = {
+  rawBody: svixBody,
+  svixId,
+  svixTimestamp: svixTs,
+  svixSignature: `v1,${toBase64(svixMac)}`,
+  secret: `whsec_${toBase64(svixSecretRaw)}`,
+  toleranceSeconds: Infinity,
+};
+assertResult('valid svix signature passes', verifySvixSignature(svix), ok);
+assertResult(
   'mutated svix body fails',
-  !verifySvixSignature({
-    rawBody: svixBody + 'x',
-    svixId,
-    svixTimestamp: svixTs,
-    svixSignature: svixSig,
-    secret: svixSecret,
-    toleranceSeconds: Infinity,
-  })
+  verifySvixSignature({ ...svix, rawBody: svixBody + 'x' }),
+  fails('signatureMismatch')
+);
+assertResult(
+  'invalid base64 secret fails',
+  verifySvixSignature({ ...svix, secret: 'whsec_not base64' }),
+  fails('invalidSecret')
+);
+assertResult(
+  'no v1 signature fails',
+  verifySvixSignature({ ...svix, svixSignature: 'v2,abc' }),
+  fails('missingSignature')
+);
+assertResult(
+  'old svix timestamp rejected',
+  verifySvixSignature({
+    ...svix,
+    toleranceSeconds: 300,
+    nowSeconds: Number(svixTs) + 301,
+  }),
+  fails('timestampOutsideTolerance')
 );
 
 // Summary

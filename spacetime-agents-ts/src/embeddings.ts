@@ -1,4 +1,4 @@
-import type { HttpLike } from './openrouter';
+import type { HttpLike } from './openrouter.js';
 
 export interface EmbeddingProvider {
   name: string;

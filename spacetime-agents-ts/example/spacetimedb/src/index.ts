@@ -8,18 +8,14 @@ import {
   type ProcedureCtx,
   type ReducerCtx,
 } from 'spacetimedb/server';
+import { Timestamp } from 'spacetimedb';
 import * as agents from '@spacetimedb/agents/submodule';
 import * as auth from '@spacetimedb/auth/submodule';
-import { consumeRateLimit } from '@spacetimedb/rate-limit/submodule';
-import * as agentRateLimit from '@spacetimedb/rate-limit/submodule';
 import * as files from '@spacetimedb/files/submodule';
 import { agents as agentDefinitions } from './agents';
 import { attachmentValidationError } from './attachments';
-import { messageAttachment, tokenLimit } from './model';
+import { messageAttachment, tokenLimit, tokenUsage } from './model';
 import { registerAgentViews } from './views';
-
-const U32_MAX = 0xffff_ffff;
-const AGENT_TOKEN_RATE_LIMIT_SCOPE = 'agents.tokens';
 
 function throwSenderError(msg: string): never {
   throw new SenderError(msg);
@@ -35,9 +31,9 @@ const consoleSendMail: auth.SendMailFn = (_ctx, params) => {
 const spacetimedb = schema({
   auth,
   files,
-  agentRateLimit,
   agents,
   tokenLimit,
+  tokenUsage,
   messageAttachment,
 });
 export default spacetimedb;
@@ -58,39 +54,40 @@ function requireUserId(ctx: CallerCtx): string {
   return userId;
 }
 
-function rateLimitKey(userId: string): string {
-  return `${AGENT_TOKEN_RATE_LIMIT_SCOPE}:${userId}`;
+// The cap and window are admin-configurable at runtime, which a fixed
+// rate-limit policy cannot express, so usage is counted in token_usage.
+function openUsage(tx: WriteCtx, userId: string) {
+  const row = tx.db.tokenUsage.owner.find(userId);
+  return row &&
+    row.windowEndsAt.microsSinceUnixEpoch > tx.timestamp.microsSinceUnixEpoch
+    ? row
+    : undefined;
 }
 
 function checkRateLimit(tx: WriteCtx, userId: string): void {
   const limit = tx.db.tokenLimit.singleton.find(true);
-  if (!limit) return;
-  const bucket = tx.db.agentRateLimit.rateLimitBucket.key.find(
-    rateLimitKey(userId)
-  );
-  if (
-    bucket &&
-    bucket.expiresAt.microsSinceUnixEpoch > tx.timestamp.microsSinceUnixEpoch &&
-    bucket.count >= limit.tokensPerWindow
-  ) {
-    throwSenderError(
-      `agent.rate_limited:${bucket.count}/${limit.tokensPerWindow}`
-    );
+  const used = openUsage(tx, userId)?.tokens ?? 0n;
+  if (limit && used >= BigInt(limit.tokensPerWindow)) {
+    throwSenderError(`agent.rate_limited:${used}/${limit.tokensPerWindow}`);
   }
 }
 
 function bumpRateLimit(tx: WriteCtx, userId: string, tokens: number): void {
   const limit = tx.db.tokenLimit.singleton.find(true);
   if (!limit) return;
-  const result = consumeRateLimit(tx.as.agentRateLimit, {
-    key: rateLimitKey(userId),
-    scope: AGENT_TOKEN_RATE_LIMIT_SCOPE,
-    // The cap is enforced before each run; this only records usage.
-    limit: U32_MAX,
-    windowSeconds: limit.windowSecs,
-    cost: Math.min(tokens, U32_MAX),
-  });
-  if (!result.allowed) throwSenderError('agent.rate_limit_counter_overflow');
+  const open = openUsage(tx, userId);
+  const row = {
+    owner: userId,
+    tokens: (open?.tokens ?? 0n) + BigInt(tokens),
+    windowEndsAt:
+      open?.windowEndsAt ??
+      new Timestamp(
+        tx.timestamp.microsSinceUnixEpoch +
+          BigInt(limit.windowSecs) * 1_000_000n
+      ),
+  };
+  if (tx.db.tokenUsage.owner.find(userId)) tx.db.tokenUsage.owner.update(row);
+  else tx.db.tokenUsage.insert(row);
 }
 
 const BASE64_ALPHABET =
@@ -133,7 +130,6 @@ const agentsClient = agents.client<WriteCtx>({
 
 export const init = spacetimedb.init(ctx => {
   auth.install(ctx.as.auth);
-  agentRateLimit.install(ctx.as.agentRateLimit);
   agents.install(ctx.as.agents);
 });
 

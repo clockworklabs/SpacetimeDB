@@ -1,12 +1,16 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
-import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../crypto';
-import type { AuthHandlerCtx, AuthTransactionCtx } from '../context';
-import type { AuthHttpOptions } from '../client';
-import { HttpError, jsonResponse, requireConfig, safeJson } from './http';
-import { AUTH_RATE_LIMITS, enforceRateLimits } from '../rate_limit';
-import { clientKey } from '../request-trust';
-import { issueSession } from '../sessions';
-import { newId, secretBytes } from '../tokens';
+import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  verifyPassword,
+} from '../crypto.js';
+import type { AuthHandlerCtx, AuthTransactionCtx } from '../context.js';
+import type { AuthHttpOptions } from '../client.js';
+import { HttpError, jsonResponse, requireConfig, safeJson } from './http.js';
+import { AUTH_RATE_LIMITS, enforceRateLimits } from '../rate_limit.js';
+import { clientKey } from '../request-trust.js';
+import { issueSession } from '../sessions.js';
+import { newId, secretBytes } from '../tokens.js';
 
 interface SignupBody {
   email: string;

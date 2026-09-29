@@ -7,7 +7,7 @@ import {
   SenderError,
   type InferTypeOfParams,
 } from 'spacetimedb/server';
-import { fileListPage } from './rows';
+import { fileListPage } from './rows.js';
 import {
   errors,
   FILE_BYTES_MAX,
@@ -15,8 +15,8 @@ import {
   FILE_OWNER_BYTES_MAX,
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
-} from './constants';
-import { fileSha256Hex } from './hash';
+} from './constants.js';
+import { fileSha256Hex } from './hash.js';
 import {
   FileValidationError,
   ownerPathKey,
@@ -24,8 +24,8 @@ import {
   validateFilePath,
   validateFilePrefix,
   validateMimeType,
-} from './validation';
-import type { FilesCtx } from './submodule/schema';
+} from './validation.js';
+import type { FilesCtx } from './submodule/schema.js';
 
 const VALID_VISIBILITIES = new Set<string>([
   FILE_VISIBILITY_OWNER,

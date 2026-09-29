@@ -1,6 +1,6 @@
 import { SyncResponse, type Request } from 'spacetimedb/server';
-import type { AuthConfig } from '../types';
-import type { AuthTransactionCtx } from '../context';
+import type { AuthConfig } from '../types.js';
+import type { AuthTransactionCtx } from '../context.js';
 
 /** Thrown by handlers; the client() boundary turns it into a JSON error response. */
 export class HttpError extends Error {

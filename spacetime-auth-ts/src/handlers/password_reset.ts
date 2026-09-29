@@ -1,25 +1,25 @@
 import type { SyncResponse, Request } from 'spacetimedb/server';
 import { Timestamp } from 'spacetimedb';
-import { hashPassword } from '../crypto';
-import { buildPasswordResetEmail } from '../mailer';
-import type { AuthHandlerCtx, AuthTransactionCtx } from '../context';
-import type { AuthHttpOptions } from '../client';
-import { HttpError, jsonResponse, requireConfig, safeJson } from './http';
+import { hashPassword } from '../crypto.js';
+import { buildPasswordResetEmail } from '../mailer.js';
+import type { AuthHandlerCtx, AuthTransactionCtx } from '../context.js';
+import type { AuthHttpOptions } from '../client.js';
+import { HttpError, jsonResponse, requireConfig, safeJson } from './http.js';
 import {
   AUTH_RATE_LIMITS,
   enforceIpRateLimit,
   enforceRateLimits,
-} from '../rate_limit';
-import { clientKey } from '../request-trust';
-import { deleteSession } from '../sessions';
-import { newId, newToken } from '../tokens';
+} from '../rate_limit.js';
+import { clientKey } from '../request-trust.js';
+import { deleteSession } from '../sessions.js';
+import { newId, newToken } from '../tokens.js';
 import {
   MAX_EMAIL_LEN,
   MAX_PASSWORD_LEN,
   MIN_PASSWORD_LEN,
   newSalt,
   passwordAccount,
-} from './password';
+} from './password.js';
 
 const PURPOSE = 'password_reset';
 const TOKEN_TTL_SECONDS = 60n * 60n;

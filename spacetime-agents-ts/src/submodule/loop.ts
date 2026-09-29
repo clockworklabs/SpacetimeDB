@@ -1,4 +1,4 @@
-import { errors } from '../errors';
+import { errors } from '../errors.js';
 import {
   callChat,
   type ChatError,
@@ -9,7 +9,7 @@ import {
   type ResponseFormat,
   type ToolCall,
   type ToolDefinition,
-} from '../openrouter';
+} from '../openrouter.js';
 
 export const USER_CONTENT_MAX = 32_000;
 export const TOOL_RESULT_MAX = 64_000;

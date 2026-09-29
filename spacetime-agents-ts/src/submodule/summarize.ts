@@ -1,4 +1,4 @@
-import type { LoopMessage } from './loop';
+import type { LoopMessage } from './loop.js';
 
 export function pickSummarizationCandidates(
   messages: LoopMessage[],

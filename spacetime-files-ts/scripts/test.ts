@@ -1,12 +1,12 @@
 import * as assert from 'node:assert/strict';
-import { fileSha256Hex } from '../src/hash.ts';
-import { responseHeaders } from '../src/headers.ts';
-import { queryParam } from '../src/query.ts';
+import { fileSha256Hex } from '../src/hash';
+import { responseHeaders } from '../src/headers';
+import { queryParam } from '../src/query';
 import {
   ownerPathKey,
   validateFilePath,
   validateMimeType,
-} from '../src/validation.ts';
+} from '../src/validation';
 
 assert.equal(
   fileSha256Hex(new TextEncoder().encode('abc')),

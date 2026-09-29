@@ -1,4 +1,4 @@
-export { default } from './submodule/schema';
+export { default } from './submodule/schema.js';
 export {
   errors,
   fileSummary,
@@ -9,7 +9,7 @@ export {
   FILE_PATH_MAX,
   FILE_VISIBILITY_OWNER,
   FILE_VISIBILITY_PUBLIC,
-} from './index';
+} from './index.js';
 export {
   uploadFileParams,
   uploadFile,
@@ -26,6 +26,6 @@ export {
   setFileVisibilityParams,
   setFileVisibility,
   type UploadFileOpts,
-} from './procedures';
-export { serveFile, type FileMetadata } from './handlers';
-export type { FilesCtx, FilesHandlerCtx } from './submodule/schema';
+} from './procedures.js';
+export { serveFile, type FileMetadata } from './handlers.js';
+export type { FilesCtx, FilesHandlerCtx } from './submodule/schema.js';

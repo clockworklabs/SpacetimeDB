@@ -25,14 +25,18 @@ after signature verification succeeds.
 Verify a Stripe webhook with the raw body and module time:
 
 ```ts
+import { SyncResponse } from 'spacetimedb/server';
 import { verifyStripeSignature } from '@spacetimedb/crypto';
 
-const valid = verifyStripeSignature({
+const result = verifyStripeSignature({
   rawBody,
   signatureHeader: request.headers.get('stripe-signature') ?? '',
   secret: webhookSecret,
   nowSeconds: Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n),
 });
+if (!result.ok) {
+  return new SyncResponse(result.reason, { status: 400 });
+}
 ```
 
 Verify the raw webhook body before parsing it. Store webhook secrets in private
@@ -49,6 +53,17 @@ tables and keep them out of public rows and procedure results.
 - `verifySvixSignature(options)` verifies Svix-compatible signatures, including
   Resend webhooks.
 - `verifyGithubSignature(options)` verifies GitHub's SHA-256 webhook signature.
+
+The verifiers return `{ ok: true }` or `{ ok: false, reason }`. `reason` is one
+of the `errors` codes, so the caller decides what to log or return:
+
+| Code                                 | Meaning                                                |
+| ------------------------------------ | ------------------------------------------------------ |
+| `crypto.missing_signature`           | The header has no timestamp or no supported signature. |
+| `crypto.invalid_timestamp`           | The signed timestamp is not an integer.                |
+| `crypto.timestamp_outside_tolerance` | The timestamp is outside `toleranceSeconds`.           |
+| `crypto.invalid_secret`              | The Svix secret is not valid base64.                   |
+| `crypto.signature_mismatch`          | No signature matches the body and secret.              |
 
 Package entrypoints:
 

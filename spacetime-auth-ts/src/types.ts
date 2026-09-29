@@ -4,7 +4,7 @@ import type {
   authConfigTable,
   authSessionTable,
   authUserTable,
-} from './tables';
+} from './tables.js';
 
 export type AuthUser = Infer<typeof authUserTable.rowType>;
 export type AuthSession = Infer<typeof authSessionTable.rowType>;

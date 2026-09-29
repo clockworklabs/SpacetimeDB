@@ -1,5 +1,5 @@
 import type { ElementsObj, Infer as InferBuilder } from 'spacetimedb/server';
-import type { ToolDefinition, ResponseFormat } from './openrouter';
+import type { ToolDefinition, ResponseFormat } from './openrouter.js';
 
 type TypeBuilderLike = ElementsObj[string];
 type IsUnit<T> = [keyof T] extends [never] ? true : false;

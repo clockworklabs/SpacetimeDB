@@ -2,9 +2,13 @@
 
 import type { Identity, Timestamp } from 'spacetimedb';
 import { SenderError } from 'spacetimedb/server';
-import type { AuthProcedureCtx, AuthReducerCtx, AuthViewCtx } from './context';
-import { errors } from './errors';
-import type { AuthUser } from './types';
+import type {
+  AuthProcedureCtx,
+  AuthReducerCtx,
+  AuthViewCtx,
+} from './context.js';
+import { errors } from './errors.js';
+import type { AuthUser } from './types.js';
 
 type CallerContext = AuthReducerCtx | AuthProcedureCtx | AuthViewCtx;
 

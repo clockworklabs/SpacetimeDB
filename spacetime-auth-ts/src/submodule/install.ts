@@ -1,7 +1,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
-import type spacetimedb from './index';
+import type spacetimedb from './index.js';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 

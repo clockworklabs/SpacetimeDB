@@ -1,9 +1,9 @@
 import { SyncResponse, type Infer, type Request } from 'spacetimedb/server';
-import { FILE_VISIBILITY_PUBLIC } from './constants';
-import { responseHeaders } from './headers';
-import { queryParam } from './query';
-import type { file, FilesHandlerCtx } from './submodule/schema';
-import { safeMimeType } from './validation';
+import { FILE_VISIBILITY_PUBLIC } from './constants.js';
+import { responseHeaders } from './headers.js';
+import { queryParam } from './query.js';
+import type { file, FilesHandlerCtx } from './submodule/schema.js';
+import { safeMimeType } from './validation.js';
 
 type FileRow = Infer<typeof file.rowType>;
 

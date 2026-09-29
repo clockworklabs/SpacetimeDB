@@ -5,7 +5,7 @@ import type {
   ToolCall,
   Provider,
   ChatResponse,
-} from './openrouter';
+} from './openrouter.js';
 
 type JsonObject = Record<string, unknown>;
 

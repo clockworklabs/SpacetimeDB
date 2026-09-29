@@ -29,13 +29,37 @@
     }
   },
   "files": [
-    "src",
+    "dist",
     "LICENSE",
     "README.md"
   ],
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./openrouter": {
+        "types": "./dist/openrouter.d.ts",
+        "default": "./dist/openrouter.js"
+      },
+      "./providers": {
+        "types": "./dist/providers.d.ts",
+        "default": "./dist/providers.js"
+      },
+      "./embeddings": {
+        "types": "./dist/embeddings.d.ts",
+        "default": "./dist/embeddings.js"
+      },
+      "./submodule": {
+        "types": "./dist/submodule.d.ts",
+        "default": "./dist/submodule.js"
+      }
+    }
   },
   "repository": {
     "type": "git",
@@ -58,7 +82,8 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm run test:unit",
     "test:unit": "tsx scripts/test.ts && tsx scripts/test-loop.ts",
-    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "dependencies": {},

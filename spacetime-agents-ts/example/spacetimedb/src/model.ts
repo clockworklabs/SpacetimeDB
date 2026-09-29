@@ -11,6 +11,16 @@ export const tokenLimit = table(
   }
 );
 
+// One row per user: tokens spent in the user's current window.
+export const tokenUsage = table(
+  { name: 'token_usage', public: false },
+  {
+    owner: t.string().primaryKey(),
+    tokens: t.u64(),
+    windowEndsAt: t.timestamp(),
+  }
+);
+
 export const messageAttachment = table(
   { name: 'message_attachment', public: false },
   {
