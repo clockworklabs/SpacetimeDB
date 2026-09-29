@@ -9,7 +9,7 @@ import {
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
-import { install } from './install';
+import { install } from './install.js';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
 // Ignored = event type this submodule does not handle. Failed = invalid payload.

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
-import { buildResendHttpRequest } from '../src/submodule/request.ts';
-import { validateEmailInput } from '../src/submodule/email-input.ts';
-import { parseResendEventType } from '../src/submodule/webhook-metadata.ts';
+import { buildResendHttpRequest } from '../src/submodule/request';
+import { validateEmailInput } from '../src/submodule/email-input';
+import { parseResendEventType } from '../src/submodule/webhook-metadata';
 
 assert.equal(
   parseResendEventType('{"type":"email.delivered","data":{}}'),

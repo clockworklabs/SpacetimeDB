@@ -3,7 +3,7 @@ import {
   type EmailStatusValue,
   type ModuleTimestamp,
   type WriteCtx,
-} from './schema';
+} from './schema.js';
 
 const STATUS_ORDER = {
   Queued: 0,

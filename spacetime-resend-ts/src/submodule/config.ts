@@ -3,10 +3,10 @@ import {
   t,
   type ProcedureModuleCtx,
   type WriteCtx,
-} from './schema';
-import { adminVerdict, denyIfNotAdmin } from './auth';
-import { throwSenderError } from './validation';
-import { errors } from './errors';
+} from './schema.js';
+import { adminVerdict, denyIfNotAdmin } from './auth.js';
+import { throwSenderError } from './validation.js';
+import { errors } from './errors.js';
 
 export type ResendConfig = {
   apiKey: string;

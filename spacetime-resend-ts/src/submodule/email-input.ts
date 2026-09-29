@@ -1,5 +1,5 @@
-import { errors } from './errors';
-import { hasControlCharacter } from './text-validation';
+import { errors } from './errors.js';
+import { hasControlCharacter } from './text-validation.js';
 
 export type EmailInput = {
   from?: string | undefined;

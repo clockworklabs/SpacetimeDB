@@ -10,14 +10,18 @@ import {
   vSendEmailResponse,
   type ProcedureModuleCtx,
   type WriteCtx,
-} from './schema';
-import { callResend, ensureOkOrThrow } from './http';
-import { safeJsonParse, summarizeIssues, throwSenderError } from './validation';
-import { upsertEmail } from './email_writes';
-import { loadConfigOrThrowFromProcedure } from './config';
-import { adminVerdict, denyIfNotAdmin } from './auth';
-import { validateEmailInput } from './email-input';
-import { errors } from './errors';
+} from './schema.js';
+import { callResend, ensureOkOrThrow } from './http.js';
+import {
+  safeJsonParse,
+  summarizeIssues,
+  throwSenderError,
+} from './validation.js';
+import { upsertEmail } from './email_writes.js';
+import { loadConfigOrThrowFromProcedure } from './config.js';
+import { adminVerdict, denyIfNotAdmin } from './auth.js';
+import { validateEmailInput } from './email-input.js';
+import { errors } from './errors.js';
 
 function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));

@@ -12,9 +12,9 @@ import {
   type ReducerModuleCtx,
   type WebhookEventStatusValue,
   type WriteCtx,
-} from './schema';
-import { upsertEmail } from './email_writes';
-import { requireAdmin } from './auth';
+} from './schema.js';
+import { upsertEmail } from './email_writes.js';
+import { requireAdmin } from './auth.js';
 import { verifySvixSignature } from '@spacetimedb/crypto';
 import {
   SyncResponse,
@@ -26,9 +26,9 @@ import {
   safeJsonParse,
   summarizeIssues,
   throwSenderError,
-} from './validation';
-import { parseResendEventType } from './webhook-metadata';
-import { errors } from './errors';
+} from './validation.js';
+import { parseResendEventType } from './webhook-metadata.js';
+import { errors } from './errors.js';
 
 type ResendTags = EmailEvent['data']['tags'];
 

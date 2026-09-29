@@ -8,7 +8,6 @@
     "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "allowImportingTsExtensions": true,
     "noImplicitAny": true,
     "moduleResolution": "Bundler",
     "isolatedDeclarations": false,

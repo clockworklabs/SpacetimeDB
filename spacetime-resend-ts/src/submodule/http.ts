@@ -1,8 +1,8 @@
 import * as v from 'valibot';
-import { type ProcedureModuleCtx, vResendErrorBody } from './schema';
-import { safeJsonParse, throwSenderError } from './validation';
-import { buildResendHttpRequest } from './request';
-import { errors } from './errors';
+import { type ProcedureModuleCtx, vResendErrorBody } from './schema.js';
+import { safeJsonParse, throwSenderError } from './validation.js';
+import { buildResendHttpRequest } from './request.js';
+import { errors } from './errors.js';
 
 export type ResendHttpResponse = {
   status: number;

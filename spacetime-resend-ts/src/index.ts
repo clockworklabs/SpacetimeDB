@@ -1,8 +1,11 @@
-export { default, init } from './submodule/schema';
-export { ingestResendWebhook, replayWebhookEvent } from './submodule/webhooks';
+export { default, init } from './submodule/schema.js';
+export {
+  ingestResendWebhook,
+  replayWebhookEvent,
+} from './submodule/webhooks.js';
 
-export { setResendConfig, getResendConfigStatus } from './submodule/config';
-export { addAdminIdentity, removeAdminIdentity } from './submodule/auth';
+export { setResendConfig, getResendConfigStatus } from './submodule/config.js';
+export { addAdminIdentity, removeAdminIdentity } from './submodule/auth.js';
 export {
   cancelEmail,
   getEmail,
@@ -12,4 +15,4 @@ export {
   listEmailsByUserId,
   resendApiRequest,
   sendEmail,
-} from './submodule/operations';
+} from './submodule/operations.js';

@@ -1,5 +1,5 @@
-import { errors } from './errors';
-import { hasControlCharacter } from './text-validation';
+import { errors } from './errors.js';
+import { hasControlCharacter } from './text-validation.js';
 
 const RESEND_API_BASE = 'https://api.resend.com';
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'DELETE']);
