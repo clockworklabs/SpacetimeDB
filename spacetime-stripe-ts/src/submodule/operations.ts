@@ -1,6 +1,9 @@
 import * as v from 'valibot';
+import { Timestamp } from 'spacetimedb';
 import {
+  Range,
   SenderError,
+  stripeWebhookPruneTickTable,
   t,
   WebhookEventStatus,
   type WebhookEventStatusValue,
@@ -31,6 +34,8 @@ import {
   MAX_WEBHOOK_BODY_LENGTH,
   MAX_WEBHOOK_HEADER_LENGTH,
   MAX_WEBHOOK_METADATA_LENGTH,
+  WEBHOOK_EVENT_RETENTION_MICROS,
+  WEBHOOK_PRUNE_BATCH,
 } from './limits';
 import {
   assertExhaustive,
@@ -988,7 +993,6 @@ export const ingestStripeWebhook = spacetimedb.reducer(
         eventId: signedMetadata.eventId,
         eventType: signedMetadata.eventType,
         livemode: signedMetadata.livemode,
-        signatureHeader,
         payloadJson,
         status: WebhookEventStatus.Received,
         errorMessage: undefined,
@@ -1017,5 +1021,22 @@ export const replayWebhookEvent = spacetimedb.reducer(
     if (!event) throwSenderError(errors.webhookEventNotFound);
     const outcome = applyStripeEvent(ctx, event.payloadJson);
     updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
+  }
+);
+
+export const pruneWebhookEvents = spacetimedb.reducer(
+  { onSchedule: stripeWebhookPruneTickTable },
+  { arg: stripeWebhookPruneTickTable.rowType },
+  ctx => {
+    const cutoff = new Timestamp(
+      ctx.timestamp.microsSinceUnixEpoch - WEBHOOK_EVENT_RETENTION_MICROS
+    );
+    const expired = takeRows(
+      ctx.db.stripeWebhookEvent.byReceivedAt.filter(
+        new Range(undefined, { tag: 'excluded', value: cutoff })
+      ),
+      WEBHOOK_PRUNE_BATCH
+    );
+    for (const row of expired) ctx.db.stripeWebhookEvent.delete(row);
   }
 );

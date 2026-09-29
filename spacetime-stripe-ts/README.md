@@ -116,7 +116,12 @@ its submodule-scoped `ctx.as.stripe` context.
 | `stripe_invoice`          | `stripe_invoice_id`          | indexed by customer, subscription, status |
 | `stripe_payment`          | `stripe_payment_intent_id`   | indexed by customer, status               |
 
-- `stripe_webhook_event`: idempotency log (`get_webhook_event_count` exposes the size)
+- `stripe_webhook_event`: idempotency log holding each event's payload (not its
+  signature header). The scheduled `prune_webhook_events` reducer deletes events
+  received more than 30 days ago, 500 per hourly run. `get_webhook_event_count`
+  exposes the size.
+- `stripe_webhook_prune_tick`: schedule for `prune_webhook_events`, created by
+  `install`
 - `stripe_config`: credentials singleton
 - `stripe_admin_identity`: admin allowlist
 

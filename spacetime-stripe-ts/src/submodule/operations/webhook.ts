@@ -92,7 +92,6 @@ export function handleStripeWebhook(
           eventId,
           eventType,
           livemode,
-          signatureHeader,
           payloadJson,
           status: WebhookEventStatus.Received,
           errorMessage: undefined,

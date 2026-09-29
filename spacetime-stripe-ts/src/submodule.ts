@@ -8,6 +8,7 @@ export {
   updateSubscriptionQuantityInternal,
   ingestStripeWebhook,
   replayWebhookEvent,
+  pruneWebhookEvents,
 } from './submodule/operations';
 export {
   validateStripePrice,

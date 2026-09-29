@@ -111,7 +111,6 @@ export const stripeWebhookEventRow = {
   eventId: t.string().primaryKey(),
   eventType: t.string(),
   livemode: t.bool(),
-  signatureHeader: t.option(t.string()),
   payloadJson: t.string(),
   status: webhookEventStatus,
   errorMessage: t.option(t.string()),
@@ -217,10 +216,19 @@ export const stripeWebhookEventTable = table(
     name: 'stripe_webhook_event',
     public: false,
     indexes: [
-      { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
+      { accessor: 'byReceivedAt', algorithm: 'btree', columns: ['receivedAt'] },
     ],
   },
   stripeWebhookEventRow
+);
+
+// Schedules the retention sweep of stripe_webhook_event.
+export const stripeWebhookPruneTickTable = table(
+  { name: 'stripe_webhook_prune_tick', public: false },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+  }
 );
 
 // Singleton row holding deploy-time secrets. Private, never subscribable.
@@ -255,6 +263,7 @@ export const spacetimedb = schema({
   stripePayment: stripePaymentTable,
   stripeInvoice: stripeInvoiceTable,
   stripeWebhookEvent: stripeWebhookEventTable,
+  stripeWebhookPruneTick: stripeWebhookPruneTickTable,
   stripeConfig: stripeConfigTable,
   stripeAdminIdentity: stripeAdminIdentityTable,
 });
