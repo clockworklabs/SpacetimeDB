@@ -12,10 +12,9 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  userId: __t.string().name("user_id"),
+  owner: __t.string(),
   agentName: __t.string().name("agent_name"),
   title: __t.option(__t.string()),
-  systemPromptOverride: __t.option(__t.string()).name("system_prompt_override"),
   modelOverride: __t.option(__t.string()).name("model_override"),
   metadata: __t.option(__t.string()),
   summary: __t.option(__t.string()),

@@ -1,6 +1,9 @@
+import { errors } from '../errors';
 import {
   callChat,
+  type ChatError,
   type ChatMessage,
+  type ContentBlock,
   type HttpLike,
   type Provider,
   type ResponseFormat,
@@ -21,6 +24,14 @@ export interface LoopConfig {
   maxTokens: number | undefined;
   retries: number;
   responseFormat: ResponseFormat | undefined;
+  /** Recalled summary and retrieved messages, sent as a leading user message. */
+  context: string | undefined;
+}
+
+export interface LoopAttachment {
+  mimeType: string;
+  /** Base64-encoded bytes. */
+  data: string;
 }
 
 export interface LoopMessage {
@@ -33,9 +44,11 @@ export interface LoopMessage {
   isError: boolean;
   promptTokens: number | undefined;
   completionTokens: number | undefined;
+  attachments: LoopAttachment[];
 }
 
-export type AppendMessageRow = Omit<LoopMessage, 'id'>;
+// Only user messages carry attachments; the loop never appends them.
+export type AppendMessageRow = Omit<LoopMessage, 'id' | 'attachments'>;
 
 export interface LoopTx {
   listMessages(threadId: bigint): LoopMessage[];
@@ -60,29 +73,34 @@ function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}...[truncated]`;
 }
 
-function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max)}...`;
+// Provider detail stays in the module log; the stored message is generic.
+function chatErrorContent(error: ChatError): string {
+  const detail =
+    error.kind === 'http'
+      ? `${error.status} ${error.body.slice(0, 500)}`
+      : error.message;
+  console.warn(`agents provider ${error.kind} error: ${detail}`);
+  return error.kind === 'http'
+    ? `${errors.providerError}:http_${error.status}`
+    : `${errors.providerError}:${error.kind}`;
 }
 
-function formatChatError(error: {
-  kind: string;
-  status?: number;
-  message?: string;
-  body?: string;
-}): string {
-  switch (error.kind) {
-    case 'http':
-      return `agent.provider_http:${error.status}:${truncate(error.body ?? '', 500)}`;
-    case 'transport':
-      return `agent.provider_transport:${error.message ?? 'unknown'}`;
-    case 'parse':
-      return `agent.provider_parse:${error.message ?? 'unknown'}`;
-    default:
-      return `agent.provider_error:${error.kind}`;
+function userContent(row: LoopMessage): string | ContentBlock[] {
+  if (row.attachments.length === 0) return row.content;
+  const blocks: ContentBlock[] = [];
+  if (row.content) blocks.push({ type: 'text', text: row.content });
+  for (const attachment of row.attachments) {
+    blocks.push({
+      type: 'image',
+      mimeType: attachment.mimeType,
+      data: attachment.data,
+    });
   }
+  return blocks;
 }
 
-function buildLlmMessages(
+// Drops orphan tool rows whose assistant tool call fell outside the window.
+export function buildLlmMessages(
   tx: LoopTx,
   threadId: bigint,
   maxHistoryMessages: number
@@ -97,7 +115,7 @@ function buildLlmMessages(
 
   for (const row of window) {
     if (row.role === 'user') {
-      messages.push({ role: 'user', content: row.content });
+      messages.push({ role: 'user', content: userContent(row) });
     } else if (row.role === 'assistant') {
       let toolCalls: ToolCall[] | undefined;
       if (row.toolCallsJson != null) {
@@ -133,7 +151,7 @@ function runOneTurn(options: RunAgentLoopOptions): boolean {
     tx.appendMessage({
       threadId,
       role: 'assistant',
-      content: 'agent.cancelled',
+      content: errors.cancelled,
       toolCallsJson: undefined,
       toolCallId: undefined,
       isError: true,
@@ -145,9 +163,12 @@ function runOneTurn(options: RunAgentLoopOptions): boolean {
   });
   if (cancelled) return false;
 
-  const llmMessages = withTx(tx =>
+  const history = withTx(tx =>
     buildLlmMessages(tx, threadId, cfg.maxHistoryMessages)
   );
+  const llmMessages: ChatMessage[] = cfg.context
+    ? [{ role: 'user', content: cfg.context }, ...history]
+    : history;
   const result = callChat(http, cfg.provider, {
     apiKey: cfg.apiKey,
     model: cfg.model,
@@ -164,7 +185,7 @@ function runOneTurn(options: RunAgentLoopOptions): boolean {
       tx.appendMessage({
         threadId,
         role: 'assistant',
-        content: formatChatError(result.error),
+        content: chatErrorContent(result.error),
         toolCallsJson: undefined,
         toolCallId: undefined,
         isError: true,
@@ -220,7 +241,7 @@ export function runAgentLoop(options: RunAgentLoopOptions): void {
     tx.appendMessage({
       threadId: options.threadId,
       role: 'assistant',
-      content: `agent.max_turns_exceeded:${options.cfg.maxTurns}`,
+      content: `${errors.maxTurnsExceeded}:${options.cfg.maxTurns}`,
       toolCallsJson: undefined,
       toolCallId: undefined,
       isError: true,

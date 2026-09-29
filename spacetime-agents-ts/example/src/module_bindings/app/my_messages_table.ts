@@ -13,7 +13,7 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   threadId: __t.u64().name("thread_id"),
-  userId: __t.string().name("user_id"),
+  owner: __t.string(),
   role: __t.string(),
   content: __t.string(),
   toolCallsJson: __t.option(__t.string()).name("tool_calls_json"),

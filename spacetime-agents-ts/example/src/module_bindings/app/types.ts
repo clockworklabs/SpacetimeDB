@@ -10,12 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const AgentAdminIdentity = __t.object("AgentAdminIdentity", {
-  identity: __t.identity(),
-  addedAtMicros: __t.i64(),
-});
-export type AgentAdminIdentity = __Infer<typeof AgentAdminIdentity>;
-
 export const AgentAuthUser = __t.object("AgentAuthUser", {
   userId: __t.string(),
   email: __t.string(),
@@ -41,39 +35,10 @@ export type AgentConfigStatus = __Infer<typeof AgentConfigStatus>;
 
 export const AgentInfo = __t.object("AgentInfo", {
   name: __t.string(),
-  defaultProvider: __t.string(),
-  defaultModel: __t.string(),
+  model: __t.string(),
+  models: __t.array(__t.string()),
 });
 export type AgentInfo = __Infer<typeof AgentInfo>;
-
-export const AgentOverride = __t.object("AgentOverride", {
-  agentName: __t.string(),
-  provider: __t.option(__t.string()),
-  model: __t.option(__t.string()),
-  systemPrompt: __t.option(__t.string()),
-  maxTurns: __t.option(__t.u32()),
-  maxHistoryMessages: __t.option(__t.u32()),
-  maxTokens: __t.option(__t.u32()),
-  retries: __t.option(__t.u32()),
-  updatedAt: __t.timestamp(),
-});
-export type AgentOverride = __Infer<typeof AgentOverride>;
-
-export const AgentSecret = __t.object("AgentSecret", {
-  singleton: __t.bool(),
-  staleLockThresholdSecs: __t.u32(),
-  rateLimitTokensPerWindow: __t.option(__t.u32()),
-  rateLimitWindowSecs: __t.option(__t.u32()),
-  updatedAt: __t.timestamp(),
-});
-export type AgentSecret = __Infer<typeof AgentSecret>;
-
-export const ApiKey = __t.object("ApiKey", {
-  provider: __t.string(),
-  key: __t.string(),
-  updatedAt: __t.timestamp(),
-});
-export type ApiKey = __Infer<typeof ApiKey>;
 
 export const AuthPubKey = __t.object("AuthPubKey", {
   publicKeyPem: __t.string(),
@@ -108,7 +73,7 @@ export type LinkConnectionResult = __Infer<typeof LinkConnectionResult>;
 export const Message = __t.object("Message", {
   id: __t.u64(),
   threadId: __t.u64(),
-  userId: __t.string(),
+  owner: __t.string(),
   role: __t.string(),
   content: __t.string(),
   toolCallsJson: __t.option(__t.string()),
@@ -132,24 +97,11 @@ export const MessageAttachment = __t.object("MessageAttachment", {
 });
 export type MessageAttachment = __Infer<typeof MessageAttachment>;
 
-export const MessageEmbedding = __t.object("MessageEmbedding", {
-  messageId: __t.u64(),
-  threadId: __t.u64(),
-  userId: __t.string(),
-  model: __t.string(),
-  vector: __t.array(__t.f32()),
-  createdAt: __t.timestamp(),
-});
-export type MessageEmbedding = __Infer<typeof MessageEmbedding>;
-
 export const MyAuthUser = __t.object("MyAuthUser", {});
 export type MyAuthUser = __Infer<typeof MyAuthUser>;
 
 export const MyFiles = __t.object("MyFiles", {});
 export type MyFiles = __Infer<typeof MyFiles>;
-
-export const MyMessageEmbeddings = __t.object("MyMessageEmbeddings", {});
-export type MyMessageEmbeddings = __Infer<typeof MyMessageEmbeddings>;
 
 export const MyMessages = __t.object("MyMessages", {});
 export type MyMessages = __Infer<typeof MyMessages>;
@@ -186,10 +138,9 @@ export type SendAttachment = __Infer<typeof SendAttachment>;
 
 export const Thread = __t.object("Thread", {
   id: __t.u64(),
-  userId: __t.string(),
+  owner: __t.string(),
   agentName: __t.string(),
   title: __t.option(__t.string()),
-  systemPromptOverride: __t.option(__t.string()),
   modelOverride: __t.option(__t.string()),
   metadata: __t.option(__t.string()),
   summary: __t.option(__t.string()),
@@ -201,15 +152,17 @@ export type Thread = __Infer<typeof Thread>;
 
 export const ThreadLock = __t.object("ThreadLock", {
   threadId: __t.u64(),
-  userId: __t.string(),
+  owner: __t.string(),
   lockedAt: __t.timestamp(),
   cancelRequested: __t.bool(),
 });
 export type ThreadLock = __Infer<typeof ThreadLock>;
 
-export const ThreadLockSweeperTick = __t.object("ThreadLockSweeperTick", {
-  scheduledId: __t.u64(),
-  scheduledAt: __t.scheduleAt(),
+export const TokenLimit = __t.object("TokenLimit", {
+  singleton: __t.bool(),
+  tokensPerWindow: __t.u32(),
+  windowSecs: __t.u32(),
+  updatedAt: __t.timestamp(),
 });
-export type ThreadLockSweeperTick = __Infer<typeof ThreadLockSweeperTick>;
+export type TokenLimit = __Infer<typeof TokenLimit>;
 

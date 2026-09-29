@@ -11,7 +11,6 @@ let allMessages = [];
 let allAttachments = {}; // messageId -> attachment metadata
 let pendingAttachments = []; // {mimeType, filename, bytes} not yet sent
 let lockedThreads = new Map(); // threadId -> cancelRequested
-let overrides = new Map(); // agentName -> AgentOverride row
 
 let inFlightSend = new Set();
 let configState = { kind: 'unknown' };
@@ -215,7 +214,7 @@ $('setup-form').addEventListener('submit', async e => {
   btn.disabled = true;
   btn.textContent = 'Saving…';
   try {
-    await window.stdb.setAgentSecret({
+    await window.stdb.setAgentConfig({
       staleLockThresholdSecs,
       rateLimitTokensPerWindow,
       rateLimitWindowSecs,
@@ -234,11 +233,6 @@ $('setup-form').addEventListener('submit', async e => {
 });
 
 $('btn-settings').addEventListener('click', openSetup);
-
-window.addEventListener('stdb:overrides', e => {
-  overrides = new Map((e.detail.overrides ?? []).map(o => [o.agentName, o]));
-  renderMessages();
-});
 
 window.addEventListener('stdb:locks', e => {
   lockedThreads = new Map(e.detail.locks);
@@ -319,15 +313,17 @@ function pickDefaultAgent() {
   return names[0];
 }
 
-// thread → effective model (thread.modelOverride ?? agent override ?? agent code default)
+function agentInfoFor(thread) {
+  if (!thread || configState.kind !== 'configured') return undefined;
+  return configState.status.agents.find(a => a.name === thread.agentName);
+}
+// The thread's selection applies only while the agent still offers it.
 function effectiveModelFor(thread) {
-  if (!thread) return '';
-  if (thread.modelOverride) return thread.modelOverride;
-  const ov = overrides.get(thread.agentName);
-  if (ov?.model != null) return ov.model;
-  if (configState.kind !== 'configured') return '';
-  const ai = configState.status.agents.find(a => a.name === thread.agentName);
-  return ai?.defaultModel ?? '';
+  const ai = agentInfoFor(thread);
+  if (thread?.modelOverride && ai?.models.includes(thread.modelOverride)) {
+    return thread.modelOverride;
+  }
+  return ai?.model ?? '';
 }
 $('btn-new-thread').addEventListener('click', async () => {
   if (configState.kind !== 'configured' || !window.stdb) return;
@@ -337,7 +333,6 @@ $('btn-new-thread').addEventListener('click', async () => {
     const id = await window.stdb.startThread({
       agentName,
       title: undefined,
-      systemPromptOverride: undefined,
       metadata: undefined,
     });
     selectThread(id);
@@ -401,7 +396,6 @@ function openRenameFor(threadId) {
   if (!t) return;
   renameTargetId = threadId;
   $('rename-title').value = t.title ?? '';
-  $('rename-prompt').value = t.systemPromptOverride ?? '';
   $('rename-backdrop').classList.add('open');
   setTimeout(() => $('rename-title').focus(), 50);
 }
@@ -439,16 +433,13 @@ $('rename-form').addEventListener('submit', async e => {
   e.preventDefault();
   if (!window.stdb || renameTargetId === null) return;
   const titleRaw = $('rename-title').value.trim();
-  const promptRaw = $('rename-prompt').value.trim();
   try {
     await window.stdb.updateThread({
       threadId: renameTargetId,
       title: titleRaw ? titleRaw : undefined,
-      systemPromptOverride: promptRaw ? promptRaw : undefined,
       modelOverride: undefined,
       metadata: undefined,
       clearTitle: !titleRaw,
-      clearSystemPromptOverride: !promptRaw,
       clearModelOverride: false,
       clearMetadata: false,
     });
@@ -736,31 +727,6 @@ function renderPendingAttachments() {
   });
 }
 
-// Model list comes from OpenRouter's /api/v1/models so it's always
-// current. Cached per page load.
-let modelListCache = null;
-let modelListPromise = null;
-async function getModelList() {
-  if (modelListCache) return modelListCache;
-  if (modelListPromise) return modelListPromise;
-  modelListPromise = (async () => {
-    const res = await fetch('https://openrouter.ai/api/v1/models');
-    if (!res.ok) throw new Error(`openrouter /models -> ${res.status}`);
-    const body = await res.json();
-    const ids = (body?.data ?? [])
-      .map(m => m?.id)
-      .filter(id => typeof id === 'string')
-      .sort();
-    modelListCache = ids;
-    return ids;
-  })();
-  try {
-    return await modelListPromise;
-  } finally {
-    modelListPromise = null;
-  }
-}
-
 let modelPopover = null;
 function closeModelPopover() {
   if (modelPopover) {
@@ -775,11 +741,9 @@ async function pickModel(model) {
     await window.stdb.updateThread({
       threadId: activeThreadId,
       title: undefined,
-      systemPromptOverride: undefined,
       modelOverride: model,
       metadata: undefined,
       clearTitle: false,
-      clearSystemPromptOverride: false,
       clearModelOverride: false,
       clearMetadata: false,
     });
@@ -819,11 +783,12 @@ function renderModelList(listEl, ids, current, filter) {
     listEl.appendChild(more);
   }
 }
-async function openModelPopover(anchor) {
+function openModelPopover(anchor) {
   closeModelPopover();
   const t = allThreads.find(x => x.id === activeThreadId);
   if (!t) return;
   const current = effectiveModelFor(t);
+  const ids = agentInfoFor(t)?.models ?? [];
   modelPopover = document.createElement('div');
   modelPopover.className = 'model-popover';
   const search = document.createElement('input');
@@ -832,10 +797,6 @@ async function openModelPopover(anchor) {
   search.placeholder = 'filter models…';
   const list = document.createElement('div');
   list.className = 'list';
-  const loading = document.createElement('div');
-  loading.className = 'empty';
-  loading.textContent = 'loading models…';
-  list.appendChild(loading);
   modelPopover.appendChild(search);
   modelPopover.appendChild(list);
   document.body.appendChild(modelPopover);
@@ -845,15 +806,6 @@ async function openModelPopover(anchor) {
   modelPopover.style.bottom = `${window.innerHeight - r.top + 4}px`;
   search.focus();
 
-  let ids;
-  try {
-    ids = await getModelList();
-  } catch (err) {
-    loading.textContent = `couldn't load: ${err.message ?? err}`;
-    return;
-  }
-  // Popover may have been closed during the await.
-  if (!modelPopover) return;
   renderModelList(list, ids, current, '');
   search.addEventListener('input', () =>
     renderModelList(list, ids, current, search.value)

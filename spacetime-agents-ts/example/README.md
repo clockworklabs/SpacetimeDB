@@ -8,10 +8,11 @@ and file HTTP handlers.
 
 ## What this demonstrates
 
-- Defining typed agents and tools with `@spacetimedb/agents`.
+- Registering the `@spacetimedb/agents` submodule with the example's own typed
+  agents and tools.
 - Running an agent loop from a SpacetimeDB procedure with OpenRouter, OpenAI, or
   Anthropic.
-- Isolating threads, messages, locks, files, and embeddings by authenticated user.
+- Isolating threads, messages, locks, and files by authenticated user.
 - Publishing user-scoped views over private tables.
 - Tool calls, cancellation, response regeneration, history summarization, and RAG.
 - Per-message token accounting and optional per-user token limits.
@@ -67,10 +68,9 @@ This workspace tests the submodule source in this repository. Consumer applicati
 npm install @spacetimedb/agents spacetimedb
 ```
 
-Start with the package's
-[integration guide](../README.md#integrate-into-an-application). Copy the agent
-registry and procedure boundary you need; the example's auth, files, RAG, and UI
-are application-specific integrations around the helper.
+Start with the package's [quick start](../README.md#quick-start). The example's
+auth, files, token quota, and UI are application-specific integrations around
+the submodule client.
 
 ## Configuration
 
@@ -85,7 +85,7 @@ set by the launching process are never overwritten.
 | `ANTHROPIC_API_KEY`                         | empty                      | Enables Anthropic-backed agents.                                   |
 | `STALE_LOCK_THRESHOLD_SECS`                 | `900`                      | Age at which the lock sweeper may remove an abandoned thread lock. |
 | `RATE_LIMIT_TOKENS_PER_WINDOW`              | empty                      | Optional per-user prompt-plus-completion token cap.                |
-| `RATE_LIMIT_WINDOW_SECS`                    | empty                      | Sliding-window duration used with the token cap.                   |
+| `RATE_LIMIT_WINDOW_SECS`                    | empty                      | Fixed-window duration used with the token cap.                     |
 | `AUTH_ISSUER_URL`                           | `http://localhost:8789`    | JWT issuer and OAuth redirect origin.                              |
 | `AUTH_BASE_URL`                             | `AUTH_ISSUER_URL`          | Public base URL used by auth routes and redirects.                 |
 | `AUTH_COOKIE_NAME`                          | `stdb_auth`                | Name of the session cookie.                                        |
@@ -101,8 +101,9 @@ set by the launching process are never overwritten.
 | `PORT`                                      | `8789`                     | Static-server port.                                                |
 
 On startup, the logged-in CLI identity calls `set_auth_config`,
-`set_agent_secret`, and `set_api_key` for each configured provider. Provider keys
-are stored in private module tables and are not returned by `/api/config`.
+`agents.set_agent_config`, `set_token_limit`, and `agents.set_api_key` for each
+configured provider. Provider keys are stored in private module tables and are
+not returned by `/api/config`.
 
 ## Architecture
 
@@ -113,7 +114,7 @@ Browser
 
 SpacetimeDB module
   -> authenticated user/session mapping
-  -> caller-scoped thread, message, lock, file, and embedding views
+  -> caller-scoped thread, message, lock, and file views
   -> agent procedure -> provider HTTPS API
 ```
 
@@ -130,9 +131,12 @@ SpacetimeDB subscriptions deliver progress to the browser.
 
 Configuration is resolved in this order:
 
-1. Per-thread overrides.
-2. Operator-managed rows in `agent_override`.
+1. Operator-managed overrides set with `agents.set_agent_override`.
+2. The thread's selected model, when it is listed in the agent's `models`.
 3. Defaults in `spacetimedb/src/agents/`.
+
+The model picker offers only the agent's `models`. Users cannot change system
+prompts.
 
 The registered `chat` agent exposes the example tools; the `summarizer` agent
 compacts long conversation history. Defensive limits cap user content and
@@ -141,13 +145,16 @@ the same thread, and a scheduled sweeper removes locks abandoned beyond the
 configured threshold.
 
 Successful assistant messages record prompt and completion token counts. The UI
-shows those values per message. The optional token window rejects new work with
-`agent.rate_limited:<used>/<cap>` after the configured per-user cap is reached.
+shows those values per message. The client's `onUsage` hook records every model
+response against the optional per-user token window, and `beforeRun` rejects new
+work with `agent.rate_limited:<used>/<cap>` once the cap is reached. Each user
+may own at most 100 threads.
 
 ## Adding an agent or tool
 
-Agents are registered by key in `spacetimedb/src/agents/index.ts`. The registry key
-is the runtime name stored on each thread.
+Agents are registered by key in `spacetimedb/src/agents/index.ts` and passed to
+`agents.client` in `spacetimedb/src/index.ts`. The registry key is the runtime
+name stored on each thread.
 
 ```ts
 import { defineAgent } from '@spacetimedb/agents';
@@ -166,12 +173,13 @@ After changing an agent or tool, republish the module and regenerate the client.
 
 ## Administration and security
 
-- A fresh publish seeds the publishing owner in the private
-  `auth_admin_identity` and `agent_admin_identity` tables.
+- A fresh publish seeds the publishing owner as the auth and Agents
+  administrator.
 - Public reducers never grant the first caller administrator access.
 - The startup configuration calls run as the logged-in CLI identity.
 - Browser users are not administrators by default. Grant a development identity
-  only with `add_agent_admin_identity` called by an existing administrator.
+  only with `agents.add_agent_admin_identity` called by an existing
+  administrator.
 - Model-provider keys, auth signing material, `.env`, and generated local tokens
   must not be committed.
 - The included server is a development server. Put TLS, host validation, secret
@@ -215,11 +223,12 @@ error path.
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - schema, views, auth integration, and agent procedures.
-- `spacetimedb/src/loop.ts` - provider-independent agent loop.
+- `spacetimedb/src/index.ts` - schema, auth integration, the Agents client, and
+  agent procedures.
+- `spacetimedb/src/views.ts` - caller-scoped views.
 - `spacetimedb/src/agents/` - registered agent definitions.
 - `spacetimedb/src/tools/` - typed tools available to agents.
-- `spacetimedb/scripts/test-loop.ts` - model-mocked loop tests.
+- `spacetimedb/scripts/test-attachments.ts` - attachment validation tests.
 - `server.ts` - startup configuration and same-origin HTTP proxy.
 - `src/app.ts` - browser connection, subscriptions, and UI bridge.
 - `public/index.html` - application structure.

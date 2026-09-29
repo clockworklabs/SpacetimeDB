@@ -10,11 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  messageId: __t.u64().primaryKey().name("message_id"),
-  threadId: __t.u64().name("thread_id"),
-  userId: __t.string().name("user_id"),
-  model: __t.string(),
-  vector: __t.array(__t.f32()),
-  createdAt: __t.timestamp().name("created_at"),
-});
+export default {
+  tokensPerWindow: __t.option(__t.u32()),
+  windowSecs: __t.option(__t.u32()),
+};

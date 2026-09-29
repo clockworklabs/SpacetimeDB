@@ -1,6 +1,4 @@
 // Pure-Node tests for the Agents package.
-// Avoids importing 'spacetimedb/server' (Node 22 ESM can't parse its `using` decls);
-// builds minimal AlgebraicType fixtures matching what t.object(...) would produce.
 
 import {
   agentTool,
@@ -8,70 +6,31 @@ import {
   defineAgent,
   makeAgentRegistry,
   typeBuilderToJsonSchema,
-} from '../src/agent.ts';
+} from '../src/agent';
 import {
   openRouterProvider,
   openAiProvider,
   anthropicProvider,
-} from '../src/providers.ts';
+} from '../src/providers';
 import {
   callChat,
   isRetryableError,
   type HttpLike,
   type ChatRequest,
   type ToolDefinition,
-} from '../src/openrouter.ts';
+} from '../src/openrouter';
 import {
   cosineSimilarity,
   topKByScore,
   openAiEmbeddingsProvider,
   openRouterEmbeddingsProvider,
-} from '../src/embeddings.ts';
+} from '../src/embeddings';
 import {
   deleteStaleThreadLocks,
   staleLockCutoffMicros,
-} from '../src/stale-locks.ts';
+} from '../src/stale-locks';
 
-type AT = { tag: string; value?: unknown };
-
-import { t, type AlgebraicType } from 'spacetimedb';
-import type { TypeBuilder } from 'spacetimedb/server';
-
-const fake = <T = unknown>(at: AT): TypeBuilder<T, AlgebraicType> =>
-  ({ algebraicType: at }) as unknown as TypeBuilder<T, AlgebraicType>;
-
-const _bool = (): AT => ({ tag: 'Bool' });
-const _string = (): AT => ({ tag: 'String' });
-const _i8 = (): AT => ({ tag: 'I8' });
-const _u8 = (): AT => ({ tag: 'U8' });
-const _i16 = (): AT => ({ tag: 'I16' });
-const _u16 = (): AT => ({ tag: 'U16' });
-const _i32 = (): AT => ({ tag: 'I32' });
-const _u32 = (): AT => ({ tag: 'U32' });
-const _i64 = (): AT => ({ tag: 'I64' });
-const _u64 = (): AT => ({ tag: 'U64' });
-const _u128 = (): AT => ({ tag: 'U128' });
-const _f64 = (): AT => ({ tag: 'F64' });
-const _array = (e: AT): AT => ({ tag: 'Array', value: e });
-const _object = (props: Record<string, AT>): AT => ({
-  tag: 'Product',
-  value: {
-    elements: Object.entries(props).map(([name, at]) => ({
-      name,
-      algebraicType: at,
-    })),
-  },
-});
-const _unit = (): AT => ({ tag: 'Product', value: { elements: [] } });
-const _option = (inner: AT): AT => ({
-  tag: 'Sum',
-  value: {
-    variants: [
-      { name: 'some', algebraicType: inner },
-      { name: 'none', algebraicType: _unit() },
-    ],
-  },
-});
+import { t } from 'spacetimedb';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {
@@ -119,7 +78,7 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 1. unit -> empty object schema
 {
-  const schema = typeBuilderToJsonSchema(fake(_unit()));
+  const schema = typeBuilderToJsonSchema(t.unit());
   assert(
     eq(schema, { type: 'object', properties: {} }),
     `unit() -> empty object`
@@ -128,14 +87,12 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 2. object with required primitives
 {
-  const tb = fake(
-    _object({
-      name: _string(),
-      count: _i32(),
-      ratio: _f64(),
-      on: _bool(),
-    })
-  );
+  const tb = t.object('Primitives', {
+    name: t.string(),
+    count: t.i32(),
+    ratio: t.f64(),
+    on: t.bool(),
+  });
   const schema = typeBuilderToJsonSchema(tb);
   assert(
     eq(schema, {
@@ -154,12 +111,10 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 3. option fields excluded from required, unwrapped to inner schema
 {
-  const tb = fake(
-    _object({
-      must: _string(),
-      maybe: _option(_string()),
-    })
-  );
+  const tb = t.object('Optional', {
+    must: t.string(),
+    maybe: t.option(t.string()),
+  });
   const schema = typeBuilderToJsonSchema(tb);
   assert(
     schema.required !== undefined &&
@@ -175,11 +130,9 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 4. nested object
 {
-  const tb = fake(
-    _object({
-      inner: _object({ a: _i64() }),
-    })
-  );
+  const tb = t.object('Outer', {
+    inner: t.object('Inner', { a: t.i64() }),
+  });
   const schema = typeBuilderToJsonSchema(tb);
   assert(
     eq(schema.properties.inner, {
@@ -193,7 +146,7 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 5. array of strings
 {
-  const tb = fake(_object({ tags: _array(_string()) }));
+  const tb = t.object('Tags', { tags: t.array(t.string()) });
   const schema = typeBuilderToJsonSchema(tb);
   assert(
     eq(schema.properties.tags, { type: 'array', items: { type: 'string' } }),
@@ -203,18 +156,16 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 6. all i*/u* through 64 bits roll up to integer
 {
-  const tb = fake(
-    _object({
-      a: _i8(),
-      b: _u8(),
-      c: _i16(),
-      d: _u16(),
-      e: _i32(),
-      f: _u32(),
-      g: _i64(),
-      h: _u64(),
-    })
-  );
+  const tb = t.object('Integers', {
+    a: t.i8(),
+    b: t.u8(),
+    c: t.i16(),
+    d: t.u16(),
+    e: t.i32(),
+    f: t.u32(),
+    g: t.i64(),
+    h: t.u64(),
+  });
   const schema = typeBuilderToJsonSchema(tb);
   const allInt = Object.values(schema.properties).every(
     v =>
@@ -229,7 +180,7 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 {
   let threw = false;
   try {
-    typeBuilderToJsonSchema(fake(_object({ x: _u128() })));
+    typeBuilderToJsonSchema(t.object('Wide', { x: t.u128() }));
   } catch (err) {
     threw = err instanceof Error && err.message.includes('U128');
   }
@@ -240,7 +191,7 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 {
   let threw = false;
   try {
-    typeBuilderToJsonSchema(fake(_string()));
+    typeBuilderToJsonSchema(t.string());
   } catch (err) {
     threw = err instanceof Error && err.message.includes('object');
   }
@@ -249,17 +200,9 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
 
 // 9. true sum (non-option) -> oneOf
 {
-  const sumAt: AT = {
-    tag: 'Sum',
-    value: {
-      variants: [
-        { name: 'a', algebraicType: _string() },
-        { name: 'b', algebraicType: _i32() },
-        { name: 'c', algebraicType: _bool() },
-      ],
-    },
-  };
-  const tb = fake(_object({ kind: sumAt }));
+  const tb = t.object('Kinds', {
+    kind: t.enum('Kind', { a: t.string(), b: t.i32(), c: t.bool() }),
+  });
   const schema = typeBuilderToJsonSchema(tb);
   const kind = schema.properties.kind as { oneOf?: unknown[] };
   const oneOf = Array.isArray(kind.oneOf) ? kind.oneOf : [];
@@ -333,7 +276,7 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
 {
   const tool = agentTool(
     'echoes the message back',
-    fake<{ msg: string }>(_object({ msg: _string() })),
+    t.object('Msg', { msg: t.string() }),
     (_ctx, args) => `echo: ${args.msg}`
   );
   const at = tool.algebraicType;
@@ -344,14 +287,10 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
 {
   const echo = agentTool(
     'echoes the message back',
-    fake<{ msg: string }>(_object({ msg: _string() })),
+    t.object('Msg', { msg: t.string() }),
     (_ctx, args) => `echo: ${args.msg}`
   );
-  const noop = agentTool(
-    'does nothing, takes no args',
-    fake(_unit()),
-    _ctx => 'ok'
-  );
+  const noop = agentTool('does nothing, takes no args', t.unit(), _ctx => 'ok');
   const { llmToolDefs, invoke } = makeAgentDispatch<
     unknown,
     { echo: typeof echo; noop: typeof noop }
@@ -397,7 +336,7 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
     `bad JSON returns isError`
   );
 
-  const boom = agentTool('throws', fake(_unit()), _ctx => {
+  const boom = agentTool('throws', t.unit(), _ctx => {
     throw new Error('kaboom');
   });
   const d2 = makeAgentDispatch<unknown, { boom: typeof boom }>({ boom });
@@ -435,7 +374,7 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
 
 // 12. invalid tool name rejected at dispatch construction
 {
-  const bad = agentTool('x', fake(_unit()), () => 'ok');
+  const bad = agentTool('x', t.unit(), () => 'ok');
   let threw = false;
   try {
     makeAgentDispatch<unknown, Record<string, typeof bad>>({
@@ -449,7 +388,7 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
 
 // 13. valid tool names accepted (a-z, A-Z, 0-9, _, -)
 {
-  const ok = agentTool('x', fake(_unit()), () => 'ok');
+  const ok = agentTool('x', t.unit(), () => 'ok');
   let threw = false;
   try {
     makeAgentDispatch<unknown, Record<string, typeof ok>>({
@@ -465,7 +404,7 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
 
 // 14. Prototype-key lookup reported as 'unknown tool', not dispatched.
 {
-  const ok = agentTool('x', fake(_unit()), () => 'ok');
+  const ok = agentTool('x', t.unit(), () => 'ok');
   const { invoke } = makeAgentDispatch<unknown, Record<string, typeof ok>>({
     real: ok,
   });
@@ -489,7 +428,7 @@ process.stdout.write('\ndefineAgent + makeAgentRegistry tests\n');
 {
   const echo = agentTool(
     'echo back',
-    fake<{ message: string }>(_object({ message: _string() })),
+    t.object('Message', { message: t.string() }),
     (_ctx, args) => `echo: ${args.message}`
   );
   const a = defineAgent({
@@ -535,10 +474,10 @@ process.stdout.write('\ndefineAgent + makeAgentRegistry tests\n');
 {
   const echo = agentTool(
     'echo back',
-    fake<{ message: string }>(_object({ message: _string() })),
+    t.object('Message', { message: t.string() }),
     (_ctx, args) => `echo: ${args.message}`
   );
-  const noop = agentTool('does nothing', fake(_unit()), _ctx => 'ok');
+  const noop = agentTool('does nothing', t.unit(), _ctx => 'ok');
   const chat = defineAgent({ defaultModel: 'm/chat', tools: { echo, noop } });
   const summary = defineAgent({
     defaultModel: 'm/summary',
@@ -574,12 +513,12 @@ process.stdout.write('\ndefineAgent + makeAgentRegistry tests\n');
 {
   const echo = agentTool(
     'echo',
-    fake<{ msg: string }>(_object({ msg: _string() })),
+    t.object('Msg', { msg: t.string() }),
     (_ctx, args) => `chat-echo: ${args.msg}`
   );
   const otherEcho = agentTool(
     'echo',
-    fake<{ msg: string }>(_object({ msg: _string() })),
+    t.object('Msg', { msg: t.string() }),
     (_ctx, args) => `summary-echo: ${args.msg}`
   );
   const chat = defineAgent({ defaultModel: 'm/chat', tools: { echo } });
@@ -618,7 +557,7 @@ process.stdout.write('\ndefineAgent + makeAgentRegistry tests\n');
 {
   const echo = agentTool(
     'echo',
-    fake<{ msg: string }>(_object({ msg: _string() })),
+    t.object('Msg', { msg: t.string() }),
     (_ctx, args) => `e: ${args.msg}`
   );
   const chat = defineAgent({ defaultModel: 'm/chat', tools: { echo } });

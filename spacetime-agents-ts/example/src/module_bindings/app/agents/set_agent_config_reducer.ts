@@ -12,6 +12,4 @@ import {
 
 export default {
   staleLockThresholdSecs: __t.option(__t.u32()),
-  rateLimitTokensPerWindow: __t.option(__t.u32()),
-  rateLimitWindowSecs: __t.option(__t.u32()),
 };
