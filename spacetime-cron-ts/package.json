@@ -18,7 +18,7 @@
   },
   "files": [
     "src",
-    "LICENSE.txt",
+    "LICENSE",
     "README.md"
   ],
   "publishConfig": {
@@ -50,7 +50,9 @@
     "test:registration": "node --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-registration.ts",
     "test:recovery": "node scripts/test-recovery.mjs",
     "test:schedule": "tsx scripts/test-schedule.ts",
-    "test:validation": "tsx scripts/test-validation.ts"
+    "test:validation": "tsx scripts/test-validation.ts",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "dependencies": {
     "cron-parser": "5.5.0"
