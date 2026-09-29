@@ -1,11 +1,10 @@
-import { Timestamp } from 'spacetimedb';
+import { SenderError, Timestamp } from 'spacetimedb';
 import {
   buildPresenceKey,
   installPresenceConfig,
   MAX_PRESENCE_SWEEP_BATCH,
   removePresence,
-  resolvePresenceSweepBatch,
-  sweepPresence,
+  runPresenceSweep,
   touchPresence,
   updatePresenceConfig,
   upsertPresence,
@@ -32,15 +31,32 @@ function assertThrows(fn: () => void, expected: string, name: string): void {
     fn();
     assert(false, name, `expected ${expected}`);
   } catch (error) {
-    assert(error instanceof Error && error.message === expected, name);
+    assert(error instanceof SenderError && error.message === expected, name);
   }
 }
 
-function makeTx(nowMicros = 0n) {
+type ConfigRow = {
+  singleton: boolean;
+  defaultTtlSeconds: number;
+  sweepBatch: number;
+  updatedAt: Timestamp;
+};
+
+function makeTx(nowMicros = 0n, config?: Partial<ConfigRow>) {
   const rows = new Map<string, PresenceEntryRow>();
+  const configRow: ConfigRow = {
+    singleton: true,
+    defaultTtlSeconds: 30,
+    sweepBatch: 500,
+    updatedAt: new Timestamp(0n),
+    ...config,
+  };
   const tx = {
     timestamp: new Timestamp(nowMicros),
     db: {
+      presenceConfig: {
+        singleton: { find: () => configRow },
+      },
       presenceEntry: {
         key: {
           find: (key: string) => rows.get(key),
@@ -48,16 +64,6 @@ function makeTx(nowMicros = 0n) {
         },
         insert: (row: PresenceEntryRow) => rows.set(row.key, row),
         delete: (row: PresenceEntryRow) => rows.delete(row.key),
-        expiresAt: {
-          filter: function* () {
-            yield* [...rows.values()].sort((a, b) =>
-              a.expiresAt.microsSinceUnixEpoch <
-              b.expiresAt.microsSinceUnixEpoch
-                ? -1
-                : 1
-            );
-          },
-        },
       },
     },
     rows,
@@ -65,78 +71,60 @@ function makeTx(nowMicros = 0n) {
   return tx;
 }
 
+process.stdout.write('presence helpers\n');
+
 {
-  const tx = makeTx();
-  upsertPresence(tx, {
-    scope: 'room:1',
-    subject: 'fresh-a',
-    ttlSeconds: 100,
-  });
-  upsertPresence(tx, {
-    scope: 'room:1',
-    subject: 'fresh-b',
-    ttlSeconds: 100,
-  });
-  upsertPresence(tx, {
-    scope: 'room:1',
-    subject: 'expired',
-    ttlSeconds: 1,
-  });
+  const tx = makeTx(0n, { sweepBatch: 2 });
+  for (const subject of ['fresh-a', 'expired-a', 'fresh-b', 'expired-b']) {
+    upsertPresence(tx, {
+      scope: 'room:1',
+      subject,
+      ttlSeconds: subject.startsWith('fresh') ? 100 : 1,
+    });
+  }
+  upsertPresence(tx, { scope: 'room:1', subject: 'expired-c', ttlSeconds: 1 });
   tx.timestamp = new Timestamp(2_000_000n);
-  const deleted = sweepPresence(tx, tx.db.presenceEntry.expiresAt.filter(), 2);
-  assert(deleted === 1, 'sweep reaches expired rows beyond fresh inserts');
+  const deleted = runPresenceSweep(tx, [...tx.rows.values()]);
+  assert(deleted === 2, 'sweep skips unexpired rows and stops at the batch');
   assert(
-    ![...tx.rows.values()].some(row => row.subject === 'expired'),
-    'indexed sweep removes the expired row'
+    tx.rows.has(buildPresenceKey('room:1', 'fresh-a')) &&
+      tx.rows.has(buildPresenceKey('room:1', 'fresh-b')) &&
+      tx.rows.size === 3,
+    'sweep keeps unexpired rows'
   );
 }
 
-process.stdout.write('\npresence submodule\n');
-
 {
-  let config:
-    | {
-        singleton: boolean;
-        defaultTtlSeconds: number;
-        sweepBatch: number;
-        updatedAt: Timestamp;
-      }
-    | undefined;
-  const ctx = {
-    timestamp: new Timestamp(1n),
-    db: {
-      presenceConfig: {
-        singleton: {
-          find: () => config,
-          update: (row: typeof config) => {
-            config = row;
-          },
-        },
-        insert: (row: NonNullable<typeof config>) => {
-          config = row;
-        },
-      },
-    },
-  };
-  installPresenceConfig(ctx, { defaultTtlSeconds: 30, sweepBatch: 500 });
-  ctx.timestamp = new Timestamp(2n);
-  updatePresenceConfig(ctx, { defaultTtlSeconds: 45, sweepBatch: 750 });
+  const tx = makeTx(0n, { defaultTtlSeconds: 45 });
+  const row = upsertPresence(tx, { scope: 'room:1', subject: 'user:alice' });
   assert(
-    config?.defaultTtlSeconds === 45 && config.sweepBatch === 750,
-    'configuration updates an existing row'
+    row.expiresAt.microsSinceUnixEpoch === 45_000_000n,
+    'upsert uses the configured default TTL'
   );
+  tx.timestamp = new Timestamp(10_000_000n);
+  const touched = touchPresence(tx, 'room:1', 'user:alice');
   assert(
-    resolvePresenceSweepBatch(ctx) === 750,
-    'sweep reads the updated batch size'
+    touched.expiresAt.microsSinceUnixEpoch === 55_000_000n,
+    'touch uses the configured default TTL'
   );
 }
 
 {
   const tx = makeTx();
   assertThrows(
-    () => sweepPresence(tx, [], MAX_PRESENCE_SWEEP_BATCH + 1),
-    'presence.invalid_sweep_batch',
-    'sweep rejects an excessive batch size'
+    () => upsertPresence(tx, { scope: ' ', subject: 'user:alice' }),
+    'presence.invalid_scope',
+    'upsert rejects an empty scope with a SenderError'
+  );
+  assertThrows(
+    () =>
+      upsertPresence(tx, {
+        scope: 'room:1',
+        subject: 'user:alice',
+        payloadJson: 'x'.repeat(4097),
+      }),
+    'presence.invalid_payload',
+    'upsert rejects an oversized payload'
   );
 }
 
@@ -145,18 +133,6 @@ assert(
     buildPresenceKey('room', 'one::user'),
   'compound keys cannot collide through delimiters'
 );
-
-{
-  const tx = makeTx();
-  const row = upsertPresence(tx, {
-    scope: 'room:1',
-    subject: 'user:alice',
-    status: 'online',
-    ttlSeconds: 30,
-  });
-  assert(row.scope === 'room:1', 'inserts row');
-  assert(tx.rows.size === 1, 'row count 1 after insert');
-}
 
 {
   const tx = makeTx();
@@ -202,24 +178,51 @@ assert(
   upsertPresence(tx, {
     scope: 'room:1',
     subject: 'user:alice',
-    ttlSeconds: 1,
-  });
-  tx.timestamp = new Timestamp(2_000_000n);
-  const deleted = sweepPresence(tx, tx.db.presenceEntry.expiresAt.filter());
-  assert(deleted === 1, 'sweep removes expired row');
-  assert(tx.rows.size === 0, 'rows empty after sweep');
-}
-
-{
-  const tx = makeTx();
-  upsertPresence(tx, {
-    scope: 'room:1',
-    subject: 'user:alice',
     ttlSeconds: 10,
   });
   const removed = removePresence(tx, 'room:1', 'user:alice');
   assert(removed, 'removePresence returns true for existing row');
   assert(tx.rows.size === 0, 'removePresence deletes row');
+}
+
+process.stdout.write('\npresence config\n');
+
+{
+  let config: ConfigRow | undefined;
+  const ctx = {
+    timestamp: new Timestamp(1n),
+    db: {
+      presenceConfig: {
+        singleton: {
+          find: () => config,
+          update: (row: ConfigRow) => {
+            config = row;
+          },
+        },
+        insert: (row: ConfigRow) => {
+          config = row;
+        },
+      },
+    },
+  };
+  installPresenceConfig(ctx, { defaultTtlSeconds: 30, sweepBatch: 500 });
+  installPresenceConfig(ctx, { defaultTtlSeconds: 60, sweepBatch: 100 });
+  assert(config?.defaultTtlSeconds === 30, 'install keeps the stored config');
+  ctx.timestamp = new Timestamp(2n);
+  updatePresenceConfig(ctx, { defaultTtlSeconds: 45, sweepBatch: 750 });
+  assert(
+    config?.defaultTtlSeconds === 45 && config.sweepBatch === 750,
+    'configuration updates an existing row'
+  );
+  assertThrows(
+    () =>
+      updatePresenceConfig(ctx, {
+        defaultTtlSeconds: 45,
+        sweepBatch: MAX_PRESENCE_SWEEP_BATCH + 1,
+      }),
+    'presence.invalid_sweep_batch',
+    'configuration rejects an excessive batch size'
+  );
 }
 
 process.stdout.write(`\n${pass} passed, ${fail} failed\n`);

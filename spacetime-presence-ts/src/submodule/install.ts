@@ -1,18 +1,13 @@
 import { ScheduleAt } from 'spacetimedb';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
-import {
-  DEFAULT_PRESENCE_SWEEP_BATCH,
-  DEFAULT_PRESENCE_TTL_SECONDS,
-  installPresenceConfig,
-} from '../index';
+import { installPresenceConfig } from '../presence';
 import type spacetimedb from './index';
 
-const ONE_SECOND_MICROS = 1_000_000n;
-const SWEEP_INTERVAL_SECONDS = 10n;
+const SWEEP_INTERVAL_MICROS = 10n * 1_000_000n;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type InstallCtx = ReducerCtx<Schema>;
+type InstallCtx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
+/** Makes the caller the first presence administrator, seeds config, and schedules expiry sweeps. */
 export function install(ctx: InstallCtx) {
   if (ctx.db.presenceAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.presenceAdminIdentity.insert({
@@ -20,14 +15,11 @@ export function install(ctx: InstallCtx) {
       addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
     });
   }
-  installPresenceConfig(ctx, {
-    defaultTtlSeconds: DEFAULT_PRESENCE_TTL_SECONDS,
-    sweepBatch: DEFAULT_PRESENCE_SWEEP_BATCH,
-  });
-  ctx.db.presenceSweepTick.insert({
-    scheduledId: 0n,
-    scheduledAt: ScheduleAt.interval(
-      SWEEP_INTERVAL_SECONDS * ONE_SECOND_MICROS
-    ),
-  });
+  installPresenceConfig(ctx);
+  if (ctx.db.presenceSweepTick.count() === 0n) {
+    ctx.db.presenceSweepTick.insert({
+      scheduledId: 0n,
+      scheduledAt: ScheduleAt.interval(SWEEP_INTERVAL_MICROS),
+    });
+  }
 }

@@ -1,5 +1,3 @@
-import { Timestamp, type Identity } from 'spacetimedb';
-import { install } from './install';
 import {
   schema,
   table,
@@ -10,29 +8,23 @@ import {
   type ReducerCtx,
   type ViewCtx,
 } from 'spacetimedb/server';
+import { errors } from '../errors';
 import {
-  DEFAULT_PRESENCE_SWEEP_BATCH,
   DEFAULT_PRESENCE_STATUS,
-  MAX_PRESENCE_SWEEP_BATCH,
   removePresence,
   runPresenceSweep,
-  sweepPresence,
   updatePresenceConfig,
   upsertPresence,
-} from '../index';
-import {
-  presenceConfigRow,
-  presenceEntryRow,
-  presenceSweepTickRow,
-} from '../tables';
+} from '../presence';
+import { presenceConfigRow, presenceEntryRow } from '../tables';
 
-const presenceEntry = table(
-  { name: 'presence_entry', public: true },
+export const presenceEntry = table(
+  { name: 'presence_entry', public: false },
   presenceEntryRow
 );
 
 const presenceConfig = table(
-  { name: 'presence_config', public: true },
+  { name: 'presence_config', public: false },
   presenceConfigRow
 );
 
@@ -46,7 +38,10 @@ const presenceAdminIdentity = table(
 
 const presenceSweepTick = table(
   { name: 'presence_sweep_tick' },
-  presenceSweepTickRow
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+  }
 );
 
 const spacetimedb = schema({
@@ -60,6 +55,10 @@ export default spacetimedb;
 type Schema = InferSchema<typeof spacetimedb>;
 type Tx = ReducerCtx<Schema>;
 
+/** The scope the client-callable operations write. Hosts choose their own scopes. */
+export const GLOBAL_SCOPE = 'presence.global';
+const MAX_VIEW_ROWS = 1000;
+
 const heartbeatResult = t.object('PresenceHeartbeatResult', {
   scope: t.string(),
   subject: t.string(),
@@ -67,129 +66,66 @@ const heartbeatResult = t.object('PresenceHeartbeatResult', {
   expiresAt: t.timestamp(),
 });
 
-const DEFAULT_SCOPE = 'presence.global';
-
-function takeRows<T>(rows: Iterable<T>, limit = 1000): T[] {
+function takeRows<T>(rows: Iterable<T>): T[] {
   const out: T[] = [];
   for (const row of rows) {
-    if (out.length >= limit) break;
+    if (out.length >= MAX_VIEW_ROWS) break;
     out.push(row);
   }
   return out;
 }
 
-function identityHex(identity: Identity): string {
-  return identity.toHexString();
-}
-
-// Subject is always the sender's Identity, never a caller-supplied value.
-function buildSubject(ctx: { sender: Identity }): string {
-  return identityHex(ctx.sender);
-}
-
-function sanitizeScope(scope: string | undefined): string {
-  const out = (scope ?? DEFAULT_SCOPE).trim();
-  if (out.length === 0) throw new SenderError('presence.invalid_scope');
-  return out;
-}
-
-function isAdmin(ctx: ViewCtx<Schema>): boolean {
+function isAdmin(ctx: Tx | ViewCtx<Schema>): boolean {
   return ctx.db.presenceAdminIdentity.identity.find(ctx.sender) != null;
 }
 
 function requireAdmin(ctx: Tx): void {
-  if (ctx.db.presenceAdminIdentity.identity.find(ctx.sender) == null) {
-    throw new SenderError('presence.not_authorized');
-  }
+  if (!isAdmin(ctx)) throw new SenderError(errors.notAuthorized);
 }
 
-function toU32(name: string, value: number, max = 0xffff_ffff): number {
-  if (!Number.isInteger(value) || value <= 0 || value > max) {
-    throw new SenderError(`presence.invalid_${name}`);
-  }
-  return value;
+function expiredRows(tx: Tx) {
+  return tx.db.presenceEntry.expiresAt.filter(
+    new Range(undefined, { tag: 'included', value: tx.timestamp })
+  );
 }
 
-// Fresh publishes seed the publishing owner as admin, install config, and start the expiry sweeper.
-export const init = spacetimedb.init(ctx => {
-  install(ctx);
-});
-
+/** Records the caller's global presence. The subject is the caller's identity. */
 export const heartbeat = spacetimedb.procedure(
   {
-    scope: t.option(t.string()),
     status: t.option(t.string()),
     activity: t.option(t.string()),
     payloadJson: t.option(t.string()),
     ttlSeconds: t.option(t.u32()),
   },
   heartbeatResult,
-  (ctx, args) => {
-    const scope = sanitizeScope(args.scope);
-    const subject = buildSubject(ctx);
-    const ttlSeconds =
-      args.ttlSeconds === undefined
-        ? undefined
-        : toU32('ttl_seconds', Number(args.ttlSeconds));
-
-    let out: {
-      scope: string;
-      subject: string;
-      status: string;
-      expiresAt: Timestamp;
-    } | null = null;
+  (ctx, args) =>
     ctx.withTx(tx => {
       const row = upsertPresence(tx, {
-        scope,
-        subject,
+        scope: GLOBAL_SCOPE,
+        subject: ctx.sender.toHexString(),
         status: args.status ?? DEFAULT_PRESENCE_STATUS,
         activity: args.activity,
         payloadJson: args.payloadJson,
-        ttlSeconds,
+        ttlSeconds: args.ttlSeconds,
       });
-      out = {
+      return {
         scope: row.scope,
         subject: row.subject,
         status: row.status,
         expiresAt: row.expiresAt,
       };
-    });
-    if (!out) throw new SenderError('presence.heartbeat_tx_failed');
-    return out;
-  }
+    })
 );
 
-export const clearPresence = spacetimedb.reducer(
-  { scope: t.option(t.string()) },
-  (ctx, args) => {
-    const scope = sanitizeScope(args.scope);
-    const subject = buildSubject(ctx);
-    const tx: Tx = ctx;
-    removePresence(tx, scope, subject);
-  }
-);
+export const clearPresence = spacetimedb.reducer({}, ctx => {
+  removePresence(ctx, GLOBAL_SCOPE, ctx.sender.toHexString());
+});
 
-export const runSweep = spacetimedb.procedure(
-  { maxRows: t.option(t.u32()) },
-  t.u32(),
-  (ctx, args) => {
-    const maxRows =
-      args.maxRows === undefined
-        ? undefined
-        : toU32('sweep_batch', Number(args.maxRows), MAX_PRESENCE_SWEEP_BATCH);
-    let deleted = 0;
-    ctx.withTx(tx => {
-      requireAdmin(tx);
-      deleted = sweepPresence(
-        tx,
-        tx.db.presenceEntry.expiresAt.filter(
-          new Range(undefined, { tag: 'included', value: tx.timestamp })
-        ),
-        maxRows ?? DEFAULT_PRESENCE_SWEEP_BATCH
-      );
-    });
-    return deleted;
-  }
+export const runSweep = spacetimedb.procedure({}, t.u32(), ctx =>
+  ctx.withTx(tx => {
+    requireAdmin(tx);
+    return runPresenceSweep(tx, expiredRows(tx));
+  })
 );
 
 export const addPresenceAdmin = spacetimedb.reducer(
@@ -205,22 +141,32 @@ export const addPresenceAdmin = spacetimedb.reducer(
   }
 );
 
+export const removePresenceAdmin = spacetimedb.reducer(
+  { identity: t.identity() },
+  (ctx, args) => {
+    requireAdmin(ctx);
+    const row = ctx.db.presenceAdminIdentity.identity.find(args.identity);
+    if (!row) return;
+    if (ctx.db.presenceAdminIdentity.count() <= 1n) {
+      throw new SenderError(errors.cannotRemoveLastAdmin);
+    }
+    ctx.db.presenceAdminIdentity.delete(row);
+  }
+);
+
 export const updateConfig = spacetimedb.reducer(
   { defaultTtlSeconds: t.u32(), sweepBatch: t.u32() },
   (ctx, args) => {
     requireAdmin(ctx);
-    updatePresenceConfig(ctx, {
-      defaultTtlSeconds: toU32(
-        'default_ttl_seconds',
-        Number(args.defaultTtlSeconds)
-      ),
-      sweepBatch: toU32(
-        'sweep_batch',
-        Number(args.sweepBatch),
-        MAX_PRESENCE_SWEEP_BATCH
-      ),
-    });
+    updatePresenceConfig(ctx, args);
   }
+);
+
+/** Up to 1,000 global presence entries, including their activity and payload. */
+export const presenceOnline = spacetimedb.view(
+  { name: 'presence_online', public: true },
+  t.array(presenceEntry.rowType),
+  ctx => takeRows(ctx.db.presenceEntry.scope.filter(GLOBAL_SCOPE))
 );
 
 export const presenceEntriesAdmin = spacetimedb.view(
@@ -232,12 +178,7 @@ export const presenceEntriesAdmin = spacetimedb.view(
 export const presenceSweep = spacetimedb.reducer(
   { onSchedule: presenceSweepTick },
   { arg: presenceSweepTick.rowType },
-  (ctx, _args) => {
-    runPresenceSweep(
-      ctx,
-      ctx.db.presenceEntry.expiresAt.filter(
-        new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      )
-    );
+  ctx => {
+    runPresenceSweep(ctx, expiredRows(ctx));
   }
 );

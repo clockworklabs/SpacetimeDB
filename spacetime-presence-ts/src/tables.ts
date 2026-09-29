@@ -20,11 +20,6 @@ export const presenceConfigRow = {
   updatedAt: t.timestamp(),
 };
 
-export const presenceSweepTickRow = {
-  scheduledId: t.u64().primaryKey().autoInc(),
-  scheduledAt: t.scheduleAt(),
-};
-
 export function createPresenceEntryTable(options?: {
   name?: string;
   public?: boolean;
@@ -50,11 +45,3 @@ export function createPresenceConfigTable(options?: {
     presenceConfigRow
   );
 }
-
-export const presenceEntryTable = createPresenceEntryTable();
-export const presenceConfigTable = createPresenceConfigTable();
-
-export const presenceTables = {
-  presenceEntry: presenceEntryTable,
-  presenceConfig: presenceConfigTable,
-};

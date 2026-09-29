@@ -1,4 +1,5 @@
-import { Timestamp } from 'spacetimedb';
+import { SenderError, Timestamp } from 'spacetimedb';
+import { errors } from './errors';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const U32_MAX = 0xffff_ffff;
@@ -11,7 +12,7 @@ const MAX_SCOPE_LENGTH = 128;
 const MAX_SUBJECT_LENGTH = 256;
 const MAX_STATUS_LENGTH = 64;
 const MAX_ACTIVITY_LENGTH = 256;
-const MAX_PAYLOAD_LENGTH = 64 * 1024;
+const MAX_PAYLOAD_LENGTH = 4096;
 const MAX_TTL_SECONDS = 3600;
 
 export interface PresenceEntryRow {
@@ -34,6 +35,7 @@ interface PresenceConfigRow {
   updatedAt: Timestamp;
 }
 
+/** A transaction over the presence entry and config tables. */
 export interface PresenceTxLike {
   timestamp: Timestamp;
   db: {
@@ -44,6 +46,11 @@ export interface PresenceTxLike {
       };
       insert(row: PresenceEntryRow): void;
       delete(row: PresenceEntryRow): void;
+    };
+    presenceConfig: {
+      singleton: {
+        find(key: boolean): PresenceConfigRow | null | undefined;
+      };
     };
   };
 }
@@ -61,32 +68,13 @@ export interface PresenceConfigCtxLike {
   };
 }
 
-export interface PresenceSweepCtxLike extends PresenceTxLike {
-  db: PresenceTxLike['db'] & {
-    presenceConfig: {
-      singleton: {
-        find(key: boolean): PresenceConfigRow | null | undefined;
-      };
-    };
-  };
-}
-
-export interface PresenceConfigReadCtxLike {
-  db: {
-    presenceConfig: {
-      singleton: {
-        find(key: boolean): PresenceConfigRow | null | undefined;
-      };
-    };
-  };
-}
-
 export interface PresenceUpsertOpts {
   scope: string;
   subject: string;
   status?: string;
   activity?: string;
   payloadJson?: string;
+  /** Defaults to the configured `defaultTtlSeconds`. */
   ttlSeconds?: number;
 }
 
@@ -95,32 +83,60 @@ export interface PresenceInstallOpts {
   sweepBatch?: number;
 }
 
-function assertPositiveU32(name: string, value: number): void {
-  if (!Number.isInteger(value) || value <= 0 || value > U32_MAX) {
-    throw new Error(`presence.invalid_${name}`);
+function assertTtl(ttlSeconds: number): void {
+  if (
+    !Number.isInteger(ttlSeconds) ||
+    ttlSeconds <= 0 ||
+    ttlSeconds > MAX_TTL_SECONDS
+  ) {
+    throw new SenderError(errors.invalidTtlSeconds);
   }
 }
 
-function sanitize(name: string, value: string): string {
+function assertSweepBatch(value: number): void {
+  if (
+    !Number.isInteger(value) ||
+    value <= 0 ||
+    value > MAX_PRESENCE_SWEEP_BATCH
+  ) {
+    throw new SenderError(errors.invalidSweepBatch);
+  }
+}
+
+function sanitize(code: string, value: string, maxLength: number): string {
   const out = value.trim();
-  if (out.length === 0) throw new Error(`presence.invalid_${name}`);
-  const maxLength = name === 'scope' ? MAX_SCOPE_LENGTH : MAX_SUBJECT_LENGTH;
-  if (out.length > maxLength) throw new Error(`presence.invalid_${name}`);
+  if (out.length === 0 || out.length > maxLength) throw new SenderError(code);
   return out;
 }
 
 function plusSeconds(ts: Timestamp, seconds: number): Timestamp {
   return new Timestamp(
-    (ts.microsSinceUnixEpoch as bigint) + BigInt(seconds) * ONE_SECOND_MICROS
+    ts.microsSinceUnixEpoch + BigInt(seconds) * ONE_SECOND_MICROS
+  );
+}
+
+function defaultTtl(tx: PresenceTxLike): number {
+  return (
+    tx.db.presenceConfig.singleton.find(true)?.defaultTtlSeconds ??
+    DEFAULT_PRESENCE_TTL_SECONDS
   );
 }
 
 export function buildPresenceKey(scope: string, subject: string): string {
-  const normalizedScope = sanitize('scope', scope);
-  const normalizedSubject = sanitize('subject', subject);
+  const normalizedScope = sanitize(
+    errors.invalidScope,
+    scope,
+    MAX_SCOPE_LENGTH
+  );
+  const normalizedSubject = sanitize(
+    errors.invalidSubject,
+    subject,
+    MAX_SUBJECT_LENGTH
+  );
   return `${normalizedScope.length}:${normalizedScope}${normalizedSubject.length}:${normalizedSubject}`;
 }
 
+/** Inserts the config row once. Later calls keep the stored config. */
 export function installPresenceConfig(
   ctx: PresenceConfigCtxLike,
   opts?: PresenceInstallOpts
@@ -128,36 +144,25 @@ export function installPresenceConfig(
   const defaultTtlSeconds =
     opts?.defaultTtlSeconds ?? DEFAULT_PRESENCE_TTL_SECONDS;
   const sweepBatch = opts?.sweepBatch ?? DEFAULT_PRESENCE_SWEEP_BATCH;
-  assertPositiveU32('default_ttl_seconds', defaultTtlSeconds);
-  assertPresenceSweepBatch(sweepBatch);
-
-  const existing = ctx.db.presenceConfig.singleton.find(true);
-  if (!existing) {
-    ctx.db.presenceConfig.insert({
-      singleton: true,
-      defaultTtlSeconds,
-      sweepBatch,
-      updatedAt: ctx.timestamp,
-    });
-    return;
-  }
-}
-
-export function assertPresenceSweepBatch(value: number): void {
-  assertPositiveU32('sweep_batch', value);
-  if (value > MAX_PRESENCE_SWEEP_BATCH) {
-    throw new Error('presence.invalid_sweep_batch');
-  }
+  assertTtl(defaultTtlSeconds);
+  assertSweepBatch(sweepBatch);
+  if (ctx.db.presenceConfig.singleton.find(true)) return;
+  ctx.db.presenceConfig.insert({
+    singleton: true,
+    defaultTtlSeconds,
+    sweepBatch,
+    updatedAt: ctx.timestamp,
+  });
 }
 
 export function updatePresenceConfig(
   ctx: PresenceConfigCtxLike,
   opts: Required<PresenceInstallOpts>
 ): void {
-  assertPositiveU32('default_ttl_seconds', opts.defaultTtlSeconds);
-  assertPresenceSweepBatch(opts.sweepBatch);
+  assertTtl(opts.defaultTtlSeconds);
+  assertSweepBatch(opts.sweepBatch);
   const existing = ctx.db.presenceConfig.singleton.find(true);
-  if (!existing) throw new Error('presence.config_missing');
+  if (!existing) throw new SenderError(errors.configMissing);
   ctx.db.presenceConfig.singleton.update({
     ...existing,
     defaultTtlSeconds: opts.defaultTtlSeconds,
@@ -170,25 +175,28 @@ export function upsertPresence(
   tx: PresenceTxLike,
   opts: PresenceUpsertOpts
 ): PresenceEntryRow {
-  const scope = sanitize('scope', opts.scope);
-  const subject = sanitize('subject', opts.subject);
+  const scope = sanitize(errors.invalidScope, opts.scope, MAX_SCOPE_LENGTH);
+  const subject = sanitize(
+    errors.invalidSubject,
+    opts.subject,
+    MAX_SUBJECT_LENGTH
+  );
   const key = buildPresenceKey(scope, subject);
-  const ttlSeconds = opts.ttlSeconds ?? DEFAULT_PRESENCE_TTL_SECONDS;
-  assertPositiveU32('ttl_seconds', ttlSeconds);
-  if (ttlSeconds > MAX_TTL_SECONDS)
-    throw new Error('presence.invalid_ttl_seconds');
+  const ttlSeconds = opts.ttlSeconds ?? defaultTtl(tx);
+  assertTtl(ttlSeconds);
 
-  const status = (opts.status ?? DEFAULT_PRESENCE_STATUS).trim();
-  if (status.length === 0 || status.length > MAX_STATUS_LENGTH) {
-    throw new Error('presence.invalid_status');
-  }
+  const status = sanitize(
+    errors.invalidStatus,
+    opts.status ?? DEFAULT_PRESENCE_STATUS,
+    MAX_STATUS_LENGTH
+  );
   const activity = opts.activity?.trim() || undefined;
   if ((activity?.length ?? 0) > MAX_ACTIVITY_LENGTH) {
-    throw new Error('presence.invalid_activity');
+    throw new SenderError(errors.invalidActivity);
   }
   const payloadJson = opts.payloadJson?.trim() || undefined;
   if ((payloadJson?.length ?? 0) > MAX_PAYLOAD_LENGTH) {
-    throw new Error('presence.invalid_payload');
+    throw new SenderError(errors.invalidPayload);
   }
 
   const now = tx.timestamp;
@@ -214,8 +222,6 @@ export function upsertPresence(
 
   const updated: PresenceEntryRow = {
     ...existing,
-    scope,
-    subject,
     status,
     activity,
     payloadJson,
@@ -227,23 +233,23 @@ export function upsertPresence(
   return updated;
 }
 
+/** Extends a lease and keeps its status, activity, and payload. */
 export function touchPresence(
   tx: PresenceTxLike,
   scope: string,
   subject: string,
-  ttlSeconds = DEFAULT_PRESENCE_TTL_SECONDS
+  ttlSeconds?: number
 ): PresenceEntryRow {
   const key = buildPresenceKey(scope, subject);
   const existing = tx.db.presenceEntry.key.find(key);
   if (!existing) return upsertPresence(tx, { scope, subject, ttlSeconds });
-  assertPositiveU32('ttl_seconds', ttlSeconds);
-  if (ttlSeconds > MAX_TTL_SECONDS)
-    throw new Error('presence.invalid_ttl_seconds');
+  const ttl = ttlSeconds ?? defaultTtl(tx);
+  assertTtl(ttl);
   const now = tx.timestamp;
   const updated = {
     ...existing,
     lastSeenAt: now,
-    expiresAt: plusSeconds(now, ttlSeconds),
+    expiresAt: plusSeconds(now, ttl),
     updatedAt: now,
   };
   tx.db.presenceEntry.key.update(updated);
@@ -262,39 +268,24 @@ export function removePresence(
   return true;
 }
 
-export function sweepPresence(
-  tx: PresenceTxLike,
-  expiredRows: Iterable<PresenceEntryRow>,
-  maxRows = DEFAULT_PRESENCE_SWEEP_BATCH
-): number {
-  assertPresenceSweepBatch(maxRows);
-  const nowMicros = tx.timestamp.microsSinceUnixEpoch as bigint;
-  let deleted = 0;
-  for (const row of expiredRows) {
-    if (deleted >= maxRows) break;
-    if ((row.expiresAt.microsSinceUnixEpoch as bigint) > nowMicros) break;
-    tx.db.presenceEntry.delete(row);
-    deleted++;
-  }
-  return deleted;
-}
-
-export function resolvePresenceSweepBatch(
-  ctx: PresenceConfigReadCtxLike
-): number {
-  const cfg = ctx.db.presenceConfig.singleton.find(true);
-  const value = Number(cfg?.sweepBatch ?? DEFAULT_PRESENCE_SWEEP_BATCH);
-  return Number.isInteger(value) &&
-    value > 0 &&
-    value <= MAX_PRESENCE_SWEEP_BATCH
-    ? value
-    : DEFAULT_PRESENCE_SWEEP_BATCH;
-}
-
+/**
+ * Deletes up to the configured sweep batch of expired rows from `rows`,
+ * usually the `expiresAt` index filtered to rows at or before now. Unexpired
+ * rows are skipped, so any iterable is safe.
+ */
 export function runPresenceSweep(
-  ctx: PresenceSweepCtxLike,
-  expiredRows: Iterable<PresenceEntryRow>
+  tx: PresenceTxLike,
+  rows: Iterable<PresenceEntryRow>
 ): number {
-  const batch = resolvePresenceSweepBatch(ctx);
-  return sweepPresence(ctx, expiredRows, batch);
+  const batch =
+    tx.db.presenceConfig.singleton.find(true)?.sweepBatch ??
+    DEFAULT_PRESENCE_SWEEP_BATCH;
+  const now = tx.timestamp.microsSinceUnixEpoch;
+  const expired: PresenceEntryRow[] = [];
+  for (const row of rows) {
+    if (expired.length >= batch) break;
+    if (row.expiresAt.microsSinceUnixEpoch <= now) expired.push(row);
+  }
+  for (const row of expired) tx.db.presenceEntry.delete(row);
+  return expired.length;
 }

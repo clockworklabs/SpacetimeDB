@@ -15,137 +15,114 @@ For the install-to-publish workflow, see
 
 This package provides:
 
-- reusable presence table row/builders,
-- helpers for heartbeats and status/activity updates,
+- a `./submodule` namespace with private presence tables, a scheduled expiry
+  sweep, and client operations for global presence,
+- helpers for heartbeats and status/activity updates in host-chosen scopes,
 - bounded sweep helpers for expired presence rows.
 
 ## Usage
 
 ### Integrate into an application
 
-Presence is a host-configured helper: the host chooses whether rows are public,
-defines the scheduled sweep, and derives subjects from its authentication
-model. The skeleton below owns those decisions explicitly.
+Register the namespace and install its config and expiry sweep. Presence rows
+are private: the host decides which scopes a caller may write and read, so it
+writes scoped presence through the helpers and exposes it through its own
+views.
 
 ```ts
-import { Range, schema, t, table } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
-import {
-  createPresenceEntryTable,
-  createPresenceConfigTable,
-  installPresenceConfig,
-  presenceSweepTickRow,
-  runPresenceSweep,
-  upsertPresence,
-} from '@spacetimedb/presence';
+import { schema, SenderError, t } from 'spacetimedb/server';
+import * as presence from '@spacetimedb/presence/submodule';
 
-const presenceEntry = createPresenceEntryTable({ public: true });
-const presenceConfig = createPresenceConfigTable({ public: false });
-const presenceSweepTick = table(
-  { name: 'presence_sweep_tick' },
-  presenceSweepTickRow
-);
-
-const spacetimedb = schema({
-  presenceEntry,
-  presenceConfig,
-  presenceSweepTick,
-});
+const spacetimedb = schema({ presence });
 
 export const init = spacetimedb.init(ctx => {
-  installPresenceConfig(ctx);
-  ctx.db.presenceSweepTick.insert({
-    scheduledId: 0n,
-    scheduledAt: ScheduleAt.interval(30n * 1_000_000n),
-  });
+  presence.install(ctx.as.presence);
 });
 
-export const heartbeat = spacetimedb.procedure(
-  { scope: t.string(), status: t.option(t.string()) },
-  t.unit(),
-  (ctx, args) => {
-    ctx.withTx(tx => {
-      upsertPresence(tx, {
-        scope: args.scope,
-        subject: ctx.sender.toHexString(),
-        status: args.status ?? 'online',
-      });
+export const roomHeartbeat = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    if (!isRoomMember(ctx, roomId)) throw new SenderError('room.not_member');
+    presence.upsertPresence(ctx.as.presence, {
+      scope: `room:${roomId}`,
+      subject: ctx.sender.toHexString(),
+      status: 'online',
     });
-    return {};
   }
 );
 
-export const presenceSweep = spacetimedb.reducer(
-  { onSchedule: presenceSweepTick },
-  { arg: presenceSweepTick.rowType },
-  ctx => {
-    runPresenceSweep(
-      ctx,
-      ctx.db.presenceEntry.expiresAt.filter(
-        new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      )
-    );
-  }
+export const myRoomPresence = spacetimedb.view(
+  { name: 'my_room_presence', public: true },
+  t.array(presence.presenceEntry.rowType),
+  ctx =>
+    roomIdsFor(ctx).flatMap(roomId => [
+      ...ctx.db.presence.presenceEntry.scope.filter(`room:${roomId}`),
+    ])
 );
 
 export default spacetimedb;
 ```
 
-The public operation derives its subject from `ctx.sender`. Applications with
-account authentication can use a verified session's stable user ID instead.
-See the
-[Presence Chat host module](./example/spacetimedb/)
-for authenticated subjects, typing scopes, and bounded cleanup.
+`isRoomMember` and `roomIdsFor` stand for the host's own authorization. The
+subject can be any stable ID; applications with account authentication can
+use a verified session's user ID instead of the identity. See the
+[Presence Chat host module](./example/spacetimedb/) for authenticated
+subjects, typing scopes, and bounded cleanup.
 
-After generating bindings, send heartbeats through the host procedure and
-subscribe to the host's public or caller-scoped presence table:
+After generating bindings, send heartbeats through the host operation and
+subscribe to the host's view:
 
 ```ts
 import { tables } from './module_bindings';
 
-await conn.procedures.heartbeat({
-  scope: 'room:42',
-  status: 'online',
-});
+await conn.reducers.roomHeartbeat({ roomId: 42n });
 
-conn
-  .subscriptionBuilder()
-  .subscribe([tables.myPresenceEntries.where(row => row.scope.eq('room:42'))]);
+conn.subscriptionBuilder().subscribe([tables.myRoomPresence]);
 ```
 
 ## API
 
-- `createPresenceEntryTable` and `createPresenceConfigTable` create the host
-  tables.
-- `installPresenceConfig` installs default expiration policy.
-- `upsertPresence` records a heartbeat or status change.
+Submodule operations:
+
+- `heartbeat({ status, activity, payloadJson, ttlSeconds })` records the
+  caller's presence in the global scope, keyed by its identity.
+- `clear_presence()` removes the caller's global presence.
+- `presence_online`: public view of up to 1,000 global presence entries,
+  including their `activity` and `payloadJson`. Do not store secrets or
+  private application data in those fields.
+- `update_config({ defaultTtlSeconds, sweepBatch })`, `run_sweep()`, and the
+  `presence_entries_admin` view require a presence administrator.
+- `add_presence_admin({ identity })` and `remove_presence_admin({ identity })`
+  manage administrators. The last administrator cannot be removed.
+
+Helpers, called with `ctx.as.presence` or `tx.as.presence`:
+
+- `upsertPresence` records a heartbeat or status change. `ttlSeconds` defaults
+  to the configured `defaultTtlSeconds` (30 seconds unless updated).
 - `touchPresence` extends an existing lease while preserving its metadata.
 - `removePresence` removes one scope and subject pair.
-- `buildPresenceKey` creates the collision-safe compound key used by the
-  default tables.
-- `sweepPresence` removes expired rows from a supplied iterator.
-- `runPresenceSweep` removes a bounded batch from an expiration-index iterator
-  supplied by the host.
-- `resolvePresenceSweepBatch` validates configured cleanup batch sizes.
-- `presenceEntryRow`, `presenceConfigRow`, `presenceSweepTickRow`, and
-  `presenceTables` support lower-level table composition.
-- `DEFAULT_PRESENCE_TTL_SECONDS`, `DEFAULT_PRESENCE_SWEEP_BATCH`,
-  `MAX_PRESENCE_SWEEP_BATCH`, and `DEFAULT_PRESENCE_STATUS` expose the package
-  limits and defaults.
+
+Invalid input throws a `SenderError` with a code from the exported `errors`
+object. Leases last at most one hour, payloads at most 4,096 characters, and
+sweep batches at most 10,000 rows.
+
+The root entrypoint also supports host-declared tables of the same shape:
+`createPresenceEntryTable`, `createPresenceConfigTable`, `presenceEntryRow`,
+and `presenceConfigRow` build the tables, `installPresenceConfig` seeds the
+config row, and `runPresenceSweep(tx, rows)` deletes up to the configured batch
+of expired rows from `rows`, typically the `expiresAt` index filtered to rows
+at or before now. The host schedules that sweep itself.
 
 Package entrypoints:
 
-- `@spacetimedb/presence` exports the full standalone helper surface.
-- `@spacetimedb/presence/presence` exports presence operations.
-- `@spacetimedb/presence/tables` exports table builders.
-- `@spacetimedb/presence/submodule` exports the ready-made submodule
-  namespace.
-
-The ready-made namespace publishes `presence_entry` rows. The `activity` and
-`payloadJson` fields are visible to subscribed clients. Do not store secrets or
-private application data in these fields. Its manual sweep and configuration
-operations require a presence administrator. Sweep batches are limited to
-10,000 rows per call.
+- `@spacetimedb/presence` exports `errors`, the helpers, and the table
+  builders.
+- `@spacetimedb/presence/presence` exports the helpers.
+- `@spacetimedb/presence/tables` exports the table builders.
+- `@spacetimedb/presence/submodule` exports the submodule namespace,
+  `install`, operations, and helpers.
+- [`spacetimedb/`](./spacetimedb/) publishes the submodule as a standalone
+  database.
 
 ## Testing
 
