@@ -121,13 +121,13 @@ The Stripe secret stays in private module state. Every procedure other than
 
 ## Private tables
 
-| Table                     | Key                          | Notes                                     |
-| ------------------------- | ---------------------------- | ----------------------------------------- |
-| `stripe_customer`         | `stripe_customer_id`         | indexed by email, app-userId              |
-| `stripe_subscription`     | `stripe_subscription_id`     | indexed by customer, org, user            |
-| `stripe_checkout_session` | `stripe_checkout_session_id` | indexed by customer, status               |
-| `stripe_invoice`          | `stripe_invoice_id`          | indexed by customer, subscription, status |
-| `stripe_payment`          | `stripe_payment_intent_id`   | indexed by customer, status               |
+| Table                     | Key                          | Indexed by                        |
+| ------------------------- | ---------------------------- | --------------------------------- |
+| `stripe_customer`         | `stripe_customer_id`         | user ID                           |
+| `stripe_subscription`     | `stripe_subscription_id`     | customer, org, user               |
+| `stripe_checkout_session` | `stripe_checkout_session_id` | customer                          |
+| `stripe_invoice`          | `stripe_invoice_id`          | customer, subscription, org, user |
+| `stripe_payment`          | `stripe_payment_intent_id`   | customer, org, user               |
 
 - `stripe_webhook_event`: idempotency log holding each event's payload (not its
   signature header). The scheduled `prune_webhook_events` reducer deletes events
@@ -254,7 +254,9 @@ Both entry points verify the Stripe signature in-module against the configured
 `webhookSigningSecret` (HMAC-SHA256 over `${timestamp}.${rawBody}` via
 `@spacetimedb/crypto`). Missing secrets produce a service-unavailable response:
 
-- `stripe_webhook_handler` (HTTP) - for direct Stripe-to-SpacetimeDB delivery.
+- `handleStripeWebhook` (HTTP) - for direct Stripe-to-SpacetimeDB delivery,
+  mounted at `/stripe/webhook` by the standalone module and routed by the host
+  when used as a submodule.
 - `ingest_stripe_webhook` (reducer) - for a relay forwarding the raw body +
   `stripe-signature` header over the SDK; it verifies before mutating state.
 
@@ -286,9 +288,9 @@ ephemeral listener secret.
 
 ## Architecture notes
 
-- **valibot for runtime validation.** `vStripeEvent` is a `v.variant('type', [...])` over the 12 supported event types. `parseWithSchema` returns a tagged result; `assertExhaustive` makes the typed `switch` compiler-checked.
-- **SDK types, sync HTTP.** The `stripe` npm package supplies event types such as `Stripe.CustomerCreatedEvent`. Procedures use the synchronous `ctx.http.fetch` API through the request boundary in `submodule/http.ts`.
-- **Compile-time SDK alignment.** `_align*` checks in `schema.ts` assert valibot output is structurally assignable to `Stripe.*Event`. If Stripe ships a breaking change, typecheck fails.
+- **valibot for runtime validation.** `vStripeEvent` is a `v.variant('type', [...])` over the supported event types, and `assertExhaustive` makes the typed `switch` compiler-checked.
+- **Sync HTTP.** Procedures call Stripe with the synchronous `ctx.http.fetch` API through the request boundary in `submodule/http.ts`.
+- **Compile-time SDK alignment.** `scripts/type-alignment.ts` asserts that the `stripe` package's `Stripe.*Event` types are assignable to the valibot output, so `pnpm run typecheck` fails if Stripe ships an incompatible payload change.
 - **Idempotency.** Each webhook event is keyed by `event.id`. Processed and ignored events are acknowledged without re-applying them. Failed events are retried using the stored payload. The HTTP handler retains failures and returns `400`; the reducer rejects failed payloads and rolls back its transaction. `replay_webhook_event` applies the stored event state again.
 
 ## Testing
@@ -302,4 +304,4 @@ Credentialed sandbox coverage is described in **Integration testing** above.
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+[Apache-2.0](./LICENSE).
