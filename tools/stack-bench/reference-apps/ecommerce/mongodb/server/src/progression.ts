@@ -321,10 +321,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   const scheduleRestock = async (req: Request, res: express.Response) => {
-    const itemId = objectId(req.body?.itemId);
-    const warehouseId = objectId(req.body?.warehouseId);
-    const item = itemId ? await Item.findById(itemId) : null;
-    const warehouse = warehouseId ? await Warehouse.findById(warehouseId) : null;
+    const item = typeof req.body?.item === "string" ? await Item.findOne({ name: req.body.item }) : null;
+    const warehouse = typeof req.body?.warehouse === "string" ? await Warehouse.findOne({ name: req.body.warehouse }) : null;
     const quantity = number(req.body?.quantity);
     const delaySeconds = number(req.body?.delaySeconds);
     if (!item || !warehouse || !(quantity >= 1) || !(delaySeconds >= 1)) {

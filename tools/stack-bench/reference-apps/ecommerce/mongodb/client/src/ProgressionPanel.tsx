@@ -321,11 +321,8 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
         onChange={event => setRestock(value => ({ ...value, quantity: event.target.value }))} />
       <input data-role="schedule-restock-delay" value={restock.delaySeconds} placeholder="Delay"
         onChange={event => setRestock(value => ({ ...value, delaySeconds: event.target.value }))} />
-      <button data-role="schedule-restock-submit" data-action-input={JSON.stringify(restock)}
-        onClick={() => act("/api/admin/scheduled-restocks", { method: "POST", body: JSON.stringify({
-          itemId: findItem(restock.item)?.id, warehouseId: state.warehouses?.find((entry: any) => entry.name === restock.warehouse)?.id,
-          quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds),
-        }) })}>Schedule</button>
+      <button data-role="schedule-restock-submit" data-action-input={JSON.stringify({ item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds) })}
+        onClick={() => act("/api/admin/scheduled-restocks", { method: "POST", body: JSON.stringify({ item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds) }) })}>Schedule</button>
       {(state.scheduledRestocks || []).map((entry: any) => <div data-role="pending-restock-item" data-quantity={entry.quantity} data-entity-id={entry.id} key={entry.id}>
         {nameFor(items, entry.itemId)} <span data-role="pending-restock-remaining">{Math.max(0, Math.ceil((new Date(entry.dueAt).getTime() - Date.now()) / 1000))}</span>
         <button data-role="pending-restock-cancel" onClick={() => act(`/api/admin/scheduled-restocks/${entry.id}`, { method: "DELETE" })}>Cancel</button>
