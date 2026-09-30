@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use duct::cmd;
 use std::path::{Path, PathBuf};
 
@@ -57,38 +57,75 @@ fn changed_files(repo_root: &Path, merge_base: &str) -> Result<Vec<ChangedFile>>
         "HEAD"
     )
     .dir(repo_root)
-    .read()
-    .context("failed to list changed files")?;
+    .stdout_capture()
+    .run()
+    .context("failed to list changed files")?
+    .stdout;
     parse_changed_files(&output)
 }
 
-fn parse_changed_files(output: &str) -> Result<Vec<ChangedFile>> {
-    let mut fields = output.split_terminator('\0');
+fn parse_changed_files(output: &[u8]) -> Result<Vec<ChangedFile>> {
+    ensure!(
+        output.is_empty() || output.last() == Some(&0),
+        "truncated git diff output"
+    );
+    let mut fields = output.split(|byte| *byte == 0);
     let mut changes = Vec::new();
     while let Some(status) = fields.next() {
-        let path = fields.next().context("missing path in git diff output")?;
-        let change = match status.as_bytes().first() {
+        if status.is_empty() {
+            break;
+        }
+        let path_field = fields.next().context("missing path in git diff output")?;
+        ensure!(!path_field.is_empty(), "empty path in git diff output");
+        let path = path_from_git(path_field)?;
+        let change = match status.first() {
             Some(b'A') => ChangedFile {
                 old_path: None,
-                new_path: Some(path.into()),
+                new_path: Some(path),
             },
             Some(b'D') => ChangedFile {
-                old_path: Some(path.into()),
+                old_path: Some(path),
                 new_path: None,
             },
             Some(b'R' | b'C') => ChangedFile {
-                old_path: Some(path.into()),
-                new_path: Some(fields.next().context("missing destination in git diff output")?.into()),
+                old_path: Some(path),
+                new_path: Some({
+                    let destination = fields.next().context("missing destination in git diff output")?;
+                    ensure!(!destination.is_empty(), "empty destination in git diff output");
+                    path_from_git(destination)?
+                }),
             },
             Some(b'M' | b'T') => ChangedFile {
-                old_path: Some(path.into()),
-                new_path: Some(path.into()),
+                old_path: Some(path.clone()),
+                new_path: Some(path),
             },
-            _ => bail!("unexpected git diff status {status}"),
+            _ => bail!("unexpected git diff status {}", String::from_utf8_lossy(status)),
         };
         changes.push(change);
     }
     Ok(changes)
+}
+
+#[cfg(unix)]
+fn path_from_git(bytes: &[u8]) -> Result<PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+    Ok(std::ffi::OsString::from_vec(bytes.to_vec()).into())
+}
+
+#[cfg(not(unix))]
+fn path_from_git(bytes: &[u8]) -> Result<PathBuf> {
+    Ok(String::from_utf8(bytes.to_vec())?.into())
+}
+
+#[cfg(unix)]
+fn path_matches_git(path: &Path, bytes: &[u8]) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    path.as_os_str().as_bytes() == bytes
+}
+
+#[cfg(not(unix))]
+fn path_matches_git(path: &Path, bytes: &[u8]) -> bool {
+    path.to_string_lossy().as_bytes() == bytes
 }
 
 fn find_violations(
@@ -132,26 +169,34 @@ fn is_new_script(old: Option<(&Path, &[u8])>, new_path: &Path, new_contents: &[u
 fn read_blob(repo_root: &Path, revision: &str, path: &Path) -> Result<Option<Vec<u8>>> {
     let entries = cmd!("git", "ls-tree", "-z", revision, "--", path)
         .dir(repo_root)
-        .read()
-        .with_context(|| format!("failed to inspect {} at {revision}", path.display()))?;
-    let is_blob = entries.split_terminator('\0').any(|entry| {
-        entry.split_once('\t').is_some_and(|(metadata, entry_path)| {
-            entry_path == path.to_string_lossy() && metadata.split_whitespace().nth(1) == Some("blob")
-        })
-    });
-    if !is_blob {
-        return Ok(None);
+        .stdout_capture()
+        .run()
+        .with_context(|| format!("failed to inspect {} at {revision}", path.display()))?
+        .stdout;
+    for entry in entries.split(|byte| *byte == 0) {
+        let Some(tab) = entry.iter().position(|byte| *byte == b'\t') else {
+            continue;
+        };
+        if !path_matches_git(path, &entry[tab + 1..]) {
+            continue;
+        }
+        let mut metadata = entry[..tab].split(|byte| *byte == b' ');
+        let _mode = metadata.next();
+        if metadata.next() != Some(b"blob".as_slice()) {
+            return Ok(None);
+        }
+        let hash = metadata.next().context("missing blob hash in git ls-tree output")?;
+        let hash = std::str::from_utf8(hash).context("invalid blob hash in git ls-tree output")?;
+        return Ok(Some(
+            cmd!("git", "cat-file", "blob", hash)
+                .dir(repo_root)
+                .stdout_capture()
+                .run()
+                .with_context(|| format!("failed to read blob for {} at {revision}", path.display()))?
+                .stdout,
+        ));
     }
-
-    let spec = format!("{revision}:{}", path.display());
-    Ok(Some(
-        cmd!("git", "show", &spec)
-            .dir(repo_root)
-            .stdout_capture()
-            .run()
-            .with_context(|| format!("failed to read {spec}"))?
-            .stdout,
-    ))
+    Ok(None)
 }
 
 fn is_script(path: &Path, contents: &[u8]) -> bool {
@@ -226,6 +271,19 @@ mod tests {
 
         assert!(reject_new_scripts(root, "base", |_| false).is_err());
         assert!(reject_new_scripts(root, "base", |path| path == Path::new("new.py")).is_ok());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let non_utf8 = PathBuf::from(std::ffi::OsString::from_vec(b"bad-\xff.py".to_vec()));
+            std::fs::write(root.join(&non_utf8), "print(2)\n").unwrap();
+            cmd!("git", "add", "--", &non_utf8).dir(root).run().unwrap();
+            cmd!("git", "commit", "-qm", "add non-UTF-8 script")
+                .dir(root)
+                .run()
+                .unwrap();
+            assert!(reject_new_scripts(root, "base", |path| path == Path::new("new.py")).is_err());
+        }
     }
 
     #[test]
@@ -247,7 +305,7 @@ mod tests {
 
     #[test]
     fn parses_additions_edits_deletions_and_moves() {
-        let changes = parse_changed_files("A\0new.py\0M\0old.sh\0D\0gone.py\0R100\0before.sh\0after.sh\0").unwrap();
+        let changes = parse_changed_files(b"A\0new.py\0M\0old.sh\0D\0gone.py\0R100\0before.sh\0after.sh\0").unwrap();
         assert_eq!(changes.len(), 4);
         assert!(changes[0].old_path.is_none());
         assert_eq!(changes[0].new_path.as_deref(), Some(Path::new("new.py")));
