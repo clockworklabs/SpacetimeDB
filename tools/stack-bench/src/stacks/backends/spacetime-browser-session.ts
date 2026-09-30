@@ -9,10 +9,10 @@ import { withBrowserRequest } from '../../actions/browser-request.js';
 
 interface Reader { readonly offset: number; readonly remaining: number }
 interface Writer { getBuffer(): Uint8Array }
-interface Call { requestId: number; flags: number; reducer: string; args: Uint8Array }
+interface Call { requestId: number; flags: number; reducer?: string; procedure?: string; args: Uint8Array }
 interface Message {
   tag: string;
-  value: Call & { result: { tag: string } };
+  value: Call & { result: { tag: string }; status: { tag: string } };
 }
 interface MessageCodec {
   deserialize(reader: Reader): Message;
@@ -53,7 +53,6 @@ interface Capture {
   template?: { match: string; control: string; count: number; value: Template };
   auth?: { change(message: Message, socket: Socket): Message | null; fail(): void };
   authResult?: (socket: Socket, id: number, result: string) => void;
-  authProcedure?: () => void;
   authObservation?: AuthObservation;
   authWitnesses: AuthWitness[];
   authUnproved: Set<AuthKind>;
@@ -61,6 +60,9 @@ interface Capture {
 type AuthReceipt = { shape: string; success: boolean; transport: 'spacetime-websocket';
   bodySha256: string; absentParameters?: string[] };
 const captures = new WeakMap<object, Capture>();
+// An app may take credentials in a reducer or a procedure; both are its own calls.
+const operation = (call: Call): string =>
+  call.procedure === undefined ? `reducer:${call.reducer}` : `procedure:${call.procedure}`;
 let codec: Promise<Codec> | undefined;
 
 function encode(codec: Codec, type: MessageCodec, message: Message): Buffer {
@@ -183,13 +185,12 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
         let changedFrame = false;
         const messages = decode(wire, wire.ClientMessage, bytes);
         for (const message of messages) {
-          if (message.tag === 'CallProcedure') capture.authProcedure?.();
           const id = message.value?.requestId;
           if (id !== undefined) {
             if (socket.ids.has(id) || socket.ids.size >= 10000) invalidate();
             socket.ids.add(id);
           }
-          if (message.tag === 'CallReducer') {
+          if (message.tag === 'CallReducer' || message.tag === 'CallProcedure') {
             const changed = capture.auth?.change(message, socket);
             if (changed) {
               message.value = changed.value;
@@ -223,17 +224,22 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
             if (socket.identified) invalidate();
             socket.identified = true;
           }
-          if (message.tag === 'ReducerResult') {
-            const { requestId, result } = message.value;
-            capture.authResult?.(socket, requestId, result.tag);
+          // A procedure that throws, as an app refusal does, reports InternalError.
+          const result = message.tag === 'ReducerResult' ? message.value.result.tag
+            : message.tag !== 'ProcedureResult' ? undefined
+            : message.value.status.tag === 'Returned' ? 'Ok'
+            : message.value.status.tag === 'InternalError' ? 'Err' : message.value.status.tag;
+          if (result !== undefined) {
+            const { requestId } = message.value;
+            capture.authResult?.(socket, requestId, result);
             for (const item of socket.calls) if (item.call.requestId === requestId) {
-              item.committed = result.tag === 'Ok' || result.tag === 'OkEmpty';
-              item.result = result.tag;
+              item.committed = result === 'Ok' || result === 'OkEmpty';
+              item.result = result;
               item.observation?.finishWait();
               item.observation = undefined;
             }
-            if (socket.pending?.id === requestId) socket.pending.finish(result.tag);
-            if (socket.authPending?.id === requestId) socket.authPending.finish(result.tag);
+            if (socket.pending?.id === requestId) socket.pending.finish(result);
+            if (socket.authPending?.id === requestId) socket.authPending.finish(result);
           }
         }
       } catch { invalidate(); }
@@ -306,8 +312,10 @@ export function confirmSpacetimeSignup(page: object, user: string): void {
 async function authDeclarations(capture: Capture) {
   const target = leasedSpacetimeTarget();
   const schemaUrl = new URL(`/v1/database/${target.mod}/schema?version=9`, target.uri);
-  let schema: { reducers?: { name: string; params?: { elements?: { name?: { some?: string };
-    algebraic_type?: Record<string, unknown> }[] } }[]; typespace?: { types?: Record<string, unknown>[] } };
+  type Operation = { name: string; params?: { elements?: { name?: { some?: string };
+    algebraic_type?: Record<string, unknown> }[] } };
+  let schema: { reducers?: Operation[]; misc_exports?: { Procedure?: Operation }[];
+    typespace?: { types?: Record<string, unknown>[] } };
   try {
     schema = await withBrowserRequest(capture.page.request, async api => {
       const response = await api.get(schemaUrl.href, { timeout: 10_000 });
@@ -342,12 +350,17 @@ async function authDeclarations(capture: Capture) {
   };
   const declarations = new Map<string, { names: string[]; read: ((reader: Reader) => unknown)[];
     write: ((writer: Writer, value: unknown) => void)[] }>();
-  for (const reducer of schema.reducers ?? []) {
-    const fields = reducer.params?.elements;
+  const operations = [
+    ...(schema.reducers ?? []).map(reducer => ({ key: `reducer:${reducer.name}`, ...reducer })),
+    ...(schema.misc_exports ?? []).flatMap(item => item.Procedure
+      ? [{ key: `procedure:${item.Procedure.name}`, ...item.Procedure }] : []),
+  ];
+  for (const declared of operations) {
+    const fields = declared.params?.elements;
     if (!fields?.length || !fields.every(field => typeof field.name?.some === 'string')) continue;
     const types = fields.map(field => argumentType(field.algebraic_type));
     if (types.some(type => !type)) continue;
-    declarations.set(reducer.name, {
+    declarations.set(declared.key, {
       names: fields.map(field => field.name!.some!),
       read: types.map(type => capture.codec.AlgebraicType.makeDeserializer(type!)),
       write: types.map(type => capture.codec.AlgebraicType.makeSerializer(type!)),
@@ -356,10 +369,10 @@ async function authDeclarations(capture: Capture) {
   return declarations;
 }
 
-// A submit can contain several writes. This path captures each real reducer
-// call; it does not infer which call creates an account from a later sign-in.
+// A submit can contain several writes. This path captures each real reducer or
+// procedure call; it does not infer which call creates an account from a later sign-in.
 export async function startSpacetimeAuthWriteCapture(page: object,
-  visit: (route: { url: string; reducer: string; flags: number; parameters: readonly string[] }, args: unknown[]) =>
+  visit: (route: { url: string; operation: string; flags: number; parameters: readonly string[] }, args: unknown[]) =>
     { value: unknown; shape: string; absentParameters?: string[] } | null,
   receipt: (value: AuthReceipt, changed: boolean) => void, onFailure: () => void) {
   const capture = captures.get(page);
@@ -374,7 +387,9 @@ export async function startSpacetimeAuthWriteCapture(page: object,
     fail,
     change(message, socket) {
       if (stopped) return null;
-      const declaration = declarations?.get(message.value.reducer);
+      const declaration = declarations?.get(operation(message.value));
+      // An undeclared procedure leaves the capture unproved; the app's call still proceeds.
+      if (!declaration && message.tag === 'CallProcedure') { fail(); return null; }
       if (!declaration || !leasedSocket(capture, socket, target, true, true)) {
         fail(); throw new Error('Unproved native signup write');
       }
@@ -388,7 +403,7 @@ export async function startSpacetimeAuthWriteCapture(page: object,
       if (reader.remaining || !Buffer.from(encodeArgs(args)).equals(Buffer.from(message.value.args))) {
         fail(); throw new Error('Native write did not round trip');
       }
-      const changed = visit({ url: socket.url, reducer: message.value.reducer,
+      const changed = visit({ url: socket.url, operation: operation(message.value),
         flags: message.value.flags, parameters: declaration.names }, args);
       const values = changed?.value ?? args;
       if (!Array.isArray(values) || values.length !== args.length) { fail(); throw new Error('Invalid native write patch'); }
@@ -412,7 +427,6 @@ export async function startSpacetimeAuthWriteCapture(page: object,
     const index = waiting.findIndex(item => item.socket === socket && item.id === id);
     if (index >= 0) waiting.splice(index, 1)[0]!.finish(result);
   };
-  capture.authProcedure = () => { if (!stopped) fail(); };
   return {
     stop: () => { stopped = true; },
     finish: async () => {
@@ -427,14 +441,14 @@ export async function startSpacetimeAuthWriteCapture(page: object,
       } finally { clearTimeout(timer); }
     },
     dispose: () => {
-      clearTimeout(timer); capture.auth = undefined; capture.authResult = undefined; capture.authProcedure = undefined;
+      clearTimeout(timer); capture.auth = undefined; capture.authResult = undefined;
       if (waiting.length) fail();
     },
   };
 }
 
-// Patch the app's own credential reducer call on its existing socket. The
-// declared reducer parameters are the only authority for locating extra fields.
+// Patch the app's own credential reducer or procedure call on its existing socket.
+// The declared parameters are the only authority for locating extra fields.
 export async function startSpacetimeAuthPatch(page: object, username: string, password: string,
   patch: (args: unknown[], parameters: readonly { name: string }[], observedPassword?: string | null) =>
     { value: unknown; shape: string; absentParameters?: string[] } | null,
@@ -447,7 +461,7 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
   if (!declarations) return { receipt: async () => undefined, dispose: () => {} };
   const observed = kind ? capture.authWitnesses.filter(witness => witness.kind === kind) : [];
   const witnessValues = (witness: AuthWitness) => {
-    const declaration = declarations.get(witness.item.call.reducer);
+    const declaration = declarations.get(operation(witness.item.call));
     if (!declaration) return null;
     const reader = new capture.codec.BinaryReader(witness.item.call.args);
     const values = declaration.read.map(read => read(reader));
@@ -456,12 +470,12 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
     declaration.write.forEach((write, index) => write(writer, values[index]));
     return Buffer.from(writer.getBuffer()).equals(Buffer.from(witness.item.call.args)) ? values : null;
   };
-  type WitnessRoute = { reducer: string; userAt: number; credentialAt?: number; baseline: unknown[] };
+  type WitnessRoute = { operation: string; userAt: number; credentialAt?: number; baseline: unknown[] };
   let witnessRoute: WitnessRoute | undefined;
   if (kind === 'signin' && observed.length === 2) {
     const positive = observed.find(witness => witness.user === username && witness.accepted && witness.usable);
     const negative = observed.find(witness => witness.user === username && !witness.accepted);
-    if (positive && negative && positive.item.call.reducer === negative.item.call.reducer
+    if (positive && negative && operation(positive.item.call) === operation(negative.item.call)
       && positive.item.call.flags === negative.item.call.flags) {
       const first = witnessValues(positive), second = witnessValues(negative);
       const userAt = first?.findIndex(value => value === username) ?? -1;
@@ -470,7 +484,7 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
       if (first && second && first.length === second.length && userAt >= 0
         && first.filter(value => value === username).length === 1
         && second[userAt] === username && differences.length === 1 && differences[0] !== userAt) {
-        witnessRoute = { reducer: positive.item.call.reducer, userAt,
+        witnessRoute = { operation: operation(positive.item.call), userAt,
           credentialAt: differences[0]!, baseline: second };
       }
     }
@@ -480,7 +494,7 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
     const values = witnessValues(witness);
     const userAt = values?.findIndex(value => value === witness.user) ?? -1;
     if (values && userAt >= 0 && values.filter(value => value === witness.user).length === 1) {
-      witnessRoute = { reducer: witness.item.call.reducer, userAt, baseline: values };
+      witnessRoute = { operation: operation(witness.item.call), userAt, baseline: values };
     }
   }
   // A partial witness never authorizes the old raw-value fallback.
@@ -494,14 +508,14 @@ export async function startSpacetimeAuthPatch(page: object, username: string, pa
   const fail = () => { failed = true; onFailure(); finish(undefined); };
   capture.auth = {
     change(message, socket) {
-      const declaration = declarations.get(message.value.reducer);
+      const declaration = declarations.get(operation(message.value));
       if (!declaration) return null;
       const reader = new capture.codec.BinaryReader(message.value.args);
       const values = declaration.read.map(read => read(reader));
       if (reader.remaining || witnessUnproved) return null;
       let observedPassword: string | null | undefined;
       if (witnessRoute) {
-        if (message.value.reducer !== witnessRoute.reducer || values.length !== witnessRoute.baseline.length
+        if (operation(message.value) !== witnessRoute.operation || values.length !== witnessRoute.baseline.length
           || values[witnessRoute.userAt] !== username || values.filter(value => value === username).length !== 1) return null;
         if (kind === 'signup') {
           observedPassword = null;

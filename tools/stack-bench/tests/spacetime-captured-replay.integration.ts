@@ -173,13 +173,16 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
 // remain unmeasured. No probe may replay a second request on another connection.
 // A completed HTTP or native login can reload and close its socket. That must
 // preserve its receipt; closing before a native reply must remain inconclusive.
+// Credentials may go to a procedure instead of a reducer: its Returned status is
+// a completed call and InternalError (a thrown refusal) is a refusal. A reducer
+// call never matches a procedure declaration of the same name.
 test('SpacetimeDB auth receipts remain valid only for one complete credential call', async t => {
   const codec = await import(new URL('../src/stacks/spacetime-wire-codec.js', import.meta.url).href);
   const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
   const encode = (type: { serialize(writer: unknown, value: unknown): void }, value: unknown) => {
     const writer = new codec.BinaryWriter(256); type.serialize(writer, value); return Buffer.from(writer.getBuffer());
   };
-  let mode = '', connections = 0;
+  let mode = '', connections = 0, procedure = false;
   const received: unknown[][] = [], observations: unknown[] = [];
   const scalarCase = () => mode === 'scalar-fields';
   const integerCase = () => ['u64-fields', 'type-changing-fields'].includes(mode);
@@ -228,9 +231,10 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   const callBytes = (id: number, user?: string, credential?: string, reducer?: string) => {
     const writer = new codec.BinaryWriter(128), args = values(user, credential);
     types().forEach((type, index) => codec.AlgebraicType.makeSerializer(type)(writer, args[index]));
-    return encode(codec.ClientMessage, { tag: 'CallReducer', value: {
-      reducer: reducer ?? (mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up'), requestId: id, flags: 0, args: writer.getBuffer(),
-    } });
+    const name = reducer ?? (mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up');
+    return encode(codec.ClientMessage, procedure
+      ? { tag: 'CallProcedure', value: { procedure: name, requestId: id, flags: 0, args: writer.getBuffer() } }
+      : { tag: 'CallReducer', value: { reducer: name, requestId: id, flags: 0, args: writer.getBuffer() } });
   };
   const server = createServer((req, res) => {
     if (req.url === '/authenticate') {
@@ -242,11 +246,15 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
       });
     } else if (req.url?.includes('/schema')) {
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ reducers: [{ name: mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up',
+      const operations = [{ name: mode === 'renamed' || scalarCase() ? 'register_customer' : 'sign_up',
         params: { elements: rawTypes().map((raw, index) => ({ name: { some: ['username', 'password', mode === 'opaque-salted-signup' ? 'salt' : integerCase() ? 'nonce' : 'is_admin', 'nonce'][index] },
           algebraic_type: mode === 'unsupported-schema' && index === 1 ? { Array: { U8: [] } } : raw })) } },
       ...(['opaque-hash-signup', 'opaque-delayed-signup'].includes(mode) ? [{ name: 'sign_in', params: { elements: rawTypes().map((raw, index) => ({
-        name: { some: ['username', 'password'][index] }, algebraic_type: raw })) } }] : [])] }));
+        name: { some: ['username', 'password'][index] }, algebraic_type: raw })) } }] : [])];
+      res.end(JSON.stringify(procedure || mode === 'reducer-call-to-procedure'
+        ? { reducers: [], misc_exports: operations.map(operation => ({ Procedure: { ...operation,
+          return_type: { Product: { elements: [] } } } })) }
+        : { reducers: operations }));
     } else {
       res.setHeader('Content-Type', 'text/html'); res.end('<body>Native auth form</body>');
     }
@@ -262,7 +270,7 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
       // Malformed outbound traffic must be stopped by the active native probe.
       if (data[0] === 255) { received.push(['malformed']); return; }
       const message = codec.ClientMessage.deserialize(new codec.BinaryReader(data));
-      if (message.tag !== 'CallReducer') return;
+      if (message.tag !== 'CallReducer' && message.tag !== 'CallProcedure') return;
       const reader = new codec.BinaryReader(message.value.args);
       received.push(types().map(type => codec.AlgebraicType.makeDeserializer(type)(reader)));
       if (mode === 'lost-receipt' || mode === 'opaque-closed-witness' && message.value.requestId === 31) {
@@ -272,9 +280,15 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
       const opaqueRejected = ['deferred-reject-login', 'deferred-reject-signup'].includes(mode)
         || ['opaque-hash-login', 'opaque-delayed-login', 'opaque-completed-reload'].includes(mode) && args[1] !== 'hash-correct'
         || ['opaque-hash-signup', 'opaque-delayed-signup', 'opaque-salted-signup'].includes(mode) && args[0] === 'claimant';
-      send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
-        timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: mode === 'refused' || opaqueRejected
-          ? { tag: 'Err', value: new Uint8Array() } : { tag: 'OkEmpty' } } });
+      const rejected = mode === 'refused' || opaqueRejected;
+      send(message.tag === 'CallProcedure'
+        ? { tag: 'ProcedureResult', value: { requestId: message.value.requestId,
+          timestamp: { __timestamp_micros_since_unix_epoch__: 1n },
+          totalHostExecutionDuration: { __time_duration_micros__: 1n },
+          status: rejected ? { tag: 'InternalError', value: 'refused' } : { tag: 'Returned', value: new Uint8Array() } } }
+        : { tag: 'ReducerResult', value: { requestId: message.value.requestId,
+          timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: rejected
+            ? { tag: 'Err', value: new Uint8Array() } : { tag: 'OkEmpty' } } });
       if (mode === 'malformed-inbound') socket.send(Buffer.from([0, 255]));
     });
   });
@@ -283,8 +297,11 @@ test('SpacetimeDB auth receipts remain valid only for one complete credential ca
   const browser = await chromium.launch();
   try {
     for (mode of ['accepted', 'localhost', 'refused', 'renamed', 'scalar-fields', 'u64-fields', 'optional-some', 'optional-none', 'enum-fields', 'type-changing-fields', 'nonmatching-credentials', 'missing-claim', 'opaque-hash-login', 'opaque-delayed-login', 'opaque-ok-denial', 'opaque-completed-reload', 'opaque-token-competing-call', 'opaque-token-lookalike', 'opaque-token-query', 'opaque-token-body', 'opaque-token-wrong-target', 'opaque-hash-signup', 'opaque-delayed-signup', 'deferred-reject-login', 'deferred-reject-signup', 'opaque-salted-signup', 'opaque-http-signup-profile', 'opaque-ambiguous-witness', 'opaque-unrelated-witness', 'opaque-closed-witness', 'opaque-abandoned-witness', 'reload-after-receipt', 'http-reload', 'lost-receipt', 'reconnected-second', 'second-after-receipt',
-      'second-then-submit-error', 'malformed-outbound', 'malformed-inbound', 'wrong-module', 'foreign-target', 'unsupported-protocol', 'unsupported-schema', 'app-proxy']) {
-      await t.test(mode, async () => {
+      'second-then-submit-error', 'malformed-outbound', 'malformed-inbound', 'wrong-module', 'foreign-target', 'unsupported-protocol', 'unsupported-schema', 'app-proxy',
+      'reducer-call-to-procedure', 'procedure:accepted', 'procedure:refused', 'procedure:opaque-hash-login', 'procedure:opaque-hash-signup']) {
+      procedure = mode.startsWith('procedure:');
+      mode = mode.replace(/^procedure:/, '');
+      await t.test(`${mode}${procedure ? ' (procedure)' : ''}`, async () => {
         received.length = 0; connections = 0;
         const lease = createBackendLease({ runId: 'native-auth', backend: 'spacetime', track: 'ecommerce', runIndex: 0,
           serverUri: mode === 'foreign-target' ? `http://127.0.0.1:${port + 1}` : url,
