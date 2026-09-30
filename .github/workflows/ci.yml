@@ -806,7 +806,6 @@ jobs:
   new_script_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: New script check
-    # Compare the PR with its base using a small Rust CI helper.
     runs-on: spacetimedb-linux-small
     permissions:
       contents: read
