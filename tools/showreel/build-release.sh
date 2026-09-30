@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 V=$1; DIR=release-v$V; MIN_FREE_GB=${MIN_FREE_GB:-6}
 [ -f "$DIR/scenes.js" ] || { echo "no $DIR/scenes.js"; exit 1; }
+# Layout, glyph, soundtrack and DECISIONS.md checks; errors stop the build, warnings are printed.
+node --expose-gc check.js "$DIR"
 # The soundtrack must not contain NaN (it would mux as silence).
 AUDIO_OUT=$(node "$DIR/audio.js")
 echo "$AUDIO_OUT"

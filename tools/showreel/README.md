@@ -52,6 +52,10 @@ build a contact sheet, inspect, and only then do the full build.
 | `audio.js` | Synth instruments (kick, clap, hats, bass, pads, plucks, risers, whooshes, impacts, reverb) + an arrangement keyed off `T`/`EVENTS` imported from `scenes.js`, so sound stays in sync when scenes move. |
 | `render.js` | Stills mode, worker mode and orchestrator; motion blur = averaging `--samples` subframes over a 180° shutter. `--reel DIR` renders another reel (below). |
 | `mux.sh`, `sheet.sh` | ffmpeg helpers. `./mux.sh DIR NAME.mp4` muxes another reel. |
+| `kit/` | The release-video library: layout, chat, terminal, before/after lanes, widgets, cards, intro, outro, reel, audio. `kit/CATALOG.md` lists every component and scene example; `kit/gallery.js` renders a still of each (gitignored `kit/gallery/`). `release.js` / `release-audio.js` re-export it. |
+| `check.js` | Checks a reel before rendering: missing glyphs, off-canvas text, NaN audio, DECISIONS.md script (errors); text crossing or touching box edges, overlaps, shrunk headlines, short scenes (warnings). Run by `build-release.sh`. |
+| `snapshot.js` | Regression net for shared-code changes: `--save` hashes frames and audio of every reel, `--check` compares. |
+| `assets/` | Logos and wordmark used by the reels (copied from the repo's docs and images). |
 
 ## Release videos
 

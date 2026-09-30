@@ -50,7 +50,8 @@ them out), and don't call something new if it existed before.
 - what was left out and why;
 - open doubts.
 
-**Build.** Write `release-vX.Y/scenes.js` and `audio.js` using the shared parts (`release.js`: `header`, `makeIntro`,
+**Build.** First read `tools/showreel/kit/CATALOG.md` (every component and every scene built so far) and render the
+gallery (`node --expose-gc kit/gallery.js`) to see them. Write `release-vX.Y/scenes.js` and `audio.js` using the shared parts (`release.js`: `header`, `makeIntro`,
 `makeCards`, `makeOutro`, `makeReel`; `release-audio.js`). Reuse existing scene types from other reels where they fit,
 but the feature comes first: when no existing scene shows it well, write a custom scene for it (the 2.9 MCP scene, an agent
 chat beside a live database panel, is the kind of bespoke scene that sells a feature). Note in `DECISIONS.md` which scenes
@@ -62,8 +63,10 @@ Follow the brand rules in the README:
 - green as the only accent, red only for errors;
 - headlines stay on screen 2.5–4.5 s after they finish appearing.
 
-Render stills (`npm run release:stills -- release-vX.Y <times> --samples 1`), check them with contact sheets
-(`./sheet.sh`), and fix overlaps, overflow and timing. Then build with `./build-release.sh X.Y`: one full-quality
+Run `node --expose-gc check.js release-vX.Y` and fix every error and warning it reports (missing glyphs, text off the
+canvas or crossing a box edge, overlapping text, shrunk headlines, short scenes, a NaN soundtrack); explain in
+`DECISIONS.md` any warning you keep on purpose. Render stills (`npm run release:stills -- release-vX.Y <times> --samples 1`),
+check them with contact sheets (`./sheet.sh`), and fix crowding and timing the checker can't see. Then build with `./build-release.sh X.Y`: one full-quality
 render, no compressed copies. Keep memory bounded, and don't change the shared code in a way that alters existing
 reels.
 
