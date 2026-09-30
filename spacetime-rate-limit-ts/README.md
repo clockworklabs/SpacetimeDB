@@ -122,20 +122,24 @@ The view returns at most 1,000 rows and returns an empty set to non-admins.
 
 `client({ scope, limit, windowSeconds })` configures the policy for one scope.
 Each scope can be configured once per module; a second `client` call with the
-same scope throws `errors.duplicateScope`. When a policy depends on application
-state, such as an upgrade tier, create one client per tier with its own scope.
+same scope fails module loading with `rate_limit.duplicate_scope`. When a
+policy depends on application state, such as an upgrade tier, create one client
+per tier with its own scope.
 The returned limiter exposes `scope`, `limit`, and `windowSeconds`, plus:
 
 - `consume(ctx, { key, cost? })` spends `cost` (default 1) from the actor's
   bucket in the caller's transaction and returns whether it was allowed, the
-  remaining capacity, the reset time, and the retry delay.
+  remaining capacity, the reset time, and the retry delay. `cost` must be a
+  positive integer no greater than `limit`; otherwise `consume` throws
+  `errors.invalidCost`, since the request could never be allowed.
 - `peek(db, key, now?)` reads the actor's bucket without spending from it.
   Views have no clock, so a view reports an expired window until the sweep
   removes it; compare `resetAt` with the current time, or pass `now` from a
   reducer or procedure to report an expired window as fresh.
 
 `key` identifies the actor; the limiter combines it with the scope. Scopes are
-at most 128 characters and keys at most 256.
+at most 128 characters. A key must be 1 to 256 characters; otherwise `consume`
+and `peek` throw `errors.invalidActorKey`.
 
 `install(ctx)` makes the publishing identity the first administrator and
 schedules a sweep of expired buckets every 30 seconds. Call it from the host's
@@ -153,7 +157,10 @@ Admin operations:
   `resetBuckets({ maxRows })` deletes buckets regardless of expiry. Both remove
   500 rows by default and accept at most 10,000 per call.
 
-`errors` exports stable error codes for callers that distinguish failures.
+`errors` holds the stable codes a caller can receive as a `SenderError`:
+`notAuthorized`, `cannotRemoveLastAdmin`, `invalidActorKey`, `invalidCost`,
+`invalidSweepBatch`, and `invalidMaxRows`. An invalid policy passed to `client`
+fails module loading instead.
 
 Package entrypoints:
 
