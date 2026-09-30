@@ -68,6 +68,7 @@ interface BrowserActor {
   loc(testid: string, options?: {
     readonly contains?: string;
     readonly scope?: { readonly testid: string; readonly contains?: string | RegExp };
+    readonly editable?: boolean;
   }): Locator;
 }
 
@@ -326,8 +327,11 @@ async function fill({ input, capabilities, signal }: BrowserArguments<Interactio
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   const scope = inputScope(browser, input.in);
-  const loc = actor.loc(input.testid, { scope });
-  await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
+  const visible = actor.loc(input.testid, { scope });
+  await visible.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
+  // A contract can reuse an input's ID to show saved values; typing targets the editable one.
+  const editable = actor.loc(input.testid, { scope, editable: true });
+  const loc = await editable.count() > 0 ? editable : visible;
   const text = browser.expand(input.text) ?? '';
   const tag = await loc.evaluate(element => element.tagName);
   if (tag === 'SELECT') {

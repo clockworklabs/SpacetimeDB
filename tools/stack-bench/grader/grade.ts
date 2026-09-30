@@ -504,14 +504,15 @@ export class Actor {
     }
     return found;
   }
-  loc(testid: string, { contains, scope }:
-    { contains?: string; scope?: { testid: string; contains?: string } } = {}) {
+  loc(testid: string, { contains, scope, editable }:
+    { contains?: string; scope?: { testid: string; contains?: string }; editable?: boolean } = {}) {
     // `scope` narrows the search to inside a specific container (e.g. the badge
     // belonging to ONE room), so a stale element elsewhere can't satisfy it.
     const root = scope
       ? this.page.locator(tid(scope.testid), { hasText: scope.contains }).filter({ visible: true }).first()
       : this.page;
-    const selector = tid(testid);
+    const selector = editable ? `:is(${tid(testid)}):is(input, textarea, select, [contenteditable]:not([contenteditable="false"]))`
+      : tid(testid);
     return (contains
       ? root.locator(selector, { hasText: contains })
       : root.locator(selector)).filter({ visible: true }).first();

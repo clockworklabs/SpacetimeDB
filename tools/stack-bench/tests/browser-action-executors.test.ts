@@ -249,7 +249,7 @@ test('UI failures retain bounded observations but exclude passwords and unproven
   for (const present of [false, true]) {
     const select = { tagName: 'SELECT', options: [{ value: 'weekly', label: present ? 'Weekly' : 'Daily' }] };
     const result = await run({ do: 'fill', actor: 'a', testid: 'frequency', text: 'Weekly' }, services({ loc: () => ({
-      waitFor: async () => {}, evaluate: async (read: (element: typeof select) => unknown) => read(select),
+      waitFor: async () => {}, count: async () => 1, evaluate: async (read: (element: typeof select) => unknown) => read(select),
       selectOption: async () => { throw new errors.TimeoutError('locator.selectOption: Timeout exceeded'); },
     }) }));
     assert.equal(result.finding?.kind, present ? 'page-timeout' : 'choice-missing');
@@ -349,6 +349,7 @@ test('fill adapts values to date input types', async () => {
   const values: Array<[string, string]> = [];
   const locator = (type: string) => ({
     waitFor: async () => {},
+    count: async () => 1,
     evaluate: async () => 'INPUT',
     getAttribute: async (name: string) => name === 'type' ? type : null,
     fill: async (value: string) => { values.push([type, value]); },
