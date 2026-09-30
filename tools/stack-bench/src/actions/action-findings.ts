@@ -96,6 +96,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
     : f.alternatives?.length ? `none of the ${f.alternatives.join(', ')} controls became visible in time`
     : 'the page did not respond in time',
   'page-crashed': () => 'the page crashed',
+  'grading-time-limit': f => `the operation did not finish within ${Math.round(f.limitMs / 60_000)} minutes`,
   'page-error': f => `${f.control || f.scope ? scopedControl(f) : 'the page'} did not behave as required`,
   'app-control-failed': f => `${target(f.target)} could not ${f.mode}`,
   'script-failed': f => `${f.script} failed`,
@@ -225,6 +226,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional(), requestedChoice: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), alternatives: z.array(z.string()).optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('page-crashed'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('grading-time-limit'), fields: z.strictObject({ limitMs: z.number() }) }),
   z.strictObject({ kind: z.literal('page-error'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('app-control-failed'), fields: z.strictObject({ mode: z.string(), target: targetSchema, detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('script-failed'), fields: z.strictObject({ script: z.string(), detail: z.string().optional() }) }),

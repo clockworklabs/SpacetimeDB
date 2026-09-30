@@ -25,7 +25,7 @@ import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-rel
 import { resolveBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
-import { inconclusive } from '../src/actions/actor-action-runtime.js';
+import { fail, inconclusive } from '../src/actions/actor-action-runtime.js';
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
@@ -123,6 +123,7 @@ type GradeArgs = {
   diagnostic?: boolean;
   savedDiagnostic?: ReturnType<typeof inspectSavedDiagnostic>;
   browserWsEndpoint?: string;
+  timeLimitMs?: number;
 };
 type GradeRunContext = {
   contractIds?: readonly string[];
@@ -135,6 +136,7 @@ type GradeRunContext = {
   authReadEndpoints?: readonly string[];
   applicationWriteEndpoints?: readonly string[];
   actionCancellation?: { reason: string | null };
+  timeLimit?: { limitMs: number; deadlineAtMs: number };
   runId: string;
   roomName: (base: string) => string;
   restartSpec?: RuntimeControlSpec;
@@ -164,6 +166,13 @@ type GradeRunContext = {
 type ActionFailure = Error & { actionEvidence?: ActionEvidence; actionActor?: string | null };
 const APPLICATION_RESTORE_SETTLE_MS = 8000;
 const APPLICATION_RESTORE_TIMEOUT_MS = 60_000;
+// A check still running at the grading time limit has not passed. Recording it keeps
+// the rest of the level measured instead of losing the grader process.
+function enforceTimeLimit(ctx: GradeRunContext): void {
+  if (ctx.timeLimit && Date.now() >= ctx.timeLimit.deadlineAtMs) {
+    fail('grading-time-limit', { limitMs: ctx.timeLimit.limitMs });
+  }
+}
 class ApplicationNotRestored extends Error {
   constructor(reason: string) {
     super(`the application server stopped by the harness was not restored: ${reason}`);
@@ -224,6 +233,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     diagnostic: { type: 'boolean' },
     'saved-diagnostic': { type: 'string' },
     'browser-ws-endpoint': { type: 'string' },
+    'time-limit-ms': { type: 'string' },
   } });
   const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
     out: values.out, label: values.label,
@@ -241,7 +251,11 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false,
     nullControl: values['null-control'] ?? false,
     diagnostic: values.diagnostic ?? false,
-    browserWsEndpoint: values['browser-ws-endpoint'] };
+    browserWsEndpoint: values['browser-ws-endpoint'],
+    timeLimitMs: values['time-limit-ms'] === undefined ? undefined : Number(values['time-limit-ms']) };
+  if (args.timeLimitMs !== undefined && !(Number.isSafeInteger(args.timeLimitMs) && args.timeLimitMs > 0)) {
+    throw new Error('--time-limit-ms must be a positive integer');
+  }
   if (!args.url || !args.spec) {
     throw new Error('Usage: node dist/grader/grade.js --url <app-url> --spec <scenario.json> '
       + '--level <N> [--out <file>] [--label <s>] [--feature <N>]');
@@ -1075,6 +1089,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     // Setup is not scored, but a failure makes the feature untestable (0).
     for (const step of feature.setup) {
       if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
+      enforceTimeLimit(ctx);
       await annotate(actors.get(step.actor), { feature: feature.name, criterion: 'setup', step: step.do });
       await runStep(step, actors, ctx);
     }
@@ -1118,6 +1133,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       if (restoreFailures.length) throw new ApplicationNotRestored(restoreFailures[0]!.reason);
       for (const step of criterion.steps) {
         if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
+        enforceTimeLimit(ctx);
         activeActor = step.actor ?? activeActor;
         await annotate(actors.get(step.actor) ?? actors.values().next().value,
           { feature: feature.name, criterion: criterion.id, step: step.do });
@@ -1257,7 +1273,9 @@ async function main(): Promise<void> {
     : null;
   const databaseLease = gradeDatabaseLease(args.backend);
 
-  const ctx: GradeRunContext = { actionCancellation: { reason: null }, runId, roomName: (base: string) => `${base}-${runId}`,
+  const ctx: GradeRunContext = { actionCancellation: { reason: null },
+    ...(args.timeLimitMs === undefined ? {} : { timeLimit: { limitMs: args.timeLimitMs, deadlineAtMs: Date.now() + args.timeLimitMs } }),
+    runId, roomName: (base: string) => `${base}-${runId}`,
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease, authRequestPatch: args.backend ? platformAuthPatch(args.backend) : null,

@@ -40,6 +40,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'choice-missing': finding('choice-missing', { control: 'frequency', detail: DETAIL }),
   'page-timeout': finding('page-timeout', { control: 'buy-now', detail: DETAIL }),
   'page-crashed': finding('page-crashed', { detail: DETAIL }),
+  'grading-time-limit': finding('grading-time-limit', { limitMs: 2_220_000 }),
   'page-error': finding('page-error', { detail: DETAIL }),
   'app-control-failed': finding('app-control-failed', { mode: 'start', target: 'app-server', detail: DETAIL }),
   'script-failed': finding('script-failed', { script: 'scripts/seed.js', detail: DETAIL }),

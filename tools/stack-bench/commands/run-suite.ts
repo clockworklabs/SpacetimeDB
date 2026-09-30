@@ -39,7 +39,7 @@ import { readBackendLease } from '../src/runtime/backend-lease.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
-import { GRADER_SOURCE_TIMEOUT_MS, gradingSourceTimeoutMs } from '../src/runtime/grading-timeout.js';
+import { GRADER_SOURCE_TIMEOUT_MS, GRADER_TIME_LIMIT_RESERVE_MS, gradingSourceTimeoutMs } from '../src/runtime/grading-timeout.js';
 import type { BackendLease, BackendLeaseExpectation } from '../src/runtime/backend-lease.js';
 import type { CheckEvidence } from '../src/evidence/check-evidence.js';
 import type { AggregatedPackRuntimeEvidence, PackRuntimeEvidence } from '../src/composition/pack-runtime.js';
@@ -738,8 +738,11 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
   if (captureMedia && args.media) argv.push('--media', join(outputDirectory, 'media'), '--trace');
   else if (captureMedia) argv.push('--failure-media', join(outputDirectory, 'failure-media'));
   if (args.browserWsEndpoint) argv.push('--browser-ws-endpoint', args.browserWsEndpoint);
-  const child = await runGraderChild(argv, outputDirectory, suite.id,
-    gradingSourceTimeoutMs(recipeBinding?.plan.packs ?? [], selectedChecks));
+  // The grader stops starting steps before the process limit, so an overrun is a
+  // recorded result for the running check instead of a lost source.
+  const timeoutMs = gradingSourceTimeoutMs(recipeBinding?.plan.packs ?? [], selectedChecks);
+  argv.push('--time-limit-ms', String(timeoutMs - GRADER_TIME_LIMIT_RESERVE_MS));
+  const child = await runGraderChild(argv, outputDirectory, suite.id, timeoutMs);
   const { stdout, failure } = child;
   if (!existsSync(out)) {
     console.log('NO REPORT');

@@ -1,6 +1,8 @@
 import type { CompiledRecipePlan } from '../composition/composition-compiler.js';
 
 export const GRADER_SOURCE_TIMEOUT_MS = 15 * 60_000;
+// Time the grader keeps after its last step for the running action, the report and cleanup.
+export const GRADER_TIME_LIMIT_RESERVE_MS = 2 * 60_000;
 
 // The fixed allowance covers setup and bundle creation. Each selected scenario
 // then receives the same allowance as its child grader, up to a worker-safe cap.
