@@ -70,22 +70,26 @@ test('container smoke keeps safe transport causes without error bodies', async (
   runContainerSmoke({ command: (_file, args) => { script = requiredArgument(args, args.indexOf('-e') + 1); return '{}'; },
     imageId: IMAGE_ID, resultsDir: '/unused', destinations: [], tcpPorts: [], requiredExecutables: [],
     credentialStatusCommand: null, credentialMount: null, credentialEnvironment: null, marker: 'unused', networkMode: 'host' });
+  const setTimeout = (resume: () => void) => resume();
   for (const code of ['ENOTFOUND', 'CERT_HAS_EXPIRED', 'ECONNRESET', 'UND_ERR_CONNECT_TIMEOUT']) {
     const failure = new Error('private response body', { cause: new AggregateError([
       Object.assign(new Error('private credential'), { code, syscall: 'connect' }),
     ], 'private aggregate') });
-    await assert.rejects(runInNewContext(script, { require: () => ({}), AbortSignal, URL,
+    let calls = 0;
+    await assert.rejects(runInNewContext(script, { require: () => ({}), AbortSignal, URL, setTimeout,
       process: { argv: ['node', '["https://provider.invalid"]', '[]', '[]', 'null', 'null', 'unused'], env: {} },
-      fetch: async () => { throw failure; },
+      fetch: async () => { calls++; throw failure; },
     }), error => {
       const text = String(error);
       assert.match(text, new RegExp(code));
       assert.match(text, /AggregateError/);
+      assert.match(text, /"attempts":3/);
       assert.doesNotMatch(text, /private/);
       return true;
     });
+    assert.equal(calls, 3, 'a failed destination is retried before preflight fails');
   }
-  await assert.rejects(runInNewContext(script, { require: () => ({}), AbortSignal, URL,
+  await assert.rejects(runInNewContext(script, { require: () => ({}), AbortSignal, URL, setTimeout,
     process: { argv: ['node', '["https://provider.invalid"]', '[]', '[]', 'null', 'null', 'unused'], env: {} },
     fetch: async () => { throw Object.assign(new Error('private'), { name: 'TimeoutError' }); },
   }), /TimeoutError/);

@@ -6,6 +6,8 @@ import type { BackendLease } from './backend-lease.js';
 import { SIDECAR_CONTAINER_RESOURCE_LIMITS } from '../composition/product-config.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 
+const OUTBOUND_PROBE_ATTEMPTS = 3;
+
 export interface ContainerSmokeResult {
   platform: string;
   arch: string;
@@ -61,9 +63,13 @@ export function runContainerSmoke({ command, imageId, resultsDir, destinations, 
     + `for(const key of ['name','code','syscall'])if(typeof e[key]==='string'&&/^[A-Za-z0-9_ -]{1,64}$/.test(e[key]))detail[key]=e[key];`
     + `if(e.cause)detail.cause=causeDetails(e.cause,depth+1);`
     + `if(Array.isArray(e.errors))detail.errors=e.errors.slice(0,4).map(item=>causeDetails(item,depth+1));return detail};`
-    + `const reached=[];for(const url of urls){const started=Date.now();try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
-    + `reached.push({url,status:r.status,elapsedMs:Date.now()-started})}catch(e){throw new Error('Outbound probe failed: '+JSON.stringify({`
-    + `origin:new URL(url).origin,elapsedMs:Date.now()-started,error:causeDetails(e)}))}}`
+    // A single slow connect while many attempts start together is not an outage.
+    + `const reached=[];for(const url of urls){const started=Date.now();let failure=null;`
+    + `for(let attempt=1;attempt<=${OUTBOUND_PROBE_ATTEMPTS};attempt++){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
+    + `reached.push({url,status:r.status,elapsedMs:Date.now()-started});failure=null;break}catch(e){failure=e;`
+    + `if(attempt<${OUTBOUND_PROBE_ATTEMPTS})await new Promise(ok=>setTimeout(ok,2000*attempt))}}`
+    + `if(failure)throw new Error('Outbound probe failed: '+JSON.stringify({`
+    + `origin:new URL(url).origin,elapsedMs:Date.now()-started,attempts:${OUTBOUND_PROBE_ATTEMPTS},error:causeDetails(failure)}))}`
     + `for(const port of ports){await reach(port);tcpReached.push(port)}`
     + `fs.writeFileSync('/results/'+process.argv[6],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
     + `process.stdout.write(JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,reached,`
