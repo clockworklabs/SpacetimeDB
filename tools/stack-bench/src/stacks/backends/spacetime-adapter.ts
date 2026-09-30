@@ -5,6 +5,7 @@ import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 import { createSpacetimeGradingContext,
   spacetimeNamedActionRequest } from '../stack-grading-operations.js';
 import { activateSpacetime, controlSpacetime } from '../spacetime-lifecycle.js';
+import { spacetimeNamedActionFetch } from './spacetime-reducer-arguments.js';
 import { noConnectionUrl, spacetimeBuildContainerPlan,
   spacetimeSetupMetadata } from '../stack-agent-operations.js';
 import { deploySpacetimeReference, SPACETIME_REFERENCE_LAYOUT } from '../stack-reference-operations.js';
@@ -62,7 +63,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
     exec?: TextCommandExecutor }) => proveSpacetimeUse({ lease: requireLeasedSpacetime(lease), marker, exec }) },
   grading: { context: createSpacetimeGradingContext,
     transport: 'reducer', capabilities: SPACETIME_GRADING_CAPABILITIES },
-  namedAction: { request: spacetimeNamedActionRequest },
+  namedAction: { request: spacetimeNamedActionRequest, fetch: spacetimeNamedActionFetch },
   teardown: { host: stopSpacetimeHost },
   runPolicy: { resetEnabled: true, retainHostSupported: true,
     supervisorEnvironment: ({ spacetimePort }: { spacetimePort: number | null }) => {

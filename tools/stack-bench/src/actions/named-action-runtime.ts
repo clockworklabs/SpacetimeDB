@@ -303,6 +303,7 @@ export function createNamedActionsCapability({
   readonly now?: () => number;
   readonly applicationWriteEndpoints?: readonly string[];
 }): NamedActionsCapability {
+  const adapter = STACK_ADAPTER_REGISTRY.ids.includes(backend) ? STACK_ADAPTER_REGISTRY.get(backend).namedAction : null;
   const nativeOrigin = backend === 'convex'
     ? new URL(leaseFromEnv(process.env, { backend: 'convex', active: true }).lease.resources.serverUri!).origin : null;
   return Object.freeze({
@@ -324,7 +325,7 @@ export function createNamedActionsCapability({
       return STACK_ADAPTER_REGISTRY.get(backend).namedAction.request(
         { action, input, spacetime, url }) as NamedActionRequest | null;
     },
-    fetch: fetchImpl,
+    fetch: adapter && 'fetch' in adapter ? adapter.fetch(fetchImpl, spacetime) : fetchImpl,
     lastCalls: Object.freeze({ get: lastCalls.get, set: lastCalls.set }),
     now,
     sleep,

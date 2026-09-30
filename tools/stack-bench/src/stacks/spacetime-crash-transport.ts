@@ -1,4 +1,5 @@
 import type { SpacetimeTarget } from './stack-grading-operations.js';
+import { withOptionalReducerArguments } from './backends/spacetime-reducer-arguments.js';
 
 export interface ReducerReply { outcome: 'committed' | 'refused' | 'unknown' }
 
@@ -88,6 +89,8 @@ export async function openCrashReducerConnection(target: SpacetimeTarget, token:
         catch { finish({ outcome: 'unknown' }); }
       });
     },
+    // Complete arguments before the timed call, not while it is measured.
+    arguments: (reducer: string, args: string) => withOptionalReducerArguments(target, reducer, args),
     close: stop,
   };
 }

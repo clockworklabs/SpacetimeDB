@@ -1404,7 +1404,9 @@ test('concurrent calls classify every result before counting accepted requests',
       let calls = 0;
       const provided = services(actors, { backend,
         spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
-        fetchImpl: async () => {
+        fetchImpl: async url => {
+          // A reducer called without arguments first reads its declared parameters.
+          if (url.endsWith('/schema?version=9')) return namedResponse(404, false);
           if (calls++ === 0) return namedResponse(200, true);
           if (status === 0) throw new Error('connection lost');
           return namedResponse(status, false);

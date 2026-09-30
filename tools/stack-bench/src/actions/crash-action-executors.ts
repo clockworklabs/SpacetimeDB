@@ -39,11 +39,13 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
   if (!credentials) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
   const bound = bindBrowserRequest(actor, request, credentials)({ 'Content-Type': 'application/json', ...credentials });
   let connection: Awaited<ReturnType<typeof openCrashReducerConnection>> | undefined;
+  let reducerArgs = request.body ?? '[]';
   if (spacetime) {
     const authorization = Object.entries(credentials).find(([key]) => key.toLowerCase() === 'authorization')?.[1];
     const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
     if (!token || !action.reducer) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
     connection = await openCrashReducerConnection(spacetime, token, signal);
+    reducerArgs = await connection.arguments(action.reducer!, reducerArgs);
   }
   const protocol = connection ? 'websocket-v1-confirmed'
     : request.responseContract === 'convex-mutation' ? 'convex-mutation' : 'http';
@@ -57,7 +59,7 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
       let responseFailed = false;
       try {
         if (connection) {
-          const reply = await connection.call(action.reducer!, request.body ?? '[]', requestSignal);
+          const reply = await connection.call(action.reducer!, reducerArgs, requestSignal);
           if (reply.outcome === 'committed') outcome = 'committed';
           responseFailed = reply.outcome === 'refused';
         } else {
