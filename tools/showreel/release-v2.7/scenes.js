@@ -5,11 +5,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
-const { laneFrame, beforeAfter } = R;
-const { planMarker, resultLine } = R;
-const { typedCommand } = R;
-const { agentChat, linkPulses } = R;
-const { slide, panel, enter, status, caption, pill, bubble, code, SYN, header } = R;
+const { laneFrame, beforeAfter, planMarker, resultLine, typedCommand, agentChat, linkPulses, slide, panel, enter, status, caption, pill, bubble, code, SYN, header } = R;
 
 const DUR = 46.5;
 const T = { intro: 0, mcp: 5.5, lock: 15, uniq: 23.5, dx: 32.5, outro: 40.5, end: DUR };

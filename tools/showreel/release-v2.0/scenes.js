@@ -5,9 +5,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
-const { resultLine } = R;
-const { typedCommand } = R;
-const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
+const { commandChip, resultLine, typedCommand, slide, panel, enter, status, caption, pill, code, SYN, header } = R;
 
 const DUR = 62.5;
 const T = { intro: 0, events: 5.5, await: 15, config: 24, tmpl: 33, secure: 41.5, plus: 49, outro: 56.5, end: DUR };
@@ -255,10 +253,8 @@ function sTmpl(ctx, t) {
   const ta = E.outExpo(clamp((u - 3.0) / 0.4));
   if (ta > 0) {
     const s = 'spacetime dev --template nextjs-ts';
-    const w = measure(ctx, s, 500, 22, MONO) + 100;
     ctx.save(); ctx.globalAlpha *= ta;
-    rr(ctx, CX - w / 2, 820, w, 64, 32); ctx.fillStyle = '#121A1F'; ctx.fill(); ctx.strokeStyle = hexA(C.green, 0.6); ctx.lineWidth = 1.5; ctx.stroke();
-    typedCommand(ctx, s, CX - w / 2 + 32, 860, u, null, null, { size: 22 });
+    commandChip(ctx, s, CX, 820, u, null, null, { stroke: hexA(C.green, 0.6) });
     ctx.restore();
   }
   caption(ctx, 'Ten new starter templates: a working real-time app in your stack, in one command.', u, 4.2, 960);

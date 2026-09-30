@@ -5,8 +5,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
-const { laneFrame, beforeAfter } = R;
-const { slide, panel, enter, caption, pill, code, SYN, header } = R;
+const { laneFrame, beforeAfter, slide, panel, enter, caption, pill, code, SYN, header } = R;
 
 const DUR = 29.5;
 const T = { intro: 0, sub: 5.5, tab: 15, outro: 23.5, end: DUR };

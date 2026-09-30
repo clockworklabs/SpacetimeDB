@@ -5,9 +5,7 @@ const { W, H, C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure,
 const U = require('../ui');
 const { CX, TAU, riseParts, kicker, check, spinner } = U;
 const R = require('../release');
-const { typedCommand } = R;
-const { agentChat, linkPulses } = R;
-const { slide, panel, enter, status, caption, pill, bubble, header } = R;
+const { typedCommand, agentChat, linkPulses, slide, panel, enter, status, caption, pill, bubble, header } = R;
 
 const DUR = 44.5;
 const T = { intro: 0, mcp: 5.5, plugins: 15, unity: 23, mods: 31.5, outro: 38.5, end: DUR };

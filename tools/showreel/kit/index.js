@@ -4,6 +4,7 @@ module.exports = {
   ...require('./chat'),
   ...require('./terminal'),
   ...require('./compare'),
+  ...require('./widgets'),
   ...require('./intro'),
   ...require('./cards'),
   ...require('./outro'),

@@ -4,7 +4,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text 
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
-const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
+const { statusPill, slide, panel, enter, status, caption, pill, code, SYN, header } = R;
 
 const DUR = 35.5;
 const T = { intro: 0, recon: 5.5, cpp: 14.5, plus: 23.5, outro: 29.5, end: DUR };
@@ -42,13 +42,7 @@ function sRecon(ctx, t) {
   ctx.save();
   enter(ctx, u, 0.25, 40);
   panel(ctx, B.x, B.y, B.w, B.h, 'my-chat.app');
-  const lbl = st === 'online' ? 'connected' : st === 'lost' ? 'connection lost' : 'reconnecting…';
-  const lw = measure(ctx, lbl, 600, 16, MONO) + 62, sx = B.x + B.w - 36 - lw;
-  rr(ctx, sx, B.y + 88, lw, 38, 19); ctx.fillStyle = '#0d1317'; ctx.fill();
-  ctx.strokeStyle = st === 'online' ? hexA(C.green, 0.5) : st === 'lost' ? hexA(C.red, 0.7) : hexA(C.white, 0.3); ctx.lineWidth = 1.5; ctx.stroke();
-  if (st === 'retry') spinner(ctx, sx + 24, B.y + 107, 7, t, C.white);
-  else { ctx.fillStyle = st === 'online' ? C.green : C.red; ctx.beginPath(); ctx.arc(sx + 24, B.y + 107, 6, 0, TAU); ctx.fill(); }
-  text(ctx, lbl, sx + 42, B.y + 113, { size: 16, weight: 600 });
+  statusPill(ctx, B.x + B.w - 36, B.y + 88, st, t);
   text(ctx, '#lobby', B.x + 40, B.y + 116, { size: 24, weight: 800, fam: SANS });
   // messages; they dim while offline and a new one arrives after the reconnect
   const dim = st === 'online' ? 0 : 0.55;

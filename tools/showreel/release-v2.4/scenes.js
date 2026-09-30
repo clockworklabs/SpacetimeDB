@@ -4,8 +4,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
-const { typedCommand } = R;
-const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
+const { commandChip, typedCommand, slide, panel, enter, status, caption, pill, code, SYN, header } = R;
 
 const DUR = 36.5;
 const T = { intro: 0, http: 5.5, tmpl: 15, plus: 24, outro: 30.5, end: DUR };
@@ -112,10 +111,7 @@ function sTmpl(ctx, t) {
   // command
   ctx.save();
   enter(ctx, u, 0.2, 30);
-  const cw = measure(ctx, TCMD, 500, 22, MONO) + 100;
-  rr(ctx, CX - cw / 2, 262, cw, 64, 32); ctx.fillStyle = '#121A1F'; ctx.fill();
-  ctx.strokeStyle = hexA(C.white, 0.15); ctx.lineWidth = 1.5; ctx.stroke();
-  typedCommand(ctx, TCMD, CX - cw / 2 + 32, 302, u, TP.cmd[0], TP.cmd[1], { size: 22 });
+  commandChip(ctx, TCMD, CX, 262, u, TP.cmd[0], TP.cmd[1]);
   ctx.restore();
 
   const W3 = 520, G3 = 40, x0 = CX - (3 * W3 + 2 * G3) / 2, y0 = 370, h = 500;
