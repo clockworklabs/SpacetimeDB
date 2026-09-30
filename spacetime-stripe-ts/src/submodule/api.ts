@@ -34,6 +34,7 @@ export {
   listInvoicesByUserId,
   getCheckoutSession,
   listCheckoutSessions,
+  getWebhookEvent,
 } from './operations/queries.js';
 export {
   setStripeConfig,

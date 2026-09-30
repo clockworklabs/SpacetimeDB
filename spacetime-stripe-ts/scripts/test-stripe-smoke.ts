@@ -126,6 +126,23 @@ async function ingest(
   ]);
 }
 
+const WEBHOOK_EVENT_STATUS = [
+  'Received',
+  'Processed',
+  'Ignored',
+  'Failed',
+] as const;
+
+// `spacetime call` prints an option as [0, row] and an enum as [tag, []].
+// The stripe_webhook_event status is column 4.
+function webhookEventStatus(output: string): string {
+  const tag = JSON.parse(output)?.[1]?.[4]?.[0];
+  const status = WEBHOOK_EVENT_STATUS[tag];
+  if (!status)
+    throw new Error(`could not parse webhook event status from: ${output}`);
+  return status;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -239,24 +256,31 @@ async function main() {
       throw new Error(`failed event was not retried: ${recovered}`);
   }
 
-  step('relay rejects invalid payload on each attempt');
-  const invalidPayload = JSON.stringify({
+  step('relay keeps a Failed row for an invalid signed payload');
+  const invalidPayload = {
     id: 'evt_relay_invalid',
     type: 'customer.created',
     created: EVENT_CREATED,
     data: { object: {} },
-  });
+  };
+  const readInvalidEvent = async () =>
+    webhookEventStatus(
+      await call(opts, 'get_webhook_event', [q('evt_relay_invalid')])
+    );
   for (let attempt = 0; attempt < 2; attempt++) {
-    const error = await expectCallFails(opts, 'ingest_stripe_webhook', [
-      q('evt_relay_invalid'),
-      q('customer.created'),
-      'false',
-      q(invalidPayload),
-      some(stripeSignature(invalidPayload)),
-    ]);
-    if (!error.includes('stripe.webhook_payload_invalid'))
-      throw new Error(error);
+    await ingest(opts, {
+      eventId: 'evt_relay_invalid',
+      eventType: 'customer.created',
+      payload: invalidPayload,
+    });
+    const status = await readInvalidEvent();
+    if (status !== 'Failed')
+      throw new Error(`expected Failed webhook row after ingest: ${status}`);
   }
+  await call(opts, 'replay_webhook_event', [q('evt_relay_invalid')]);
+  const replayed = await readInvalidEvent();
+  if (replayed !== 'Failed')
+    throw new Error(`expected Failed webhook row after replay: ${replayed}`);
 
   step('negative: anonymous callers cannot read or mutate Stripe state');
   for (const [name, args] of [

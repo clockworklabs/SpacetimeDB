@@ -38,6 +38,5 @@ export const errors = {
   webhookSignatureMismatch: 'stripe.webhook_signature_mismatch',
   webhookPayloadMissingMetadata: 'stripe.webhook_payload_missing_metadata',
   webhookMetadataMismatch: 'stripe.webhook_metadata_mismatch',
-  webhookPayloadInvalid: 'stripe.webhook_payload_invalid',
   webhookEventNotFound: 'stripe.webhook_event_not_found',
 } as const;

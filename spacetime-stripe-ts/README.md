@@ -183,6 +183,8 @@ authorization; pass `ctx.as.stripe`)
 - `replay_webhook_event(eventId)` (admin): re-applies a stored event
 - `prune_webhook_events`: scheduled retention sweep
 - `get_webhook_event_count()` (admin): observability
+- `get_webhook_event(eventId)` (admin): stored event with `status`
+  (`Received`, `Processed`, `Ignored`, or `Failed`) and `errorMessage`
 
 **Queries** (admin)
 
@@ -273,9 +275,13 @@ Both entry points verify the Stripe signature in-module against the configured
 The relay reducer also verifies that its separately supplied event metadata
 matches the signed payload before using the event ID as its idempotency key.
 The HTTP handler records rejected payloads as Failed and returns `400`. A
-redelivery retries the stored payload. The relay reducer throws on failure,
-which rolls back its transaction. Unexpected transaction errors return `500`
-from the HTTP handler without committing partial state.
+redelivery retries the stored payload. Unexpected transaction errors return
+`500` from the HTTP handler without committing partial state.
+
+The relay reducer throws, writing nothing, when size, secret, signature, or
+metadata checks reject a request. Once a signed event is stored, the reducer
+commits: an invalid payload keeps its `Failed` event record with the error
+message. Callers read the outcome with `get_webhook_event`.
 
 ## Integration testing
 
@@ -300,7 +306,7 @@ ephemeral listener secret.
 - **valibot for runtime validation.** `vStripeEvent` is a `v.variant('type', [...])` over the supported event types, and `assertExhaustive` makes the typed `switch` compiler-checked.
 - **Sync HTTP.** Procedures call Stripe with the synchronous `ctx.http.fetch` API through the request boundary in `submodule/http.ts`.
 - **Compile-time SDK alignment.** `scripts/type-alignment.ts` asserts that the `stripe` package's `Stripe.*Event` types are assignable to the valibot output, so `pnpm run typecheck` fails if Stripe ships an incompatible payload change.
-- **Idempotency.** Each webhook event is keyed by `event.id`. Processed and ignored events are acknowledged without re-applying them. Failed events are retried using the stored payload. The HTTP handler retains failures and returns `400`; the reducer rejects failed payloads and rolls back its transaction. `replay_webhook_event` applies the stored event state again.
+- **Idempotency.** Each webhook event is keyed by `event.id`. Processed and ignored events are acknowledged without re-applying them. Failed events are retried using the stored payload. The HTTP handler retains failures and returns `400`; the reducer commits them as `Failed`. `replay_webhook_event` applies the stored event state again.
 
 ## Testing
 

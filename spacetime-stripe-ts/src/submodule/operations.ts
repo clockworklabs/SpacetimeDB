@@ -923,9 +923,8 @@ export const ingestStripeWebhook = spacetimedb.reducer(
         processedAt: undefined,
       });
 
+    // A Failed event row commits so it can be read and replayed.
     const outcome = applyStripeEvent(ctx, existing?.payloadJson ?? payloadJson);
-    if (outcome.status.tag === 'Failed')
-      throwSenderError(errors.webhookPayloadInvalid);
     updateWebhookStatus(
       ctx,
       signedMetadata.eventId,

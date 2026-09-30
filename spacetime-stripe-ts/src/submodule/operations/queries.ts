@@ -7,6 +7,7 @@ import {
   stripeCheckoutSessionTable,
   stripePaymentTable,
   stripeInvoiceTable,
+  stripeWebhookEventTable,
 } from '../schema.js';
 import { withAdminTx, takeRows } from '../operations.js';
 import { latestSubscription } from '../subscription-order.js';
@@ -170,5 +171,15 @@ export const listCheckoutSessions = spacetimedb.procedure(
   (ctx, { stripeCustomerId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripeCheckoutSession.byCustomer.filter(stripeCustomerId))
+    )
+);
+
+export const getWebhookEvent = spacetimedb.procedure(
+  { eventId: t.string() },
+  t.option(stripeWebhookEventTable.rowType),
+  (ctx, { eventId }) =>
+    withAdminTx(
+      ctx,
+      tx => tx.db.stripeWebhookEvent.eventId.find(eventId) ?? undefined
     )
 );
