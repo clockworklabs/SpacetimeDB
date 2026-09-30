@@ -578,21 +578,32 @@ async function template(capture: Capture, match: string, control: string, signal
     return response.ok() ? response.json() : null;
   });
   if (!schema) return null;
-  // ponytail: scalar reducer parameters only; unsupported shapes retain UI setup.
+  // Schema JSON is externally tagged; the codec takes { tag, value }. A reducer can take
+  // lists, options or records (a product's variants, say). The byte-exact round trip
+  // below rejects any shape this conversion gets wrong, which keeps the form path.
   const scalars = new Set(['Bool', 'I8', 'U8', 'I16', 'U16', 'I32', 'U32', 'I64', 'U64', 'I128', 'U128', 'I256', 'U256', 'F32', 'F64', 'String']);
-  const scalar = (raw: Record<string, unknown>, depth = 0): { tag: string } => {
+  const fieldName = (raw: unknown): string | undefined => typeof raw === 'string' ? raw
+    : raw && typeof raw === 'object' && 'some' in raw ? String((raw as { some: unknown }).some) : undefined;
+  const codecType = (raw: Record<string, unknown>, depth = 0): { tag: string; value?: unknown } => {
     if (!raw || depth > 8) throw new Error('Unsupported parameter');
-    if ('Ref' in raw) return scalar(schema.typespace?.types?.[Number(raw.Ref)], depth + 1);
+    if ('Ref' in raw) return codecType(schema.typespace?.types?.[Number(raw.Ref)], depth + 1);
     const tags = Object.keys(raw);
-    if (tags.length !== 1 || !scalars.has(tags[0]!)) throw new Error('Unsupported parameter');
-    return { tag: tags[0]! };
+    if (tags.length !== 1) throw new Error('Unsupported parameter');
+    const tag = tags[0]!, value = raw[tag] as Record<string, unknown>;
+    if (scalars.has(tag)) return { tag };
+    if (tag === 'Array') return { tag, value: codecType(value, depth + 1) };
+    const members = (list: unknown) => (Array.isArray(list) ? list : []).map((member: Record<string, unknown>) =>
+      ({ name: fieldName(member.name), algebraicType: codecType(member.algebraic_type as Record<string, unknown>, depth + 1) }));
+    if (tag === 'Product') return { tag, value: { elements: members(value.elements) } };
+    if (tag === 'Sum') return { tag, value: { variants: members(value.variants) } };
+    throw new Error('Unsupported parameter');
   };
   const declarations: { name: string; params: { elements: { algebraic_type: Record<string, unknown> }[] } }[] =
     Array.isArray(schema?.reducers) ? schema.reducers : [];
   const found: Template[] = [];
   for (const declaration of declarations) {
     try {
-      const types = declaration.params.elements.map(field => scalar(field.algebraic_type));
+      const types = declaration.params.elements.map(field => codecType(field.algebraic_type));
       const readers = types.map(type => capture.codec.AlgebraicType.makeDeserializer(type));
       const writers = types.map(type => capture.codec.AlgebraicType.makeSerializer(type));
       const encodeArgs = (args: unknown[]) => {
