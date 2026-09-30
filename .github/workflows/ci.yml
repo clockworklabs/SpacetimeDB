@@ -1702,15 +1702,19 @@ jobs:
       - *download-build-artifacts
       - *extract-build-artifacts
 
-      - name: Use the workspace SpacetimeDB toolchain
-        run: |
-          ln -sf spacetimedb-cli "$CARGO_TARGET_DIR/release/spacetime"
-          echo "$CARGO_TARGET_DIR/release" >> "$GITHUB_PATH"
+      - *expose-spacetime-cli
 
       - name: Check submodules
         run: |
+          pnpm -r -F "./spacetime-*-ts/**" run lint
           pnpm -r -F "./spacetime-*-ts/**" run typecheck
           pnpm -r -F "./spacetime-*-ts/**" run test
+
+      # Starts an isolated server on a free local port with a temporary data
+      # directory. `spacetime start` runs the extracted spacetimedb-standalone
+      # beside spacetimedb-cli.
+      - name: Run cron crash-recovery test
+        run: pnpm --dir spacetime-cron-ts run test:recovery
 
       - name: Build submodule packages and examples
         run: pnpm -r -F "./spacetime-*-ts/**" run build

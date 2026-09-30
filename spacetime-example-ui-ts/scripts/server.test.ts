@@ -12,7 +12,7 @@ import {
 const temporaryDirectories: string[] = [];
 
 function temporaryTokenPath(): string {
-  const directory = mkdtempSync(path.join(tmpdir(), 'stdb-submodule-shared-'));
+  const directory = mkdtempSync(path.join(tmpdir(), 'stdb-example-ui-'));
   temporaryDirectories.push(directory);
   return path.join(directory, 'server-token');
 }
