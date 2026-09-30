@@ -75,7 +75,7 @@ This document contains the help content for the `spacetime` command-line program
 
 ###### **Options:**
 
-* `--root-dir <ROOT_DIR>` — The root directory to store all spacetime files in.
+* `--root-dir <ROOT_DIR>` — The root directory for SpacetimeDB files. If you installed with --root-dir, pass the same value on each command, before the subcommand (for example, spacetime --root-dir /stdb start).
 * `--config-path <CONFIG_PATH>` — The path to the cli.toml config file
 
 

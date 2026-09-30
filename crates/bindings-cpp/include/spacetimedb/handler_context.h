@@ -68,7 +68,7 @@ public:
                 Identity{},
                 std::nullopt,
                 tx_timestamp,
-                AuthCtx::internal()
+                AuthCtx(false, [] { return std::nullopt; })
             );
         };
         return Internal::with_tx(make_reducer_ctx, body);
@@ -81,7 +81,7 @@ public:
                 Identity{},
                 std::nullopt,
                 tx_timestamp,
-                AuthCtx::internal()
+                AuthCtx(false, [] { return std::nullopt; })
             );
         };
         return Internal::try_with_tx(make_reducer_ctx, body);
