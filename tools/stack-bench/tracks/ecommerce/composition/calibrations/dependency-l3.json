@@ -202,7 +202,70 @@
       "spacetime",
       "convex"
     ],
-    "evidence": [],
+    "evidence": [
+      {
+        "kind": "mutation",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/convex-mutation.json",
+        "repetition": 1,
+        "sha256": "dea18447d6e52f41d70525238d297ac2f346a103b11fda8de88af35c18bb5331",
+        "stack": "convex"
+      },
+      {
+        "kind": "mutation",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/mongodb-mutation.json",
+        "repetition": 1,
+        "sha256": "8bf44d7fa502e7c6c542998cf4eb95d519c360690149fab54267babbd87f6e07",
+        "stack": "mongodb"
+      },
+      {
+        "kind": "mutation",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/postgres-mutation.json",
+        "repetition": 1,
+        "sha256": "0c59c6223421ab41f3d2c0b22aaf516463041cac6cb9576466a302edcfb4acc1",
+        "stack": "postgres"
+      },
+      {
+        "kind": "mutation",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/spacetime-mutation.json",
+        "repetition": 1,
+        "sha256": "bda380a9e6af7f16a04173b8568cd8bdb5a39c55c39a2e807ae0bde2e5c97e52",
+        "stack": "spacetime"
+      },
+      {
+        "kind": "null",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/null.json",
+        "repetition": 1,
+        "sha256": "6b714b17f8715871c7452b0b4ca96640cb69217e874bd00de888199944be0c21"
+      },
+      {
+        "kind": "reference",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/convex-reference.json",
+        "repetition": 1,
+        "sha256": "eacd052bd5ca9d6d225c74b0b8676ebee1dd4c583350104c98a07bdbbdd14ba1",
+        "stack": "convex"
+      },
+      {
+        "kind": "reference",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/mongodb-reference.json",
+        "repetition": 1,
+        "sha256": "f022cf0337b4fb72d4cd54d6b67938673e168140c1239d2dade58687a6459d06",
+        "stack": "mongodb"
+      },
+      {
+        "kind": "reference",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/postgres-reference.json",
+        "repetition": 1,
+        "sha256": "4c5c994f64667d12325437a803854f95a1f9c5314842a3822a4d3b7e4f64647b",
+        "stack": "postgres"
+      },
+      {
+        "kind": "reference",
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/spacetime-reference.json",
+        "repetition": 1,
+        "sha256": "d59670d1d0cb206474838b8a7082da122110814dd72842ac4602b75d8e2e4edc",
+        "stack": "spacetime"
+      }
+    ],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
       "contentSha256": "81293ef69fefd55d3744d5adcbb3e70bd06d339f7810e2017f2efe229616d3e0",
@@ -218,6 +281,79 @@
       "L1",
       "L2",
       "L3"
+    ]
+  },
+  "qualificationReuse": {
+    "rationale": "Reviewed executable-only change since c34ab8c8a7: (1) 550e8fb975 dependency-mode gating, which qualification never runs (no campaign, sequential mode); (2) f7b4214624 setOffline records an application page-error where it formerly threw a harness failure, a path no retained artifact reached (no harness failures; all references 176/176, all mutants caught). Checks, mutations, references, recipe and catalog are unchanged; only executableSha256 differs.",
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/reuse-review.json",
+        "sha256": "5585044442bbf8dc2c84383bf31aa6cb4fe2ab92d0620a51f0d7ad3e9f66171b"
+      }
+    ],
+    "sourceRecipe": {
+      "id": "ecommerce.progression-catalog",
+      "contentSha256": "631b7dc759373ff3accbbc8e7713206288b752c2776e157ad182d78987d0021c",
+      "executionSha256": "49947f3fe5146342350f84287e26416a3000f7ab0dcab77a5a095bac1928c087"
+    },
+    "sourceCalibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "contentSha256": "12f471ed8ebb74548606c6d007da1c31940ad80dc7d8802cbbdb6911e27709bd"
+    },
+    "scopes": [
+      {
+        "kind": "mutation",
+        "stack": "convex",
+        "fromExecutableSha256": "7941c8b5ae777cfdbd285731bfb9c665e891226c52e3c03815f60e5b4cf37b13",
+        "toExecutableSha256": "d1496eee886cb0f4374597102eb1af32bcf3ac3a43630d0355c3ca16a9a11c4e"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "fromExecutableSha256": "7bec6e1e173c40f60a0e94efde797d64e12fa441b9bc966c88a9fd1b43ec8af6",
+        "toExecutableSha256": "42bb91d5d4a0630283ea64149a4e82a29cc825f57ae67d2bf154aa4c6035e94f"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "fromExecutableSha256": "da2d7ee54fb1470cf924d6af02807b36059164a65e06bb4c00850aa81e785307",
+        "toExecutableSha256": "96be0759a42488d7f55931999a5bfe2536566a13b6b7c947ec8c9bead0851bdb"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e61c44ff4d932df296e4cdb4d8523f3374178da7a055efa12ea2125fd6e8f4d5",
+        "toExecutableSha256": "fb88cf639572a82239689deb438b475f02e350db3cc899a2e58b94aab6942ee5"
+      },
+      {
+        "kind": "null",
+        "fromExecutableSha256": "8156f1cb79a6f154df3538d5819ec3d6751907852e6548bdfb9925d84010709f",
+        "toExecutableSha256": "631723e73b3e34885e518b80d1082b65d17a148e97b72b314055fa5f57d2736f"
+      },
+      {
+        "kind": "reference",
+        "stack": "convex",
+        "fromExecutableSha256": "7941c8b5ae777cfdbd285731bfb9c665e891226c52e3c03815f60e5b4cf37b13",
+        "toExecutableSha256": "d1496eee886cb0f4374597102eb1af32bcf3ac3a43630d0355c3ca16a9a11c4e"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "fromExecutableSha256": "7bec6e1e173c40f60a0e94efde797d64e12fa441b9bc966c88a9fd1b43ec8af6",
+        "toExecutableSha256": "42bb91d5d4a0630283ea64149a4e82a29cc825f57ae67d2bf154aa4c6035e94f"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "fromExecutableSha256": "da2d7ee54fb1470cf924d6af02807b36059164a65e06bb4c00850aa81e785307",
+        "toExecutableSha256": "96be0759a42488d7f55931999a5bfe2536566a13b6b7c947ec8c9bead0851bdb"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "fromExecutableSha256": "e61c44ff4d932df296e4cdb4d8523f3374178da7a055efa12ea2125fd6e8f4d5",
+        "toExecutableSha256": "fb88cf639572a82239689deb438b475f02e350db3cc899a2e58b94aab6942ee5"
+      }
     ]
   }
 }
