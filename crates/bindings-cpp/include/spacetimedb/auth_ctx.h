@@ -31,6 +31,8 @@ private:
     std::function<bool()> is_internal_loader_;
     mutable std::shared_ptr<std::optional<JwtClaims>> jwt_;
     std::function<std::optional<JwtClaims>()> jwt_loader_;
+    // The sender verified by the host. Absent only for `internal()`, whose sender is the database.
+    std::optional<Identity> sender_;
 
     // Private constructors used by factory methods
     AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader);
@@ -123,9 +125,9 @@ public:
     /**
      * @brief Gets the caller's identity.
      * 
-     * For internal calls, this returns the database's identity.
-     * For external calls, this returns the identity derived from the JWT
-     * (based on the issuer and subject claims).
+     * This is the sender verified by the host, the same as `ctx.sender()`,
+     * whether or not the caller presented a JWT. For an internal invocation
+     * it is the database's identity.
      * 
      * @return The caller's Identity
      */
@@ -148,11 +150,11 @@ inline AuthCtx AuthCtx::from_connection_id_opt(std::optional<ConnectionId> conne
         FFI::identity(identity_bytes.data());
         return sender == Identity(identity_bytes);
     };
-    if (connection_id.has_value()) {
-        AuthCtx auth = from_connection_id(*connection_id, std::move(sender));
-        return AuthCtx(std::move(is_self), std::move(auth.jwt_loader_));
-    }
-    return AuthCtx(std::move(is_self), []() -> std::optional<JwtClaims> { return std::nullopt; });
+    AuthCtx auth = connection_id.has_value()
+        ? AuthCtx(std::move(is_self), from_connection_id(*connection_id, sender).jwt_loader_)
+        : AuthCtx(std::move(is_self), []() -> std::optional<JwtClaims> { return std::nullopt; });
+    auth.sender_ = std::move(sender);
+    return auth;
 }
 
 inline bool AuthCtx::is_internal() const {
@@ -167,13 +169,15 @@ inline AuthCtx AuthCtx::internal() {
 }
 
 inline AuthCtx AuthCtx::from_jwt_payload(std::string jwt_payload, Identity identity) {
-    return AuthCtx(false, [payload = std::move(jwt_payload), id = std::move(identity)]() mutable -> std::optional<JwtClaims> {
+    AuthCtx auth(false, [payload = std::move(jwt_payload), id = identity]() mutable -> std::optional<JwtClaims> {
         return JwtClaims(std::move(payload), std::move(id));
     });
+    auth.sender_ = std::move(identity);
+    return auth;
 }
 
 inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity sender) {
-    return AuthCtx(false, [connection_id, sender]() -> std::optional<JwtClaims> {
+    AuthCtx auth(false, [connection_id, sender]() -> std::optional<JwtClaims> {
         // Call the host FFI to get the JWT
         BytesSource jwt_source;
         
@@ -207,6 +211,8 @@ inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity 
         // Use the provided sender identity (already computed by host from JWT claims)
         return JwtClaims(std::move(jwt_payload), sender);
     });
+    auth.sender_ = std::move(sender);
+    return auth;
 }
 
 inline bool AuthCtx::has_jwt() const {
@@ -222,19 +228,10 @@ inline const std::optional<JwtClaims>& AuthCtx::get_jwt() const {
 }
 
 inline Identity AuthCtx::get_caller_identity() const {
-    if (is_internal()) {
-        // Return database identity for internal calls
-        std::array<uint8_t, 32> identity_bytes;
-        FFI::identity(identity_bytes.data());
-        return Identity(identity_bytes);
+    if (sender_.has_value()) {
+        return *sender_;
     }
-    
-    const auto& jwt = get_jwt();
-    if (jwt.has_value()) {
-        return jwt->get_identity();
-    }
-    
-    // No JWT, return database identity as fallback
+    // Only `internal()` has no recorded sender, and its sender is the database.
     std::array<uint8_t, 32> identity_bytes;
     FFI::identity(identity_bytes.data());
     return Identity(identity_bytes);
