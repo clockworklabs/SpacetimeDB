@@ -64,7 +64,9 @@ Submit tagged arguments with an attempt cap and base backoff. The first attempt
 is scheduled immediately; subsequent delays are `backoffSecs * 2^attempt`.
 
 Handlers must be idempotent. A returned failure or a thrown exception records a
-failed attempt and schedules the next attempt, up to `maxAttempts`. Writes made
+failed attempt and schedules the next attempt, up to `maxAttempts`. A thrown
+`SenderError` marks the task's arguments as invalid: Retry records the attempt
+as `GaveUp` with the error message and schedules nothing further. Writes made
 by the handler before a failure are committed with that attempt; Retry does not
 provide a separate transaction for the handler. A host crash or transaction
 abort can still prevent the retry from being scheduled.
