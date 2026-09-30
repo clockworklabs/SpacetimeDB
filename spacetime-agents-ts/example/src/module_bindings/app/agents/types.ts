@@ -12,7 +12,7 @@ import {
 
 export const AgentAdminIdentity = __t.object("AgentAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type AgentAdminIdentity = __Infer<typeof AgentAdminIdentity>;
 

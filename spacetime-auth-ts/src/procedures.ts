@@ -90,7 +90,7 @@ export function addAuthAdmin(
   if (ctx.db.authAdminIdentity.identity.find(identity) == null) {
     ctx.db.authAdminIdentity.insert({
       identity,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
 }

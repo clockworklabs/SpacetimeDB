@@ -22,7 +22,7 @@ export const agentAdminIdentity = table(
   { name: 'agent_admin_identity', public: false },
   {
     identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
+    addedAt: t.timestamp(),
   }
 );
 

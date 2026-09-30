@@ -26,7 +26,7 @@ export type AuthAccount = __Infer<typeof AuthAccount>;
 
 export const AuthAdminIdentity = __t.object("AuthAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type AuthAdminIdentity = __Infer<typeof AuthAdminIdentity>;
 

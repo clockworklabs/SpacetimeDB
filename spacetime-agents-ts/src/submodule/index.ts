@@ -159,7 +159,7 @@ export const addAgentAdminIdentity = spacetimedb.reducer(
     if (ctx.db.agentAdminIdentity.identity.find(identity) == null) {
       ctx.db.agentAdminIdentity.insert({
         identity,
-        addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+        addedAt: ctx.timestamp,
       });
     }
   }

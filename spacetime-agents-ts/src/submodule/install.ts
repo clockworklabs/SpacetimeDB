@@ -8,7 +8,7 @@ export function install(ctx: AgentsTx): void {
   if (ctx.db.agentAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.agentAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   ctx.db.threadLockSweeperTick.insert({

@@ -83,7 +83,7 @@ export const authConnectionBindingRow = {
 // (set_auth_config, revoke_session, admin changes) must come from an admin.
 export const authAdminIdentityRow = {
   identity: t.identity().primaryKey(),
-  addedAtMicros: t.i64(),
+  addedAt: t.timestamp(),
 };
 
 export const authUserTable = table(
