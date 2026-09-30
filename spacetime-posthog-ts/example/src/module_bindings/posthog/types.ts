@@ -76,7 +76,7 @@ export type PostHogOutboxStatus = __Infer<typeof PostHogOutboxStatus>;
 
 export const PosthogAdminIdentity = __t.object("PosthogAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type PosthogAdminIdentity = __Infer<typeof PosthogAdminIdentity>;
 
@@ -135,7 +135,7 @@ export const PosthogOutbox = __t.object("PosthogOutbox", {
   },
   attempts: __t.u32(),
   claimId: __t.option(__t.string()),
-  claimExpiresAtMicros: __t.i64(),
+  claimExpiresAt: __t.timestamp(),
   nextAttemptAt: __t.timestamp(),
   lastStatusCode: __t.option(__t.u16()),
   lastError: __t.option(__t.string()),

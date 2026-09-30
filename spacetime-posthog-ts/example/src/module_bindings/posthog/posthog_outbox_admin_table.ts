@@ -26,7 +26,7 @@ export default __t.row({
   },
   attempts: __t.u32(),
   claimId: __t.option(__t.string()).name("claim_id"),
-  claimExpiresAtMicros: __t.i64().name("claim_expires_at_micros"),
+  claimExpiresAt: __t.timestamp().name("claim_expires_at"),
   nextAttemptAt: __t.timestamp().name("next_attempt_at"),
   lastStatusCode: __t.option(__t.u16()).name("last_status_code"),
   lastError: __t.option(__t.string()).name("last_error"),
