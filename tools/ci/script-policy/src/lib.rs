@@ -21,7 +21,7 @@ pub fn reject_new_scripts(repo_root: &Path, base_ref: &str, is_allowed: impl Fn(
     if violations.is_empty() {
         return Ok(());
     }
-    eprintln!("New Bash or Python scripts are not allowed:");
+    eprintln!("The following new files are not allowed:");
     for path in &violations {
         eprintln!("  {}", path.display());
     }
