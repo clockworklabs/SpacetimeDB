@@ -9,6 +9,7 @@ export { addAdminIdentity, removeAdminIdentity } from './submodule/auth.js';
 export {
   cancelEmail,
   getEmail,
+  getWebhookEvent,
   listDeliveryEventsForEmail,
   listEmailsByOrgId,
   listEmailsByStatus,

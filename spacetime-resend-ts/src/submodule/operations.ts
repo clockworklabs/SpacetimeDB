@@ -4,6 +4,7 @@ import {
   emailStatus,
   resendDeliveryEventTable,
   resendEmailTable,
+  resendWebhookEventTable,
   sendEmailResult,
   spacetimedb,
   t,
@@ -285,6 +286,17 @@ export const getEmail = spacetimedb.procedure(
     requireProcedureAdmin(ctx);
     return ctx.withTx(
       tx => tx.db.resendEmail.resendId.find(resendId) ?? undefined
+    );
+  }
+);
+
+export const getWebhookEvent = spacetimedb.procedure(
+  { eventId: t.string() },
+  t.option(resendWebhookEventTable.rowType),
+  (ctx, { eventId }) => {
+    requireProcedureAdmin(ctx);
+    return ctx.withTx(
+      tx => tx.db.resendWebhookEvent.eventId.find(eventId) ?? undefined
     );
   }
 );

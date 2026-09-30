@@ -178,6 +178,30 @@ function emailStatus(rowText: string): string {
   return EMAIL_STATUS[tag]!;
 }
 
+const WEBHOOK_EVENT_STATUS = [
+  'Received',
+  'Processed',
+  'Ignored',
+  'Failed',
+] as const;
+
+function webhookEventStatus(rowText: string): string {
+  const parsed = JSON.parse(rowText);
+  const row = parsed?.[1];
+  const variant = row?.[5];
+  const tag = variant?.[0];
+  if (
+    typeof tag !== 'number' ||
+    tag < 0 ||
+    tag >= WEBHOOK_EVENT_STATUS.length
+  ) {
+    throw new Error(
+      `could not parse webhook event status from row: ${rowText}`
+    );
+  }
+  return WEBHOOK_EVENT_STATUS[tag]!;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   // Unique run id so re-runs don't collide on idempotent webhook IDs.
@@ -309,6 +333,24 @@ async function main() {
       `expected signed metadata mismatch failure: ${mismatch.slice(0, 400)}`
     );
   }
+
+  step('reducer keeps a Failed row for an invalid signed payload');
+  const invalidEventId = evt('invalid_reducer');
+  await ingestWebhook(
+    opts,
+    invalidEventId,
+    'email.sent',
+    JSON.stringify({ type: 'email.sent', data: {} })
+  );
+  const readInvalidEvent = () =>
+    callReducer(opts, 'get_webhook_event', [quote(invalidEventId)]);
+  let stored = await readInvalidEvent();
+  if (webhookEventStatus(stored) !== 'Failed')
+    throw new Error(`expected Failed webhook row after ingest: ${stored}`);
+  await callReducer(opts, 'replay_webhook_event', [quote(invalidEventId)]);
+  stored = await readInvalidEvent();
+  if (webhookEventStatus(stored) !== 'Failed')
+    throw new Error(`expected Failed webhook row after replay: ${stored}`);
 
   step('signed event types the submodule does not handle are acknowledged');
   await ingestWebhook(

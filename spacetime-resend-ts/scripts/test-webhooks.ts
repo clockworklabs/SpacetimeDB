@@ -17,15 +17,23 @@ const payloadJson = JSON.stringify({
   data: { id: 'contact_1' },
 });
 
-function sign(eventId: string): string {
+// Signed and handled, but fails payload validation.
+const invalidPayloadJson = JSON.stringify({
+  type: 'email.sent',
+  created_at: '2027-01-15T08:00:00Z',
+  data: {},
+});
+
+function sign(eventId: string, body = payloadJson): string {
   const digest = createHmac('sha256', secretRaw)
-    .update(`${eventId}.${timestamp}.${payloadJson}`)
+    .update(`${eventId}.${timestamp}.${body}`)
     .digest('base64');
   return `v1,${digest}`;
 }
 
 // The mock context implements only the tables these paths read and write.
-const webhookEvents = new Map<string, { eventId: string }>();
+type EventRow = { eventId: string; status: { tag: string } };
+const webhookEvents = new Map<string, EventRow>();
 const tx = {
   timestamp: new Timestamp(BigInt(nowSeconds) * 1_000_000n),
   db: {
@@ -35,16 +43,15 @@ const tx = {
     resendWebhookEvent: {
       eventId: {
         find: (id: string) => webhookEvents.get(id),
-        update: (row: { eventId: string }) =>
-          webhookEvents.set(row.eventId, row),
+        update: (row: EventRow) => webhookEvents.set(row.eventId, row),
       },
-      insert: (row: { eventId: string }) => webhookEvents.set(row.eventId, row),
+      insert: (row: EventRow) => webhookEvents.set(row.eventId, row),
     },
   },
 };
 
 const handler = makeResendWebhookHandler();
-function post(eventId: string, signature: string) {
+function post(eventId: string, signature: string, body = payloadJson) {
   const headers = new Map([
     ['svix-id', eventId],
     ['svix-timestamp', timestamp],
@@ -53,7 +60,7 @@ function post(eventId: string, signature: string) {
   const req = {
     method: 'POST',
     headers: { get: (name: string) => headers.get(name) ?? null },
-    text: () => payloadJson,
+    text: () => body,
   };
   return handler(
     { withTx: (fn: (ctx: typeof tx) => unknown) => fn(tx) } as never,
@@ -69,11 +76,20 @@ assert.equal(webhookEvents.size, 0);
 assert.equal(post('evt_good_http', sign('evt_good_http')).status, 200);
 assert.ok(webhookEvents.has('evt_good_http'));
 
-const ingest = (eventId: string, signature: string) =>
+const invalidHttp = post(
+  'evt_invalid_http',
+  sign('evt_invalid_http', invalidPayloadJson),
+  invalidPayloadJson
+);
+assert.equal(invalidHttp.status, 400);
+assert.match(invalidHttp.text(), /resend\.webhook_payload_invalid/);
+assert.equal(webhookEvents.get('evt_invalid_http')?.status.tag, 'Failed');
+
+const ingest = (eventId: string, signature: string, body = payloadJson) =>
   ingestResendWebhook(tx as never, {
     eventId,
-    eventType: 'contact.created',
-    payloadJson,
+    eventType: JSON.parse(body).type,
+    payloadJson: body,
     signatureHeader: signature,
     timestampHeader: timestamp,
   });
@@ -87,5 +103,13 @@ assert.throws(
 assert.ok(!webhookEvents.has('evt_bad_reducer'));
 ingest('evt_good_reducer', sign('evt_good_reducer'));
 assert.ok(webhookEvents.has('evt_good_reducer'));
+
+// The reducer returns so the Failed row commits.
+ingest(
+  'evt_invalid_reducer',
+  sign('evt_invalid_reducer', invalidPayloadJson),
+  invalidPayloadJson
+);
+assert.equal(webhookEvents.get('evt_invalid_reducer')?.status.tag, 'Failed');
 
 process.stdout.write('resend webhook tests passed\n');

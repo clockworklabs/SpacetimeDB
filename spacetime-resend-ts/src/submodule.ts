@@ -17,6 +17,7 @@ export {
   sendEmail,
   cancelEmail,
   getEmail,
+  getWebhookEvent,
   listEmailsByUserId,
   listEmailsByOrgId,
   listEmailsByStatus,

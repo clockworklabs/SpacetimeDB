@@ -151,8 +151,12 @@ The HTTP handler returns 200 after applying an event, for an already processed
 event, and for signed event types the submodule does not handle, which are stored
 as `Ignored`. Invalid payloads return 400 and retain a failed event record;
 redelivery retries failed records. Unexpected transaction failures propagate to
-the HTTP runtime. The reducer entrypoint throws on invalid payloads, rolling back
-its transaction.
+the HTTP runtime.
+
+The reducer throws, writing nothing, when metadata, size, headers, secret, or
+signature checks reject a request. Once a signed event is stored, the reducer
+commits: an invalid payload keeps its `Failed` event record with the error
+message. Callers read the outcome with `get_webhook_event`.
 
 Delivery timestamps use the provider's event time. Older events cannot replace
 newer status, and an earlier delivery stage cannot replace a later one. Queued
@@ -164,6 +168,8 @@ bounce, and failure details change only when their event sets the status.
 
 - `get_email`, `list_emails_by_user_id`, `list_emails_by_org_id`, `list_emails_by_status`
 - `list_delivery_events_for_email`
+- `get_webhook_event` - stored event with `status` (`Received`, `Processed`,
+  `Ignored`, or `Failed`) and `errorMessage`
 
 List procedures return at most 1,000 rows. Host applications should expose
 caller-scoped, paginated views for product-facing history.

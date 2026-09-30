@@ -246,11 +246,15 @@ const MAX_WEBHOOK_BODY_LENGTH = 1024 * 1024;
 const MAX_WEBHOOK_HEADER_LENGTH = 8192;
 const MAX_WEBHOOK_METADATA_LENGTH = 255;
 
+type WebhookRejection = { status: number; code: string };
+
 // The reducer and HTTP route verify, store, and apply events in one transaction.
+// Returns a rejection when the request is refused before anything is written,
+// otherwise the stored event status.
 function applyResendWebhook(
   ctx: WriteCtx,
   args: Omit<ResendWebhookIngestArgs, 'eventType'>
-): { status: number; code: string } {
+): WebhookRejection | WebhookEventStatusValue {
   if (
     args.eventId.length === 0 ||
     args.eventId.length > MAX_WEBHOOK_METADATA_LENGTH
@@ -300,7 +304,7 @@ function applyResendWebhook(
     existing?.status.tag === 'Processed' ||
     existing?.status.tag === 'Ignored'
   ) {
-    return { status: 200, code: 'ok' };
+    return existing.status;
   }
 
   if (!existing)
@@ -327,9 +331,7 @@ function applyResendWebhook(
     outcome.status,
     outcome.error
   );
-  return outcome.status.tag === 'Failed'
-    ? { status: 400, code: errors.webhookPayloadInvalid }
-    : { status: 200, code: 'ok' };
+  return outcome.status;
 }
 
 export const ingestResendWebhook = spacetimedb.reducer(
@@ -344,8 +346,9 @@ export const ingestResendWebhook = spacetimedb.reducer(
     if (eventType !== parseResendEventType(args.payloadJson)) {
       throwSenderError(errors.webhookMetadataMismatch);
     }
+    // A Failed event row commits so it can be read and replayed.
     const result = applyResendWebhook(ctx, args);
-    if (result.status !== 200) throwSenderError(result.code);
+    if ('code' in result) throwSenderError(result.code);
   }
 );
 
@@ -378,10 +381,11 @@ export function makeResendWebhookHandler() {
       timestampHeader: req.headers.get('svix-timestamp') ?? undefined,
     };
     const result = ctx.withTx(tx => applyResendWebhook(tx as WriteCtx, args));
-    return webhookJson(
-      { ok: result.status === 200, code: result.code },
-      result.status
-    );
+    if ('code' in result)
+      return webhookJson({ ok: false, code: result.code }, result.status);
+    return result.tag === 'Failed'
+      ? webhookJson({ ok: false, code: errors.webhookPayloadInvalid }, 400)
+      : webhookJson({ ok: true, code: 'ok' }, 200);
   };
 }
 
