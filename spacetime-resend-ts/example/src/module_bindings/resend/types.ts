@@ -24,7 +24,7 @@ export type EmailStatus = __Infer<typeof EmailStatus>;
 
 export const ResendAdminIdentity = __t.object("ResendAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type ResendAdminIdentity = __Infer<typeof ResendAdminIdentity>;
 
