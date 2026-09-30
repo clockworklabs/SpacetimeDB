@@ -36,7 +36,7 @@ function sMcp(ctx, t) {
   if (u < -0.1 || u > len) return;
   ctx.save();
   slide(ctx, u, len);
-  header(ctx, u, 'MCP · NOW ON MAINCLOUD', [{ s: 'Connect your AI agent to your' }, { s: 'Maincloud databases.', fill: 'brand' }]);
+  header(ctx, u, 'MCP · NOW ON MAINCLOUD', [{ s: 'Connect your agent to' }, { s: 'Maincloud databases.', fill: 'brand' }]);
 
   // chat
   const cp = { x: 140, y: 270, w: 1000, h: 660 };

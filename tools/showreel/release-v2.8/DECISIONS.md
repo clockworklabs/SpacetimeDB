@@ -16,6 +16,9 @@ the version-bump commit. Length 29.5 s: two features, no cards. Research and sou
 - Submodules: "TypeScript modules · needs a 2.8 server" on screen; no Rust/C#/C++ claim. The separator is `.` (the 2.8.0 docs showed `/`, fixed in 2.8.3). No `spacetime call` with arguments (format not verified).
 - Reconnect: auto-reconnect already existed; what's new is reconnecting immediately on return. The 2.7 lane says it "waits for its next scheduled retry" (a limitation), not that it was broken. No identity claim.
 
+## Checker warnings kept
+- `check.js` warns that "tab in the background" crosses a box edge: it's an overlay drawn over the dimmed rows while the tab is hidden. Kept on purpose.
+
 ## Illustrative
 The `auth_lib` library and its tables, the board values, the lane timings.
 

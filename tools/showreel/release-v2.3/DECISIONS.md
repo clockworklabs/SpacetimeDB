@@ -19,6 +19,9 @@ included. Length 37.5 s. Research and sources: `RESEARCH.md`.
 - Unity 6 WebGL: worded as Unity 6 support (a new engine version), not as a fix.
 - AI rules: installing rules isn't new; the card says their coverage grew.
 
+## Checker warnings kept
+- `check.js` warns that the "procedure" and "4 replies" packets overlap at 20.2 s: they pass each other mid-flight for a moment. Kept on purpose.
+
 ## Illustrative
 The Godot file tree, player names, food, the request lanes and timing.
 

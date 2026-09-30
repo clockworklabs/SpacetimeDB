@@ -7,7 +7,7 @@ Range: `v2.9.0 → v2.10.0` (17 commits; 2.10.0 shipped three days after 2.9.0).
 ## Script
 | Scene | What shipped, for whom, what they can now do | Kicker / headline |
 |---|---|---|
-| MCP on Maincloud | Coding agents can now use SpacetimeDB's MCP tools (SQL, reducer calls) on databases hosted on Maincloud, not just local ones. | MCP · NOW ON MAINCLOUD / Connect your AI agent to your Maincloud databases. |
+| MCP on Maincloud | Coding agents can now use SpacetimeDB's MCP tools (SQL, reducer calls) on databases hosted on Maincloud, not just local ones. | MCP · NOW ON MAINCLOUD / Connect your agent to Maincloud databases. |
 | Card | C# modules built for .NET 10 call reducers directly, 6–12% faster on insert/filter/scan benchmarks. | PERFORMANCE / Also in 2.10. |
 
 ## Sources

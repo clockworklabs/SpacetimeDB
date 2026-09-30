@@ -289,7 +289,10 @@ function sUnity(ctx, t) {
         rr(ctx, X(s0), ly + 22, X(e) - X(s0), 36, 8);
         ctx.fillStyle = hexA(C.white, 0.1); ctx.fill();
         ctx.strokeStyle = hexA(C.white, 0.3); ctx.lineWidth = 1.5; ctx.stroke();
+        // the label stays inside the bar while it grows
+        ctx.save(); ctx.beginPath(); ctx.rect(X(s0), ly + 22, X(e) - X(s0), 36); ctx.clip();
         text(ctx, 'Reloading domain', X(s0) + 18, ly + 46, { size: 17, weight: 600, fill: hexA(C.white, 0.6) });
+        ctx.restore();
         if (sim < s1) spinner(ctx, X(e) - 22, ly + 40, 8, t, C.white);
       } else {
         rr(ctx, X(s0), ly + 22, X(e) - X(s0), 36, 8);
