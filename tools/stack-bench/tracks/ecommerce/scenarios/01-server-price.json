@@ -200,7 +200,7 @@
                 "testid": "item-card",
                 "contains": "Espresso Machine",
                 "attribute": "data-buy-input"
-              },
+             , "fields": ["itemId"] },
               "settleMs": 0
             },
             {

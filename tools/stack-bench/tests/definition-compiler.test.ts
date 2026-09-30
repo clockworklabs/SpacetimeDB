@@ -336,6 +336,16 @@ test('named-action overrides accept only declared locator fields', () => {
   }
 });
 
+test('named-action input fields name distinct declared parameters', () => {
+  const namedAction = { id: 'cart', path: '/api/cart/:itemId', method: 'PATCH', reducer: 'update_cart_quantity',
+    args: [0, 2], params: [{ name: 'itemId', in: 'path', placeholder: ':itemId' }, { name: 'quantity', in: 'body' }] };
+  const call = (fields: unknown) => scenario({ do: 'callAction', actor: 'a', action: 'cart', namedAction,
+    input: { testid: 'cart-item', attribute: 'data-cart-input', fields } });
+  assert.doesNotThrow(() => compileScenarioDefinition(call(['itemId'])));
+  for (const fields of [[], ['itemId', 'itemId'], [''], ['price'], 'itemId']) {
+    assert.throws(() => compileScenarioDefinition(call(fields)), /fields/);
+  }
+});
 
 test('relative number comparisons require a baseline and one unambiguous bound', () => {
   const step = { do: 'expectNumber', actor: 'a', testid: 'timer', relativeTo: 'initial', plus: -1 };

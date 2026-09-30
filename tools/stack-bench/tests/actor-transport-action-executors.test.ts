@@ -503,6 +503,27 @@ test('named action input uses declared defaults and a missing route is not mista
     input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, withDefault);
   assert.equal(calledWithDefault.status, 'passed');
 
+  // Declared fields are all the attribute supplies; another value it carries
+  // cannot replace the scenario's test value.
+  const scoped = { ...action, args: [0, 0, 7] };
+  const fields = { testid: 'row', attribute: 'data-action-input', fields: ['itemId', 'warehouseId'] };
+  const withFields = services(new Map<string, unknown>([
+    ['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3 })],
+  ]), { actions: [scoped], fetchImpl: async (_url, options) => {
+    assert.deepEqual(JSON.parse(String(options.body)), { itemId: 1, warehouseId: 2, quantity: 7 });
+    return namedResponse(200, true);
+  } });
+  const calledWithFields = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: fields, authentication: 'none' }, withFields);
+  assert.equal(calledWithFields.status, 'passed');
+  const withoutField = services(new Map<string, unknown>([['customer', actor({ itemId: 1 })]]), {
+    actions: [scoped], fetchImpl: async () => assert.fail('a call without a declared field must not be sent'),
+  });
+  const missingField = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: fields, authentication: 'none' }, withoutField);
+  assert.equal(missingField.status, 'failed');
+  assert.match(missingField.summary ?? '', /warehouseId/);
+
   const unexpected = services(new Map<string, unknown>([
     ['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3, extra: true })],
   ]), { actions: [action] });

@@ -41,6 +41,8 @@ interface CallActionInput {
     readonly attribute: string;
     readonly contains?: string;
     readonly testid: string;
+    // The parameters the attribute supplies; the rest keep the step's arguments.
+    readonly fields?: readonly string[];
     readonly overrides?: Readonly<Record<string, {
       readonly actor: string;
       readonly testid: string;
@@ -133,9 +135,14 @@ async function readActionValues(capabilities: NamedActionCapabilities, source: A
     fail('interface-invalid', { action: input.action, attribute: input.input.attribute,
       unexpected: unexpected.sort() });
   }
+  const fields = input.input.fields ?? expected;
+  const absent = fields.filter(name => !Object.hasOwn(supplied, name));
+  if (input.input.fields && absent.length) {
+    fail('interface-invalid', { action: input.action, attribute: input.input.attribute, missing: absent });
+  }
   const defaults = action.args ?? [];
   const actionValues = Object.fromEntries(expected.map((name, index) =>
-    [name, Object.hasOwn(supplied, name) ? supplied[name] : defaults[index]]));
+    [name, fields.includes(name) && Object.hasOwn(supplied, name) ? supplied[name] : defaults[index]]));
   for (const [name, override] of Object.entries(input.input.overrides ?? {})) {
     if (!expected.includes(name)) invalid(`override parameter ${name} is not declared`);
     actionValues[name] = await readAttribute(actorFor(capabilities, override.actor), override);

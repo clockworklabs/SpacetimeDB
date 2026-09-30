@@ -335,10 +335,14 @@ function validateNamedTarget(value: unknown, at: string): void {
 }
 
 function validateActionInput(value: unknown, at: string): void {
-  strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'overrides']));
+  strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'fields', 'overrides']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
   if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
+  if (value.fields !== undefined && (!stringArray(value.fields) || !value.fields.length
+    || value.fields.some(field => !field) || new Set(value.fields).size !== value.fields.length)) {
+    fail(`${at}.fields`, 'must be a non-empty array of distinct parameter names');
+  }
   if (value.overrides !== undefined) {
     if (!object(value.overrides)) fail(`${at}.overrides`, 'must be an object');
     for (const [name, override] of Object.entries(value.overrides)) {
@@ -472,6 +476,10 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
       if (namedAction.id !== step.action) fail(`${at}.namedAction.id`, 'must match action');
       if (step.input !== undefined && !namedAction.params?.length) {
         fail(`${at}.namedAction.params`, 'must be a non-empty array');
+      }
+      const declared = new Set((namedAction.params ?? []).map(param => param.name));
+      if (object(step.input) && stringArray(step.input.fields) && step.input.fields.some(field => !declared.has(field))) {
+        fail(`${at}.input.fields`, 'must name declared parameters');
       }
       const fixedBody = namedAction.params?.length && namedAction.params.every(param => param.in === 'body')
         && Array.isArray(namedAction.args) && namedAction.args.length === namedAction.params.length;

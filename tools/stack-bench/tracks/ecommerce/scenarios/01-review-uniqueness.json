@@ -37,7 +37,7 @@
           "steps": [
             { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true },
-            { "do": "callAction", "actor": "author", "from": "author", "action": "submitReview", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 4, "changed my mind"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" }, "settleMs": 1500 },
+            { "do": "callAction", "actor": "author", "from": "author", "action": "submitReview", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 4, "changed my mind"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input", "fields": ["itemId"] }, "settleMs": 1500 },
             { "do": "expectActionOutcome", "actor": "author", "outcome": "completed" },
             { "do": "reload", "actor": "author", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "author", "name": "kira", "readyTestid": "current-user" },
