@@ -5,6 +5,7 @@ const { W, H, C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure,
 const U = require('../ui');
 const { CX, TAU, riseParts, kicker, check, spinner } = U;
 const R = require('../release');
+const { typedCommand } = R;
 const { agentChat, linkPulses } = R;
 const { slide, panel, enter, status, caption, pill, bubble, header } = R;
 
@@ -151,9 +152,7 @@ function sPlugins(ctx, t) {
       const [c0, c1] = TYPE[li++];
       const y = gy + 40 + k * 40;
       if (u < c0 - 0.05) return;
-      const n = Math.floor(P(u, c0, c1) * s.length);
-      text(ctx, '$', tm.x + 40, y, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-      text(ctx, s.slice(0, n), tm.x + 66, y, { size: 20, weight: 500 });
+      typedCommand(ctx, s, tm.x + 40, y, u, c0, c1);
       if (k === 1 && u > c1 + DONE) {
         const cx = tm.x + 66 + measure(ctx, s, 500, 20, MONO) + 24;
         check(ctx, cx, y - 6, 14, C.green, E.outCubic(clamp((u - c1 - DONE) / 0.2)));

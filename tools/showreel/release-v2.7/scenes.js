@@ -5,6 +5,8 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { planMarker, resultLine } = R;
+const { typedCommand } = R;
 const { agentChat, linkPulses } = R;
 const { slide, panel, enter, status, caption, pill, bubble, code, SYN, header } = R;
 
@@ -118,8 +120,7 @@ function sLock(ctx, t) {
   LK.rows.forEach((r, i) => {
     if (u < r.c0 - 0.05) return;
     const y0 = Tm.y + 120 + i * 108;
-    text(ctx, '$', Tm.x + 32, y0, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-    text(ctx, r.cmd.slice(0, Math.floor(P(u, r.c0, r.c1) * r.cmd.length)), Tm.x + 58, y0, { size: 20 });
+    typedCommand(ctx, r.cmd, Tm.x + 32, y0, u, r.c0, r.c1);
     const oa = E.outCubic(P(u, r.out, r.out + 0.25));
     if (oa <= 0) return;
     if (r.ok) {
@@ -127,11 +128,7 @@ function sLock(ctx, t) {
       if (r.s) R.fitText(ctx, r.s, Tm.x + 88, y0 + 44, Tm.w - 120, { size: 18, fam: MONO, weight: 500, fill: hexA(C.white, 0.8), alpha: oa });
       else text(ctx, 'unlocked', Tm.x + 88, y0 + 44, { size: 18, fill: C.green, alpha: oa });
     } else {
-      ctx.save(); ctx.globalAlpha *= oa;
-      ctx.strokeStyle = C.red; ctx.lineWidth = 2.5; ctx.beginPath();
-      ctx.moveTo(Tm.x + 60, y0 + 30); ctx.lineTo(Tm.x + 74, y0 + 44); ctx.moveTo(Tm.x + 74, y0 + 30); ctx.lineTo(Tm.x + 60, y0 + 44); ctx.stroke();
-      text(ctx, r.s, Tm.x + 88, y0 + 44, { size: 18, weight: 600, fill: C.red });
-      ctx.restore();
+      resultLine(ctx, r.s, Tm.x + 60, y0 + 44, oa, { ok: false, weight: 600 });
     }
   });
   ctx.restore();
@@ -182,10 +179,7 @@ function uLane(ctx, x, y, w, h, u, now) {
     const oa = E.outCubic(P(u, UQ.out, UQ.out + 0.3));
     if (oa > 0) {
       if (now) {
-        // the plan's "▸" marker (not in the mono font, so drawn)
-        ctx.save(); ctx.globalAlpha *= oa; ctx.fillStyle = C.green;
-        ctx.beginPath(); ctx.moveTo(x + 34, oy + 28); ctx.lineTo(x + 44, oy + 34); ctx.lineTo(x + 34, oy + 40); ctx.closePath(); ctx.fill();
-        ctx.restore();
+        planMarker(ctx, x + 34, oy + 40, C.green, oa);
         text(ctx, '  Created unique constraint user_email_key', x + 32, oy + 40, { size: 17, fill: C.green, alpha: oa });
         text(ctx, '  on [email] of table user', x + 32, oy + 68, { size: 17, fill: C.green, alpha: oa });
       } else {

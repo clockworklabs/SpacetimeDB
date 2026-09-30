@@ -4,6 +4,8 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text 
 const U = require('../ui');
 const { CX, TAU, check } = U;
 const R = require('../release');
+const { planMarker } = R;
+const { typedCommand } = R;
 const { slide, panel, enter, caption, pill, code, SYN, header } = R;
 
 const DUR = 37;
@@ -16,12 +18,6 @@ const SCENES = [
   { t: T.outro, name: 'SPACETIMEDB' },
 ];
 
-// Draw the migration plan's "▸" marker (not in the mono font).
-function tri(ctx, x, y, col, a = 1) {
-  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = col;
-  ctx.beginPath(); ctx.moveTo(x, y - 12); ctx.lineTo(x + 10, y - 6); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
 
 // ======================================================================
 // REMOVE TABLES: clear() it, delete it from the code, republish
@@ -49,7 +45,7 @@ function dLane(ctx, x, y, w, h, u, now) {
   const oa = E.outCubic(P(u, DR.out, DR.out + 0.3));
   const oy = y + 310;
   if (oa > 0) {
-    if (now) { tri(ctx, x + 34, oy, C.green, oa); text(ctx, '  Removed table: legacy_items', x + 32, oy, { size: 18, fill: C.green, alpha: oa }); }
+    if (now) { planMarker(ctx, x + 34, oy, C.green, oa); text(ctx, '  Removed table: legacy_items', x + 32, oy, { size: 18, fill: C.green, alpha: oa }); }
     else {
       text(ctx, 'Removing the table legacy_items', x + 32, oy, { size: 18, fill: C.red, alpha: oa });
       text(ctx, 'requires a manual migration', x + 32, oy + 30, { size: 18, fill: C.red, alpha: oa });
@@ -105,8 +101,7 @@ function sCli(ctx, t) {
   panel(ctx, Tm.x, Tm.y, Tm.w, Tm.h, 'terminal');
   const cmd = (s, c0, c1, y) => {
     if (u < c0 - 0.05) return;
-    text(ctx, '$', Tm.x + 36, y, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-    text(ctx, s.slice(0, Math.floor(P(u, c0, c1) * s.length)), Tm.x + 62, y, { size: 20 });
+    typedCommand(ctx, s, Tm.x + 36, y, u, c0, c1);
   };
   cmd('spacetime list', CL.list[0], CL.list[1], Tm.y + 112);
   if (u > CL.rows) {
@@ -137,8 +132,7 @@ function sCli(ctx, t) {
   if (u > CL.ci[0] - 0.05) text(ctx, 'IN CI', Tm.x + 36, Tm.y + 470, { size: 14, weight: 700, tracking: 4, fill: hexA(C.white, 0.45) });
   if (u > CL.ci[0] - 0.05) {
     const s = 'spacetime publish --yes=migrate,break-clients my-game';
-    text(ctx, '$', Tm.x + 36, Tm.y + 520, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-    text(ctx, s.slice(0, Math.floor(P(u, CL.ci[0], CL.ci[1]) * s.length)), Tm.x + 62, Tm.y + 520, { size: 20 });
+    typedCommand(ctx, s, Tm.x + 36, Tm.y + 520, u, CL.ci[0], CL.ci[1]);
   }
   if (u > CL.ciNote) text(ctx, 'Skip only the prompts you name.', Tm.x + 62, Tm.y + 562, { size: 19, weight: 500, fam: SANS, fill: C.green, alpha: E.outCubic(P(u, CL.ciNote, CL.ciNote + 0.3)) });
   ctx.restore();

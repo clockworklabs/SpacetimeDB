@@ -4,6 +4,8 @@ const { W, C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, te
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { resultLine } = R;
+const { typedCommand } = R;
 const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
 
 const DUR = 46;
@@ -155,12 +157,10 @@ function sSolid(ctx, t) {
   enter(ctx, u, 0.25, 40);
   panel(ctx, Tm.x, Tm.y, Tm.w, Tm.h, 'terminal');
   const cmd = 'spacetime dev --template solid-ts';
-  text(ctx, '$', Tm.x + 32, Tm.y + 112, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-  text(ctx, cmd.slice(0, Math.floor(P(u, SO.type[0], SO.type[1]) * cmd.length)), Tm.x + 58, Tm.y + 112, { size: 20 });
+  typedCommand(ctx, cmd, Tm.x + 32, Tm.y + 112, u, SO.type[0], SO.type[1]);
   if (u > SO.ran) {
     const ra = E.outCubic(P(u, SO.ran, SO.ran + 0.3));
-    check(ctx, Tm.x + 34, Tm.y + 150, 14, C.green, ra);
-    text(ctx, 'SolidJS app + TypeScript module, running', Tm.x + 58, Tm.y + 156, { size: 18, fill: C.green, alpha: ra });
+    resultLine(ctx, 'SolidJS app + TypeScript module, running', Tm.x + 34, Tm.y + 156, ra, { gap: 24 });
   }
   ctx.restore();
 

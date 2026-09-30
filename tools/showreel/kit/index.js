@@ -2,6 +2,7 @@
 module.exports = {
   ...require('./layout'),
   ...require('./chat'),
+  ...require('./terminal'),
   ...require('./intro'),
   ...require('./cards'),
   ...require('./outro'),

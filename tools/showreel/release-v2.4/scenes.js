@@ -4,6 +4,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { typedCommand } = R;
 const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
 
 const DUR = 36.5;
@@ -51,8 +52,7 @@ function sHttp(ctx, t) {
   enter(ctx, u, 0.5, 40);
   panel(ctx, Tm.x, Tm.y, Tm.w, Tm.h, 'terminal');
   if (u > HT.curl[0] - 0.05) {
-    text(ctx, '$', Tm.x + 32, Tm.y + 110, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-    text(ctx, CURL.slice(0, Math.floor(P(u, HT.curl[0], HT.curl[1]) * CURL.length)), Tm.x + 58, Tm.y + 110, { size: 20 });
+    typedCommand(ctx, CURL, Tm.x + 32, Tm.y + 110, u, HT.curl[0], HT.curl[1]);
   }
   if (u > HT.res) text(ctx, 'Hello!', Tm.x + 58, Tm.y + 150, { size: 20, weight: 700, fill: C.green, alpha: E.outCubic(P(u, HT.res, HT.res + 0.25)) });
   ctx.restore();
@@ -115,8 +115,7 @@ function sTmpl(ctx, t) {
   const cw = measure(ctx, TCMD, 500, 22, MONO) + 100;
   rr(ctx, CX - cw / 2, 262, cw, 64, 32); ctx.fillStyle = '#121A1F'; ctx.fill();
   ctx.strokeStyle = hexA(C.white, 0.15); ctx.lineWidth = 1.5; ctx.stroke();
-  text(ctx, '$', CX - cw / 2 + 32, 302, { size: 22, weight: 600, fill: hexA(C.white, 0.5) });
-  text(ctx, TCMD.slice(0, Math.floor(P(u, TP.cmd[0], TP.cmd[1]) * TCMD.length)), CX - cw / 2 + 60, 302, { size: 22 });
+  typedCommand(ctx, TCMD, CX - cw / 2 + 32, 302, u, TP.cmd[0], TP.cmd[1], { size: 22 });
   ctx.restore();
 
   const W3 = 520, G3 = 40, x0 = CX - (3 * W3 + 2 * G3) / 2, y0 = 370, h = 500;

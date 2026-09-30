@@ -5,6 +5,8 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { resultLine } = R;
+const { typedCommand } = R;
 const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
 
 const DUR = 62.5;
@@ -197,13 +199,11 @@ function sConfig(ctx, t) {
   enter(ctx, u, CF.dev[0] - 0.3, 40);
   panel(ctx, D.x, D.y, D.w, D.h, 'terminal');
   const dc = 'spacetime dev';
-  text(ctx, '$', D.x + 36, D.y + 114, { size: 20, weight: 600, fill: hexA(C.white, 0.5) });
-  text(ctx, dc.slice(0, Math.floor(P(u, CF.dev[0], CF.dev[1]) * dc.length)), D.x + 62, D.y + 114, { size: 20 });
+  typedCommand(ctx, dc, D.x + 36, D.y + 114, u, CF.dev[0], CF.dev[1]);
   [[CF.l1, 'module built and published'], [CF.l2, 'client bindings generated'], [CF.l3, 'Starting client: npm run dev']].forEach(([at, s], i) => {
     const a = E.outCubic(P(u, at, at + 0.25));
     if (a <= 0) return;
-    check(ctx, D.x + 40, D.y + 150 + i * 40, 14, C.green, a);
-    text(ctx, s, D.x + 68, D.y + 156 + i * 40, { size: 19, fill: i === 2 ? C.white : hexA(C.white, 0.75), alpha: a });
+    resultLine(ctx, s, D.x + 40, D.y + 156 + i * 40, a, { size: 19, fill: i === 2 ? C.white : hexA(C.white, 0.75) });
   });
   // the app pops up
   const aa = E.outBack(clamp((u - CF.app) / 0.4));
@@ -258,8 +258,7 @@ function sTmpl(ctx, t) {
     const w = measure(ctx, s, 500, 22, MONO) + 100;
     ctx.save(); ctx.globalAlpha *= ta;
     rr(ctx, CX - w / 2, 820, w, 64, 32); ctx.fillStyle = '#121A1F'; ctx.fill(); ctx.strokeStyle = hexA(C.green, 0.6); ctx.lineWidth = 1.5; ctx.stroke();
-    text(ctx, '$', CX - w / 2 + 32, 860, { size: 22, weight: 600, fill: hexA(C.white, 0.5) });
-    text(ctx, s, CX - w / 2 + 60, 860, { size: 22 });
+    typedCommand(ctx, s, CX - w / 2 + 32, 860, u, null, null, { size: 22 });
     ctx.restore();
   }
   caption(ctx, 'Ten new starter templates: a working real-time app in your stack, in one command.', u, 4.2, 960);

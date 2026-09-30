@@ -4,6 +4,8 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { resultLine } = R;
+const { typedCommand } = R;
 const { slide, panel, enter, caption, pill, header } = R;
 
 const DUR = 37.5;
@@ -66,13 +68,11 @@ function sGodot(ctx, t) {
   ctx.fillStyle = hexA(C.white, 0.07); ctx.fillRect(Ed.x, Ed.y + 380, Ed.w, 1);
   text(ctx, 'TERMINAL', Ed.x + 32, Ed.y + 420, { size: 13, weight: 700, tracking: 3, fill: hexA(C.white, 0.45) });
   if (u > GD.cmd[0] - 0.05) {
-    text(ctx, '$', Ed.x + 32, Ed.y + 466, { size: 18, weight: 600, fill: hexA(C.white, 0.5) });
-    text(ctx, GCMD.slice(0, Math.floor(P(u, GD.cmd[0], GD.cmd[1]) * GCMD.length)), Ed.x + 56, Ed.y + 466, { size: 18 });
+    typedCommand(ctx, GCMD, Ed.x + 32, Ed.y + 466, u, GD.cmd[0], GD.cmd[1], { size: 18 });
   }
   if (u > GD.added) {
     const a = E.outCubic(P(u, GD.added, GD.added + 0.3));
-    check(ctx, Ed.x + 58, Ed.y + 504, 14, C.green, a);
-    text(ctx, 'SpacetimeDB SDK added', Ed.x + 86, Ed.y + 510, { size: 18, fill: C.green, alpha: a });
+    resultLine(ctx, 'SpacetimeDB SDK added', Ed.x + 58, Ed.y + 510, a);
   }
   ctx.restore();
 
