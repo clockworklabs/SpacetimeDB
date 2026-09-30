@@ -65,7 +65,7 @@ fn get_command() -> Command {
         .arg(
             Arg::new("root_dir")
                 .long("root-dir")
-                .help("The root directory to store all spacetime files in.")
+                .help("The root directory for SpacetimeDB files. If you installed with --root-dir, pass the same value on each command, before the subcommand (for example, spacetime --root-dir /stdb start).")
                 .value_parser(clap::value_parser!(RootDir)),
         )
         .arg(

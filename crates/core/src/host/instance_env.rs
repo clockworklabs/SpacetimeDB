@@ -406,7 +406,7 @@ impl InstanceEnv {
     /// End a console timer by logging the span at INFO level.
     pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
         let elapsed = span.start.elapsed();
-        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+        let message = format!("Timing span {:?}: {:?}", span.name, elapsed);
 
         self.console_log_simple_message(LogLevel::Info, function, &message);
     }
@@ -1552,15 +1552,16 @@ mod test {
     }
 
     fn bind_test_environment(env: &mut InstanceEnv) -> Result<spacetimedb_datastore::traits::Program> {
-        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
-        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
+        use spacetimedb_lib::db::raw_def::v10::{
+            RawEnvVarTypeV10, RawEnvironmentDeclarationV10, RawModuleDefV10Builder,
+        };
         let mut builder = RawModuleDefV10Builder::new();
         builder.add_environment(
             [("A", false), ("MISSING", true)]
                 .into_iter()
-                .map(|(name, optional)| EnvironmentDeclaration {
+                .map(|(name, optional)| RawEnvironmentDeclarationV10 {
                     name: name.into(),
-                    ty: EnvVarType::String,
+                    ty: RawEnvVarTypeV10::String,
                     optional,
                 })
                 .collect(),
