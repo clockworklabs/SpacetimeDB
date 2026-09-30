@@ -59,6 +59,7 @@ interface Actor {
     close(): Promise<void>;
     context(): { setOffline(offline: boolean): Promise<void> };
     evaluate<Result>(callback: () => Result): Promise<Result>;
+    url(): string;
   };
   readonly writes?: readonly CapturedWrite[];
   readonly networkInterruption?: NetworkInterruption;
@@ -852,6 +853,7 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
       detail: 'this client was not opened with an interruptible network' });
   }
   let connections: { closed: number; open: string[] } | undefined;
+  const urlBefore = actor.page.url();
   if (offline) {
     // The device goes offline first, as a real outage reports; then its connections are cut.
     await actor.page.context().setOffline(true);
@@ -868,6 +870,12 @@ async function setOffline({ input, capabilities, signal }: ActionArguments<Offli
   await browser.sleep(input.settleMs ?? 500, signal);
   const browserOnline = await actor.page.evaluate(() => navigator.onLine);
   if (browserOnline === offline) {
+    // An application that reloads itself while offline lands on the browser's error
+    // page, which ignores offline emulation and does not recover when back online.
+    if (offline && !urlBefore.startsWith('chrome-error://')
+      && actor.page.url().startsWith('chrome-error://')) {
+      fail('page-error', { detail: 'the application reloaded while offline and left the browser error page' });
+    }
     throw new Error(`setOffline requested browser network ${offline ? 'offline' : 'online'}, `
       + `but navigator.onLine remained ${browserOnline}`);
   }

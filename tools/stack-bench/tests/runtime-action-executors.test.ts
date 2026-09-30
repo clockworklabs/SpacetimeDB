@@ -670,7 +670,7 @@ test('offline lifecycle preserves settling time and verifies browser network sta
   const offlineStates: boolean[] = [];
   const waits: number[] = [];
   let browserOnline = true;
-  const actor = { networkInterruption: interruption, page: {
+  const actor = { networkInterruption: interruption, page: { url: () => 'http://app/',
     evaluate: async () => browserOnline,
     context: () => ({
     setOffline: async (value: boolean) => {
@@ -695,12 +695,22 @@ test('offline lifecycle preserves settling time and verifies browser network sta
 });
 
 test('offline lifecycle fails closed when browser network state does not change', async () => {
-  const actor = { networkInterruption: interruption, page: { evaluate: async () => true,
+  const actor = { networkInterruption: interruption, page: { url: () => 'http://app/', evaluate: async () => true,
     context: () => ({ setOffline: async () => {} }) } };
   const result = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 1 },
     services(new Map([['a', actor]])));
   assert.equal(result.status, 'harness_failure');
   assert.match(result.summary ?? '', /navigator\.onLine remained true/);
+});
+
+test('an application that reloads itself onto the browser error page while offline fails', async () => {
+  let url = 'http://app/';
+  const actor = { networkInterruption: interruption, page: { url: () => url, evaluate: async () => true,
+    context: () => ({ setOffline: async () => { url = 'chrome-error://chromewebdata/'; } }) } };
+  const result = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 1 },
+    services(new Map([['a', actor]])));
+  assert.equal(result.status, 'failed');
+  assert.equal(result.finding?.kind, 'page-error');
 });
 
 test('a crashed page during a concurrency barrier or click remains a harness failure', async () => {
