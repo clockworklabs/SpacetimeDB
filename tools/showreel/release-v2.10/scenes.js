@@ -4,6 +4,7 @@ const { W, C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, te
 const U = require('../ui');
 const { CX, TAU, riseParts, kicker, check, spinner } = U;
 const R = require('../release');
+const { agentChat, linkPulses } = R;
 const { slide, panel, enter, status, caption, pill, bubble, header } = R;
 
 const DUR = 27;
@@ -40,41 +41,7 @@ function sMcp(ctx, t) {
 
   // chat
   const cp = { x: 140, y: 270, w: 1000, h: 660 };
-  ctx.save();
-  enter(ctx, u, 0.25, 40);
-  panel(ctx, cp.x, cp.y, cp.w, cp.h, 'your AI agent');
-  const ys = [370, 455, 525, 625, 710, 780];
-  CHAT.forEach((m, i) => {
-    const lt = u - m.u;
-    if (lt < 0) return;
-    const a = E.outExpo(clamp(lt / 0.35));
-    const y = ys[i];
-    if (m.kind === 'user') bubble(ctx, m.s, cp.x + cp.w - 36, y, 'right', a);
-    else if (m.kind === 'agent') {
-      ctx.save();
-      ctx.globalAlpha *= a;
-      ctx.fillStyle = C.white; ctx.beginPath(); ctx.arc(cp.x + 48, y - 1, 6, 0, TAU); ctx.fill();
-      const n = Math.floor(P(lt, 0, 0.5) * m.s.length);
-      text(ctx, m.s.slice(0, n), cp.x + 70, y + 8, { size: 26, weight: 500, fam: SANS });
-      ctx.restore();
-    } else {
-      // tool call pill
-      const label = `spacetimedb · ${m.s}`;
-      const w1 = measure(ctx, label, 700, 17, MONO), w2 = measure(ctx, m.d, 400, 16, MONO);
-      const pw = w1 + w2 + 96;
-      ctx.save();
-      ctx.globalAlpha *= a;
-      ctx.translate((1 - a) * 20, 0);
-      rr(ctx, cp.x + 36, y - 22, pw, 44, 22);
-      ctx.fillStyle = '#0d1317'; ctx.fill();
-      ctx.strokeStyle = lt > TOOL_RUN ? hexA(C.green, 0.25 + 0.5 * pulse(lt - TOOL_RUN, 3)) : hexA(C.white, 0.2); ctx.lineWidth = 1.5; ctx.stroke();
-      status(ctx, cp.x + 54, y + 1, lt, t, TOOL_RUN);
-      text(ctx, label, cp.x + 84, y + 6, { size: 17, weight: 700 });
-      text(ctx, m.d, cp.x + 84 + w1 + 14, y + 6, { size: 16, fill: hexA(C.white, 0.55) });
-      ctx.restore();
-    }
-  });
-  ctx.restore();
+  agentChat(ctx, u, t, { ...cp, title: 'your AI agent', chat: CHAT, ys: [370, 455, 525, 625, 710, 780], toolRun: TOOL_RUN });
 
   // live database on Maincloud
   const dp = { x: 1190, y: 270, w: 590, h: 660 };
@@ -123,22 +90,8 @@ function sMcp(ctx, t) {
   });
   ctx.restore();
 
-  // link between agent and database: data pulses while a tool runs
-  const la = E.outCubic(P(u, 0.6, 0.9));
-  ctx.save();
-  ctx.globalAlpha *= la;
-  ctx.strokeStyle = hexA(C.white, 0.2); ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(cp.x + cp.w, 600); ctx.lineTo(dp.x, 600); ctx.stroke();
-  for (const m of [CHAT[1], CHAT[4]]) {
-    const lt = u - m.u;
-    for (let k = 0; k < 3; k++) {
-      const p = (lt - k * 0.1) / 0.35;
-      if (p < 0 || p > 2) continue;
-      const x = p <= 1 ? lerp(cp.x + cp.w, dp.x, p) : lerp(dp.x, cp.x + cp.w, p - 1);
-      ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(x, 600, 4, 0, TAU); ctx.fill();
-    }
-  }
-  ctx.restore();
+  // link between the agent and the panel: data pulses while a tool runs
+  linkPulses(ctx, u, { x0: cp.x + cp.w, x1: dp.x, y: 600, calls: [CHAT[1].u, CHAT[4].u] });
 
   if (u > 6.4) text(ctx, 'spacetime mcp --server maincloud', CX, 990, { size: 20, align: 'center', fill: hexA(C.white, 0.55), alpha: E.outCubic(P(u, 6.4, 6.8)) });
   ctx.restore();

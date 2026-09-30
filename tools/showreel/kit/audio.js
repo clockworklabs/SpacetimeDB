@@ -38,6 +38,15 @@ function createReleaseAudio({ DUR, T, seed }) {
   const done = (t, i = 0) => { blip(t, PENT[2 + (i % 6)], 0.8, 0, 25); blip(t + 0.04, PENT[2 + (i % 6)] + 12, 0.3, 0, 25); };
   const fail = t => { blip(t, 60, 0.5, -0.4, 40); blip(t + 0.1, 58, 0.4, -0.4, 40); };
 
+  // Sound for agentChat(): a pop per user message, a blip out and a check back per tool call, typing per agent reply.
+  function chatCues(start, chat, toolRun = 0.45) {
+    chat.forEach((m, i) => {
+      const t = start + m.u;
+      if (m.kind === 'user') pop(t);
+      else if (m.kind === 'tool') { blip(t, PENT[i + 1], 0.5, -0.2, 35); blip(t + 0.12, PENT[i + 2], 0.35, 0.2, 35); done(t + toolRun, i); }
+      else { typing(t, t + 0.5, 0.3, 20 + i); bell(t, 84, 0.35); }
+    });
+  }
   function intro(firstScene) {
     riser(0.0, K.ver, 0.6); whoosh(0.0, 0.7, 0.5, 1); bell(0.02, 69, 0.5);
     pad(0.0, K.ver, [45, 52], 1.2, 1.5, 0.3, 700);
@@ -73,7 +82,7 @@ function createReleaseAudio({ DUR, T, seed }) {
     bell(S0 + 1.1, 76, 0.9); bell(S0 + 1.1, 81, 0.6);
     bell(S0 + 1.8, 84, 0.6); blip(S0 + 1.8, 93, 0.5, 0, 12);
   }
-  return { ...S, K, CH, PENT, chordAt, groove, typing, transition, pop, done, fail, intro, scene, cards, outro };
+  return { ...S, K, CH, PENT, chordAt, groove, typing, transition, pop, done, fail, chatCues, intro, scene, cards, outro };
 }
 
 module.exports = { createReleaseAudio };

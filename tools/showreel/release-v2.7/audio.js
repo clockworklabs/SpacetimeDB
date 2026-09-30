@@ -7,12 +7,7 @@ A.intro(T.mcp);
 { // MCP: chat messages pop, tool calls blip out and back
   const S = T.mcp;
   A.scene(S, T.lock, { crash: 0.6 });
-  CHAT.forEach((m, i) => {
-    const t = S + m.u;
-    if (m.kind === 'user') pop(t);
-    else if (m.kind === 'tool') { blip(t, PENT[i + 1], 0.5, -0.2, 35); blip(t + 0.12, PENT[i + 2], 0.35, 0.2, 35); done(t + TOOL_RUN, i); }
-    else { typing(t, t + 0.5, 0.3, 20 + i); bell(t, 84, 0.35); }
-  });
+  A.chatCues(S, CHAT, TOOL_RUN);
 }
 { // lock: commands typed; the lock clicks shut, deletes bounce, then it opens
   const S = T.lock;
