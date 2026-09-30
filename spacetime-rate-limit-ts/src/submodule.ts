@@ -3,6 +3,7 @@ export { install } from './submodule/install.js';
 export {
   client,
   errors,
+  resetRegisteredScopes,
   type RateLimitClient,
   type RateLimitPolicy,
   type RateLimitReadDb,

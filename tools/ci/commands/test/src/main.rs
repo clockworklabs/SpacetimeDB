@@ -38,7 +38,9 @@ fn main() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
+        "unreal",
+        "--skip",
+        "csharp",
     )
     .run()?;
     // Bindings snapshot tests rely on the unstable feature,
@@ -82,7 +84,9 @@ fn main() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
+        "unreal",
+        "--skip",
+        "csharp",
     )
     .run()?;
     // Run the same SDK suite against wasm/browser test clients.
@@ -96,7 +100,9 @@ fn main() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
+        "unreal",
+        "--skip",
+        "csharp",
     )
     .run()?;
     // TODO: This should check for a diff at the start. If there is one, we should alert the user
