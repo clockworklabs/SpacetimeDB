@@ -566,13 +566,12 @@ async function template(capture: Capture, match: string, control: string, signal
   if (live.length !== 1 || !match || match === control) return null;
   const socket = live[0]!;
   if (socket.invalid || !socket.identified || socket.pending) return null;
-  const target = leasedSpacetimeTarget(), url = new URL(socket.url);
-  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  if (!leasedSocket(capture, socket, target)) return null;
+  const target = leasedSpacetimeTarget();
+  if (!leasedSocket(capture, socket, target, true, true)) return null;
   const cached = capture.template;
   if (cached?.value.socket === socket && cached.match === match && cached.control === control && cached.count === socket.calls.length) return cached.value;
   signal.throwIfAborted();
-  url.pathname = `/v1/database/${target.mod}/schema`; url.search = '?version=9';
+  const url = new URL(`/v1/database/${target.mod}/schema?version=9`, target.uri);
   const schema = await withBrowserRequest(capture.page.request, async api => {
     const response = await api.get(url.href, { timeout: 10000 });
     return response.ok() ? response.json() : null;
