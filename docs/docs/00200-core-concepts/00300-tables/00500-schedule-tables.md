@@ -419,6 +419,10 @@ SpacetimeDB passes the schedule row to the scheduled reducer or procedure as an 
 - Scheduled reducers delete the row after execution, so the row is visible in the schedule table while the reducer runs.
 - Interval schedules are never deleted automatically. Only one-shot schedules are removed after they run.
 
+### Sender and Visibility
+
+Scheduled reducers and procedures are private, so clients can't call them directly, although the database's owner can. When a schedule fires, the sender is the database itself, so the invocation is [internal](../00500-authentication/00600-authorization.md#internal-invocations), no matter who inserted the schedule row. If a client can influence what goes into a schedule row, validate the row in the scheduled function the same way you would validate a client's arguments.
+
 ## Use Cases
 
 - **Reminders and notifications** - Schedule messages to be sent at specific times
