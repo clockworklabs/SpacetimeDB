@@ -217,10 +217,23 @@ cron.unschedule(ctx, cleanup);
 
 These helpers perform scheduling operations. Application reducers remain responsible for authorization.
 
-Input errors from `cron.schedule()` are thrown as `SenderError`s. Every code
-thrown by the package is exported as `errors`, for example
+Input errors from `cron.schedule()` are thrown as `SenderError`s. `errors`
+holds the codes a caller can receive at runtime, for example
 `errors.invalidExpression` (`cron.invalid_expression`). Codes may be followed
 by `:` and detail text.
+
+- `notAuthorized`: a client called a `<job_name>_cron` function directly.
+- `invalidMaxFailures`, `invalidInterval`, `invalidExpression`,
+  `invalidTimezone`, `unsatisfiableExpression`, `missingArgs`, and
+  `unexpectedArgs`: `cron.schedule()` rejected its input.
+- `invalidScheduleState`, `invalidArgsState`, `invalidTrigger`, and
+  `noFutureOccurrence`: stored in the private `cron_job.disabledReason` when
+  cron disables a job.
+
+Programming errors, such as invalid job definitions or client configuration,
+missing handler registration, a job handle from another client, or a handler
+that returns a promise, fail module loading or the call with `cron.*` codes
+that are not exported.
 
 ### Database state
 

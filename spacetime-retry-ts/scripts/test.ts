@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { Identity, Timestamp } from 'spacetimedb';
-import { ScheduleAt, schema, t } from 'spacetimedb/server';
+import { ScheduleAt, schema, SenderError, t } from 'spacetimedb/server';
 import {
   client,
   errors,
@@ -16,6 +16,7 @@ const sharedArgs = t.object('TestArgs', { value: t.string() });
 const retry = client({
   tasks: {
     throws: t.unit(),
+    rejects: t.unit(),
     fails: t.unit(),
     succeeds: t.unit(),
     first: sharedArgs,
@@ -25,6 +26,9 @@ const retry = client({
 const retryFire = retry.retryReducer(schema({ ...retry.tables }), {
   throws() {
     throw new Error('x'.repeat(3000));
+  },
+  rejects() {
+    throw new SenderError('order.not_found');
   },
   fails: () => retryFailed('unavailable'),
   succeeds: () => retryOk(),
@@ -196,7 +200,13 @@ assert.equal(tasks.size, 2);
 fire({ ...task, args: { tag: 'fails' } });
 assert.equal(history.get(4n)?.error, 'unavailable');
 fire({ ...task, args: { tag: 'toString' } });
-assert.equal(history.get(5n)?.error, `${errors.unknownHandler}:toString`);
+assert.equal(history.get(5n)?.error, 'retry.unknown_handler:toString');
+assert.equal(tasks.size, 4);
+
+// A SenderError gives up on the first attempt without scheduling another.
+fire({ ...task, args: { tag: 'rejects' } });
+assert.equal(history.get(6n)?.status.tag, 'GaveUp');
+assert.equal(history.get(6n)?.error, 'order.not_found');
 assert.equal(tasks.size, 4);
 
 // The newest pending tasks come first.
@@ -212,8 +222,8 @@ for (let i = 0; i < 1000; i++) {
 }
 assert.equal(tasks.size, 4);
 assert.equal(history.size, 1000);
-assert.equal(history.has(5n), false);
-assert.equal(history.has(6n), true);
+assert.equal(history.has(6n), false);
+assert.equal(history.has(7n), true);
 const recent = retry.views.retryHistoryAdmin(ctx);
 assert.equal(recent.length, 1000);
 assert.equal(recent[0].id, nextHistoryId);

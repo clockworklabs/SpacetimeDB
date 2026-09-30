@@ -14,7 +14,7 @@ export function install(ctx: InstallCtx) {
   if (ctx.db.authAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.authAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   if (ctx.db.authSweeperTick.count() === 0n) {
