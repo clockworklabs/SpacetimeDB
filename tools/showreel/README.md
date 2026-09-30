@@ -45,11 +45,55 @@ build a contact sheet, inspect, and only then do the full build.
 
 | File | Role |
 |---|---|
+| `ui.js` | Scene building blocks shared by every reel: starfield + dot grid, shockwaves, bursts, `riseParts`/`kicker` headlines, terminal rows, check marks, spinners, the HUD (`drawHUD(ctx, t, rt, { scenes, dur, label })`). |
+| `synth.js` | `createSynth(LEN, seed)`: the instruments, buses, reverb and master shared by every soundtrack; `finish(path)` writes the wav. |
 | `lib.js` | Canvas/fonts setup, palette `C`, easing `E`, helpers (`riseText`, `text`, `glass`, `drawMark` = the logo mark from `images/dark/logo.svg`), asset loading (framework logos from `docs/static/images/logos`, wordmark from `images/dark/logo-text.svg`). **`DUR` (total length) lives here.** |
 | `scenes.js` | The whole timeline. `T` = scene start times; one function per scene using local time `u = t - T.<scene>`; global FX lists (`FLASHES`, `SHAKES`, `SHOCKS`, `BURSTS`); HUD; `frame(ctx, t)` composes a frame. |
 | `audio.js` | Synth instruments (kick, clap, hats, bass, pads, plucks, risers, whooshes, impacts, reverb) + an arrangement keyed off `T`/`EVENTS` imported from `scenes.js`, so sound stays in sync when scenes move. |
-| `render.js` | Stills mode, worker mode and orchestrator; motion blur = averaging `--samples` subframes over a 180° shutter. |
-| `mux.sh`, `sheet.sh` | ffmpeg helpers. |
+| `render.js` | Stills mode, worker mode and orchestrator; motion blur = averaging `--samples` subframes over a 180° shutter. `--reel DIR` renders another reel (below). |
+| `mux.sh`, `sheet.sh` | ffmpeg helpers. `./mux.sh DIR NAME.mp4` muxes another reel. |
+
+## Release videos
+
+Short "what's new" videos per release reuse the same look, helpers and soundtrack synth. Each lives in its own
+directory with a `scenes.js` (exporting `frame`, `setSlow` and its own `DUR`) and an `audio.js`; renders go to `DIR/out/`.
+The showreel's output is unchanged by this: after extracting the shared helpers its wav and sample stills were verified byte-identical.
+
+
+The prompt that generates one release video (used by the pipeline) is `RELEASE_PROMPT.md`.
+
+Rules for every release video (from the v2.9/v2.10 drafts and the user's feedback):
+
+- **Range**: the 2.N video covers `v2.(N-1).0 → v2.N.0`, so the previous line's patch releases roll into it. Patch releases
+  never get their own video. "v2.N.0" means the commit of the **first published GitHub release** of that minor, which isn't
+  always the git tag of that name: 2.0 ends at `v2.0.1` (the `v2.0.0` tag is an unreleased feature-branch tip) and 2.7 ends at
+  `v2.7.0-hotfix3` (the published 2.7.0; the `v2.7.0` tag is only the version-bump commit). Some patch tags sit on release
+  branches, so a range is computed from the commits, and each reel's `DECISIONS.md` states its exact range.
+- **Files per reel** (`release-vX.Y/`): `RESEARCH.md` (verified candidates), `DECISIONS.md`, `scenes.js`, `audio.js`.
+  Shared parts live in `release.js` (intro, cards, outro, frame/FX/HUD) and `release-audio.js`. Build with
+  `./build-release.sh X.Y` (→ `release-vX.Y/spacetimedb-vX.Y.mp4`), stills with `npm run release:stills -- release-vX.Y 12 30 --samples 1`.
+- **Audience**: it's a promo. Headlines state outcomes, not mechanisms; avoid being technical. Changes users can't notice
+  (internal refactors, CI, metrics, logs, durability plumbing with no visible effect, docs) are left out.
+- **Claims must be exact**: check every release-note claim against the PR and the code at the tags. Release notes can
+  overstate (2.9's notes credited `spacetime init` with a .NET default it already had since 2.7). Soften the wording rather than
+  overclaim, and attribute performance numbers to benchmarks.
+- **Script before visuals**: for every scene, first write one plain sentence: what shipped, who it's for, and what they can
+  now do. The headline, caption and visuals follow from that sentence. The scripts go at the top of `DECISIONS.md`, so the
+  wording can be reviewed without watching the video.
+- **Headlines say what shipped**: the kicker names the feature; the headline states the new capability in plain words
+  ("Connect your coding agent to your database", not "Your agent, meet your database"). Test: someone who reads only the
+  kicker and headline can tell a colleague what's new. No clever taglines that need the scene to make sense.
+- **Don't advertise embarrassing fixes**: no scenes or cards for fixes of data loss or unreachable data, durability or
+  security holes, crashes, silently wrong results, or regressions from a recent release (feedback on the first 2.9 cut:
+  "Back online. Still you." highlighted a bug users would rather not hear about). They go under "Left out" in `DECISIONS.md`.
+  Lifted limits (longer timeouts, new platforms, faster recovery) are fine.
+- **No target length**: a thin release makes a short video. Never pad with fixes; a card screen can hold 1 to 5 cards, and
+  can be dropped entirely.
+- **Decide and document**: no questions are asked. Each reel has a `DECISIONS.md` with the range, what became a scene, a card or
+  was left out (with reasons), wording that was softened and why, illustrative data, and open doubts.
+- Illustrative data (chat lines, identities, timings) is fine but is listed as such in `DECISIONS.md`.
+
+The v2.9 and v2.10 drafts made before these rules are kept on the local branch `julien/showreel-release-reels-backup`.
 
 ## Timeline (current: 90 s)
 

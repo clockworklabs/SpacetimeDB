@@ -3,18 +3,24 @@
 //   node render.js --worker a b seg.mp4       -> frames [a,b) to seg
 //   node render.js [--jobs N] [--samples S]    -> full render (then ./mux.sh)
 //   node render.js --slow 2                    -> slowed-down kiosk render into out-kiosk/ (then ./mux-kiosk.sh)
+//   node render.js --reel release-v2.10 ...    -> render another reel (its scenes.js, DUR and out/ live in that dir)
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
-const { W, H, FPS, DUR, loadAssets, createCanvas } = require('./lib');
-const { frame, setSlow } = require('./scenes');
+const { W, H, FPS, loadAssets, createCanvas } = require('./lib');
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+// --reel DIR renders DIR/scenes.js (which exports its own DUR) into DIR/out; default is the showreel.
+const REEL = opt('--reel', null);
+const REEL_DIR = REEL ? path.resolve(__dirname, REEL) : __dirname;
+const SC = require(path.join(REEL_DIR, 'scenes'));
+const { frame, setSlow } = SC;
+const DUR = SC.DUR ?? require('./lib').DUR;
 // --slow N plays the whole timeline N× slower (kiosk/loop version); it renders into its own dir.
 const SLOW = +opt('--slow', 1);
 setSlow(SLOW);
-const OUT = path.join(__dirname, SLOW === 1 ? 'out' : 'out-kiosk');
+const OUT = path.join(REEL_DIR, SLOW === 1 ? 'out' : 'out-kiosk');
 fs.mkdirSync(OUT, { recursive: true });
 const SAMPLES = +opt('--samples', 5);
 const SHUTTER = 0.5; // 180°
@@ -46,8 +52,10 @@ function renderMB(ctx, t, acc, rt = t) {
   const ctx = canvas.getContext('2d');
   const acc = new Uint32Array(W * H * 4);
 
-  if (argv[0] === '--still') {
-    const times = argv.slice(1, argv.includes('--samples') ? argv.indexOf('--samples') : undefined);
+  if (argv.includes('--still')) {
+    const times = argv.slice(argv.indexOf('--still') + 1);
+    const end = times.findIndex(a => a.startsWith('--'));
+    if (end >= 0) times.length = end;
     for (const ts of times) {
       const t = +ts;
       const t0 = Date.now();
@@ -96,7 +104,7 @@ function renderMB(ctx, t, acc, rt = t) {
     const j = next++;
     if (j >= chunks.length) return res(false);
     const [a, b] = chunks[j];
-    const w = fork(__filename, ['--worker', a, b, segs[j], '--samples', SAMPLES, '--slow', SLOW], { execArgv: ['--expose-gc', '--max-old-space-size=512'] });
+    const w = fork(__filename, ['--worker', a, b, segs[j], '--samples', SAMPLES, '--slow', SLOW, ...(REEL ? ['--reel', REEL] : [])], { execArgv: ['--expose-gc', '--max-old-space-size=512'] });
     w.on('exit', c => {
       if (c !== 0) return rej(new Error(`chunk ${j} failed (${c})`));
       doneFrames += b - a;
