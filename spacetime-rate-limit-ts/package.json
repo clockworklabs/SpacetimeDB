@@ -56,7 +56,7 @@
     "format": "prettier . --write --ignore-path ../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test.ts",
+    "test": "node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test.ts",
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""

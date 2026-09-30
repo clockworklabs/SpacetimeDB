@@ -1,4 +1,5 @@
 import { Timestamp } from 'spacetimedb';
+import { SenderError } from 'spacetimedb/server';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const U32_MAX = 0xffff_ffff;
@@ -8,18 +9,22 @@ export const MAX_SWEEP_BATCH = 10_000;
 const MAX_SCOPE_LENGTH = 128;
 const MAX_ACTOR_KEY_LENGTH = 256;
 
+/** Codes a reducer, procedure, or view caller can receive as a `SenderError`. */
 export const errors = {
   notAuthorized: 'rate_limit.not_authorized',
   cannotRemoveLastAdmin: 'rate_limit.cannot_remove_last_admin',
-  invalidScope: 'rate_limit.invalid_scope',
-  duplicateScope: 'rate_limit.duplicate_scope',
   invalidActorKey: 'rate_limit.invalid_actor_key',
-  invalidLimit: 'rate_limit.invalid_limit',
-  invalidWindow: 'rate_limit.invalid_window',
   invalidCost: 'rate_limit.invalid_cost',
   invalidSweepBatch: 'rate_limit.invalid_sweep_batch',
   invalidMaxRows: 'rate_limit.invalid_max_rows',
-  configMissing: 'rate_limit.config_missing',
+} as const;
+
+// Policy errors fail the host module while it loads, before any caller.
+const policyErrors = {
+  invalidScope: 'rate_limit.invalid_scope',
+  duplicateScope: 'rate_limit.duplicate_scope',
+  invalidLimit: 'rate_limit.invalid_limit',
+  invalidWindow: 'rate_limit.invalid_window',
 } as const;
 
 export interface RateLimitPolicy {
@@ -90,10 +95,8 @@ export interface RateLimitTxLike {
   };
 }
 
-function assertPositiveInt(code: string, value: number, max = U32_MAX): void {
-  if (!Number.isInteger(value) || value <= 0 || value > max) {
-    throw new Error(code);
-  }
+function isPositiveInt(value: number, max = U32_MAX): boolean {
+  return Number.isInteger(value) && value > 0 && value <= max;
 }
 
 function secondsUntil(now: Timestamp, future: Timestamp): number {
@@ -102,6 +105,8 @@ function secondsUntil(now: Timestamp, future: Timestamp): number {
   return Number((delta + ONE_SECOND_MICROS - 1n) / ONE_SECOND_MICROS);
 }
 
+// Module state lasts for one evaluation of the host module. SpacetimeDB
+// evaluates it once in each fresh worker isolate.
 const registeredScopes = new Set<string>();
 
 /**
@@ -110,15 +115,16 @@ const registeredScopes = new Set<string>();
  */
 export function client({ scope, limit, windowSeconds }: RateLimitPolicy) {
   if (scope.length === 0 || scope.length > MAX_SCOPE_LENGTH)
-    throw new Error(errors.invalidScope);
-  assertPositiveInt(errors.invalidLimit, limit);
-  assertPositiveInt(errors.invalidWindow, windowSeconds);
-  if (registeredScopes.has(scope)) throw new Error(errors.duplicateScope);
+    throw new Error(policyErrors.invalidScope);
+  if (!isPositiveInt(limit)) throw new Error(policyErrors.invalidLimit);
+  if (!isPositiveInt(windowSeconds))
+    throw new Error(policyErrors.invalidWindow);
+  if (registeredScopes.has(scope)) throw new Error(policyErrors.duplicateScope);
   registeredScopes.add(scope);
 
   function bucketKey(actorKey: string): string {
     if (actorKey.length === 0 || actorKey.length > MAX_ACTOR_KEY_LENGTH)
-      throw new Error(errors.invalidActorKey);
+      throw new SenderError(errors.invalidActorKey);
     // Length-prefix both parts so delimiters inside them cannot collide.
     return `${scope.length}:${scope}${actorKey.length}:${actorKey}`;
   }
@@ -128,14 +134,20 @@ export function client({ scope, limit, windowSeconds }: RateLimitPolicy) {
     limit,
     windowSeconds,
 
-    /** Spend `cost` (default 1) from the actor's bucket in the caller's transaction. */
+    /**
+     * Spend `cost` (default 1) from the actor's bucket in the caller's
+     * transaction. A cost above `limit` can never be allowed, so it throws
+     * `errors.invalidCost`.
+     */
     consume(
       tx: RateLimitTxLike,
       opts: { key: string; cost?: number }
     ): RateLimitResult {
       const key = bucketKey(opts.key);
       const cost = opts.cost ?? 1;
-      assertPositiveInt(errors.invalidCost, cost);
+      if (!isPositiveInt(cost, limit)) {
+        throw new SenderError(errors.invalidCost);
+      }
       const now = tx.timestamp;
       const existing = tx.db.rateLimitBucket.key.find(key);
       const open =
@@ -221,7 +233,9 @@ export function sweepRateLimits(
   expiredRows: Iterable<RateLimitBucketRow>,
   maxRows: number
 ): number {
-  assertPositiveInt(errors.invalidSweepBatch, maxRows, MAX_SWEEP_BATCH);
+  if (!isPositiveInt(maxRows, MAX_SWEEP_BATCH)) {
+    throw new Error(errors.invalidSweepBatch);
+  }
   const now = tx.timestamp.microsSinceUnixEpoch;
   let deleted = 0;
   for (const row of expiredRows) {
