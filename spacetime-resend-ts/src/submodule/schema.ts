@@ -112,7 +112,7 @@ export const resendConfigRow = {
 // Fresh publishes seed the owner via init; public procedures never bootstrap admin state.
 export const resendAdminIdentityRow = {
   identity: t.identity().primaryKey(),
-  addedAtMicros: t.i64(),
+  addedAt: t.timestamp(),
 };
 
 export const resendEmailTable = table(

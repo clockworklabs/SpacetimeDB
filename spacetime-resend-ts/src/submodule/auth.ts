@@ -40,7 +40,7 @@ export const addAdminIdentity = spacetimedb.procedure(
       if (tx.db.resendAdminIdentity.identity.find(identity) == null) {
         tx.db.resendAdminIdentity.insert({
           identity,
-          addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+          addedAt: ctx.timestamp,
         });
       }
     });
