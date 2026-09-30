@@ -11,7 +11,9 @@
     "video:kiosk": "node render.js --samples 5 --slow 2",
     "build:kiosk": "npm run video:kiosk && ./mux-kiosk.sh",
     "release": "./build-release.sh",
-    "release:stills": "node render.js --still --reel"
+    "release:stills": "node render.js --still --reel",
+    "snapshot:save": "node --expose-gc snapshot.js --save",
+    "snapshot:check": "node --expose-gc snapshot.js --check"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
