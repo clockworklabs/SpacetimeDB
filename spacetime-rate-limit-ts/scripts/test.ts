@@ -1,4 +1,5 @@
 import { Timestamp } from 'spacetimedb';
+import { SenderError } from 'spacetimedb/server';
 import {
   client,
   errors,
@@ -22,12 +23,17 @@ function assert(cond: boolean, name: string, detail = ''): void {
   }
 }
 
-function assertThrows(fn: () => void, expected: string, name: string): void {
+function assertThrows(
+  fn: () => void,
+  expected: string,
+  name: string,
+  type: new (message: string) => Error = Error
+): void {
   try {
     fn();
     assert(false, name, `expected ${expected}`);
   } catch (error) {
-    assert(error instanceof Error && error.message === expected, name);
+    assert(error instanceof type && error.message === expected, name);
   }
 }
 
@@ -74,13 +80,37 @@ process.stdout.write('\nrate limiter\n');
   );
   assertThrows(
     () => client({ scope: 'tap', windowSeconds: 30, limit: 5 }),
-    errors.duplicateScope,
+    'rate_limit.duplicate_scope',
     'a scope can be configured once'
   );
   assertThrows(
     () => tap.consume(tx, { key: '' }),
     errors.invalidActorKey,
-    'empty actor key rejected'
+    'empty actor key rejected',
+    SenderError
+  );
+}
+
+{
+  const tx = makeTx();
+  const upload = client({ scope: 'upload', limit: 3, windowSeconds: 60 });
+  assertThrows(
+    () => upload.consume(tx, { key: 'alice', cost: 4 }),
+    errors.invalidCost,
+    'cost above the limit rejected',
+    SenderError
+  );
+  assertThrows(
+    () => upload.consume(tx, { key: 'alice', cost: 0 }),
+    errors.invalidCost,
+    'non-positive cost rejected',
+    SenderError
+  );
+  assert(tx.rows.size === 0, 'rejected cost leaves the bucket untouched');
+  const full = upload.consume(tx, { key: 'alice', cost: 3 });
+  assert(
+    full.allowed && full.remaining === 0,
+    'cost equal to the limit allowed'
   );
 }
 

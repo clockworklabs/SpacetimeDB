@@ -88,7 +88,7 @@ export const updateConfig = spacetimedb.reducer(
   (ctx, args) => {
     requireAdmin(ctx);
     const cfg = ctx.db.rateLimitConfig.singleton.find(true);
-    if (!cfg) throw new Error(errors.configMissing);
+    if (!cfg) throw new Error('rate_limit.config_missing');
     ctx.db.rateLimitConfig.singleton.update({
       ...cfg,
       sweepBatch: positiveU32(

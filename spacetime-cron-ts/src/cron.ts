@@ -10,7 +10,7 @@ import {
   type Infer,
   type VariantsObj,
 } from 'spacetimedb/server';
-import { errors } from './errors.js';
+import { errors, internalErrors } from './errors.js';
 import {
   boundedScheduleTime,
   CronInputError,
@@ -141,7 +141,7 @@ function invocationId(
 
 function requireMetadata(job: CronJobReference): JobMetadata {
   const value = metadata.get(job);
-  if (!value) throw new Error(errors.foreignJobHandle);
+  if (!value) throw new Error(internalErrors.foreignJobHandle);
   return value;
 }
 
@@ -149,7 +149,7 @@ function requireCore(job: CronJobReference): Core {
   const value = requireMetadata(job).core;
   if (!value) {
     throw new Error(
-      `${errors.notWired}:${job.jobName}:pass the job to client() first`
+      `${internalErrors.notWired}:${job.jobName}:pass the job to client() first`
     );
   }
   return value;
@@ -160,14 +160,14 @@ function requireRegisteredHandlers(core: Core): void {
     .filter(job => !job.registration)
     .map(job => job.handle.jobName);
   if (missing.length > 0) {
-    throw new Error(`${errors.missingHandlers}:${missing.join(',')}`);
+    throw new Error(`${internalErrors.missingHandlers}:${missing.join(',')}`);
   }
 }
 
 function requireFire(job: JobMetadata): CronFireTableDef {
   if (!job.fire) {
     throw new Error(
-      `${errors.notWired}:${job.handle.jobName}:pass the job to client() first`
+      `${internalErrors.notWired}:${job.handle.jobName}:pass the job to client() first`
     );
   }
   return job.fire;
@@ -185,7 +185,7 @@ function fireTable(ctx: CronTx, job: JobMetadata): CronFireTable {
   const value = ctx.db[job.fireAccessor];
   if (!value) {
     throw new Error(
-      `${errors.missingTable}:${job.fireTableName}:spread cron.tables into schema()`
+      `${internalErrors.missingTable}:${job.fireTableName}:spread cron.tables into schema()`
     );
   }
   // The accessor was derived from the fire table registered by client().
@@ -311,13 +311,13 @@ function ensureReconcileTick(ctx: CronTx, core: Core): void {
   if (everySeconds === undefined) return;
   if (!core.reconcileRegistered) {
     throw new Error(
-      `${errors.reconcileReducerNotRegistered}:export cron.reconcileReducer()`
+      `${internalErrors.reconcileReducerNotRegistered}:export cron.reconcileReducer()`
     );
   }
   const tick = ctx.db.cronReconcileTick;
   if (!tick) {
     throw new Error(
-      `${errors.missingTable}:cron_reconcile_tick:spread cron.tables into schema()`
+      `${internalErrors.missingTable}:cron_reconcile_tick:spread cron.tables into schema()`
     );
   }
   if (tick.key.find(RECONCILE_TICK_KEY)) return;
@@ -551,7 +551,7 @@ function executeReducer(
     const result = invokeHandler(handler, ctx, job, prepared);
     if (isThenable(result)) {
       throw new Error(
-        `${errors.asyncReducerHandler}:reducers must complete synchronously`
+        `${internalErrors.asyncReducerHandler}:reducers must complete synchronously`
       );
     }
   } catch (error) {
@@ -577,7 +577,7 @@ function executeProcedure(
 ): void {
   requireDatabaseCaller(ctx);
   if (arg.recovery) {
-    throw new SenderError(errors.invalidProcedureRecovery);
+    throw new SenderError(internalErrors.invalidProcedureRecovery);
   }
   const prepared = ctx.withTx(tx => prepareFire(tx, job, arg, true));
   if (!prepared) return;
@@ -587,7 +587,7 @@ function executeProcedure(
     const result = invokeHandler(handler, ctx, job, prepared);
     if (isThenable(result)) {
       throw new Error(
-        `${errors.asyncProcedureHandler}:procedures must complete synchronously`
+        `${internalErrors.asyncProcedureHandler}:procedures must complete synchronously`
       );
     }
   } catch (caught) {
@@ -661,7 +661,7 @@ function registerJob(job: JobMetadata, kind: 'reducer' | 'procedure'): Core {
   const core = requireCore(job.handle);
   if (job.registration) {
     throw new Error(
-      `${errors.handlerAlreadyRegistered}:${job.handle.jobName}:${job.registration}`
+      `${internalErrors.handlerAlreadyRegistered}:${job.handle.jobName}:${job.registration}`
     );
   }
   job.registration = kind;
@@ -731,7 +731,7 @@ export function client<const Config extends CronConfig>(
   config: Config
 ): CronClient<Config> {
   const { jobs } = config;
-  if (jobs.length === 0) throw new Error(errors.noJobs);
+  if (jobs.length === 0) throw new Error(internalErrors.noJobs);
   const historyCap = normalizeHistoryCap(config.historyCap);
   const isPublic = config.publicTables ?? false;
   const reconcileEverySeconds = normalizeReconcileEverySeconds(
@@ -747,13 +747,15 @@ export function client<const Config extends CronConfig>(
   for (const handle of sortedJobs) {
     const job = requireMetadata(handle);
     if (jobsByName.has(handle.jobName)) {
-      throw new Error(`${errors.duplicateJob}:${handle.jobName}`);
+      throw new Error(`${internalErrors.duplicateJob}:${handle.jobName}`);
     }
     if (job.core) {
-      throw new Error(`${errors.jobAlreadyWired}:${handle.jobName}`);
+      throw new Error(`${internalErrors.jobAlreadyWired}:${handle.jobName}`);
     }
     if (usedAccessors.has(job.fireAccessor)) {
-      throw new Error(`${errors.tableKeyCollision}:${job.fireAccessor}`);
+      throw new Error(
+        `${internalErrors.tableKeyCollision}:${job.fireAccessor}`
+      );
     }
     usedAccessors.add(job.fireAccessor);
     jobsByName.set(handle.jobName, job);
@@ -786,18 +788,18 @@ export function client<const Config extends CronConfig>(
 
   function jobInThisClient(handle: CronJobReference): JobMetadata {
     const job = requireMetadata(handle);
-    if (job.core !== core) throw new Error(errors.foreignJobHandle);
+    if (job.core !== core) throw new Error(internalErrors.foreignJobHandle);
     return job;
   }
 
   function reconcileReducer(spacetimedb: CronSchema) {
     if (core.reconcileRegistered) {
-      throw new Error(errors.reconcileReducerAlreadyRegistered);
+      throw new Error(internalErrors.reconcileReducerAlreadyRegistered);
     }
     const tick = core.reconcileTick;
     if (tick === undefined) {
       throw new Error(
-        `${errors.reconcileNotConfigured}:set client({ reconcileEverySeconds })`
+        `${internalErrors.reconcileNotConfigured}:set client({ reconcileEverySeconds })`
       );
     }
     requireRegisteredHandlers(core);
@@ -814,7 +816,7 @@ export function client<const Config extends CronConfig>(
 
   function publicViews(spacetimedb: CronSchema): CronPublicViews {
     if (core.publicViewsRegistered) {
-      throw new Error(errors.publicViewsAlreadyRegistered);
+      throw new Error(internalErrors.publicViewsAlreadyRegistered);
     }
     core.publicViewsRegistered = true;
     const jobsView = spacetimedb.anonymousView(
