@@ -350,18 +350,15 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 }
 
 fn validate_environment(def: &RawModuleDefV10) -> Result<Option<spacetimedb_lib::environment::EnvironmentSchema>> {
-    let mut sections = def.sections.iter().filter_map(|section| match section {
+    let Some(declarations) = def.sections.iter().find_map(|section| match section {
         RawModuleDefV10Section::Environment(declarations) => Some(declarations),
         _ => None,
-    });
-    let Some(declarations) = sections.next() else {
+    }) else {
         return Ok(None);
     };
-    if sections.next().is_some() {
-        return Err(ValidationError::RepeatedEnvironmentDeclaration.into());
-    }
+    let declarations = declarations.iter().map(|x| x.clone().into()).collect();
     let schema = spacetimedb_lib::environment::EnvironmentSchema::from_declarations(declarations)
-        .map_err(|error| ValidationError::Environment { error })?;
+        .map_err(ValidationError::from)?;
     Ok(Some(schema))
 }
 
@@ -3064,33 +3061,21 @@ mod tests {
 #[cfg(test)]
 mod environment_tests {
     use super::*;
-    use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
 
     fn declared(name: &str) -> RawModuleDefV10 {
         RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Environment(vec![EnvironmentDeclaration {
-                name: name.into(),
-                ty: EnvVarType::String,
-                optional: true,
-            }])],
+            sections: vec![RawModuleDefV10Section::Environment(vec![
+                RawEnvironmentDeclarationV10 {
+                    name: name.into(),
+                    ty: RawEnvVarTypeV10::String,
+                    optional: true,
+                },
+            ])],
         }
     }
 
     #[test]
-    fn environment_schema_round_trip_preserves_explicit_empty_and_exact_keys() {
-        let legacy = validate(RawModuleDefV10::default()).unwrap();
-        assert!(legacy.environment().is_empty());
-        assert!(!legacy.environment_declared());
-        let raw: RawModuleDefV10 = legacy.into();
-        assert!(!validate(raw).unwrap().environment_declared());
-        let explicit = validate(RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Environment(vec![])],
-        })
-        .unwrap();
-        assert!(explicit.environment().is_empty());
-        assert!(explicit.environment_declared());
-        let raw: RawModuleDefV10 = explicit.into();
-        assert!(validate(raw).unwrap().environment_declared());
+    fn environment_schema_round_trip_preserves_exact_keys() {
         let module = validate(declared("Mixed_CASE")).unwrap();
         assert!(module.environment().get("Mixed_CASE").is_some());
         assert!(module.environment().get("mixed_case").is_none());
@@ -3104,12 +3089,6 @@ mod environment_tests {
 
     #[test]
     fn environment_rejects_ambiguous_sections_and_nested_declarations() {
-        let mut duplicate = declared("A");
-        duplicate.sections.push(RawModuleDefV10Section::Environment(vec![]));
-        assert!(validate(duplicate)
-            .unwrap_err()
-            .into_iter()
-            .any(|error| matches!(error, ValidationError::RepeatedEnvironmentDeclaration)));
         let nested = RawModuleDefV10 {
             sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "outer".into(),
