@@ -3751,6 +3751,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "is-internal-test"
+version = "0.0.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "is-terminal"
 version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
