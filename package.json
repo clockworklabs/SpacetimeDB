@@ -30,5 +30,14 @@
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.18.2",
     "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bun"
+    ],
+    "ignoredBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
   }
 }
