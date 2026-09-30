@@ -229,7 +229,7 @@ namespace SpacetimeDB
         private volatile int socketGeneration;
         private uint? replayRequestId;
         private HashSet<uint>? replayQueryIds;
-        private readonly Random reconnectRandom = new();
+        private readonly System.Random reconnectRandom = new();
         private readonly Dictionary<uint, List<string>> subscriptionQueries = new();
         private readonly HashSet<uint> unsubscribeRequested = new();
         private event Action<Exception, NextReconnect?>? onConnectError;
