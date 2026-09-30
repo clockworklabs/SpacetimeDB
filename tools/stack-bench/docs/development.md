@@ -49,6 +49,7 @@ Run the smallest check that covers the change:
 | Track scenarios | `npm run check:scenarios` |
 | Packs and recipes | `npm run check:composition` |
 | Calibration | `npm run check:calibration` |
+| Scenario, contract, reference, or SDK source behind a pinned hash | `npm run repin` |
 | Dependency graph | `npm run graph` |
 
 After a shared runtime, composition, grading, campaign, or release change is
