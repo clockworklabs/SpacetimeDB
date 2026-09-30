@@ -27,15 +27,23 @@ namespace SpacetimeDB
         internal static void Register()
         {
             global::SpacetimeDB.Internal.Module.RegisterEnvironment(
-                new("REQUIRED", new global::SpacetimeDB.Internal.EnvVarType.String(default), false)
+                new(
+                    "REQUIRED",
+                    new global::SpacetimeDB.Internal.RawEnvVarTypeV10.String(default),
+                    false
+                )
             );
             global::SpacetimeDB.Internal.Module.RegisterEnvironment(
-                new("OPTIONAL", new global::SpacetimeDB.Internal.EnvVarType.String(default), true)
+                new(
+                    "OPTIONAL",
+                    new global::SpacetimeDB.Internal.RawEnvVarTypeV10.String(default),
+                    true
+                )
             );
             global::SpacetimeDB.Internal.Module.RegisterEnvironment(
                 new(
                     "MODE",
-                    new global::SpacetimeDB.Internal.EnvVarType.Union(
+                    new global::SpacetimeDB.Internal.RawEnvVarTypeV10.Union(
                         new global::System.Collections.Generic.List<string> { "dev", "prod" }
                     ),
                     false

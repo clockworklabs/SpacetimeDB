@@ -3847,15 +3847,19 @@ static class ModuleRegistration
         // HTTP routes retain the root routing API even for mounted modules.
         httpBuilder ??= builder;
         builder.RegisterEnvironment(
-            new("REQUIRED", new global::SpacetimeDB.Internal.EnvVarType.String(default), false)
+            new(
+                "REQUIRED",
+                new global::SpacetimeDB.Internal.RawEnvVarTypeV10.String(default),
+                false
+            )
         );
         builder.RegisterEnvironment(
-            new("OPTIONAL", new global::SpacetimeDB.Internal.EnvVarType.String(default), true)
+            new("OPTIONAL", new global::SpacetimeDB.Internal.RawEnvVarTypeV10.String(default), true)
         );
         builder.RegisterEnvironment(
             new(
                 "MODE",
-                new global::SpacetimeDB.Internal.EnvVarType.Union(
+                new global::SpacetimeDB.Internal.RawEnvVarTypeV10.Union(
                     new global::System.Collections.Generic.List<string> { "dev", "prod" }
                 ),
                 false
