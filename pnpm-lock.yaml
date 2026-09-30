@@ -853,9 +853,9 @@ importers:
 
   spacetime-grid-ts/example:
     dependencies:
-      '@spacetimedb/submodule-shared':
+      '@spacetimedb/example-ui':
         specifier: workspace:*
-        version: link:../../spacetime-submodule-shared-ts
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -924,9 +924,9 @@ importers:
 
   spacetime-lobby-ts/example:
     dependencies:
-      '@spacetimedb/submodule-shared':
+      '@spacetimedb/example-ui':
         specifier: workspace:*
-        version: link:../../spacetime-submodule-shared-ts
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -1008,9 +1008,9 @@ importers:
 
   spacetime-presence-ts/example:
     dependencies:
-      '@spacetimedb/submodule-shared':
+      '@spacetimedb/example-ui':
         specifier: workspace:*
-        version: link:../../spacetime-submodule-shared-ts
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1

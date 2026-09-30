@@ -5,7 +5,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { exampleUiAssetsDir } from '@spacetimedb/submodule-shared/server';
+import { exampleUiAssetsDir } from '@spacetimedb/example-ui/server';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
