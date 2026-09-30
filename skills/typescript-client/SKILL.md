@@ -101,6 +101,10 @@ conn.db.user.onDelete((ctx, user) => console.log('Left:', user.name));
 conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser.name));
 ```
 
+`SpacetimeDBProvider` reconnects with backoff and keeps its token. A connection built with
+`DbConnection.builder()` stays closed after a disconnect until the application builds a new
+one. `onConnectError` reports every failed attempt, including an unreachable host.
+
 ## Gotchas
 
 - **Subscription rows have no presentation order.** A server view's array order does not
