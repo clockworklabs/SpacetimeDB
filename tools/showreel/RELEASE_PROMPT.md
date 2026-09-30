@@ -67,7 +67,11 @@ Run `node --expose-gc check.js release-vX.Y` and fix every error and warning it 
 canvas or crossing a box edge, overlapping text, shrunk headlines, short scenes, a NaN soundtrack); explain in
 `DECISIONS.md` any warning you keep on purpose. Render stills (`npm run release:stills -- release-vX.Y <times> --samples 1`),
 check them with contact sheets (`./sheet.sh`), and fix crowding and timing the checker can't see. Then build with `./build-release.sh X.Y`: one full-quality
-render, no compressed copies. Keep memory bounded, and don't change the shared code in a way that alters existing
-reels.
+render, no compressed copies. Keep memory bounded.
+
+**Shared code.** Existing reels must never change. Add new components to `kit/` rather than editing existing ones. If you
+do need to edit anything in `kit/`, `lib.js`, `ui.js` or `synth.js`: run `node --expose-gc snapshot.js --save` on the
+clean checkout before editing, then `node --expose-gc snapshot.js --check` after; every reel must stay identical. A
+genuinely useful new scene goes into `kit/CATALOG.md` (and the gallery).
 
 **Deliver.** `release-vX.Y/spacetimedb-vX.Y.mp4` plus `DECISIONS.md`.

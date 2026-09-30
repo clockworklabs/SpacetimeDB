@@ -73,8 +73,8 @@ const EXAMPLES = {
   'ex-tab-reconnect': ['release-v2.8', 21], 'ex-react-reconnect': ['release-v2.6', 12], 'ex-cpp-query': ['release-v2.6', 21],
   'ex-procedures-flag': ['release-v2.5', 12], 'ex-solid-sync': ['release-v2.5', 20], 'ex-view-pk': ['release-v2.5', 29.5],
   'ex-http-routes': ['release-v2.4', 12], 'ex-templates-3': ['release-v2.4', 21], 'ex-godot': ['release-v2.3', 12],
-  'ex-pipelining': ['release-v2.3', 20], 'ex-remove-tables': ['release-v2.2', 12], 'ex-safer-cli': ['release-v2.2', 21],
-  'ex-rust-browser': ['release-v2.1', 12], 'ex-http-timeouts': ['release-v2.1', 21], 'ex-unreal-events': ['release-v2.1', 30],
+  'ex-pipelining': ['release-v2.3', 21.5], 'ex-remove-tables': ['release-v2.2', 12], 'ex-safer-cli': ['release-v2.2', 21],
+  'ex-rust-browser': ['release-v2.1', 12], 'ex-http-timeouts': ['release-v2.1', 21], 'ex-unreal-events': ['release-v2.1', 27],
   'ex-event-tables': ['release-v2.0', 13], 'ex-await-reducers': ['release-v2.0', 22], 'ex-spacetime-json': ['release-v2.0', 31],
   'ex-logo-grid': ['release-v2.0', 39.5],
 };

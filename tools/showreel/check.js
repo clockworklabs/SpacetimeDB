@@ -26,7 +26,20 @@ function instrument(ctx) {
   let path = null;
   const tf = (x, y) => { const m = ctx.getTransform(); return [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f]; };
   const orig = {};
-  for (const k of ['fillText', 'beginPath', 'moveTo', 'lineTo', 'arcTo', 'fill']) orig[k] = ctx[k].bind(ctx);
+  for (const k of ['fillText', 'beginPath', 'moveTo', 'lineTo', 'arcTo', 'fill', 'rect', 'clip', 'save', 'restore']) orig[k] = ctx[k].bind(ctx);
+  // Clip regions (bounding boxes), tracked through save/restore, so clipped text is measured as drawn.
+  let clipBox = null; const clipStack = [];
+  ctx.save = () => { clipStack.push(clipBox); return orig.save(); };
+  ctx.restore = () => { clipBox = clipStack.length ? clipStack.pop() : null; return orig.restore(); };
+  ctx.rect = (x, y, w, h) => { path?.pts.push(tf(x, y), tf(x + w, y + h)); return orig.rect(x, y, w, h); };
+  ctx.clip = (...a) => {
+    if (path && path.pts.length) {
+      const xs = path.pts.map(p => p[0]), ys = path.pts.map(p => p[1]);
+      const b = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+      clipBox = clipBox ? { x0: Math.max(clipBox.x0, b.x0), y0: Math.max(clipBox.y0, b.y0), x1: Math.min(clipBox.x1, b.x1), y1: Math.min(clipBox.y1, b.y1) } : b;
+    }
+    return orig.clip(...a);
+  };
   ctx.beginPath = () => { path = { pts: [], arcs: 0 }; return orig.beginPath(); };
   ctx.moveTo = (x, y) => { path?.pts.push(tf(x, y)); return orig.moveTo(x, y); };
   ctx.lineTo = (x, y) => { path?.pts.push(tf(x, y)); return orig.lineTo(x, y); };
@@ -48,7 +61,9 @@ function instrument(ctx) {
       const al = ctx.textAlign;
       const lx = al === 'center' ? x - w / 2 : al === 'right' || al === 'end' ? x - w : x;
       const [ax, ay] = tf(lx, y - size * 0.72), [bx, by] = tf(lx + w, y + size * 0.2);
-      rec.texts.push({ s, font: ctx.font, size, wgt, alpha: ctx.globalAlpha, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) });
+      let r = { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) };
+      if (clipBox) r = { x0: Math.max(r.x0, clipBox.x0), y0: Math.max(r.y0, clipBox.y0), x1: Math.min(r.x1, clipBox.x1), y1: Math.min(r.y1, clipBox.y1) };
+      if (r.x1 - r.x0 > 1 && r.y1 - r.y0 > 1) rec.texts.push({ s, font: ctx.font, size, wgt, alpha: ctx.globalAlpha, ...r });
     }
     return orig.fillText(s, x, y);
   };
