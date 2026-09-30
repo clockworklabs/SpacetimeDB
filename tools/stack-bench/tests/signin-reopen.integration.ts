@@ -6,20 +6,26 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 
 // A header toggle that only opens and closes the account panel closes it when a
-// failed sign-up left it open on sign-up; reopening shows sign-in. A toggle that
+// failed sign-up left it open on sign-up; reopening shows sign-in. A modal left on
+// sign-up covers the toggle until its overlay-close dismisses it. A toggle that
 // opens slowly from a closed panel must still be clicked only once.
 test('sign-in reopens a toggle that closed a panel left on sign-up', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const layout of ['left-on-signup', 'slow-open']) {
+    for (const layout of ['left-on-signup', 'modal-on-signup', 'slow-open']) {
       const page = await browser.newPage();
       await page.setContent(`<header><button id="signin-toggle">Sign in</button></header><main></main><script>
-        let open = ${layout === 'left-on-signup'}, mode = 'signup', clicks = 0;
+        let open = ${layout !== 'slow-open'}, mode = 'signup', clicks = 0;
         const main = document.querySelector('main');
+        const modal = ${layout === 'modal-on-signup'};
         const render = () => {
           main.innerHTML = !open ? '' : mode === 'signup'
-            ? '<form><input id="signup-username"><button type="button" class="switch">Sign in instead</button></form>'
+            ? (modal ? '<div style="position:fixed;inset:0;background:#0008"><button id="overlay-close">x</button>' : '')
+              + '<form><input id="signup-username"><button type="button" class="switch">Sign in instead</button></form>'
+              + (modal ? '</div>' : '')
             : '<form id="signin"><input id="signin-username"><input id="signin-password"><button id="signin-submit">Go</button></form>';
+          const close = document.querySelector('#overlay-close');
+          if (close) close.onclick = () => { open = false; render(); };
           const signin = document.querySelector('#signin');
           if (signin) signin.onsubmit = event => { event.preventDefault();
             main.innerHTML = '<strong id="current-user">' + document.querySelector('#signin-username').value + '</strong>'; };
@@ -43,6 +49,7 @@ test('sign-in reopens a toggle that closed a panel left on sign-up', async () =>
       assert.equal(await page.locator('#current-user').innerText(), 'customer');
       assert.equal(await page.evaluate(() => (window as unknown as { toggleClicks: number }).toggleClicks),
         layout === 'left-on-signup' ? 2 : 1, layout);
+      if (layout === 'modal-on-signup') assert.equal(await page.locator('#overlay-close').count(), 0);
       await page.close();
     }
   } finally { await browser.close(); }

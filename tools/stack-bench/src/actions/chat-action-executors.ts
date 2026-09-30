@@ -185,7 +185,14 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
     if (await restoredSession()) return { user, signedIn: false };
     if (!(await username.isVisible())) {
       const signupUsername = actor.page.locator(browser.testId('signup-username')).first();
-      const signupOpen = await signupUsername.isVisible();
+      let signupOpen = await signupUsername.isVisible();
+      // A dialog left on sign-up can cover the toggle; its close control dismisses it.
+      const overlayClose = actor.loc('overlay-close');
+      if (signupOpen && await overlayClose.isVisible()) {
+        await overlayClose.click({ timeout: browser.defaultWithin });
+        await signupUsername.waitFor({ state: 'hidden', timeout: browser.defaultWithin }).catch(() => {});
+        signupOpen = await signupUsername.isVisible();
+      }
       await toggle.click({ timeout: browser.defaultWithin });
       // A toggle can close a panel left open on sign-up; opening it again reaches sign-in.
       if (signupOpen && !(await username.waitFor({ state: 'visible', timeout: 1000 }).then(() => true, () => false))
