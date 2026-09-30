@@ -1,6 +1,7 @@
 export {
   client,
   errors,
+  resetRegisteredScopes,
   type RateLimitClient,
   type RateLimitPolicy,
   type RateLimitReadDb,

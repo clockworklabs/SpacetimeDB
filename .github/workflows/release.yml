@@ -110,8 +110,7 @@ jobs:
 
   release-crates:
     needs: build-cargo-release
-    # This packages and publishes crates with the prebuilt release helper; it does not build the workspace.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
