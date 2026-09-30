@@ -89,7 +89,9 @@ fn inspector(script: &str) -> (tempfile::TempDir, PathBuf) {
 async fn local_inspection_passes_exact_bytes_host_and_requires_success() {
     use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Section};
     let raw = RawModuleDef::V10(RawModuleDefV10 {
-        sections: vec![RawModuleDefV10Section::Environment(schema().into_declarations())],
+        sections: vec![RawModuleDefV10Section::Environment(
+            schema().into_declarations().into_iter().map(Into::into).collect(),
+        )],
     });
     let json = serde_json::to_string(&SerdeWrapper(raw)).unwrap();
     let (dir, extractor) = inspector(&format!(
@@ -118,7 +120,9 @@ async fn local_inspection_passes_exact_bytes_host_and_requires_success() {
 async fn synchronous_generate_adapter_uses_same_exact_byte_protocol_inside_a_runtime() {
     use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Section};
     let raw = RawModuleDef::V10(RawModuleDefV10 {
-        sections: vec![RawModuleDefV10Section::Environment(schema().into_declarations())],
+        sections: vec![RawModuleDefV10Section::Environment(
+            schema().into_declarations().into_iter().map(Into::into).collect(),
+        )],
     });
     let json = serde_json::to_string(&SerdeWrapper(raw)).unwrap();
     let (_dir, extractor) = inspector(&format!(
