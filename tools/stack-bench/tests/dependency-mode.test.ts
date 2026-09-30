@@ -21,10 +21,9 @@ type RepairPlanInput = Pick<RepairPlan, 'selection' | 'budget'> & { order?: Repa
 type Outcome = 'pass' | 'fail' | 'blocked' | 'not-run';
 type Outcomes = Record<string, Outcome | Record<string, Outcome>>;
 
-test('ecommerce password security stays required without blocking working account descendants', () => {
-  // Failure cases: dropping the password check would inflate completion;
-  // retaining it as a capability gate would hide later behavior; broken normal
-  // sign-in must still block account-dependent work.
+test('an ecommerce account feature must pass its production checks before dependent work', () => {
+  // A production guarantee gates like a feature check: a password-security
+  // failure and broken sign-in both stop account-dependent work.
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', loadTrack('ecommerce'));
   const policy = compileDependencyPolicyInput({ selection: 'feature', budget: { total: 0 } }, catalog,
     { selectedLevels: [1, 2, 3] });
@@ -37,11 +36,29 @@ test('ecommerce password security stays required without blocking working accoun
     state = progressionEngine.recordResult(state, grade(state, failed, { accounts: { [check.id]: 'fail' } }));
     const dependent = definition.nodes.find(node => node.dependencies.length === 1 && node.dependencies[0] === 'accounts');
     assert(dependent);
-    assert.equal(state.nodes.accounts!.status, failed === '1c' ? 'working' : 'failed');
-    assert.equal(prompt(state).nodeIds.includes(dependent.id), failed === '1c');
+    assert.equal(state.nodes.accounts!.status, 'failed');
+    assert.equal(prompt(state).nodeIds.includes(dependent.id), false);
     const score = progressionEngine.score(state) as DependencyScore;
     assert(score.completion.failed > 0, 'a security failure must not earn full completion');
   }
+});
+
+test('a failed live-state check stops work that depends on its feature', () => {
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', loadTrack('ecommerce'));
+  const policy = compileDependencyPolicyInput({ selection: 'feature', budget: { total: 0 } }, catalog,
+    { selectedLevels: [1, 2, 3] });
+  const definition = dependencyRuntimeDefinition(catalog, policy);
+  const owner = definition.nodes.find(node => node.gradingChecks.some(check => check.id.endsWith('.3b')))!;
+  const check = owner.gradingChecks.find(check => check.id.endsWith('.3b'))!;
+  assert.equal(check.role, 'guarantee');
+  let state = progressionEngine.initialize(definition);
+  for (let attempt = 0; prompt(state).nodeIds.length > 0; attempt++) {
+    state = progressionEngine.recordResult(state, grade(state, `pass-${attempt}`, { [owner.id]: { [check.id]: 'fail' } }));
+  }
+  assert.equal(state.nodes[owner.id]!.status, 'failed');
+  const dependents = definition.nodes.filter(node => node.dependencies.includes(owner.id));
+  assert(dependents.length > 0);
+  for (const dependent of dependents) assert.equal(state.nodes[dependent.id]!.status, 'blocked', dependent.id);
 });
 
 interface FixtureNode {
@@ -198,7 +215,7 @@ test('blocked prerequisites retain zero credit, repair eligibility and separate 
   assert.equal((progressionEngine.score(state) as DependencyScore).nodes.find(n => n.id === 'accounts')!.passedPoints, 3);
 });
 
-test('a deferred guarantee runs and remains repairable without blocking descendants', () => {
+test('a deferred guarantee runs and must be repaired before descendants unlock', () => {
   let state = progressionEngine.initialize(guaranteeFixture());
   state = progressionEngine.recordResult(state, grade(state, 'owner', { owner: 'pass' }));
   assert.equal(state.nodes.owner!.status, 'working');
@@ -213,7 +230,7 @@ test('a deferred guarantee runs and remains repairable without blocking descenda
     other: 'pass',
   }));
   assert.equal(state.nodes.owner!.status, 'working');
-  assert.equal(state.nodes.descendant!.status, 'active');
+  assert.equal(state.nodes.descendant!.status, 'locked');
   assert.deepEqual(action(state).repair.nodeIds, ['owner']);
 
   state = progressionEngine.recordResult(state, repairedGrade(state, 'guarantee-repair', {
@@ -224,7 +241,7 @@ test('a deferred guarantee runs and remains repairable without blocking descenda
   assert.deepEqual(prompt(state).nodeIds, ['descendant']);
 });
 
-test('a guarantee stays deferred when its same-pass prerequisite fails', () => {
+test('a guarantee that cannot run keeps its node from unlocking descendants', () => {
   const definition = guaranteeFixture();
   definition.repair.budget = { total: 0 };
   let state = progressionEngine.initialize(definition);
@@ -235,8 +252,8 @@ test('a guarantee stays deferred when its same-pass prerequisite fails', () => {
   }));
   assert.equal(state.nodes.owner!.checks['check.owner.guarantee'], null);
   assert.equal(state.nodes.owner!.status, 'working');
-  assert.equal(state.nodes.descendant!.status, 'active');
-  assert.deepEqual(prompt(state).nodeIds, ['descendant']);
+  assert.equal(state.nodes.descendant!.status, 'locked');
+  assert.deepEqual(prompt(state).nodeIds, []);
   const score = progressionEngine.score(state) as DependencyScore;
   const owner = score.nodes.find(node => node.id === 'owner')!;
   assert.equal(owner.completion.blocked, 1);

@@ -246,13 +246,14 @@ function hasFailedCheck(state: DependencyState, node: CompiledProgressionNode): 
   return Object.values(getNodeState(state, node.id).checks).some(failedCheck);
 }
 
-function hasFailedFeatureCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
-  return node.gradingChecks.some(check => check.role === 'feature'
-    && failedCheck(getNodeState(state, node.id).checks[check.id]));
-}
-
 function isUsable(status: ProgressionNodeState['status']): boolean {
   return status === 'working' || status === 'passed';
+}
+
+// A feature must pass every check, including its production guarantees,
+// before work that depends on it begins.
+function unlocksDependents(status: ProgressionNodeState['status']): boolean {
+  return status === 'passed';
 }
 
 interface RepairAllowance {
@@ -494,21 +495,23 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
     return;
   }
   if (state.definition.workSelection !== 'all-at-once'
-    && node.dependencies.some(parentId => !isUsable(getNodeState(state, parentId).status))) {
+    && node.dependencies.some(parentId => !unlocksDependents(getNodeState(state, parentId).status))) {
     nodeState.status = 'locked';
     return;
   }
   nodeState.exhaustedAtLevel = null;
   nodeState.exhaustionReason = null;
-  if (featureChecksPass(state, node)) {
-    nodeState.status = allChecksPass(state, node) ? 'passed' : 'working';
-  } else if (hasFailedFeatureCheck(state, node)
-    && !canRepair(state, node)) {
+  if (allChecksPass(state, node)) {
+    nodeState.status = 'passed';
+  } else if (hasFailedCheck(state, node) && !canRepair(state, node)) {
     nodeState.status = 'failed';
     nodeState.exhaustedAtLevel = state.level;
     nodeState.exhaustionReason = nodeState.unchangedFailure.count
       >= state.definition.unchangedFailureLimit
       ? 'repeated-findings' : exhaustedRepairLimit(state, [node.id], state.level);
+  } else if (featureChecksPass(state, node)) {
+    // Built, with repairable or not-yet-runnable guarantees; it unlocks nothing yet.
+    nodeState.status = 'working';
   } else {
     nodeState.status = 'active';
   }
@@ -524,7 +527,7 @@ function blockBrokenDescendants(state: DependencyState): void {
       nodeState.exhaustedAtLevel = null;
       nodeState.exhaustionReason = null;
     } else if (node.dependencies.some(parentId =>
-      !isUsable(getNodeState(state, parentId).status))) {
+      !unlocksDependents(getNodeState(state, parentId).status))) {
       nodeState.status = 'locked';
       nodeState.exhaustedAtLevel = null;
       nodeState.exhaustionReason = null;
@@ -539,7 +542,7 @@ function openLevel(state: DependencyState, level: number): void {
     for (const node of state.definition.nodes) {
       const nodeState = getNodeState(state, node.id);
       const dependenciesReady = node.dependencies.every(parentId =>
-        isUsable(getNodeState(state, parentId).status));
+        unlocksDependents(getNodeState(state, parentId).status));
       const dependenciesFailed = brokenByParents(state, node);
       const before = nodeState.status;
       if (dependenciesFailed) {
@@ -819,7 +822,7 @@ function observeUnchangedFailures(state: DependencyState, promptedNodeIds: Reado
       count,
     };
     if (count >= state.definition.unchangedFailureLimit) {
-      if (hasFailedFeatureCheck(state, node)) failed.add(node.id);
+      failed.add(node.id);
     }
   }
 
@@ -980,7 +983,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
   for (const node of state.definition.nodes) {
     if (!selectedNodeIds.includes(node.id)
       && ['active', 'working'].includes(getNodeState(state, node.id).status)
-      && hasFailedFeatureCheck(state, node)) {
+      && hasFailedCheck(state, node)) {
       updateNodeStatus(state, node);
     }
   }
