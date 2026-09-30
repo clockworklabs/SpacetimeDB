@@ -10,8 +10,10 @@ on:
 
 jobs:
   build:
-    # This builds and uploads the documentation site, not SpacetimeDB binaries.
-    runs-on: spacetimedb-linux-small
+    # Docusaurus exceeds the small runner's roughly 2 GiB default Node heap.
+    runs-on: spacetimedb-linux
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
