@@ -20,40 +20,41 @@ struct ConnectionId;
  * @brief Authentication context for a reducer call.
  * 
  * Provides access to the JWT claims for the connection that triggered the reducer,
- * if any. Reducers can be called from internal sources (scheduled reducers, init, etc.)
- * or from external connections (with potential JWT authentication).
+ * if any, and reports whether the sender is this database (see is_internal()).
  * 
  * This class uses lazy loading - the JWT is only fetched and parsed when accessed.
  */
 class AuthCtx {
-    friend struct HandlerContext;
-
 private:
-    bool is_internal_;
+    // Computed on first use, since it needs a host call to read the database's identity.
+    mutable std::optional<bool> is_internal_;
+    std::function<bool()> is_internal_loader_;
     mutable std::shared_ptr<std::optional<JwtClaims>> jwt_;
     std::function<std::optional<JwtClaims>()> jwt_loader_;
 
-    // Private constructor used by factory methods
+    // Private constructors used by factory methods
     AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader);
+    AuthCtx(std::function<bool()> is_internal_loader, std::function<std::optional<JwtClaims>()> loader);
 
 public:
     /**
-     * @brief Creates an AuthCtx from an optional ConnectionId.
+     * @brief Creates the AuthCtx of an invocation whose sender is `sender`.
      * 
-     * If the connection_id is present, creates an AuthCtx that will load the JWT.
-     * If the connection_id is absent, creates an internal AuthCtx.
+     * The invocation is internal when `sender` is this database.
+     * If the connection_id is present, the JWT recorded for it is loaded on demand.
      * 
      * @param connection_id Optional connection ID
-     * @param sender The identity of the caller (already derived from JWT claims by the host)
-     * @return An AuthCtx based on the connection_id
+     * @param sender The identity of the caller, as verified by the host
+     * @return An AuthCtx for the invocation
      */
     static AuthCtx from_connection_id_opt(std::optional<ConnectionId> connection_id, Identity sender);
 
     /**
-     * @brief Creates an AuthCtx for an internal (non-connection-based) reducer call.
+     * @brief Creates an AuthCtx whose is_internal() is true and which has no JWT.
      * 
-     * Internal calls include scheduled reducers, init reducers, and other
-     * database-initiated operations.
+     * Invocations get their AuthCtx from from_connection_id_opt, which computes
+     * is_internal() from the sender. This is for contexts constructed outside
+     * an invocation, such as a default-constructed ReducerContext.
      * 
      * @return An AuthCtx representing an internal call
      */
@@ -88,14 +89,19 @@ public:
     static AuthCtx from_connection_id(ConnectionId connection_id, Identity sender);
 
     /**
-     * @brief Returns whether this reducer was spawned from inside the database.
+     * @brief Returns whether the sender of this invocation is this database.
      * 
-     * @return true if this is an internal call (scheduled, init, etc.)
+     * This is true when the database acts on its own behalf, for example in a
+     * scheduled reducer or procedure, and false for every other sender,
+     * including the database's owner in `init`. It is equivalent to
+     * `ctx.sender() == ctx.database_identity()`.
+     * 
+     * @return true if the sender is this database
      */
-    bool is_internal() const { return is_internal_; }
+    bool is_internal() const;
 
     /**
-     * @brief Checks if there is a JWT without loading it.
+     * @brief Checks if there is a JWT.
      * 
      * If is_internal() returns true, this will return false.
      * 
@@ -107,6 +113,8 @@ public:
      * @brief Gets the JWT claims, loading them if necessary.
      * 
      * This will fetch the JWT from the host on the first call and cache it.
+     * Internal invocations have no JWT, even when their sender presented one,
+     * so this is empty whenever is_internal() returns true.
      * 
      * @return An optional containing the JwtClaims if available
      */
@@ -131,12 +139,27 @@ public:
 inline AuthCtx::AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader)
     : is_internal_(is_internal), jwt_loader_(std::move(loader)) {}
 
+inline AuthCtx::AuthCtx(std::function<bool()> is_internal_loader, std::function<std::optional<JwtClaims>()> loader)
+    : is_internal_loader_(std::move(is_internal_loader)), jwt_loader_(std::move(loader)) {}
+
 inline AuthCtx AuthCtx::from_connection_id_opt(std::optional<ConnectionId> connection_id, Identity sender) {
+    auto is_self = [sender]() {
+        std::array<uint8_t, 32> identity_bytes;
+        FFI::identity(identity_bytes.data());
+        return sender == Identity(identity_bytes);
+    };
     if (connection_id.has_value()) {
-        return from_connection_id(*connection_id, std::move(sender));
-    } else {
-        return internal();
+        AuthCtx auth = from_connection_id(*connection_id, std::move(sender));
+        return AuthCtx(std::move(is_self), std::move(auth.jwt_loader_));
     }
+    return AuthCtx(std::move(is_self), []() -> std::optional<JwtClaims> { return std::nullopt; });
+}
+
+inline bool AuthCtx::is_internal() const {
+    if (!is_internal_.has_value()) {
+        is_internal_ = is_internal_loader_();
+    }
+    return *is_internal_;
 }
 
 inline AuthCtx AuthCtx::internal() {
@@ -187,24 +210,19 @@ inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity 
 }
 
 inline bool AuthCtx::has_jwt() const {
-    if (is_internal_) {
-        return false;
-    }
-    
-    // Load the JWT if not already loaded, then check if it has a value
-    // This ensures has_jwt() and get_jwt() are consistent
     return get_jwt().has_value();
 }
 
 inline const std::optional<JwtClaims>& AuthCtx::get_jwt() const {
     if (!jwt_) {
-        jwt_ = std::make_shared<std::optional<JwtClaims>>(jwt_loader_());
+        jwt_ = std::make_shared<std::optional<JwtClaims>>(
+            is_internal() ? std::nullopt : jwt_loader_());
     }
     return *jwt_;
 }
 
 inline Identity AuthCtx::get_caller_identity() const {
-    if (is_internal_) {
+    if (is_internal()) {
         // Return database identity for internal calls
         std::array<uint8_t, 32> identity_bytes;
         FFI::identity(identity_bytes.data());

@@ -9,6 +9,7 @@ use anyhow::Context as _;
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use http::StatusCode;
+use spacetimedb::auth::identity::ContainerClaim;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile, ModuleHttpConfig, V8Config, WasmConfig};
 use spacetimedb::db;
@@ -200,6 +201,10 @@ impl NodeDelegate for StandaloneEnv {
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         self.data_dir().replica(replica_id).module_logs()
+    }
+
+    async fn is_current_container(&self, _claim: &ContainerClaim) -> bool {
+        false
     }
 }
 

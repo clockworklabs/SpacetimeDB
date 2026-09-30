@@ -48,6 +48,7 @@ members = [
   "modules/perf-test",
   "modules/module-test",
   "modules/environment-test",
+  "modules/is-internal-test",
   "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
   "modules/sdk-test",

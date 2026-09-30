@@ -1139,7 +1139,7 @@ impl ReducerContext {
             sender,
             timestamp,
             connection_id,
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthCtx::for_sender(sender, connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1272,7 +1272,6 @@ fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
     connection_id: Option<ConnectionId>,
-    is_http_handler: bool,
 ) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
@@ -1284,12 +1283,7 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        let mut tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
-        if is_http_handler {
-            // HTTP requests have no connection ID, but are not host-originated calls.
-            tx.sender_auth = AuthCtx::new(false, || None);
-        }
-        let tx = TxContext(tx);
+        let tx = TxContext(ReducerContext::new(crate::Local {}, identity, connection_id, timestamp));
 
         struct DoOnDrop<F: Fn()>(F);
         impl<F: Fn()> Drop for DoOnDrop<F> {
@@ -1321,14 +1315,9 @@ fn try_with_tx<T, E>(
     res
 }
 
-fn with_tx<T>(
-    body: impl Fn(&TxContext) -> T,
-    identity: Identity,
-    connection_id: Option<ConnectionId>,
-    is_http_handler: bool,
-) -> T {
+fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id, is_http_handler) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1469,7 +1458,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id(), false)
+        with_tx(body, self.sender(), self.connection_id())
     }
 
     /// Acquire a mutable transaction
@@ -1502,7 +1491,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, self.sender(), self.connection_id(), false)
+        try_with_tx(body, self.sender(), self.connection_id())
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -1936,6 +1925,8 @@ impl CtxWithHttp for ProcedureContext {
 #[non_exhaustive]
 pub struct JwtClaims {
     payload: String,
+    /// The sender the host verified these credentials for, if known.
+    verified_identity: Option<Identity>,
     parsed: OnceCell<serde_json::Value>,
     audience: OnceCell<Vec<String>>,
 }
@@ -1943,28 +1934,42 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 #[derive(Clone)]
 pub struct AuthCtx {
-    is_internal: bool,
+    // Computed on first use, since it needs a host call to read the database's `Identity`.
+    is_internal: Rc<dyn Deref<Target = bool>>,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
     jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
 impl AuthCtx {
-    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
-    /// and for when there isn't.
-    fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
-        conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
+    /// Creates the [`AuthCtx`] of an invocation whose sender is `sender`.
+    ///
+    /// The invocation is internal when `sender` is this database.
+    /// The [JWT], if any, is the one recorded for `connection_id`.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    fn for_sender(sender: Identity, connection_id: Option<ConnectionId>) -> Self {
+        AuthCtx {
+            is_internal: Rc::new(LazyCell::new(move || {
+                sender == Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+            })),
+            jwt: Rc::new(LazyCell::new(move || {
+                connection_id
+                    .and_then(rt::get_jwt)
+                    .map(|payload| JwtClaims::new(payload, Some(sender)))
+            })),
+        }
     }
 
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
         AuthCtx {
-            is_internal,
+            is_internal: Rc::new(Box::new(is_internal)),
             jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
 
     /// Creates an [`AuthCtx`] for an internal call, with no [JWT].
-    /// This represents a scheduled reducer.
+    /// This represents an invocation whose sender is this database, such as a scheduled reducer.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn internal() -> AuthCtx {
@@ -1976,41 +1981,46 @@ impl AuthCtx {
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
-        Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
+        Self::new(false, move || Some(JwtClaims::new(jwt_payload, None)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    /// Returns whether the sender of this invocation is this database.
     ///
-    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
-        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
-    }
-
-    /// Returns whether this reducer was spawned from inside the database.
+    /// This is true when the database acts on its own behalf,
+    /// for example in a scheduled reducer or procedure,
+    /// and false for every other sender, including the database's owner in `init`.
+    /// It is equivalent to `ctx.sender() == ctx.database_identity()`.
     pub fn is_internal(&self) -> bool {
-        self.is_internal
+        **self.is_internal
     }
 
-    /// Checks if there is a [JWT] without loading it.
+    /// Checks if there is a [JWT].
     /// If [`AuthCtx::is_internal`] returns true, this will return false.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
-        self.jwt.is_some()
+        self.jwt().is_some()
     }
 
     /// Loads the [JWT].
     ///
+    /// Internal invocations have no JWT, even when their sender presented one,
+    /// so this returns `None` whenever [`AuthCtx::is_internal`] returns true.
+    ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn jwt(&self) -> Option<&JwtClaims> {
+        if self.is_internal() {
+            return None;
+        }
         self.jwt.as_ref().deref().as_ref()
     }
 }
 
 impl JwtClaims {
-    fn new(jwt: String) -> Self {
+    fn new(jwt: String, verified_identity: Option<Identity>) -> Self {
         Self {
             payload: jwt,
+            verified_identity,
             parsed: OnceCell::new(),
             audience: OnceCell::new(),
         }
@@ -2051,10 +2061,15 @@ impl JwtClaims {
         self.audience.get_or_init(|| self.extract_audience())
     }
 
-    /// Returns the identity for these credentials, which is
-    /// based on the iss and sub claims.
+    /// Returns the identity of the sender who presented these credentials.
+    ///
+    /// This is the sender the host verified, which is not always the identity
+    /// that the `iss` and `sub` claims would produce.
+    /// For claims created with [`AuthCtx::from_jwt_payload`],
+    /// it is computed from the `iss` and `sub` claims.
     pub fn identity(&self) -> Identity {
-        Identity::from_claims(self.issuer(), self.subject())
+        self.verified_identity
+            .unwrap_or_else(|| Identity::from_claims(self.issuer(), self.subject()))
     }
 
     /// Get the whole JWT payload as a json string.
@@ -2205,5 +2220,16 @@ mod tests {
         let audience = auth.jwt().unwrap().audience();
         assert_eq!(audience.len(), 1);
         assert_eq!(audience, &["my-project-id".to_string()]);
+    }
+
+    #[test]
+    fn jwt_identity_is_the_verified_sender() {
+        let payload = r#"{"iss": "https://example.com", "sub": "alice"}"#;
+        let from_claims = Identity::from_claims("https://example.com", "alice");
+        let auth = AuthCtx::from_jwt_payload(payload.to_string());
+        assert_eq!(auth.jwt().unwrap().identity(), from_claims);
+
+        let sender = Identity::from_byte_array([7; 32]);
+        assert_eq!(JwtClaims::new(payload.to_string(), Some(sender)).identity(), sender);
     }
 }
