@@ -164,12 +164,17 @@ function startServer() {
   return child;
 }
 
+// A process killed by a signal reports signalCode and leaves exitCode null.
+function hasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 async function waitForServer(child) {
   await poll(
     'isolated SpacetimeDB server',
     () =>
       new Promise(resolve => {
-        if (child.exitCode !== null) {
+        if (hasExited(child)) {
           resolve(false);
           return;
         }
@@ -185,13 +190,13 @@ async function waitForServer(child) {
         });
       })
   );
-  if (child.exitCode !== null) {
+  if (hasExited(child)) {
     throw new Error(`isolated server exited early\n${serverLogs.at(-1)?.()}`);
   }
 }
 
 async function stopServer(child) {
-  if (!child || child.exitCode !== null) return;
+  if (!child || hasExited(child)) return;
   const exited = once(child, 'exit');
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
@@ -202,7 +207,7 @@ async function stopServer(child) {
     child.kill('SIGKILL');
   }
   await Promise.race([exited, wait(5_000)]);
-  if (child.exitCode === null) {
+  if (!hasExited(child)) {
     throw new Error(`failed to stop isolated server process ${child.pid}`);
   }
 }
