@@ -2,19 +2,22 @@
   "schemaVersion": 1,
   "kind": "qualification_reuse_review",
   "baseCommit": "0c0d88b4cec2a54189a9b47b3f7436b3476ee9ce",
-  "candidateCommit": "550e8fb97546f3fc64f8d994d7ff4495be4474af",
+  "candidateCommit": "f3c84fd313a5fe624268433af264ee5d94d6442f",
   "changedExecutableFiles": [
     "tools/stack-bench/src/actions/runtime-action-executors.ts",
-    "tools/stack-bench/src/progression/dependency-mode.ts"
+    "tools/stack-bench/src/progression/dependency-mode.ts",
+    "tools/stack-bench/src/runtime/container-smoke.ts"
   ],
   "change": [
     "550e8fb975 dependency-mode.ts: progression gating only; a node unlocks dependents only when every check passes.",
-    "f7b4214624 runtime-action-executors.ts setOffline: when navigator.onLine stays true after going offline and the page moved from the app to chrome-error://, record an application page-error instead of throwing a harness failure."
+    "f7b4214624 runtime-action-executors.ts setOffline: when navigator.onLine stays true after going offline and the page moved from the app to chrome-error://, record an application page-error instead of throwing a harness failure.",
+    "f3c84fd313 container-smoke.ts: the no-model preflight outbound probe tries each destination three times (2 s and 4 s apart) before failing."
   ],
   "callPath": [
     "Reference, mutation and null qualification invoke the bench without --campaign-file; bench.ts uses mode sequential when args.progression is unset (bench.ts: mode: args.runMode ?? { id: args.progression ? dependency : sequential }).",
     "args.progression is compiled only in bench-arguments.ts for a campaign attempt whose mode id is dependency (dependencyRuntimeDefinition), so qualification never initializes the progression engine.",
-    "setOffline does run in qualification (105b). Its new branch is reachable only where the old code threw a harness failure. The c34ab8c8a7 qualification recorded no harness failure: every reference passed 105b (176/176) and every mutant was caught by an application failure (155/167/158/143 of 155/167/158/143), so none of these artifacts reached that branch and the new code yields the same results."
+    "setOffline does run in qualification (105b). Its new branch is reachable only where the old code threw a harness failure. The c34ab8c8a7 qualification recorded no harness failure: every reference passed 105b (176/176) and every mutant was caught by an application failure (155/167/158/143 of 155/167/158/143), so none of these artifacts reached that branch and the new code yields the same results.",
+    "The smoke probe runs in stack qualification preflight. A retry only changes an outcome when a first probe fails; every c34ab8c8a7 reference and mutation run passed preflight and completed, so none of these artifacts depend on it. The null scope is unchanged."
   ],
   "unchanged": [
     "checks",
@@ -31,25 +34,25 @@
       "kind": "mutation",
       "stack": "convex",
       "fromExecutableSha256": "7941c8b5ae777cfdbd285731bfb9c665e891226c52e3c03815f60e5b4cf37b13",
-      "toExecutableSha256": "d1496eee886cb0f4374597102eb1af32bcf3ac3a43630d0355c3ca16a9a11c4e"
+      "toExecutableSha256": "668e86658d8c25b52bf4677f4ce8a81e3980b81b92b2e95626342b453496a455"
     },
     {
       "kind": "mutation",
       "stack": "mongodb",
       "fromExecutableSha256": "7bec6e1e173c40f60a0e94efde797d64e12fa441b9bc966c88a9fd1b43ec8af6",
-      "toExecutableSha256": "42bb91d5d4a0630283ea64149a4e82a29cc825f57ae67d2bf154aa4c6035e94f"
+      "toExecutableSha256": "7342d35dacffcb673dd9f1b578895fd5c39f4973062b78b7588272654a762462"
     },
     {
       "kind": "mutation",
       "stack": "postgres",
       "fromExecutableSha256": "da2d7ee54fb1470cf924d6af02807b36059164a65e06bb4c00850aa81e785307",
-      "toExecutableSha256": "96be0759a42488d7f55931999a5bfe2536566a13b6b7c947ec8c9bead0851bdb"
+      "toExecutableSha256": "543b0b8a62cc867c7bf54fb2ae3314d54c7aca848ba99382cf7a1999658a7716"
     },
     {
       "kind": "mutation",
       "stack": "spacetime",
       "fromExecutableSha256": "e61c44ff4d932df296e4cdb4d8523f3374178da7a055efa12ea2125fd6e8f4d5",
-      "toExecutableSha256": "fb88cf639572a82239689deb438b475f02e350db3cc899a2e58b94aab6942ee5"
+      "toExecutableSha256": "6c1a226ff07d32f966c536689e39108f010fca28d05fbdad2e960c326038994f"
     },
     {
       "kind": "null",
@@ -60,25 +63,25 @@
       "kind": "reference",
       "stack": "convex",
       "fromExecutableSha256": "7941c8b5ae777cfdbd285731bfb9c665e891226c52e3c03815f60e5b4cf37b13",
-      "toExecutableSha256": "d1496eee886cb0f4374597102eb1af32bcf3ac3a43630d0355c3ca16a9a11c4e"
+      "toExecutableSha256": "668e86658d8c25b52bf4677f4ce8a81e3980b81b92b2e95626342b453496a455"
     },
     {
       "kind": "reference",
       "stack": "mongodb",
       "fromExecutableSha256": "7bec6e1e173c40f60a0e94efde797d64e12fa441b9bc966c88a9fd1b43ec8af6",
-      "toExecutableSha256": "42bb91d5d4a0630283ea64149a4e82a29cc825f57ae67d2bf154aa4c6035e94f"
+      "toExecutableSha256": "7342d35dacffcb673dd9f1b578895fd5c39f4973062b78b7588272654a762462"
     },
     {
       "kind": "reference",
       "stack": "postgres",
       "fromExecutableSha256": "da2d7ee54fb1470cf924d6af02807b36059164a65e06bb4c00850aa81e785307",
-      "toExecutableSha256": "96be0759a42488d7f55931999a5bfe2536566a13b6b7c947ec8c9bead0851bdb"
+      "toExecutableSha256": "543b0b8a62cc867c7bf54fb2ae3314d54c7aca848ba99382cf7a1999658a7716"
     },
     {
       "kind": "reference",
       "stack": "spacetime",
       "fromExecutableSha256": "e61c44ff4d932df296e4cdb4d8523f3374178da7a055efa12ea2125fd6e8f4d5",
-      "toExecutableSha256": "fb88cf639572a82239689deb438b475f02e350db3cc899a2e58b94aab6942ee5"
+      "toExecutableSha256": "6c1a226ff07d32f966c536689e39108f010fca28d05fbdad2e960c326038994f"
     }
   ]
 }
