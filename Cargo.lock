@@ -1057,8 +1057,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
+ "ci-script-policy",
  "clap 4.5.50",
- "duct",
 ]
 
 [[package]]
@@ -1076,6 +1076,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "duct",
+]
+
+[[package]]
+name = "ci-script-policy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "tempfile",
 ]
 
 [[package]]

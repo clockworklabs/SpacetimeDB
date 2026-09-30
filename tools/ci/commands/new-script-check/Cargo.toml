@@ -7,4 +7,4 @@ edition.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 ci-common = { path = "../../common" }
-duct.workspace = true
+ci-script-policy = { path = "../../script-policy" }
