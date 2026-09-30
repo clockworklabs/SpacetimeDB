@@ -92,7 +92,9 @@ fn find_violations(
         let Some(new_path) = &change.new_path else {
             continue;
         };
-        let new_contents = read_blob(repo_root, "HEAD", new_path)?;
+        let Some(new_contents) = read_blob(repo_root, "HEAD", new_path)? else {
+            continue;
+        };
         if !is_script(new_path, &new_contents) || is_allowed(new_path) {
             continue;
         }
@@ -100,7 +102,8 @@ fn find_violations(
             .old_path
             .as_ref()
             .map(|path| read_blob(repo_root, merge_base, path))
-            .transpose()?;
+            .transpose()?
+            .flatten();
         if is_new_script(
             change.old_path.as_deref().zip(old_contents.as_deref()),
             new_path,
@@ -116,14 +119,29 @@ fn is_new_script(old: Option<(&Path, &[u8])>, new_path: &Path, new_contents: &[u
     is_script(new_path, new_contents) && !old.is_some_and(|(path, contents)| is_script(path, contents))
 }
 
-fn read_blob(repo_root: &Path, revision: &str, path: &Path) -> Result<Vec<u8>> {
-    let spec = format!("{revision}:{}", path.display());
-    Ok(cmd!("git", "show", &spec)
+fn read_blob(repo_root: &Path, revision: &str, path: &Path) -> Result<Option<Vec<u8>>> {
+    let entries = cmd!("git", "ls-tree", "-z", revision, "--", path)
         .dir(repo_root)
-        .stdout_capture()
-        .run()
-        .with_context(|| format!("failed to read {spec}"))?
-        .stdout)
+        .read()
+        .with_context(|| format!("failed to inspect {} at {revision}", path.display()))?;
+    let is_blob = entries.split_terminator('\0').any(|entry| {
+        entry.split_once('\t').is_some_and(|(metadata, entry_path)| {
+            entry_path == path.to_string_lossy() && metadata.split_whitespace().nth(1) == Some("blob")
+        })
+    });
+    if !is_blob {
+        return Ok(None);
+    }
+
+    let spec = format!("{revision}:{}", path.display());
+    Ok(Some(
+        cmd!("git", "show", &spec)
+            .dir(repo_root)
+            .stdout_capture()
+            .run()
+            .with_context(|| format!("failed to read {spec}"))?
+            .stdout,
+    ))
 }
 
 fn is_script(path: &Path, contents: &[u8]) -> bool {
@@ -198,6 +216,16 @@ mod tests {
         std::fs::write(root.join("new.py"), "print(1)\n").unwrap();
         cmd!("git", "add", ".").dir(root).run().unwrap();
         cmd!("git", "commit", "-qm", "add script").dir(root).run().unwrap();
+        let base = cmd!("git", "rev-parse", "base").dir(root).read().unwrap();
+        let gitlink = format!("160000,{},public", base.trim());
+        cmd!("git", "update-index", "--add", "--cacheinfo", &gitlink)
+            .dir(root)
+            .run()
+            .unwrap();
+        cmd!("git", "commit", "-qm", "add submodule entry")
+            .dir(root)
+            .run()
+            .unwrap();
 
         assert_eq!(
             find_new_scripts(root, "base", |_| false).unwrap(),
