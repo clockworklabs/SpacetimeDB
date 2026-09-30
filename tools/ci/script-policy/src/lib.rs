@@ -1,5 +1,12 @@
 #![allow(clippy::disallowed_macros)]
 
+//! Rejects newly added Bash and Python scripts in a Git repository.
+//!
+//! The check compares `HEAD` with the supplied base ref's merge base, asks Git
+//! for added paths using NUL-delimited output, and inspects each file's extension
+//! and shebang. Callers provide `is_allowed` for repository-specific exceptions;
+//! any remaining paths are reported together and cause the check to fail.
+
 use anyhow::{bail, ensure, Context, Result};
 use duct::cmd;
 use std::path::{Path, PathBuf};
