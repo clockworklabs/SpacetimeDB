@@ -184,7 +184,14 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
       .filter({ visible: true }).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
     if (await restoredSession()) return { user, signedIn: false };
     if (!(await username.isVisible())) {
+      const signupUsername = actor.page.locator(browser.testId('signup-username')).first();
+      const signupOpen = await signupUsername.isVisible();
       await toggle.click({ timeout: browser.defaultWithin });
+      // A toggle can close a panel left open on sign-up; opening it again reaches sign-in.
+      if (signupOpen && !(await username.waitFor({ state: 'visible', timeout: 1000 }).then(() => true, () => false))
+        && !(await signupUsername.isVisible()) && await toggle.isVisible()) {
+        await toggle.click({ timeout: browser.defaultWithin });
+      }
       await (acceptRestoredSession ? username.or(currentUser).filter({ visible: true }).first() : username)
         .waitFor({ state: 'visible', timeout: browser.defaultWithin });
       if (await restoredSession()) return { user, signedIn: false };
