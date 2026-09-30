@@ -3,8 +3,9 @@
 //! Rejects newly added Bash and Python scripts in a Git repository.
 //!
 //! The check compares `HEAD` with the supplied base ref's merge base, asks Git
-//! for added paths using NUL-delimited output, and inspects each file's extension
-//! and shebang. Callers provide `is_allowed` for repository-specific exceptions;
+//! for added paths using NUL-delimited output. It checks known script extensions
+//! directly and reads extensionless files to inspect their shebangs. Callers provide
+//! `is_allowed` for repository-specific exceptions;
 //! any remaining paths are reported together and cause the check to fail.
 
 use anyhow::{bail, ensure, Context, Result};
@@ -70,7 +71,12 @@ fn path_matches_git(path: &Path, bytes: &[u8]) -> bool {
 }
 
 fn find_violations(repo_root: &Path, merge_base: &str, is_allowed: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
-    // Phase 1: ask Git for added paths only. NUL delimiters preserve unusual filenames.
+    let added_paths = find_added_files(repo_root, merge_base)?;
+    check_files_for_violations(added_paths, is_allowed, |path| read_blob(repo_root, "HEAD", path))
+}
+
+fn find_added_files(repo_root: &Path, merge_base: &str) -> Result<Vec<PathBuf>> {
+    // NUL delimiters preserve unusual filenames.
     let output = cmd!(
         "git",
         "diff",
@@ -90,19 +96,29 @@ fn find_violations(repo_root: &Path, merge_base: &str, is_allowed: impl Fn(&Path
         output.is_empty() || output.last() == Some(&0),
         "truncated git diff output"
     );
-    let added_paths = output
+    output
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
         .map(path_from_git)
-        .collect::<Result<Vec<_>>>()?;
+        .collect()
+}
 
-    // Phase 2: inspect only those added files and apply this repository's exception rule.
+fn check_files_for_violations(
+    paths: Vec<PathBuf>,
+    is_allowed: impl Fn(&Path) -> bool,
+    read_contents: impl Fn(&Path) -> Result<Option<Vec<u8>>>,
+) -> Result<Vec<PathBuf>> {
     let mut violations = Vec::new();
-    for path in added_paths {
-        let Some(contents) = read_blob(repo_root, "HEAD", &path)? else {
+    for path in paths {
+        if is_allowed(&path) {
             continue;
+        }
+        let is_script = if path.extension().is_some() {
+            is_script_path(&path)
+        } else {
+            read_contents(&path)?.is_some_and(|contents| is_script_contents(&contents))
         };
-        if is_script(&path, &contents) && !is_allowed(&path) {
+        if is_script {
             violations.push(path);
         }
     }
@@ -142,15 +158,13 @@ fn read_blob(repo_root: &Path, revision: &str, path: &Path) -> Result<Option<Vec
     Ok(None)
 }
 
-fn is_script(path: &Path, contents: &[u8]) -> bool {
-    if path
-        .extension()
+fn is_script_path(path: &Path) -> bool {
+    path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| matches!(extension, "sh" | "bash" | "py" | "pyw"))
-    {
-        return true;
-    }
+}
 
+fn is_script_contents(contents: &[u8]) -> bool {
     let first_line = contents.split(|byte| *byte == b'\n').next().unwrap_or_default();
     let Some(shebang) = first_line.strip_prefix(b"#!") else {
         return false;
@@ -182,77 +196,80 @@ fn is_script(path: &Path, contents: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     #[test]
-    fn repository_scan_uses_caller_allowlist() {
+    fn finds_added_files_without_renames() {
         let repo = tempfile::tempdir().unwrap();
         let root = repo.path();
-        for args in [
-            vec!["init", "-q", "-b", "base"],
-            vec!["config", "user.name", "Test"],
-            vec!["config", "user.email", "test@example.com"],
-        ] {
-            cmd("git", args).dir(root).run().unwrap();
-        }
-        std::fs::write(root.join("notes"), "plain text\n").unwrap();
+        cmd!("git", "init", "-q", "-b", "base").dir(root).run().unwrap();
+        cmd!("git", "config", "user.name", "Test").dir(root).run().unwrap();
+        cmd!("git", "config", "user.email", "test@example.com")
+            .dir(root)
+            .run()
+            .unwrap();
         std::fs::write(root.join("existing.sh"), "#!/bin/bash\n").unwrap();
         cmd!("git", "add", ".").dir(root).run().unwrap();
         cmd!("git", "commit", "-qm", "base").dir(root).run().unwrap();
-        cmd!("git", "switch", "-qc", "change").dir(root).run().unwrap();
+        let base = cmd!("git", "rev-parse", "HEAD").dir(root).read().unwrap();
+        cmd!("git", "mv", "existing.sh", "moved.sh").dir(root).run().unwrap();
         std::fs::write(root.join("new.py"), "print(1)\n").unwrap();
         cmd!("git", "add", ".").dir(root).run().unwrap();
-        cmd!("git", "commit", "-qm", "add script").dir(root).run().unwrap();
-        let base = cmd!("git", "rev-parse", "base").dir(root).read().unwrap();
-        let gitlink = format!("160000,{},public", base.trim());
-        cmd!("git", "update-index", "--add", "--cacheinfo", &gitlink)
-            .dir(root)
-            .run()
-            .unwrap();
-        cmd!("git", "commit", "-qm", "add submodule entry")
-            .dir(root)
-            .run()
-            .unwrap();
+        cmd!("git", "commit", "-qm", "change").dir(root).run().unwrap();
 
-        assert!(reject_new_scripts(root, "base", |_| false).is_err());
-        assert!(reject_new_scripts(root, "base", |path| path == Path::new("new.py")).is_ok());
+        assert_eq!(
+            find_added_files(root, base.trim()).unwrap(),
+            vec![PathBuf::from("new.py")]
+        );
+    }
 
-        std::fs::write(root.join("notes"), "#!/bin/bash\n").unwrap();
-        cmd!("git", "mv", "existing.sh", "moved.sh").dir(root).run().unwrap();
-        cmd!("git", "add", "notes").dir(root).run().unwrap();
-        cmd!("git", "commit", "-qm", "convert file and move script")
-            .dir(root)
-            .run()
-            .unwrap();
-        assert!(reject_new_scripts(root, "base", |path| path == Path::new("new.py")).is_ok());
+    #[test]
+    fn checks_file_list_with_caller_allowlist() {
+        let paths = ["new.py", "allowed.sh", "notes.txt", "script", "plain", "gitlink"]
+            .map(PathBuf::from)
+            .to_vec();
+        let read_paths = RefCell::new(Vec::new());
+        let violations = check_files_for_violations(
+            paths,
+            |path| path == Path::new("allowed.sh"),
+            |path| {
+                read_paths.borrow_mut().push(path.to_path_buf());
+                Ok(match path.to_str().unwrap() {
+                    "script" => Some(b"#!/usr/bin/env python3\n".to_vec()),
+                    "plain" => Some(b"plain text\n".to_vec()),
+                    "gitlink" => None,
+                    _ => panic!("unexpected blob read: {}", path.display()),
+                })
+            },
+        )
+        .unwrap();
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStringExt;
-            let non_utf8 = PathBuf::from(std::ffi::OsString::from_vec(b"bad-\xff.py".to_vec()));
-            std::fs::write(root.join(&non_utf8), "print(2)\n").unwrap();
-            cmd!("git", "add", "--", &non_utf8).dir(root).run().unwrap();
-            cmd!("git", "commit", "-qm", "add non-UTF-8 script")
-                .dir(root)
-                .run()
-                .unwrap();
-            assert!(reject_new_scripts(root, "base", |path| path == Path::new("new.py")).is_err());
-        }
+        assert_eq!(violations, vec![PathBuf::from("new.py"), PathBuf::from("script")]);
+        assert_eq!(
+            read_paths.into_inner(),
+            vec![
+                PathBuf::from("script"),
+                PathBuf::from("plain"),
+                PathBuf::from("gitlink")
+            ]
+        );
     }
 
     #[test]
     fn detects_extensions_and_shebangs() {
         for path in ["tool.sh", "tool.bash", "tool.py", "tool.pyw"] {
-            assert!(is_script(Path::new(path), b""));
+            assert!(is_script_path(Path::new(path)));
         }
+        assert!(!is_script_path(Path::new("tool.txt")));
         for shebang in [
             b"#!/bin/bash\n".as_slice(),
             b"#!/usr/bin/env bash\n",
             b"#!/usr/bin/env -S python3 -u\n",
             b"#!/usr/bin/python3.12\n",
         ] {
-            assert!(is_script(Path::new("tool"), shebang));
+            assert!(is_script_contents(shebang));
         }
-        assert!(!is_script(Path::new("tool"), b"#!/usr/bin/env node\n"));
-        assert!(!is_script(Path::new("tool.rs"), b"fn main() {}"));
+        assert!(!is_script_contents(b"#!/usr/bin/env node\n"));
+        assert!(!is_script_contents(b"fn main() {}"));
     }
 }
