@@ -9,7 +9,7 @@ struct ChangedFile {
     new_path: Option<PathBuf>,
 }
 
-pub fn find_new_scripts(repo_root: &Path, base_ref: &str, is_allowed: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
+pub fn reject_new_scripts(repo_root: &Path, base_ref: &str, is_allowed: impl Fn(&Path) -> bool) -> Result<()> {
     let base_commit = fetch_base_ref(repo_root, base_ref)?;
     let merge_base = cmd!("git", "merge-base", &base_commit, "HEAD")
         .dir(repo_root)
@@ -17,7 +17,17 @@ pub fn find_new_scripts(repo_root: &Path, base_ref: &str, is_allowed: impl Fn(&P
         .with_context(|| format!("failed to find merge base with {base_ref}"))?;
     let merge_base = merge_base.trim();
     let changes = changed_files(repo_root, merge_base)?;
-    find_violations(repo_root, &changes, merge_base, is_allowed)
+    let violations = find_violations(repo_root, &changes, merge_base, is_allowed)?;
+    if violations.is_empty() {
+        return Ok(());
+    }
+    eprintln!("New Bash or Python scripts are not allowed:");
+    for path in &violations {
+        eprintln!("  {}", path.display());
+    }
+    bail!(
+        "Please implement new scripting in Rust. If an exception is needed, add the path or directory to the allowlist in the Rust check."
+    )
 }
 
 fn fetch_base_ref(repo_root: &Path, base_ref: &str) -> Result<String> {
@@ -181,19 +191,6 @@ fn is_script(path: &Path, contents: &[u8]) -> bool {
         })
 }
 
-pub fn report_violations(paths: &[PathBuf]) -> Result<()> {
-    if paths.is_empty() {
-        return Ok(());
-    }
-    eprintln!("New Bash or Python scripts are not allowed:");
-    for path in paths {
-        eprintln!("  {}", path.display());
-    }
-    bail!(
-        "Please implement new scripting in Rust. If an exception is needed, add the path or directory to the allowlist in the Rust check."
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,13 +224,8 @@ mod tests {
             .run()
             .unwrap();
 
-        assert_eq!(
-            find_new_scripts(root, "base", |_| false).unwrap(),
-            vec![PathBuf::from("new.py")]
-        );
-        assert!(find_new_scripts(root, "base", |path| path == Path::new("new.py"))
-            .unwrap()
-            .is_empty());
+        assert!(reject_new_scripts(root, "base", |_| false).is_err());
+        assert!(reject_new_scripts(root, "base", |path| path == Path::new("new.py")).is_ok());
     }
 
     #[test]
