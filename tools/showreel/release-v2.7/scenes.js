@@ -5,6 +5,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { laneFrame, beforeAfter } = R;
 const { planMarker, resultLine } = R;
 const { typedCommand } = R;
 const { agentChat, linkPulses } = R;
@@ -158,9 +159,7 @@ const UQ = { pub: 1.6, out: 2.4, badge: 3.0, dup: 4.6 };
 const USERS = [['1', 'alice@example.com'], ['2', 'bob@example.com'], ['3', 'carol@example.com']];
 
 function uLane(ctx, x, y, w, h, u, now) {
-  glass(ctx, x, y, w, h, 20, now ? { stroke0: hexA(C.green, 0.45) } : {});
-  text(ctx, now ? 'v2.7' : 'v2.6', x + 32, y + 50, { size: 15, weight: 700, tracking: 4, fill: now ? C.green : hexA(C.white, 0.5) });
-  text(ctx, now ? 'Migrated in place' : 'Manual migration', x + 102, y + 50, { size: 22, weight: 700, fam: SANS, fill: hexA(C.white, now ? 0.95 : 0.7) });
+  laneFrame(ctx, x, y, w, h, { now, version: now ? 'v2.7' : 'v2.6', title: now ? 'Migrated in place' : 'Manual migration' });
   text(ctx, 'user', x + 32, y + 104, { size: 18, weight: 700 });
   const ba = now ? E.outBack(clamp((u - UQ.badge) / 0.35)) : 0;
   text(ctx, 'id', x + 48, y + 138, { size: 14, weight: 600, tracking: 2, fill: hexA(C.white, 0.4) });
@@ -213,8 +212,7 @@ function sUniq(ctx, t) {
   text(ctx, ' email: String,', x0 + w1, 300, { size: 22 });
   if (ia > 0) { rr(ctx, x0 - 6, 272, (w1 + 12) * ia, 40, 6); ctx.strokeStyle = hexA(C.green, 0.8); ctx.stroke(); }
   ctx.restore();
-  ctx.save(); ctx.globalAlpha *= 0.85; enter(ctx, u, 0.5, 40); uLane(ctx, 140, 360, 800, 500, u, false); ctx.restore();
-  ctx.save(); enter(ctx, u, 0.65, 40); uLane(ctx, 980, 360, 800, 500, u, true); ctx.restore();
+  beforeAfter(ctx, u, (ctx, x, y, w, h, now) => uLane(ctx, x, y, w, h, u, now), { old: [140, 360, 800, 500], now: [980, 360, 800, 500], enterAt: [0.5, 0.65] });
   caption(ctx, 'Add #[unique] or #[primary_key] to a live table and republish. Your rows stay.', u, 5.2, 950);
   ctx.restore();
 }

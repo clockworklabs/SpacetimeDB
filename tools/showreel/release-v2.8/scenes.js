@@ -5,6 +5,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { laneFrame, beforeAfter } = R;
 const { slide, panel, enter, caption, pill, code, SYN, header } = R;
 
 const DUR = 29.5;
@@ -108,9 +109,7 @@ function sSub(ctx, t) {
 const TB = { away: 1.2, back: 2.6, fix: 3.1 };
 
 function tabLane(ctx, x, y, w, h, u, t, now) {
-  glass(ctx, x, y, w, h, 20, now ? { stroke0: hexA(C.green, 0.45) } : {});
-  text(ctx, now ? 'v2.8' : 'v2.7', x + 32, y + 50, { size: 15, weight: 700, tracking: 4, fill: now ? C.green : hexA(C.white, 0.5) });
-  text(ctx, now ? 'Reconnects on return' : 'Waits for the next retry', x + (now ? 102 : 102), y + 50, { size: 22, weight: 700, fam: SANS, fill: hexA(C.white, now ? 0.95 : 0.7) });
+  laneFrame(ctx, x, y, w, h, { now, version: now ? 'v2.8' : 'v2.7', title: now ? 'Reconnects on return' : 'Waits for the next retry' });
   // mini browser
   const bx = x + 32, by = y + 86, bw = w - 64, bh = 250;
   const away = u > TB.away && u < TB.back;
@@ -159,8 +158,7 @@ function sTab(ctx, t) {
   ctx.save();
   slide(ctx, u, len);
   header(ctx, u, 'REACT, SVELTE AND SOLID APPS · 2.7.1', [{ s: 'Web apps reconnect when' }, { s: 'you return to the tab.', fill: 'brand' }]);
-  ctx.save(); ctx.globalAlpha *= 0.85; enter(ctx, u, 0.3, 40); tabLane(ctx, 140, 290, 800, 470, u, t, false); ctx.restore();
-  ctx.save(); enter(ctx, u, 0.45, 40); tabLane(ctx, 980, 290, 800, 470, u, t, true); ctx.restore();
+  beforeAfter(ctx, u, (ctx, x, y, w, h, now) => tabLane(ctx, x, y, w, h, u, t, now), { old: [140, 290, 800, 470], now: [980, 290, 800, 470], enterAt: [0.3, 0.45] });
   caption(ctx, 'Returning to a tab, waking the laptop or getting Wi-Fi back now reconnects right away.', u, 4.0, 870);
   ctx.restore();
 }

@@ -4,6 +4,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text,
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { laneFrame, beforeAfter } = R;
 const { resultLine } = R;
 const { typedCommand } = R;
 const { slide, panel, enter, caption, pill, header } = R;
@@ -110,9 +111,7 @@ function packet(ctx, x, y, col, w = 30, label) {
 }
 
 function pipeLane(ctx, x, y, w, h, u, t, now) {
-  glass(ctx, x, y, w, h, 20, now ? { stroke0: hexA(C.green, 0.45) } : {});
-  text(ctx, now ? 'v2.3' : 'v2.2', x + 32, y + 50, { size: 15, weight: 700, tracking: 4, fill: now ? C.green : hexA(C.white, 0.5) });
-  text(ctx, now ? 'Next request goes right in' : 'Each request waits its turn', x + 102, y + 50, { size: 22, weight: 700, fam: SANS, fill: hexA(C.white, now ? 0.95 : 0.7) });
+  laneFrame(ctx, x, y, w, h, { now, version: now ? 'v2.3' : 'v2.2', title: now ? 'Next request goes right in' : 'Each request waits its turn' });
   const x0 = x + 150, x1 = x + w - 170, ly = y + 130, ry = y + 175;
   text(ctx, 'client', x + 36, ly + 30, { size: 17, weight: 600, fill: hexA(C.white, 0.6) });
   rr(ctx, x1 + 20, ly - 34, 120, 110, 12); ctx.fillStyle = hexA(C.white, 0.05); ctx.fill();
@@ -166,8 +165,7 @@ function sPipe(ctx, t) {
   ctx.save();
   slide(ctx, u, len);
   header(ctx, u, 'SERVER · PIPELINING', [{ s: 'Requests no longer' }, { s: 'wait in line.', fill: 'brand' }]);
-  ctx.save(); ctx.globalAlpha *= 0.85; enter(ctx, u, 0.3, 40); pipeLane(ctx, 140, 270, 1640, 260, u, t, false); ctx.restore();
-  ctx.save(); enter(ctx, u, 0.45, 40); pipeLane(ctx, 140, 560, 1640, 260, u, t, true); ctx.restore();
+  beforeAfter(ctx, u, (ctx, x, y, w, h, now) => pipeLane(ctx, x, y, w, h, u, t, now), { old: [140, 270, 1640, 260], now: [140, 560, 1640, 260], enterAt: [0.3, 0.45] });
   caption(ctx, 'The server takes the next request without waiting, and a slow procedure no longer holds the line.', u, 4.4, 900);
   if (u > 5.2) text(ctx, 'Several replies per network message: TypeScript SDK clients', CX, 950, { size: 20, weight: 500, fam: SANS, align: 'center', fill: hexA(C.white, 0.5), alpha: E.outCubic(P(u, 5.2, 5.6)) });
   ctx.restore();

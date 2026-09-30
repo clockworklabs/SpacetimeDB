@@ -4,6 +4,7 @@ const { W, C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, te
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { laneFrame, beforeAfter } = R;
 const { resultLine } = R;
 const { typedCommand } = R;
 const { slide, panel, enter, status, caption, pill, code, SYN, header } = R;
@@ -209,9 +210,7 @@ const VW = { change: 2.4 };
 const BOARD = [['alice', 12], ['bob', 10], ['carol', 8]];
 
 function board(ctx, x, y, w, h, u, now) {
-  glass(ctx, x, y, w, h, 20, now ? { stroke0: hexA(C.green, 0.45) } : {});
-  text(ctx, now ? 'v2.5' : 'v2.4', x + 32, y + 50, { size: 15, weight: 700, tracking: 4, fill: now ? C.green : hexA(C.white, 0.5) });
-  text(ctx, now ? 'One update' : 'Delete, then insert', x + (now ? 110 : 102), y + 50, { size: 21, weight: 700, fam: SANS, fill: hexA(C.white, now ? 0.95 : 0.7) });
+  laneFrame(ctx, x, y, w, h, { now, version: now ? 'v2.5' : 'v2.4', title: now ? 'One update' : 'Delete, then insert', titleX: now ? 110 : 102, titleSize: 21 });
   text(ctx, 'leaderboard', x + 32, y + 104, { size: 18, weight: 700 });
   const lt = u - VW.change;
   BOARD.forEach(([n, s], i) => {
@@ -265,8 +264,7 @@ function sViews(ctx, t) {
   const hk = E.outCubic(P(u, 1.1, 1.5));
   if (hk > 0) { rr(ctx, x0 + w1 - 6, y0 - 28, (w2 + 12) * hk, 40, 6); ctx.strokeStyle = hexA(C.green, 0.8); ctx.stroke(); }
   ctx.restore();
-  ctx.save(); ctx.globalAlpha *= 0.85; enter(ctx, u, 0.5, 40); board(ctx, 140, 380, 800, 480, u, false); ctx.restore();
-  ctx.save(); enter(ctx, u, 0.65, 40); board(ctx, 980, 380, 800, 480, u, true); ctx.restore();
+  beforeAfter(ctx, u, (ctx, x, y, w, h, now) => board(ctx, x, y, w, h, u, now), { old: [140, 380, 800, 480], now: [980, 380, 800, 480], enterAt: [0.5, 0.65] });
   caption(ctx, 'Views written as code can name a primary key, so apps get one update instead of two events.', u, 4.2, 950);
   ctx.restore();
 }

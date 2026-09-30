@@ -4,6 +4,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text 
 const U = require('../ui');
 const { CX, TAU, check } = U;
 const R = require('../release');
+const { laneFrame, beforeAfter } = R;
 const { planMarker } = R;
 const { typedCommand } = R;
 const { slide, panel, enter, caption, pill, code, SYN, header } = R;
@@ -27,9 +28,7 @@ const STEPS = [['1', [['ctx.db.', null], ['legacy_items', null], ['().', null], 
 const TABLES = ['players', 'scores', 'legacy_items'];
 
 function dLane(ctx, x, y, w, h, u, now) {
-  glass(ctx, x, y, w, h, 20, now ? { stroke0: hexA(C.green, 0.45) } : {});
-  text(ctx, now ? 'v2.2' : 'v2.1', x + 32, y + 50, { size: 15, weight: 700, tracking: 4, fill: now ? C.green : hexA(C.white, 0.5) });
-  text(ctx, now ? 'Dropped, rest untouched' : 'Manual migration', x + 102, y + 50, { size: 22, weight: 700, fam: SANS, fill: hexA(C.white, now ? 0.95 : 0.7) });
+  laneFrame(ctx, x, y, w, h, { now, version: now ? 'v2.2' : 'v2.1', title: now ? 'Dropped, rest untouched' : 'Manual migration' });
   text(ctx, 'my-game', x + 32, y + 104, { size: 18, weight: 700 });
   TABLES.forEach((n, i) => {
     const legacy = i === 2;
@@ -77,8 +76,7 @@ function sDrop(ctx, t) {
     }
     x += w + 24;
   });
-  ctx.save(); ctx.globalAlpha *= 0.85; enter(ctx, u, 0.5, 40); dLane(ctx, 140, 360, 800, 500, u, false); ctx.restore();
-  ctx.save(); enter(ctx, u, 0.65, 40); dLane(ctx, 980, 360, 800, 500, u, true); ctx.restore();
+  beforeAfter(ctx, u, (ctx, x, y, w, h, now) => dLane(ctx, x, y, w, h, u, now), { old: [140, 360, 800, 500], now: [980, 360, 800, 500], enterAt: [0.5, 0.65] });
   caption(ctx, 'Empty a table with clear(), remove it from your code, and republish. No full wipe.', u, 5.0, 950);
   ctx.restore();
 }

@@ -4,6 +4,7 @@ const { C, SANS, MONO, clamp, lerp, P, E, pulse, hexA, rr, glass, measure, text 
 const U = require('../ui');
 const { CX, TAU, check, spinner } = U;
 const R = require('../release');
+const { laneFrame, beforeAfter } = R;
 const { slide, panel, enter, caption, pill, code, SYN, header } = R;
 
 const DUR = 53;
@@ -88,9 +89,7 @@ const HT = { run: [1.2, 4.6], reply: 12 }; // scene-local sweep; the reply arriv
 const AX = 40; // seconds shown on the axis
 
 function tLane(ctx, x, y, w, h, u, now) {
-  glass(ctx, x, y, w, h, 20, now ? { stroke0: hexA(C.green, 0.45) } : {});
-  text(ctx, now ? 'v2.1' : 'v2.0', x + 32, y + 50, { size: 15, weight: 700, tracking: 4, fill: now ? C.green : hexA(C.white, 0.5) });
-  text(ctx, now ? '30 s by default, up to 3 minutes' : '0.5 s by default, 10 s at most', x + 102, y + 50, { size: 22, weight: 700, fam: SANS, fill: hexA(C.white, now ? 0.95 : 0.7) });
+  laneFrame(ctx, x, y, w, h, { now, version: now ? 'v2.1' : 'v2.0', title: now ? '30 s by default, up to 3 minutes' : '0.5 s by default, 10 s at most' });
   const x0 = x + 60, x1 = x + w - 60, ly = y + 140;
   const X = s => lerp(x0, x1, s / AX);
   ctx.fillStyle = hexA(C.white, 0.12); ctx.fillRect(x0, ly + 30, x1 - x0, 1.5);
@@ -122,8 +121,7 @@ function sHttp(ctx, t) {
   rr(ctx, CX - w / 2 - 32, 260, w + 64, 62, 14); ctx.fillStyle = '#121A1F'; ctx.fill(); ctx.strokeStyle = hexA(C.white, 0.12); ctx.lineWidth = 1.5; ctx.stroke();
   code(ctx, ln, CX - w / 2, 299, 21);
   ctx.restore();
-  ctx.save(); ctx.globalAlpha *= 0.85; enter(ctx, u, 0.4, 40); tLane(ctx, 140, 350, 1640, 230, u, false); ctx.restore();
-  ctx.save(); enter(ctx, u, 0.55, 40); tLane(ctx, 140, 600, 1640, 230, u, true); ctx.restore();
+  beforeAfter(ctx, u, (ctx, x, y, w, h, now) => tLane(ctx, x, y, w, h, u, now), { old: [140, 350, 1640, 230], now: [140, 600, 1640, 230], enterAt: [0.4, 0.55] });
   caption(ctx, 'HTTP calls from procedures now wait long enough for slow APIs, and failures say why.', u, 5.2, 900);
   if (u > 6.0) text(ctx, 'e.g. “error trying to connect: dns error: …”', CX, 955, { size: 20, align: 'center', fill: hexA(C.white, 0.5), alpha: E.outCubic(P(u, 6.0, 6.4)) });
   ctx.restore();

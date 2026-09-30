@@ -3,6 +3,7 @@ module.exports = {
   ...require('./layout'),
   ...require('./chat'),
   ...require('./terminal'),
+  ...require('./compare'),
   ...require('./intro'),
   ...require('./cards'),
   ...require('./outro'),
