@@ -28,8 +28,7 @@ public sealed class AuthCtx
     public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity)
     {
         // The invocation is internal when its sender is this database.
-        bool isInternal() =>
-            identity == SpacetimeDB.Internal.IReducerContext.GetDatabaseIdentity();
+        bool isInternal() => identity == SpacetimeDB.Internal.IReducerContext.GetDatabaseIdentity();
         if (connectionId == null)
         {
             return new AuthCtx(isInternal, jwtFactory: static () => null);
