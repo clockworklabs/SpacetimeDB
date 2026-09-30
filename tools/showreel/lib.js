@@ -2,7 +2,6 @@
 const { createCanvas, GlobalFonts, loadImage, Path2D } = require('@napi-rs/canvas');
 
 const W = 1920, H = 1080, FPS = 60, DUR = 90;
-const REPO = require('path').resolve(__dirname, '../..');
 
 // Brand gradient stops (used only via brandGrad — one element per screen).
 const BRAND = { pink: '#ff80fb', purple: '#a880ff', green: '#4cf490' };
@@ -244,8 +243,9 @@ function drawMark(ctx, cx, cy, size, o = {}) {
 // ---------- assets ----------
 const A = {};
 async function loadAssets() {
-  const L = REPO + '/docs/static/images/logos/';
-  const names = ['rust', 'react', 'unity', 'unreal', 'svelte', 'vue', 'nextjs', 'nodejs', 'bun', 'deno', 'angular', 'tanstack', 'remix', 'nuxt', 'typescript', 'cpp', 'javascript', 'html5'];
+  // Logos and wordmark are bundled in ./assets (copied from the SpacetimeDB repo's docs/static/images/logos and images/dark).
+  const L = __dirname + '/assets/logos/';
+  const names = ['rust', 'react', 'unity', 'unreal', 'svelte', 'vue', 'nextjs', 'nodejs', 'bun', 'deno', 'angular', 'tanstack', 'remix', 'nuxt', 'typescript', 'cpp', 'javascript', 'html5', 'csharp'];
   A.logos = {};
   for (const n of names) {
     const im = await loadImage(L + n + '-logo.svg');
@@ -255,14 +255,14 @@ async function loadAssets() {
     const k = Math.min(S / im.width, S / im.height);
     const w = im.width * k, h = im.height * k;
     x.drawImage(im, (S - w) / 2, (S - h) / 2, w, h);
-    if (!['typescript', 'cpp', 'javascript'].includes(n)) {
+    if (!['typescript', 'cpp', 'javascript', 'csharp'].includes(n)) {
       x.globalCompositeOperation = 'source-in';
       x.fillStyle = C.white;
       x.fillRect(0, 0, S, S);
     }
     A.logos[n] = c;
   }
-  const wm = await loadImage(REPO + '/images/dark/logo-text.svg');
+  const wm = await loadImage(__dirname + '/assets/logo-text.svg');
   const wc = createCanvas(348 * 4, 53 * 4), wx = wc.getContext('2d');
   wx.drawImage(wm, 0, 0, 348 * 4, 53 * 4);
   A.wordmark = wc;
