@@ -2,22 +2,28 @@
   "schemaVersion": 1,
   "kind": "qualification_reuse_review",
   "baseCommit": "0c0d88b4cec2a54189a9b47b3f7436b3476ee9ce",
-  "candidateCommit": "f3c84fd313a5fe624268433af264ee5d94d6442f",
+  "candidateCommit": "6e88af4638abf507de86ecca3a33b6e64f308c8c",
   "changedExecutableFiles": [
+    "tools/stack-bench/commands/run-suite.ts",
+    "tools/stack-bench/grader/grade.ts",
+    "tools/stack-bench/src/actions/action-findings.ts",
     "tools/stack-bench/src/actions/runtime-action-executors.ts",
     "tools/stack-bench/src/progression/dependency-mode.ts",
-    "tools/stack-bench/src/runtime/container-smoke.ts"
+    "tools/stack-bench/src/runtime/container-smoke.ts",
+    "tools/stack-bench/src/runtime/grading-timeout.ts"
   ],
   "change": [
     "550e8fb975 dependency-mode.ts: progression gating only; a node unlocks dependents only when every check passes.",
     "f7b4214624 runtime-action-executors.ts setOffline: when navigator.onLine stays true after going offline and the page moved from the app to chrome-error://, record an application page-error instead of throwing a harness failure.",
-    "f3c84fd313 container-smoke.ts: the no-model preflight outbound probe tries each destination three times (2 s and 4 s apart) before failing."
+    "f3c84fd313 container-smoke.ts: the no-model preflight outbound probe tries each destination three times (2 s and 4 s apart) before failing.",
+    "6e88af4638 grade.ts/run-suite.ts: the grader stops starting steps at (source process limit - 2 min); a remaining check fails with a measured grading-time-limit finding instead of the process being killed and the level voided."
   ],
   "callPath": [
     "Reference, mutation and null qualification invoke the bench without --campaign-file; bench.ts uses mode sequential when args.progression is unset (bench.ts: mode: args.runMode ?? { id: args.progression ? dependency : sequential }).",
     "args.progression is compiled only in bench-arguments.ts for a campaign attempt whose mode id is dependency (dependencyRuntimeDefinition), so qualification never initializes the progression engine.",
     "setOffline does run in qualification (105b). Its new branch is reachable only where the old code threw a harness failure. The c34ab8c8a7 qualification recorded no harness failure: every reference passed 105b (176/176) and every mutant was caught by an application failure (155/167/158/143 of 155/167/158/143), so none of these artifacts reached that branch and the new code yields the same results.",
-    "The smoke probe runs in stack qualification preflight. A retry only changes an outcome when a first probe fails; every c34ab8c8a7 reference and mutation run passed preflight and completed, so none of these artifacts depend on it. The null scope is unchanged."
+    "The smoke probe runs in stack qualification preflight. A retry only changes an outcome when a first probe fails; every c34ab8c8a7 reference and mutation run passed preflight and completed, so none of these artifacts depend on it. The null scope is unchanged.",
+    "The grading deadline applies to qualification. Its smallest value is 15 min - 2 min = 780 s. Across all 632 graded sources in the c34ab8c8a7 qualification run tree the longest took 446 s (Convex first-build L3 source 071), so no retained artifact would reach the deadline and the new code yields the same results."
   ],
   "unchanged": [
     "checks",
@@ -34,54 +40,54 @@
       "kind": "mutation",
       "stack": "convex",
       "fromExecutableSha256": "7941c8b5ae777cfdbd285731bfb9c665e891226c52e3c03815f60e5b4cf37b13",
-      "toExecutableSha256": "668e86658d8c25b52bf4677f4ce8a81e3980b81b92b2e95626342b453496a455"
+      "toExecutableSha256": "c828e5220b258c652c52a3bd1c692e21e1f4e31bddb75171ea0de5ff1593fee3"
     },
     {
       "kind": "mutation",
       "stack": "mongodb",
       "fromExecutableSha256": "7bec6e1e173c40f60a0e94efde797d64e12fa441b9bc966c88a9fd1b43ec8af6",
-      "toExecutableSha256": "7342d35dacffcb673dd9f1b578895fd5c39f4973062b78b7588272654a762462"
+      "toExecutableSha256": "65ddeb4a25fb860f2d206153bf860fb1ca39276f4c53f86766bf07320292cea0"
     },
     {
       "kind": "mutation",
       "stack": "postgres",
       "fromExecutableSha256": "da2d7ee54fb1470cf924d6af02807b36059164a65e06bb4c00850aa81e785307",
-      "toExecutableSha256": "543b0b8a62cc867c7bf54fb2ae3314d54c7aca848ba99382cf7a1999658a7716"
+      "toExecutableSha256": "34f1b04758c5d1b1d5f959dcd397fad9e52d8cc26a2ed640864004175f15e742"
     },
     {
       "kind": "mutation",
       "stack": "spacetime",
       "fromExecutableSha256": "e61c44ff4d932df296e4cdb4d8523f3374178da7a055efa12ea2125fd6e8f4d5",
-      "toExecutableSha256": "6c1a226ff07d32f966c536689e39108f010fca28d05fbdad2e960c326038994f"
+      "toExecutableSha256": "44d8ffea3370044acf9409be389020294b0588b21e64ef5920e679505c3c84f4"
     },
     {
       "kind": "null",
       "fromExecutableSha256": "8156f1cb79a6f154df3538d5819ec3d6751907852e6548bdfb9925d84010709f",
-      "toExecutableSha256": "631723e73b3e34885e518b80d1082b65d17a148e97b72b314055fa5f57d2736f"
+      "toExecutableSha256": "9c7bd2c08826ab67ef49ca9b0b96ff3273fcfc489a40bfe62ca8b37880256e5b"
     },
     {
       "kind": "reference",
       "stack": "convex",
       "fromExecutableSha256": "7941c8b5ae777cfdbd285731bfb9c665e891226c52e3c03815f60e5b4cf37b13",
-      "toExecutableSha256": "668e86658d8c25b52bf4677f4ce8a81e3980b81b92b2e95626342b453496a455"
+      "toExecutableSha256": "c828e5220b258c652c52a3bd1c692e21e1f4e31bddb75171ea0de5ff1593fee3"
     },
     {
       "kind": "reference",
       "stack": "mongodb",
       "fromExecutableSha256": "7bec6e1e173c40f60a0e94efde797d64e12fa441b9bc966c88a9fd1b43ec8af6",
-      "toExecutableSha256": "7342d35dacffcb673dd9f1b578895fd5c39f4973062b78b7588272654a762462"
+      "toExecutableSha256": "65ddeb4a25fb860f2d206153bf860fb1ca39276f4c53f86766bf07320292cea0"
     },
     {
       "kind": "reference",
       "stack": "postgres",
       "fromExecutableSha256": "da2d7ee54fb1470cf924d6af02807b36059164a65e06bb4c00850aa81e785307",
-      "toExecutableSha256": "543b0b8a62cc867c7bf54fb2ae3314d54c7aca848ba99382cf7a1999658a7716"
+      "toExecutableSha256": "34f1b04758c5d1b1d5f959dcd397fad9e52d8cc26a2ed640864004175f15e742"
     },
     {
       "kind": "reference",
       "stack": "spacetime",
       "fromExecutableSha256": "e61c44ff4d932df296e4cdb4d8523f3374178da7a055efa12ea2125fd6e8f4d5",
-      "toExecutableSha256": "6c1a226ff07d32f966c536689e39108f010fca28d05fbdad2e960c326038994f"
+      "toExecutableSha256": "44d8ffea3370044acf9409be389020294b0588b21e64ef5920e679505c3c84f4"
     }
   ]
 }
