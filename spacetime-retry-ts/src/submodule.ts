@@ -19,6 +19,7 @@ const MAX_TASK_NAME_LENGTH = 128;
 const MAX_ERROR_LENGTH = 2048;
 const MAX_ROWS = 1000;
 
+/** Codes a caller can receive as a `SenderError`. */
 export const errors = {
   notAuthorized: 'retry.not_authorized',
   invalidTaskName: 'retry.invalid_task_name',
@@ -26,7 +27,6 @@ export const errors = {
   invalidBackoffSeconds: 'retry.invalid_backoff_seconds',
   taskAlreadyExists: 'retry.task_already_exists',
   cannotRemoveLastAdmin: 'retry.cannot_remove_last_admin',
-  unknownHandler: 'retry.unknown_handler',
 } as const;
 
 function retryTaskTable(args: SumBuilder<VariantsObj>) {
@@ -209,20 +209,25 @@ export function client<const Tasks extends RetryTasks>({
     arg: RetryTaskRow
   ): void {
     let result: RetryResult;
+    let permanent = false;
     try {
       const { tag } = arg.args;
       if (!Object.prototype.hasOwnProperty.call(handlers, tag)) {
-        throw new Error(`${errors.unknownHandler}:${tag}`);
+        // Only reachable when handlers bypass `RetryHandlers` typing.
+        throw new Error(`retry.unknown_handler:${tag}`);
       }
       result = handlers[tag](ctx, 'value' in arg.args ? arg.args.value : {});
     } catch (error) {
       // A caught exception does not roll back the handler's earlier writes.
+      // A `SenderError` rejects the task's arguments, so retrying cannot help.
+      permanent = error instanceof SenderError;
       result = retryFailed(
         error instanceof Error ? error.message : String(error)
       );
     }
 
-    const isLast = !result.ok && arg.attempt + 1 >= arg.maxAttempts;
+    const isLast =
+      !result.ok && (permanent || arg.attempt + 1 >= arg.maxAttempts);
     const history = ctx.db.retryHistory;
     // Each attempt adds one row, so removing the oldest keeps the bound. Prune
     // before inserting: an index scan yields rows inserted in the current

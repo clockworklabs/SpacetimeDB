@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { exampleUiAssetsDir } from '@spacetimedb/submodule-shared/server';
+import { exampleUiAssetsDir } from '@spacetimedb/example-ui/server';
 import { PRODUCTS, SCENARIOS } from './catalog/catalog';
 
 const __filename = fileURLToPath(import.meta.url);

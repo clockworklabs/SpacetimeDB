@@ -64,7 +64,9 @@ Submit tagged arguments with an attempt cap and base backoff. The first attempt
 is scheduled immediately; subsequent delays are `backoffSecs * 2^attempt`.
 
 Handlers must be idempotent. A returned failure or a thrown exception records a
-failed attempt and schedules the next attempt, up to `maxAttempts`. Writes made
+failed attempt and schedules the next attempt, up to `maxAttempts`. A thrown
+`SenderError` marks the task's arguments as invalid: Retry records the attempt
+as `GaveUp` with the error message and schedules nothing further. Writes made
 by the handler before a failure are committed with that attempt; Retry does not
 provide a separate transaction for the handler. A host crash or transaction
 abort can still prevent the retry from being scheduled.
@@ -87,7 +89,10 @@ view returns these attempts newest first.
   `reducers.removeRetryAdminIdentity` require a Retry admin.
 - `views.retryTasksAdmin` and `views.retryHistoryAdmin` return up to 1,000
   pending tasks and attempts, newest first, to Retry admins.
-- `errors` holds the `retry.*` codes thrown by these operations.
+- `errors` holds the `retry.*` codes these operations throw as `SenderError`s:
+  `notAuthorized`, `invalidTaskName`, `invalidMaxAttempts`,
+  `invalidBackoffSeconds`, `taskAlreadyExists` (followed by `:` and the task
+  name), and `cannotRemoveLastAdmin`.
 
 The generated client can submit a task when the host exports
 `submitRetryTask`:
