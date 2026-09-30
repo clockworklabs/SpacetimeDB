@@ -9,7 +9,7 @@ import {
   grantServerIdentity,
   loadServerToken,
   saveServerToken,
-} from '@spacetimedb/submodule-shared/server';
+} from '@spacetimedb/example-ui/server';
 import { DbConnection, type ErrorContext } from './src/module_bindings';
 
 const __filename = fileURLToPath(import.meta.url);
