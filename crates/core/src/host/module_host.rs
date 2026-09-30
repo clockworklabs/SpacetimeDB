@@ -2399,32 +2399,24 @@ impl ModuleHost {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
 
-        // A verified container credential for this database makes the call a self-call,
-        // which may invoke private reducers and observes internal authority.
-        let hosted_self_call = client
-            .as_ref()
-            .and_then(|client| client.auth.claims.container)
-            .is_some_and(|container| container.database == self.info.database_identity);
-
-        if reducer_def.visibility.is_private() && !hosted_self_call && !self.is_database_owner(caller_identity) {
+        if reducer_def.visibility.is_private() && !self.may_call_private(caller_identity) {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
-        let mut params = Self::call_reducer_params(
-            owning_def,
-            caller_identity,
-            caller_connection_id,
-            client,
-            request_id,
-            timer,
-            reducer_id,
+        Ok((
             reducer_def,
-            args,
-        )?;
-        if hosted_self_call {
-            params.call_auth_flags = 1;
-        }
-        Ok((reducer_def, params))
+            Self::call_reducer_params(
+                owning_def,
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+            )?,
+        ))
     }
 
     async fn call_reducer_with_params(
@@ -2932,7 +2924,7 @@ impl ModuleHost {
             .procedure_by_name_with_module(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
-        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if procedure_def.visibility.is_private() && !self.may_call_private(caller_identity) {
             return Err(ProcedureCallError::NoSuchProcedure);
         }
 
@@ -2954,7 +2946,13 @@ impl ModuleHost {
         ))
     }
 
+    /// Whether `caller_identity` may call private functions: the database itself, as its
+    /// container presents it, or its owner.
     //TODO(shub) #4195: Also allow for collaborators along with owner
+    fn may_call_private(&self, caller_identity: Identity) -> bool {
+        caller_identity == self.info.database_identity || self.is_database_owner(caller_identity)
+    }
+
     fn is_database_owner(&self, caller_identity: Identity) -> bool {
         self.info.owner_identity == caller_identity
     }

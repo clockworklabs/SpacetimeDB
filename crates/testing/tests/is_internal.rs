@@ -1,8 +1,8 @@
 //! Check `is_internal()` in real Rust and C# Wasm modules:
 //! it is true exactly when the sender is the database.
 use serial_test::serial;
-use spacetimedb::host::FunctionArgs;
-use spacetimedb_lib::{AlgebraicValue, Identity};
+use spacetimedb::host::{FunctionArgs, ReducerCallError};
+use spacetimedb_lib::{AlgebraicValue, Identity, ScheduleAt, Timestamp};
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule, DEFAULT_CONFIG};
 use std::time::Duration;
 
@@ -64,4 +64,41 @@ fn check_is_internal(module: &str) {
         .await
         .expect("the scheduled reducer did not observe that it is internal");
     });
+}
+
+/// Private functions, here a scheduled reducer, admit the database itself, as its container
+/// presents it, and its owner, but not other callers.
+#[test]
+#[serial]
+fn private_functions_admit_the_database_itself() {
+    CompiledModule::compile("is-internal-test", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |handle| async move {
+            let module = handle.client.module();
+            let job = || {
+                let row = (1000u64, ScheduleAt::Time(Timestamp::UNIX_EPOCH));
+                FunctionArgs::Bsatn(spacetimedb_lib::bsatn::to_vec(&row).unwrap().into())
+            };
+            // The test harness publishes as `Identity::ZERO`, the owner.
+            let stranger = Identity::ONE;
+            assert!(matches!(
+                module
+                    .call_reducer(stranger, None, None, None, None, "scheduled", job())
+                    .await,
+                Err(ReducerCallError::NoSuchReducer)
+            ));
+            // The owner is admitted, though the reducer itself rejects a caller that is not internal.
+            assert!(module
+                .call_reducer(Identity::ZERO, None, None, None, None, "scheduled", job())
+                .await
+                .is_ok());
+            module
+                .call_reducer(handle.db_identity, None, None, None, None, "scheduled", job())
+                .await
+                .unwrap()
+                .outcome
+                .into_result()
+                .unwrap();
+        },
+    );
 }
