@@ -154,8 +154,8 @@ class JwtClaimsImpl implements JwtClaims {
 }
 
 class AuthCtxImpl implements AuthCtx {
-  public readonly isInternal: boolean;
-
+  // Computed on first use, since it needs a host call to read the database's identity.
+  private readonly _isInternal: () => boolean;
   // Source of the JWT payload string, if there is one.
   private readonly _jwtSource: () => string | null;
   // Whether we have initialized the JWT claims.
@@ -164,11 +164,11 @@ class AuthCtxImpl implements AuthCtx {
   private _senderIdentity: Identity;
 
   private constructor(opts: {
-    isInternal: boolean;
+    isInternal: () => boolean;
     jwtSource: () => string | null;
     senderIdentity: Identity;
   }) {
-    this.isInternal = opts.isInternal;
+    this._isInternal = opts.isInternal;
     this._jwtSource = opts.jwtSource;
     this._senderIdentity = opts.senderIdentity;
   }
@@ -177,7 +177,8 @@ class AuthCtxImpl implements AuthCtx {
     if (this._initializedJWT) return;
     this._initializedJWT = true;
 
-    const token = this._jwtSource();
+    // Internal invocations have no JWT, even when their sender presented one.
+    const token = this.isInternal ? null : this._jwtSource();
     if (!token) {
       this._jwtClaims = null;
     } else {
@@ -185,6 +186,10 @@ class AuthCtxImpl implements AuthCtx {
     }
     // At this point we can safely freeze the object.
     Object.freeze(this);
+  }
+
+  get isInternal(): boolean {
+    return this._isInternal();
   }
 
   /** Lazily compute whether a JWT exists and is parseable. */
@@ -202,26 +207,33 @@ class AuthCtxImpl implements AuthCtx {
   /** Create a context representing internal (non-user) requests. */
   static internal(): AuthCtx {
     return new AuthCtxImpl({
-      isInternal: true,
+      isInternal: () => true,
       jwtSource: () => null,
       senderIdentity: Identity.zero(),
     });
   }
 
-  /** If there is a connection id, look up the JWT payload from the system tables. */
+  /**
+   * The context of an invocation whose sender is `sender`.
+   * It is internal when the sender is this database.
+   * If there is a connection id, the JWT payload is looked up from the system tables.
+   */
   static fromSystemTables(
     connectionId: ConnectionId | null,
     sender: Identity
   ): AuthCtx {
+    let cachedIsInternal: boolean | undefined;
+    const isInternal = () =>
+      (cachedIsInternal ??= sender.isEqual(new Identity(sys.identity())));
     if (connectionId === null) {
       return new AuthCtxImpl({
-        isInternal: false,
+        isInternal,
         jwtSource: () => null,
         senderIdentity: sender,
       });
     }
     return new AuthCtxImpl({
-      isInternal: false,
+      isInternal,
       jwtSource: () => {
         const payloadBuf = sys.get_jwt_payload(connectionId.__connection_id__);
         if (payloadBuf.length === 0) return null;
