@@ -102,3 +102,21 @@ TEST_CASE(internal_invocations_have_no_jwt) {
     ASSERT_TRUE(external.has_jwt());
     ASSERT_EQ(std::string("container"), external.get_jwt()->subject());
 }
+
+TEST_CASE(caller_identity_is_the_sender_with_or_without_a_jwt) {
+    const Identity database(database_identity_bytes);
+    std::array<uint8_t, 32> client_bytes{};
+    client_bytes.fill(3);
+    const Identity client(client_bytes);
+
+    // An HTTP handler transaction, or `init`, has a sender that is neither the database nor backed by a JWT.
+    payload.clear();
+    ASSERT_TRUE(Identity{} == ReducerContext(Identity{}, std::nullopt, Timestamp{}).sender_auth().get_caller_identity());
+    ASSERT_TRUE(client == AuthCtx::from_connection_id_opt(std::nullopt, client).get_caller_identity());
+    ASSERT_TRUE(client == AuthCtx::from_connection_id_opt(ConnectionId(5), client).get_caller_identity());
+
+    payload = R"({"sub":"client"})";
+    ASSERT_TRUE(client == AuthCtx::from_connection_id_opt(ConnectionId(5), client).get_caller_identity());
+    ASSERT_TRUE(database == AuthCtx::from_connection_id_opt(std::nullopt, database).get_caller_identity());
+    ASSERT_TRUE(database == AuthCtx::internal().get_caller_identity());
+}
