@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { schema } from 'spacetimedb/server';
 import { client, cronTable, publicDisabledReason } from '../src/cron';
-import { errors } from '../src/errors';
+import { errors, internalErrors } from '../src/errors';
 
 const expectCode = (code: string) => ({
   message: new RegExp(`^${code}(:|$)`),
@@ -14,15 +14,15 @@ const expectCode = (code: string) => ({
   client({ jobs: [other] });
   assert.throws(
     () => cron.unschedule({} as never, other),
-    expectCode(errors.foreignJobHandle)
+    expectCode(internalErrors.foreignJobHandle)
   );
   assert.throws(
     () => client({ jobs: [{ jobName: 'plain' }] }),
-    expectCode(errors.foreignJobHandle)
+    expectCode(internalErrors.foreignJobHandle)
   );
 }
 
-assert.throws(() => client({ jobs: [] }), expectCode(errors.noJobs));
+assert.throws(() => client({ jobs: [] }), expectCode(internalErrors.noJobs));
 
 {
   const job = cronTable({ name: 'duplicate' });
@@ -82,7 +82,7 @@ assert.throws(() => client({ jobs: [] }), expectCode(errors.noJobs));
   job.cronReducer(spacetimedb, () => {});
   assert.throws(
     () => cron.reconcileReducer(spacetimedb),
-    expectCode(errors.reconcileNotConfigured)
+    expectCode(internalErrors.reconcileNotConfigured)
   );
 }
 
@@ -94,7 +94,7 @@ assert.throws(() => client({ jobs: [] }), expectCode(errors.noJobs));
   cron.reconcileReducer(spacetimedb);
   assert.throws(
     () => cron.reconcileReducer(spacetimedb),
-    expectCode(errors.reconcileReducerAlreadyRegistered)
+    expectCode(internalErrors.reconcileReducerAlreadyRegistered)
   );
 }
 
@@ -105,7 +105,7 @@ assert.throws(() => client({ jobs: [] }), expectCode(errors.noJobs));
   cron.publicViews(spacetimedb);
   assert.throws(
     () => cron.publicViews(spacetimedb),
-    expectCode(errors.publicViewsAlreadyRegistered)
+    expectCode(internalErrors.publicViewsAlreadyRegistered)
   );
 }
 

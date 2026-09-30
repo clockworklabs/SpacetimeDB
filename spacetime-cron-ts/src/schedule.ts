@@ -5,7 +5,7 @@ import {
   nextFireAfter,
   parseCronExpression,
 } from './parser.js';
-import { errors } from './errors.js';
+import { errors, internalErrors } from './errors.js';
 import type { CronSchedule, ScheduleSpec } from './types.js';
 
 export const ONE_SECOND_MICROS = 1_000_000n;
@@ -37,7 +37,7 @@ export function normalizeJobName(name: string): string {
     !JOB_NAME_PATTERN.test(normalized)
   ) {
     throw new CronInputError(
-      `${errors.invalidJobName}:use 1-48 lowercase snake_case characters`
+      `${internalErrors.invalidJobName}:use 1-48 lowercase snake_case characters`
     );
   }
   return normalized;
@@ -47,7 +47,7 @@ export function normalizeHistoryCap(value: number | undefined): number {
   const cap = value ?? 5;
   if (!Number.isSafeInteger(cap) || cap < 0 || cap > MAX_HISTORY_CAP) {
     throw new CronInputError(
-      `${errors.invalidHistoryCap}:must be an integer between 0 and ${MAX_HISTORY_CAP}`
+      `${internalErrors.invalidHistoryCap}:must be an integer between 0 and ${MAX_HISTORY_CAP}`
     );
   }
   return cap;
@@ -63,7 +63,7 @@ export function normalizeReconcileEverySeconds(
     value > MAX_INTERVAL_SECONDS
   ) {
     throw new CronInputError(
-      `${errors.invalidReconcileInterval}:seconds must be an integer between 1 and ${MAX_INTERVAL_SECONDS}`
+      `${internalErrors.invalidReconcileInterval}:seconds must be an integer between 1 and ${MAX_INTERVAL_SECONDS}`
     );
   }
   return value;

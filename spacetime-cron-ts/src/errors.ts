@@ -1,6 +1,30 @@
-/** Codes thrown by cron. Some are followed by `:` and detail text. */
+/**
+ * Codes a caller can receive at runtime. `schedule()` throws the input codes as
+ * `SenderError`s; the disabled-reason codes are stored on the job row. Some are
+ * followed by `:` and detail text.
+ */
 export const errors = {
   notAuthorized: 'cron.not_authorized',
+  // Thrown by `schedule()`.
+  invalidMaxFailures: 'cron.invalid_max_failures',
+  invalidInterval: 'cron.invalid_interval',
+  invalidExpression: 'cron.invalid_expression',
+  invalidTimezone: 'cron.invalid_timezone',
+  unsatisfiableExpression: 'cron.unsatisfiable_expression',
+  missingArgs: 'cron.missing_args',
+  unexpectedArgs: 'cron.unexpected_args',
+  // Stored as a job's disabled reason.
+  invalidScheduleState: 'cron.invalid_schedule_state',
+  invalidArgsState: 'cron.invalid_args_state',
+  invalidTrigger: 'cron.invalid_trigger',
+  noFutureOccurrence: 'cron.no_future_occurrence',
+} as const;
+
+/**
+ * Module-definition and handler programming errors. They fail module loading
+ * or an invocation and are not exported from the package.
+ */
+export const internalErrors = {
   foreignJobHandle: 'cron.foreign_job_handle',
   notWired: 'cron.not_wired',
   noJobs: 'cron.no_jobs',
@@ -21,16 +45,4 @@ export const errors = {
   invalidJobName: 'cron.invalid_job_name',
   invalidHistoryCap: 'cron.invalid_history_cap',
   invalidReconcileInterval: 'cron.invalid_reconcile_interval',
-  invalidMaxFailures: 'cron.invalid_max_failures',
-  invalidInterval: 'cron.invalid_interval',
-  invalidExpression: 'cron.invalid_expression',
-  invalidTimezone: 'cron.invalid_timezone',
-  unsatisfiableExpression: 'cron.unsatisfiable_expression',
-  missingArgs: 'cron.missing_args',
-  unexpectedArgs: 'cron.unexpected_args',
-  // Stored as a job's disabled reason.
-  invalidScheduleState: 'cron.invalid_schedule_state',
-  invalidArgsState: 'cron.invalid_args_state',
-  invalidTrigger: 'cron.invalid_trigger',
-  noFutureOccurrence: 'cron.no_future_occurrence',
 } as const;
