@@ -15,7 +15,7 @@ Use `POST /api/checkout`.
 <!-- /interface -->
 
 <!-- interface:reducer -->
-Use the `checkout` reducer.
+Use the `checkout` reducer with no arguments.
 <!-- /interface -->
 
 <!-- interface:convex -->
