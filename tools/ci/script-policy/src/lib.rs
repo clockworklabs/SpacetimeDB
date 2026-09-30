@@ -158,7 +158,7 @@ fn is_script(path: &Path, contents: &[u8]) -> bool {
     if path
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension, "sh" | "bash" | "py" | "pyw"))
+        .is_some_and(|extension| matches!(extension, "sh" | "bash" | "py" | "pyw" | "python" | "python3"))
     {
         return true;
     }
