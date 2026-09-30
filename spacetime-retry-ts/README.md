@@ -89,7 +89,10 @@ view returns these attempts newest first.
   `reducers.removeRetryAdminIdentity` require a Retry admin.
 - `views.retryTasksAdmin` and `views.retryHistoryAdmin` return up to 1,000
   pending tasks and attempts, newest first, to Retry admins.
-- `errors` holds the `retry.*` codes thrown by these operations.
+- `errors` holds the `retry.*` codes these operations throw as `SenderError`s:
+  `notAuthorized`, `invalidTaskName`, `invalidMaxAttempts`,
+  `invalidBackoffSeconds`, `taskAlreadyExists` (followed by `:` and the task
+  name), and `cannotRemoveLastAdmin`.
 
 The generated client can submit a task when the host exports
 `submitRetryTask`:

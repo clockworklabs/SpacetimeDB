@@ -200,7 +200,7 @@ assert.equal(tasks.size, 2);
 fire({ ...task, args: { tag: 'fails' } });
 assert.equal(history.get(4n)?.error, 'unavailable');
 fire({ ...task, args: { tag: 'toString' } });
-assert.equal(history.get(5n)?.error, `${errors.unknownHandler}:toString`);
+assert.equal(history.get(5n)?.error, 'retry.unknown_handler:toString');
 assert.equal(tasks.size, 4);
 
 // A SenderError gives up on the first attempt without scheduling another.

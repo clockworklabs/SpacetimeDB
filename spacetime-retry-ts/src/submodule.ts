@@ -19,6 +19,7 @@ const MAX_TASK_NAME_LENGTH = 128;
 const MAX_ERROR_LENGTH = 2048;
 const MAX_ROWS = 1000;
 
+/** Codes a caller can receive as a `SenderError`. */
 export const errors = {
   notAuthorized: 'retry.not_authorized',
   invalidTaskName: 'retry.invalid_task_name',
@@ -26,7 +27,6 @@ export const errors = {
   invalidBackoffSeconds: 'retry.invalid_backoff_seconds',
   taskAlreadyExists: 'retry.task_already_exists',
   cannotRemoveLastAdmin: 'retry.cannot_remove_last_admin',
-  unknownHandler: 'retry.unknown_handler',
 } as const;
 
 function retryTaskTable(args: SumBuilder<VariantsObj>) {
@@ -213,7 +213,8 @@ export function client<const Tasks extends RetryTasks>({
     try {
       const { tag } = arg.args;
       if (!Object.prototype.hasOwnProperty.call(handlers, tag)) {
-        throw new Error(`${errors.unknownHandler}:${tag}`);
+        // Only reachable when handlers bypass `RetryHandlers` typing.
+        throw new Error(`retry.unknown_handler:${tag}`);
       }
       result = handlers[tag](ctx, 'value' in arg.args ? arg.args.value : {});
     } catch (error) {
