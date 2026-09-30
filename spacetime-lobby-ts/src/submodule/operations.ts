@@ -203,7 +203,7 @@ function attemptMatch(
     ticket =>
       ticket.ranked === ranked &&
       ticket.matchSize === matchSize &&
-      ticket.expiresAtMicros > now
+      ticket.expiresAt.microsSinceUnixEpoch > now
   );
   if (queued.length < matchSize) return undefined;
 
@@ -316,9 +316,10 @@ function enqueue(
     roomId: undefined,
     createdAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
-    expiresAtMicros:
+    expiresAt: new Timestamp(
       ctx.timestamp.microsSinceUnixEpoch +
-      BigInt(ttlSeconds) * ONE_SECOND_MICROS,
+        BigInt(ttlSeconds) * ONE_SECOND_MICROS
+    ),
   });
 
   const roomId = attemptMatch(ctx, pool, matchSize, ranked !== undefined);
@@ -554,12 +555,11 @@ function deleteRoom(ctx: WriteCtx, room: RoomRow): void {
 /** One bounded cleanup pass. Runs on the schedule `install` creates. */
 function sweep(ctx: WriteCtx): void {
   const config = getConfig(ctx);
-  const now = ctx.timestamp.microsSinceUnixEpoch;
 
   for (const ticket of take(
     ctx.db.lobbyQueueTicket.byStatusExpiresAt.filter([
       TicketStatus.Queued,
-      new Range(undefined, { tag: 'included', value: now }),
+      new Range(undefined, { tag: 'included', value: ctx.timestamp }),
     ]),
     SWEEP_BATCH
   )) {
@@ -710,7 +710,7 @@ export const addLobbyAdmin = spacetimedb.reducer(
     if (ctx.db.lobbyAdminIdentity.identity.find(args.identity) != null) return;
     ctx.db.lobbyAdminIdentity.insert({
       identity: args.identity,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
 );

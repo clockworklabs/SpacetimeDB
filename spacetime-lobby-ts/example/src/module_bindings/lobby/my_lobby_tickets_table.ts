@@ -30,5 +30,5 @@ export default __t.row({
   roomId: __t.option(__t.u64()).name("room_id"),
   createdAt: __t.timestamp().name("created_at"),
   updatedAt: __t.timestamp().name("updated_at"),
-  expiresAtMicros: __t.i64().name("expires_at_micros"),
+  expiresAt: __t.timestamp().name("expires_at"),
 });

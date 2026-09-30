@@ -72,7 +72,7 @@ export const lobbyAdminIdentity = table(
   { name: 'lobby_admin_identity', public: false },
   {
     identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
+    addedAt: t.timestamp(),
   }
 );
 
@@ -97,7 +97,7 @@ export const lobbyQueueTicket = table(
       {
         accessor: 'byStatusExpiresAt',
         algorithm: 'btree',
-        columns: ['status', 'expiresAtMicros'],
+        columns: ['status', 'expiresAt'],
       },
       {
         accessor: 'bySubjectStatus',
@@ -120,7 +120,7 @@ export const lobbyQueueTicket = table(
     roomId: t.option(t.u64()),
     createdAt: t.timestamp(),
     updatedAt: t.timestamp(),
-    expiresAtMicros: t.i64(),
+    expiresAt: t.timestamp(),
   }
 );
 

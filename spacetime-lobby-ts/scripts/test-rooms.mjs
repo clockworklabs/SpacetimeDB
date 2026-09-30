@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Timestamp } from 'spacetimedb';
 import { RoomStatus, SeatStatus } from '../src/submodule/schema.ts';
 import {
+  joinQueueForSubject,
   joinRoomForSubject,
   leaveRoomForSubject,
   reportMatchResult,
@@ -12,9 +13,21 @@ const rooms = new Map();
 const seats = new Map();
 const ratings = new Map();
 const results = [];
+const tickets = new Map();
 const tx = {
   timestamp: new Timestamp(1n),
+  newUuidV7: () => `u${tickets.size}`,
   db: {
+    lobbyConfig: {
+      singleton: {
+        find: () => ({ maxMatchSize: 16, defaultTicketTtlSeconds: 60 }),
+      },
+    },
+    lobbyQueueTicket: {
+      bySubjectStatus: { filter: () => [] },
+      byPoolStatusCreatedAt: { filter: () => [...tickets.values()] },
+      insert: row => (tickets.set(row.ticketId, row), row),
+    },
     lobbyRoom: {
       roomId: {
         find: id => rooms.get(id),
@@ -73,6 +86,26 @@ assert.ok(ratings.get('4:duel3:bob').rating < 1000);
 assert.throws(
   () => reportMatchResult(tx, { roomId: 1n, winnerSubject: 'bob' }),
   error => error.message === 'lobby.room_not_active'
+);
+
+// Queue expiry is a timestamp, and expired tickets never match.
+tickets.set('stale', {
+  ticketId: 'stale',
+  subject: 'carol',
+  ranked: false,
+  matchSize: 2,
+  expiresAt: new Timestamp(1n),
+});
+const queued = joinQueueForSubject(tx, {
+  pool: 'duel',
+  subject: 'dave',
+  matchSize: 2,
+  ttlSeconds: 5,
+});
+assert.equal(queued.roomId, undefined);
+assert.equal(
+  tickets.get(queued.ticketId).expiresAt.microsSinceUnixEpoch,
+  5_000_001n
 );
 
 process.stdout.write('lobby room tests passed\n');

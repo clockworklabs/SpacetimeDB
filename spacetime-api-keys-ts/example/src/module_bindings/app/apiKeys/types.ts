@@ -31,7 +31,7 @@ export type ApiKey = __Infer<typeof ApiKey>;
 
 export const ApiKeyAdminIdentity = __t.object("ApiKeyAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type ApiKeyAdminIdentity = __Infer<typeof ApiKeyAdminIdentity>;
 

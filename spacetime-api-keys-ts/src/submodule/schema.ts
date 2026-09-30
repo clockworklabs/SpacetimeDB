@@ -39,7 +39,7 @@ export const apiKeyAdminIdentity = table(
   { name: 'api_key_admin_identity', public: false },
   {
     identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
+    addedAt: t.timestamp(),
   }
 );
 

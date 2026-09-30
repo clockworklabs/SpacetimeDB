@@ -12,7 +12,7 @@ import {
 
 export const LobbyAdminIdentity = __t.object("LobbyAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type LobbyAdminIdentity = __Infer<typeof LobbyAdminIdentity>;
 
@@ -81,7 +81,7 @@ export const LobbyQueueTicket = __t.object("LobbyQueueTicket", {
   roomId: __t.option(__t.u64()),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
-  expiresAtMicros: __t.i64(),
+  expiresAt: __t.timestamp(),
 });
 export type LobbyQueueTicket = __Infer<typeof LobbyQueueTicket>;
 

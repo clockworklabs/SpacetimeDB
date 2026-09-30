@@ -8,7 +8,7 @@ export function install(ctx: ReducerModuleCtx) {
   if (ctx.db.apiKeyAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.apiKeyAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   if (ctx.db.apiKeySweepTick.count() === 0n) {

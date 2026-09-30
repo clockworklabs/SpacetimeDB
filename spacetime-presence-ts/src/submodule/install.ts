@@ -12,7 +12,7 @@ export function install(ctx: InstallCtx) {
   if (ctx.db.presenceAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.presenceAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   installPresenceConfig(ctx);

@@ -12,7 +12,7 @@ import {
 
 export const PresenceAdminIdentity = __t.object("PresenceAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type PresenceAdminIdentity = __Infer<typeof PresenceAdminIdentity>;
 

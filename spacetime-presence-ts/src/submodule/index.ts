@@ -31,7 +31,7 @@ const presenceAdminIdentity = table(
   { name: 'presence_admin_identity', public: false },
   {
     identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
+    addedAt: t.timestamp(),
   }
 );
 
@@ -134,7 +134,7 @@ export const addPresenceAdmin = spacetimedb.reducer(
     if (ctx.db.presenceAdminIdentity.identity.find(args.identity) == null) {
       ctx.db.presenceAdminIdentity.insert({
         identity: args.identity,
-        addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+        addedAt: ctx.timestamp,
       });
     }
   }

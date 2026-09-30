@@ -613,7 +613,7 @@ export const addApiKeysAdmin = spacetimedb.reducer(
     if (ctx.db.apiKeyAdminIdentity.identity.find(args.identity) == null) {
       ctx.db.apiKeyAdminIdentity.insert({
         identity: args.identity,
-        addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+        addedAt: ctx.timestamp,
       });
     }
   }

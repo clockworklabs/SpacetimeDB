@@ -18,7 +18,7 @@ export function install(ctx: ReducerModuleCtx) {
   if (ctx.db.lobbyAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.lobbyAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   if (ctx.db.lobbySweepTick.count() === 0n) {
