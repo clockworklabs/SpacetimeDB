@@ -14,7 +14,8 @@ import { assertQualificationSliceCoverage, unchangedQualificationChecks,
   validateQualificationDocuments } from './qualification-slices.js';
 import type { QualificationDocuments } from './qualification-slices.js';
 import { missingRunnerObservation, runnerEnvironmentIdentity } from '../runtime/runner-environment.js';
-import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.js';
+import { qualificationScopeIdentity, validateQualificationScopeIdentity,
+  type QualificationScopeInput } from './qualification-scope.js';
 import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-release.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
@@ -147,6 +148,10 @@ export interface CalibrationContext {
   execution: RecipeExecution[];
   stackBenchRoot: string;
   qualificationDocuments?: QualificationDocuments;
+  // Many slices share one snapshot. With qualificationDocuments fixed, its
+  // validated documents and unchanged checks are the same for each slice.
+  snapshots?: Map<string, { snapshot: UnknownRecord; source: QualificationDocuments; unchanged?: Set<string> }>;
+  scopeGraphs?: QualificationScopeInput['graphs'];
 }
 
 export interface CalibrationIdentity {
@@ -903,10 +908,16 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const { calibration, release, stackBenchRoot } = context;
   const slice = entry.slice!;
   const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
-  const [snapshotRef] = verifyEvidence([slice.snapshot], stackBenchRoot, `${at}.snapshot`);
-  const snapshot = readDefinitionJson(resolve(stackBenchRoot, snapshotRef!.path), 'qualification snapshot');
-  strictObject(snapshot, `${at}.snapshot`, new Set(['documents', 'calibration', 'mutations']));
-  const source = validateQualificationDocuments(snapshot.documents);
+  const snapshotKey = `${slice.snapshot.path}:${slice.snapshot.sha256}`;
+  let saved = context.snapshots?.get(snapshotKey);
+  if (!saved) {
+    const [snapshotRef] = verifyEvidence([slice.snapshot], stackBenchRoot, `${at}.snapshot`);
+    const snapshot = readDefinitionJson(resolve(stackBenchRoot, snapshotRef!.path), 'qualification snapshot');
+    strictObject(snapshot, `${at}.snapshot`, new Set(['documents', 'calibration', 'mutations']));
+    saved = { snapshot, source: validateQualificationDocuments(snapshot.documents) };
+    context.snapshots?.set(snapshotKey, saved);
+  }
+  const { snapshot, source } = saved;
   if (!isObject(snapshot.calibration)) evidenceFailure(at, 'has no source calibration');
   const sourceCalibration = snapshot.calibration as unknown as CalibrationPlan;
   const reuse = calibration.qualificationReuse;
@@ -981,7 +992,8 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const trackRoot = resolve(stackBenchRoot, 'tracks', release.track);
   const current = context.qualificationDocuments ?? validateQualificationDocuments(buildRecipeQualificationDocuments(
     resolve(trackRoot, calibration.recipe.path), { trackRoot }));
-  const unchanged = unchangedQualificationChecks(source, current, reuse?.contractTextEquivalences);
+  const unchanged = saved.unchanged ?? unchangedQualificationChecks(source, current, reuse?.contractTextEquivalences);
+  if (context.qualificationDocuments) saved.unchanged = unchanged;
   if (slice.checks.some(key => !unchanged.has(key))) evidenceFailure(at,
     'claims a changed check, setup, or shared dependency');
 
@@ -1053,7 +1065,7 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   const expected = qualificationScopeIdentity({ kind: measuredKind, release: sourceSelection.release,
     stack: entry.stack ?? null, reference: entry.kind === 'null' ? null
       : sourceReference,
-    mutation: selectedMutation, stackBenchRoot });
+    mutation: selectedMutation, stackBenchRoot, graphs: context.scopeGraphs });
   const { sha256: _actualSha, executableSha256: actualExecutable, ...actualInputs } = actual;
   const { sha256: _expectedSha, executableSha256: expectedExecutable, ...expectedInputs } = expected;
   if (canonicalDefinitionJson(actualInputs) !== canonicalDefinitionJson(expectedInputs)) {
@@ -1078,6 +1090,7 @@ function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchR
   const qualificationDocuments = entries.some(entry => entry.slice)
     ? validateQualificationDocuments(buildRecipeQualificationDocuments(
       resolve(trackRoot, context.calibration.recipe.path), { trackRoot })) : undefined;
+  const snapshots = new Map(), scopeGraphs = new Map();
   normalized.forEach((entry, index) => {
     let artifact = artifacts.get(entry.path);
     if (!artifact) {
@@ -1089,7 +1102,7 @@ function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchR
       artifacts.set(entry.path, artifact);
     }
     if (entry.slice) {
-      validateQualificationSlice(artifact, entry, { ...context, stackBenchRoot, qualificationDocuments });
+      validateQualificationSlice(artifact, entry, { ...context, stackBenchRoot, qualificationDocuments, snapshots, scopeGraphs });
     } else {
       validateQualificationEvidenceArtifact(artifact, entry,
         { ...context, stackBenchRoot, enforceQualificationScope: false });
@@ -1497,8 +1510,10 @@ export function calibrationCoversAlias(calibration: CalibrationPlan,
 }
 
 export function resolveCalibrationForRelease(release: RecipeRelease | null,
-  { trackRoot, stackBenchRoot, alias = null }:
-    { trackRoot: string; stackBenchRoot?: string; alias?: string | null }): CalibrationPlan | null {
+  { trackRoot, stackBenchRoot, alias = null, compiled }:
+    { trackRoot: string; stackBenchRoot?: string; alias?: string | null;
+      // A caller whose files cannot change may share compiles, keyed by file and release.
+      compiled?: Map<string, CalibrationPlan | Error> }): CalibrationPlan | null {
   if (!release) return null;
   const root = realpathSync(resolve(trackRoot));
   const directory = join(root, 'composition', 'calibrations');
@@ -1509,7 +1524,15 @@ export function resolveCalibrationForRelease(release: RecipeRelease | null,
     const raw = readDefinitionJson(path, 'calibration');
     if (read(raw, 'recipe', 'id') !== release.id
       || read(raw, 'recipe', 'contentSha256') !== release.contentSha256) continue;
-    matches.push(compileCalibrationFile(path, { trackRoot: root, stackBenchRoot, release }));
+    const key = `${path}:${release.contentSha256}:${stackBenchRoot ?? ''}`;
+    let plan = compiled?.get(key);
+    if (!plan) {
+      try { plan = compileCalibrationFile(path, { trackRoot: root, stackBenchRoot, release }); }
+      catch (error) { plan = error instanceof Error ? error : new Error(String(error)); }
+      compiled?.set(key, plan);
+    }
+    if (plan instanceof Error) throw plan;
+    matches.push(structuredClone(plan));
   }
   const selected = alias === null ? matches : matches.filter(calibration => {
     const selectionPath = resolve(root, calibration.selection.path);

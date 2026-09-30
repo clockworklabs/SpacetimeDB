@@ -12,6 +12,8 @@ import { campaignLockIsActive, readCampaignLock } from '../src/campaigns/campaig
 import { readDepthPause } from '../src/campaigns/campaign-depth-pause.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { campaignFacts, inspectCampaignAttempt } from '../src/campaigns/campaign-inspection.js';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+import type { CalibrationPlan } from '../src/composition/calibration-compiler.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
 import { repairBudgetLimit } from '../src/progression/repair-plan.js';
@@ -26,6 +28,12 @@ const CAMPAIGN_ARTIFACT = /^(?:plan\.json|state\.json|report\/(?:report\.(?:html
 const EXECUTION_ARTIFACT = /^(?:run\.json|preflight\.json|recovery\.json|progression-state\.json|process\.json|process\.(?:stdout|stderr)\.log|backend\.log|level-l\d+-checkpoint\.json|progression\/attempt-\d+\/(?:bundle\.json|contract-lint\.json|actions\.json|grading-[^/]+\.json|failure-media\/[^/]+\.(?:png|jpe?g|webp))|(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)\/(?:bundle\.json|contract-lint\.json|actions\.json|grading-[^/]+\.json|failure-media\/[^/]+\.(?:png|jpe?g|webp)))$/i;
 
 type ControllerActive = (directory: string, campaign: CompiledCampaignPlan) => boolean;
+
+// The dashboard serves one unchanging build, so each calibration is compiled
+// and its qualification evidence verified once, not on every campaign read.
+const compiledCalibrations = new Map<string, CalibrationPlan | Error>();
+export const calibrationResolver: typeof resolveCalibrationForRelease = (release, options) =>
+  resolveCalibrationForRelease(release, { ...options, compiled: compiledCalibrations });
 
 export interface DashboardArtifact {
   id: string;
@@ -375,7 +383,7 @@ export function summarizeCampaign(directory: string, {
     interrupted,
     ...(interrupted ? { statusReason: 'The campaign controller is no longer running.' } : {}),
     budgets: plan.definition.budgets,
-    facts: campaignFacts(plan),
+    facts: campaignFacts(plan, { calibrationResolver }),
     attempts,
     ...(includePackage ? { package: campaignPackage(directory, state.attempts) } : {}),
   };

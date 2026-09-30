@@ -67,6 +67,13 @@ export interface QualificationScopeInput {
   reference?: QualificationReference | null;
   mutation?: QualificationMutation | null;
   stackBenchRoot: string;
+  // Reused across calls over one unchanged root, such as one evidence check.
+  graphs?: Map<string, ScopeGraph>;
+}
+
+interface ScopeGraph {
+  hashed: { sha256: string };
+  registries: { name: string; sha256: string }[];
 }
 
 const KINDS = new Set<QualificationKind>(['reference', 'mutation', 'null']);
@@ -292,7 +299,7 @@ function checkIdentity(release: QualificationRelease): string {
 }
 
 export function qualificationScopeIdentity({ kind, release, stack = null, reference = null,
-  mutation = null, stackBenchRoot }: QualificationScopeInput): QualificationScopeIdentity {
+  mutation = null, stackBenchRoot, graphs }: QualificationScopeInput): QualificationScopeIdentity {
   if (!KINDS.has(kind)) fail(`unknown evidence kind ${JSON.stringify(kind)}`);
   const root = resolve(stackBenchRoot);
   if (!existsSync(root)) fail(`Stack Bench root does not exist: ${root}`);
@@ -315,22 +322,30 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
     if (kind === 'reference' && mutation !== null) fail('reference evidence cannot declare a mutation');
   }
 
-  const files = moduleGraph(root, [...KIND_ENTRYPOINTS[kind],
-    ...(stack === null ? [] : stackAssets(root, stack).map(path => relative(root, path)))], { stack });
-  const registries = files.filter(path => REGISTRY_MODULES.has(relative(root, path).replaceAll('\\', '/')));
-  for (const input of RUNTIME_INPUTS) {
-    const path = resolve(root, input);
-    if (!existsSync(path)) fail(`mapped runtime input does not exist: ${input}`);
-    files.push(path);
+  const graphKey = `${kind}:${stack ?? ''}:${release.track}`;
+  let graph = graphs?.get(graphKey);
+  if (!graph) {
+    const files = moduleGraph(root, [...KIND_ENTRYPOINTS[kind],
+      ...(stack === null ? [] : stackAssets(root, stack).map(path => relative(root, path)))], { stack });
+    const registries = files.filter(path => REGISTRY_MODULES.has(relative(root, path).replaceAll('\\', '/')));
+    for (const input of RUNTIME_INPUTS) {
+      const path = resolve(root, input);
+      if (!existsSync(path)) fail(`mapped runtime input does not exist: ${input}`);
+      files.push(path);
+    }
+    const trackWalk = resolve(root, 'tracks', release.track, 'walk.ts');
+    if (!existsSync(trackWalk)) fail(`mapped track walk does not exist: tracks/${release.track}/walk.ts`);
+    files.push(trackWalk);
+    graph = {
+      hashed: hashFiles(files.filter(path => !registries.includes(path)), { base: root, lineEndings: 'lf' }),
+      registries: registries.map(path => ({ name: relative(root, path).replaceAll('\\', '/'),
+        sha256: sha256(registryProjection(path, root, stack)) })).sort((a, b) => a.name.localeCompare(b.name)),
+    };
+    graphs?.set(graphKey, graph);
   }
-  const trackWalk = resolve(root, 'tracks', release.track, 'walk.ts');
-  if (!existsSync(trackWalk)) fail(`mapped track walk does not exist: tracks/${release.track}/walk.ts`);
-  files.push(trackWalk);
-  const hashed = hashFiles(files.filter(path => !registries.includes(path)), { base: root, lineEndings: 'lf' });
-  const executable = stack === null && registries.length === 0 ? hashed : { sha256: sha256(canonicalDefinitionJson({
-    files: hashed.sha256,
-    registries: registries.map(path => ({ name: relative(root, path).replaceAll('\\', '/'),
-      sha256: sha256(registryProjection(path, root, stack)) })).sort((a, b) => a.name.localeCompare(b.name)),
+  const executable = stack === null && graph.registries.length === 0 ? graph.hashed : { sha256: sha256(canonicalDefinitionJson({
+    files: graph.hashed.sha256,
+    registries: graph.registries,
     ...(stack === null ? {} : { interface: sha256(stackInterfaceText(root, release, stack)) }),
   })) };
   const adapter = stack === null ? null : { id: stack, version: stackAdapterVersion(stack) };

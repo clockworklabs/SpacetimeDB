@@ -33,7 +33,7 @@ import { CHECK_EVIDENCE_STATUSES, evidenceDisposition, type CheckEvidence } from
 import { renderFinding } from '../src/actions/action-findings.js';
 import { repairBudgetLimit, type RepairBudget } from '../src/progression/repair-plan.js';
 import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail, attemptPause,
-  walkPublicExecutionArtifacts } from './dashboard-model.js';
+  walkPublicExecutionArtifacts, calibrationResolver } from './dashboard-model.js';
 import type { DashboardArtifact } from './dashboard-model.js';
 import { attemptExcluded, attemptMetrics, attemptStalling, compareCampaign, median }
   from './public/metrics.js';
@@ -379,7 +379,7 @@ function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
   const mode = plan.definition.mode;
   const policy = plan.dependencyPolicy?.definition ?? null;
   const agent = plan.agents[0] ?? null;
-  const facts = campaignFacts(plan);
+  const facts = campaignFacts(plan, { calibrationResolver });
   return {
     mode: mode.id,
     workSelection: policy?.workSelection ?? mode.workSelection ?? null,
@@ -568,7 +568,7 @@ export function campaignSheet(resultsRoot: string, key: string,
     mode: plan.definition.mode?.id ?? 'sequential',
     levels: plan.definition.levels,
     repetitions: plan.definition.repetitions,
-    provisional: campaignFacts(plan).grading.status !== 'qualified',
+    provisional: campaignFacts(plan, { calibrationResolver }).grading.status !== 'qualified',
     mixedScope: comparison.mixedScope,
     executions: state.summary.executions,
     resumable: dependency && state.status === 'prepared' && state.summary.executions > 0,

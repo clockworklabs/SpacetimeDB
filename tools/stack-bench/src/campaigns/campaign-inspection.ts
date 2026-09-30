@@ -15,6 +15,7 @@ import { campaignCohortKey, campaignComparisonKey, executionSpend, campaignFirst
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recordedExecutionSpend, type RunCheckpoint } from '../evidence/run-checkpoints.js';
 import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
+import type { CompilerOptions } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
@@ -190,11 +191,11 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
   }
 }
 
-export function campaignFacts(plan: CompiledCampaignPlan) {
+export function campaignFacts(plan: CompiledCampaignPlan, options: CompilerOptions = {}) {
   const requested = plan.attempts[0]?.condition.requested.levels;
   return {
     mode: plan.definition.mode?.id ?? 'sequential',
-    grading: campaignGradingQualification(plan),
+    grading: campaignGradingQualification(plan, options),
     agents: plan.agents.map(agent => ({
       adapter: agent.adapter,
       version: agent.adapterVersion,
