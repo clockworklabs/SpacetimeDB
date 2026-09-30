@@ -31,7 +31,7 @@
       {
         "backend": "spacetime",
         "id": "ecommerce-reference-spacetime",
-        "sourceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+        "sourceSha256": "138a473bca882a5111d1c8db0322298ffc88e97eb69cd7ef23621c0ca0ed2063"
       },
       {
         "backend": "convex",
@@ -56,7 +56,7 @@
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "33a3def03342ee8174ce00bce5306c31893f814bb3e9320b1a59c9aaac1025d0",
+      "sha256": "6b9cf6fad8291454bcfd4790f7a0cd6a2224547aebf2f74ce4344c9fa50c6bbc",
       "referenceId": "ecommerce-reference-spacetime"
     },
     {
