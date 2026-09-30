@@ -202,7 +202,7 @@ export function enqueueEventInTx(
     status,
     attempts: 0,
     claimId: undefined,
-    claimExpiresAtMicros: 0n,
+    claimExpiresAt: Timestamp.UNIX_EPOCH,
     nextAttemptAt: ctx.timestamp,
     lastStatusCode: undefined,
     lastError: error,
@@ -273,16 +273,15 @@ function logDelivery(
 }
 
 function claimQueuedRows(ctx: WriteCtx, limit: number) {
-  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
   const expiredClaims = takeRows(
-    ctx.db.posthogOutbox.byStatusClaimExpiresAtMicros.filter([
+    ctx.db.posthogOutbox.byStatusClaimExpiresAt.filter([
       OutboxStatus.Processing,
-      new Range(undefined, { tag: 'included', value: nowMicros }),
+      new Range(undefined, { tag: 'included', value: ctx.timestamp }),
     ]),
     MAX_EXPIRED_CLAIMS_PER_FLUSH
   );
   for (const row of expiredClaims) {
-    if (!claimHasExpired(row, nowMicros)) continue;
+    if (!claimHasExpired(row, ctx.timestamp)) continue;
     ctx.db.posthogOutbox.outboxId.update(
       releaseExpiredClaim(row, ctx.timestamp)
     );
@@ -296,8 +295,11 @@ function claimQueuedRows(ctx: WriteCtx, limit: number) {
     limit
   );
   const claimId = ctx.newUuidV7().toString();
+  const expiresAt = new Timestamp(
+    ctx.timestamp.microsSinceUnixEpoch + CLAIM_TTL_MICROS
+  );
   const claimed = rows.map(row =>
-    claimOutboxRow(row, claimId, nowMicros + CLAIM_TTL_MICROS, ctx.timestamp)
+    claimOutboxRow(row, claimId, expiresAt, ctx.timestamp)
   );
   for (const row of claimed) ctx.db.posthogOutbox.outboxId.update(row);
   return { claimId, rows: claimed };

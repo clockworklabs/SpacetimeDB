@@ -50,7 +50,7 @@ export const posthogAdminIdentity = table(
   { name: 'posthog_admin_identity', public: false },
   {
     identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
+    addedAt: t.timestamp(),
   }
 );
 
@@ -72,9 +72,9 @@ export const posthogOutbox = table(
         columns: ['status', 'nextAttemptAt'],
       },
       {
-        accessor: 'byStatusClaimExpiresAtMicros',
+        accessor: 'byStatusClaimExpiresAt',
         algorithm: 'btree',
-        columns: ['status', 'claimExpiresAtMicros'],
+        columns: ['status', 'claimExpiresAt'],
       },
       {
         accessor: 'byStatusUpdatedAt',
@@ -93,7 +93,7 @@ export const posthogOutbox = table(
     status: outboxStatus,
     attempts: t.u32(),
     claimId: t.option(t.string()),
-    claimExpiresAtMicros: t.i64(),
+    claimExpiresAt: t.timestamp(),
     nextAttemptAt: t.timestamp(),
     lastStatusCode: t.option(t.u16()),
     lastError: t.option(t.string()),

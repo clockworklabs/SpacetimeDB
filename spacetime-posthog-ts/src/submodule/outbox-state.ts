@@ -1,3 +1,4 @@
+import { Timestamp } from 'spacetimedb';
 import { truncateForLog } from './http.js';
 
 export const MAX_DELIVERY_ATTEMPTS = 5;
@@ -8,7 +9,7 @@ type OutboxRow = {
   status: { tag: string };
   attempts: number;
   claimId?: string | undefined;
-  claimExpiresAtMicros: bigint;
+  claimExpiresAt: Timestamp;
   nextAttemptAt: unknown;
   lastStatusCode?: number | undefined;
   lastError?: string | undefined;
@@ -17,10 +18,10 @@ type OutboxRow = {
 };
 
 export function claimHasExpired(
-  row: Pick<OutboxRow, 'claimExpiresAtMicros'>,
-  nowMicros: bigint
+  row: Pick<OutboxRow, 'claimExpiresAt'>,
+  now: Timestamp
 ): boolean {
-  return row.claimExpiresAtMicros <= nowMicros;
+  return row.claimExpiresAt.microsSinceUnixEpoch <= now.microsSinceUnixEpoch;
 }
 
 export function retryDelayMicros(attempt: number): bigint {
@@ -37,7 +38,7 @@ export function releaseExpiredClaim<T extends OutboxRow>(
     ...row,
     status: { tag: 'Queued' },
     claimId: undefined,
-    claimExpiresAtMicros: 0n,
+    claimExpiresAt: Timestamp.UNIX_EPOCH,
     nextAttemptAt: timestamp,
     updatedAt: timestamp,
   };
@@ -62,7 +63,7 @@ export function requeueFailedRow<T extends OutboxRow>(
     status: { tag: 'Queued' },
     attempts: 0,
     claimId: undefined,
-    claimExpiresAtMicros: 0n,
+    claimExpiresAt: Timestamp.UNIX_EPOCH,
     nextAttemptAt: timestamp,
     updatedAt: timestamp,
   };
@@ -71,14 +72,14 @@ export function requeueFailedRow<T extends OutboxRow>(
 export function claimOutboxRow<T extends OutboxRow>(
   row: T,
   claimId: string,
-  expiresAtMicros: bigint,
+  expiresAt: Timestamp,
   timestamp: T['updatedAt']
 ): T {
   return {
     ...row,
     status: { tag: 'Processing' },
     claimId,
-    claimExpiresAtMicros: expiresAtMicros,
+    claimExpiresAt: expiresAt,
     updatedAt: timestamp,
   };
 }
@@ -103,7 +104,7 @@ export function settleOutboxClaim<T extends OutboxRow>(
         : { tag: 'Queued' },
     attempts,
     claimId: undefined,
-    claimExpiresAtMicros: 0n,
+    claimExpiresAt: Timestamp.UNIX_EPOCH,
     nextAttemptAt: terminal ? timestamp : retryAt,
     lastStatusCode: result.statusCode,
     lastError: result.ok ? undefined : truncateForLog(result.responseBody),

@@ -8,7 +8,7 @@ export function install(ctx: ReducerModuleCtx) {
   if (ctx.db.posthogAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.posthogAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   if (ctx.db.posthogFlushTick.count() === 0n) {
