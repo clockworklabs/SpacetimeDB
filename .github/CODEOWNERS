@@ -11,7 +11,7 @@ LICENSE.txt @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/commands/keynote-bench/ @joshua-spacetime @cloutiertyler @jdetter
 /tools/ci/commands/codeowners-check/ @cloutiertyler
-/tools/ci/commands/new-script-check/ @bfops @cloutiertyler @jdetter
+/tools/ci/commands/new-script-check/ @cloutiertyler
 /tools/upgrade-version/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/release/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/license-check/ @bfops @jdetter @cloutiertyler
