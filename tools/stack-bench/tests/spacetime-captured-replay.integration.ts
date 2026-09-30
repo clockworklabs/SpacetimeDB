@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -19,6 +19,8 @@ import { createBackendLease, writeBackendLease } from '../src/runtime/backend-le
 // reconnects and unsupported protocol use UI BEFORE sending. Once sent, refusal
 // fails; lost/malformed replies, collisions and timeout are inconclusive. None
 // may retry through the form. All other values and the live connection survive.
+// An app may proxy the leased database through its own origin under any prefix;
+// the database layout then comes from the lease, not the app.
 test('SpacetimeDB catalog replay preserves the caller and never retries a sent write', async () => {
   const codec = await import(new URL('../src/stacks/spacetime-wire-codec.js', import.meta.url).href);
   const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
@@ -35,21 +37,31 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
   };
   let mode = '', calls = 0, connections = 0, page: Page;
   const rows: string[] = [], observations: unknown[] = [];
+  const schema = (res: ServerResponse) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ reducers: [{ name: 'catalog_add', params: { elements: [
+      { name: { some: 'title' }, algebraic_type: mode === 'unsupported-schema' ? { Array: { U8: [] } } : { String: [] } },
+      { name: { some: 'nonce' }, algebraic_type: { String: [] } },
+    ] } }] }));
+  };
+  const database = createServer((req, res) => {
+    if (new URL(req.url!, 'http://localhost').pathname === '/v1/database/catalog/schema') schema(res);
+    else res.writeHead(404).end();
+  }).listen(0, '127.0.0.1');
+  await once(database, 'listening');
+  const databaseUrl = `http://127.0.0.1:${(database.address() as { port: number }).port}`;
   const server = createServer(async (req, res) => {
     const url = new URL(req.url!, 'http://localhost');
     if (url.pathname.endsWith('/schema')) {
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ reducers: [{ name: 'catalog_add', params: { elements: [
-        { name: { some: 'title' }, algebraic_type: mode === 'unsupported-schema' ? { Array: { U8: [] } } : { String: [] } },
-        { name: { some: 'nonce' }, algebraic_type: { String: [] } },
-      ] } }] }));
+      if (mode === 'app-proxy') res.writeHead(404).end();
+      else schema(res);
     } else if (url.pathname === '/encode') {
       res.end(callBytes(url.searchParams.get('name')!, Number(url.searchParams.get('id')), url.searchParams.get('nonce')!));
     } else {
       res.setHeader('Content-Type', 'text/html');
       res.end(`<input data-role="name"><button data-role="save">Save</button><script>
         window.formSubmits=0; window.replies=0;
-        window.socket=new WebSocket(location.origin.replace('http:','ws:')+'/v1/database/catalog/subscribe', ${JSON.stringify(mode === 'unsupported-protocol' ? 'unknown.protocol' : 'v3.bsatn.spacetimedb')});
+        window.socket=new WebSocket(location.origin.replace('http:','ws:')+${JSON.stringify(mode === 'app-proxy' ? '/stdb' : '')}+'/v1/database/catalog/subscribe', ${JSON.stringify(mode === 'unsupported-protocol' ? 'unknown.protocol' : 'v3.bsatn.spacetimedb')});
         socket.binaryType='arraybuffer'; socket.onmessage=()=>window.replies++;
         document.querySelector('button').onclick=async()=>{window.formSubmits++;
           const name=document.querySelector('input').value;
@@ -92,10 +104,10 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
   const browser = await chromium.launch();
   let result = 'failed';
   try {
-    for (mode of ['accepted', 'changing-argument', 'unsupported-schema', 'unsupported-protocol', 'unconfirmed', 'wrong-module', 'reconnect', 'refused', 'lost', 'malformed', 'collision', 'timeout']) {
+    for (mode of ['accepted', 'app-proxy', 'changing-argument', 'unsupported-schema', 'unsupported-protocol', 'unconfirmed', 'wrong-module', 'reconnect', 'refused', 'lost', 'malformed', 'collision', 'timeout']) {
       calls = 0; connections = 0; rows.length = 0;
       const lease = createBackendLease({ runId: 'native-replay', backend: 'spacetime', track: 'ecommerce', runIndex: 0,
-        serverUri: url, module: mode === 'wrong-module' ? 'other-module' : 'catalog', dataDir: join(root, 'data') });
+        serverUri: mode === 'app-proxy' ? databaseUrl : url, module: mode === 'wrong-module' ? 'other-module' : 'catalog', dataDir: join(root, 'data') });
       lease.state = 'active'; writeBackendLease(leasePath, lease);
       process.env.STACK_BENCH_LEASE = leasePath; process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
       const context = await browser.newContext();
@@ -129,7 +141,7 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
         }, { capabilities: { actors: { get: () => actor }, 'browser-interaction': interaction,
           'transport-observation': interaction, 'named-actions': { fetch } } });
         await page.waitForTimeout(50);
-        const native = ['accepted', 'refused', 'lost', 'malformed', 'collision', 'timeout'].includes(mode);
+        const native = ['accepted', 'app-proxy', 'refused', 'lost', 'malformed', 'collision', 'timeout'].includes(mode);
         assert.equal(await page.evaluate(() => (window as unknown as { formSubmits: number }).formSubmits), native ? 2 : 3, mode);
         assert.equal(calls, mode === 'collision' ? 4 : 3, `${mode}: no retry`);
         assert.equal(connections, mode === 'reconnect' ? 2 : 1, `${mode}: no harness-created connection`);
@@ -141,6 +153,7 @@ test('SpacetimeDB catalog replay preserves the caller and never retries a sent w
     result = 'passed';
   } finally {
     await browser.close(); sockets.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+    await new Promise<void>(resolve => database.close(() => resolve()));
     if (previous.path === undefined) delete process.env.STACK_BENCH_LEASE; else process.env.STACK_BENCH_LEASE = previous.path;
     if (previous.token === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN; else process.env.STACK_BENCH_LEASE_TOKEN = previous.token;
     rmSync(root, { recursive: true, force: true });
