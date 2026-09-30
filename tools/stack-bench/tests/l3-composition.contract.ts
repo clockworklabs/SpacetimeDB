@@ -8,6 +8,7 @@ import { compilePackDefinition, compileRecipeFile, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledFeature, type CompiledStep }
   from '../src/composition/definition-compiler.js';
+import { declaredPackWaitMs } from '../src/composition/pack-budget.js';
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
@@ -228,24 +229,7 @@ test('pending-work checks cancel or complete the work they create', () => {
 
 test('L3 budgets cover declared waits without becoming unbounded estimates', () => {
   for (const pack of packs) {
-    const declaredDelay = selected.filter(entry => entry.pack.id === pack.id)
-      .reduce((total, entry) => {
-        const steps = nestedSteps(featureFor(entry.check));
-        let fixed = 0;
-        const recorded = new Map<string, number>();
-        for (const step of steps) {
-          if (step.do === 'recordTime') recorded.set(String(step.as), fixed);
-          if (step.do === 'wait') {
-            if (typeof step.since === 'string') {
-              assert(recorded.has(step.since), `missing clock ${step.since}`);
-              fixed = Math.max(fixed, recorded.get(step.since)! + Number(step.ms));
-            } else fixed += Number(step.ms);
-          }
-          fixed += Number(step.settleMs ?? 0);
-        }
-        const longestObservation = Math.max(0, ...steps.map(step => Number(step.within ?? 0)));
-        return total + fixed + longestObservation;
-      }, 0);
+    const declaredDelay = declaredPackWaitMs(pack, trackRoot);
     assert(maxRuntimeMs(pack) >= declaredDelay,
       `${pack.id} budget is below its declared waits`);
     assert(maxRuntimeMs(pack) <= declaredDelay + 180000,

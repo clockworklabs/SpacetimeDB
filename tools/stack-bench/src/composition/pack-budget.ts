@@ -1,11 +1,13 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease } from './calibration-compiler.js';
+import { compilePackDefinition, type CompiledPackDefinition } from './composition-compiler.js';
+import { compileScenarioDefinition, type CompiledStep } from './definition-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { nonNegativeInteger, PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -86,6 +88,7 @@ export interface PackBudgetRecommendation {
   sampleCount: number;
   observedMinRuntimeMs: number;
   observedMaxRuntimeMs: number;
+  declaredWaitMs: number;
   maxRuntimeMs: number;
 }
 
@@ -97,9 +100,10 @@ export interface PackBudgetResult {
 }
 
 export const PACK_BUDGET_POLICY = Object.freeze({
-  id: 'max-observed-times-two-rounded-up-1s-v1',
+  id: 'max-observed-times-two-at-least-declared-waits-rounded-up-1s-v2',
   metric: PACK_RUNTIME_METRIC,
   multiplier: 2,
+  floor: 'declared-scenario-waits',
   roundUpMs: 1_000,
   minimumMs: 1_000,
 });
@@ -136,10 +140,40 @@ function equalIdentityFields(actual: unknown, expected: unknown, fields: readonl
   }
 }
 
-export function recommendPackBudgets({ binding, calibration, evidence }: {
+// The time a pack's scenarios allow: fixed waits and settles, plus each check's
+// longest observation window. A shorter budget would stop a correct application
+// that uses time the scenario permits.
+export function declaredPackWaitMs(pack: CompiledPackDefinition, trackRoot: string): number {
+  const flatten = (step: CompiledStep): CompiledStep[] =>
+    [step, ...(step.branches ?? []).flatMap(branch => branch.flatMap(flatten))];
+  return pack.checks.reduce((total, check) => {
+    const source = resolve(trackRoot, check.source);
+    const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+      .features.find(candidate => candidate.id === check.feature);
+    if (!feature) throw new Error(`${pack.id} check ${check.id} selects no feature`);
+    const steps = [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)].flatMap(flatten);
+    let fixed = 0;
+    const clocks = new Map<string, number>();
+    for (const step of steps) {
+      if (step.do === 'recordTime') clocks.set(String(step.as), fixed);
+      if (step.do === 'wait') {
+        if (typeof step.since === 'string') {
+          const start = clocks.get(step.since);
+          if (start === undefined) throw new Error(`${pack.id} waits on unrecorded clock ${step.since}`);
+          fixed = Math.max(fixed, start + Number(step.ms));
+        } else fixed += Number(step.ms);
+      }
+      fixed += Number(step.settleMs ?? 0);
+    }
+    return total + fixed + Math.max(0, ...steps.map(step => Number(step.within ?? 0)));
+  }, 0);
+}
+
+export function recommendPackBudgets({ binding, calibration, evidence, trackRoot }: {
   binding: RecipeBinding;
   calibration: CalibrationPlan;
   evidence: PackBudgetEvidence[];
+  trackRoot: string;
 }): PackBudgetResult {
   if (!binding?.release || !binding?.plan || !calibration) {
     throw new Error('pack budget recommendation requires a compiled recipe and calibration');
@@ -256,11 +290,16 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
   const recommendations = [...expectedPackCounts.keys()].sort().map(packId => {
     const observed = samples.filter(sample => sample.packId === packId).map(sample => sample.measuredRuntimeMs);
     const observedMaxRuntimeMs = Math.max(...observed);
+    const planned = binding.plan.packs.find(pack => pack.id === packId);
+    if (!planned) throw new Error(`recipe plan has no pack ${packId}`);
+    const packPath = join(trackRoot, 'composition', planned.path);
+    const declaredWaitMs = declaredPackWaitMs(compilePackDefinition(
+      JSON.parse(readFileSync(packPath, 'utf8')), { source: packPath }), trackRoot);
+    const roundUp = (ms: number) => Math.ceil(ms / PACK_BUDGET_POLICY.roundUpMs) * PACK_BUDGET_POLICY.roundUpMs;
     const maxRuntimeMs = Math.max(PACK_BUDGET_POLICY.minimumMs,
-      Math.ceil(observedMaxRuntimeMs * PACK_BUDGET_POLICY.multiplier / PACK_BUDGET_POLICY.roundUpMs)
-        * PACK_BUDGET_POLICY.roundUpMs);
+      roundUp(observedMaxRuntimeMs * PACK_BUDGET_POLICY.multiplier), roundUp(declaredWaitMs));
     return { packId, sampleCount: observed.length,
-      observedMinRuntimeMs: Math.min(...observed), observedMaxRuntimeMs, maxRuntimeMs };
+      observedMinRuntimeMs: Math.min(...observed), observedMaxRuntimeMs, declaredWaitMs, maxRuntimeMs };
   });
   return { measuredEngine, measuredRunner, samples, recommendations };
 }

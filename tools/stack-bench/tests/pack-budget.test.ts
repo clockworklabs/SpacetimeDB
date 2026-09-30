@@ -91,12 +91,16 @@ test('budget recommendation requires every exact reference repetition and applie
     item.artifact.payload.runner.containersRunning = 18 + index;
   });
   const original = structuredClone(evidence);
-  const result = recommendPackBudgets({ binding, calibration, evidence });
+  const result = recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence });
   const measuredPackCount = new Set(selectedChecks.map(check => check.packId)).size;
   assert.equal(result.samples.length, measuredPackCount * evidence.length);
   assert.equal(result.recommendations.length, measuredPackCount);
   assert(result.recommendations.every(item => item.sampleCount === evidence.length));
-  assert(result.recommendations.every(item => item.maxRuntimeMs === 3_000));
+  // Twice the slowest run, but never below the time the pack's scenarios allow.
+  assert(result.recommendations.every(item =>
+    item.maxRuntimeMs === Math.max(3_000, Math.ceil(item.declaredWaitMs / 1_000) * 1_000)));
+  assert(result.recommendations.some(item => item.declaredWaitMs > 3_000 && item.maxRuntimeMs > 3_000));
+  assert(result.recommendations.some(item => item.maxRuntimeMs === 3_000));
   assert.equal(PACK_BUDGET_POLICY.multiplier, 2);
   assert.deepEqual(result.measuredEngine, currentEngineIdentity());
   assert.deepEqual(result.measuredRunner, { ...applianceRunner, containersRunning: 18 });
@@ -108,30 +112,30 @@ test('budget recommendation requires every exact reference repetition and applie
 test('budget recommendation rejects mutation, duplicate, incomplete, and cross-scope evidence', () => {
   const diagnostic = exactEvidence();
   evidenceAt(diagnostic, 0).artifact.payload.diagnostic = true;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: diagnostic }), /targeted diagnostic/);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: diagnostic }), /targeted diagnostic/);
   evidenceAt(diagnostic, 0).artifact.payload.timingOnly = true;
-  assert.doesNotThrow(() => recommendPackBudgets({ binding, calibration, evidence: diagnostic }));
+  assert.doesNotThrow(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: diagnostic }));
   const mutation = exactEvidence();
   evidenceAt(mutation, 0).artifact.payload.mutationControl = true;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mutation }), /mutation evidence/);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: mutation }), /mutation evidence/);
   const duplicate = exactEvidence();
   identity(evidenceAt(duplicate, 2).artifact.identities.stackAdapter).id = identity(evidenceAt(duplicate, 0).artifact.identities.stackAdapter).id;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: duplicate }), /repeats stack/);
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: exactEvidence().slice(1) }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: duplicate }), /repeats stack/);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: exactEvidence().slice(1) }),
     /cover each supported stack/);
   const stale = exactEvidence();
   identity(evidenceAt(stale, 0).artifact.identities.recipe).sha256 = 'f'.repeat(64);
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: stale }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: stale }),
     /does not match the selected qualification scope/);
   const staleRuntime = exactEvidence();
   const staleRuntimeIdentity = evidenceAt(staleRuntime, 0).runtimeCalibration;
   assert(staleRuntimeIdentity);
   staleRuntimeIdentity.sha256 = 'f'.repeat(64);
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: staleRuntime }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: staleRuntime }),
     /retainedRuntimeCalibration.sha256/);
   const wrongQualification = exactEvidence();
   identity(evidenceAt(wrongQualification, 0).artifact.identities.calibration).sha256 = calibration.contentSha256;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: wrongQualification }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: wrongQualification }),
     /identities.calibration.sha256/);
 });
 
@@ -162,19 +166,19 @@ test('progression L3 budgets require exactly the selected pack counts, not the f
       id, checkCount, setupRuntimeMs: 100, criterionRuntimeMs: 900, measuredRuntimeMs: 1_000,
     }));
   }
-  assert.equal(recommendPackBudgets({ binding, calibration, evidence }).recommendations.length, counts.size);
+  assert.equal(recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence }).recommendations.length, counts.size);
   const missing = structuredClone(evidence);
   evidenceAt(missing, 0).artifact.payload.runs[0]!.packRuntime.packs.pop();
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: missing }), /missing packs/);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: missing }), /missing packs/);
   const extra = structuredClone(evidence);
   const unselected = binding.plan.packs.find(pack => !counts.has(pack.id));
   assert(unselected);
   evidenceAt(extra, 0).artifact.payload.runs[0]!.packRuntime.packs.push({ id: unselected.id,
     checkCount: 1, setupRuntimeMs: 100, criterionRuntimeMs: 900, measuredRuntimeMs: 1_000 });
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: extra }), /unknown pack/);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: extra }), /unknown pack/);
   const wrongCount = structuredClone(evidence);
   evidenceAt(wrongCount, 0).artifact.payload.runs[0]!.packRuntime.packs[0]!.checkCount = 0;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: wrongCount }), /checks for .* expected/);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: wrongCount }), /checks for .* expected/);
 });
 
 test('budget recommendation rejects timing captured outside the Linux appliance', () => {
@@ -183,17 +187,17 @@ test('budget recommendation rejects timing captured outside the Linux appliance'
   assert(localRunner);
   localRunner.mode = 'local-controller';
   localRunner.platform = 'win32';
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: local }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: local }),
     /not supported appliance timing evidence/);
 
   const legacy = exactEvidence();
   delete evidenceAt(legacy, 0).artifact.payload.runner;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: legacy }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: legacy }),
     /runner\.schemaVersion must be 1/);
 
   const unobserved = exactEvidence();
   evidenceAt(unobserved, 0).artifact.payload.runner = { ...calibration.qualification.runner };
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: unobserved }),
+  assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: unobserved }),
     /runner observation is missing/);
 
   for (const [field, value] of Object.entries({ cpuCount: 16, memoryBytes: 32_000_000_000,
@@ -203,7 +207,7 @@ test('budget recommendation rejects timing captured outside the Linux appliance'
     const mixedRunner = evidenceAt(mixed, 1).artifact.payload.runner;
     assert(mixedRunner);
     mixedRunner[field] = value;
-    assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mixed }),
+    assert.throws(() => recommendPackBudgets({ binding, calibration, trackRoot: track.dir, evidence: mixed }),
       /different appliance runner environment/);
   }
 });

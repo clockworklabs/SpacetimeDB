@@ -53,7 +53,7 @@ function main(): void {
   const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir, alias: `L${args.level}` });
   if (!calibration) throw new Error(`${binding.release.id} has no calibration`);
   const loaded = loadPackBudgetEvidence(args.evidence);
-  const result = recommendPackBudgets({ binding, calibration, evidence: loaded });
+  const result = recommendPackBudgets({ binding, calibration, evidence: loaded, trackRoot: track.dir });
   if (existsSync(args.out)) throw new Error(`refusing to replace existing budget measurement: ${args.out}`);
   const id = `pack-budget-${args.track}-l${args.level}-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;
   const artifact = writeArtifact(args.out, { kind: 'pack_budget_measurement', id,
