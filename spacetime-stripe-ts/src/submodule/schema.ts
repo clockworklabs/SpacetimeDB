@@ -247,7 +247,7 @@ export const stripeConfigTable = table(
 // Allowlist of identities permitted to call privileged procedures.
 export const stripeAdminIdentityRow = {
   identity: t.identity().primaryKey(),
-  addedAtMicros: t.i64(),
+  addedAt: t.timestamp(),
 };
 
 export const stripeAdminIdentityTable = table(

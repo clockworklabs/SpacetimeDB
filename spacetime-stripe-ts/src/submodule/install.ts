@@ -7,7 +7,7 @@ export function install(ctx: ReducerModuleCtx) {
   if (ctx.db.stripeAdminIdentity.identity.find(ctx.sender) == null) {
     ctx.db.stripeAdminIdentity.insert({
       identity: ctx.sender,
-      addedAtMicros: ctx.timestamp.microsSinceUnixEpoch,
+      addedAt: ctx.timestamp,
     });
   }
   if (ctx.db.stripeWebhookPruneTick.count() === 0n) {

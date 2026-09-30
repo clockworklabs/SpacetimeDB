@@ -52,7 +52,7 @@ export type RemoteCheckoutSessionResult = __Infer<typeof RemoteCheckoutSessionRe
 
 export const StripeAdminIdentity = __t.object("StripeAdminIdentity", {
   identity: __t.identity(),
-  addedAtMicros: __t.i64(),
+  addedAt: __t.timestamp(),
 });
 export type StripeAdminIdentity = __Infer<typeof StripeAdminIdentity>;
 
