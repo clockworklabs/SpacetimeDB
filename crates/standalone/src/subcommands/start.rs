@@ -207,6 +207,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    db_routes.db_reset = db_routes.db_reset.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)

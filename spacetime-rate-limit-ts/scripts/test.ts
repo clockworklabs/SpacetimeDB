@@ -4,6 +4,7 @@ import {
   client,
   errors,
   MAX_SWEEP_BATCH,
+  resetRegisteredScopes,
   sweepRateLimits,
   type RateLimitBucketRow,
 } from '../src/limit';
@@ -82,6 +83,11 @@ process.stdout.write('\nrate limiter\n');
     () => client({ scope: 'tap', windowSeconds: 30, limit: 5 }),
     'rate_limit.duplicate_scope',
     'a scope can be configured once'
+  );
+  resetRegisteredScopes();
+  assert(
+    client({ scope: 'tap', windowSeconds: 30, limit: 5 }).limit === 5,
+    'reset lets a scope be configured again'
   );
   assertThrows(
     () => tap.consume(tx, { key: '' }),

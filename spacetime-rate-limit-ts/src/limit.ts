@@ -109,6 +109,11 @@ function secondsUntil(now: Timestamp, future: Timestamp): number {
 // evaluates it once in each fresh worker isolate.
 const registeredScopes = new Set<string>();
 
+/** Forgets every configured scope so `client` can configure them again. */
+export function resetRegisteredScopes(): void {
+  registeredScopes.clear();
+}
+
 /**
  * Configure the policy for one scope. Each scope may be configured once per
  * module so every caller enforces the same limit and window.

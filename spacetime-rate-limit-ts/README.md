@@ -122,7 +122,9 @@ The view returns at most 1,000 rows and returns an empty set to non-admins.
 
 `client({ scope, limit, windowSeconds })` configures the policy for one scope.
 Each scope can be configured once per module; a second `client` call with the
-same scope fails module loading with `rate_limit.duplicate_scope`. When a
+same scope fails module loading with `rate_limit.duplicate_scope`.
+`resetRegisteredScopes()` clears the configured scopes, for example between
+tests that configure the same scope again. When a
 policy depends on application state, such as an upgrade tier, create one client
 per tier with its own scope.
 The returned limiter exposes `scope`, `limit`, and `windowSeconds`, plus:
