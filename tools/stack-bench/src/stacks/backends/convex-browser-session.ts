@@ -6,7 +6,8 @@ const sessions = new WeakMap<object, {
 
 export function recordConvexSession(page: object, socketUrl: string, payload: string | Buffer, socket?: object): void {
   const url = new URL(socketUrl);
-  if (!/^\/api\/[^/]+\/sync$/.test(url.pathname)) return;
+  // An application proxy may mount the sync endpoint under its own path prefix.
+  if (!/(?:^|\/)api\/[^/]+\/sync$/.test(url.pathname)) return;
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
   let frame;
   try { frame = JSON.parse(String(payload)); } catch { return; }

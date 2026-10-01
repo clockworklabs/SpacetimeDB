@@ -45,7 +45,8 @@ test('Convex replay accepts native sessions through the explicit application pro
   ] });
   recordConvexSession(actor.page, 'ws://unrelated.test/api/1.0.0/sync', query);
   assert.throws(() => bindBrowserRequest(actor, request, headers), ActionInconclusive);
-  recordConvexSession(actor.page, 'ws://localhost:6923/api/1.0.0/sync', query);
+  // The proxy may mount the sync endpoint under a path prefix.
+  recordConvexSession(actor.page, 'ws://localhost:6923/convex/api/1.0.0/sync', query);
   assert.throws(() => bindBrowserRequest(actor, { ...request, applicationOrigin: undefined }, headers), ActionInconclusive);
   const replay = bindBrowserRequest(actor, request, headers)();
   assert.deepEqual(replay.headers, {});
