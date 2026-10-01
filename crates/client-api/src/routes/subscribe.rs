@@ -28,8 +28,8 @@ use spacetimedb::client::messages::{
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
-    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, SessionBusy, SessionId,
-    SessionReservation, WsVersion,
+    MessageExecutionErrorClassification, MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol,
+    SessionBusy, SessionId, SessionReservation, WsVersion,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -953,8 +953,7 @@ async fn ws_recv_task<MessageHandler>(
             if ws_version == WsVersion::V1
                 && let MessageHandleError::Execution(err) = e
             {
-                // TODO: Review log level after guest/client execution errors can be distinguished from internal failures.
-                log::warn!("{err:#}");
+                log::log!(message_execution_error_log_level(&err), "{err:#}");
                 // If the send task has exited, also exit this recv task.
                 if unordered_tx.send(err.into()).is_err() {
                     break;
@@ -973,6 +972,13 @@ async fn ws_recv_task<MessageHandler>(
                 break;
             };
         }
+    }
+}
+
+fn message_execution_error_log_level(err: &MessageExecutionError) -> log::Level {
+    match err.classification {
+        MessageExecutionErrorClassification::Client => log::Level::Debug,
+        MessageExecutionErrorClassification::Internal => log::Level::Warn,
     }
 }
 
@@ -2179,6 +2185,27 @@ mod tests {
     }
 
     #[test]
+    fn message_execution_error_classification_selects_log_level() {
+        let error = |classification| MessageExecutionError {
+            reducer: None,
+            reducer_id: None,
+            caller_identity: Identity::ZERO,
+            caller_connection_id: None,
+            classification,
+            err: anyhow!("test error"),
+        };
+
+        assert_eq!(
+            message_execution_error_log_level(&error(MessageExecutionErrorClassification::Client)),
+            log::Level::Debug
+        );
+        assert_eq!(
+            message_execution_error_log_level(&error(MessageExecutionErrorClassification::Internal)),
+            log::Level::Warn
+        );
+    }
+
+    #[test]
     fn record_client_rejection_increments_rejection_metric() {
         let database = test_database(100);
 
@@ -2432,6 +2459,7 @@ mod tests {
                 reducer_id: None,
                 caller_identity: Identity::ZERO,
                 caller_connection_id: None,
+                classification: MessageExecutionErrorClassification::Internal,
                 err: anyhow!("it did not work"),
             })),
             // TODO: This is the easiest to construct,
@@ -2483,6 +2511,7 @@ mod tests {
                 reducer_id: None,
                 caller_identity: Identity::ZERO,
                 caller_connection_id: None,
+                classification: MessageExecutionErrorClassification::Internal,
                 err: anyhow!("it did not work"),
             })),
             // TODO: This is the easiest to construct,

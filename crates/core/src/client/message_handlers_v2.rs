@@ -1,4 +1,4 @@
-use crate::client::MessageExecutionError;
+use crate::client::{MessageExecutionError, MessageExecutionErrorClassification};
 
 use super::{ClientConnection, DataMessage, MessageHandleError};
 use serde::de::Error as _;
@@ -95,6 +95,7 @@ pub(super) async fn handle_decoded_message(
         reducer_id,
         caller_identity: client.id.identity,
         caller_connection_id: Some(client.id.connection_id),
+        classification: MessageExecutionErrorClassification::Internal,
         err,
     })?;
 

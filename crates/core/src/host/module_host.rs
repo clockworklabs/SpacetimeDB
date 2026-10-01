@@ -1653,6 +1653,17 @@ pub enum ReducerCallError {
     LifecycleReducer(Lifecycle),
 }
 
+impl ReducerCallError {
+    /// Whether this error was caused by a client asking to call a reducer that
+    /// cannot be invoked with the supplied name or arguments.
+    ///
+    /// The remaining variants indicate failures in the module lifecycle or in
+    /// the worker responsible for executing the reducer.
+    pub(crate) fn is_client_error(&self) -> bool {
+        matches!(self, Self::Args(_) | Self::NoSuchReducer | Self::LifecycleReducer(_))
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ViewOutcome {
     Success,
@@ -3767,10 +3778,12 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{
+        InvalidFunctionArguments, InvalidReducerArguments, ModuleHost, OneOffQueryBsatnParams, ReducerCallError,
+    };
     use crate::client::{
-        ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
-        WsVersion,
+        messages::SerializableMessage, ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender,
+        OutboundMessage, Protocol, WsVersion,
     };
     use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
     use crate::subscription::module_subscription_actor::ModuleSubscriptions;
@@ -3778,6 +3791,8 @@ mod tests {
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::Lifecycle;
+    use spacetimedb_schema::reducer_name::ReducerName;
     use std::sync::Arc;
 
     fn v2_client_config() -> ClientConfig {
@@ -3796,6 +3811,66 @@ mod tests {
         let client_id = ClientActorId::for_test(Identity::ZERO);
         let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, v2_client_config(), db.clone());
         (Arc::new(sender), receiver)
+    }
+
+    #[test]
+    fn reducer_call_errors_are_classified_by_source() {
+        let invalid_args = ReducerCallError::Args(InvalidReducerArguments(InvalidFunctionArguments {
+            err: anyhow::anyhow!("wrong argument type"),
+            function_name: ReducerName::for_test("test_reducer").into(),
+        }));
+
+        for error in [
+            invalid_args,
+            ReducerCallError::NoSuchReducer,
+            ReducerCallError::LifecycleReducer(Lifecycle::Init),
+        ] {
+            assert!(error.is_client_error(), "expected client error: {error}");
+        }
+
+        for error in [
+            ReducerCallError::NoSuchModule(super::NoSuchModule),
+            ReducerCallError::WorkerError("worker exited".into()),
+            ReducerCallError::ScheduleReducerNotFound,
+        ] {
+            assert!(!error.is_client_error(), "expected internal error: {error}");
+        }
+    }
+
+    #[test]
+    fn v1_invalid_one_off_query_stays_on_query_response_path() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let _rt = runtime.enter();
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+        let client_id = ClientActorId::for_test(Identity::ZERO);
+        let (sender, mut receiver) =
+            ClientConnectionSender::dummy_with_channel(client_id, ClientConfig::for_test(), db.clone());
+
+        let metrics = ModuleHost::one_off_query_bsatn_inner(OneOffQueryBsatnParams {
+            db: db.clone(),
+            subscriptions: subs.clone(),
+            auth: AuthCtx::new(db.owner_identity(), sender.id.identity),
+            query: "select * from missing_table".to_owned(),
+            client: Arc::new(sender),
+            message_id: b"invalid-query".to_vec(),
+            timer: std::time::Instant::now(),
+            rlb_pool: subs.bsatn_rlb_pool.clone(),
+        })?;
+
+        assert!(metrics.is_none());
+        runtime.block_on(async {
+            match receiver.recv().await {
+                Some(OutboundMessage::V1(SerializableMessage::QueryBinary(response))) => {
+                    assert!(response.error.is_some());
+                    assert!(response.results.is_empty());
+                }
+                other => panic!("expected V1 one-off query error response, got: {other:?}"),
+            }
+        });
+
+        Ok(())
     }
 
     #[test]

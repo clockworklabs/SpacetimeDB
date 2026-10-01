@@ -2,7 +2,7 @@ use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtoc
 use super::{ClientConnection, DataMessage, MessageHandleError, Protocol};
 use crate::energy::FunctionBudget;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{FunctionArgs, ReducerId};
+use crate::host::{FunctionArgs, ReducerCallError, ReducerId};
 use crate::identity::Identity;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
@@ -37,7 +37,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let module = client.module();
     let mod_info = module.info();
 
-    type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, anyhow::Error)>;
+    type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, ExecutionErrorSource)>;
     let res: HandleResult<'_> = match message {
         ws_v1::ClientMessage::CallReducer(ws_v1::CallReducer {
             ref reducer,
@@ -50,29 +50,34 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 (
                     Some(reducer),
                     mod_info.module_def.reducer_by_name(reducer).map(|(id, _)| id),
-                    e.into(),
+                    ExecutionErrorSource::Reducer(e),
                 )
             })
         }
         ws_v1::ClientMessage::SubscribeMulti(subscription) => {
             let res = client.subscribe_multi(subscription, timer).await;
-            res.map(drop).map_err(|e| (None, None, e.into()))
+            res.map(drop)
+                .map_err(|e| (None, None, ExecutionErrorSource::Internal(e.into())))
         }
         ws_v1::ClientMessage::UnsubscribeMulti(request) => {
             let res = client.unsubscribe_multi(request, timer).await;
-            res.map(drop).map_err(|e| (None, None, e.into()))
+            res.map(drop)
+                .map_err(|e| (None, None, ExecutionErrorSource::Internal(e.into())))
         }
         ws_v1::ClientMessage::SubscribeSingle(subscription) => {
             let res = client.subscribe_single(subscription, timer).await;
-            res.map(drop).map_err(|e| (None, None, e.into()))
+            res.map(drop)
+                .map_err(|e| (None, None, ExecutionErrorSource::Internal(e.into())))
         }
         ws_v1::ClientMessage::Unsubscribe(request) => {
             let res = client.unsubscribe(request, timer).await;
-            res.map(drop).map_err(|e| (None, None, e.into()))
+            res.map(drop)
+                .map_err(|e| (None, None, ExecutionErrorSource::Internal(e.into())))
         }
         ws_v1::ClientMessage::Subscribe(subscription) => {
             let res = client.subscribe(subscription, timer).await;
-            res.map(drop).map_err(|e| (None, None, e.into()))
+            res.map(drop)
+                .map_err(|e| (None, None, ExecutionErrorSource::Internal(e.into())))
         }
         ws_v1::ClientMessage::OneOffQuery(ws_v1::OneOffQuery {
             query_string: query,
@@ -82,7 +87,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer).await,
                 Protocol::Text => client.one_off_query_json(&query, &message_id, timer).await,
             };
-            res.map_err(|err| (None, None, err))
+            res.map_err(|err| (None, None, ExecutionErrorSource::Internal(err)))
         }
         ws_v1::ClientMessage::CallProcedure(ws_v1::CallProcedure {
             ref procedure,
@@ -99,15 +104,54 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             Ok(())
         }
     };
-    res.map_err(|(reducer_name, reducer_id, err)| MessageExecutionError {
-        reducer: reducer_name.cloned(),
-        reducer_id,
-        caller_identity: client.id.identity,
-        caller_connection_id: Some(client.id.connection_id),
-        err,
+    res.map_err(|(reducer_name, reducer_id, err)| {
+        let (classification, err) = err.into_classified_error();
+        MessageExecutionError {
+            reducer: reducer_name.cloned(),
+            reducer_id,
+            caller_identity: client.id.identity,
+            caller_connection_id: Some(client.id.connection_id),
+            classification,
+            err,
+        }
     })?;
 
     Ok(())
+}
+
+/// A typed source for errors which can become a V1 [`MessageExecutionError`].
+///
+/// Reducer errors must remain typed until after they are classified. Errors
+/// returned by subscriptions and one-off queries at this layer are internal:
+/// invalid queries are converted into protocol error responses by those
+/// operations before control returns here.
+enum ExecutionErrorSource {
+    Reducer(ReducerCallError),
+    Internal(anyhow::Error),
+}
+
+impl ExecutionErrorSource {
+    fn into_classified_error(self) -> (MessageExecutionErrorClassification, anyhow::Error) {
+        match self {
+            Self::Reducer(err) => {
+                let classification = if err.is_client_error() {
+                    MessageExecutionErrorClassification::Client
+                } else {
+                    MessageExecutionErrorClassification::Internal
+                };
+                (classification, err.into())
+            }
+            Self::Internal(err) => (MessageExecutionErrorClassification::Internal, err),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageExecutionErrorClassification {
+    /// Invalid client input, such as an unknown reducer or invalid arguments.
+    Client,
+    /// A module lifecycle, database, or worker failure.
+    Internal,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -117,6 +161,7 @@ pub struct MessageExecutionError {
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,
+    pub classification: MessageExecutionErrorClassification,
     #[source]
     pub err: anyhow::Error,
 }

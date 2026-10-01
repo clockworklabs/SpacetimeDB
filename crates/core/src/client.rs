@@ -19,7 +19,7 @@ pub use client_connection::{
 pub use client_connection_index::ClientActorIndex;
 pub use client_session_index::{ClientSessionIndex, SessionBusy, SessionId, SessionReservation};
 pub use message_handlers::MessageHandleError;
-pub use message_handlers_v1::MessageExecutionError;
+pub use message_handlers_v1::{MessageExecutionError, MessageExecutionErrorClassification};
 pub use messages::OutboundMessage;
 use spacetimedb_lib::ConnectionId;
 
