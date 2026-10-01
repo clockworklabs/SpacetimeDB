@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - docs/release
+      - jdetter-openclaw/llms-signing-e2e-test
     paths:
       - 'docs/docs/**'
       - 'skills/**'
