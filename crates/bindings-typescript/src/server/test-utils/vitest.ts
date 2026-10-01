@@ -5,7 +5,11 @@ export function spacetimedbModuleTestPlugin(): Plugin {
     name: 'spacetimedb-module-test',
     enforce: 'pre',
     resolveId(id) {
-      if (id === 'spacetime:sys@2.0' || id === 'spacetime:sys@2.1') {
+      if (
+        id === 'spacetime:sys@2.0' ||
+        id === 'spacetime:sys@2.1' ||
+        id === 'spacetime:sys@2.2'
+      ) {
         return '\0spacetimedb-module-test-sys';
       }
       return null;
@@ -37,6 +41,7 @@ export function spacetimedbModuleTestPlugin(): Plugin {
         export const procedure_commit_mut_tx = unsupported('procedure_commit_mut_tx');
         export const procedure_abort_mut_tx = unsupported('procedure_abort_mut_tx');
         export const procedure_http_request = unsupported('procedure_http_request');
+        export const env_get = unsupported('env_get');
         export const console_log = () => {};
         export const console_timer_start = () => 0;
         export const console_timer_end = () => {};
