@@ -1,10 +1,11 @@
 # @spacetimedb/resend
 
-A SpacetimeDB submodule for transactional email via [Resend](https://resend.com):
-admin-gated outbound delivery, idempotent webhook ingest, private delivery
-state, synchronous procedures, and valibot-validated webhook payloads.
+Send email from your SpacetimeDB application through [Resend](https://resend.com).
+Use it for welcome messages, receipts, and notifications, then track whether
+each message was delivered, delayed, or bounced.
 
----
+The submodule stores delivery status in your database and updates it from
+Resend webhooks. Your application decides who can send email and see its history.
 
 ## Install
 
@@ -23,8 +24,7 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Register Resend in the host schema, initialize its private state, and expose only
-application-authorized send procedures and caller-scoped delivery views:
+Add Resend to your module and initialize it:
 
 ```ts
 import { schema } from 'spacetimedb/server';
@@ -38,15 +38,36 @@ export const init = spacetimedb.init(ctx => {
 });
 ```
 
-Provider configuration must run as the publishing owner or a registered Resend
-administrator. See the
-[Dispatch host module](./example/spacetimedb/)
-for a narrow send procedure, scoped views, and signed webhook routing.
+After publishing, configure your Resend API key, sender address, and webhook
+signing secret as the database owner or a Resend administrator. When mounted
+as `resend`, use `resend.set_resend_config`; the arguments are shown in
+[Standalone configuration](#standalone-configuration).
+
+Call `resend.sendEmailRequest` from a procedure that checks who may send email
+and which recipients they may contact. Apply rate limits before sending:
+
+```ts
+resend.sendEmailRequest(ctx.as.resend, {
+  to: ['delivered@resend.dev'],
+  subject: 'Welcome',
+  html: '<p>Hello.</p>',
+  tagsJson: JSON.stringify([
+    { name: 'userId', value: 'u_123' },
+    { name: 'orgId', value: 'launch' },
+  ]),
+});
+```
+
+For delivery updates, register `makeResendWebhookHandler()` on an HTTP route
+and add that URL in Resend. See the [Dispatch example](./example/) for a
+complete send procedure, webhook route, and views that show each user only
+their own email history.
 
 ### Standalone configuration
 
-Resend credentials live in a private `resend_config` singleton. During `init`, a
-fresh database seeds the owner into the private `resend_admin_identity` table.
+When running Resend as its own database, configure it with the unprefixed
+operation below. Credentials are private, and the publishing owner is the
+first administrator.
 
 ```bash
 spacetime call --server http://127.0.0.1:3000 spacetime-resend set_resend_config \
@@ -104,27 +125,8 @@ fields are capped at 320 characters, subjects at 998 characters, HTML and text
 at 200,000 characters each, and tag or header JSON at 16 KiB. Control characters
 in address, subject, and schedule fields are rejected before provider HTTP.
 
-Host modules should prefer the submodule helper export:
-
-```ts
-import * as resend from '@spacetimedb/resend/submodule';
-
-resend.sendEmailRequest(ctx.as.resend, {
-  to: ['delivered@resend.dev'],
-  subject: 'Welcome',
-  html: '<p>Hello.</p>',
-  tagsJson: JSON.stringify([
-    { name: 'userId', value: 'u_123' },
-    { name: 'orgId', value: 'launch' },
-  ]),
-});
-```
-
-That lets the host app own product-specific authorization and workflow while
-the submodule owns config, delivery rows, and webhook ingest.
-
-Expose that helper through a product-facing procedure with recipient policy and
-rate limits. The generated client then calls the wrapper:
+The generated client calls your application's send procedure, such as the
+`sendDispatch` procedure in the example:
 
 ```ts
 const result = await conn.procedures.sendDispatch({
