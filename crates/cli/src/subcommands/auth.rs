@@ -116,7 +116,9 @@ fn secret_hint(database: &str, name: &str) -> String {
 }
 
 fn database_arg() -> Arg {
-    Arg::new("database").required(true).help("The name of the database")
+    Arg::new("database")
+        .required(true)
+        .help("The name of the database (not its identity)")
 }
 
 fn idp_arg() -> Arg {
@@ -158,12 +160,12 @@ fn get_subcommands() -> Vec<Command> {
                     .arg(
                         Arg::new("value")
                             .required(true)
-                            .help("The value to assign to the setting"),
+                            .help("The value to assign to the setting. `steam.app_ids` takes a comma-separated list; an empty value clears a Steam setting"),
                     ),
             )
             .subcommand(
                 Command::new("reset")
-                    .about("Reset all SpacetimeAuth configuration for a database")
+                    .about("Reset the SpacetimeAuth configuration of a database to its defaults, keeping the display name and Steam settings")
                     .arg(database_arg()),
             ),
         Command::new("idp")
@@ -171,7 +173,7 @@ fn get_subcommands() -> Vec<Command> {
             .subcommand_required(true)
             .subcommand(
                 Command::new("set")
-                    .about("Configure an identity provider for a database")
+                    .about("Configure and enable an identity provider for a database")
                     .arg(database_arg())
                     .arg(idp_arg())
                     .arg(Arg::new("client_id").required(true).help("The OAuth client ID"))
@@ -235,7 +237,7 @@ fn get_subcommands() -> Vec<Command> {
                     .arg(
                         Arg::new("value")
                             .required(true)
-                            .help("The value to assign to the setting"),
+                            .help("The value to assign to the setting. URI lists are comma-separated; an empty value clears the list"),
                     )
                     .arg(client_name_arg()),
             ),
