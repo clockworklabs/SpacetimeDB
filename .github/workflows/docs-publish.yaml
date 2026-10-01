@@ -52,7 +52,7 @@ jobs:
     steps:
       - name: Send Discord notification
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PUBLIC_ANNOUNCEMENTS_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}
           RELEASE_OPS_ROLE_ID: ${{ secrets.DEV_OPS_ROLE_ID }}
           RESULT: ${{ needs.build.result }}
         run: |
