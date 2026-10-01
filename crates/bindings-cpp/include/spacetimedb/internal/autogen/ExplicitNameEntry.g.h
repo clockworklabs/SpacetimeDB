@@ -30,5 +30,12 @@ SPACETIMEDB_INTERNAL_PRODUCT_TYPE(ExplicitNameEntry_Index_Wrapper) {
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(value)
 };
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(ExplicitNameEntry, SpacetimeDB::Internal::NameMapping, ExplicitNameEntry_Function_Wrapper, ExplicitNameEntry_Index_Wrapper)
+SPACETIMEDB_INTERNAL_PRODUCT_TYPE(ExplicitNameEntry_Namespace_Wrapper) {
+    SpacetimeDB::Internal::NameMapping value;
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, value);
+    }
+    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(value)
+};
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(ExplicitNameEntry, SpacetimeDB::Internal::NameMapping, ExplicitNameEntry_Function_Wrapper, ExplicitNameEntry_Index_Wrapper, ExplicitNameEntry_Namespace_Wrapper)
 } // namespace SpacetimeDB::Internal

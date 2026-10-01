@@ -931,6 +931,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-cache-warm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "tempfile",
+]
+
+[[package]]
 name = "ci-check-release-deps"
 version = "0.1.0"
 dependencies = [
@@ -1023,6 +1033,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-llm-benchmark-summary"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "serde_json",
+]
+
+[[package]]
 name = "ci-module-latest-deps"
 version = "0.1.0"
 dependencies = [
@@ -1030,6 +1049,16 @@ dependencies = [
  "ci-common",
  "clap 4.5.50",
  "duct",
+]
+
+[[package]]
+name = "ci-new-script-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "ci-script-policy",
+ "clap 4.5.50",
 ]
 
 [[package]]
@@ -1047,6 +1076,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "duct",
+]
+
+[[package]]
+name = "ci-script-policy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "tempfile",
 ]
 
 [[package]]
@@ -6371,6 +6409,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_xoshiro"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f703f4665700daf5512dcca5f43afa6af89f09db47fb56be587f80636bda2d41"
+dependencies = [
+ "rand_core 0.9.3",
+]
+
+[[package]]
 name = "rayon"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7348,6 +7395,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sdk-csharp-test-harness"
+version = "2.11.0"
+dependencies = [
+ "serial_test",
+ "spacetimedb-testing",
+]
+
+[[package]]
 name = "sdk-test-case-conversion"
 version = "0.1.0"
 dependencies = [
@@ -8006,6 +8061,7 @@ dependencies = [
  "futures",
  "git2",
  "glob",
+ "headers",
  "http",
  "ignore",
  "indicatif",
@@ -8113,7 +8169,9 @@ dependencies = [
  "bytestring",
  "derive_more 0.99.20",
  "enum-as-inner",
+ "headers",
  "hex",
+ "http",
  "itertools 0.12.1",
  "proptest",
  "serde",
@@ -8309,6 +8367,8 @@ dependencies = [
  "pretty_assertions",
  "prometheus",
  "proptest",
+ "rand 0.9.2",
+ "rand_xoshiro",
  "smallvec",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
