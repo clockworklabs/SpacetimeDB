@@ -104,6 +104,7 @@ wasmtime-internal-fiber.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"
 core_affinity = "0.8"
+encoding_rs = "0.8"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemalloc-ctl = {workspace = true}

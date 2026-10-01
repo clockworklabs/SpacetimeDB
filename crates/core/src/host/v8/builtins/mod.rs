@@ -1,7 +1,7 @@
 use v8::{FunctionCallbackArguments, Local, PinScope};
 
 use super::de::scratch_buf;
-use super::error::{exception_already_thrown, ExcResult, StringTooLongError, Throwable, TypeError};
+use super::error::{exception_already_thrown, ExcResult, RangeError, Throwable, TypeError};
 use super::string::{str_from_ident, StringConst};
 use super::{FnRet, IntoJsString};
 
@@ -104,7 +104,14 @@ fn resolve_builtins_module<'scope>(
 /// This is not public API, since it's not accessible to user modules - only to
 /// the js builtins in this directory.
 fn internal_builtins_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, v8::Module> {
-    create_synthetic_module!(scope, "spacetime:internal_builtins", utf8_encode, utf8_decode)
+    create_synthetic_module!(
+        scope,
+        "spacetime:internal_builtins",
+        utf8_encode,
+        utf8_decode,
+        normalize_label,
+        generic_decode
+    )
 }
 
 /// Encode a JS string into UTF-8.
@@ -135,22 +142,129 @@ fn utf8_encode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackA
 ///
 /// Signature fom ./types.d.ts:
 /// ```ts
-/// export function utf8_decode(s: ArrayBufferView, fatal: boolean): string;
+/// export function utf8_decode(buf: AllowSharedBufferSource, ignoreBOM: boolean): string;
 /// ```
 fn utf8_decode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
     let buf = args.get(0);
-    let fatal = args.get(1).boolean_value(scope);
-    if let Ok(buf) = buf.try_cast::<v8::ArrayBufferView>() {
-        let buffer = buf.get_contents(&mut []);
-        let res = if fatal {
-            let s = std::str::from_utf8(buffer).map_err(|e| TypeError(e.to_string()).throw(scope))?;
-            s.into_string(scope)
-        } else {
-            v8::String::new_from_utf8(scope, buffer, v8::NewStringType::Normal)
-                .ok_or_else(|| StringTooLongError::new(&String::from_utf8_lossy(buffer)))
-        };
-        res.map(Into::into).map_err(|e| e.into_range_error().throw(scope))
-    } else {
-        Err(TypeError("argument is not an `ArrayBuffer` or a view on one").throw(scope))
+    let ignore_bom = args.get(1).boolean_value(scope);
+    let buf = cast_buffer(scope, buf)?;
+    let mut buffer = buf.get_contents(&mut []);
+    const BOM_UTF8: &[u8] = &[0xEF, 0xBB, 0xBF];
+    if !ignore_bom {
+        buffer = buffer.strip_prefix(BOM_UTF8).unwrap_or(buffer)
     }
+    let string = v8::String::new_from_utf8(scope, buffer, v8::NewStringType::Normal)
+        .ok_or_else(|| RangeError("Value too large to decode").throw(scope))?;
+    Ok(string.into())
+}
+
+fn cast_buffer<'scope, 'a: 'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    buf: Local<'a, v8::Value>,
+) -> ExcResult<v8::Local<'scope, v8::ArrayBufferView>> {
+    buf.try_cast::<v8::ArrayBufferView>()
+        .or_else(|_| {
+            buf.try_cast::<v8::ArrayBuffer>()
+                .map(|buf| v8::Uint8Array::new(scope, buf, 0, buf.byte_length()).unwrap().into())
+        })
+        .or_else(|_| {
+            buf.try_cast::<v8::SharedArrayBuffer>().map(|buf| {
+                // pretend that the SAB is a regular AB - rusty_v8 doesn't implement the overload
+                let arr = unsafe { Local::<v8::ArrayBuffer>::cast_unchecked(Local::<v8::Object>::from(buf)) };
+                v8::Uint8Array::new(scope, arr, 0, buf.byte_length()).unwrap().into()
+            })
+        })
+        .map_err(|_| TypeError("argument is not an `ArrayBuffer` or a view on one").throw(scope))
+}
+
+/// Map a label for an encoding to its canonical form.
+///
+/// Signature fom ./types.d.ts:
+/// ```ts
+/// export function normalize_label(label: string): string | null;
+/// ```
+fn normalize_label<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
+    let label = args.get(0);
+    let label = label
+        .to_string(scope)
+        .ok_or_else(exception_already_thrown)?
+        .to_rust_string_lossy(scope);
+    match encoding_rs::Encoding::for_label_no_replacement(label.as_bytes()) {
+        Some(encoding) => Ok(encoding.name().to_ascii_lowercase().into_string(scope).unwrap().into()),
+        None => Ok(v8::null(scope).into()),
+    }
+}
+
+/// Decode a UTF-8 string from an `ArrayBuffer` into a JS string.
+///
+/// If `fatal` is true, throw an error if the data is not valid UTF-8.
+///
+/// Signature fom ./types.d.ts:
+/// ```ts
+/// export function generic_decode(encoding: string, buf: AllowSharedBufferSource, fatal: boolean, ignoreBOM: boolean): string;
+/// ```
+fn generic_decode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
+    let mut scratch = scratch_buf::<32>();
+    // unsafe cast: this will only ever be called by this privileged code in text_encoding.js
+    let encoding = args.get(0).cast::<v8::String>().to_rust_cow_lossy(scope, &mut scratch);
+    let encoding = encoding_rs::Encoding::for_label(encoding.as_bytes()).unwrap();
+
+    let buf = args
+        .get(1)
+        .try_cast::<v8::ArrayBufferView>()
+        .map_err(|_| TypeError("argument is not an `ArrayBuffer` or a view on one").throw(scope))?;
+    let fatal = args.get(2).boolean_value(scope);
+    let ignore_bom = args.get(3).boolean_value(scope);
+
+    let mut buffer = buf.get_contents(&mut []);
+
+    let mut decoder = if ignore_bom {
+        encoding.new_decoder_without_bom_handling()
+    } else {
+        encoding.new_decoder_with_bom_removal()
+    };
+
+    let len = decoder
+        .max_utf16_buffer_length(buffer.len())
+        .ok_or_else(|| RangeError("Value too large to decode").throw(scope))?;
+    let mut output = vec![0u16; len];
+
+    let mut total_written = 0;
+    let mut out = &mut output[..];
+    if fatal {
+        loop {
+            let (result, read, written) = decoder.decode_to_utf16_without_replacement(buffer, out, true);
+            total_written += written;
+            match result {
+                encoding_rs::DecoderResult::InputEmpty => break,
+                encoding_rs::DecoderResult::OutputFull => {
+                    buffer = &buffer[read..];
+                    output.reserve(1);
+                    out = &mut output[total_written..];
+                }
+                encoding_rs::DecoderResult::Malformed(_, _) => {
+                    return Err(TypeError("The encoded data is not valid").throw(scope))
+                }
+            }
+        }
+    } else {
+        loop {
+            let (result, read, written, _) = decoder.decode_to_utf16(buffer, out, true);
+            total_written += written;
+            match result {
+                encoding_rs::CoderResult::InputEmpty => break,
+                encoding_rs::CoderResult::OutputFull => {
+                    buffer = &buffer[read..];
+                    output.reserve(1);
+                    out = &mut output[total_written..];
+                }
+            }
+        }
+    }
+
+    output.truncate(total_written);
+
+    v8::String::new_from_two_byte(scope, &output, v8::NewStringType::Normal)
+        .map(Into::into)
+        .ok_or_else(|| RangeError("Value too large to decode").throw(scope))
 }
