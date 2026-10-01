@@ -1,10 +1,12 @@
 # @spacetimedb/posthog
 
-A SpacetimeDB submodule for server-side PostHog analytics: direct capture,
-durable queued events, scheduled batch delivery, feature flag evaluation, and
-admin-scoped delivery state. Procedures call PostHog through `ctx.http.fetch`.
+Track actions in your SpacetimeDB application with PostHog, such as completed
+orders or new accounts. You can also check feature flags to decide which
+features a user should see.
 
----
+Record events alongside your application's database changes. The submodule
+sends queued events to PostHog automatically, retries temporary delivery
+failures, and lets administrators inspect delivery results.
 
 ## Install
 
@@ -17,21 +19,18 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-This submodule can also run as its own SpacetimeDB database. The standalone
-module in `spacetimedb/` publishes the root entry point:
-
-```bash
-pnpm --dir spacetimedb run build
-pnpm --dir spacetimedb run publish:local
-```
-
 ## Usage
 
 ### Integrate into an application
 
-Register PostHog in the host schema, call `install` from the host `init`, and
-enqueue events from reducers. `install` starts a scheduled procedure that
-delivers queued events once credentials are configured:
+Add PostHog to your module and initialize it. This example records an
+`order_completed` event when your application completes an order. Include your
+order update and authorization check in the same reducer.
+
+After publishing, an administrator must set the PostHog host and project API
+key with `posthog.set_posthog_config`. See the arguments in
+[Standalone configuration](#standalone-configuration). Queued events are sent
+automatically once the credentials are configured.
 
 ```ts
 import { schema, t } from 'spacetimedb/server';
@@ -73,15 +72,21 @@ concern:
 await conn.reducers.completeOrder({ orderId, totalCents });
 ```
 
-The host must decide which events a caller may trigger. See the
-[Context Cafe host module](./example/spacetimedb/) for reducer-safe queueing and
-admin-scoped observability.
+See the [Context Cafe example](./example/) for event tracking and an
+administrator's delivery dashboard.
 
 ### Standalone configuration
 
-PostHog credentials live in a private `posthog_config` singleton. During
-`init`, a fresh database seeds the owner into the private
-`posthog_admin_identity` table.
+To run PostHog as its own database from this repository, build and publish the
+module in `spacetimedb/`:
+
+```bash
+pnpm --dir spacetimedb run build
+pnpm --dir spacetimedb run publish:local
+```
+
+Configure it with the unprefixed operation below. Credentials are private, and
+the publishing owner is the first administrator.
 
 ```bash
 spacetime call --server http://127.0.0.1:3000 spacetime-posthog set_posthog_config \
