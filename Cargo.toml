@@ -85,6 +85,8 @@ members = [
   "tools/ci/commands/version-upgrade-check",
   "tools/ci/commands/docs",
   "tools/ci/commands/codeowners-check",
+  "tools/ci/commands/new-script-check",
+  "tools/ci/script-policy",
   "tools/ci/commands/cla-assistant",
   "tools/ci/commands/workflow-coordinator",
   "tools/ci/commands/workflow-watch",
