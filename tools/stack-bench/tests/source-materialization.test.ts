@@ -112,7 +112,8 @@ test('startup may add runtime files but not change or remove accepted source', a
       () => writeFileSync(join(app, 'app.js'), 'export const ready = false;\n'),
       () => rmSync(join(app, 'app.js')),
     ]) {
-      await assert.rejects(start(change), (error: { code?: string }) => error.code === 'generated_app_source_changed');
+      await assert.rejects(start(change), (error: { code?: string; message?: string }) =>
+        error.code === 'generated_app_source_changed' && /: app\.js$/.test(error.message ?? ''));
       assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const ready = true;\n');
     }
   } finally { rmSync(root, { recursive: true, force: true }); }

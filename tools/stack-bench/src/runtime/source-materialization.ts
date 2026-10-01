@@ -62,12 +62,13 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
     }
   };
   // Startup may add runtime state such as a build marker; it must not change or remove accepted files.
-  const kept = accepted.files.every(file => existsSync(join(appDir, file)))
-    && hashFiles(accepted.files.map(file => join(appDir, file)), { base: appDir }).sha256 === accepted.sha256;
-  if (!kept) {
+  const digest = (root: string, file: string) => hashFiles([join(root, file)], { base: root }).sha256;
+  const changed = accepted.files.filter(file => !existsSync(join(appDir, file))
+    || digest(appDir, file) !== digest(sourcePath, file));
+  if (changed.length) {
     await restoreAcceptedSource();
     throw Object.assign(
-      new Error('materialized application source differs from its accepted snapshot'),
+      new Error(`materialized application source differs from its accepted snapshot: ${changed.slice(0, 5).join(', ')}`),
       { code: 'generated_app_source_changed' });
   }
   if (startFailure) {
@@ -82,7 +83,7 @@ export function materializationAppFailure(error: unknown): RunOutcome {
     && code !== 'generated_app_start_contract_missing'
     && code !== 'generated_app_not_restartable') throw error;
   const reason = code === 'generated_app_source_changed'
-    ? 'application startup changed the accepted source'
+    ? `application startup changed the accepted source: ${message(error).split(': ').slice(1).join(': ')}`
     : code === 'generated_app_not_restartable'
     ? `application did not start from clean source: ${redactCredentials(message(error))
         .replace(/\s+/g, ' ').slice(0, 600)}`
