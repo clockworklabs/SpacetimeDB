@@ -42,6 +42,19 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime start`↴](#spacetime-start)
 * [`spacetime lock`↴](#spacetime-lock)
 * [`spacetime unlock`↴](#spacetime-unlock)
+* [`spacetime auth`↴](#spacetime-auth)
+* [`spacetime auth config`↴](#spacetime-auth-config)
+* [`spacetime auth config set`↴](#spacetime-auth-config-set)
+* [`spacetime auth config reset`↴](#spacetime-auth-config-reset)
+* [`spacetime auth idp`↴](#spacetime-auth-idp)
+* [`spacetime auth idp set`↴](#spacetime-auth-idp-set)
+* [`spacetime auth idp enable`↴](#spacetime-auth-idp-enable)
+* [`spacetime auth idp disable`↴](#spacetime-auth-idp-disable)
+* [`spacetime auth client`↴](#spacetime-auth-client)
+* [`spacetime auth client create`↴](#spacetime-auth-client-create)
+* [`spacetime auth client delete`↴](#spacetime-auth-client-delete)
+* [`spacetime auth client get`↴](#spacetime-auth-client-get)
+* [`spacetime auth client set`↴](#spacetime-auth-client-set)
 * [`spacetime version`↴](#spacetime-version)
 
 ## `spacetime`
@@ -71,6 +84,7 @@ This document contains the help content for the `spacetime` command-line program
 * `start` — Start a local SpacetimeDB instance
 * `lock` — Lock a database to prevent accidental deletion
 * `unlock` — Unlock a database to allow deletion
+* `auth` — Manage SpacetimeAuth for a database
 * `version` — Manage installed spacetime versions
 
 ###### **Options:**
@@ -794,6 +808,220 @@ Run `spacetime help unlock` for more detailed information.
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime auth`
+
+Manage SpacetimeAuth for a database
+
+**Usage:** `spacetime auth <COMMAND>`
+
+###### **Subcommands:**
+
+* `config` — Manage SpacetimeAuth configuration for a database
+* `idp` — Manage identity providers for a database
+* `client` — Manage OAuth clients for a database
+
+
+
+## `spacetime auth config`
+
+Manage SpacetimeAuth configuration for a database
+
+**Usage:** `spacetime auth config <COMMAND>`
+
+###### **Subcommands:**
+
+* `set` — Set a SpacetimeAuth configuration value for a database
+* `reset` — Reset the SpacetimeAuth configuration of a database to its defaults, keeping the display name and Steam settings
+
+
+
+## `spacetime auth config set`
+
+Set a SpacetimeAuth configuration value for a database
+
+**Usage:** `spacetime auth config set <database> <key> <value>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+* `<KEY>` — The setting to configure
+
+  Possible values: `display_name`, `favicon_url`, `color.text`, `color.background`, `color.primary`, `color.input`, `color.border`, `login.email`, `login.anonymous`, `steam.publisher_key`, `steam.app_ids`
+
+* `<VALUE>` — The value to assign to the setting. `steam.app_ids` takes a comma-separated list; an empty value clears a Steam setting
+
+
+
+## `spacetime auth config reset`
+
+Reset the SpacetimeAuth configuration of a database to its defaults, keeping the display name and Steam settings
+
+**Usage:** `spacetime auth config reset <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+
+
+
+## `spacetime auth idp`
+
+Manage identity providers for a database
+
+**Usage:** `spacetime auth idp <COMMAND>`
+
+###### **Subcommands:**
+
+* `set` — Configure and enable an identity provider for a database
+* `enable` — Enable an identity provider for a database
+* `disable` — Disable an identity provider for a database
+
+
+
+## `spacetime auth idp set`
+
+Configure and enable an identity provider for a database
+
+**Usage:** `spacetime auth idp set <database> <idp> <client_id> <client_secret>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+* `<IDP>` — The identity provider to configure
+
+  Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
+
+* `<CLIENT_ID>` — The OAuth client ID
+* `<CLIENT_SECRET>` — The OAuth client secret
+
+
+
+## `spacetime auth idp enable`
+
+Enable an identity provider for a database
+
+**Usage:** `spacetime auth idp enable <database> <idp>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+* `<IDP>` — The identity provider to configure
+
+  Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
+
+
+
+
+## `spacetime auth idp disable`
+
+Disable an identity provider for a database
+
+**Usage:** `spacetime auth idp disable <database> <idp>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+* `<IDP>` — The identity provider to configure
+
+  Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
+
+
+
+
+## `spacetime auth client`
+
+Manage OAuth clients for a database
+
+**Usage:** `spacetime auth client <COMMAND>`
+
+###### **Subcommands:**
+
+* `create` — Create a new OAuth client
+* `delete` — Delete an OAuth client
+* `get` — Get an OAuth client
+* `set` — Set a configuration value for an OAuth client
+
+
+
+## `spacetime auth client create`
+
+Create a new OAuth client
+
+**Usage:** `spacetime auth client create [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+
+###### **Options:**
+
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
+* `--private` — Create the client as private (requires a client secret for token exchange)
+
+
+
+## `spacetime auth client delete`
+
+Delete an OAuth client
+
+**Usage:** `spacetime auth client delete [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+
+###### **Options:**
+
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
+
+
+
+## `spacetime auth client get`
+
+Get an OAuth client
+
+**Usage:** `spacetime auth client get [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+
+###### **Options:**
+
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
+* `--include-secret` — Include the client secret in the output
+
+
+
+## `spacetime auth client set`
+
+Set a configuration value for an OAuth client
+
+**Usage:** `spacetime auth client set [OPTIONS] <database> <key> <value>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name of the database (not its identity)
+* `<KEY>` — The setting to configure
+
+  Possible values: `name`, `private`, `web`, `native`, `redirect_uris`, `post_logout_redirect_uris`
+
+* `<VALUE>` — The value to assign to the setting. URI lists are comma-separated; an empty value clears the list
+
+###### **Options:**
+
+* `--name <NAME>` — The client name
+
+  Default value: `Default Client`
 
 
 
