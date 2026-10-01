@@ -1,11 +1,13 @@
 # @spacetimedb/lobby
 
-SpacetimeDB lobby and matchmaking submodule.
+Match players and manage game rooms in your SpacetimeDB application. Players
+join a queue, receive a place in a room, and join the match when everyone is
+ready. Ranked two-player matches can update player ratings from the result
+your game reports.
 
-This package provides queue tickets, deterministic same-pool matchmaking,
-ranked two-player results with Elo ratings, rooms, seats, lifecycle state,
-admin observability, and submodule helpers for host modules. Host applications
-define parties, backfill, and product-specific match rules.
+The submodule tracks waiting players and room state, and cleans up expired
+queue entries and abandoned rooms. Your game decides its match rules and who
+won.
 
 ## Install
 
@@ -22,8 +24,7 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-For a host application, register the namespace and keep the lifecycle hook in the
-host module:
+Add Lobby to your module and initialize its matchmaking settings and cleanup:
 
 ```ts
 import { schema } from 'spacetimedb/server';
@@ -41,12 +42,12 @@ export default spacetimedb;
 `install` seeds the default config, makes the publishing identity the first
 lobby administrator, and schedules the cleanup sweep.
 
-Players can queue, cancel, join, and leave through the submodule's own
-reducers, which derive the subject from `ctx.sender.toHexString()`. Ranked
-queues, result reporting, and closing a room are host helpers only, so the host
-decides which rating pools exist and who won. Call them with an explicit
-subject after the host has validated auth or mapped the SpacetimeDB identity to
-an application user ID:
+Players can queue, cancel, join, and leave through the submodule's own reducers,
+which identify them with `ctx.sender.toHexString()`. For ranked matches, your
+game chooses the rating pool and reports the result through server-side helpers.
+
+This example queues a player for a ranked duel. Replace `userIdFor` with your
+application's authenticated user lookup:
 
 ```ts
 export const findDuel = spacetimedb.reducer({}, ctx => {

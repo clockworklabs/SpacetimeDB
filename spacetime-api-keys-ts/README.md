@@ -1,10 +1,13 @@
 # @spacetimedb/api-keys
 
-Reusable SpacetimeDB submodule for server-to-server API keys.
+Give scripts and external services access to your SpacetimeDB application with
+API keys. For example, issue a key that lets a deployment tool upload files
+without signing in through your application's UI.
 
-The submodule owns API key lifecycle state: key creation, hashed secret storage,
-verification, scope checks, revocation, rotation, usage audit rows, and
-admin-gated views. Host apps own what scopes mean.
+Create keys with permissions and an expiration time, check them before an
+operation, and revoke or rotate them when needed. Your application defines
+what each permission allows. The submodule stores key hashes and usage history;
+each raw key is returned only when it is created or rotated.
 
 ## Install
 
@@ -21,8 +24,7 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-Register the submodule in the host schema and install its admin state and
-usage cleanup from the host lifecycle hook:
+Add API Keys to your module and initialize it:
 
 ```ts
 import { schema, SenderError, t } from 'spacetimedb/server';
@@ -44,9 +46,9 @@ schedules the usage sweep.
 
 ### Configure the secret
 
-Key material is HMAC-SHA256 keyed by an operator secret, so the module cannot
-mint keys until an administrator stores one. Generate it outside the module
-and set it once after publishing:
+Before creating API keys, an administrator must configure a secret used to
+generate them. Generate that secret outside the module and set it after
+publishing:
 
 ```bash
 spacetime call <database> api_keys.set_api_keys_config \
@@ -59,9 +61,10 @@ rotation fail with `api_keys.config_missing`.
 
 ### Verify keys in host operations
 
-Verification runs through a host wrapper so the application can apply request
-limits and derive the action being authorized. Keep the authorized mutation in
-the same host transaction:
+Check the API key in the operation it protects. This example requires the
+`files:write` permission before uploading a file. Apply your request limits
+before verification, and keep the key check and file write in the same
+transaction:
 
 ```ts
 export const uploadWithApiKey = spacetimedb.procedure(

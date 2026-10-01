@@ -1,10 +1,12 @@
 # @spacetimedb/grid
 
-Square and hex grids for SpacetimeDB modules, with sparse cell costs, owned or
-collaborative entities, A\* pathfinding, and Dijkstra movement ranges inside the
-gameplay transaction.
+Build square or hex-based game maps in your SpacetimeDB application. Place
+units, mark obstacles, find paths, and calculate which cells a unit can reach
+with its movement budget.
 
----
+Grid state is stored in your database. Your game can give each player their
+own map or let players share one, with server-side checks on who can move each
+unit.
 
 ## Install
 
@@ -17,18 +19,16 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-A grid is a row plus its associated `cellState`, `gridEntity`, and `entityPath`
-rows. Everything is regular SpacetimeDB state, so clients subscribe to grid
-changes like any other table.
-
 ## Usage
 
 ### Integrate into an application
 
-Register the Grid namespace and wrap its helpers with the application's ownership
-rules. Every helper runs inside the caller's transaction: pass `ctx.as.grid`
-from a reducer, or `tx.as.grid` inside a procedure's `withTx` when the host
-needs a return value.
+Add Grid to your module, then expose operations to create a map and move a
+unit. This example uses the caller's identity as the owner. Use an authenticated
+user ID instead if your game has user accounts.
+
+Each helper runs in your transaction: pass `ctx.as.grid` from a reducer, or
+`tx.as.grid` inside a procedure's `withTx` when you need a return value.
 
 ```ts
 import { schema, t } from 'spacetimedb/server';

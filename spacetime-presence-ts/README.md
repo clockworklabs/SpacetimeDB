@@ -1,6 +1,12 @@
 # @spacetimedb/presence
 
-Presence primitives for SpacetimeDB modules.
+Show who is online and what they are doing in your SpacetimeDB application.
+Use presence for an online-user list, room membership indicators, or typing
+indicators in chat.
+
+Clients send regular heartbeats to keep their presence active. Entries expire
+when those updates stop and are removed by scheduled cleanup. Your application
+can keep separate presence lists for rooms or groups and control who sees them.
 
 ## Install
 
@@ -13,20 +19,14 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-This package provides:
-
-- a `./submodule` namespace with private presence tables, a scheduled expiry
-  sweep, and client operations for global presence,
-- helpers for heartbeats and status/activity updates in host-chosen scopes.
-
 ## Usage
 
 ### Integrate into an application
 
-Register the namespace and install its config and expiry sweep. Presence rows
-are private: the host decides which scopes a caller may write and read, so it
-writes scoped presence through the helpers and exposes it through its own
-views.
+Add Presence to your module and initialize it. This example lets a room member
+send a heartbeat and see who is active in their rooms. Presence records are
+private, so your operations and views must check room membership before writing
+or returning them.
 
 ```ts
 import { schema, SenderError, t } from 'spacetimedb/server';
