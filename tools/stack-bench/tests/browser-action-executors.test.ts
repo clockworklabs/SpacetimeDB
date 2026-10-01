@@ -32,7 +32,9 @@ function services(actor: unknown, overrides: ServiceOverrides = {}): ProvidedSer
   };
   return {
     capabilities: {
-      actors: { get: (name: string) => name === 'a' ? actor : undefined },
+      // Stub actors without a page have no collapsed sections to open.
+      actors: { get: (name: string) => name !== 'a' ? undefined : actor && typeof actor === 'object' && !('page' in actor)
+        ? { ...actor, page: { locator: () => ({ evaluateAll: async () => {} }) } } : actor },
       'browser-interaction': browser,
       'browser-observation': browser,
       clock: { sleep: overrides.clockSleep ?? (async () => {}) },

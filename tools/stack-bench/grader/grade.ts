@@ -354,8 +354,8 @@ export class Actor {
     this.writes = [];
     this.lastWsWrite = null;
     page.on('dialog', dialog => {
-      // Dismissing beforeunload cancels the navigation that the scenario requested.
-      void (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(error => {
+      // Each step performs the action it names, so a confirmation or leave-page warning is accepted.
+      void dialog.accept().catch(error => {
         if (page.isClosed()) return;
         this.consoleErrors.push(`dialog handling failed: ${errorMessage(error)}`);
         if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();

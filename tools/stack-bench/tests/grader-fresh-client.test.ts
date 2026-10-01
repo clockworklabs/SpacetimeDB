@@ -44,7 +44,7 @@ test('browser diagnostics survive setup failure without changing check verdicts'
   }
 });
 
-test('an explicit reload accepts a leave-page warning but still dismisses ordinary confirmations', async () => {
+test('a step accepts a confirmation and an explicit reload accepts a leave-page warning', async () => {
   const server = createServer((_request, response) => response.end(`<button id="arm">Arm</button>
     <button id="confirm">Confirm</button><span id="answer"></span><span id="loads"></span><script>
     const loads = Number(sessionStorage.getItem('loads') || 0) + 1;
@@ -64,7 +64,7 @@ test('an explicit reload accepts a leave-page warning but still dismisses ordina
       name: 'leave page', features: [{ id: 1, name: 'leave page', actors: ['owner'], setup: [],
         criteria: [{ id: 'reload', desc: 'explicit navigation proceeds', points: 1, steps: [
           { do: 'click', actor: 'owner', testid: 'confirm' },
-          { do: 'expect', actor: 'owner', testid: 'answer', contains: 'dismissed' },
+          { do: 'expect', actor: 'owner', testid: 'answer', contains: 'accepted' },
           { do: 'click', actor: 'owner', testid: 'arm' },
           { do: 'reload', actor: 'owner', settleMs: 0 },
           { do: 'expect', actor: 'owner', testid: 'loads', contains: '2' },
@@ -74,6 +74,38 @@ test('an explicit reload accepts a leave-page warning but still dismisses ordina
     }, { runId: 'leave-page', roomName: name => name, url, actions: [], spacetime: null, nullControl: false });
     const evidence = result.criteria[0]!.evidence;
     assert.equal(evidence.status, 'passed', evidence.summary ?? undefined);
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test('expect reads controls inside collapsed sections, including ones that arrive later', async () => {
+  const server = createServer((_request, response) => response.end(`<!doctype html><article data-role="support-ticket">Shared case<details><summary>Conversation</summary>
+    <ol id="thread"></ol></details></article><details><summary>Account</summary><span id="private-note">secret</span></details>
+    <script>setTimeout(() => { const item = document.createElement('li'); item.dataset.role = 'support-reply-item';
+      item.textContent = 'Case received.'; document.querySelector('#thread').append(item); }, 600);</script>`));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const definition = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
+      name: 'collapsed', features: [{ id: 1, name: 'collapsed', actors: ['owner'], setup: [], criteria: [
+        { id: 'reply', desc: 'a later reply is read', points: 1, steps: [
+          { do: 'expect', actor: 'owner', testid: 'support-reply-item', contains: 'Case received.',
+            in: { testid: 'support-ticket', contains: 'Shared case' }, within: 3000 }] },
+        { id: 'private', desc: 'a collapsed private value counts as shown', points: 1, steps: [
+          { do: 'expect', actor: 'owner', testid: 'private-note', absent: true, within: 500 }] },
+      ] }] });
+    const result = await gradeFeature(browser, definition.features[0]!, {
+      url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
+    }, { runId: 'collapsed', roomName: name => name, url, actions: [], spacetime: null, nullControl: false });
+    const [reply, hidden] = result.criteria.map(criterion => criterion.evidence);
+    assert.equal(reply!.status, 'passed', reply!.summary ?? undefined);
+    assert.equal(hidden!.status, 'failed');
   } finally {
     await browser.close();
     server.closeAllConnections();

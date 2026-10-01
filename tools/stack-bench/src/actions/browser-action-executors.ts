@@ -20,6 +20,9 @@ interface ScrollTarget {
   readonly innerText: string;
   readonly type?: string;
   readonly options?: ArrayLike<{ value: string; label: string; selected?: boolean }>;
+  readonly parentElement: ScrollTarget | null;
+  closest(selector: 'details'): (ScrollTarget & { open: boolean }) | null;
+  querySelectorAll(selector: 'details'): ArrayLike<{ open: boolean }>;
   scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
   readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
     callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
@@ -423,6 +426,20 @@ async function expectElapsed({ input, capabilities }: BrowserArguments<{ since: 
   return { elapsedMs, atMost: input.atMost };
 }
 
+// A user opens a collapsed <details> section to read it; its summary has no contracted name.
+// Sections inside the scoped entry open too, so content that arrives later is shown.
+async function openDisclosures(actor: BrowserActor, browser: BrowserCapability, testid: string,
+  scope?: { readonly testid: string }): Promise<void> {
+  await actor.page.locator(browser.testId(testid)).evaluateAll(controls => controls.forEach(control => {
+    for (let section = control.closest('details'); section; section = section.parentElement?.closest('details') ?? null) {
+      section.open = true;
+    }
+  }));
+  if (scope) await actor.page.locator(browser.testId(scope.testid)).evaluateAll(entries => entries.forEach(entry => {
+    for (const section of Array.from(entry.querySelectorAll('details'))) section.open = true;
+  }));
+}
+
 async function expect({ input, capabilities, signal }: BrowserArguments<ExpectInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
@@ -436,6 +453,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   if (input.absent) {
     const deadline = Date.now() + within;
     while (Date.now() <= deadline) {
+      await openDisclosures(actor, browser, input.testid, scope);
       if (await loc.isVisible()) fail('control-present', { control: input.testid,
         ...(contains ? { matchingText: findingText(contains) } : {}),
         ...(scope?.testid ? { scope: scope.testid } : {}),
@@ -446,6 +464,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   }
 
   const countDeadline = Date.now() + within;
+  await openDisclosures(actor, browser, input.testid, scope);
   const visible = await loc.waitFor({ state: 'visible', timeout: within })
     .then(() => true).catch(error => {
       if (errorField(error, 'name') !== 'TimeoutError') throw error;
