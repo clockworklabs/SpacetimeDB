@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          ref: docs/release
+          ref: jdetter-openclaw/llms-signing-e2e-test
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -52,7 +52,7 @@ jobs:
             const fs = require('node:fs');
             const { execFileSync } = require('node:child_process');
 
-            const branch = 'docs/release';
+            const branch = 'jdetter-openclaw/llms-signing-e2e-test';
             const path = 'docs/static/llms.md';
             const generated = fs.readFileSync(path);
             const current = await github.rest.repos.getContent({
