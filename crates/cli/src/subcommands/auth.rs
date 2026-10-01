@@ -107,6 +107,14 @@ async fn send(config: &Config, body: serde_json::Value) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The API never echoes a client secret back, so point at the command that does.
+fn secret_hint(database: &str, name: &str) -> String {
+    format!(
+        "The client secret is not shown. To retrieve it, run:\n  \
+         spacetime auth client get {database} --name {name:?} --include-secret"
+    )
+}
+
 fn database_arg() -> Arg {
     Arg::new("database").required(true).help("The name of the database")
 }
@@ -238,6 +246,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let (cmd, args) = args.subcommand().expect("Subcommand required");
     let (subcmd, args) = args.subcommand().expect("Subcommand required");
     let database = args.get_one::<String>("database").unwrap();
+    let mut hint = None;
 
     let body = match (cmd, subcmd) {
         ("config", "set") => {
@@ -268,12 +277,19 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             "idp": args.get_one::<IdentityProvider>("idp").unwrap().to_string(),
             "enabled": toggle == "enable",
         }),
-        ("client", "create") => serde_json::json!({
-            "action": "client.create",
-            "database": database,
-            "name": args.get_one::<String>("name").unwrap(),
-            "private": args.get_flag("private"),
-        }),
+        ("client", "create") => {
+            let name = args.get_one::<String>("name").unwrap();
+            let private = args.get_flag("private");
+            if private {
+                hint = Some(secret_hint(database, name));
+            }
+            serde_json::json!({
+                "action": "client.create",
+                "database": database,
+                "name": name,
+                "private": private,
+            })
+        }
         ("client", "delete") => serde_json::json!({
             "action": "client.delete",
             "database": database,
@@ -289,10 +305,14 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             let key = args.get_one::<ClientSetting>("key").unwrap();
             let value = args.get_one::<String>("value").unwrap();
             validate_client_setting(key, value)?;
+            let name = args.get_one::<String>("name").unwrap();
+            if matches!(key, ClientSetting::Private) && matches!(value.to_lowercase().as_str(), "true" | "1") {
+                hint = Some(secret_hint(database, name));
+            }
             serde_json::json!({
                 "action": "client.set",
                 "database": database,
-                "name": args.get_one::<String>("name").unwrap(),
+                "name": name,
                 "key": key.to_string(),
                 "value": value,
             })
@@ -300,7 +320,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         (cmd, subcmd) => anyhow::bail!("Invalid subcommand: {cmd} {subcmd}"),
     };
 
-    send(&config, body).await
+    send(&config, body).await?;
+    // On stderr, so stdout stays the JSON response.
+    if let Some(hint) = hint {
+        eprintln!("\n{hint}");
+    }
+    Ok(())
 }
 
 fn validate_bool(value: &str) -> anyhow::Result<()> {
@@ -402,6 +427,12 @@ mod tests {
     fn client_name_not_empty() {
         assert!(validate_client_setting(&ClientSetting::Name, "My Client").is_ok());
         assert!(validate_client_setting(&ClientSetting::Name, "  ").is_err());
+    }
+
+    #[test]
+    fn secret_hint_quotes_the_client_name() {
+        assert!(secret_hint("my-db", "Default Client")
+            .ends_with("spacetime auth client get my-db --name \"Default Client\" --include-secret"));
     }
 
     #[test]
