@@ -1,10 +1,11 @@
 # @spacetimedb/files
 
-File storage primitives for SpacetimeDB modules: upload, list, rename, delete,
-and serve byte blobs with per-file visibility, per-owner quotas, SHA-256 ETags,
-and an HTTP handler for public files.
+Store and share files in your SpacetimeDB application, such as avatars and
+message attachments. Users can upload, list, rename, and delete their files.
+Keep files private or make them available through an HTTP download route.
 
----
+File contents are stored in your database. Each file can be up to 4 MB, with a
+default total limit of 100 MB per owner.
 
 ## Install
 
@@ -17,17 +18,16 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-File metadata lives in the submodule's private `file` table and bytes in its
-private `file_blob` table, as transactional application state.
-
 ## Usage
 
 ### Integrate into an application
 
-Register the submodule, derive an owner from the host's identity or session
-model, and expose narrow reducers and procedures around the file helpers. The
-helpers run in the caller's transaction: pass `ctx.as.files` from a reducer, or
-`tx.as.files` inside a procedure's `withTx`.
+Add Files to your module, then expose operations for uploading and reading a
+file. This example uses the caller's SpacetimeDB identity as the owner. If your
+application has user accounts, use the authenticated user ID instead.
+
+The file helpers run in your transaction: pass `ctx.as.files` from a reducer,
+or `tx.as.files` inside a procedure's `withTx`.
 
 ```ts
 import { schema } from 'spacetimedb/server';

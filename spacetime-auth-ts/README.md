@@ -1,8 +1,13 @@
 # @spacetimedb/auth
 
-Authentication primitives for SpacetimeDB TypeScript modules. The package
-provides password and OAuth handlers, ES256 sessions, connection binding,
-profile management, and in-module rate limiting.
+Add user accounts and sign-in to your SpacetimeDB application. Users can sign
+in with a password, Google, or GitHub, manage their profile, and sign out of
+individual sessions. The package also supports email verification and password
+resets.
+
+Use the signed-in user in your reducers, procedures, and HTTP routes to control
+access to application data. Your application supplies its HTTP routes, signing
+key, and email delivery service.
 
 ## Install
 
@@ -15,15 +20,12 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-The host module owns HTTP route registration and any mail-delivery adapter.
-
 ## Usage
 
 ### Integrate into an application
 
-Import the submodule namespace, register the handlers your application needs,
-then install Auth from the host `init` hook. Auth mounts and initializes its
-Rate Limit dependency.
+Add Auth to your module and initialize it. This also sets up its built-in
+rate limits:
 
 ```ts
 import { schema } from 'spacetimedb/server';
@@ -37,9 +39,10 @@ export const init = spacetimedb.init(ctx => {
 });
 ```
 
-Configure the HTTP handlers once with `auth.client`, then register the ones
-your application uses on the host router with `ctx.as.auth`. The host owns its
-router, trusted-proxy policy, and mail delivery.
+Choose the sign-in routes your application needs. The example below adds
+password signup. Replace `deliver` with your email service. Set
+`trustedProxyHeader` only when your server receives requests through a trusted
+proxy that sets that header:
 
 ```ts
 import { Router } from 'spacetimedb/server';
@@ -94,9 +97,9 @@ await conn.reducers['auth.linkConnection']({ sessionToken: token });
 await conn.reducers['auth.updateProfile']({ name: 'Ada', image: undefined });
 ```
 
-The complete wiring covers routes, connection binding, caller-scoped views,
-and mail callbacks in the
-[Auth example host module](./example/spacetimedb/).
+See the [Auth example](./example/) for the full sign-in flow, email delivery,
+and views that return only the signed-in user's data. Before using the routes,
+configure the signing key below and any OAuth credentials you need.
 
 ### Configuration and the signing key
 
