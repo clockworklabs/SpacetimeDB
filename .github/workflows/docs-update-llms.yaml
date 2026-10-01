@@ -46,11 +46,56 @@ jobs:
         run: node scripts/generate-llms.mjs
 
       - name: Commit updated llms files
-        working-directory: docs
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add static/llms.md
-          git diff --staged --quiet && echo "No changes" && exit 0
-          git commit -m "Update llms files from docs build"
-          git push
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { execFileSync } = require('node:child_process');
+
+            const branch = 'docs/release';
+            const path = 'docs/static/llms.md';
+            const generated = fs.readFileSync(path);
+            const current = await github.rest.repos.getContent({
+              ...context.repo,
+              path,
+              ref: branch,
+            });
+
+            if (Buffer.from(current.data.content, 'base64').equals(generated)) {
+              core.info('No changes');
+              return;
+            }
+
+            const expectedHeadOid = execFileSync(
+              'git',
+              ['rev-parse', 'HEAD'],
+              { encoding: 'utf8' },
+            ).trim();
+
+            await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                  commit {
+                    oid
+                    url
+                  }
+                }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: `${context.repo.owner}/${context.repo.repo}`,
+                  branchName: branch,
+                },
+                expectedHeadOid,
+                message: {
+                  headline: 'Update llms files from docs build',
+                },
+                fileChanges: {
+                  additions: [{
+                    path,
+                    contents: generated.toString('base64'),
+                  }],
+                },
+              },
+            });
