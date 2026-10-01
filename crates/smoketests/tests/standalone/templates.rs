@@ -17,6 +17,49 @@ macro_rules! registered_template_ids {
 
 spacetimedb_smoketests::for_each_smoketest_template!(registered_template_ids);
 
+#[test]
+fn unknown_builtin_template_reports_a_helpful_error() -> Result<()> {
+    let tmpdir = tempfile::tempdir().context("Failed to create temp dir")?;
+    let project_path = tmpdir.path().join("test-next-js");
+    let config_path = tmpdir.path().join("config.toml");
+    let output = Command::new(ensure_binaries_built())
+        .arg("--config-path")
+        .arg(&config_path)
+        .args([
+            "init",
+            "--template",
+            "next-js",
+            "--project-path",
+            project_path.to_str().unwrap(),
+            "--non-interactive",
+            "test-next-js",
+        ])
+        .current_dir(tmpdir.path())
+        .output()
+        .context("Failed to execute spacetime init with an unknown template")?;
+
+    assert!(!output.status.success(), "unknown template should fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unknown built-in template `next-js`. Did you mean `nextjs-ts`?"),
+        "unexpected stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Run `spacetime init --template` to list available templates."),
+        "unexpected stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("To use a custom template, specify `owner/repo` or a full git clone URL."),
+        "unexpected stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("Invalid repository format"),
+        "unexpected stderr:\n{stderr}"
+    );
+
+    Ok(())
+}
+
 fn init_template(template_id: &str) -> Result<(TempDir, PathBuf)> {
     let tmpdir = tempfile::tempdir().context("Failed to create temp dir")?;
     let project_name = format!("test-{template_id}");

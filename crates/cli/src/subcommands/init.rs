@@ -19,6 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
 
 use crate::common_args;
+use crate::edit_distance::find_best_match_for_name;
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
 use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
@@ -380,7 +381,7 @@ fn create_template_config_from_template_str(
             use_local: true,
             native_aot: false,
         })
-    } else {
+    } else if is_owner_repo(template_str) || is_git_clone_url(template_str) {
         // GitHub template
         Ok(TemplateConfig {
             project_name,
@@ -393,7 +394,39 @@ fn create_template_config_from_template_str(
             use_local: true,
             native_aot: false,
         })
+    } else {
+        let template_ids = templates
+            .iter()
+            .map(|template| template.id.as_str())
+            .collect::<Vec<_>>();
+        let suggestion = find_best_match_for_name(&template_ids, template_str, None)
+            .map(|template_id| format!(" Did you mean `{template_id}`?"))
+            .unwrap_or_default();
+
+        anyhow::bail!(
+            "Unknown built-in template `{template_str}`.{suggestion}\n\nRun `spacetime init --template` to list available templates.\nTo use a custom template, specify `owner/repo` or a full git clone URL."
+        )
     }
+}
+
+fn is_owner_repo(input: &str) -> bool {
+    let mut parts = input.split('/');
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some(owner), Some(repo), None)
+            if !owner.is_empty()
+                && !repo.is_empty()
+                && !owner.chars().any(char::is_whitespace)
+                && !repo.chars().any(char::is_whitespace)
+    )
+}
+
+fn is_git_clone_url(input: &str) -> bool {
+    input.starts_with("git@")
+        || input.starts_with("git://")
+        || input.starts_with("ssh://")
+        || input.starts_with("http://")
+        || input.starts_with("https://")
 }
 
 #[cfg(windows)]
@@ -991,16 +1024,12 @@ fn format_language_label(lang: Option<&str>) -> String {
 }
 
 fn clone_github_template(repo_input: &str, target: &Path, is_server_only: bool) -> anyhow::Result<()> {
-    let is_git_url = |s: &str| {
-        s.starts_with("git@") || s.starts_with("ssh://") || s.starts_with("http://") || s.starts_with("https://")
-    };
-
-    let repo_url = if is_git_url(repo_input) {
+    let repo_url = if is_git_clone_url(repo_input) {
         repo_input.to_string()
-    } else if repo_input.contains('/') {
+    } else if is_owner_repo(repo_input) {
         format!("https://github.com/{}", repo_input)
     } else {
-        anyhow::bail!("Invalid repository format. Use 'owner/repo' or full git clone URL");
+        anyhow::bail!("Invalid repository format. Use `owner/repo` or a full git clone URL.");
     };
 
     println!("  Cloning from {}...", repo_url);
@@ -2366,6 +2395,70 @@ fn check_for_emscripten_and_cmake() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn template_definition(id: &str) -> TemplateDefinition {
+        TemplateDefinition {
+            id: id.to_string(),
+            description: format!("{id} test template"),
+            server_source: format!("templates/{id}/spacetimedb"),
+            client_source: format!("templates/{id}"),
+            server_lang: Some("typescript".to_string()),
+            client_lang: Some("typescript".to_string()),
+            client_framework: None,
+        }
+    }
+
+    fn template_config(input: &str) -> anyhow::Result<TemplateConfig> {
+        create_template_config_from_template_str(
+            "test-project".to_string(),
+            PathBuf::from("test-project"),
+            input,
+            &[template_definition("basic-rs"), template_definition("nextjs-ts")],
+        )
+    }
+
+    #[test]
+    fn template_typo_reports_unknown_builtin_with_suggestion() {
+        let error = template_config("next-js").err().expect("template typo should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("Unknown built-in template `next-js`."));
+        assert!(message.contains("Did you mean `nextjs-ts`?"));
+        assert!(message.contains("spacetime init --template"));
+        assert!(message.contains("`owner/repo` or a full git clone URL"));
+        assert!(!message.contains("Invalid repository format"));
+    }
+
+    #[test]
+    fn builtin_template_id_is_classified_as_builtin() {
+        let config = template_config("nextjs-ts").unwrap();
+
+        assert_eq!(config.template_type, TemplateType::Builtin);
+        assert_eq!(
+            config.template_def.as_ref().map(|template| template.id.as_str()),
+            Some("nextjs-ts")
+        );
+        assert_eq!(config.github_repo, None);
+    }
+
+    #[test]
+    fn owner_repo_template_is_classified_as_github() {
+        let config = template_config("ClockworkLabs/SpacetimeDB").unwrap();
+
+        assert_eq!(config.template_type, TemplateType::GitHub);
+        assert_eq!(config.github_repo.as_deref(), Some("ClockworkLabs/SpacetimeDB"));
+        assert!(config.template_def.is_none());
+    }
+
+    #[test]
+    fn full_git_url_template_is_classified_as_github() {
+        let url = "https://github.com/ClockworkLabs/SpacetimeDB.git";
+        let config = template_config(url).unwrap();
+
+        assert_eq!(config.template_type, TemplateType::GitHub);
+        assert_eq!(config.github_repo.as_deref(), Some(url));
+        assert!(config.template_def.is_none());
+    }
 
     fn cli_patch_wildcard() -> String {
         to_major_minor_patch_wildcard(env!("CARGO_PKG_VERSION"))
