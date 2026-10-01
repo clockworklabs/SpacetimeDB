@@ -54,6 +54,13 @@ pub enum ValidationError {
         pos: ColId,
         product_type: PrettyAlgebraicType,
     },
+    #[error(
+        "{column} has a recursive type (cycle at {ref_}); recursive types cannot be used in table or view columns; store references as IDs instead"
+    )]
+    RecursiveTypeInColumn {
+        column: RawColumnName,
+        ref_: AlgebraicTypeRef,
+    },
     #[error("table `{table}` has multiple primary key annotations")]
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]

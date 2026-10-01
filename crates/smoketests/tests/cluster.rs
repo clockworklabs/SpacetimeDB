@@ -32,6 +32,7 @@ mod cluster {
     mod permissions;
     mod publish_upgrade_prompt;
     mod quickstart;
+    mod recursive_types;
     mod rls;
     mod schedule_reducer;
     mod sql;

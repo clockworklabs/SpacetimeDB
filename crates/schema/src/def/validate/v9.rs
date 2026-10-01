@@ -13,7 +13,7 @@ use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
-use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
+use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, typespace::TypeRefError, WithTypespace};
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -1078,7 +1078,20 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             &column.algebraic_type,
         );
 
-        let (accessor_name, ty_for_generate) = (accessor_name, ty_for_generate).combine_errors()?;
+        // Table and view schemas store fully-resolved column types. Recursive types are valid in
+        // the module interface, but cannot be resolved into the finite type required by storage.
+        let storage_type =
+            match WithTypespace::new(self.module_validator.typespace, &column.algebraic_type).resolve_refs() {
+                Err(TypeRefError::RecursiveTypeRef(ref_)) => Err(ValidationError::RecursiveTypeInColumn {
+                    column: self.raw_column_name(col_id),
+                    ref_,
+                }
+                .into()),
+                // `validate_for_type_use` reports invalid references with their codegen location.
+                Ok(_) | Err(TypeRefError::InvalidTypeRef(_)) => Ok(()),
+            };
+
+        let (accessor_name, ty_for_generate, ()) = (accessor_name, ty_for_generate, storage_type).combine_errors()?;
 
         Ok(ColumnDef {
             accessor_name: identifier(accessor_name.clone())?,
@@ -2151,7 +2164,7 @@ mod tests {
 
     #[test]
     fn recursive_ref() {
-        let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
+        let recursive_type = AlgebraicType::product([("test_nest", AlgebraicType::option(AlgebraicTypeRef(0).into()))]);
 
         let mut builder = RawModuleDefV9Builder::new();
         let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
@@ -2159,6 +2172,22 @@ mod tests {
         let result: ModuleDef = builder.finish().try_into().unwrap();
 
         assert!(result.typespace_for_generate[ref_].is_recursive());
+    }
+
+    #[test]
+    fn recursive_type_in_table_column() {
+        let recursive_type = AlgebraicType::product([("test_nest", AlgebraicType::option(AlgebraicTypeRef(0).into()))]);
+
+        let mut builder = RawModuleDefV9Builder::new();
+        let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type, false);
+        builder
+            .build_table_with_new_type("Container", ProductType::from([("nested", ref_.into())]), false)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::RecursiveTypeInColumn { column, ref_ } => {
+            column == &RawColumnName::new("Container", "nested") && ref_ == &AlgebraicTypeRef(0)
+        });
     }
 
     #[test]

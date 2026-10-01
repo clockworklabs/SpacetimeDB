@@ -2021,7 +2021,7 @@ mod tests {
     }
     #[test]
     fn recursive_ref() {
-        let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
+        let recursive_type = AlgebraicType::product([("test_nest", AlgebraicType::option(AlgebraicTypeRef(0).into()))]);
 
         let mut builder = RawModuleDefV10Builder::new();
         let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
@@ -2029,6 +2029,22 @@ mod tests {
         let result: ModuleDef = builder.finish().try_into().unwrap();
 
         assert!(result.typespace_for_generate[ref_].is_recursive());
+    }
+
+    #[test]
+    fn recursive_type_in_table_column() {
+        let recursive_type = AlgebraicType::product([("test_nest", AlgebraicType::option(AlgebraicTypeRef(0).into()))]);
+
+        let mut builder = RawModuleDefV10Builder::new();
+        let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type, false);
+        builder
+            .build_table_with_new_type("Container", ProductType::from([("nested", ref_.into())]), false)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::RecursiveTypeInColumn { column, ref_ } => {
+            column == &RawColumnName::new("Container", "nested") && ref_ == &AlgebraicTypeRef(0)
+        });
     }
 
     #[test]
