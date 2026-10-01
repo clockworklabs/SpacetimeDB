@@ -1,17 +1,15 @@
 # @spacetimedb/retry
 
-Typed retries for SpacetimeDB TypeScript modules. `client()` creates a private
-scheduled-task table, attempt history, admin controls, and exponential-backoff
-dispatch around handlers defined by the host module.
+Retry failed background tasks in your SpacetimeDB application. Pass arguments
+to a task, set an attempt limit, and choose how long to wait between attempts.
+Each retry waits longer than the last, and administrators can inspect pending
+tasks and past attempts.
 
 ## Install
 
 ```bash
 npm install @spacetimedb/retry spacetimedb
 ```
-
-The tables and reducers are registered in the host schema. Retry does not
-mount a separate submodule schema.
 
 `spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
 to build the host module.
@@ -23,11 +21,10 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-Declare each task's argument type in `client()` when the module loads, before
-`schema()`. Register the handlers with `retry.retryReducer()` after
-`schema()`, so each handler receives the host's typed reducer context and its
-task's typed arguments. The example below is a module-definition skeleton:
-replace `sendReceipt` with an idempotent application function.
+Define the task's arguments, add Retry's tables to your module, then register
+the function that does the work. In this example, replace `sendReceipt` with
+your application's function. It must be safe to run more than once for the
+same order.
 
 ```ts
 import { schema, t } from 'spacetimedb/server';

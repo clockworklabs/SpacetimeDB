@@ -1,8 +1,8 @@
 # @spacetimedb/crypto
 
-SHA-256, HMAC-SHA256, encoding helpers, constant-time byte comparison, and
-webhook-signature verification for SpacetimeDB TypeScript modules. Hashing is
-implemented with `@noble/hashes`.
+Check that incoming webhooks came from Stripe, Resend, or GitHub before your
+SpacetimeDB application acts on them. The package also provides SHA-256 hashing,
+HMAC signatures, encoding helpers, and constant-time byte comparison.
 
 ## Install
 
@@ -17,12 +17,8 @@ For the surrounding SpacetimeDB module workflow, see
 
 ### Integrate into an application
 
-This pure helper package supplies hashing, encoding, and signature verification
-functions. Import the function needed by the host HTTP handler. Pass the exact
-raw request bytes and deterministic module time, then parse the provider payload
-after signature verification succeeds.
-
-Verify a Stripe webhook with the raw body and module time:
+In your HTTP handler, verify a Stripe webhook with the raw request body and
+the module's timestamp:
 
 ```ts
 import { SyncResponse } from 'spacetimedb/server';
@@ -43,6 +39,8 @@ Verify the raw webhook body before parsing it. Store webhook secrets in private
 tables and keep them out of public rows and procedure results.
 
 ## API
+
+These helpers do not create database tables. Hashing uses `@noble/hashes`.
 
 - `sha256(data)` and `hmacSha256(key, message)` return `Uint8Array` digests.
 - `timingSafeEqual(a, b)` compares every byte in equal-length arrays.

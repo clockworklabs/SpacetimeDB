@@ -1,12 +1,12 @@
 # @spacetimedb/cron
 
-Calendar and interval scheduling for SpacetimeDB TypeScript modules.
+Run recurring tasks in your SpacetimeDB application, such as daily reports,
+scheduled cleanup, or periodic data updates. Choose a calendar schedule or a
+fixed interval, pass arguments to each job, and inspect recent results.
 
-Each job has stable database state, one per-job schedule table, a statically
-registered handler, typed arguments, and bounded run history. Calendar
-schedules support IANA time zones and daylight-saving transitions. Reducer
-failures use SpacetimeDB's temporary volatile recovery mechanism until nested
-transactions are available.
+Schedules are stored in your database. Your application can change or cancel
+them at runtime. Calendar schedules support time zones and daylight-saving
+changes.
 
 ## Requirements
 
@@ -27,27 +27,18 @@ npm install @spacetimedb/cron spacetimedb
 For the complete install, build, and publish workflow, see the repository's
 [Getting started guide](https://spacetimedb.com/docs/).
 
-## Usage
+## Quick start
 
-### Integrate into an application
+This module records a report each weekday at 9 AM in New York. Replace the
+handler's database write with the work your application needs.
 
 ```ts
 import { schema, table, t } from 'spacetimedb/server';
 import { client, cronTable } from '@spacetimedb/cron';
 
-const dailyReport = cronTable({
-  name: 'daily_report',
-  args: t.object('DailyReportCronArgs', {
-    workspaceId: t.u64(),
-    format: t.string(),
-  }),
-});
-const heartbeat = cronTable({ name: 'heartbeat' });
-const refreshCatalog = cronTable({ name: 'refresh_catalog' });
-
+const dailyReport = cronTable({ name: 'daily_report' });
 const cron = client({
-  jobs: [dailyReport, heartbeat, refreshCatalog],
-  publicTables: true,
+  jobs: [dailyReport],
   reconcileEverySeconds: 300,
 });
 
@@ -64,26 +55,11 @@ export default spacetimedb;
 
 export const generateReport = dailyReport.cronReducer(
   spacetimedb,
-  (ctx, args, invocation) => {
+  (ctx, invocation) => {
     ctx.db.report.insert({
       id: 0n,
       generatedAt: invocation.scheduledFor,
     });
-    console.log(
-      `Generating ${args.format} report for workspace ${args.workspaceId}`
-    );
-  }
-);
-
-export const beat = heartbeat.cronReducer(spacetimedb, _ctx => {
-  // Perform deterministic database work here.
-});
-
-export const refresh = refreshCatalog.cronProcedure(
-  spacetimedb,
-  (ctx, invocation) => {
-    // Use invocation.id as the idempotency key for an external request.
-    ctx.http.fetch('https://example.com/catalog');
   }
 );
 
@@ -94,14 +70,21 @@ export const init = spacetimedb.init(ctx => {
   cron.schedule(ctx, dailyReport, '0 9 * * 1-5', {
     timezone: 'America/New_York',
     maxFailures: 3,
-    args: { workspaceId: 42n, format: 'summary' },
   });
-  cron.schedule(ctx, heartbeat, { everySeconds: 30 });
-  cron.schedule(ctx, refreshCatalog, '0 */15 * * * *');
 });
 ```
 
-`init` seeds schedules for a fresh database. Runtime schedule changes remain database state across module publishes.
+`init` creates the schedule for a new database. Later module publishes keep
+schedule changes made at runtime. To run at a fixed interval instead, pass
+`{ everySeconds: 30 }` in place of the cron expression.
+
+The repair sweep checks every five minutes for jobs that lost their next
+scheduled run. Failure recovery is best effort; see [Execution model](#execution-model)
+for crash behavior. `maxFailures: 3` disables the job after three consecutive
+recorded failures. The `cronJobs` view lets clients subscribe to job status.
+
+See the [browser example](./example/) for jobs with arguments, HTTP requests,
+and schedule controls.
 
 ## API
 
@@ -381,8 +364,6 @@ procedure outcomes, generations, cancellation, history bounds, authorization,
 and the example module. The recovery suite verifies that a procedure commits
 its next calendar fire before external work, survives a host stop, and performs
 at most one catch-up invocation after downtime.
-
-See the [browser example](./example/) for a complete integration.
 
 ## License
 
