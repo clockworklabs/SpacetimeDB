@@ -3,6 +3,7 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { createParser } from 'eventsource-parser';
 import { firstUnpricedReason } from './credential-broker-accounting.js';
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
+import type { ProviderFailure } from '../src/agents/provider-failure.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 // Account Responses does not promise max_output_tokens. Reserve the documented
@@ -177,6 +178,39 @@ interface BrokerProtocol {
   inputTokenAdjustment?(payload: JsonRecord): number;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
+  responseRejection?(body: Buffer, encoding?: string | string[]): Pick<ProviderFailure, 'category' | 'code'> | null;
+}
+
+/**
+ * A successful stream can carry the provider's refusal instead of a response, for example when the
+ * model has no capacity. A refusal before any output is a rejection, not a broken transport.
+ */
+function responsesRejection(body: Buffer, encoding?: string | string[]): Pick<ProviderFailure, 'category' | 'code'> | null {
+  let rejection: Pick<ProviderFailure, 'category' | 'code'> | null = null;
+  let produced = false;
+  const accept = (value: unknown): void => {
+    if (!isRecord(value) || rejection) return;
+    if (typeof value.type === 'string' && value.type.startsWith('response.output_')) produced = true;
+    if (value.type !== 'error' && value.type !== 'response.failed') return;
+    const response = isRecord(value.response) ? value.response : null;
+    const error = [response?.error, value.error, value].find(isRecord) ?? {};
+    const code = typeof error.code === 'string' && /^[a-zA-Z0-9_.-]{1,100}$/.test(error.code) ? error.code : null;
+    // Only the code is kept; the message is read to recognise a capacity refusal and then dropped.
+    const busy = /capacity|overloaded|rate.?limit/i.test(`${code ?? ''} ${typeof error.message === 'string' ? error.message : ''}`);
+    rejection = { category: busy ? 'rate-limit' : 'request', code };
+  };
+  try {
+    const text = decodedResponseBody(body, encoding).toString('utf8');
+    try { accept(JSON.parse(text)); }
+    catch {
+      const parser = createParser({ maxBufferSize: MAX_REQUEST_BYTES,
+        onEvent: ({ data }) => { try { accept(JSON.parse(data)); } catch { /* not an event object */ } } });
+      parser.feed(`${text}
+
+`);
+    }
+  } catch { return null; }
+  return produced ? null : rejection;
 }
 
 function responsesUsage(body: Buffer, encoding?: string | string[], config?: BrokerConfig): JsonRecord | null {
@@ -379,5 +413,6 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
+    responseRejection: responsesRejection,
   };
 }

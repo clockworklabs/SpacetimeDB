@@ -547,6 +547,46 @@ test('credential broker prices repeated compressed streams instead of exhausting
     upstreamBody: gzipSync(stream) });
 });
 
+test('a provider refusal inside a successful stream is a free rejection, and a capacity refusal can be waited out', async () => {
+  const rates = { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 0, cacheWrite1h: 0 };
+  const failed = (error: Record<string, unknown>) =>
+    `event: response.failed
+data: ${JSON.stringify({ type: 'response.failed', response: { status: 'failed', error } })}
+
+`;
+  const started = `event: response.output_item.added
+data: ${JSON.stringify({ type: 'response.output_item.added' })}
+
+`;
+  for (const { upstreamBody, failure, estimated } of [
+    { upstreamBody: failed({ code: 'server_is_overloaded', message: 'Selected model is at capacity. Please try a different model.' }),
+      failure: { category: 'rate-limit', status: 200, code: 'server_is_overloaded' }, estimated: 0 },
+    { upstreamBody: failed({ message: 'Selected model is at capacity.' }),
+      failure: { category: 'rate-limit', status: 200, code: null }, estimated: 0 },
+    { upstreamBody: failed({ code: 'invalid_prompt', message: 'private detail' }),
+      failure: { category: 'request', status: 200, code: 'invalid_prompt' }, estimated: 0 },
+    // A failure after output began may have been billed, so it stays an estimated transport failure.
+    { upstreamBody: started + failed({ code: 'server_error', message: 'stream broke' }),
+      failure: { category: 'transport', status: 200, code: 'incomplete-response' }, estimated: 1 },
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), 'openai-broker-rejection-'));
+    const ledgerPath = join(root, 'ledger.json');
+    try {
+      await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+        assert.equal((await send(brokerPort, { path: '/v1/responses',
+          headers: { authorization: `Bearer ${sessionToken}` },
+          body: JSON.stringify({ model: 'test-model', input: 'hello' }) })).status, 200);
+        const ledger = readCredentialBrokerLedger(ledgerPath);
+        assert.deepEqual(ledger.providerFailure, failure);
+        assert.equal(ledger.estimatedBillableRequests, estimated);
+        assert.equal(ledger.spentUsd > 0, estimated === 1);
+        assert.doesNotMatch(JSON.stringify(ledger), /private detail|at capacity/);
+      }, { provider: 'openai', ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
+        upstreamHeaders: { 'content-type': 'text/event-stream' }, upstreamBody });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
 test('credential broker estimates a settled request without exact provider usage', async () => {
   const errorStream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}',

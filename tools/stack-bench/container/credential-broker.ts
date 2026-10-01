@@ -280,7 +280,13 @@ export function createCredentialBroker(configInput: unknown, {
             const usage = responseBytes <= maxRequestBytes
               ? protocol.responseUsage(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding'])
               : null;
-            if (!usage) {
+            const rejection = usage || responseBytes > maxRequestBytes ? null
+              : protocol.responseRejection?.(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding']) ?? null;
+            if (rejection) {
+              // The provider refused before producing output, so nothing is charged, as for an error status.
+              recordFailure(requestOrdinal, { ...rejection, status });
+              settleBillable();
+            } else if (!usage) {
               if (config.provider === 'openrouter') providerIntegrityError = 'OpenRouter response lacks verified cost and routing metadata';
               recordFailure(requestOrdinal, { category: 'transport', status, code: 'incomplete-response' });
               settleBillable({ estimated: 'no-usage', unpriced: unprovenPricing });
