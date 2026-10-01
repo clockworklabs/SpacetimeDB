@@ -2772,12 +2772,7 @@ mod tests {
     }
 
     fn post_mcp_root(body: &'static str) -> Request<Body> {
-        Request::builder()
-            .method(http::Method::POST)
-            .uri("/v1/mcp")
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap()
+        post_mcp_root_with(&[], body)
     }
 
     #[tokio::test]
@@ -2832,5 +2827,317 @@ mod tests {
         let response = app.oneshot(post_mcp_root("")).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    fn post_mcp_root_with(headers: &[(&'static str, &'static str)], body: &'static str) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method(http::Method::POST)
+            .uri("/v1/mcp")
+            .header(http::header::CONTENT_TYPE, "application/json");
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+
+        builder.body(Body::from(body)).unwrap()
+    }
+
+    async fn json_body(response: axum::response::Response) -> serde_json::Value {
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    async fn mcp_root_status(
+        headers: &[(&'static str, &'static str)],
+        body: &'static str,
+    ) -> (StatusCode, serde_json::Value) {
+        let response = root_router(RootRoutes::default())
+            .oneshot(post_mcp_root_with(headers, body))
+            .await
+            .unwrap();
+        let status = response.status();
+
+        (status, json_body(response).await)
+    }
+
+    const STATELESS_LIST: &str = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#;
+
+    #[tokio::test]
+    async fn handshake_era_is_unchanged_over_http() {
+        let (status, body) =
+            mcp_root_status(&[], r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["protocolVersion"], "2025-06-18");
+        assert!(
+            body["result"]["resultType"].is_null(),
+            "an older client has no resultType"
+        );
+        assert!(body["result"]["_meta"].is_null());
+
+        // unimplemented method stays in band with 200
+        let (status, body) = mcp_root_status(&[], r#"{"jsonrpc":"2.0","id":2,"method":"nope","params":{}}"#).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["error"]["code"], -32601);
+
+        let (status, body) = mcp_root_status(
+            &[],
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ping","arguments":{}}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["result"]["resultType"].is_null());
+        assert!(body["result"]["_meta"].is_null());
+        assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("pong"));
+    }
+
+    #[tokio::test]
+    async fn stateless_discover_answers_over_http() {
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "server/discover")],
+            r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["supportedVersions"][0], "2026-07-28");
+        assert_eq!(body["result"]["supportedVersions"][1], "2025-06-18");
+        assert_eq!(body["result"]["resultType"], "complete");
+        assert!(body["result"]["ttlMs"].as_u64().is_some_and(|ttl| ttl > 0));
+        assert_eq!(body["result"]["cacheScope"], "public");
+        assert_eq!(
+            body["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+            "spacetimedb"
+        );
+    }
+
+    #[tokio::test]
+    async fn stateless_listing_is_cacheable_over_http() {
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "tools/list")],
+            STATELESS_LIST,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["resultType"], "complete");
+        assert!(body["result"]["ttlMs"].as_u64().is_some_and(|ttl| ttl > 0));
+        assert!(body["result"]["tools"].as_array().unwrap().len() >= 5);
+    }
+
+    #[tokio::test]
+    async fn header_validation_failures_are_bad_requests() {
+        let (status, body) = mcp_root_status(&[("mcp-protocol-version", "2026-07-28")], STATELESS_LIST).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], -32020);
+
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "tools/call")],
+            STATELESS_LIST,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], -32020);
+
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "tools/list")],
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-06-18","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], -32020);
+
+        // missing client capabilities
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "tools/list")],
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], -32602);
+    }
+
+    #[tokio::test]
+    async fn tools_call_name_header_is_enforced_over_http() {
+        let call = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#;
+        let version = ("mcp-protocol-version", "2026-07-28");
+        let method = ("mcp-method", "tools/call");
+
+        let (status, body) = mcp_root_status(&[version, method, ("mcp-name", "sql")], call).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "a name that disagrees with the body");
+        assert_eq!(body["error"]["code"], -32020);
+
+        let (status, body) = mcp_root_status(&[version, method, ("mcp-name", "=?base64?cGluZw==?=")], call).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["resultType"], "complete");
+        assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("pong"));
+    }
+
+    #[tokio::test]
+    async fn version_negotiation_and_dispatch_over_http() {
+        // a version we do not implement
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2099-01-01"), ("mcp-method", "tools/list")],
+            STATELESS_LIST,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], -32022);
+        assert_eq!(body["error"]["data"]["requested"], "2099-01-01");
+        assert_eq!(body["error"]["data"]["supported"][0], "2026-07-28");
+
+        // initialize does not exist in the stateless revision
+        let (status, body) = mcp_root_status(
+            &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "initialize")],
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "the stateless revision answers 404");
+        assert_eq!(body["error"]["code"], -32601);
+    }
+
+    #[tokio::test]
+    async fn a_notification_is_accepted_with_no_body() {
+        let response = root_router(RootRoutes::default())
+            .oneshot(post_mcp_root_with(
+                &[("mcp-protocol-version", "2026-07-28"), ("mcp-method", "tools/list")],
+                r#"{"jsonrpc":"2.0","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert!(response.into_body().collect().await.unwrap().to_bytes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_mcp_endpoint_refuses_get() {
+        let response = root_router(RootRoutes::default())
+            .oneshot(Request::builder().uri("/v1/mcp").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn discover_answers_whatever_version_the_client_declared() {
+        let (status, body) = mcp_root_status(
+            &[("mcp-method", "server/discover")],
+            r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "no version header at all");
+        assert_eq!(body["result"]["supportedVersions"][0], "2026-07-28");
+
+        let (status, body) = mcp_root_status(
+            &[
+                ("mcp-protocol-version", "2025-06-18"),
+                ("mcp-method", "server/discover"),
+            ],
+            r#"{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{}}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "an older revision declared");
+        assert_eq!(body["result"]["supportedVersions"][1], "2025-06-18");
+    }
+
+    #[tokio::test]
+    async fn the_scoped_route_enforces_the_same_stateless_rules() {
+        let database_identity = test_identity(22);
+        let state = DummyState::new().with_database(database_identity);
+        let app = DatabaseRoutes::<DummyState>::default()
+            .into_router(state.clone())
+            .with_state(state);
+
+        let list = |headers: Vec<(&'static str, &'static str)>| {
+            let mut builder = Request::builder()
+                .method(http::Method::POST)
+                .uri(format!("/{database_identity}/mcp"))
+                .header(http::header::CONTENT_TYPE, "application/json");
+            for (name, value) in headers {
+                builder = builder.header(name, value);
+            }
+            builder.body(Body::from(STATELESS_LIST)).unwrap()
+        };
+
+        let response = app
+            .clone()
+            .oneshot(list(vec![
+                ("mcp-protocol-version", "2026-07-28"),
+                ("mcp-method", "tools/list"),
+            ]))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["result"]["resultType"], "complete");
+        assert!(body["result"]["ttlMs"].as_u64().is_some_and(|ttl| ttl > 0));
+        for tool in body["result"]["tools"].as_array().unwrap() {
+            // the url already picked the database
+            assert!(tool["inputSchema"]["properties"]["database"].is_null());
+        }
+
+        let response = app
+            .oneshot(list(vec![("mcp-protocol-version", "2026-07-28")]))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(json_body(response).await["error"]["code"], -32020);
+    }
+
+    #[tokio::test]
+    async fn a_failed_tool_is_in_band_and_still_decorated() {
+        let (status, body) = mcp_root_status(
+            &[
+                ("mcp-protocol-version", "2026-07-28"),
+                ("mcp-method", "tools/call"),
+                ("mcp-name", "get_schema"),
+            ],
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_schema","arguments":{"database":"no-such-db"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "a tool failure is not a protocol error");
+        assert_eq!(body["result"]["isError"], true);
+        assert_eq!(body["result"]["resultType"], "complete");
+        assert_eq!(
+            body["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+            "spacetimedb"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_version_header_is_a_bad_request() {
+        let mut request = post_mcp_root_with(&[("mcp-method", "tools/list")], STATELESS_LIST);
+        request
+            .headers_mut()
+            .append("mcp-protocol-version", "2026-07-28".parse().unwrap());
+        request
+            .headers_mut()
+            .append("mcp-protocol-version", "2025-06-18".parse().unwrap());
+
+        let response = root_router(RootRoutes::default()).oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(json_body(response).await["error"]["code"], -32020);
+    }
+
+    #[tokio::test]
+    async fn a_non_object_body_is_a_bad_request() {
+        for body in [r#"[{"jsonrpc":"2.0","id":1,"method":"tools/list"}]"#, r#""hello""#] {
+            let response = root_router(RootRoutes::default())
+                .oneshot(post_mcp_root(body))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{body} must not be accepted"
+            );
+            assert_eq!(json_body(response).await["error"]["code"], -32600);
+        }
     }
 }
