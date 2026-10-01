@@ -1,11 +1,12 @@
 # @spacetimedb/stripe
 
-A SpacetimeDB submodule that mirrors Stripe customers, subscriptions, Checkout
-sessions, invoices, and payments. Stripe webhooks feed private base tables, and
-host modules expose product-specific views and workflows. Procedures are
-synchronous and webhook payloads use valibot validation.
+Take payments through Stripe from your SpacetimeDB application. Create Checkout
+sessions for purchases or subscriptions, open the customer billing portal, and
+track payment and subscription status in your database.
 
----
+Stripe webhooks keep those records up to date. Your application uses them to
+decide when to grant access or fulfill an order, and which billing details each
+user can see.
 
 ## Install
 
@@ -24,8 +25,14 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Register Stripe in the application schema, initialize it, and route Stripe
-webhooks to it:
+Add Stripe to your module, initialize it, and register a webhook route. The
+example below starts Checkout for a product in your application's `storeProduct`
+table. `APP_ORIGIN` is your application's URL.
+
+After publishing, configure your Stripe API key and webhook signing secret as
+an administrator with `stripe.set_stripe_config`. See the arguments in
+[Standalone configuration](#standalone-configuration). Register the webhook URL
+with Stripe and select the [events listed below](#webhook-events-handled).
 
 ```ts
 import { Router, SenderError, schema, t } from 'spacetimedb/server';
@@ -97,8 +104,9 @@ that need an administrator check read the same table through
 
 ### Standalone configuration
 
-Stripe credentials live in a private `stripe_config` singleton. During `init`, a
-fresh database seeds the owner into the private `stripe_admin_identity` table.
+When running Stripe as its own database, configure it with the unprefixed
+operation below. Credentials are private, and the publishing owner is the
+first administrator.
 
 ```bash
 spacetime call --server http://127.0.0.1:3000 stripe-ts set_stripe_config \
