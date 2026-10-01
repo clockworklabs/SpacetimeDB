@@ -195,8 +195,8 @@ export function useTable<TableDef extends UntypedTableDef>(
   };
 
   watch(
-    () => conn.isActive,
-    isActive => {
+    () => [conn.getConnection(), conn.isActive] as const,
+    ([, isActive]) => {
       // Clean up existing listeners and subscriptions first
       if (unsubscribeFromTable) {
         unsubscribeFromTable();
@@ -206,6 +206,9 @@ export function useTable<TableDef extends UntypedTableDef>(
         subscriptionHandle.unsubscribe();
         subscriptionHandle = null;
       }
+
+      isReady.value = false;
+      latestTransactionEvent = null;
 
       if (isActive) {
         unsubscribeFromTable = setupTableListeners() || null;
