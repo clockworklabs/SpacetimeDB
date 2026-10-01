@@ -20,7 +20,7 @@ partial class RawModuleDefV10
     private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
     private readonly List<RawViewDefV10> viewDefs = [];
     private readonly List<RawViewPrimaryKeyDefV10> viewPrimaryKeyDefs = [];
-    private readonly List<EnvironmentDeclaration> environment = [];
+    private readonly List<RawEnvironmentDeclarationV10> environment = [];
     private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
         new(StringComparer.Ordinal);
@@ -87,7 +87,7 @@ partial class RawModuleDefV10
 
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
-    internal void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+    internal void RegisterEnvironment(RawEnvironmentDeclarationV10 declaration) =>
         environment.Add(declaration);
 
     internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
@@ -432,7 +432,7 @@ public static class Module
         moduleDef.RegisterView(def);
     }
 
-    public static void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+    public static void RegisterEnvironment(RawEnvironmentDeclarationV10 declaration) =>
         moduleDef.RegisterEnvironment(declaration);
 
     public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
