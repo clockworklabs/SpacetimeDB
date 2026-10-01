@@ -359,4 +359,62 @@ mod tests {
             r#"SELECT * FROM "player" WHERE ("player"."bytes" = 0x01020304ff)"#
         );
     }
+
+    #[test]
+    fn test_byte_vector_equality_literals() {
+        struct BytesRow;
+        struct BytesRowCols {
+            bytes: Col<BytesRow, Vec<u8>>,
+        }
+        impl HasCols for BytesRow {
+            type Cols = BytesRowCols;
+            fn cols(table_name: &'static str) -> Self::Cols {
+                BytesRowCols {
+                    bytes: Col::new(table_name, "bytes"),
+                }
+            }
+        }
+
+        let owned = vec![0, 1, 2, 0xff];
+        let query = Table::<BytesRow>::new("bytes_row")
+            .filter(|row| row.bytes.eq(owned.clone()))
+            .build();
+        assert_eq!(
+            query.sql(),
+            r#"SELECT * FROM "bytes_row" WHERE ("bytes_row"."bytes" = 0x000102ff)"#
+        );
+
+        let query = Table::<BytesRow>::new("bytes_row")
+            .filter(|row| row.bytes.eq(&owned))
+            .build();
+        assert_eq!(
+            query.sql(),
+            r#"SELECT * FROM "bytes_row" WHERE ("bytes_row"."bytes" = 0x000102ff)"#
+        );
+
+        let query = Table::<BytesRow>::new("bytes_row")
+            .filter(|row| row.bytes.eq(owned.as_slice()))
+            .build();
+        assert_eq!(
+            query.sql(),
+            r#"SELECT * FROM "bytes_row" WHERE ("bytes_row"."bytes" = 0x000102ff)"#
+        );
+
+        let query = Table::<BytesRow>::new("bytes_row")
+            .filter(|row| row.bytes.eq(Vec::new()))
+            .build();
+        assert_eq!(
+            query.sql(),
+            r#"SELECT * FROM "bytes_row" WHERE ("bytes_row"."bytes" = 0x)"#
+        );
+
+        let nonmatching = Table::<BytesRow>::new("bytes_row")
+            .filter(|row| row.bytes.eq(&[0, 1, 3, 0xff][..]))
+            .build();
+        assert_ne!(query.sql(), nonmatching.sql());
+        assert_eq!(
+            nonmatching.sql(),
+            r#"SELECT * FROM "bytes_row" WHERE ("bytes_row"."bytes" = 0x000103ff)"#
+        );
+    }
 }

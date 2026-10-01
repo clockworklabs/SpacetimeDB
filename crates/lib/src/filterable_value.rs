@@ -15,6 +15,7 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - Signed and unsigned integers of various widths.
 /// - [`bool`].
 /// - [`String`], which is also filterable with `&str`.
+/// - [`Vec<u8>`], which is also filterable with `&[u8]`.
 /// - [`Identity`].
 /// - [`Uuid`].
 /// - [`Timestamp`].
@@ -49,8 +50,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 //   E.g. `&str: FilterableValue<Column = String>` is desirable.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
-    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
+    label = "should be an integer type, `bool`, `String`, `&str`, `Vec<u8>`, `&[u8]`, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, byte vectors and slices, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
@@ -105,17 +106,14 @@ impl_filterable_value! {
     String,
     &str => String,
 
+    Vec<u8>,
+    &[u8] => Vec<u8>,
+
     Identity: Copy,
     Uuid: Copy,
     Timestamp: Copy,
     ConnectionId: Copy,
     Hash: Copy,
-
-    // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
-    // as they have trivial portable equality and ordering,
-    // but @RReverser's proposed filtering rules do not include them.
-    // Vec<u8>,
-    // &[u8] => Vec<u8>,
 }
 
 /// Marker trait for column types supported as procedural view primary keys.
@@ -123,7 +121,7 @@ impl_filterable_value! {
 #[diagnostic::on_unimplemented(
     message = "view primary key column type `{Self}` is not supported",
     label = "view primary key columns must use an index-filterable key type",
-    note = "view primary keys must be integer, bool, string, Identity, Uuid, Timestamp, ConnectionId, Hash, or a no-payload enum which derives SpacetimeType"
+    note = "view primary keys must be integer, bool, string, bytes, Identity, Uuid, Timestamp, ConnectionId, Hash, or a no-payload enum which derives SpacetimeType"
 )]
 pub trait ViewPrimaryKeyColumn {}
 impl<T> ViewPrimaryKeyColumn for T where for<'a> &'a T: FilterableValue<Column = T> {}
@@ -199,3 +197,59 @@ impl_terminator!(
     ops::RangeToInclusive<T>,
     (ops::Bound<T>, ops::Bound<T>),
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_sats::{AlgebraicValue, ProductValue};
+
+    fn assert_byte_filter<Arg: FilterableValue<Column = Vec<u8>>>() {}
+
+    #[test]
+    fn byte_vectors_and_slices_are_filterable_without_cloning() {
+        assert_byte_filter::<&Vec<u8>>();
+        assert_byte_filter::<&[u8]>();
+    }
+
+    #[test]
+    fn byte_filter_bounds_use_canonical_bsatn_product_encoding() {
+        for bytes in [Vec::new(), vec![0, 1, 2, 0xff]] {
+            let slice = bytes.as_slice();
+            let mut encoded_bound = Vec::new();
+            let bound = <&[u8] as IndexScanRangeBoundsTerminator>::bounds(&slice);
+            assert_eq!(bound.serialize_into(&mut encoded_bound), None);
+
+            let product = ProductValue::from([AlgebraicValue::Bytes(bytes.clone().into())]);
+            assert_eq!(encoded_bound, bsatn::to_vec(&product).unwrap());
+
+            let mut encoded_bound = encoded_bound.as_slice();
+            assert!(bsatn::eq::eq_bsatn(
+                &AlgebraicValue::Product(product),
+                bsatn::Deserializer::new(&mut encoded_bound),
+            ));
+        }
+    }
+
+    #[test]
+    fn byte_filter_equality_rejects_nonmatching_values() {
+        let encode = |bytes: &[u8]| {
+            let mut encoded = Vec::new();
+            let bound = <&[u8] as IndexScanRangeBoundsTerminator>::bounds(&bytes);
+            let _ = bound.serialize_into(&mut encoded);
+            encoded
+        };
+
+        let encoded = encode(&[1, 2, 3]);
+        let mut encoded = encoded.as_slice();
+        let nonmatching = AlgebraicValue::Bytes(vec![1, 2, 4].into());
+        assert!(!bsatn::eq::eq_bsatn(
+            &nonmatching,
+            bsatn::Deserializer::new(&mut encoded),
+        ));
+
+        let encoded = encode(&[]);
+        let mut encoded = encoded.as_slice();
+        let nonempty = AlgebraicValue::Bytes(vec![0].into());
+        assert!(!bsatn::eq::eq_bsatn(&nonempty, bsatn::Deserializer::new(&mut encoded),));
+    }
+}

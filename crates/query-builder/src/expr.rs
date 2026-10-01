@@ -141,7 +141,21 @@ impl_rhs!(Identity, |id: Identity| format!("0x{}", id.to_hex()));
 impl_rhs!(ConnectionId, |id: ConnectionId| format!("0x{}", id.to_hex()));
 impl_rhs!(Timestamp, |ts: Timestamp| format!("'{}'", ts));
 
-impl_rhs!(Vec<u8>, |b: Vec<u8>| {
-    let hex: String = b.iter().map(|x| format!("{:02x}", x)).collect();
+fn format_bytes(bytes: &[u8]) -> String {
+    let hex: String = bytes.iter().map(|x| format!("{:02x}", x)).collect();
     format!("0x{}", hex)
-});
+}
+
+impl_rhs!(Vec<u8>, |bytes: Vec<u8>| format_bytes(&bytes));
+
+impl<T> RHS<T, Vec<u8>> for &Vec<u8> {
+    fn to_expr(self) -> Operand<T> {
+        Operand::Literal(LiteralValue(format_bytes(self)))
+    }
+}
+
+impl<T> RHS<T, Vec<u8>> for &[u8] {
+    fn to_expr(self) -> Operand<T> {
+        Operand::Literal(LiteralValue(format_bytes(self)))
+    }
+}
