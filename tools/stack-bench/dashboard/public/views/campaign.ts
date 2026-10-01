@@ -221,14 +221,7 @@ export function campaignPage(input: CampaignPageInput): string {
       ? `<a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">`
         + `${label}</a>` : label}</th>`;
   }).join('');
-  const repetitions = row('Valid runs', stack => value(ratio(stack.n, stack.attempts.length)))
-      + row('Excluded', stack =>
-        value(num(stack.attempts.filter(attempt => attempt.excluded).length)));
-  return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
-    + `<b>${esc(sheet.key)}</b></div>`
-    + `<div class="title"><h2>${esc(sheet.title)}</h2>`
-    + `<span class="state${sheet.provisional ? ' warn' : ''}" title="${esc([statusWord(sheet.status), sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${sheet.provisional ? 'Provisional' : esc(statusWord(sheet.status))}</span></div>${facts(sheet)}`
-    + '<h3>Results</h3>'
+  const results = '<h3>Results</h3>'
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
     + row('Checks passed', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
@@ -236,10 +229,16 @@ export function campaignPage(input: CampaignPageInput): string {
     + (showRepairs ? row('First builds', stack => value(pct(stack.unaided))) : '')
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Active time', stack => value(duration(stack.timeSec)))
-    + repetitions
+    + row('Valid runs', stack => value(ratio(stack.n, stack.attempts.length)))
+    + row('Excluded', stack => value(num(stack.attempts.filter(attempt => attempt.excluded).length)))
     + row('Total spend', stack => value(spend(stack.spend, stack.spendPending, stack.liveSpend)))
-    + '</tbody></table></div>'
+    + '</tbody></table></div>';
+  return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
+    + `<b>${esc(sheet.key)}</b></div>`
+    + `<div class="title"><h2>${esc(sheet.title)}</h2>`
+    + `<span class="state${sheet.provisional ? ' warn' : ''}" title="${esc([statusWord(sheet.status), sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${sheet.provisional ? 'Provisional' : esc(statusWord(sheet.status))}</span></div>`
     + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns, input.unit) : '')
+    + board(input, stacks)
     + '<h3>Runs</h3>'
     + `<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Model</th><th>Features passed</th><th>Checks passed</th><th>Spend</th>${showRepairs ? '<th>Repairs</th>' : ''}<th>Elapsed</th><th>Status</th></tr></thead><tbody>`
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
@@ -255,5 +254,5 @@ export function campaignPage(input: CampaignPageInput): string {
           ? `<details><summary>Excluded · show reason</summary><p>${esc(attempt.excluded)}</p></details>`
           : esc(phrase(attempt))}</td></tr>`;
     })).join('')
-    + '</tbody></table></div></div>' + board(input, stacks) + '</div>';
+    + '</tbody></table></div></div>' + results + facts(sheet) + '</div>';
 }

@@ -52,13 +52,13 @@ test('campaign separates aggregate scores from selected evidence and explains pe
       questlines: [{ id: 'catalog', title: 'Catalog', score: 20, nodes: [] }] }],
   };
   const page = campaignPage({ sheet, progression: null, view: 'grid', step: 0 });
-  const selected = page.slice(page.indexOf('<h3>Runs</h3>'));
+  const selected = page.slice(page.indexOf('feature-progress'), page.indexOf('<h3>Results</h3>'));
   assert.match(page, /82%/);
   assert.match(selected, /20%/);
   assert.match(selected, /2 \/ 10/);
   assert.doesNotMatch(selected, /82%|9 \/ 10|Questline average/);
   assert.match(page, /Valid runs/);
-  const metricsTable = page.split('<table class="sheet">')[1]!.split('</table>')[0]!;
+  const metricsTable = page.split('<h3>Results</h3>')[1]!.split('</table>')[0]!;
   assert.match(metricsTable, /\$6\.00/);
   const noRepairSheet = { ...sheet, repetitions: 1, stacks: sheet.stacks.map(stack => ({
     ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 },

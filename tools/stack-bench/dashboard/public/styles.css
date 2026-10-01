@@ -118,9 +118,9 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
 
 /* campaign sheet: stacks across, facts down */
 .page > h3 { margin: 28px 0 12px; font-size: 15px; font-weight: 600; color: var(--n1); }
-.facts { display: flex; flex-wrap: wrap; gap: 1px; margin: 0 0 16px; background: var(--shade4); border: 1px solid var(--shade4); border-radius: 4px; overflow: hidden; }
-.facts div { flex: 1 1 168px; align-content: start; display: grid; gap: 5px; min-width: 0; padding: 9px 12px; background: var(--shade6); }
-.facts b { color: var(--n2); font: 500 12px/1.5 var(--mono); overflow-wrap: anywhere; }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 24px 0 0; }
+.facts div { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.facts b { color: var(--n3); font: 500 11.5px/1.5 var(--mono); overflow-wrap: anywhere; }
 .sheet { width: 100%; border-collapse: collapse; background: var(--shade6); }
 .sheet th, .sheet td { min-width: 185px; padding: 8px 16px; text-align: left; vertical-align: middle; border: 1px solid var(--shade4); }
 .sheet th:first-child { min-width: 190px; width: 190px; }
@@ -258,7 +258,6 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
   .sheet-scroll::before { content: 'Scroll horizontally to compare stacks'; display: block; padding: 6px 0; color: var(--n4); font-size: 12px; }
 }
 @media (max-width: 420px) {
-  .facts div { flex-basis: calc(50% - 1px); }
   .page { padding-inline: 12px; }
   .secret { flex-wrap: wrap; }
   .secret input { max-width: 100%; }
