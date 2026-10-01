@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - docs/release
+      - jdetter-openclaw/llms-signing-short-e2e-test
     paths:
       - 'docs/docs/**'
       - 'skills/**'
@@ -22,7 +23,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          ref: docs/release
+          ref: jdetter-openclaw/llms-signing-short-e2e-test
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -50,7 +51,7 @@ jobs:
         with:
           script: |
             const fs = require('node:fs');
-            const branch = 'docs/release';
+            const branch = 'jdetter-openclaw/llms-signing-short-e2e-test';
             const path = 'docs/static/llms.md';
             if (await exec.exec('git', ['diff', '--quiet', '--', path], {
               ignoreReturnCode: true,
