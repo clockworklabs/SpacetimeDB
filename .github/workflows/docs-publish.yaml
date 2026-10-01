@@ -52,8 +52,8 @@ jobs:
     steps:
       - name: Send Discord notification
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_RELEASE_CHANNEL_URL }}
-          RELEASE_OPS_ROLE_ID: ${{ secrets.RELEASE_OPS_ROLE_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PUBLIC_ANNOUNCEMENTS_WEBHOOK_URL }}
+          RELEASE_OPS_ROLE_ID: ${{ secrets.DEV_OPS_ROLE_ID }}
           RESULT: ${{ needs.build.result }}
         run: |
           set -euo pipefail
