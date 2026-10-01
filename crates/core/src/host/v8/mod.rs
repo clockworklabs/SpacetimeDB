@@ -2147,6 +2147,18 @@ mod test {
     }
 
     #[test]
+    fn text_decoder_dependency_construction_and_decoding() {
+        with_scope(|scope| {
+            catch_exception(scope, |scope| {
+                builtins::evaluate_builtins(scope)?;
+                eval_user_module(scope, include_str!("builtins/text_encoding.test.js"))?;
+                Ok(())
+            })
+            .expect("TextDecoder regression module should evaluate successfully");
+        });
+    }
+
+    #[test]
     fn call_call_reducer_works() {
         let call = |code| {
             with_module_catch(code, |scope, exports| {
