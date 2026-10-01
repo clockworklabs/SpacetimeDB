@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
+import { hashFiles } from '../evidence/provenance.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
@@ -60,9 +61,10 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
         { cause: cleanupFailure });
     }
   };
-  const materialized = hashAppSource(appDir);
-  if (materialized.sha256 !== accepted.sha256
-    || materialized.files.length !== accepted.files.length) {
+  // Startup may add runtime state such as a build marker; it must not change or remove accepted files.
+  const kept = accepted.files.every(file => existsSync(join(appDir, file)))
+    && hashFiles(accepted.files.map(file => join(appDir, file)), { base: appDir }).sha256 === accepted.sha256;
+  if (!kept) {
     await restoreAcceptedSource();
     throw Object.assign(
       new Error('materialized application source differs from its accepted snapshot'),

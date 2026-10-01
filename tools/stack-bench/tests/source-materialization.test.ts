@@ -94,6 +94,30 @@ test('clean startup regenerates root local environment without changing accepted
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('startup may add runtime files but not change or remove accepted source', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-startup-writes-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(app);
+    writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(app, 'app.js'), 'export const ready = true;\n');
+    snapshotAppSource(app, accepted);
+    const start = (write: () => void) => materializeAcceptedSource(accepted, app,
+      { backend: 'spacetime', app, port: 0, probe: '' }, async (_spec, mode) => { if (mode === 'start') write(); });
+    await start(() => {
+      mkdirSync(join(app, '.run'), { recursive: true });
+      writeFileSync(join(app, '.run', 'frontend-build'), 'build marker');
+    });
+    for (const change of [
+      () => writeFileSync(join(app, 'app.js'), 'export const ready = false;\n'),
+      () => rmSync(join(app, 'app.js')),
+    ]) {
+      await assert.rejects(start(change), (error: { code?: string }) => error.code === 'generated_app_source_changed');
+      assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const ready = true;\n');
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('clean restore discards root local environment even from an older source snapshot', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-old-local-env-'));
   try {
