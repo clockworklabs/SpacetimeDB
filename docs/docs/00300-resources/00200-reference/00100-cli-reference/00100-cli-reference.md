@@ -834,7 +834,7 @@ Manage SpacetimeAuth configuration for a database
 ###### **Subcommands:**
 
 * `set` — Set a SpacetimeAuth configuration value for a database
-* `reset` — Reset all SpacetimeAuth configuration for a database
+* `reset` — Reset the SpacetimeAuth configuration of a database to its defaults, keeping the display name and Steam settings
 
 
 
@@ -846,24 +846,24 @@ Set a SpacetimeAuth configuration value for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 * `<KEY>` — The setting to configure
 
   Possible values: `display_name`, `favicon_url`, `color.text`, `color.background`, `color.primary`, `color.input`, `color.border`, `login.email`, `login.anonymous`, `steam.publisher_key`, `steam.app_ids`
 
-* `<VALUE>` — The value to assign to the setting
+* `<VALUE>` — The value to assign to the setting. `steam.app_ids` takes a comma-separated list; an empty value clears a Steam setting
 
 
 
 ## `spacetime auth config reset`
 
-Reset all SpacetimeAuth configuration for a database
+Reset the SpacetimeAuth configuration of a database to its defaults, keeping the display name and Steam settings
 
 **Usage:** `spacetime auth config reset <database>`
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 
 
 
@@ -875,7 +875,7 @@ Manage identity providers for a database
 
 ###### **Subcommands:**
 
-* `set` — Configure an identity provider for a database
+* `set` — Configure and enable an identity provider for a database
 * `enable` — Enable an identity provider for a database
 * `disable` — Disable an identity provider for a database
 
@@ -883,13 +883,13 @@ Manage identity providers for a database
 
 ## `spacetime auth idp set`
 
-Configure an identity provider for a database
+Configure and enable an identity provider for a database
 
 **Usage:** `spacetime auth idp set <database> <idp> <client_id> <client_secret>`
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 * `<IDP>` — The identity provider to configure
 
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
@@ -907,7 +907,7 @@ Enable an identity provider for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 * `<IDP>` — The identity provider to configure
 
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
@@ -923,7 +923,7 @@ Disable an identity provider for a database
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 * `<IDP>` — The identity provider to configure
 
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
@@ -954,7 +954,7 @@ Create a new OAuth client
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 
 ###### **Options:**
 
@@ -973,7 +973,7 @@ Delete an OAuth client
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 
 ###### **Options:**
 
@@ -991,7 +991,7 @@ Get an OAuth client
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 
 ###### **Options:**
 
@@ -1010,12 +1010,12 @@ Set a configuration value for an OAuth client
 
 ###### **Arguments:**
 
-* `<DATABASE>` — The name of the database
+* `<DATABASE>` — The name of the database (not its identity)
 * `<KEY>` — The setting to configure
 
   Possible values: `name`, `private`, `web`, `native`, `redirect_uris`, `post_logout_redirect_uris`
 
-* `<VALUE>` — The value to assign to the setting
+* `<VALUE>` — The value to assign to the setting. URI lists are comma-separated; an empty value clears the list
 
 ###### **Options:**
 
