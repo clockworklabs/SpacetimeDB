@@ -1552,15 +1552,16 @@ mod test {
     }
 
     fn bind_test_environment(env: &mut InstanceEnv) -> Result<spacetimedb_datastore::traits::Program> {
-        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
-        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
+        use spacetimedb_lib::db::raw_def::v10::{
+            RawEnvVarTypeV10, RawEnvironmentDeclarationV10, RawModuleDefV10Builder,
+        };
         let mut builder = RawModuleDefV10Builder::new();
         builder.add_environment(
             [("A", false), ("MISSING", true)]
                 .into_iter()
-                .map(|(name, optional)| EnvironmentDeclaration {
+                .map(|(name, optional)| RawEnvironmentDeclarationV10 {
                     name: name.into(),
-                    ty: EnvVarType::String,
+                    ty: RawEnvVarTypeV10::String,
                     optional,
                 })
                 .collect(),
