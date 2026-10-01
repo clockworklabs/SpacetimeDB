@@ -64,6 +64,7 @@ A module is a collection of functions and schema definitions, which can be writt
 - [spacetime publish](/docs/databases/building-publishing): This guide covers how to build and publish your SpacetimeDB module.
 - [Cheat Sheet](/docs/databases/cheat-sheet): Quick reference for SpacetimeDB module syntax across Rust, C#, TypeScript, and C++.
 - [spacetime dev](/docs/databases/developing): This guide covers how to create a new SpacetimeDB database module project.
+- [Environment Variables](/docs/databases/environment-variables): Environment variables store configuration and secrets for a database, such as API keys and deployment settings. A module declares the names it reads and any allowed values. Publishing preserves stored values unless you explicitly replace or delete them. Undeclared values can be stored before a module starts using them. Module code reads them through ctx.env, or ctx.Env in C#.
 - [Incremental Migrations](/docs/databases/incremental-migrations): SpacetimeDB does not provide built-in support for general schema-modifying migrations. It does, however, allow adding new tables, and changing reducers' definitions in arbitrary ways. It's possible to run general migrations using an external tool, but this is tedious, necessitates downtime, and imposes the requirement that you update all your clients at the same time as publishing your new module version.
 - [Transactions and Atomicity](/docs/databases/transactions-atomicity): SpacetimeDB provides strong transactional guarantees for all database operations. Every reducer runs inside a database transaction, ensuring your data remains consistent and reliable even under concurrent load.
 
@@ -103,7 +104,19 @@ A module is a collection of functions and schema definitions, which can be writt
 - [Key Architecture](/docs/intro/key-architecture): Host
 - [Language Support](/docs/intro/language-support): Server Database Modules
 - [What is SpacetimeDB?](/docs/intro/what-is-spacetimedb): SpacetimeDB is a database that is also a server.
-- [The Zen of SpacetimeDB](/docs/intro/zen): SpacetimeDB is built on 5 core principles. As you embrace these simple principles, you will find your troubles simply melt away. These principles guide both how we develop SpacetimeDB and how you should think about building applications with it.
+- [The Zen of Spacetime](/docs/intro/zen): Spacetime is built on 5 core principles. As you embrace these simple principles, you will find your troubles simply melt away. These principles guide both how we develop Spacetime and how you should think about building applications with it.
+
+### llms-signing-e2e-test
+
+This temporary page verifies that the llms update workflow creates a signed commit.
+
+- [llms signing end-to-end test](/docs/llms-signing-e2e-test): This temporary page verifies that the llms update workflow creates a signed commit.
+
+### migrating-from-convex
+
+This guide is for teams moving an application backend from Convex to a
+
+- [Migrating from Convex](/docs/migrating-from-convex): This guide is for teams moving an application backend from Convex to a
 
 ### quickstarts
 
@@ -136,12 +149,19 @@ A module is a collection of functions and schema definitions, which can be writt
 Guides, references, and tools to help you build with SpacetimeDB.
 
 - [Developer Resources](/docs/resources): Guides, references, and tools to help you build with SpacetimeDB.
+- [MCP Reference](/docs/resources/mcp): SpacetimeDB can serve a host or a single database to MCP-aware agents and editors.
 
 ### sats-json
 
 The Spacetime Algebraic Type System JSON format defines how Spacetime AlgebraicTypes and AlgebraicValues are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the HTTP Databases API and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a ProductValue with one element or a SumValue.
 
 - [SATS-JSON Data Format](/docs/sats-json): The Spacetime Algebraic Type System JSON format defines how Spacetime AlgebraicTypes and AlgebraicValues are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the HTTP Databases API and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a ProductValue with one element or a SumValue.
+
+### submodules
+
+A submodule is a SpacetimeDB module that can be included in another module's database. The submodule's tables and functions register under a namespace you choose, keeping them separate from the consumer's own tables and from other submodules.
+
+- [Submodules](/docs/submodules): A submodule is a SpacetimeDB module that can be included in another module's database. The submodule's tables and functions register under a namespace you choose, keeping them separate from the consumer's own tables and from other submodules.
 
 ### tables
 
