@@ -268,3 +268,22 @@ fn generic_decode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallba
         .map(Into::into)
         .ok_or_else(|| RangeError("Value too large to decode").throw(scope))
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::host::v8::to_value::test::with_scope;
+    use crate::host::v8::{catch_exception, eval_user_module};
+
+    #[test]
+    fn text_decoder_dependency_construction_and_decoding() {
+        with_scope(|scope| {
+            catch_exception(scope, |scope| {
+                evaluate_builtins(scope)?;
+                eval_user_module(scope, include_str!("builtins/text_encoding.test.js"))?;
+                Ok(())
+            })
+            .expect("TextDecoder regression module should evaluate successfully");
+        });
+    }
+}
