@@ -64,20 +64,6 @@ a { color: var(--n1); }
 .state.idle { color: var(--n4); }
 
 /* live lanes: stack, score, climb, phase */
-.live { border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); margin-bottom: 18px; }
-.live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 44px; padding: 8px 16px; border-bottom: 1px solid var(--shade4); }
-.live-head b { color: var(--n1); font-size: 15px; font-weight: 600; }
-.lane { display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(80px, .4fr) minmax(100px, .5fr) minmax(180px, 1fr); gap: 20px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--shade4); }
-.lane > * { min-width: 0; }
-.lane-repetition { white-space: nowrap; }
-.lane-variant { margin-top: 5px; font-size: 12px; overflow-wrap: anywhere; color: var(--n2); }
-.lane-metric { display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
-.lane-label { font-size: 12px; color: var(--n2); }
-.lane:first-of-type { border-top: 0; }
-.lane .who { color: var(--n1); font-weight: 600; }
-.lane .big { color: var(--n1); font: 600 26px/1 var(--sans); letter-spacing: -.02em; }
-.lane .phase { font-size: 13px; overflow-wrap: anywhere; }
-.lane .phase.warn { color: var(--yellow); }
 
 .reference-run { margin-bottom: 16px; border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); }
 .reference-run > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 24px; padding: 14px 16px; cursor: pointer; list-style: none; }

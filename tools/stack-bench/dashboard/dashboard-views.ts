@@ -251,7 +251,7 @@ export function overviewPage(campaignsRoot: string, requestedPage = 1,
   const keys = selected.slice((page - 1) * pageSize, page * pageSize).map(item => item.key);
   const summaries = new Map(overviewSummary(campaignsRoot, { ...options, keys }).map(item => [item.key, item]));
   return { campaigns: keys.map(key => summaries.get(key)!).filter(Boolean), page, pages,
-    total: selected.length, pageSize, counts, running: index.filter(item => item.status === 'running').map(item => item.key) };
+    total: selected.length, pageSize, counts };
 }
 
 export type OverviewPage = ReturnType<typeof overviewPage>;

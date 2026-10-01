@@ -27,9 +27,9 @@ test('standalone reference runs use real controller state, keep the denominator 
     assert.equal(first.runs.length, 1);
     assert.equal(first.runs[0]!.status, 'running');
     assert.deepEqual(first.runs[0]!.points, { passed: 1, measured: 3, planned: 186 });
-    assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: first }), /<strong>1\/186<\/strong> points passed<small>3 measured<\/small>/);
-    assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: { runs: [
-      { ...first.runs[0]!, points: { passed: 1, measured: 3, planned: null } }], error: null } }), /total unavailable/);
+    assert.match(campaignsPage({ campaigns: [], filter: 'all', references: first }), /<strong>1\/186<\/strong> points passed<\/span>/);
+    assert.match(campaignsPage({ campaigns: [], filter: 'all', references: { runs: [
+      { ...first.runs[0]!, points: { passed: 1, measured: 3, planned: null } }], error: null } }), /<strong>1<\/strong> points passed/);
     running = false;
     assert.equal((await referenceRuns(root, docker)).runs[0]!.status, 'incomplete');
     writeFileSync(output, JSON.stringify({ kind: 'reference_qualification', timestamps: { completedAt: '2026-09-22' },
@@ -40,7 +40,8 @@ test('standalone reference runs use real controller state, keep the denominator 
     assert.equal(final.runs[0]!.status, 'failed');
     assert.equal(final.runs[0]!.updatedAt, '2026-09-22');
     assert.deepEqual(final.runs[0]!.points, { passed: 184, measured: 186, planned: 186 });
-    assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: final }), /&lt;failure&gt;/);
+    // Only a run in progress is shown above the campaign history.
+    assert.doesNotMatch(campaignsPage({ campaigns: [], filter: 'all', references: final }), /reference-run/);
     assert((await referenceRuns(root, async () => { throw new Error('offline'); })).error);
     writeFileSync(output, JSON.stringify({ kind: 'reference_qualification', timestamps: { completedAt: '2026-09-22' },
       payload: { fixture: 'convex', ok: true, runs: [{ score: '186/186', failures: [] }] } }));

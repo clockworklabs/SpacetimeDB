@@ -1028,21 +1028,6 @@ test('the progression view replays the graph once per stack within its budget', 
 // no prose, no badge, one value per cell, stacks in fixed order — are asserted
 // here on rendered HTML rather than in a browser.
 
-test('the campaign overview links every simultaneous attempt of the same stack', () => {
-  const sheet = structuredClone(campaignSheet(shared.completed, 'fixture-run-0', { controllerActive: () => true }));
-  const stack = sheet.stacks[0]!;
-  const first = stack.attempts[0]!;
-  stack.attempts = [
-    { ...first, id: 'parallel-one', status: 'running', repetition: 1 },
-    { ...first, id: 'parallel-two', status: 'running', repetition: 2 },
-    { ...first, id: 'queued-three', status: 'pending', repetition: 3 },
-  ];
-  const html = campaignsPage({ campaigns: [], sheets: [sheet], filter: 'all' });
-  assert.match(html, /href="\/c\/fixture-run-0\/a\/parallel-one"/);
-  assert.match(html, /href="\/c\/fixture-run-0\/a\/parallel-two"/);
-  assert.doesNotMatch(html, /queued-three/);
-});
-
 test('cost and completion keep unknown spend and the full selected scope visible', () => {
   const sheet = structuredClone(campaignSheet(shared.completed, 'fixture-run-0', { controllerActive: () => true }));
   const stack = sheet.stacks[0]!;
@@ -1057,9 +1042,6 @@ test('cost and completion keep unknown spend and the full selected scope visible
   assert.match(campaign, /≤\$5\.00/);
   assert.match(campaign, /1 \/ 107/);
   assert.match(campaign, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
-  const live = campaignsPage({ campaigns: [], sheets: [sheet], filter: 'all' });
-  assert.match(live, /1%/);
-  assert.doesNotMatch(live, /100%/);
   attempt.spend = stack.spend = { status: 'unknown', costUsd: null };
   assert.match(campaignPage({ sheet, progression: null, view: 'grid', step: 0 }), /Unknown/);
   sheet.mode = 'dependency';
@@ -1138,9 +1120,9 @@ test('the client renders controls, evidence links, and every supported page', ()
     contentType: 'image/png', size: 8 });
   const plans = discoverPlans(join(resultsRoot, 'plans'));
   const pages: Array<[string, string]> = [
-    ['campaigns', campaignsPage({ campaigns: overview, sheets: [dependency], filter: 'all' })],
+    ['campaigns', campaignsPage({ campaigns: overview, filter: 'all' })],
     ['campaigns filtered',
-      campaignsPage({ campaigns: overview, sheets: [], filter: 'completed' })],
+      campaignsPage({ campaigns: overview, filter: 'completed' })],
     ['campaign sequential',
       campaignPage({ sheet: sequential, progression: null, view: 'grid', step: 0 })],
     ['campaign grid', campaignPage({ sheet: dependency, progression, view: 'grid', step: 0 })],

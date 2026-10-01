@@ -40,7 +40,6 @@ test('campaign paging filters the full population but inspects only visible evid
   assert.equal(first.campaigns.length, 20);
   assert.equal(first.total, 23);
   assert.equal(first.pages, 2);
-  assert.equal(first.running.length, 21); // Live runs remain visible off-page.
   const second = overviewPage(join(root, 'campaigns'), 2, 'all', options);
   assert.equal(second.campaigns.length, 3);
   assert.equal(new Set([...first.campaigns, ...second.campaigns].map(item => item.key)).size, 23);
@@ -51,7 +50,7 @@ test('campaign paging filters the full population but inspects only visible evid
   assert.equal(ready.page, 1);
   assert.equal(ready.counts.all, 23);
   assert.equal(ready.counts.attention, 1);
-  const html = campaignsPage({ campaigns: first.campaigns, sheets: [], filter: 'all', pagination: first });
+  const html = campaignsPage({ campaigns: first.campaigns, filter: 'all', pagination: first });
   assert.match(html, /Page 1 of 2 · 23 campaigns/);
   assert.match(html, /href="\/\?filter=all&page=2">Next/);
   assert.equal(reads.length, 0); // Running attempts have no comparable final score.

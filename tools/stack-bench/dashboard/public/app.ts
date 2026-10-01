@@ -78,7 +78,6 @@ let loadTask: Promise<void> | null = null;
 let loadController = new AbortController();
 let refreshPending = false;
 let pendingNavigation = false;
-let pendingKeys: Set<string> | null = new Set();
 let pendingOverview = false;
 
 function route(): Route {
@@ -167,10 +166,7 @@ function page(current: Route): string {
       loading: loading && !state.plansLoaded });
   }
   if (!current.key) {
-    const running = (state.overviewPage?.running ?? [])
-      .map(key => state.sheets.get(key))
-      .filter((entry): entry is CampaignSheet => entry !== undefined);
-    return campaignsPage({ campaigns: state.overview, sheets: running, filter: current.filter,
+    return campaignsPage({ campaigns: state.overview, filter: current.filter,
       pagination: state.overviewPage ?? undefined,
       references: state.references,
       loading: loading && (!state.overviewLoaded || state.overviewQuery !== `${current.filter}:${current.page}`) });
@@ -282,12 +278,10 @@ function render(): void {
   }
 }
 
-function load(navigation = false, changedKey?: string, liveOnly = false): Promise<void> {
+function load(navigation = false, liveOnly = false): Promise<void> {
   refreshPending = true;
   pendingNavigation ||= navigation;
   pendingOverview ||= !liveOnly;
-  if (changedKey) pendingKeys?.add(changedKey);
-  else pendingKeys = null;
   if (navigation) {
     state.form = { error: '' };
     ++loadVersion;
@@ -298,18 +292,16 @@ function load(navigation = false, changedKey?: string, liveOnly = false): Promis
   loadTask = (async () => {
     while (refreshPending && (!document.hidden || pendingNavigation)) {
       const showLoading = pendingNavigation;
-      const keys = pendingKeys;
       const refreshOverview = pendingOverview;
       refreshPending = pendingNavigation = false;
       pendingOverview = false;
-      pendingKeys = new Set();
       const version = ++loadVersion;
       loadController = new AbortController();
       loading = true;
       state.readError = '';
       if (showLoading) render();
       try {
-        await loadData(version, keys, refreshOverview);
+        await loadData(version, refreshOverview);
       } catch {
         if (version === loadVersion) state.readError = 'Could not load this page. Try again.';
       } finally {
@@ -323,22 +315,21 @@ function load(navigation = false, changedKey?: string, liveOnly = false): Promis
   return loadTask;
 }
 
-async function loadData(version: number, changedKeys: Set<string> | null, refreshOverview: boolean): Promise<void> {
+async function loadData(version: number, refreshOverview: boolean): Promise<void> {
   const current = route();
   if (refreshOverview && !current.key && !current.plans) {
     const references = await read<Awaited<ReturnType<typeof referenceRuns>>>('/api/reference-runs');
     if (references && version === loadVersion) { state.references = references; render(); }
   }
   if (!refreshOverview) {
-    const keys = current.key ? [current.key] : [...state.sheets.keys()]
-      .filter(key => state.sheets.get(key)?.status === 'running' && (!changedKeys || changedKeys.has(key)));
+    const keys = current.key ? [current.key] : [];
     await Promise.all(keys.map(async key => {
       const sheet = state.sheets.get(key);
       if (!sheet) return;
       const update = await read<CampaignLiveUpdate>(`/api/campaigns/${encodeURIComponent(key)}/live`);
       if (!update || version !== loadVersion) return;
       if (update.updatedAt !== sheet.updatedAt || update.status !== sheet.status) {
-        void load(false, key); // Evidence changed while a log refresh was in flight.
+        void load(); // Evidence changed while a log refresh was in flight.
         return;
       }
       const progression = state.progression.get(key);
@@ -396,17 +387,7 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
     render();
     return;
   }
-  if (!current.key) {
-    const campaigns = (state.overviewPage?.running ?? []).filter(key =>
-      !changedKeys || changedKeys.has(key) || !state.sheets.has(key));
-    await Promise.all(campaigns.map(async key => {
-      const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(key)}`);
-      if (version !== loadVersion) return;
-      if (sheet) state.sheets.set(key, sheet);
-      render();
-    }));
-    return;
-  }
+  if (!current.key) return;
   const result = await read<CampaignSheet | { pendingJob: ReturnType<typeof readExecutionJob>; dispatchError: string | null }>(`/api/campaigns/${encodeURIComponent(current.key)}`);
   if (version !== loadVersion) return;
   if (result && 'pendingJob' in result) { state.pendingJobs.set(current.key, result); render(); return; }
@@ -477,7 +458,7 @@ function subscribe(): void {
     }
     if (current.plans || (current.key && message.key !== current.key)) return;
     if (current.attempt && message.attemptId && message.attemptId !== current.attempt) return;
-    void load(false, message.key);
+    void load();
   };
   source.addEventListener('campaign', changed);
   source.addEventListener('reference', async () => {
@@ -490,7 +471,7 @@ function subscribe(): void {
   source.addEventListener('log', event => {
     const current = route();
     const message = JSON.parse((event as MessageEvent<string>).data) as { key: string };
-    if (!current.plans && (!current.key || message.key === current.key)) void load(false, message.key, true);
+    if (!current.plans && (!current.key || message.key === current.key)) void load(false, true);
   });
   source.addEventListener('open', () => {
     if (fallback) clearInterval(fallback);
@@ -742,9 +723,7 @@ setInterval(() => {
   const current = route();
   if (current.plans) return;
   if (current.key && state.sheets.get(current.key)?.status === 'running') {
-    void load(false, current.key, true);
-  } else if (!current.key && state.overviewPage?.running.length) {
-    void load(false, undefined, true);
+    void load(false, true);
   } else if (current.tab === 'transcript' && state.transcript.before === undefined) {
     void readTranscript().then(render);
   }
