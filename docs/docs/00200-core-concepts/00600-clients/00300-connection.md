@@ -254,6 +254,10 @@ const conn = DbConnection.builder()
         // Save token for reconnection — keyed per server/database
         localStorage.setItem(TOKEN_KEY, token);
     })
+    .onAutomaticReconnect((_conn, identity, token) => {
+        console.log(`Reconnected! Identity: ${identity.toHexString()}`);
+        localStorage.setItem(TOKEN_KEY, token);
+    })
     .onConnectError((_ctx, error, attempt, delayMs) => {
         console.error('Connection failed:', error);
         if (attempt !== undefined) console.log(`Retry ${attempt} in ${delayMs} ms`);
@@ -407,7 +411,9 @@ Conn->Disconnect();
 
 ### Reconnection Behavior
 
-For TypeScript, add `.withAutomaticReconnect()` to the builder to recover after an established connection drops. The connection object, cache, table handles, and callbacks remain usable. Cache reads serve the last known data while `isReconnecting` is `true`; subscriptions are replayed and reconciled after reconnecting. Register subscriptions and row callbacks once, outside `onConnect`, because `onConnect` fires after every successful reconnect.
+For TypeScript, add `.withAutomaticReconnect()` to the builder to recover after an established connection drops. The connection object, cache, table handles, and callbacks remain usable. Cache reads serve the last known data while `isReconnecting` is `true`; subscriptions are replayed and reconciled after reconnecting. `onConnect` fires once per connection object, so subscriptions and row callbacks can be initialized there or once after `build()`.
+
+Successful automatic reconnects invoke `onAutomaticReconnect(conn, identity, token)` instead of `onConnect`. Use it for recovery-specific work, and register work needed after every successful connection, such as token persistence, with both callbacks. Existing subscriptions are replayed automatically. `onAutomaticReconnect` runs before replay; wait for subscription `onApplied` callbacks when you need refreshed data.
 
 `onDisconnect` and `onConnectError` receive optional `nextReconnectAttempt` and `nextReconnectDelayMs` parameters. Both are `undefined` when the core SDK will not retry. Initial connection failures are not retried, and `disconnect()` cancels recovery. Reducer and procedure calls made during an outage fail immediately; in-flight calls fail with an unknown-result error because they may have executed.
 

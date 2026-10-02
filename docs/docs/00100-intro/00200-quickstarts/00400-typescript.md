@@ -122,7 +122,7 @@ spacetime logs
 
 ## Reconnect after connection loss
 
-For browser or Node.js clients, enable `.withAutomaticReconnect()` on your generated `DbConnection` builder. Subscriptions and row callbacks survive reconnects; register them once rather than inside `onConnect`. If your auth tokens expire, also provide an initial token with `.withToken(initialToken)` and a refresh callback with `.withTokenProvider(() => auth.getAccessToken())`.
+For browser or Node.js clients, enable `.withAutomaticReconnect()` on your generated `DbConnection` builder. Subscriptions and row callbacks survive reconnects; register them once after `build()` or inside `onConnect`, which fires once per connection object. Successful automatic reconnects fire `onAutomaticReconnect(conn, identity, token)` instead. Use this callback for recovery-specific work; wait for subscription `onApplied` callbacks when you need refreshed data. If your auth tokens expire, also provide an initial token with `.withToken(initialToken)` and a refresh callback with `.withTokenProvider(() => auth.getAccessToken())`.
 
 See [automatic reconnection](../../00200-core-concepts/00600-clients/00700-typescript-reference.md#method-withautomaticreconnect) for lifecycle callbacks and framework behavior.
 

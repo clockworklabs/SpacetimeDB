@@ -134,7 +134,7 @@ spacetime sql "SELECT * FROM person"
 
   <Step title="Understand the client code">
     <StepText>
-      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage. Enable `withAutomaticReconnect()` to recover after connection loss. Register subscriptions and row callbacks once, outside `onConnect`, which fires again on reconnect.
+      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage. Enable `withAutomaticReconnect()` to recover after connection loss. `onConnect` fires once per connection object, so subscriptions and row callbacks can be initialized there or once after `build()`. Successful automatic reconnects fire `onAutomaticReconnect` instead, before subscriptions are replayed.
     </StepText>
     <StepCode>
 ```typescript
@@ -147,6 +147,10 @@ const conn = DbConnection.builder()
   .withAutomaticReconnect()
   .onConnect((_conn, identity, token) => {
     console.log('Connected! Identity:', identity.toHexString());
+    saveToken(token);
+  })
+  .onAutomaticReconnect((_conn, identity, token) => {
+    console.log('Reconnected! Identity:', identity.toHexString());
     saveToken(token);
   })
   .build();

@@ -125,7 +125,8 @@ Construct a `DbConnection` by calling `DbConnection.builder()` and chaining conf
 | [`withUri` method](#method-withuri)                       | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
 | [`withDatabaseName` method](#method-withdatabasename)     | Set the name or `Identity` of the remote database.                                   |
 | [`withConfirmedReads` method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
-| [`onConnect` callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
+| [`onConnect` callback](#callback-onconnect)               | Register a callback to run on the first successful connection.          |
+| [`onAutomaticReconnect` callback](#callback-onautomaticreconnect) | Register a callback to run after each successful automatic reconnect. |
 | [`onConnectError` callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
 | [`onDisconnect` callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                 |
 | [`withToken` method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                             |
@@ -179,7 +180,25 @@ class DbConnectionBuilder {
 
 Chain a call to `.onConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`withToken`](#method-withtoken) to authenticate the same user in future connections.
 
-`onConnect` fires again after each successful automatic reconnect. Register row callbacks and subscriptions once, outside this callback, to avoid accumulating duplicate listeners or subscriptions. Use `onConnect` for work needed on every connection, such as saving the token.
+`onConnect` fires once per `DbConnection` object, on its first successful connection. You can register subscriptions and row callbacks here, or once after `build()`. Automatic reconnects preserve those registrations and invoke [`onAutomaticReconnect`](#callback-onautomaticreconnect) instead.
+
+#### Callback `onAutomaticReconnect`
+
+```typescript
+class DbConnectionBuilder {
+  public onAutomaticReconnect(
+    callback: (ctx: DbConnection, identity: Identity, token: string) => void
+  ): DbConnectionBuilder;
+}
+```
+
+Called after each successful automatic reconnect enabled by [`withAutomaticReconnect`](#method-withautomaticreconnect). It receives the same `DbConnection` object, its identity, and the token used for the new connection, including any token refreshed by [`withTokenProvider`](#method-withtokenprovider). It does not fire for the initial connection or failed reconnect attempts, and `onConnect` does not fire again on automatic reconnect.
+
+Use this callback to update connection status or restore application state that must be sent to the server after every reconnect. Register a shared handler for both `onConnect` and `onAutomaticReconnect` for work needed on every successful connection, such as persisting the current token.
+
+The callback runs before subscription replay. Cached data may still be stale; wait for subscription `onApplied` callbacks when you need refreshed data. Existing subscriptions and row listeners survive automatically, so do not register them again here. Reconnection and subscription replay do not require an `onAutomaticReconnect` callback.
+
+To remove a registered callback, call `conn.removeOnAutomaticReconnect(callback)` with the same function.
 
 #### Callback `onConnectError`
 
@@ -196,7 +215,7 @@ class DbConnectionBuilder {
 }
 ```
 
-Called when the initial connection or a reconnect attempt fails before `onConnect`. When another attempt is scheduled, `nextReconnectAttempt` is its one-based number and `nextReconnectDelayMs` is the delay in milliseconds. Both are `undefined` when the SDK will not retry. Initial connection failures are never retried by the core SDK.
+Called when the initial connection or a reconnect attempt fails before it is established. When another attempt is scheduled, `nextReconnectAttempt` is its one-based number and `nextReconnectDelayMs` is the delay in milliseconds. Both are `undefined` when the SDK will not retry. Initial connection failures are never retried by the core SDK.
 
 #### Callback `onDisconnect`
 
@@ -256,6 +275,9 @@ const conn = DbConnection.builder()
   .onConnect((_conn, identity) => {
     console.log('Connected:', identity.toHexString());
   })
+  .onAutomaticReconnect((_conn, identity) => {
+    console.log('Reconnected:', identity.toHexString());
+  })
   .onDisconnect((_ctx, error, attempt, delayMs) => {
     if (attempt !== undefined) {
       console.log(`Disconnected; retry ${attempt} in ${delayMs} ms`, error);
@@ -285,7 +307,7 @@ While reconnecting:
 - Reducer and procedure calls fail immediately with `DisconnectedError` and are not sent. Calls already in flight fail with `UnknownCallResultError`: they may have executed, so retrying them could repeat an effect.
 - New subscriptions are retained for the next connection. Unsubscribing ends the handle locally and removes it from replay.
 
-On reconnect, the SDK replays subscriptions in one batch and reconciles the cache before notifying callbacks. Unchanged rows produce no row callbacks; changed rows produce the usual insert, update, or delete callbacks. Each replayed subscription fires `onApplied` again, or `onError` if rejected. `onConnect` precedes subscription replay, so wait for `onApplied` when you need refreshed data.
+On reconnect, the SDK replays subscriptions in one batch and reconciles the cache before notifying row and subscription callbacks. Unchanged rows produce no row callbacks; changed rows produce the usual insert, update, or delete callbacks. Each replayed subscription fires `onApplied` again, or `onError` if rejected. `onAutomaticReconnect` precedes subscription replay, so wait for `onApplied` when you need refreshed data.
 
 #### Method `withTokenProvider`
 
@@ -314,7 +336,7 @@ Before each reconnect attempt, the SDK reads the retained JWT's `exp` and `iat` 
 
 A recognized rejection of the retained token forces a refresh on the next attempt. Rejection of a freshly supplied token is terminal. If the provider throws or rejects, the attempt fails and the SDK retries with backoff. A token exchange service outage is also retryable.
 
-Refresh happens before reconnecting, not on a periodic timer while connected. The SDK retains tokens in memory; persistence across page reloads remains the application's responsibility.
+Refresh happens before reconnecting, not on a periodic timer while connected. The SDK retains tokens in memory; persistence across page reloads remains the application's responsibility. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` so that successful reconnects also save refreshed credentials.
 
 #### Method `build`
 
@@ -1151,7 +1173,7 @@ The React integration is fully compatible with React StrictMode and correctly ha
 
 The React provider enables core automatic reconnection. After an established connection drops, it retains the same `DbConnection` and reflects its lifecycle events in provider state. `useSpacetimeDB().isActive` is `false` during the outage; `useTable` reports `isReady` as `false` until its subscription applies again. Cached rows can remain visible while stale, so use these flags for a connection-status indicator.
 
-The shared connection manager still creates a replacement connection when the core SDK reports that it will not retry, including initial connection failures. Those replacements use the manager's existing exponential backoff. Calling `disconnect()` explicitly prevents this recovery.
+The shared connection manager still creates a replacement connection when the core SDK reports that it will not retry, including initial connection failures. Those replacements use the manager's existing exponential backoff. Each replacement is a new `DbConnection`, so its first successful connection fires `onConnect`. Recovery within the same object fires `onAutomaticReconnect`. Calling `disconnect()` explicitly prevents this recovery.
 
 Pass `withTokenProvider` on the provider's builder when your credentials expire. Keep the builder stable across renders, as in the example below.
 
@@ -1181,6 +1203,7 @@ const connectionBuilder = DbConnection.builder()
     console.log('Connected:', identity.toHexString());
     conn.subscriptionBuilder().subscribe(tables.player);
   })
+  .onAutomaticReconnect(() => console.log('Reconnected'))
   .onDisconnect(() => console.log('Disconnected'));
 
 function App() {
@@ -1296,7 +1319,9 @@ An opaque identifier for a client connection to a database, intended to differen
 
 The SpacetimeDB TypeScript SDK includes built-in integrations for React, SolidJS, Vue, Svelte, and Angular.
 
-React, Solid, and Svelte use the shared connection manager, which enables automatic reconnection on their builders. Vue and Angular build connections directly: add `.withAutomaticReconnect()` to the builder passed to their provider. All integrations accept `.withTokenProvider(...)` on that builder. These settings belong on the builder, not on individual table hooks.
+React, Solid, and Svelte use the shared connection manager, which enables automatic reconnection on their builders. Vue and Angular build connections directly: add `.withAutomaticReconnect()` to the builder passed to their provider. All integrations accept `.withTokenProvider(...)` on that builder. These settings belong on the builder, not on individual table hooks. All providers update their connection state after both `onConnect` and `onAutomaticReconnect`.
+
+Use `onConnect` for initialization that should run once per connection object, including manual subscription and row-listener registration. Use `onAutomaticReconnect` for application work needed after recovery. Table hooks manage their own subscriptions; you do not need to subscribe again from either callback when using those hooks.
 
 For example, configure a Vue or Angular connection builder with:
 
@@ -1330,6 +1355,7 @@ const connectionBuilder = DbConnection.builder()
     console.log('Connected:', identity.toHexString());
     conn.subscriptionBuilder().subscribeToAllTables();
   })
+  .onAutomaticReconnect(() => console.log('Reconnected'))
   .onDisconnect(() => console.log('Disconnected'));
 
 function Root() {

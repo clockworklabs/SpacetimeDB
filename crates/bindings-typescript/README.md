@@ -30,6 +30,9 @@ const connection = DbConnection.builder()
   .onConnect((_connection, identity) => {
     console.log('Connected:', identity.toHexString());
   })
+  .onAutomaticReconnect((_connection, identity) => {
+    console.log('Reconnected:', identity.toHexString());
+  })
   .onDisconnect((_ctx, error, attempt, delayMs) => {
     console.log(
       attempt === undefined
@@ -56,9 +59,9 @@ If you need to disconnect the client:
 connection.disconnect();
 ```
 
-Automatic reconnection preserves the connection, cache, handles, and callbacks. Register subscriptions and row callbacks once, outside `onConnect`, which runs again after every reconnect. Cache reads remain available during outages. Initial connection failures are not retried by the core SDK.
+Automatic reconnection preserves the connection, cache, handles, and callbacks. Register subscriptions and row callbacks once after `build()` or inside `onConnect`, which fires once per connection object. Successful automatic reconnects fire `onAutomaticReconnect(connection, identity, token)` instead. This callback runs before subscription replay; wait for subscription `onApplied` callbacks when you need refreshed data. Cache reads remain available during outages. Initial connection failures are not retried by the core SDK.
 
-For expiring credentials, pass the initial token with `withToken` and add `withTokenProvider(() => auth.getAccessToken())`. The SDK asks for a fresh token before reconnecting when the retained token is near expiry. The provider must return a token for the same identity.
+For expiring credentials, pass the initial token with `withToken` and add `withTokenProvider(() => auth.getAccessToken())`. The SDK asks for a fresh token before reconnecting when the retained token is near expiry. The provider must return a token for the same identity. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` to include refreshed credentials.
 
 Typically, you will use the SDK with types generated from SpacetimeDB module. For example, given a table named `Player` you can subscribe to player updates like this:
 
