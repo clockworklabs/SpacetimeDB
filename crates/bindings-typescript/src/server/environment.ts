@@ -1,5 +1,4 @@
-import { env_get } from 'spacetime:sys@2.2';
-import type { Environment, EnvironmentSchema } from '../lib/environment';
+import type { EnvironmentSchema } from '../lib/environment';
 import type {
   EnvironmentDeclaration,
   EnvVarType,
@@ -12,21 +11,6 @@ const MAX_ENV_KEY_BYTES = 256;
 const MAX_ENV_VALUE_BYTES = 8 * 1024;
 const MAX_ENV_VARS = 256;
 
-/** Values are not cached: transaction and procedure reads retain host semantics. */
-export const environment: Environment = new Proxy(
-  Object.freeze(
-    Object.assign(Object.create(null), { get: (key: string) => env_get(key) })
-  ),
-  {
-    get(target, key) {
-      if (key === 'get') return target.get;
-      if (typeof key !== 'string') return undefined;
-      // The host rejects undeclared keys and missing required values. Optional
-      // named access uses undefined; the generic ABI accessor retains null.
-      return env_get(key) ?? undefined;
-    },
-  }
-);
 export type {
   Environment,
   EnvironmentFor,

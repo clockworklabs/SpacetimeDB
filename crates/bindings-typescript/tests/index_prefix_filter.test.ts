@@ -1,14 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-
-// `runtime.ts` and `procedures.ts` form an import cycle (procedures extends
-// runtime's ReducerCtxImpl). Vitest's loader evaluates the cycle in an order
-// that leaves the base class undefined. runtime only needs `callProcedure`, and
-// not on the table-view path under test, so stub procedures to break the cycle.
-vi.mock('../src/server/procedures', () => ({
-  callProcedure: () => {
-    throw new Error('callProcedure is not stubbed for this test');
-  },
-}));
+import { describe, expect, it } from 'vitest';
 
 import { ModuleContext } from '../src/lib/schema';
 import { table } from '../src/lib/table';

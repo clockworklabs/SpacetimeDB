@@ -1,4 +1,4 @@
-import { environment, type EnvironmentFor } from './environment';
+import type { EnvironmentFor } from './environment';
 import {
   AlgebraicType,
   ProductType,
@@ -6,8 +6,6 @@ import {
   type Serializer,
 } from '../lib/algebraic_type';
 import { FunctionVisibility } from '../lib/autogen/types';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
@@ -22,21 +20,11 @@ import {
 } from '../lib/type_builders';
 import { bsatnBaseSize } from '../lib/util';
 import { Uuid } from '../lib/uuid';
-import { httpClient, type HttpClient } from './http_internal';
-import type { DbView } from './db_view';
-import { makeRandom, type Random } from './rng';
-import {
-  assignTxAliasViews,
-  buildProcedureAliasCtxMap,
-  callUserFunction,
-  ReducerCtxImpl,
-  runWithTx,
-  sys,
-} from './runtime';
+import type { HttpClient } from './http_internal';
+import type { Random } from './rng';
 import {
   exportContext,
   registerExport,
-  type SubmoduleDispatchInfo,
   type ModuleExport,
   type SchemaInner,
 } from './schema';
@@ -128,12 +116,6 @@ export interface ProcedureCtx<S extends UntypedSchemaDecl> {
 export interface TransactionCtx<S extends UntypedSchemaDecl>
   extends ReducerCtx<S> {}
 
-type ITransactionCtx<S extends UntypedSchemaDecl> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDecl>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
-
 function registerProcedure<
   S extends UntypedSchemaDecl,
   Params extends ParamsObj,
@@ -189,110 +171,3 @@ export type Procedures = Array<{
   serializeReturn: Serializer<any>;
   returnTypeBaseSize: number;
 }>;
-
-export function callProcedure(
-  procedures: Procedures,
-  id: number,
-  sender: Identity,
-  connectionId: ConnectionId | null,
-  timestamp: Timestamp,
-  argsBuf: Uint8Array,
-  dbView: () => DbView<any>,
-  dispatches: SubmoduleDispatchInfo[] = [],
-  parentPrefix = ''
-): Uint8Array {
-  const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
-    procedures[id];
-  const args = deserializeArgs(new BinaryReader(argsBuf));
-
-  const ctx: ProcedureCtx<UntypedSchemaDecl> = new ProcedureCtxImpl(
-    sender,
-    timestamp,
-    connectionId,
-    dbView,
-    dispatches,
-    parentPrefix
-  );
-
-  const ret = callUserFunction(fn, ctx, args);
-  const retBuf = new BinaryWriter(returnTypeBaseSize);
-  serializeReturn(retBuf, ret);
-  return retBuf.getBuffer();
-}
-
-type IProcedureCtx<S extends UntypedSchemaDecl> = ProcedureCtx<S>;
-const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDecl>
-  implements IProcedureCtx<S>
-{
-  #identity: Identity | undefined;
-  #uuidCounter: { value: 0 } | undefined;
-  #random: Random | undefined;
-  #dbView: () => DbView<any>;
-  readonly env = environment as EnvironmentFor<S>;
-  #dispatches: SubmoduleDispatchInfo[];
-  #parentPrefix: string;
-  #asViews: object | undefined;
-
-  constructor(
-    readonly sender: Identity,
-    readonly timestamp: Timestamp,
-    readonly connectionId: ConnectionId | null,
-    dbView: () => DbView<any>,
-    dispatches: SubmoduleDispatchInfo[] = [],
-    parentPrefix = ''
-  ) {
-    this.#dbView = dbView;
-    this.#dispatches = dispatches;
-    this.#parentPrefix = parentPrefix;
-  }
-
-  get databaseIdentity() {
-    return (this.#identity ??= new Identity(sys.identity()));
-  }
-
-  get identity() {
-    return this.databaseIdentity;
-  }
-
-  get random() {
-    return (this.#random ??= makeRandom(this.timestamp));
-  }
-
-  get http() {
-    return httpClient;
-  }
-
-  get as() {
-    return (this.#asViews ??= buildProcedureAliasCtxMap(
-      this,
-      this.#dispatches,
-      this.#parentPrefix
-    )) as any;
-  }
-
-  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
-    const dispatches = this.#dispatches;
-    const parentPrefix = this.#parentPrefix;
-    return runWithTx(timestamp => {
-      const tx = new TransactionCtxImpl(
-        this.sender,
-        timestamp,
-        this.connectionId,
-        this.#dbView()
-      );
-      assignTxAliasViews(tx, dispatches, parentPrefix);
-      return tx as unknown as TransactionCtx<S>;
-    }, body);
-  }
-
-  newUuidV4(): Uuid {
-    const bytes = this.random.fill(new Uint8Array(16));
-    return Uuid.fromRandomBytesV4(bytes);
-  }
-
-  newUuidV7(): Uuid {
-    const bytes = this.random.fill(new Uint8Array(4));
-    const counter = (this.#uuidCounter ??= { value: 0 });
-    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
-  }
-};
