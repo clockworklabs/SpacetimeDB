@@ -49,7 +49,8 @@ const { values } = parseArgs({ options: {
   'provider-route': { type: 'string' },
   'max-output-tokens': { type: 'string' },
   'max-budget-usd': { type: 'string' }, 'pricing-json': { type: 'string' },
-  'resume-session': { type: 'string' }, 'recover-stopped-container': { type: 'boolean' },
+  'resume-session': { type: 'string' }, 'prior-session-usage': { type: 'string' },
+  'recover-stopped-container': { type: 'boolean' },
   'completion-marker': { type: 'string' }, ports: { type: 'string' },
 } });
 const prepareOnly = values['prepare-only'] ?? false;
@@ -125,6 +126,13 @@ const resumeSession = values['resume-session'] ?? null;
 if (resumeSession !== null
   && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(resumeSession)) {
   console.error('run-build.js: --resume-session must be a UUID');
+  process.exit(2);
+}
+const priorSessionUsage = values['prior-session-usage'] ? JSON.parse(values['prior-session-usage']) : null;
+if (priorSessionUsage !== null && (resumeSession === null || !['input_tokens', 'output_tokens',
+  'cache_read_input_tokens', 'cache_creation_input_tokens'].every(key =>
+    Number.isSafeInteger(priorSessionUsage[key]) && priorSessionUsage[key] >= 0))) {
+  console.error('run-build.js: --prior-session-usage needs --resume-session and four token counts');
   process.exit(2);
 }
 const recoverStoppedContainer = values['recover-stopped-container'] ?? false;
@@ -635,7 +643,7 @@ if (cleanupErrors.length) {
     + `run-build.js: container cleanup failed: ${cleanupErrors.join('; ')}\n`;
 }
 
-const cliResult = codingProvider.result(String(res.stdout ?? '').trim(), appDir, invocationToken);
+const cliResult = codingProvider.result(String(res.stdout ?? '').trim(), appDir, invocationToken, priorSessionUsage);
 if (cliResult) cliResult.stack_bench_auth_mode = auth.mode;
 const memory = spawnSync('docker', ['exec', containerName, 'sh', '-c',
   'for f in memory.events memory.current memory.peak memory.max pids.current pids.peak pids.max pids.events; do '

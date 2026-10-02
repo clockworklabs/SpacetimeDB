@@ -209,6 +209,10 @@ test('throttle waits back off, resume the paid session, and do not spend interru
     assert.deepEqual(waits, [60_000 + jitterMs, 120_000 + jitterMs]);
     assert.equal(required(calls[1], 'second invocation').resumeSession, 'paid-session');
     assert.equal(required(calls[2], 'third invocation').resumeSession, 'paid-session');
+    // A resumed native session carries what the broker already measured for it.
+    assert.equal(calls[0]!.priorSessionUsage, null);
+    assert.deepEqual(calls[2]!.priorSessionUsage, { input_tokens: 2, output_tokens: 2,
+      cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });
     assert.deepEqual(coding.throttle,
       { waits: 2, waitedMs: 180_000 + 2 * jitterMs, maxWaitMs: 15 * 60_000, jitterMs });
     assert.equal(coding.interruptions.length, 2);

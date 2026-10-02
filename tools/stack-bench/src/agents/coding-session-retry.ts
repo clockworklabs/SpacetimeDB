@@ -2,6 +2,7 @@ import type { ProviderFailure } from './provider-failure.js';
 import { sleepSync } from '../runtime/platform.js';
 import { AGENT_COST_RECEIPT_TOLERANCE_USD, validateAgentCostReceipt }
   from './agent-result-contract.js';
+import type { CodexUsage } from './codex-protocol.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -72,6 +73,8 @@ export interface CodingSessionInvocation {
   input: string;
   maxBudgetUsd: number | null;
   resumeSession: string | null;
+  /** Broker-measured usage of earlier invocations of the resumed session. */
+  priorSessionUsage: CodexUsage | null;
   recoverStoppedContainer: boolean;
   invocation: number;
 }
@@ -162,7 +165,8 @@ export function providerSessionFailure(
 ): ProviderSessionFailure | null {
   const failure = result?.stack_bench_provider_failure;
   if (failure) {
-    const codes = { 'rate-limit': 'provider-throttle', quota: 'provider-quota',
+    // An unreachable provider is waited out like a throttle.
+    const codes = { 'rate-limit': 'provider-throttle', unreachable: 'provider-throttle', quota: 'provider-quota',
       authentication: 'provider-authentication', transport: 'provider-connection-error',
       request: 'provider-request-error', 'broker-budget': 'broker-budget' } as const;
     return { code: codes[failure.category], status: failure.status };
@@ -194,7 +198,7 @@ function codingSessionResult(value: unknown): CodingSessionResult | null {
   if (!object(value)) return null;
   if (value.stack_bench_provider_failure !== undefined) {
     const failure = value.stack_bench_provider_failure;
-    if (!object(failure) || !['rate-limit', 'quota', 'authentication', 'transport', 'request', 'broker-budget']
+    if (!object(failure) || !['rate-limit', 'unreachable', 'quota', 'authentication', 'transport', 'request', 'broker-budget']
       .includes(String(failure.category)) || !(failure.status === null || Number.isInteger(failure.status))
       || !(failure.code === null || typeof failure.code === 'string')) return null;
     const budget = failure.budget;
@@ -253,6 +257,21 @@ function codingProcessDiagnostic(
     return object(parsed) ? parsed : null;
   }
   catch { return null; }
+}
+
+// What the broker measured for earlier invocations of one native session.
+function brokerUsageOf(results: readonly CodingSessionResult[], sessionId: string, model: string): CodexUsage {
+  const total = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  for (const result of results) {
+    if (result.session_id !== sessionId) continue;
+    const usage = validateAgentCostReceipt(result.stack_bench_cost_receipt, model, 'coding session cost receipt').usage;
+    if (!usage) continue;
+    total.input_tokens += usage.input;
+    total.output_tokens += usage.output;
+    total.cache_read_input_tokens += usage.cacheRead;
+    total.cache_creation_input_tokens += usage.cacheWrite5m + usage.cacheWrite1h;
+  }
+  return total;
 }
 
 function completeBrokerReceiptCost(result: CodingSessionResult | null, model: string): number | null {
@@ -409,9 +428,10 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
       : invocation === 0 ? prompt
         : 'A prior coding process was terminated. Continue this task from the existing files; do not start over.\n\n'
           + prompt;
+    const priorSessionUsage = resumeSession ? brokerUsageOf(sessionResults, resumeSession, model) : null;
     let error: CodingProcessError | null = null;
     try {
-      raw = text(invoke({ input, maxBudgetUsd: invocationBudget, resumeSession,
+      raw = text(invoke({ input, maxBudgetUsd: invocationBudget, resumeSession, priorSessionUsage,
         recoverStoppedContainer, invocation }));
     } catch (err) {
       error = object(err) ? err : {};
@@ -421,7 +441,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
     if (result) sessionResults.push(result);
     else unaccounted += 1;
     try {
-      onInvocation?.({ invocation: invocation + 1, input, resumeSession,
+      onInvocation?.({ invocation: invocation + 1, input, resumeSession, priorSessionUsage,
         maxBudgetUsd: invocationBudget, recoverStoppedContainer, result, raw,
         processFailure: error ? codingSessionFailure(error) : null });
     } catch (persistenceError) {
@@ -449,7 +469,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
     const waitForOperator = (): boolean => {
       if (!waitForProvider || !result?.session_id || receiptCostUsd === null) return false;
       const failure = result.stack_bench_provider_failure;
-      if (!failure || !['rate-limit', 'quota', 'authentication'].includes(failure.category)) return false;
+      if (!failure || !['rate-limit', 'unreachable', 'quota', 'authentication'].includes(failure.category)) return false;
       const started = Date.now();
       const record: ProviderWaitRecord = { invocation: invocation + 1, sessionId: result.session_id,
         category: failure.category, waitedMs: 0, disposition: 'stopped' };

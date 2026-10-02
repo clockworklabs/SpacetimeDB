@@ -164,7 +164,7 @@ const brokerLedgerSchema = z.strictObject({
   upstreamProviders: z.array(z.string().min(1).max(128)).optional(),
   providerIntegrityError: z.string().max(200).optional(),
   providerFailure: z.strictObject({
-    category: z.enum(['rate-limit', 'quota', 'authentication', 'transport', 'request', 'broker-budget']),
+    category: z.enum(['rate-limit', 'unreachable', 'quota', 'authentication', 'transport', 'request', 'broker-budget']),
     status: z.number().int().min(100).max(599).nullable(),
     code: z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/).nullable(),
     budget: z.strictObject({

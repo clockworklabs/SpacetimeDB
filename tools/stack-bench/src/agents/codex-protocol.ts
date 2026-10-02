@@ -27,8 +27,13 @@ function record(value: unknown): value is RecordValue {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+export interface CodexUsage {
+  input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number;
+}
+
 // Codex reports inclusive input tokens. The common receipt uses uncached input.
-export function parseCodexResult(stdout: string): RecordValue {
+// A resumed thread reports its whole history, so earlier invocations' usage is subtracted.
+export function parseCodexResult(stdout: string, prior: CodexUsage | null = null): RecordValue {
   let sessionId: string | null = null;
   let result = '';
   let turns = 0;
@@ -65,6 +70,9 @@ export function parseCodexResult(stdout: string): RecordValue {
       completed = true;
       turns++;
     }
+  }
+  if (prior) for (const key of Object.keys(usage) as Array<keyof CodexUsage>) {
+    usage[key] = Math.max(0, usage[key] - prior[key]);
   }
   if (!completed) errors.push(lastError ?? 'Codex returned no completed turn');
   if (!sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) errors.push('Codex returned no valid session ID');

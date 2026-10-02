@@ -23,6 +23,18 @@ test('Codex terminal receipt excludes cached input and requires a complete valid
     /429 quota exhausted/);
 });
 
+test('a resumed Codex thread reports only what this invocation used', () => {
+  // Observed on gpt-6.1-sol: after a capacity refusal, the resumed turn reported the whole thread.
+  const jsonl = [
+    { type: 'thread.started', thread_id: '01a0f9ba-5285-73c2-95d7-cbb4f54cd772' },
+    { type: 'turn.completed', usage: { input_tokens: 1_621_834, cached_input_tokens: 1_553_664, output_tokens: 29_835 } },
+  ].map(event => JSON.stringify(event)).join('\n');
+  const prior = { input_tokens: 67_757, output_tokens: 29_804, cache_read_input_tokens: 1_482_880,
+    cache_creation_input_tokens: 0 };
+  assert.deepEqual(parseCodexResult(jsonl, prior).usage, { input_tokens: 413, output_tokens: 31,
+    cache_read_input_tokens: 70_784, cache_creation_input_tokens: 0 });
+});
+
 test('Codex uses only the temporary broker token and preserves explicit resume identity', () => {
   const args = codexArguments({ model: 'gpt-test', effort: 'high', baseUrl: 'http://127.0.0.1:123',
     resumeSession: '12345678-1234-4234-8234-123456789abc' });

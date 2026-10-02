@@ -866,7 +866,7 @@ async function main() {
           },
         });
       } : undefined,
-      invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
+      invoke: ({ input, maxBudgetUsd, resumeSession, priorSessionUsage, recoverStoppedContainer }) =>
         execFileSync(process.execPath, [
           compiledEntrypoint('container', 'run-build.js'),
           '--provider', args.provider,
@@ -884,6 +884,7 @@ async function main() {
           ...(maxBudgetUsd != null ? ['--max-budget-usd', String(maxBudgetUsd)] : []),
           '--ports', [p.vite, p.express].filter(Boolean).join(','),
           ...(resumeSession ? ['--resume-session', resumeSession] : []),
+          ...(priorSessionUsage ? ['--prior-session-usage', JSON.stringify(priorSessionUsage)] : []),
           ...(recoverStoppedContainer ? ['--recover-stopped-container'] : []),
         ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
           env: invocationEnvironment(cliEnv),

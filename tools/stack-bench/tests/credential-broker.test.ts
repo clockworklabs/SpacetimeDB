@@ -587,6 +587,39 @@ data: ${JSON.stringify({ type: 'response.output_item.added' })}
   }
 });
 
+test('a provider the broker never reached costs nothing and can be waited out; a dropped connection is estimated', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'broker-unreachable-'));
+  // A listener that accepts and immediately drops the connection, and a port with no listener.
+  const dropping = createServer();
+  dropping.on('connection', socket => socket.destroy());
+  const droppingPort = await listen(dropping);
+  const closed = createServer();
+  const closedPort = await listen(closed);
+  await close(closed);
+  try {
+    for (const { port, failure, estimated } of [
+      { port: closedPort, failure: { category: 'unreachable', status: null, code: null }, estimated: 0 },
+      { port: droppingPort, failure: { category: 'transport', status: null, code: null }, estimated: 1 },
+    ]) {
+      const ledgerPath = join(root, `ledger-${port}.json`);
+      const sessionToken = 'session-token-value-1234567890';
+      const { server } = createCredentialBroker({ mode: 'api-key', credential: 'provider-secret-value-1234567890',
+        sessionToken, model: 'test-model', maxOutputTokens: 4096, ledgerPath, maxBudgetUsd: 10,
+        pricingRates: { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 0, cacheWrite1h: 0 } }, {
+        requestUpstream: httpRequest, upstream: { protocol: 'http:', hostname: '127.0.0.1', port } });
+      const brokerPort = await listen(server);
+      try {
+        assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}` },
+          body: '{"model":"test-model","max_tokens":1000}' })).status, 502);
+        const ledger = readCredentialBrokerLedger(ledgerPath);
+        assert.deepEqual(ledger.providerFailure, failure);
+        assert.equal(ledger.estimatedBillableRequests, estimated);
+        assert.equal(ledger.spentUsd > 0, estimated === 1);
+      } finally { await close(server); }
+    }
+  } finally { await close(dropping); rmSync(root, { recursive: true, force: true }); }
+});
+
 test('credential broker estimates a settled request without exact provider usage', async () => {
   const errorStream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}',

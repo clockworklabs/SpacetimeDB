@@ -313,9 +313,20 @@ export function createCredentialBroker(configInput: unknown, {
         upstreamResponse.once('aborted', settleAbortedResponse);
         upstreamResponse.once('error', settleAbortedResponse);
       });
+      // A request whose connection never opened did not reach the provider.
+      let connected = false;
+      upstreamRequest.on('socket', socket => {
+        if (!socket.connecting) connected = true;
+        else socket.once(destination.protocol === 'https:' ? 'secureConnect' : 'connect', () => { connected = true; });
+      });
       upstreamRequest.on('error', () => {
-        recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
-        settleBillable({ estimated: 'upstream-error', unpriced: unprovenPricing });
+        if (connected) {
+          recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
+          settleBillable({ estimated: 'upstream-error', unpriced: unprovenPricing });
+        } else {
+          recordFailure(requestOrdinal, { category: 'unreachable', status: null, code: null });
+          settleBillable();
+        }
         writeHead(502, { 'content-type': 'text/plain' });
         endResponse('upstream request failed');
       });

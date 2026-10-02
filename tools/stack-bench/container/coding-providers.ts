@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { codexArguments, codexTranscriptDirectory, parseCodexResult, runCodexProcess }
   from '../src/agents/codex-protocol.js';
+import type { CodexUsage } from '../src/agents/codex-protocol.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { runTranscriptAwareProcess } from '../src/agents/claude-terminal-recovery.js';
 import type { PricingRates } from '../src/evidence/pricing-authority.js';
@@ -29,7 +30,7 @@ interface CodingProvider {
   rates(model: string): PricingRates | null;
   args(options: Invocation): string[];
   run(options: ProcessOptions): ReturnType<typeof runCodexProcess>;
-  result(stdout: string, appDir: string, invocationToken: string): Record<string, unknown> | null;
+  result(stdout: string, appDir: string, invocationToken: string, prior: CodexUsage | null): Record<string, unknown> | null;
   validateContinuation(directory: string, sessionId: string, model: string): void;
 }
 
@@ -44,8 +45,8 @@ const codexProvider: CodingProvider = {
   args: codexArguments,
   run: runCodexProcess,
   validateContinuation: validateCodexNativeSession,
-  result: (stdout, appDir, invocationToken) => {
-    const result = parseCodexResult(stdout);
+  result: (stdout, appDir, invocationToken, prior) => {
+    const result = parseCodexResult(stdout, prior);
     const sessionId = result.session_id;
     const eventFile = typeof sessionId === 'string' && /^[0-9a-f-]{36}$/i.test(sessionId)
       ? `${sessionId}.events.jsonl` : `interrupted-${invocationToken}.events.jsonl`;

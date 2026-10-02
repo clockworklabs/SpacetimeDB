@@ -1,6 +1,6 @@
 /** Only trusted broker responses establish a resumable provider rejection. */
 export interface ProviderFailure {
-  category: 'rate-limit' | 'quota' | 'authentication' | 'transport' | 'request' | 'broker-budget';
+  category: 'rate-limit' | 'unreachable' | 'quota' | 'authentication' | 'transport' | 'request' | 'broker-budget';
   status: number | null;
   code: string | null;
   budget?: {
