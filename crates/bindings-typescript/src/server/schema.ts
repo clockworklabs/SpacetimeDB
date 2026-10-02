@@ -38,6 +38,7 @@ import {
   type ProcedureFn,
   type ProcedureOpts,
   type ProcedureOptsWithOptionalName,
+  type ProcedureSignature,
   type Procedures,
 } from './procedures';
 import {
@@ -45,6 +46,7 @@ import {
   type ReducerExport,
   type ReducerOpts,
   type ReducerOptsWithOptionalName,
+  type ReducerSignature,
   type Reducers,
 } from './reducers';
 
@@ -57,6 +59,7 @@ import {
   type ViewFn,
   type ViewOpts,
   type ViewReturnTypeBuilder,
+  type ViewSignature,
   type ValidateViewPrimaryKey,
   type Views,
 } from './views';
@@ -125,6 +128,21 @@ export class SchemaInner<
       );
     }
     this.existingFunctions.add(name);
+  }
+
+  /**
+   * Set while exports are registered only for their declarations, as a client
+   * does. Reducers, procedures, and views may then lack a function body.
+   */
+  declarationsOnly = false;
+
+  /** Throws if a reducer, procedure, or view that the host will run has no body. */
+  requireBody(kind: string, name: string, fn: unknown) {
+    if (fn === undefined && !this.declarationsOnly) {
+      throw new TypeError(
+        `The ${kind} '${name}' has no function body. Only client bindings may declare a ${kind} without one.`
+      );
+    }
   }
 
   defineHttpHandler(name: string) {
@@ -306,8 +324,9 @@ export class Schema<S extends UntypedSchemaDecl> {
   /** Internal: register exports and materialize the RawModuleDefV10 for upload. */
   buildRawModuleDefV10(
     exports: object,
-    opts?: { ignoreNonModuleExports?: boolean }
+    opts?: { ignoreNonModuleExports?: boolean; declarationsOnly?: boolean }
   ): RawModuleDefV10 {
+    this.#ctx.declarationsOnly = opts?.declarationsOnly ?? false;
     registerModuleExports(this.#ctx, exports, {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
@@ -388,31 +407,45 @@ export class Schema<S extends UntypedSchemaDecl> {
   reducer<Params extends ParamsObj>(
     params: Params,
     fn: Reducer<S, Params>
-  ): ReducerExport<S, Params>;
-  reducer(fn: Reducer<S, {}>): ReducerExport<S, {}>;
-  reducer<Params extends ParamsObj>(
-    opts: ReducerOptsWithOptionalName<Params>,
+  ): SignedReducer<S, Params>;
+  reducer(fn: Reducer<S, {}>): SignedReducer<S, {}>;
+  reducer<Params extends ParamsObj, Name extends string = string>(
+    opts: ReducerOptsWithOptionalName<Params, Name>,
     params: Params,
     fn: Reducer<S, Params>
-  ): ReducerExport<S, Params>;
-  reducer(opts: ReducerOpts<{}>, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  ): SignedReducer<S, Params, Name>;
+  reducer<Name extends string = string>(
+    opts: ReducerOpts<{}, Name>,
+    fn: Reducer<S, {}>
+  ): SignedReducer<S, {}, Name>;
+  // The implementation also takes the bodiless forms of `ClientSchema`.
   reducer<Params extends ParamsObj>(
     ...args:
       | [Params, Reducer<S, Params>]
       | [Reducer<S, {}>]
       | [ReducerOptsWithOptionalName<Params>, Params, Reducer<S, Params>]
       | [ReducerOpts<{}>, Reducer<S, {}>]
-  ): ReducerExport<S, Params> {
+      | [Params]
+      | [ReducerOptsWithOptionalName<Params>, Params]
+  ): SignedReducer<S, Params> {
     let opts: ReducerOptsWithOptionalName<Params> | undefined,
       params: Params = {} as Params,
-      fn: Reducer<S, Params>;
+      fn: Reducer<S, Params> | undefined;
     switch (args.length) {
       case 1:
-        [fn] = args;
+        if (typeof args[0] === 'function') fn = args[0];
+        else params = args[0];
         break;
       case 2: {
+        if (typeof args[1] !== 'function') {
+          [opts, params] = args as [
+            ReducerOptsWithOptionalName<Params>,
+            Params,
+          ];
+          break;
+        }
         let arg1;
-        [arg1, fn] = args;
+        [arg1, fn] = args as [Params | ReducerOpts<{}>, Reducer<S, Params>];
         if (typeof arg1.name === 'string')
           opts = arg1 as ReducerOptsWithOptionalName<Params>;
         else params = arg1 as Params;
@@ -422,7 +455,11 @@ export class Schema<S extends UntypedSchemaDecl> {
         [opts, params, fn] = args;
         break;
     }
-    return makeReducerExport(this.#ctx, opts, params, fn);
+    return withSignature(makeReducerExport(this.#ctx, opts, params, fn), {
+      kind: 'reducer',
+      name: opts?.name,
+      params,
+    });
   }
 
   /**
@@ -540,8 +577,17 @@ export class Schema<S extends UntypedSchemaDecl> {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): SignedView<F, Ret>;
+  // The implementation also takes the bodiless form of `ClientSchema`.
+  view<Ret extends ViewReturnTypeBuilder, F extends ViewFn<S, {}, Ret>>(
+    opts: ViewOpts,
+    ret: Ret,
+    fn?: F
+  ): SignedView<F, Ret> {
+    return withSignature(
+      makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn),
+      { kind: 'view', name: opts.name, returnType: ret }
+    );
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -580,8 +626,16 @@ export class Schema<S extends UntypedSchemaDecl> {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): SignedView<F, Ret>;
+  // The implementation also takes the bodiless form of `ClientSchema`.
+  anonymousView<
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, {}, Ret>,
+  >(opts: ViewOpts, ret: Ret, fn?: F): SignedView<F, Ret> {
+    return withSignature(
+      makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn),
+      { kind: 'view', name: opts.name, returnType: ret }
+    );
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -613,22 +667,27 @@ export class Schema<S extends UntypedSchemaDecl> {
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
-  ): ProcedureExport<S, Params, Ret>;
+  ): SignedProcedure<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
-  ): ProcedureExport<S, {}, Ret>;
-  procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
-    opts: ProcedureOptsWithOptionalName<Params, Ret>,
+  ): SignedProcedure<S, {}, Ret>;
+  procedure<
+    Params extends ParamsObj,
+    Ret extends TypeBuilder<any, any>,
+    Name extends string = string,
+  >(
+    opts: ProcedureOptsWithOptionalName<Params, Ret, Name>,
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
-  ): ProcedureExport<S, Params, Ret>;
-  procedure<Ret extends TypeBuilder<any, any>>(
-    opts: ProcedureOpts<{}, Ret>,
+  ): SignedProcedure<S, Params, Ret, Name>;
+  procedure<Ret extends TypeBuilder<any, any>, Name extends string = string>(
+    opts: ProcedureOpts<{}, Ret, Name>,
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
-  ): ProcedureExport<S, {}, Ret>;
+  ): SignedProcedure<S, {}, Ret, Name>;
+  // The implementation also takes the bodiless forms of `ClientSchema`.
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     ...args:
       | [Params, Ret, ProcedureFn<S, Params, Ret>]
@@ -640,18 +699,34 @@ export class Schema<S extends UntypedSchemaDecl> {
           ProcedureFn<S, Params, Ret>,
         ]
       | [ProcedureOpts<{}, Ret>, Ret, ProcedureFn<S, Params, Ret>]
-  ): ProcedureExport<S, Params, Ret> {
+      | [Params, Ret]
+      | [ProcedureOptsWithOptionalName<Params, Ret>, Params, Ret]
+  ): SignedProcedure<S, Params, Ret> {
     let opts: ProcedureOptsWithOptionalName<Params, Ret> | undefined,
       params: Params = {} as Params,
       ret: Ret,
-      fn: ProcedureFn<S, Params, Ret>;
+      fn: ProcedureFn<S, Params, Ret> | undefined;
     switch (args.length) {
       case 2:
-        [ret, fn] = args;
+        if (typeof args[1] !== 'function')
+          [params, ret] = args as [Params, Ret];
+        else [ret, fn] = args as [Ret, ProcedureFn<S, Params, Ret>];
         break;
       case 3: {
+        if (typeof args[2] !== 'function') {
+          [opts, params, ret] = args as [
+            ProcedureOptsWithOptionalName<Params, Ret>,
+            Params,
+            Ret,
+          ];
+          break;
+        }
         let arg1;
-        [arg1, ret, fn] = args;
+        [arg1, ret, fn] = args as [
+          Params | ProcedureOpts<{}, Ret>,
+          Ret,
+          ProcedureFn<S, Params, Ret>,
+        ];
         if (typeof arg1.name === 'string')
           opts = arg1 as ProcedureOptsWithOptionalName<Params, Ret>;
         else params = arg1 as Params;
@@ -661,7 +736,10 @@ export class Schema<S extends UntypedSchemaDecl> {
         [opts, params, ret, fn] = args;
         break;
     }
-    return makeProcedureExport(this.#ctx, opts, params, ret, fn);
+    return withSignature(
+      makeProcedureExport(this.#ctx, opts, params, ret, fn),
+      { kind: 'procedure', name: opts?.name, params, returnType: ret }
+    );
   }
 
   httpHandler(fn: HandlerFn<S>): HttpHandlerExport<S>;
@@ -713,6 +791,41 @@ export class Schema<S extends UntypedSchemaDecl> {
 
 export const registerExport = Symbol('SpacetimeDB.registerExport');
 export const exportContext = Symbol('SpacetimeDB.exportContext');
+
+/**
+ * The symbol under which a reducer, procedure, or view export keeps its
+ * signature, which `remoteModuleDeclFromExports` reads to build a client's
+ * remote module declaration.
+ * Lifecycle reducers have none, because clients cannot call them.
+ */
+export const exportSignature = Symbol('SpacetimeDB.exportSignature');
+
+/** An export with the signature a client reads from it. */
+export type WithSignature<Sig> = { readonly [exportSignature]: Sig };
+
+export type SignedReducer<
+  S extends UntypedSchemaDecl,
+  Params extends ParamsObj,
+  Name extends string = string,
+> = ReducerExport<S, Params> & WithSignature<ReducerSignature<Name, Params>>;
+
+export type SignedProcedure<
+  S extends UntypedSchemaDecl,
+  Params extends ParamsObj,
+  Ret extends TypeBuilder<any, any>,
+  Name extends string = string,
+> = ProcedureExport<S, Params, Ret> &
+  WithSignature<ProcedureSignature<Name, Params, Ret>>;
+
+export type SignedView<F, Ret extends ViewReturnTypeBuilder> = ViewExport<F> &
+  WithSignature<ViewSignature<Ret>>;
+
+function withSignature<E extends object, const Sig>(
+  exp: E,
+  signature: Sig
+): E & WithSignature<Sig> {
+  return Object.assign(exp, { [exportSignature]: signature });
+}
 
 export interface ModuleExport {
   [registerExport](ctx: SchemaInner, exportName: string): void;

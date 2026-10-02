@@ -123,6 +123,8 @@ export function reducersToSchema<
  *   post: table({}, postType)
  * });
  * ```
+ * @deprecated Declare reducers with `spacetimedb.reducer(...)` and build the
+ * remote module declaration with `remoteModuleDeclFromExports`.
  */
 export function reducers<
   const H extends readonly ReducerSchema<any, any, any>[],
@@ -132,6 +134,8 @@ export function reducers<
  * Creates a schema from table definitions (array overload)
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
+ * @deprecated Declare reducers with `spacetimedb.reducer(...)` and build the
+ * remote module declaration with `remoteModuleDeclFromExports`.
  */
 export function reducers<
   const H extends readonly ReducerSchema<any, any, any>[],
@@ -146,6 +150,10 @@ export function reducers<
   return new Reducers(handles);
 }
 
+/**
+ * @deprecated Declare reducers with `spacetimedb.reducer(...)` and build the
+ * remote module declaration with `remoteModuleDeclFromExports`.
+ */
 export function reducerSchema<
   ReducerName extends string,
   Params extends ParamsObj,

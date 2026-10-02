@@ -44,12 +44,12 @@ export function makeProcedureExport<
   opts: ProcedureOptsWithOptionalName<Params, Ret> | undefined,
   params: Params,
   ret: Ret,
-  fn: ProcedureFn<S, Params, Ret>
+  fn: ProcedureFn<S, Params, Ret> | undefined
 ): ProcedureExport<S, Params, Ret> {
   const name = opts?.name;
 
   const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
-    fn(...args);
+    fn!(...args);
   procedureExport[exportContext] = ctx;
   procedureExport[registerExport] = (ctx, exportName) => {
     registerProcedure(ctx, name ?? exportName, params, ret, fn);
@@ -77,8 +77,9 @@ export type ProcedureFn<
 export interface ProcedureOpts<
   Params extends ParamsObj = ParamsObj,
   Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
+  Name extends string = string,
 > {
-  name: string;
+  name: Name;
   onSchedule?: Ret extends ReturnType<typeof t.unit>
     ? ScheduleTableForParams<Params>
     : never;
@@ -87,7 +88,21 @@ export interface ProcedureOpts<
 export type ProcedureOptsWithOptionalName<
   Params extends ParamsObj = ParamsObj,
   Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
-> = Omit<ProcedureOpts<Params, Ret>, 'name'> & { name?: string };
+  Name extends string = string,
+> = Omit<ProcedureOpts<Params, Ret, Name>, 'name'> & { name?: Name };
+
+/** What a client reads from a procedure declaration. See `remoteModuleDeclFromExports`. */
+export type ProcedureSignature<
+  Name extends string,
+  Params extends ParamsObj,
+  Ret extends TypeBuilder<any, any>,
+> = {
+  readonly kind: 'procedure';
+  /** The canonical name, if the declaration gives one. */
+  readonly name: Name | undefined;
+  readonly params: Params;
+  readonly returnType: Ret;
+};
 
 export type ProcedureAliasViews<SchemaDecl extends UntypedSchemaDecl> =
   SchemaDecl extends {
@@ -125,10 +140,11 @@ function registerProcedure<
   exportName: string,
   params: Params,
   ret: Ret,
-  fn: ProcedureFn<S, Params, Ret>,
+  fn: ProcedureFn<S, Params, Ret> | undefined,
   opts?: ProcedureOptsWithOptionalName<any, any>
 ) {
   ctx.defineFunction(exportName);
+  ctx.requireBody('procedure', exportName, fn);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -158,7 +174,8 @@ function registerProcedure<
   const { typespace } = ctx;
 
   ctx.procedures.push({
-    fn,
+    // Only a client registers a procedure without a body, and it never runs it.
+    fn: fn!,
     deserializeArgs: ProductType.makeDeserializer(paramsType, typespace),
     serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
     returnTypeBaseSize: bsatnBaseSize(typespace, returnType),

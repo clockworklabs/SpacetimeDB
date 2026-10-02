@@ -11,7 +11,12 @@ export {
 } from './spacetime_module.ts';
 export type { TableDeclOf, TableNamesOf } from '../lib/schema.ts';
 export * from '../lib/type_builders.ts';
-export { schema, convertToAccessorMap } from './schema.ts';
+export {
+  schema,
+  convertToAccessorMap,
+  remoteModuleDeclFromExports,
+  type InferRemoteModuleDecl,
+} from './schema.ts';
 export { table } from '../lib/table.ts';
 export { reducerSchema, reducers } from './reducers.ts';
 export { procedureSchema, procedures } from './procedures.ts';
