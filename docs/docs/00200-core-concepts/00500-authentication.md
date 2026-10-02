@@ -33,6 +33,20 @@ This matters when you persist tokens on the client:
 - Expect this distinction on browser-style transports where WebSocket headers
   are unavailable, such as Unity WebGL builds.
 
+For C# clients with `.WithAutomaticReconnect()` enabled, the SDK retains the
+authentication token and reuses it during recovery. `OnConnect` receives that
+retained or refreshed token, including on Unity WebGL, so it can be persisted
+for future application sessions without saving the transport's short-lived token.
+The WebGL precaution above still applies to C# connections without automatic reconnect.
+
+For expiring credentials, also configure `.WithTokenProvider(() => RefreshTokenAsync())`.
+Supply the initial token through `.WithToken(initialToken)`; the provider is only
+used during automatic reconnect. It returns a token for the same identity when
+the retained token is near expiry, its expiry cannot be read, or a reused token
+has been rejected. The SDK does not refresh tokens periodically while connected.
+See the [C# token-provider reference](./00600-clients/00600-csharp-reference.md#method-withtokenprovider)
+for refresh timing, rejection handling, and cancellation behavior.
+
 ## SpacetimeAuth
 
 To make it easier to get started with authentication, SpacetimeDB offers
