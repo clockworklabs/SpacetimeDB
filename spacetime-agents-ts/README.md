@@ -1,9 +1,8 @@
 # @spacetimedb/agents
 
 Build AI assistants in your SpacetimeDB application. Store conversations, send
-messages to a model, and let the assistant call functions that read or update
-your application's data. For example, a support assistant can look up an order
-through a tool you provide.
+messages to a model, and give the assistant tools that read or update your
+application's data.
 
 Choose which models and tools each assistant can use. Your application controls
 who can access each conversation and how much they can spend on model calls.
@@ -17,14 +16,10 @@ npm install @spacetimedb/agents spacetimedb
 `spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
 to build the host module.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
 ## Quick start
 
-This example defines a support assistant with a tool that reads the current
-module time. It adds operations to start a conversation and send a message,
-plus a view of the caller's conversations.
+This example creates a chat agent with a tool that returns the server's current
+time. Users can start conversations, send messages, and read their conversations.
 
 Configure a provider API key before sending a message. Add your application's
 quota check in `beforeRun` before allowing users to make paid model calls.
@@ -99,7 +94,7 @@ An administrator sets the provider key after publishing, for example
 '"openrouter"' '"<key>"'`.
 
 See the [complete example](./example/) for sign-in, attachments, and a token
-quota. Provider keys and conversations are stored in private tables.
+quota.
 
 ## Client
 
@@ -224,8 +219,7 @@ pnpm test
 pnpm run lint
 ```
 
-The unit suites use mocked HTTP with deterministic provider fixtures. The
-repository also builds the direct-publish module under `spacetimedb/`.
+Unit tests use mocked provider responses.
 
 ## License
 

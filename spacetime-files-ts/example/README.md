@@ -1,162 +1,75 @@
 # Vault files example
 
-Vault is a small Drive-style file manager built with
-[`@spacetimedb/files`](../). File bytes and file records live in the namespaced
-Files submodule; the host module adds identity-owned folder metadata and scoped
-views.
+A small file manager. Upload files, organize them in folders, preview them,
+and download them. Files can be private or shared with a public link.
 
-## What this demonstrates
+## Run it locally
 
-- Uploading, moving, renaming, listing, downloading, and deleting files.
-- Identity-owned folders and caller-scoped file-summary subscriptions.
-- Keeping file bytes out of realtime subscriptions.
-- Reading private bytes through a sender-aware procedure.
-- Serving explicitly public files through the submodule HTTP handler.
-- Drag-and-drop uploads, folder traversal, search, previews, bulk actions, and ZIP
-  downloads in a browser client.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server registered as `local`.
-- A logged-in CLI identity for publishing the example.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+From `spacetime-files-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
-## Quick start
+Then publish the example and start its web server:
 
-From `spacetime-files-ts/example`:
-
-```powershell
+```bash
 pnpm install
-pnpm --dir spacetimedb install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://127.0.0.1:8799> and upload a small image or text file.
+Open <http://127.0.0.1:8799>.
 
-`build:module:fresh` deletes and recreates only the local `spacetime-files-example`
-database. Use `pnpm run build:module` when existing local files must be preserved.
+## Try it
 
-## Use in your project
+1. Upload a small image or text file. Each file must be under 4 MB.
+2. Preview it, rename it, and download it.
+3. Create a folder and move the file into it.
+4. Open the app in a private browser window. That browser has a separate file list.
+5. Back in the first window, select a file and choose **Make public**. Use **Copy link** to
+   get its public download URL.
 
-This workspace tests the submodule source in this repository. Consumer applications install published releases:
+Anyone with a public download URL can read that file. Use only sample files
+when trying public sharing.
 
-```bash
-npm install @spacetimedb/files spacetimedb
-```
-
-Follow the package's
-[integration guide](../README.md#integrate-into-an-application). Copy the
-owner-derivation, scoped-view, and download-handler patterns; the folder model
-and file-manager UI are application code in the example.
+The app remembers your browser identity across reloads. Clearing site data
+gives you a new identity; it does not transfer your old files to that identity.
 
 ## Configuration
 
-| Variable              | Default                   | Purpose                                          |
-| --------------------- | ------------------------- | ------------------------------------------------ |
-| `HOST`                | `127.0.0.1`               | Development web-server bind address.             |
-| `PORT`                | `8799`                    | Development web-server port.                     |
-| `STDB_URI`            | `ws://127.0.0.1:3000`     | Browser WebSocket endpoint.                      |
-| `STDB_HTTP`           | `http://127.0.0.1:3000`   | Upstream endpoint for public file HTTP requests. |
-| `SPACETIMEDB_DB_NAME` | `spacetime-files-example` | Published database name.                         |
+The defaults in [.env.example](./.env.example) work for a local server.
+`STDB_URI` and `STDB_HTTP` must point to the same SpacetimeDB instance.
 
-The Node server hosts the bundle and proxies `/files?id=<fileId>` to the module
-HTTP router, which serves public files only. Private bytes travel through the
-authenticated SpacetimeDB connection.
+## Before deploying
 
-## Read and write paths
-
-The browser subscribes to `my_folders` and `my_file_summaries`. These views are
-filtered by the connection identity, and summaries omit `bytes`. Folder and file
-mutations use reducers.
-
-Private content is returned by the `read_file_bytes` procedure. Procedures retain
-the real caller in `ctx.sender`, allowing the host module to enforce ownership
-before returning bytes over the authenticated SpacetimeDB connection. HTTP
-handlers execute with the module route context and serve public files.
-
-Files marked public can use `/files?id=<fileId>` for direct HTTP reads. Making a file public
-changes its confidentiality and creates a public download path.
-
-## Paths and limits
-
-- Paths are absolute and slash-prefixed, for example `/docs/readme.txt`.
-- File and folder paths are owner-scoped. Two identities can each use `/docs`
-  and `/docs/readme.txt`.
-- Public links use the stable numeric file ID.
-- The submodule stores bytes in SpacetimeDB rows and caps each file at 4 MB.
-- Vault demonstrates in-row storage for small assets. Use dedicated infrastructure
-  for streaming uploads, media transformation, backups, and CDN delivery.
-
-The browser stores its development SpacetimeDB identity token so files remain
-associated with the same identity after reload. If a fresh database rejects the
-token, the client obtains a new anonymous identity. Existing data remains with
-its original identity.
-
-## Security and deployment boundaries
-
-- Reducers, views, and private-byte procedures enforce ownership. Browser controls
-  provide presentation only.
-- Validate path normalization, MIME metadata, file size, and ownership before
-  accepting writes or moves.
-- Treat uploaded bytes as untrusted. Production systems need content-disposition
-  policy, safe MIME handling, malware scanning where appropriate, and defenses
-  against active HTML/SVG content.
-- Public file URLs are bearer-readable by design. Do not expose confidential files
-  by marking them public.
-- The example buffers whole files and generated ZIPs in memory. Production limits
-  should account for per-file size, concurrent requests, and aggregate memory.
-- The included proxy is a local development server. Production needs TLS, explicit
-  binding, request limits, origin policy, and process supervision.
-
-## Build and verification
-
-```powershell
-pnpm --dir spacetimedb run build
-pnpm run check
-pnpm run build
-```
-
-For a release smoke test, use two independent browser identities and verify:
-
-1. Upload, preview, download, rename, move, and delete each supported small file
-   type.
-2. Folder drag-and-drop and multi-selection perform the intended operation once.
-3. Private file bytes and summaries are invisible to the other identity.
-4. A public file is reachable through `/files?id=<fileId>`; an owner-only file returns 403.
-5. Oversized uploads and invalid or conflicting paths fail atomically.
-6. Refresh preserves the owning development identity unless the database was
-   reset.
+Add accounts and account recovery if users need lasting access to their files.
+Treat uploaded content as untrusted, especially HTML and SVG.
+This demo holds files and ZIP downloads in memory and stores file bytes in
+SpacetimeDB. Plan storage and download limits for your app's expected file sizes.
 
 ## Troubleshooting
 
-- **A preview is empty:** inspect the procedure failure and verify the connected
-  identity owns the file.
-- **A public link returns an error:** confirm `STDB_HTTP` and `SPACETIMEDB_DB_NAME`
-  target the database used by `STDB_URI`.
-- **An upload exceeds the limit:** keep example files below 4 MB; use an external
-  object store for larger production assets.
-- **Files disappear after a fresh publish:** `build:module:fresh`
-  replaces the local database and all of its rows.
+- **Upload is rejected:** try a file under 4 MB and check for a duplicate path.
+- **Public link fails:** check that the file is public and both database endpoints
+  point to the same server.
 
-## Important files
+## Change the example
 
-- `spacetimedb/src/index.ts` - Files registration, folders, scoped views, and private reads.
-- `src/app.ts` - file-manager state, uploads, previews, downloads, and subscriptions.
-- `server.ts` - static development server and public-file proxy.
-- `public/index.html` - Vault interface.
-- `public/styles.css` - Vault presentation.
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts): folders and file access.
+- [src/app.ts](./src/app.ts): uploads, previews, and downloads.
+- [server.ts](./server.ts): public download routing.
+
+After changing server code, run `pnpm run build:module`. Restart
+`pnpm run dev` after changing browser code or `.env`.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in
+the local `spacetime-files-example` database.**
+
+To use the submodule in your own app, see the
+[package integration guide](../README.md#integrate-into-an-application).

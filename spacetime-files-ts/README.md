@@ -15,12 +15,7 @@ npm install @spacetimedb/files spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Files to your module, then expose operations for uploading and reading a
 file. This example uses the caller's SpacetimeDB identity as the owner. If your
@@ -102,9 +97,8 @@ Package entrypoints:
 - `@spacetimedb/files/constants`: constants and `errors`, safe to import in
   browser code.
 
-Each helper takes `(ctx, args, owner)` so the submodule stays
-identity-scheme-agnostic. Derive `owner` however the host wants (caller
-`Identity`, an Auth user id, and so on).
+Each helper takes `(ctx, args, owner)`. Derive `owner` from the authenticated
+caller.
 
 ### `uploadFile(ctx, args, owner, opts?)`
 
@@ -208,11 +202,6 @@ Thrown as `SenderError` with the codes in `errors`:
 pnpm test
 pnpm run typecheck
 ```
-
-Build the
-[example host module](./example/spacetimedb/)
-to verify the
-registered submodule and generated bindings together.
 
 ## License
 
