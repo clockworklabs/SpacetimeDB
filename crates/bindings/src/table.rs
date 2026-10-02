@@ -32,7 +32,7 @@ pub trait Table: TableInternal + ExplicitNames {
     /// Iterate over all rows of the table.
     ///
     /// For large tables, this can be a slow operation!
-    /// Prefer [filtering](RangedIndex::filter) a [`RangedIndex`] or [finding](UniqueColumn::find) a [`UniqueColumn`] if
+    /// Prefer [filtering](RangedIndex::filter) a [`RangedIndex`] or [finding](UniqueIndex::find) a [`UniqueIndex`] if
     /// possible.
     ///
     /// (This keeps track of changes made to the table since the start of this reducer invocation. For example, if rows have been deleted since the start of this reducer invocation, those rows will not be returned by `iter`. Similarly, inserted rows WILL be returned.)
@@ -51,7 +51,7 @@ pub trait Table: TableInternal + ExplicitNames {
     ///
     /// (The returned row is a copy of the row in the database.
     /// Modifying this copy does not directly modify the database.
-    /// See [`UniqueColumn::update`] if you want to update the row.)
+    /// See [`UniqueIndex::update`] if you want to update the row.)
     ///
     /// May panic if inserting the row violates any constraints.
     /// Callers which intend to handle constraint violation errors should instead use [`Self::try_insert`].
@@ -291,20 +291,20 @@ pub trait Column {
 
 /// A marker trait for columns that are the primary key of their table.
 ///
-/// This is used to restrict [`UniqueColumn::update`] to only work on primary key columns.
+/// This is used to restrict [`UniqueIndex::update`] to only work on primary key columns.
 pub trait PrimaryKey {}
 
 /// A handle to a unique index on a column.
 /// Available for `#[unique]` and `#[primary_key]` columns.
 ///
 /// For a table *table* with a column *column*, use `ctx.db.{table}().{column}()`
-/// to get a `UniqueColumn` from a [`ReducerContext`](crate::ReducerContext).
+/// to get a `UniqueIndex` from a [`ReducerContext`](crate::ReducerContext).
 ///
 /// Example:
 ///
 /// ```no_run
 /// # #[cfg(target_arch = "wasm32")] mod demo {
-/// use spacetimedb::{table, UniqueColumn, ReducerContext, DbContext};
+/// use spacetimedb::{table, UniqueIndex, ReducerContext, DbContext};
 ///
 /// #[table(accessor = user)]
 /// struct User {
@@ -318,24 +318,27 @@ pub trait PrimaryKey {}
 /// fn demo(ctx: &ReducerContext) {
 ///     let user = ctx.db().user();
 ///
-///     let by_id: UniqueColumn<_, u32, _> = user.id();
+///     let by_id: UniqueIndex<_, u32, _> = user.id();
 ///
 ///     let mut example_user: User = by_id.find(357).unwrap();
 ///     example_user.dog_count += 5;
 ///     by_id.update(example_user);
 ///
-///     let by_username: UniqueColumn<_, String, _> = user.username();
+///     let by_username: UniqueIndex<_, String, _> = user.username();
 ///     by_username.delete(&"Evil Bob".to_string());
 /// }
 /// # }
 /// ```
 ///
 /// <!-- TODO: do we need integer type suffixes on literal arguments, like for RangedIndex? -->
-pub struct UniqueColumn<Tbl, ColType, Col> {
+pub struct UniqueIndex<Tbl, ColType, Col> {
     _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
-impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColType, Col> {
+#[deprecated(note = "renamed to `UniqueIndex`")]
+pub type UniqueColumn<Tbl, ColType, Col> = UniqueIndex<Tbl, ColType, Col>;
+
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueIndex<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -457,19 +460,22 @@ fn datastore_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> sys::Row
 
 /// A read-only handle to a unique (single-column) index.
 ///
-/// This is the read-only version of [`UniqueColumn`].
-/// It mirrors [`UniqueColumn`] but only exposes read APIs.
+/// This is the read-only version of [`UniqueIndex`].
+/// It mirrors [`UniqueIndex`] but only exposes read APIs.
 /// It cannot insert or delete rows.
 /// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
 ///
 /// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
 /// This is because read-only indexes still need [`Table`] metadata.
 /// The view handle itself deliberately does not implement `Table`.
-pub struct UniqueColumnReadOnly<Tbl, ColType, Col> {
+pub struct ReadOnlyUniqueIndex<Tbl, ColType, Col> {
     _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
-impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumnReadOnly<Tbl, Col::ColType, Col> {
+#[deprecated(note = "renamed to `ReadOnlyUniqueIndex`")]
+pub type UniqueColumnReadOnly<Tbl, ColType, Col> = ReadOnlyUniqueIndex<Tbl, ColType, Col>;
+
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> ReadOnlyUniqueIndex<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -673,11 +679,14 @@ where
 /// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
 /// This is because read-only indexes still need [`Table`] metadata.
 /// The view handle itself deliberately does not implement `Table`.
-pub struct PointIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+pub struct ReadOnlyPointIndex<Tbl: Table, IndexType, Idx: Index> {
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
-impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexType, Idx> {
+#[deprecated(note = "renamed to `ReadOnlyPointIndex`")]
+pub type PointIndexReadOnly<Tbl, IndexType, Idx> = ReadOnlyPointIndex<Tbl, IndexType, Idx>;
+
+impl<Tbl: Table, IndexType, Idx: IndexIsPointed> ReadOnlyPointIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -1003,11 +1012,14 @@ where
 /// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
 /// This is because read-only indexes still need [`Table`] metadata.
 /// The view handle itself deliberately does not implement `Table`.
-pub struct RangedIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+pub struct ReadOnlyRangedIndex<Tbl: Table, IndexType, Idx: Index> {
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
-impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx> {
+#[deprecated(note = "renamed to `ReadOnlyRangedIndex`")]
+pub type RangedIndexReadOnly<Tbl, IndexType, Idx> = ReadOnlyRangedIndex<Tbl, IndexType, Idx>;
+
+impl<Tbl: Table, IndexType, Idx: Index> ReadOnlyRangedIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 

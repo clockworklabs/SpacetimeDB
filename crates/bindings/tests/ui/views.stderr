@@ -128,23 +128,23 @@ error[E0599]: no method named `delete` found for reference `&test__ViewHandle` i
    = note: the following trait defines an item `delete`, perhaps you need to implement it:
            candidate #1: `spacetimedb::Table`
 
-error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
+error[E0599]: no method named `delete` found for struct `ReadOnlyUniqueIndex<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:45:30
    |
 45 |     read_only.db.test().id().delete(&0);
-   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
+   |                              ^^^^^^ method not found in `ReadOnlyUniqueIndex<test__TableHandle, u32, id>`
 
-error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
+error[E0599]: no method named `update` found for struct `ReadOnlyUniqueIndex<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:52:30
    |
 52 |     read_only.db.test().id().update(Test { id: 0, x: 0 });
-   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
+   |                              ^^^^^^ method not found in `ReadOnlyUniqueIndex<test__TableHandle, u32, id>`
 
-error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
+error[E0599]: no method named `delete` found for struct `ReadOnlyRangedIndex<Tbl, IndexType, Idx>` in the current scope
   --> tests/ui/views.rs:59:29
    |
 59 |     read_only.db.test().x().delete(0u32..);
-   |                             ^^^^^^ method not found in `RangedIndexReadOnly<test__TableHandle, (u32,), x>`
+   |                             ^^^^^^ method not found in `ReadOnlyRangedIndex<test__TableHandle, (u32,), x>`
 
 error[E0599]: no associated function or constant named `register` found for struct `spacetimedb::rt::ViewRegistrar<ReducerContext>` in the current scope
    --> tests/ui/views.rs:101:1

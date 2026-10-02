@@ -452,42 +452,42 @@ enum AccessorType {
 impl AccessorType {
     fn unique(&self) -> proc_macro2::TokenStream {
         match self {
-            AccessorType::Read => quote!(spacetimedb::UniqueColumnReadOnly),
-            AccessorType::ReadWrite => quote!(spacetimedb::UniqueColumn),
+            AccessorType::Read => quote!(spacetimedb::ReadOnlyUniqueIndex),
+            AccessorType::ReadWrite => quote!(spacetimedb::UniqueIndex),
         }
     }
 
     fn range(&self) -> proc_macro2::TokenStream {
         match self {
-            AccessorType::Read => quote!(spacetimedb::RangedIndexReadOnly),
+            AccessorType::Read => quote!(spacetimedb::ReadOnlyRangedIndex),
             AccessorType::ReadWrite => quote!(spacetimedb::RangedIndex),
         }
     }
 
     fn point(&self) -> proc_macro2::TokenStream {
         match self {
-            AccessorType::Read => quote!(spacetimedb::PointIndexReadOnly),
+            AccessorType::Read => quote!(spacetimedb::ReadOnlyPointIndex),
             AccessorType::ReadWrite => quote!(spacetimedb::PointIndex),
         }
     }
 
     fn unique_doc_typename(&self) -> &'static str {
         match self {
-            AccessorType::Read => "UniqueColumnReadOnly",
-            AccessorType::ReadWrite => "UniqueColumn",
+            AccessorType::Read => "ReadOnlyUniqueIndex",
+            AccessorType::ReadWrite => "UniqueIndex",
         }
     }
 
     fn range_doc_typename(&self) -> &'static str {
         match self {
-            AccessorType::Read => "RangedIndexReadOnly",
+            AccessorType::Read => "ReadOnlyRangedIndex",
             AccessorType::ReadWrite => "RangedIndex",
         }
     }
 
     fn point_doc_typename(&self) -> &'static str {
         match self {
-            AccessorType::Read => "PointIndexReadOnly",
+            AccessorType::Read => "ReadOnlyPointIndex",
             AccessorType::ReadWrite => "PointIndex",
         }
     }
