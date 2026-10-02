@@ -60,9 +60,11 @@ pub use spacetimedb_lib::ViewPrimaryKeyColumn;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
-    AutoIncOverflow, PointIndex, PointIndexReadOnly, RangedIndex, RangedIndexReadOnly, Table, TryInsertError,
-    UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
+    AutoIncOverflow, PointIndex, RangedIndex, ReadOnlyPointIndex, ReadOnlyRangedIndex, ReadOnlyUniqueIndex, Table,
+    TryInsertError, UniqueConstraintViolation, UniqueIndex,
 };
+#[allow(deprecated)]
+pub use table::{PointIndexReadOnly, RangedIndexReadOnly, UniqueColumn, UniqueColumnReadOnly};
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
@@ -191,13 +193,13 @@ pub use spacetimedb_bindings_macro::settings;
 ///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has an extra method that allows getting a
-///     // corresponding `spacetimedb::UniqueColumn`.
-///     let by_username: spacetimedb::UniqueColumn<_, String, _> = user.id();
+///     // corresponding `spacetimedb::UniqueIndex`.
+///     let by_username: spacetimedb::UniqueIndex<_, String, _> = user.id();
 ///     by_username.delete(&"test_user".to_string());
 /// }
 /// ```
 ///
-/// See [`Table`], [`RangedIndex`], and [`UniqueColumn`] for more information on the methods available on these types.
+/// See [`Table`], [`RangedIndex`], and [`UniqueIndex`] for more information on the methods available on these types.
 ///
 /// # Browsing generated documentation
 ///
@@ -315,19 +317,19 @@ pub use spacetimedb_bindings_macro::settings;
 ///
 /// Creates an unique constraint and index for the annotated field.
 ///
-/// You can [`find`](crate::UniqueColumn::find), [`update`](crate::UniqueColumn::update),
-/// and [`delete`](crate::UniqueColumn::delete) rows by their unique columns.
-/// This is encapsulated in the struct [`UniqueColumn`].
+/// You can [`find`](crate::UniqueIndex::find), [`update`](crate::UniqueIndex::update),
+/// and [`delete`](crate::UniqueIndex::delete) rows by their unique columns.
+/// This is encapsulated in the struct [`UniqueIndex`].
 ///
 /// For a table *table* and a column *column*, use:
 /// ```text
 /// ctx.db.{table}().{column}()`
 /// ```
-/// to get a [`UniqueColumn`] from a [`ReducerContext`].
+/// to get a [`UniqueIndex`] from a [`ReducerContext`].
 ///
 /// For example:
 /// ```ignore
-/// let by_username: spacetimedb::UniqueColumn<_, String, _> = ctx.db.user().username();
+/// let by_username: spacetimedb::UniqueIndex<_, String, _> = ctx.db.user().username();
 /// ```
 ///
 /// When there is a unique column constraint on the table, insertion can fail if a uniqueness constraint is violated.
@@ -392,7 +394,7 @@ pub use spacetimedb_bindings_macro::settings;
 /// Creates a single-column index with the specified algorithm.
 ///
 /// It is an error to specify this attribute together with `#[unique]`.
-/// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueColumn`] struct instead of the
+/// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueIndex`] struct instead of the
 /// [`RangedIndex`] struct.
 ///
 /// The created index has the same name as the column.
@@ -423,13 +425,13 @@ pub use spacetimedb_bindings_macro::settings;
 /// [`RangedIndex`].
 ///
 /// For each field  with a `#[unique]` or `#[primary_key]` annotation,
-/// add a method to `{name}Handle` for getting a corresponding [`UniqueColumn`].
+/// add a method to `{name}Handle` for getting a corresponding [`UniqueIndex`].
 ///
 /// The following pseudocode illustrates the general idea. Curly braces are used to indicate templated
 /// names.
 ///
 /// ```ignore
-/// use spacetimedb::{RangedIndex, UniqueColumn, Table, DbView};
+/// use spacetimedb::{RangedIndex, UniqueIndex, Table, DbView};
 ///
 /// // This generated struct is hidden and cannot be directly accessed.
 /// struct {name}__TableHandle { /* ... */ };
@@ -450,7 +452,7 @@ pub use spacetimedb_bindings_macro::settings;
 /// // Once looked up, it can be used to look up indexes.
 /// impl {name}Handle {
 ///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
-///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
+///     fn {field}(&self) -> UniqueIndex<_, {F}, _> { /* ... */ };
 ///
 ///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
 ///     fn {index}(&self) -> RangedIndex<_, {(F1, ..., FN)}, _>;
