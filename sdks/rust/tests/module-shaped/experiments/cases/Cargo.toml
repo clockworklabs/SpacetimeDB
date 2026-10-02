@@ -1,0 +1,13 @@
+[package]
+name = "cases"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+pm = { path = "../pm" }
+
+[features]
+attr_on_noninline_mod = []
+attr_on_inline_mod_with_noninline_child = []
+custom_inner_attr = []

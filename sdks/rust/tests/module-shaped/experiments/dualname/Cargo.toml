@@ -1,0 +1,13 @@
+# Expected to fail: Cargo rejects depending on one package under two names.
+# "the crate `dualname` depends on crate `sdkstub` multiple times with different names"
+[package]
+name = "dualname"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+sdkstub = { path = "../sdkstub" }
+spacetimedb = { package = "sdkstub", path = "../sdkstub" }

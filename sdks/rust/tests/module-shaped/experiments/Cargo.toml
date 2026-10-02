@@ -1,0 +1,23 @@
+# Proposal 0040 spike: experiments on the Rust mechanics behind the options for module-wide client items.
+# This is a separate workspace, so the cases that are expected to fail do not affect the main workspace.
+# Use the main workspace's target directory:
+#   export CARGO_TARGET_DIR=$(git rev-parse --show-toplevel)/target
+#
+# Option 1 (module attribute), each expected to fail:
+#   cargo check -p cases --features attr_on_noninline_mod
+#   cargo check -p cases --features attr_on_inline_mod_with_noninline_child
+#   cargo check -p cases --features custom_inner_attr
+# Option 2 with CPS (descriptor macros), passes by default:
+#   cargo test -p cases
+# CPS depth limit (see depth/src/lib.rs): a pure macro_rules chain passes at 125 items and fails at 126;
+# a chain with a proc-macro step per item passes at 63 and fails at 64:
+#   CPS_ITEMS=125 cargo test -p depth;  CPS_ITEMS=126 cargo test -p depth
+#   CPS_MODE=proc CPS_ITEMS=63 cargo test -p depth;  CPS_MODE=proc CPS_ITEMS=64 cargo test -p depth
+# Per-item expansions reaching module-wide types through projections, passes:
+#   cargo test -p projections
+# Cargo dependency renaming alongside the original name, expected to fail (separate workspace):
+#   cargo check --manifest-path dualname/Cargo.toml
+[workspace]
+members = ["pm", "sdkstub", "cases", "depth", "projections"]
+exclude = ["dualname"]
+resolver = "2"
