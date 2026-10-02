@@ -41,14 +41,29 @@ where
     }
 }
 
+fn find_tsc_path(cwd: &Path) -> Option<PathBuf> {
+    if cfg!(windows) {
+        let cmd = cwd.join("node_modules/.bin/tsc.cmd");
+        if cmd.exists() {
+            return Some(cmd);
+        }
+        let exe = cwd.join("node_modules/.bin/tsc.exe");
+        if exe.exists() {
+            return Some(exe);
+        }
+    }
+    let bare = cwd.join("node_modules/.bin/tsc");
+    if bare.exists() {
+        return Some(bare);
+    }
+    None
+}
+
 pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
     let cwd = fs::canonicalize(project_path)?;
 
-    let mut tsc_path = cwd.join("node_modules/.bin/tsc");
-    if cfg!(windows) {
-        tsc_path.set_extension("cmd");
-    }
-    if tsc_path.exists() {
+    let tsc_path = find_tsc_path(&cwd);
+    if let Some(tsc_path) = tsc_path {
         let status = std::process::Command::new(tsc_path)
             .arg("--noEmit")
             .current_dir(&cwd)
@@ -291,4 +306,36 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
     }
 
     Ok(project_path.join("dist").join("bundle.js"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_tsc_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin_dir = temp.path().join("node_modules").join(".bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+
+        assert_eq!(find_tsc_path(temp.path()), None);
+
+        #[cfg(windows)]
+        {
+            let exe_path = bin_dir.join("tsc.exe");
+            std::fs::write(&exe_path, b"").unwrap();
+            assert_eq!(find_tsc_path(temp.path()), Some(exe_path.clone()));
+
+            let cmd_path = bin_dir.join("tsc.cmd");
+            std::fs::write(&cmd_path, b"").unwrap();
+            assert_eq!(find_tsc_path(temp.path()), Some(cmd_path));
+        }
+
+        #[cfg(not(windows))]
+        {
+            let base_path = bin_dir.join("tsc");
+            std::fs::write(&base_path, b"").unwrap();
+            assert_eq!(find_tsc_path(temp.path()), Some(base_path));
+        }
+    }
 }
