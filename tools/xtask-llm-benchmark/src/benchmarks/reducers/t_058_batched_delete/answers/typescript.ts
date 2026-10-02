@@ -1,6 +1,6 @@
 import { ScheduleAt } from 'spacetimedb';
 import { schema, table, t } from 'spacetimedb/server';
-import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
+import type { InferSchema, ReducerContext } from 'spacetimedb/server';
 
 const workItem = table(
   { name: 'work_item', public: true },
@@ -12,7 +12,7 @@ const deleteJob = table(
 );
 const spacetimedb = schema({ workItem, deleteJob });
 export default spacetimedb;
-type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+type Ctx = ReducerContext<InferSchema<typeof spacetimedb>>;
 
 function enqueue(ctx: Ctx, groupId: bigint) {
   ctx.db.deleteJob.insert({

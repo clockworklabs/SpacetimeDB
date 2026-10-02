@@ -429,7 +429,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 | -------------- | -------------------------- | ----------------------------------------------- |
 | `db`           | `DbView`                   | Access to the module's database tables          |
 | `sender`       | `Identity`                 | Identity of the caller                          |
-| `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
+| `senderAuth`   | `AuthContext`              | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `connectionId` | `ConnectionId \| null`     | Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
 | `random`       | `Random`                   | Random number generator (deterministic, seeded by SpacetimeDB) |

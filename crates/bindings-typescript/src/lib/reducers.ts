@@ -53,14 +53,14 @@ export type ParamsAsObject<ParamDef extends ParamsObj> =
  * ```
  */
 export type Reducer<S extends UntypedSchemaDecl, Params extends ParamsObj> = (
-  ctx: ReducerCtx<S>,
+  ctx: ReducerContext<S>,
   payload: ParamsAsObject<Params>
 ) => void;
 
 /**
  * Authentication information for the caller of a reducer.
  */
-export type AuthCtx = Readonly<{
+export type AuthContext = Readonly<{
   /** Whether the caller is an internal system process. */
   isInternal: boolean;
   /** Whether the caller has authenticated with a JWT token. */
@@ -68,6 +68,9 @@ export type AuthCtx = Readonly<{
   /** The JWT claims associated with the caller, or null if hasJWT == false. */
   jwt: JwtClaims | null;
 }>;
+
+/** @deprecated Use `AuthContext` instead. */
+export type AuthCtx = AuthContext;
 
 export type JsonValue =
   | string
@@ -103,13 +106,13 @@ export type AliasViews<SchemaDecl extends UntypedSchemaDecl> =
   SchemaDecl extends {
     namespaces: infer NS extends Record<string, UntypedSchemaDecl>;
   }
-    ? { readonly [K in keyof NS]: ReducerCtx<NS[K]> }
+    ? { readonly [K in keyof NS]: ReducerContext<NS[K]> }
     : {};
 
 /**
  * Reducer context parametrized by the inferred Schema
  */
-export type ReducerCtx<SchemaDecl extends UntypedSchemaDecl> = Readonly<{
+export type ReducerContext<SchemaDecl extends UntypedSchemaDecl> = Readonly<{
   sender: Identity;
   databaseIdentity: Identity;
   /** @deprecated Use `databaseIdentity` instead. */
@@ -118,9 +121,13 @@ export type ReducerCtx<SchemaDecl extends UntypedSchemaDecl> = Readonly<{
   connectionId: ConnectionId | null;
   db: DbView<SchemaDecl>;
   env: EnvironmentFor<SchemaDecl>;
-  senderAuth: AuthCtx;
+  senderAuth: AuthContext;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
   random: Random;
   as: AliasViews<SchemaDecl>;
 }>;
+
+/** @deprecated Use `ReducerContext` instead. */
+export type ReducerCtx<SchemaDecl extends UntypedSchemaDecl> =
+  ReducerContext<SchemaDecl>;

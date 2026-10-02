@@ -3,7 +3,7 @@ import {
   table,
   t,
   SenderError,
-  type ReducerCtx,
+  type ReducerContext,
 } from 'spacetimedb/server';
 import {
   callChat,
@@ -54,7 +54,7 @@ const spacetimedb = schema({
 });
 export default spacetimedb;
 
-type ModuleCtx = ReducerCtx<typeof spacetimedb.schemaType>;
+type ModuleCtx = ReducerContext<typeof spacetimedb.schemaType>;
 
 function senderError(message: string): never {
   throw new SenderError(message);
