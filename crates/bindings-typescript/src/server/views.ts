@@ -45,11 +45,11 @@ export function makeViewExport<
   opts: ViewOpts,
   params: Params,
   ret: Ret,
-  fn: F
+  fn: F | undefined
 ): ViewExport<F> {
   const viewExport =
     // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
-    fn.bind() as ViewExport<F>;
+    (fn ?? (() => {})).bind() as ViewExport<F>;
   viewExport[exportContext] = ctx;
   viewExport[registerExport] = (ctx, exportName) => {
     registerView(ctx, opts, exportName, params, ret, fn);
@@ -67,11 +67,11 @@ export function makeAnonViewExport<
   opts: ViewOpts,
   params: Params,
   ret: Ret,
-  fn: F
+  fn: F | undefined
 ): ViewExport<F> {
   const viewExport =
     // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
-    fn.bind() as ViewExport<F>;
+    (fn ?? (() => {})).bind() as ViewExport<F>;
   viewExport[exportContext] = ctx;
   viewExport[registerExport] = (ctx, exportName) => {
     registerAnonymousView(ctx, opts, exportName, params, ret, fn);
@@ -95,6 +95,14 @@ export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
 export type ViewOpts = {
   name?: string;
   public: true;
+};
+
+/** What a client reads from a view declaration. See `moduleDefFromExports`. */
+export type ViewSignature<Ret extends ViewReturnTypeBuilder> = {
+  readonly kind: 'view';
+  /** The canonical name, if the declaration gives one. */
+  readonly name: string | undefined;
+  readonly returnType: Ret;
 };
 
 type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
@@ -205,9 +213,10 @@ export function registerView<
   exportName: string,
   params: Params,
   ret: Ret,
-  fn: ViewFn<S, Params, Ret>
+  fn: ViewFn<S, Params, Ret> | undefined
 ) {
   const described = describeView(ctx, opts, exportName, false, params, ret);
+  ctx.requireBody('view', exportName, fn);
   // `ctx.views` is schema-erased. `ViewCtx<S>` and `ViewCtx<any>` describe the same
   // shape, but TypeScript cannot relate two instantiations of the mapped type
   // `ReadonlyDbView` while the schema is still a type parameter, so erasing `S` here
@@ -226,9 +235,10 @@ export function registerAnonymousView<
   exportName: string,
   params: Params,
   ret: Ret,
-  fn: AnonymousViewFn<S, Params, Ret>
+  fn: AnonymousViewFn<S, Params, Ret> | undefined
 ) {
   const described = describeView(ctx, opts, exportName, true, params, ret);
+  ctx.requireBody('view', exportName, fn);
   // Schema-erased for the same reason as `registerView` above.
   ctx.anonViews.push(buildViewInfo(ctx, described, fn as AnyAnonymousViewFn));
 }
