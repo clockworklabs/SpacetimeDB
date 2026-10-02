@@ -15,6 +15,10 @@ applications. This allows you to authenticate users without needing
 an external authentication service or even a hosting server.
 SpacetimeAuth is an [OpenID Connect (OIDC)](https://openid.net/developers/how-connect-works/)
 provider, which means it can be used with any OIDC-compatible client library.
+For browser-based JavaScript and TypeScript applications, see the
+[JavaScript/TypeScript integration guide](./00550-javascript-typescript-integration.md).
+For React applications, see the
+[React integration guide](./00500-react-integration.md).
 
 At the end of the authentication flow, your application receives an ID token
 containing identity claims (such as email, username, and roles). Your
