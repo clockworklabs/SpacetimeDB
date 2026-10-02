@@ -284,9 +284,22 @@ async function click({ input, capabilities, signal }:
       await browser.sleep(Math.min(100, deadline - Date.now()), signal);
     }
   }
+  // Remember the clicked element so a same-name replacement can be recognised as a confirmation.
+  // Only an action on one entry (an order, a ticket) can confirm inline; toggles and navigation cannot.
+  // Best effort: a control that is not on screen yet keeps the plain click behaviour.
+  const clickedText = !scope || input.unlessVisible || input.ifAvailable ? null
+    : await (async () => !await target.isVisible() ? null : target.evaluate(element => {
+      (globalThis as { __stackBenchClicked?: unknown }).__stackBenchClicked = element;
+      return element.innerText;
+    }, undefined, { timeout: 1000 }))().catch(() => null);
   let writeCompletion: Awaited<ReturnType<typeof withWriteCompletion>> | undefined;
   try {
-    const submit = () => target.click({ timeout: input.within ?? browser.defaultWithin });
+    const submit = async () => {
+      await target.click({ timeout: input.within ?? browser.defaultWithin });
+      if (clickedText !== null) {
+        await confirmReplacement(actor, browser, input.testid, scope, clickedText, signal).catch(() => {});
+      }
+    };
     if (input.awaitWrites) writeCompletion = await withWriteCompletion(actor.page as PlaywrightPage, async () => {
       await submit();
       if (input.settleMs) await browser.sleep(input.settleMs, signal);
@@ -305,6 +318,25 @@ async function click({ input, capabilities, signal }:
   }
   if (!input.awaitWrites && input.settleMs) await browser.sleep(input.settleMs, signal);
   return { clicked: input.testid, ...(writeCompletion ? { writes: writeCompletion.writes, capturedWritesCompleted: true } : {}) };
+}
+
+// "Cancel order" can become an inline "Yes, cancel order" under the same name. A user confirms
+// it, so a click that replaces its control with one differently labelled control is followed once.
+// The same element staying in place, or reappearing with the same label, is not a confirmation.
+async function confirmReplacement(actor: BrowserActor, browser: BrowserCapability, testid: string,
+  scope: ReturnType<typeof inputScope>, clickedText: string, signal: AbortSignal): Promise<void> {
+  const clickedRemains = () => actor.page.locator('body').evaluate(() =>
+    (globalThis as { __stackBenchClicked?: { isConnected: boolean } }).__stackBenchClicked?.isConnected === true);
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline) {
+    await browser.sleep(100, signal);
+    if (await clickedRemains()) return;
+    const next = actor.loc(testid, { scope });
+    if (!await next.isVisible() || await next.isDisabled()) continue;
+    if ((await next.innerText()).trim() === clickedText.trim()) return;
+    await next.click({ timeout: browser.defaultWithin });
+    return;
+  }
 }
 
 async function openItem({ input, capabilities, signal }:

@@ -113,6 +113,44 @@ test('expect reads controls inside collapsed sections, including ones that arriv
   }
 });
 
+test('a row action that asks for inline confirmation under the same name is confirmed once', async () => {
+  const server = createServer((_request, response) => response.end(`<!doctype html>
+    <section data-role="order-item">Coffee Grinder <span data-role="order-status">pending</span><span id="controls"></span></section>
+    <section data-role="order-item">Desk Lamp <span data-role="order-status">pending</span>
+      <button data-role="cancel-order" onclick="this.previousElementSibling.textContent='cancelled'">Cancel</button></section>
+    <script>
+      const row = document.querySelector('[data-role=order-item]'), controls = row.querySelector('#controls');
+      const ask = () => { controls.innerHTML = '<button data-role="cancel-order">Cancel order</button>';
+        controls.firstChild.onclick = () => { controls.innerHTML = '<button data-role="cancel-order">Yes, cancel order</button>';
+          controls.firstChild.onclick = () => { row.querySelector('[data-role=order-status]').textContent = 'cancelled'; }; }; };
+      ask();
+    </script>`));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const definition = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
+      name: 'confirm', features: [{ id: 1, name: 'confirm', actors: ['owner'], setup: [], criteria: [
+        { id: 'two-step', desc: 'an inline confirmation is followed', points: 1, steps: [
+          { do: 'click', actor: 'owner', testid: 'cancel-order', in: { testid: 'order-item', contains: 'Coffee Grinder' } },
+          { do: 'expect', actor: 'owner', testid: 'order-status', in: { testid: 'order-item', contains: 'Coffee Grinder' }, contains: 'cancelled', within: 2000 }] },
+        { id: 'one-step', desc: 'a control that stays in place is clicked once', points: 1, steps: [
+          { do: 'click', actor: 'owner', testid: 'cancel-order', in: { testid: 'order-item', contains: 'Desk Lamp' } },
+          { do: 'expect', actor: 'owner', testid: 'order-status', in: { testid: 'order-item', contains: 'Desk Lamp' }, contains: 'cancelled' }] },
+      ] }] });
+    const result = await gradeFeature(browser, definition.features[0]!, {
+      url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
+    }, { runId: 'confirm', roomName: name => name, url, actions: [], spacetime: null, nullControl: false });
+    for (const criterion of result.criteria) assert.equal(criterion.evidence.status, 'passed', criterion.evidence.summary ?? undefined);
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 test('a stalled stylesheet leaves navigation unmeasured and the unchanged app can load later', async () => {
   let stall = true;
   const server = createServer((request, response) => {
