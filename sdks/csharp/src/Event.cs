@@ -290,7 +290,7 @@ namespace SpacetimeDB
             {
                 Log.Warn("Unsubscribing from a query that was never submitted to the server does nothing.");
             }
-            else if (state is SubscriptionState.Active)
+            else if (state is SubscriptionState.Active || conn.IsReconnecting)
             {
                 conn.Unsubscribe(queryId);
             }
