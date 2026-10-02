@@ -1,0 +1,16 @@
+# Proposal 0040 spike: `event-table-client`'s test handlers, compiled unchanged
+# against hand-written module-shaped bindings in a single file.
+[package]
+name = "module-shaped-event-table-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spacetimedb-sdk = { path = "../../.." }
+test-counter = { path = "../../test-counter" }
+anyhow.workspace = true
+env_logger.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

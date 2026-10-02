@@ -1,0 +1,17 @@
+# Proposal 0040 spike: `event-table-client`'s test handlers, compiled unchanged
+# against the module's own source file (`modules/sdk-test-event-table/src/lib.rs`), unmodified.
+# This is the "future direct import of module source" path; it is not part of the 0040 deliverable.
+[package]
+name = "module-shaped-event-table-source-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spacetimedb-sdk = { path = "../../.." }
+test-counter = { path = "../../test-counter" }
+anyhow.workspace = true
+env_logger.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

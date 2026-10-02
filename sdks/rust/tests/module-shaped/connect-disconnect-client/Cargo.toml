@@ -1,0 +1,15 @@
+# Proposal 0040 spike: `connect_disconnect_client`'s test handlers, compiled unchanged
+# against hand-written module-shaped bindings in today's one-file-per-item layout.
+[package]
+name = "module-shaped-connect-disconnect-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spacetimedb-sdk = { path = "../../.." }
+test-counter = { path = "../../test-counter" }
+anyhow.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

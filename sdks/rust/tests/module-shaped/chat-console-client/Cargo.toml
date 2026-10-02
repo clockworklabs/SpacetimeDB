@@ -1,0 +1,14 @@
+# Proposal 0040 spike: the `templates/chat-console-rs` quickstart client, compiled unchanged
+# against hand-written module-shaped bindings in today's one-file-per-item layout.
+# `src/main.rs` is a byte-for-byte copy of `templates/chat-console-rs/src/main.rs`; `build.rs` enforces this.
+[package]
+name = "module-shaped-chat-console-client"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+spacetimedb-sdk = { path = "../../.." }
+
+[lints]
+workspace = true

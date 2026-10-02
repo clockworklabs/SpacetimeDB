@@ -4332,6 +4332,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-shaped-chat-console-client"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb-sdk",
+]
+
+[[package]]
+name = "module-shaped-connect-disconnect-client"
+version = "2.11.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sdk",
+ "test-counter",
+ "tokio",
+]
+
+[[package]]
+name = "module-shaped-event-table-client"
+version = "2.11.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+ "tokio",
+]
+
+[[package]]
+name = "module-shaped-event-table-source-client"
+version = "2.11.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+ "tokio",
+]
+
+[[package]]
 name = "module-test"
 version = "0.0.0"
 dependencies = [
@@ -8027,6 +8066,7 @@ dependencies = [
 name = "spacetimedb-bindings-macro"
 version = "2.11.0"
 dependencies = [
+ "convert_case 0.6.0",
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
@@ -8777,6 +8817,7 @@ dependencies = [
  "once_cell",
  "prometheus",
  "shlex",
+ "spacetimedb-bindings-macro",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
