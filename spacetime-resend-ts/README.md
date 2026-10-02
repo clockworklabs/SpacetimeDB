@@ -15,14 +15,7 @@ npm install @spacetimedb/resend spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-This submodule can be published directly as its own SpacetimeDB module from the root entry point.
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Resend to your module and initialize it:
 
@@ -86,8 +79,6 @@ Verify:
 spacetime call --server http://127.0.0.1:3000 spacetime-resend get_resend_config_status '{}'
 ```
 
-`send_email` reads the Resend API key from private module state.
-
 ## Private tables
 
 | Table                   | Key         | Notes                                                        |
@@ -144,7 +135,7 @@ operators.
 
 **Webhook ingest / replay**
 
-- `ingest_resend_webhook(eventId, eventType, payloadJson, signatureHeader, timestampHeader)` - idempotent
+- `ingest_resend_webhook(eventId, eventType, payloadJson, signatureHeader, timestampHeader)` - deduplicates events by the `svix-id` header passed as `eventId`
 - `replay_webhook_event(eventId)` - re-applies a stored event
 - `makeResendWebhookHandler()` builds a direct HTTP webhook handler for a host
   router.
@@ -240,21 +231,12 @@ spacetime call --server http://127.0.0.1:3000 spacetime-resend send_email \
 
 The standalone module has no HTTP route. To receive webhooks from Resend, mount the submodule in a host module that registers `makeResendWebhookHandler()` on a router, as the [example](./example/spacetimedb/) does at `/webhook/resend`. Expose the database through a public tunnel such as ngrok and register `https://<tunnel>/v1/database/<database>/route/webhook/resend` in Resend's dashboard with the same `whsec_...` you passed to `set_resend_config`.
 
-## Architecture notes
-
-- **valibot for runtime validation.** `vEmailEvent` is a `v.variant('type', [...])` over the 8 supported event types; other event types are stored as `Ignored`. The unit and smoke suites lock down the accepted wire shapes.
-- **Synchronous HTTP.** Procedures are synchronous and `ctx.http.fetch` returns a `SyncResponse`, so `callResend` in `src/submodule/http.ts` implements the required API surface directly.
-- **Wire format.** The public input uses SDK-style camelCase (`replyTo`, `scheduledAt`), and `buildSendEmailBody` emits the provider's snake_case JSON fields.
-- **Idempotency.** Each webhook event is keyed by its `svix-id` header (the reducer's `eventId` argument); re-ingesting a processed or ignored event is a no-op. Status-changing events ratchet forward, so `email.complained` preserves a terminal `delivered` status.
-
 ## Testing
 
 ```bash
 pnpm test
 pnpm run lint
 ```
-
-Credentialed smoke coverage is described in **Integration testing** above.
 
 ## License
 
