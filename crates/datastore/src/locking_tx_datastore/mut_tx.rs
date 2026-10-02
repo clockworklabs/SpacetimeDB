@@ -2161,12 +2161,22 @@ impl MutTxId {
         // Insert the sequence row into st_sequences
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
+
+        // Match `bootstrap_system_tables` when creating built-in system sequences.
+        // Check the built-in catalog because the reserved-ID helper also includes
+        // the first user-table ID, whose sequences must start at `seq.start`.
+        let allocated = if matching_system_table_schema.is_some() {
+            seq.start - 1
+        } else {
+            seq.start
+        };
+
         let mut sequence_row = StSequenceRow {
             sequence_id,
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
-            allocated: seq.start,
+            allocated,
             increment: SequenceSchema::INCREMENT,
             start: seq.start,
             min_value: SequenceSchema::MIN_VALUE,
