@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from '../../lib/type_builders.ts';
 
 export const BsatnRowList = __t.object('BsatnRowList', {
   get sizeHint() {

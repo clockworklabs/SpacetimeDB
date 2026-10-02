@@ -1,5 +1,5 @@
-import type { table, UntypedTableDef } from './table';
-import type { ColumnMetadata } from './type_builders';
+import type { table, UntypedTableDef } from './table.ts';
+import type { ColumnMetadata } from './type_builders.ts';
 
 /**
  * A helper type to determine if all columns in an index are unique.
@@ -44,5 +44,5 @@ export type ColumnIsUnique<M extends ColumnMetadata<any>> = M extends
  * of constraint definitions.
  */
 export type ConstraintOpts<AllowedCol extends string> = {
-  name?: string;
+  name?: string | undefined;
 } & { constraint: 'unique'; columns: [AllowedCol] };

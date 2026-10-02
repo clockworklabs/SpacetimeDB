@@ -9,12 +9,12 @@ import type {
   DbConnectionImpl,
   ErrorContextInterface,
   RemoteModuleOf,
-} from '../../sdk/db_connection_impl';
+} from '../../sdk/db_connection_impl.ts';
 import {
   SPACETIMEDB_CONNECTION,
   type ConnectionState,
-} from '../connection_state';
-import { ConnectionId } from '../../lib/connection_id';
+} from '../connection_state.ts';
+import { ConnectionId } from '../../lib/connection_id.ts';
 
 let connRef: DbConnectionImpl<any> | null = null;
 

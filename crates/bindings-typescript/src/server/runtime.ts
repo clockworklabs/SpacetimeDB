@@ -1,4 +1,4 @@
-import { environment, type EnvironmentFor } from './environment';
+import { environment, type EnvironmentFor } from './environment.ts';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
 
@@ -7,7 +7,7 @@ import {
   AlgebraicType,
   ProductType,
   type Deserializer,
-} from '../lib/algebraic_type';
+} from '../lib/algebraic_type.ts';
 import {
   RawModuleDef,
   ViewResultHeader,
@@ -15,68 +15,68 @@ import {
   type RawReducerDefV10,
   type RawTableDefV10,
   type Typespace,
-} from '../lib/autogen/types';
-import { ConnectionId } from '../lib/connection_id';
-import { Identity } from '../lib/identity';
-import { Timestamp } from '../lib/timestamp';
-import { Uuid } from '../lib/uuid';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter, { ResizableBuffer } from '../lib/binary_writer';
+} from '../lib/autogen/types.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
+import { Identity } from '../lib/identity.ts';
+import { Timestamp } from '../lib/timestamp.ts';
+import { Uuid } from '../lib/uuid.ts';
+import BinaryReader from '../lib/binary_reader.ts';
+import BinaryWriter, { ResizableBuffer } from '../lib/binary_writer.ts';
 import {
   type Index,
   type IndexVal,
   type PointIndex,
   type RangedIndex,
   type UniqueIndex,
-} from '../lib/indexes';
-import { callProcedure } from './procedures';
-import type { Procedures } from './procedures';
-import type { Reducers } from './reducers';
+} from '../lib/indexes.ts';
+import { callProcedure } from './procedures.ts';
+import type { Procedures } from './procedures.ts';
+import type { Reducers } from './reducers.ts';
 import {
   type HandlerContext,
   Request,
   SyncResponse,
   makeRequest,
-} from './http_handlers';
-import { httpClient } from './http_internal';
+} from './http_handlers.ts';
+import { httpClient } from './http_internal.ts';
 import {
   deserializeHeaders,
   deserializeMethod,
   serializeHeaders,
-} from './http_shared';
+} from './http_shared.ts';
 import {
   type AliasViews,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
   type ReducerCtx as IReducerCtx,
-} from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
+} from '../lib/reducers.ts';
+import { type UntypedSchemaDef } from '../lib/schema.ts';
 import {
   type RowType,
   type Table,
   type TableMethods,
   type UntypedTableDef,
-} from '../lib/table';
-import { bsatnBaseSize, hasOwn } from '../lib/util';
+} from '../lib/table.ts';
+import { bsatnBaseSize, hasOwn } from '../lib/util.ts';
 import {
   type AnonymousViewCtx,
   type AnonViews,
   type ViewCtx,
   type Views,
-} from './views';
+} from './views.ts';
 import {
   isRowTypedQuery,
   makeQueryBuilder,
   toSql,
   type QueryBuilder,
-} from './query';
-import type { DbView, ReadonlyDbView } from './db_view';
-import { getErrorConstructor, SenderError } from './errors';
-import { Range, type Bound } from './range';
-import { makeRandom, type Random } from './rng';
-import type { SubmoduleDispatchInfo, SchemaInner } from './schema';
-import { HttpRequest, HttpResponse } from '../lib/autogen/types';
+} from './query.ts';
+import type { DbView, ReadonlyDbView } from './db_view.ts';
+import { getErrorConstructor, SenderError } from './errors.ts';
+import { Range, type Bound } from './range.ts';
+import { makeRandom, type Random } from './rng.ts';
+import type { SubmoduleDispatchInfo, SchemaInner } from './schema.ts';
+import { HttpRequest, HttpResponse } from '../lib/autogen/types.ts';
 
 const { freeze } = Object;
 
