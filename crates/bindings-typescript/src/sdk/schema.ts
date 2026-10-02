@@ -1,19 +1,18 @@
-import {
-  ModuleContext,
-  tablesToSchema,
-  type SchemaDecl,
-  type UntypedSchemaDecl,
-} from '../lib/schema';
+import type { SchemaDecl } from '../lib/schema';
 import type { UntypedTableBody } from '../lib/table_body';
-
-class Tables<S extends UntypedSchemaDecl> {
-  constructor(readonly schemaType: S) {}
-}
+import {
+  schema as moduleSchema,
+  type ModuleSettings,
+  type Schema,
+} from '../server/schema';
 
 /**
- * Creates a schema from table definitions
- * @param handles - Array of table handles created by table() function
- * @returns ColumnBuilder representing the complete database schema
+ * Creates a schema from table bodies. This is the `schema()` a module
+ * uses, and it returns the same {@link Schema}, so client bindings can declare
+ * the module's reducers, procedures, and views on it, without their bodies.
+ * @param tables - The table bodies, keyed by accessor name
+ * @param moduleSettings - The module's settings, such as its case conversion policy
+ * @returns The {@link Schema} of the module
  * @example
  * ```ts
  * const spacetimedb = schema({
@@ -23,11 +22,10 @@ class Tables<S extends UntypedSchemaDecl> {
  * ```
  */
 export function schema<const H extends Record<string, UntypedTableBody>>(
-  tables: H
-): Tables<SchemaDecl<H>> {
-  const ctx = new ModuleContext();
-
-  return new Tables(tablesToSchema(ctx, tables));
+  tables: H,
+  moduleSettings?: ModuleSettings
+): Schema<SchemaDecl<H>> {
+  return moduleSchema(tables, moduleSettings) as Schema<any>;
 }
 
 type HasAccessor = { accessorName: PropertyKey };
