@@ -6,7 +6,7 @@ import type {
 } from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { coerceParams, toCamelCase, type CoerceParams } from '../lib/util';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedModuleDef } from './spacetime_module';
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
@@ -20,7 +20,7 @@ type ProceduresViewLoose = {
 export type ProceduresView<RemoteModule> = IfAny<
   RemoteModule,
   ProceduresViewLoose,
-  RemoteModule extends UntypedRemoteModule
+  RemoteModule extends UntypedModuleDef
     ? // x: camelCase(name)
       {
         [K in RemoteModule['procedures'][number] as K['accessorName']]: (

@@ -1,7 +1,7 @@
 import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import type { Values } from '../lib/type_util.ts';
-import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { UntypedModuleDef } from './spacetime_module.ts';
 import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
 type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
@@ -16,7 +16,7 @@ export type TableDefForTableName<
   : UntypedTableDef & { accessorName: N };
 
 type TableCacheForTableName<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = TableCache<RemoteModule, TableName>;
 
@@ -24,7 +24,7 @@ type TableCacheForTableName<
  * This is a helper class that provides a mapping from table names to their corresponding TableCache instances
  * while preserving the correspondence between the key and value type.
  */
-class TableMap<RemoteModule extends UntypedRemoteModule> {
+class TableMap<RemoteModule extends UntypedModuleDef> {
   private readonly map: Map<
     string,
     TableCacheForTableName<RemoteModule, TableName<RemoteModule>>
@@ -79,7 +79,7 @@ class TableMap<RemoteModule extends UntypedRemoteModule> {
  * It provides methods to get or create TableCache instances by table name,
  * ensuring type safety based on the provided SchemaDef.
  */
-export class ClientCache<RemoteModule extends UntypedRemoteModule> {
+export class ClientCache<RemoteModule extends UntypedModuleDef> {
   /**
    * The tables in the database.
    */

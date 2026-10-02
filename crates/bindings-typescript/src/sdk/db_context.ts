@@ -1,6 +1,6 @@
 import type { ClientDbView } from './db_view';
 import type { ReducersView } from './reducers';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedModuleDef } from './spacetime_module';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
 
 /**
@@ -9,7 +9,7 @@ import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
  * @template DbView - Type representing the database view.
  * @template ReducersDef - Type representing the reducers.
  */
-export interface DbContext<RemoteModule extends UntypedRemoteModule> {
+export interface DbContext<RemoteModule extends UntypedModuleDef> {
   db: ClientDbView<RemoteModule>;
   reducers: ReducersView<RemoteModule>;
   isActive: boolean;

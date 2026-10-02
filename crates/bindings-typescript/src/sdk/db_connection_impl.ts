@@ -34,7 +34,7 @@ import type {
   ReducerResultMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
-import { type UntypedRemoteModule } from './spacetime_module.ts';
+import { type UntypedModuleDef } from './spacetime_module.ts';
 import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
 import {
   type TableCache,
@@ -98,7 +98,7 @@ export type {
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 
-export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
+export type DbConnectionConfig<RemoteModule extends UntypedModuleDef> = {
   uri: URL;
   nameOrAddress: string;
   identity?: Identity;
@@ -166,7 +166,7 @@ const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 const WS_READY_STATE_CLOSING = 2;
 const WS_READY_STATE_CLOSED = 3;
 
-export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
+export class DbConnectionImpl<RemoteModule extends UntypedModuleDef>
   implements DbContext<RemoteModule>
 {
   /**

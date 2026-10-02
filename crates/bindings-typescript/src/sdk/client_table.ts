@@ -10,10 +10,10 @@ import type { ColumnBuilder } from '../lib/type_builders';
 import type { Prettify } from '../lib/type_util';
 import type { TableDefForTableName } from './client_cache';
 import type { EventContextInterface } from './event_context';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedModuleDef } from './spacetime_module';
 
 export type ClientTablePrimaryKeyMethods<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = {
   /**
@@ -43,7 +43,7 @@ export type ClientTablePrimaryKeyMethods<
 };
 
 export type ClientTableInsertMethods<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = {
   /**
@@ -69,7 +69,7 @@ export type ClientTableInsertMethods<
 };
 
 export type ClientTableDeleteMethods<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = {
   /**
@@ -95,7 +95,7 @@ export type ClientTableDeleteMethods<
 };
 
 export type ClientTableMethods<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = ClientTableInsertMethods<RemoteModule, TableName> &
   ClientTableDeleteMethods<RemoteModule, TableName>;
@@ -108,7 +108,7 @@ export type ClientTableMethods<
  * - AIO: auto-increment overflow error type (never if none)
  */
 export type ClientTable<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = Prettify<
   ClientTableCore<RemoteModule, TableName> &
@@ -141,7 +141,7 @@ type ColumnsHavePrimaryKey<
   : false;
 
 type MaybePKMethods<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = Partial<ClientTablePrimaryKeyMethods<RemoteModule, TableName>>;
 
@@ -150,7 +150,7 @@ type MaybePKMethods<
  * allowing for classes like TableCache to implement this interface
  */
 export type ClientTableCoreImplementable<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = ReadonlyTableMethods<TableDefForTableName<RemoteModule, TableName>> &
   ClientTableMethods<RemoteModule, TableName> &
@@ -165,7 +165,7 @@ export type ClientTableCoreImplementable<
  * matching the Rust SDK's `EventTable` trait.
  */
 export type ClientTableCore<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = ReadonlyTableMethods<TableDefForTableName<RemoteModule, TableName>> &
   ClientTableInsertMethods<RemoteModule, TableName> &

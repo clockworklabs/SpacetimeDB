@@ -3,11 +3,11 @@ import type { DbContext } from './db_context';
 import type { Event } from './event.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import type { ReducerEventInfo } from './reducers.ts';
-import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { UntypedModuleDef } from './spacetime_module.ts';
 
-export type UntypedEventContext = EventContextInterface<UntypedRemoteModule>;
+export type UntypedEventContext = EventContextInterface<UntypedModuleDef>;
 
-export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
+export interface EventContextInterface<RemoteModule extends UntypedModuleDef>
   extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event: Event<
@@ -19,7 +19,7 @@ export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
 }
 
 export interface ReducerEventContextInterface<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
 > extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event: ReducerEvent<
@@ -32,19 +32,19 @@ export interface ReducerEventContextInterface<
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ProcedureEventContextInterface<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
 > extends DbContext<RemoteModule> {
   /** No event is provided */
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface SubscriptionEventContextInterface<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
 > extends DbContext<RemoteModule> {
   /** No event is provided **/
 }
 
-export interface ErrorContextInterface<RemoteModule extends UntypedRemoteModule>
+export interface ErrorContextInterface<RemoteModule extends UntypedModuleDef>
   extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event?: Error;

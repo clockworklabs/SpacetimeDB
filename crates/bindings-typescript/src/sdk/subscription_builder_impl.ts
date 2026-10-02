@@ -5,7 +5,7 @@ import type {
   SubscriptionEventContextInterface,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedModuleDef } from './spacetime_module';
 import {
   isRowTypedQuery,
   toSql,
@@ -14,7 +14,7 @@ import {
 } from '../lib/query';
 import type { UntypedSchemaDef } from '../lib/schema';
 
-export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
+export class SubscriptionBuilderImpl<RemoteModule extends UntypedModuleDef> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
     undefined;
   #onError?: (ctx: ErrorContextInterface<RemoteModule>) => void = undefined;
@@ -160,7 +160,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
 
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
-export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
+export class SubscriptionManager<RemoteModule extends UntypedModuleDef> {
   subscriptions: Map<
     number,
     {
@@ -170,7 +170,7 @@ export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
   > = new Map();
 }
 
-export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
+export class SubscriptionHandleImpl<RemoteModule extends UntypedModuleDef> {
   #querySetId: number;
   #unsubscribeCalled: boolean = false;
   #endedState: boolean = false;

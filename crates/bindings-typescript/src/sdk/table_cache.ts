@@ -5,7 +5,7 @@ import { deepEqual, type ComparablePrimitive } from '../';
 import type { EventContextInterface, TableDefForTableName } from './index.ts';
 import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';
-import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { UntypedModuleDef } from './spacetime_module.ts';
 import type { TableNamesOf } from '../lib/schema.ts';
 import type {
   ReadonlyIndex,
@@ -45,7 +45,7 @@ const scalarCompare = (x: any, y: any): number => {
 };
 
 export type TableIndexView<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = ReadonlyIndexes<
   TableDefForTableName<RemoteModule, TableName>,
@@ -53,7 +53,7 @@ export type TableIndexView<
 >;
 
 export type TableCache<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = TableCacheImpl<RemoteModule, TableName> &
   TableIndexView<RemoteModule, TableName>;
@@ -62,7 +62,7 @@ export type TableCache<
  * Builder to generate calls to query a `table` in the database
  */
 export class TableCacheImpl<
-  RemoteModule extends UntypedRemoteModule,
+  RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > implements ClientTableCoreImplementable<RemoteModule, TableName>
 {
