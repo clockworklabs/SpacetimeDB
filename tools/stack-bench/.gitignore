@@ -1,0 +1,13 @@
+# Harness copies injected into each task by `cargo stack-bench build` (regenerated, not source).
+tasks/*/*/tests/harness/
+
+# Build artifacts.
+**/node_modules/
+**/dist/
+**/target/
+
+# Convex generated bindings.
+**/convex/_generated/
+
+# Harbor job results (cargo stack-bench all / -o).
+jobs/

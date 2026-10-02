@@ -1,0 +1,42 @@
+schema_version = "1.2"
+artifacts = []
+
+[task]
+name = "clockwork/realtime-chat-convex"
+description = "Build a minimal real-time chat backend on Convex; graded behaviorally through the Convex client SDK."
+keywords = ["realtime", "chat", "convex", "cross-backend", "stack-bench"]
+[[task.authors]]
+name = "Clockwork Labs"
+email = ""
+
+[metadata]
+backend = "convex"
+# Grouping dimensions read by `harbor stats breakdown` (tags/category/difficulty).
+tags = ["convex"]
+category = "realtime-chat"
+
+[verifier]
+timeout_sec = 600.0
+# SHARED mode (default): verifier runs in `main` and reaches the convex-backend
+# service over the compose network. Do NOT add [verifier.environment].
+
+[agent]
+timeout_sec = 1800.0
+
+[environment]
+build_timeout_sec = 1200.0
+os = "linux"
+cpus = 2
+memory_mb = 4096
+storage_mb = 12288
+gpus = 0
+allow_internet = true
+
+# Wait for the convex-backend compose service to be reachable from `main` before
+# the agent runs.
+[environment.healthcheck]
+command = "curl -sf -o /dev/null http://convex-backend:3210/version"
+interval_sec = 3.0
+timeout_sec = 10.0
+start_period_sec = 5.0
+retries = 40

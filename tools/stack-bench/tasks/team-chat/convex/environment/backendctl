@@ -1,0 +1,55 @@
+#!/bin/sh
+# Backend lifecycle control for the in-container self-hosted Convex backend.
+# Used by the Dockerfile ENTRYPOINT at boot and by the verifier's durability
+# phase (RESTART_CMD="/opt/stack-bench/backendctl restart"). SQLite state under
+# /convex/data survives process restarts, which is what the durability checks
+# verify.
+set -eu
+
+LOG=/var/log/convex.log
+
+start() {
+  cd /convex
+  # Fixed name+secret -> deterministic admin key; localhost origins because the
+  # backend, agent, and verifier all share this one container.
+  INSTANCE_NAME="${INSTANCE_NAME:-convex-stack-bench}" \
+  INSTANCE_SECRET="${INSTANCE_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}" \
+  CONVEX_CLOUD_ORIGIN="${CONVEX_CLOUD_ORIGIN:-http://127.0.0.1:3210}" \
+  CONVEX_SITE_ORIGIN="${CONVEX_SITE_ORIGIN:-http://127.0.0.1:3211}" \
+  DISABLE_BEACON=1 \
+  nohup ./run_backend.sh >>"$LOG" 2>&1 &
+}
+
+stop() {
+  pkill -f convex-local-backend 2>/dev/null || true
+  i=0
+  while curl -s -o /dev/null --max-time 1 http://127.0.0.1:3210/version 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge 30 ] && { echo "backendctl: backend did not stop" >&2; exit 1; }
+    sleep 0.5
+  done
+}
+
+wait_ready() {
+  i=0
+  until curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3210/version 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge 120 ] && { echo "backendctl: backend did not become ready" >&2; exit 1; }
+    sleep 1
+  done
+}
+
+case "${1:-}" in
+  start) start ;;
+  stop) stop ;;
+  wait-ready) wait_ready ;;
+  restart)
+    stop
+    start
+    wait_ready
+    ;;
+  *)
+    echo "usage: backendctl {start|stop|restart|wait-ready}" >&2
+    exit 2
+    ;;
+esac
