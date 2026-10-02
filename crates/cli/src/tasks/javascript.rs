@@ -44,11 +44,7 @@ where
 pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
     let cwd = fs::canonicalize(project_path)?;
 
-    let mut tsc_path = cwd.join("node_modules/.bin/tsc");
-    if cfg!(windows) {
-        tsc_path.set_extension("cmd");
-    }
-    if tsc_path.exists() {
+    if let Some(tsc_path) = resolve_tsc_path(&cwd) {
         let status = std::process::Command::new(tsc_path)
             .arg("--noEmit")
             .current_dir(&cwd)
@@ -291,4 +287,64 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
     }
 
     Ok(project_path.join("dist").join("bundle.js"))
+}
+
+fn resolve_tsc_path(cwd: &Path) -> Option<PathBuf> {
+    resolve_tsc_path_for_platform(cwd, cfg!(windows))
+}
+
+fn resolve_tsc_path_for_platform(cwd: &Path, windows: bool) -> Option<PathBuf> {
+    tsc_path_candidates(cwd, windows).into_iter().find(|path| path.exists())
+}
+
+fn tsc_path_candidates(cwd: &Path, windows: bool) -> Vec<PathBuf> {
+    let tsc = cwd.join("node_modules/.bin/tsc");
+    if windows {
+        let mut cmd = tsc.clone();
+        cmd.set_extension("cmd");
+
+        let mut exe = tsc;
+        exe.set_extension("exe");
+
+        vec![cmd, exe]
+    } else {
+        vec![tsc]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_windows_tsc_exe_when_cmd_is_missing() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let bin = temp.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        let tsc_exe = bin.join("tsc.exe");
+        fs::write(&tsc_exe, "").unwrap();
+
+        assert_eq!(
+            resolve_tsc_path_for_platform(temp.path(), true).as_deref(),
+            Some(tsc_exe.as_path())
+        );
+    }
+
+    #[test]
+    fn resolves_windows_tsc_cmd_before_exe() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let bin = temp.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        let tsc_cmd = bin.join("tsc.cmd");
+        let tsc_exe = bin.join("tsc.exe");
+        fs::write(&tsc_cmd, "").unwrap();
+        fs::write(&tsc_exe, "").unwrap();
+
+        assert_eq!(
+            resolve_tsc_path_for_platform(temp.path(), true).as_deref(),
+            Some(tsc_cmd.as_path())
+        );
+    }
 }
