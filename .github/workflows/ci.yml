@@ -890,16 +890,21 @@ jobs:
           tar --zstd -xf "${SDK_TEST_CLIENT_ARCHIVE}"
 
       - name: Run SDK test partition
+        env:
+          SPACETIME_SDK_TEST_MODULE_DIR: ${{ github.workspace }}/sdk-test-modules
+          SPACETIME_SDK_TEST_WORKSPACE_ROOT: ${{ github.workspace }}
         run: |
-          # Use the checked-in wrapper instead of shipping the large ci-sdk-tests
-          # helper binary from the build job in every SDK test artifact.
-          bash tools/ci/run-sdk-test-archive.sh \
+          # Run the archive directly so partitions don't need the heavy ci-sdk-tests binary.
+          export SPACETIME_SDK_TEST_CLIENT_DIR="${GITHUB_WORKSPACE}/${SDK_TEST_CLIENT_DIR}"
+          cargo nextest run \
             --archive-file "${SDK_TEST_ARCHIVE}" \
-            --module-dir sdk-test-modules \
-            --client-dir "${SDK_TEST_CLIENT_DIR}" \
-            -- \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
-            -E 'not test(/unreal/) & not test(/csharp/)'
+            -E 'not test(/unreal/) & not test(/csharp/)' \
+            --no-fail-fast \
+            --no-tests pass \
+            -j 1
+          bash tools/check-diff.sh
 
   sdk_tests_browser:
     needs: [upload-build-artifacts-linux, sdk_test_prepare_browser]
