@@ -118,6 +118,12 @@ namespace SpacetimeDB
             return this;
         }
 
+        public DbConnectionBuilder<DbConnection> OnAutomaticReconnect(ConnectCallback cb)
+        {
+            conn.AddOnAutomaticReconnect((identity, token) => cb(conn, identity, token));
+            return this;
+        }
+
         public delegate void ConnectErrorCallback(Exception e);
         public delegate void ConnectErrorWithReconnectCallback(Exception e, NextReconnect? nextReconnect);
 
@@ -148,6 +154,7 @@ namespace SpacetimeDB
         internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads);
 
         internal void AddOnConnect(Action<Identity, string> cb);
+        internal void AddOnAutomaticReconnect(Action<Identity, string> cb);
         internal void AddOnConnectError(Action<Exception, NextReconnect?> cb);
         internal void AddOnDisconnect(Action<Exception?, NextReconnect?> cb);
         internal void ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay);
@@ -185,6 +192,7 @@ namespace SpacetimeDB
         public static DbConnectionBuilder<DbConnection> Builder() => new();
 
         internal event Action<Identity, string>? onConnect;
+        private event Action<Identity, string>? onAutomaticReconnect;
 
         /// <summary>
         /// Called when an exception occurs when sending a message.
@@ -205,7 +213,7 @@ namespace SpacetimeDB
         public ConnectionId ConnectionId { get; private set; } = ConnectionId.Random();
         public Identity? Identity { get; private set; }
         private ConnectionId? initialConnectionId;
-        private bool onConnectInvoked;
+        private bool connectionEstablished;
 
         // Created by StartSocket when Connect is first called.
         internal WebSocket? webSocket;
@@ -691,7 +699,7 @@ namespace SpacetimeDB
 
         bool IDbConnection.AutomaticReconnectEnabled => automaticReconnect;
 
-        public bool IsReconnecting => automaticReconnect && hasEverConnected && !onConnectInvoked && !isClosing;
+        public bool IsReconnecting => automaticReconnect && hasEverConnected && !connectionEstablished && !isClosing;
 
         void IDbConnection.ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay)
         {
@@ -746,7 +754,7 @@ namespace SpacetimeDB
                 return;
             }
             connectionClosed = false;
-            onConnectInvoked = false;
+            connectionEstablished = false;
             initialConnectionId = null;
             if (hasEverConnected)
             {
@@ -785,7 +793,7 @@ namespace SpacetimeDB
 
         private void HandleInitialConnection(InitialConnection initial)
         {
-            if (automaticReconnect && (onConnectInvoked || initial.ConnectionId != ConnectionId ||
+            if (automaticReconnect && (connectionEstablished || initial.ConnectionId != ConnectionId ||
                 (Identity is Identity identity && identity != initial.Identity)))
             {
                 HandleSocketFailure(new ConnectionProtocolException("Unexpected identity or connection ID in InitialConnection."));
@@ -797,7 +805,7 @@ namespace SpacetimeDB
                 Log.Error("Received InitialConnection with an unexpected identity or connection ID.");
                 return;
             }
-            if (onConnectInvoked)
+            if (connectionEstablished)
             {
                 return;
             }
@@ -810,12 +818,13 @@ namespace SpacetimeDB
                 retainedToken = initial.Token;
             }
             hasEverConnected = true;
-            onConnectInvoked = true;
+            connectionEstablished = true;
             reconnectAttempt = 0;
             reconnectAt = null;
             try
             {
-                onConnect?.Invoke(initial.Identity, automaticReconnect ? retainedToken! : initial.Token);
+                var callback = reconnect ? onAutomaticReconnect : onConnect;
+                callback?.Invoke(initial.Identity, automaticReconnect ? retainedToken! : initial.Token);
             }
             catch (Exception error)
             {
@@ -823,10 +832,7 @@ namespace SpacetimeDB
             }
             finally
             {
-                if (!automaticReconnect)
-                {
-                    onConnect = null;
-                }
+                onConnect = null;
                 if (!isClosing && automaticReconnect)
                 {
                     if (reconnect)
@@ -851,9 +857,9 @@ namespace SpacetimeDB
             {
                 return;
             }
-            var established = onConnectInvoked;
+            var established = connectionEstablished;
             connectionClosed = true;
-            onConnectInvoked = false;
+            connectionEstablished = false;
             socketGeneration++;
             webSocket?.Abort();
             preparingReplay = automaticReconnect;
@@ -962,7 +968,7 @@ namespace SpacetimeDB
         {
             isClosing = true;
             connectionClosed = true;
-            onConnectInvoked = false;
+            connectionEstablished = false;
             reconnectAt = null;
             tokenTask = null;
             socketGeneration++;
@@ -1104,7 +1110,7 @@ namespace SpacetimeDB
                 HandleSocketFailure(new ConnectionProtocolException("Could not parse server message.", parsed.error));
                 return;
             }
-            if (automaticReconnect && !onConnectInvoked && parsed.message is not ServerMessage.InitialConnection)
+            if (automaticReconnect && !connectionEstablished && parsed.message is not ServerMessage.InitialConnection)
             {
                 HandleSocketFailure(new ConnectionProtocolException("Expected InitialConnection."));
                 return;
@@ -1416,7 +1422,7 @@ namespace SpacetimeDB
             return output;
         }
 
-        public bool IsActive => !connectionClosed && webSocket?.IsConnected == true && (!automaticReconnect || onConnectInvoked);
+        public bool IsActive => !connectionClosed && webSocket?.IsConnected == true && (!automaticReconnect || connectionEstablished);
 
         public void FrameTick()
         {
@@ -1453,6 +1459,8 @@ namespace SpacetimeDB
         }
 
         void IDbConnection.AddOnConnect(Action<Identity, string> cb) => onConnect += cb;
+
+        void IDbConnection.AddOnAutomaticReconnect(Action<Identity, string> cb) => onAutomaticReconnect += cb;
 
         void IDbConnection.AddOnConnectError(Action<Exception, NextReconnect?> cb) => onConnectError += cb;
 

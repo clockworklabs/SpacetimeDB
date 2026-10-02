@@ -68,6 +68,7 @@ public partial class ReconnectTests
         internal double Now;
         internal FakeSocket Socket => Sockets[^1];
         internal int Connects;
+        internal int AutomaticReconnects;
         internal int CallbackThread;
 
         public Connection()
@@ -81,6 +82,7 @@ public partial class ReconnectTests
             };
             ReconnectClock = () => Now;
             ((IDbConnection)this).AddOnConnect((_, _) => { Connects++; CallbackThread = Environment.CurrentManagedThreadId; });
+            ((IDbConnection)this).AddOnAutomaticReconnect((_, _) => { AutomaticReconnects++; CallbackThread = Environment.CurrentManagedThreadId; });
             ((IDbConnection)this).AddOnDisconnect((error, next) => Events.Add(("disconnect", error, next)));
             ((IDbConnection)this).AddOnConnectError((error, next) => Events.Add(("error", error, next)));
         }
@@ -151,11 +153,13 @@ public partial class ReconnectTests
         public void OnEnded(ISubscriptionEventContext ctx) => Ended++;
     }
 
-    private static Connection Create(bool automatic = true, string? token = null, Func<Task<string>>? provider = null, AutomaticReconnectOptions? options = null)
+    private static Connection Create(bool automatic = true, string? token = null, Func<Task<string>>? provider = null, AutomaticReconnectOptions? options = null,
+        Action<DbConnectionBuilder<Connection>>? configure = null)
     {
         var builder = Connection.Builder().WithUri("ws://localhost").WithDatabaseName("test").WithToken(token);
         if (automatic) builder.WithAutomaticReconnect(options);
         if (provider != null) builder.WithTokenProvider(provider);
+        configure?.Invoke(builder);
         var conn = builder.Build();
         Pump(conn, () => conn.Socket.Started);
         return conn;
@@ -176,11 +180,11 @@ public partial class ReconnectTests
     private static readonly Identity identity = Identity.From(new byte[32]);
     private static void Establish(Connection conn, string token = "issued-token", Identity? asIdentity = null)
     {
-        var count = conn.Connects;
+        var count = conn.Connects + conn.AutomaticReconnects;
         var errors = conn.Events.Count;
         conn.Socket.Open = true;
         conn.Socket.Receive(new ServerMessage.InitialConnection(new(asIdentity ?? identity, conn.ConnectionId, token)));
-        Pump(conn, () => conn.Connects > count || conn.Events.Count > errors && conn.Events[^1].Next == null);
+        Pump(conn, () => conn.Connects + conn.AutomaticReconnects > count || conn.Events.Count > errors && conn.Events[^1].Next == null);
     }
 
     private static void Drop(Connection conn)
@@ -279,6 +283,8 @@ public partial class ReconnectTests
         conn.FrameTick();
         Assert.Single(conn.Sockets);
         Assert.False(conn.IsReconnecting);
+        Assert.Equal(0, conn.Connects);
+        Assert.Equal(0, conn.AutomaticReconnects);
     }
 
     [Fact]
@@ -287,6 +293,8 @@ public partial class ReconnectTests
         using var conn = Create(false);
         Establish(conn);
         Assert.Null(conn.Socket.Session);
+        Assert.Equal(1, conn.Connects);
+        Assert.Equal(0, conn.AutomaticReconnects);
         Drop(conn);
         Assert.Null(conn.Events[^1].Next);
         Assert.False(conn.IsReconnecting);
@@ -305,7 +313,8 @@ public partial class ReconnectTests
         old.Receive(new ServerMessage.InitialConnection(new(identity, old.Id, "wrong")));
         old.Lose();
         Establish(conn);
-        Assert.Equal(2, conn.Connects);
+        Assert.Equal(1, conn.Connects);
+        Assert.Equal(1, conn.AutomaticReconnects);
         Assert.Single(conn.Events);
         Assert.Equal("issued-token", conn.Socket.Token);
     }
@@ -342,6 +351,7 @@ public partial class ReconnectTests
         bytes[0] = 1;
         Establish(conn, asIdentity: Identity.From(bytes));
         Assert.Equal(1, conn.Connects);
+        Assert.Equal(0, conn.AutomaticReconnects);
         Assert.Equal("error", conn.Events[^1].Kind);
         Assert.IsType<ConnectionProtocolException>(conn.Events[^1].Error);
         Assert.Null(conn.Events[^1].Next);
@@ -503,7 +513,8 @@ public partial class ReconnectTests
         Assert.Equal(1, calls);
         Assert.Equal("fresh-token", conn.Socket.Token);
         Establish(conn);
-        Assert.Equal(2, conn.Connects);
+        Assert.Equal(1, conn.Connects);
+        Assert.Equal(1, conn.AutomaticReconnects);
     }
 
     [Fact]
@@ -621,6 +632,72 @@ public partial class ReconnectTests
     }
 
     [Fact]
+    public void ConnectionCallbacksSeparateInitialSetupFromRecovery()
+    {
+        var callbacks = new List<(string Kind, Connection Connection, Identity Identity, string Token)>();
+        var handles = new List<TrackingHandle>();
+        var inserts = 0;
+        var refreshes = 0;
+        using var conn = Create(provider: () => Task.FromResult($"fresh-token-{++refreshes}"), configure: builder => builder
+            .OnConnect((connection, identity, token) =>
+            {
+                callbacks.Add(("connect", connection, identity, token));
+                connection.Db.Keyed.OnInsert += (_, _) => inserts++;
+                handles.Add(Subscribe(connection));
+                handles.Add(Subscribe(connection, "SELECT * FROM unkeyed"));
+            })
+            .OnAutomaticReconnect((connection, identity, token) =>
+            {
+                Assert.True(connection.IsActive);
+                Assert.False(connection.IsReconnecting);
+                Assert.Empty(connection.Socket.Sent);
+                callbacks.Add(("reconnect", connection, identity, token));
+            }));
+        Establish(conn);
+        Assert.Equal(("connect", conn, identity, "issued-token"), Assert.Single(callbacks));
+        Assert.Equal(2, conn.Socket.Sent.OfType<ClientMessage.Subscribe>().Count());
+
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            Drop(conn);
+            Retry(conn);
+            Establish(conn, "transport-token");
+            Assert.Equal(("reconnect", conn, identity, $"fresh-token-{attempt}"), callbacks[^1]);
+            var batch = Batch(conn);
+            Assert.Equal(2, batch.Sets.Count);
+            conn.Socket.Receive(new ServerMessage.SubscribeBatchApplied(new(batch.RequestId,
+                new()
+                {
+                    new(handles[0].Id, new SubscribeSetOutcome.Applied(Query("keyed", new Row { Id = 1 }))),
+                    new(handles[1].Id, new SubscribeSetOutcome.Applied(Query("unkeyed"))),
+                })));
+            Pump(conn, () => handles.All(handle => handle.Applied == attempt));
+        }
+        Assert.Equal(1, conn.Connects);
+        Assert.Equal(2, conn.AutomaticReconnects);
+        Assert.Equal(3, callbacks.Count);
+        Assert.Equal(1, inserts);
+        Assert.Equal(Environment.CurrentManagedThreadId, conn.CallbackThread);
+    }
+
+    [Fact]
+    public void ThrowingAutomaticReconnectCallbackStillReplaysSubscriptions()
+    {
+        using var conn = Create(configure: builder => builder.OnAutomaticReconnect((_, _, _) =>
+            throw new InvalidOperationException("Callback failed.")));
+        Establish(conn);
+        var handle = Subscribe(conn);
+        Apply(conn, handle, Query("keyed", new Row { Id = 1 }));
+        Drop(conn);
+        Retry(conn);
+        Establish(conn);
+        conn.Socket.Receive(new ServerMessage.SubscribeBatchApplied(new(Batch(conn).RequestId,
+            new() { new(handle.Id, new SubscribeSetOutcome.Applied(Query("keyed", new Row { Id = 2 }))) })));
+        Pump(conn, () => handle.Applied == 2);
+        Assert.Equal(2U, Assert.Single(conn.Db.Keyed.Iter()).Id);
+    }
+
+    [Fact]
     public void ReconnectCallbackCanChangeSubscriptionsOrDisconnect()
     {
         using var conn = Create();
@@ -628,7 +705,7 @@ public partial class ReconnectTests
         var before = Subscribe(conn);
         Apply(conn, before, Query("keyed", new Row { Id = 1 }));
         Drop(conn);
-        ((IDbConnection)conn).AddOnConnect((_, _) =>
+        ((IDbConnection)conn).AddOnAutomaticReconnect((_, _) =>
         {
             ((IDbConnection)conn).Unsubscribe(before.Id);
             Subscribe(conn, "SELECT * FROM keyed WHERE id = 2");
@@ -638,7 +715,7 @@ public partial class ReconnectTests
         Assert.Equal(1, before.Ended);
         Assert.Equal("SELECT * FROM keyed WHERE id = 2", Assert.Single(Batch(conn).Sets).QueryStrings.Single());
         Drop(conn);
-        ((IDbConnection)conn).AddOnConnect((_, _) => conn.Disconnect());
+        ((IDbConnection)conn).AddOnAutomaticReconnect((_, _) => conn.Disconnect());
         Retry(conn);
         Establish(conn);
         Assert.Empty(conn.Socket.Sent);
