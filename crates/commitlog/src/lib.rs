@@ -398,6 +398,26 @@ where
         Ok(stats)
     }
 
+    /// Remove the segments at the given offsets from the log.
+    ///
+    /// `offsets` must contain the exact segment offsets, no rounding to the
+    /// nearest offset is performed.
+    ///
+    /// The segments' contents are discarded permanently, including their
+    /// offset indexes. The latest, writable segment cannot be removed: if
+    /// `offsets` contains its offset, an error is returned and no segments
+    /// are removed.
+    ///
+    /// Segments are removed oldest-first, so that a failure partway through
+    /// does not leave a gap in the log. If removing a segment fails, the
+    /// error is returned and the remaining, newer segments are retained.
+    ///
+    /// This method acquires a write lock on this `Commitlog` instance for the
+    /// duration of the removal.
+    pub fn remove_segments(&self, offsets: &[u64]) -> io::Result<()> {
+        self.inner.write().unwrap().remove_segments(offsets)
+    }
+
     /// Remove all data from the log and reopen it.
     ///
     /// Log segments are deleted starting from the newest. As multiple segments
@@ -611,6 +631,25 @@ pub fn committed_meta(root: CommitLogDir) -> io::Result<Option<CommittedMeta>> {
     commitlog::committed_meta(repo::Fs::new(root, None)?)
 }
 
+/// Given a sorted (ascending) list of segment offsets, return the prefix of
+/// segments whose entire contents are strictly before `tx_offset`.
+///
+/// Segments are named for the earliest transaction they contain, so the
+/// segment which contains `tx_offset` itself is excluded.
+///
+/// Useful to determine which segments can be compressed, archived or removed
+/// once a snapshot at `tx_offset` exists: the returned segments will never be
+/// needed again to restore the database from that snapshot.
+pub fn segments_older_than(offsets: &[u64], tx_offset: u64) -> &[u64] {
+    let end_idx = offsets
+        .binary_search(&tx_offset)
+        // If `tx_offset` is in the middle of a segment, exclude the segment
+        // that contains it by rounding down.
+        .unwrap_or_else(|i| i.saturating_sub(1));
+    &offsets[..end_idx]
+}
+
+
 /// Obtain an iterator which traverses the commitlog located at the `root`
 /// directory from the start, yielding [`StoredCommit`]s.
 ///
@@ -699,4 +738,29 @@ where
     D::Error: From<error::Traversal> + From<io::Error>,
 {
     commitlog::fold_transaction_range(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
+}
+#[cfg(test)]
+mod segments_older_than_tests {
+    use super::segments_older_than;
+
+    const SEGMENTS: &[u64] = &[0, 10, 20, 30];
+    const EMPTY: &[u64] = &[];
+
+    #[test]
+    fn excludes_the_segment_containing_the_offset() {
+        assert_eq!(segments_older_than(SEGMENTS, 15), &[0]);
+        assert_eq!(segments_older_than(SEGMENTS, 7), EMPTY);
+        assert_eq!(segments_older_than(SEGMENTS, 35), &[0, 10, 20]);
+    }
+
+    #[test]
+    fn excludes_the_segment_starting_at_the_offset() {
+        assert_eq!(segments_older_than(SEGMENTS, 20), &[0, 10]);
+        assert_eq!(segments_older_than(SEGMENTS, 0), EMPTY);
+    }
+
+    #[test]
+    fn handles_empty_input() {
+        assert_eq!(segments_older_than(EMPTY, 15), EMPTY);
+    }
 }
