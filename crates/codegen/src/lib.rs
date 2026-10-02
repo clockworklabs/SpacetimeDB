@@ -32,7 +32,7 @@ impl Default for CodegenOptions {
 
 pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -> Vec<OutputFile> {
     itertools::chain!(
-        util::iter_tables(module, options.visibility).map(|tbl| lang.generate_table_file(module, tbl)),
+        util::iter_tables(module, options.visibility).flat_map(|tbl| lang.generate_table_files(module, tbl)),
         module.views().map(|view| lang.generate_view_file(module, view)),
         // Public tables from submodules
         module
@@ -46,7 +46,9 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -
             .into_iter()
             .filter(|(prefix, _, _)| !prefix.is_empty())
             .map(|(_, owning_def, view)| lang.generate_submodule_view_file(owning_def, view)),
-        module.types().flat_map(|typ| lang.generate_type_files(module, typ)),
+        module
+            .types()
+            .flat_map(|typ| lang.generate_type_files_with_options(module, typ, options)),
         util::iter_reducers(module, options.visibility).map(|reducer| lang.generate_reducer_file(module, reducer)),
         util::iter_procedures(module, options.visibility)
             .map(|procedure| lang.generate_procedure_file(module, procedure)),
@@ -78,6 +80,24 @@ pub trait Lang {
     fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile;
     fn generate_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile;
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile>;
+
+    /// Generate the files for a table.
+    ///
+    /// A language whose module syntax declares a table on its row type, like C#,
+    /// generates the table in [`Lang::generate_type_files_with_options`] instead.
+    fn generate_table_files(&self, module: &ModuleDef, tbl: &TableDef) -> Vec<OutputFile> {
+        vec![self.generate_table_file(module, tbl)]
+    }
+
+    /// Generate the files for a type, knowing from `options` which tables the bindings contain.
+    fn generate_type_files_with_options(
+        &self,
+        module: &ModuleDef,
+        typ: &TypeDef,
+        _options: &CodegenOptions,
+    ) -> Vec<OutputFile> {
+        self.generate_type_files(module, typ)
+    }
 
     fn generate_table_file(&self, module: &ModuleDef, tbl: &TableDef) -> OutputFile {
         let schema = TableSchema::from_module_def(module, tbl, (), 0.into())
