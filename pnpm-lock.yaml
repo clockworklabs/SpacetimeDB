@@ -592,6 +592,87 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  spacetime-stripe-ts:
+    dependencies:
+      '@spacetimedb/crypto':
+        specifier: workspace:^
+        version: link:../spacetime-crypto-ts
+      valibot:
+        specifier: ^1.4.2
+        version: 1.5.0(typescript@5.9.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      stripe:
+        specifier: ^22.1.0
+        version: 22.6.2(@types/node@22.18.0)
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-stripe-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-stripe-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:../../../spacetime-rate-limit-ts
+      '@spacetimedb/stripe':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   templates/angular-ts:
     dependencies:
       '@angular/common':
@@ -14022,6 +14103,15 @@ packages:
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
 
+  stripe@22.6.2:
+    resolution: {integrity: sha512-PwRE2scocvXqDKPiskMa5vRJEAEkq46W69XyUYmAwrNSLr675lQnfqLwnsndAWizwgihOWw/irLmoFRo3ez7ew==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   structured-clone-es@1.0.0:
     resolution: {integrity: sha512-FL8EeKFFyNQv5cMnXI31CIMCsFarSVI2bF0U0ImeNE3g/F1IvJQyqzOXxPBRXiwQfyBTlbNe88jh1jFW0O/jiQ==}
 
@@ -14824,6 +14914,14 @@ packages:
 
   valibot@1.2.0:
     resolution: {integrity: sha512-mm1rxUsmOxzrwnX5arGS+U4T25RdvpPjPN4yR0u9pUBov9+zGVtO84tif1eY4r6zWxVxu3KzIyknJy3rxfRZZg==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  valibot@1.5.0:
+    resolution: {integrity: sha512-nil6AkP2TChWL43Z5uJ6GTxX01CUA+g8LWUM+N/rB9NBbkUMaUsi9PUNzlUPgoKASgmx9f7eGOYpJ04/fSa6FQ==}
     peerDependencies:
       typescript: '>=5'
     peerDependenciesMeta:
@@ -31775,6 +31873,10 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
+  stripe@22.6.2(@types/node@22.18.0):
+    optionalDependencies:
+      '@types/node': 22.18.0
+
   structured-clone-es@1.0.0: {}
 
   style-to-js@1.1.17:
@@ -32648,6 +32750,10 @@ snapshots:
   valibot@1.2.0(typescript@5.6.3):
     optionalDependencies:
       typescript: 5.6.3
+
+  valibot@1.5.0(typescript@5.9.3):
+    optionalDependencies:
+      typescript: 5.9.3
 
   validate-npm-package-license@3.0.4:
     dependencies:
