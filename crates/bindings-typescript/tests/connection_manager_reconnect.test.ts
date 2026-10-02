@@ -32,6 +32,7 @@ class MockConnection {
   }
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
+  #onAutomaticReconnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
     (
       ctx: ErrorContextInterface,
@@ -65,6 +66,10 @@ class MockConnection {
     this.#onConnectCallbacks.delete(cb);
   }
 
+  removeOnAutomaticReconnect(cb: (conn: MockConnection) => void): void {
+    this.#onAutomaticReconnectCallbacks.delete(cb);
+  }
+
   removeOnDisconnect(
     cb: (ctx: ErrorContextInterface, error?: Error) => void
   ): void {
@@ -79,11 +84,13 @@ class MockConnection {
 
   callbackCounts(): {
     connect: number;
+    automaticReconnect: number;
     disconnect: number;
     connectError: number;
   } {
     return {
       connect: this.#onConnectCallbacks.size,
+      automaticReconnect: this.#onAutomaticReconnectCallbacks.size,
       disconnect: this.#onDisconnectCallbacks.size,
       connectError: this.#onConnectErrorCallbacks.size,
     };
@@ -100,6 +107,17 @@ class MockConnection {
       this.token = issuedToken;
     }
     for (const cb of this.#onConnectCallbacks) {
+      cb(this);
+    }
+  }
+
+  simulateAutomaticReconnect(token?: string): void {
+    this.isActive = true;
+    this.connectionId = ConnectionId.random();
+    if (token !== undefined) {
+      this.token = token;
+    }
+    for (const cb of this.#onAutomaticReconnectCallbacks) {
       cb(this);
     }
   }
@@ -132,6 +150,10 @@ class MockConnection {
 
   registerOnConnect(cb: (conn: MockConnection) => void): void {
     this.#onConnectCallbacks.add(cb);
+  }
+
+  registerOnAutomaticReconnect(cb: (conn: MockConnection) => void): void {
+    this.#onAutomaticReconnectCallbacks.add(cb);
   }
 
   registerOnDisconnect(
@@ -171,6 +193,7 @@ class MockBuilder {
   }
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
+  #onAutomaticReconnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
     (ctx: ErrorContextInterface, error?: Error) => void
   >();
@@ -197,6 +220,9 @@ class MockBuilder {
     for (const cb of this.#onConnectCallbacks) {
       connection.registerOnConnect(cb);
     }
+    for (const cb of this.#onAutomaticReconnectCallbacks) {
+      connection.registerOnAutomaticReconnect(cb);
+    }
     for (const cb of this.#onDisconnectCallbacks) {
       connection.registerOnDisconnect(cb);
     }
@@ -211,6 +237,14 @@ class MockBuilder {
     this.#onConnectCallbacks.add(cb);
     for (const connection of this.connections) {
       connection.registerOnConnect(cb);
+    }
+    return this;
+  }
+
+  onAutomaticReconnect(cb: (conn: MockConnection) => void): MockBuilder {
+    this.#onAutomaticReconnectCallbacks.add(cb);
+    for (const connection of this.connections) {
+      connection.registerOnAutomaticReconnect(cb);
     }
     return this;
   }
@@ -349,6 +383,7 @@ describe('ConnectionManager during SDK-managed reconnection', () => {
 
     expect(first.callbackCounts()).toEqual({
       connect: 1,
+      automaticReconnect: 1,
       disconnect: 1,
       connectError: 1,
     });
@@ -365,10 +400,13 @@ describe('ConnectionManager during SDK-managed reconnection', () => {
     first.simulateDisconnect(new Error('connection lost'), 1, 1000);
     expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(false);
 
-    // The SDK reconnects inside the same object and fires onConnect again.
-    first.simulateConnect('session-token');
+    first.simulateAutomaticReconnect('refreshed-token');
 
     expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(true);
+    expect(ConnectionManager.getSnapshot(key)?.token).toBe('refreshed-token');
+    expect(ConnectionManager.getSnapshot(key)?.connectionId).toBe(
+      first.connectionId
+    );
     expect(ConnectionManager.getSnapshot(key)?.connectionError).toBeUndefined();
     expect(ConnectionManager.getConnection(key)).toBe(first);
     expect(builder.buildCount).toBe(1);
@@ -496,6 +534,7 @@ describe('ConnectionManager rebuild on terminal failures', () => {
     const first = retainMock(key, builder);
     expect(first.callbackCounts()).toEqual({
       connect: 1,
+      automaticReconnect: 1,
       disconnect: 1,
       connectError: 1,
     });
@@ -504,6 +543,7 @@ describe('ConnectionManager rebuild on terminal failures', () => {
 
     expect(first.callbackCounts()).toEqual({
       connect: 0,
+      automaticReconnect: 0,
       disconnect: 0,
       connectError: 0,
     });
@@ -691,6 +731,7 @@ describe('ConnectionManager.rebuild', () => {
     const first = retainMock(key, new MockBuilder());
     expect(first.callbackCounts()).toEqual({
       connect: 1,
+      automaticReconnect: 1,
       disconnect: 1,
       connectError: 1,
     });
@@ -699,6 +740,7 @@ describe('ConnectionManager.rebuild', () => {
 
     expect(first.callbackCounts()).toEqual({
       connect: 0,
+      automaticReconnect: 0,
       disconnect: 0,
       connectError: 0,
     });
@@ -756,6 +798,9 @@ describe('ConnectionManager.rebuild', () => {
         return this;
       },
       onConnect() {
+        return this;
+      },
+      onAutomaticReconnect() {
         return this;
       },
       onDisconnect() {
@@ -832,6 +877,21 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     // Without the session token this reconnects anonymously and the server
     // mints a brand-new identity, silently signing the user out.
     expect(second.token).toBe('session-token');
+  });
+
+  test('a rebuild retains the token from the latest automatic reconnect', () => {
+    const key = nextKey();
+    const builder = new MockBuilder('original-token');
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    first.simulateDisconnect(new Error('connection lost'), 1, 1000);
+    first.simulateAutomaticReconnect('refreshed-token');
+
+    first.simulateDisconnect();
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
+
+    expect(builder.connections[1].token).toBe('refreshed-token');
+    ConnectionManager.release(key);
   });
 
   test('resumed session survives repeated rebuilds', () => {

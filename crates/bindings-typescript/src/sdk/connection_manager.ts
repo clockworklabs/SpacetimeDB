@@ -216,6 +216,7 @@ class ConnectionManagerImpl {
   ): void {
     this.#ensureCallbacks(managed);
     builder.onConnect(managed.onConnect!);
+    builder.onAutomaticReconnect(managed.onConnect!);
     builder.onDisconnect(managed.onDisconnect!);
     builder.onConnectError(managed.onConnectError!);
   }
@@ -226,6 +227,7 @@ class ConnectionManagerImpl {
   ): void {
     if (managed.onConnect) {
       connection.removeOnConnect(managed.onConnect);
+      connection.removeOnAutomaticReconnect(managed.onConnect);
     }
     if (managed.onDisconnect) {
       connection.removeOnDisconnect(managed.onDisconnect);
