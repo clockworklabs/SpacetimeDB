@@ -197,3 +197,17 @@ void legacyScheduleAtCol;
   );
   void processWrongReturnProcedure;
 }
+
+{
+  // A declaration placed again under another accessor takes that accessor and
+  // keeps its columns, instead of reducing to never.
+  const player = table({}, { id: t.u32().primaryKey(), name: t.string() });
+  const first = schema({ player });
+  const second = schema({ other: first.schemaType.tables.player });
+  type Other = typeof second.schemaType.tables.other;
+  const accessorName: Other['accessorName'] = 'other';
+  const nameColumn: Other['columns']['name'] = player.columns.name;
+  void second;
+  void accessorName;
+  void nameColumn;
+}

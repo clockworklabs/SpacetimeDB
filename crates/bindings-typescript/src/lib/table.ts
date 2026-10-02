@@ -20,7 +20,7 @@ import type {
   UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { TableBody, TableSchedule } from './table_body';
+import type { TableBody, TableSchedule, UntypedTableBody } from './table_body';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -109,22 +109,12 @@ export type CoerceRow<Row extends RowObj> = {
 type CoerceArray<X extends IndexOpts<any>[]> = X;
 
 /**
- * An untyped representation of a table's schema.
+ * An untyped table declaration: a table body plus the fields that placing it
+ * in `schema({...})` adds.
  */
-export type UntypedTableDecl = {
+export type UntypedTableDecl = UntypedTableBody & {
   sourceName: string;
   accessorName: string;
-  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  // This is really just a ProductType where all the elements have names.
-  rowType: RowBuilder<RowObj>['algebraicType']['value'];
-  /**
-   * Declarative multi-column indexes supplied by user code in `table({ indexes: [...] }, ...)`.
-   *
-   * This is intentionally the *declarative* shape (`IndexOpts`) because a lot of
-   * type-level behavior is derived from these entries (for example query-builder
-   * inference over composite indexes).
-   */
-  indexes: readonly IndexOpts<any>[];
   /**
    * Fully-resolved runtime indexes materialized from `RawTableDefV10`.
    *
@@ -136,8 +126,7 @@ export type UntypedTableDecl = {
    * reinterpreting `indexes` as runtime index metadata.
    */
   resolvedIndexes: readonly UntypedIndex<any>[];
-  constraints: readonly ConstraintOpts<any>[];
-  tableDef: RawTableDefV10;
+  rawDef: RawTableDefV10;
   isEvent?: boolean;
 };
 
@@ -222,15 +211,6 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
   indexes: infer Ixs extends NonNullable<any[]>;
 }
   ? Ixs
-  : CoerceArray<[]>;
-
-/**
- * Extracts the constraints from TableOpts, defaulting to an empty array if none are provided.
- */
-type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
-  constraints: infer Constraints extends NonNullable<any[]>;
-}
-  ? Constraints
   : CoerceArray<[]>;
 
 /**
@@ -510,7 +490,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
-    tableDef: (ctx, accName) => {
+    columns: row.row as RowBuilder<CoerceRow<Row>>['row'],
+    buildRawDef: (ctx, accName) => {
       const tableName = name ?? accName;
       if (row.typeName === undefined) {
         row.typeName = toPascalCase(tableName);
@@ -550,8 +531,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     },
     // Preserve the declared index options as runtime data so `tableToSchema`
     // can expose them without type-smuggling.
-    idxs: userIndexes as OptsIndices<Opts>,
-    constraints: constraints as OptsConstraints<Opts>,
+    indexes: userIndexes as OptsIndices<Opts>,
+    constraints: constraints.map(c => ({
+      name: c.sourceName,
+      constraint: 'unique' as const,
+      columns: c.data.value.columns.map(i => colNameList[i]) as [string],
+    })),
     scheduleAtCol,
     schedule,
   };

@@ -107,7 +107,7 @@ describe('TableCache', () => {
       row: Infer<typeof UnindexedPlayer>
     ) => {
       const rowId = AlgebraicType.intoMapKey(
-        { tag: 'Product', value: tables.unindexedPlayer.rowType },
+        { tag: 'Product', value: tables.unindexedPlayer.rowSpacetimeType },
         row
       );
       return {

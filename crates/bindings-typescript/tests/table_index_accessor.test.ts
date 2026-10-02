@@ -52,7 +52,7 @@ describe('table index accessors', () => {
       }
     );
 
-    const rawTableDef = tableSchema.tableDef(new ModuleContext(), 'person');
+    const rawTableDef = tableSchema.buildRawDef(new ModuleContext(), 'person');
     expect(rawTableDef.indexes).toHaveLength(2);
     expect(rawTableDef.indexes.map(index => index.accessorName)).toEqual([
       'dup',
@@ -77,7 +77,7 @@ describe('table index accessors', () => {
       }
     );
 
-    const rawTableDef = tableSchema.tableDef(new ModuleContext(), 'person');
+    const rawTableDef = tableSchema.buildRawDef(new ModuleContext(), 'person');
     expect(rawTableDef.indexes).toHaveLength(1);
     expect(rawTableDef.indexes[0].accessorName).toBe('byName');
   });
@@ -92,7 +92,7 @@ describe('table index accessors', () => {
       }
     );
 
-    const rawTableDef = tableSchema.tableDef(new ModuleContext(), 'person');
+    const rawTableDef = tableSchema.buildRawDef(new ModuleContext(), 'person');
     expect(rawTableDef.indexes).toHaveLength(1);
     expect(rawTableDef.indexes[0].accessorName).toBe('displayName');
   });
@@ -122,7 +122,7 @@ describe('table index accessors', () => {
     );
 
     const ctx = new ModuleContext();
-    const rawTableDef = tableSchema.tableDef(ctx, 'player');
+    const rawTableDef = tableSchema.buildRawDef(ctx, 'player');
 
     // Raw schema keeps both entries; runtime accessor construction merges by
     // accessor name.

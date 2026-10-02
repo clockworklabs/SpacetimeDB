@@ -51,7 +51,7 @@ function tallyView() {
     }
   );
 
-  const rawTableDef = tally.tableDef(ctx, 'tally');
+  const rawTableDef = tally.buildRawDef(ctx, 'tally');
   const view = makeTableView(ctx.typespace, rawTableDef) as any;
   return view.by_board_def;
 }
@@ -77,7 +77,7 @@ function tallyCountView() {
     }
   );
 
-  const rawTableDef = tally.tableDef(ctx, 'tally');
+  const rawTableDef = tally.buildRawDef(ctx, 'tally');
   const view = makeTableView(ctx.typespace, rawTableDef) as any;
   return view.by_board_count;
 }

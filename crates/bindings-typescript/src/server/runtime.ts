@@ -462,7 +462,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const rootTables = Object.values(this.#schema.schemaType.tables).map(
       table => [
         table.accessorName,
-        makeTableView(this.#schema.typespace, table.tableDef),
+        makeTableView(this.#schema.typespace, table.rawDef),
       ]
     );
     const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [

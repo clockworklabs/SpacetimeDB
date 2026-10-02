@@ -43,7 +43,7 @@ export interface RowTypedQuery<Row, ST> {
 
 export type Query<TableDecl extends TypedTableDecl> = RowTypedQuery<
   RowType<TableDecl>,
-  TableDecl['rowType']
+  TableDecl['rowSpacetimeType']
 >;
 
 export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any, any> =>
@@ -59,7 +59,7 @@ export function toSql(q: Query<any>): string {
 // A query builder with a single table.
 type From<TableDecl extends TypedTableDecl> = RowTypedQuery<
   RowType<TableDecl>,
-  TableDecl['rowType']
+  TableDecl['rowSpacetimeType']
 > &
   Readonly<{
     toSql(): string;
@@ -87,7 +87,7 @@ type From<TableDecl extends TypedTableDecl> = RowTypedQuery<
 // A query builder with a semijoin.
 type SemijoinBuilder<TableDecl extends TypedTableDecl> = RowTypedQuery<
   RowType<TableDecl>,
-  TableDecl['rowType']
+  TableDecl['rowSpacetimeType']
 > &
   Readonly<{
     toSql(): string;
@@ -255,6 +255,7 @@ export type TableRef<TableDecl extends TypedTableDecl> = Readonly<{
   columns: TableDecl['columns'];
   indexes: TableDecl['indexes'];
   rowType: TableDecl['rowType'];
+  rowSpacetimeType: TableDecl['rowSpacetimeType'];
   constraints: any;
 }>;
 
@@ -277,6 +278,9 @@ class TableRefImpl<TableDecl extends TypedTableDecl>
   }
   get rowType() {
     return this.tableDef.rowType;
+  }
+  get rowSpacetimeType() {
+    return this.tableDef.rowSpacetimeType;
   }
   get constraints() {
     return (this.tableDef as any).constraints;
@@ -438,7 +442,8 @@ export type TypedTableDecl<
   accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
-  rowType: RowBuilder<Columns>['algebraicType']['value'];
+  rowType: RowBuilder<Columns>;
+  rowSpacetimeType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
 /** @deprecated Use `TypedTableDecl` instead. */
@@ -453,7 +458,7 @@ export type TypedTableDef<
 export type TableSchemaAsTableDef<TSchema extends UntypedTableBody> = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
-  indexes: TSchema['idxs'];
+  indexes: TSchema['indexes'];
 };
 
 type RowType<TableDecl extends TypedTableDecl> = {

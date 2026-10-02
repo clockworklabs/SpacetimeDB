@@ -275,7 +275,6 @@ export class Schema<S extends UntypedSchemaDecl>
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
-    // TODO: TableBody and TableDecl should really be unified
     this.#ctx = ctx;
   }
 
@@ -342,7 +341,7 @@ export class Schema<S extends UntypedSchemaDecl>
         typespace: this.#ctx.moduleDef.typespace,
         tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
           accessorName: t.accessorName,
-          tableDef: t.tableDef,
+          tableDef: t.rawDef,
         })),
         schemaTables: this.#ctx.schemaType.tables,
         subDispatches: [...this.#ctx.submoduleDispatchInfos],
@@ -828,7 +827,7 @@ type SchemaDeclForEntries<H extends Record<string, SchemaEntry>> = SchemaDecl<
 };
 
 function isUntypedTableSchema(x: unknown): x is UntypedTableBody {
-  return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
+  return typeof x === 'object' && x !== null && hasOwn(x, 'buildRawDef');
 }
 
 function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
@@ -849,7 +848,7 @@ function isSubmoduleMount(x: unknown): x is SubmoduleMount {
     x !== null &&
     hasOwn(x, 'module') &&
     !hasOwn(x, 'default') &&
-    !hasOwn(x, 'tableDef')
+    !hasOwn(x, 'buildRawDef')
   );
 }
 
@@ -959,8 +958,11 @@ export function schema<
       }
 
       const table = entry;
-      const tableDef = table.tableDef(ctx, accName);
+      const tableDef = table.buildRawDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+      // The placed table is a copy of the table body, and it can also be an
+      // onSchedule target, so register it under its one source name too.
+      ctx.tableSourceNames.set(tableSchemas[accName], [tableDef.sourceName]);
       const tableSourceNames = ctx.tableSourceNames.get(table);
       if (tableSourceNames === undefined) {
         ctx.tableSourceNames.set(table, [tableDef.sourceName]);

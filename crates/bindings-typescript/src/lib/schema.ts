@@ -75,17 +75,25 @@ export interface SchemaDecl<T extends Record<string, UntypedTableBody>>
   };
 }
 
-export interface TableDecl<AccName extends string, T extends UntypedTableBody>
-  extends UntypedTableDecl {
+/**
+ * A table declaration: the table body `T` plus the fields that placing it in
+ * `schema({...})` under the accessor `AccName` adds. `T` can itself be a
+ * declaration placed again, so those fields replace its own.
+ */
+export type TableDecl<
+  AccName extends string,
+  T extends UntypedTableBody,
+> = Omit<
+  T,
+  'sourceName' | 'accessorName' | 'resolvedIndexes' | 'rawDef' | 'isEvent'
+> & {
+  sourceName: string;
   accessorName: AccName;
-  columns: T['rowType']['row'];
-  rowType: T['rowSpacetimeType'];
-  // Declarative user-provided table-level indexes.
-  indexes: T['idxs'];
   // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
   resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
-  constraints: T['constraints'];
-}
+  rawDef: RawTableDefV10;
+  isEvent?: boolean;
+};
 
 /**
  * @deprecated Use `TableDecl` instead. Kept so that declaration files emitted
@@ -119,7 +127,7 @@ export function tablesToSchema<
     tableDefs[accName] = tableToSchema(
       accName,
       schema,
-      schema.tableDef(ctx, accName)
+      schema.buildRawDef(ctx, accName)
     ) as SchemaDecl<T>['tables'][typeof accName];
   }
 
@@ -141,7 +149,7 @@ export function tableToSchema<
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   // Build fully-resolved runtime index metadata from the host-facing RawTableDef.
-  // This is intentionally separate from `schema.idxs`, which keeps the original
+  // This is intentionally separate from `schema.indexes`, which keeps the original
   // user-declared `IndexOpts` shape for type-level inference.
   const resolvedIndexes: UntypedIndex<AllowedCol>[] = tableDef.indexes.map(
     idx => {
@@ -181,24 +189,16 @@ export function tableToSchema<
   );
 
   return {
+    ...schema,
     // For client,`schama.tableName` will always be there as canonical name.
     // For module, if explicit name is not provided via `name`, accessor name will
     // be used, it is stored as alias in database, hence works in query builder.
     sourceName: schema.tableName || accName,
     accessorName: accName,
-    columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under SchemaDecl<T>
-    rowType: schema.rowSpacetimeType,
-    // Keep declarative indexes in their original shape for type-level consumers.
-    indexes: schema.idxs,
-    constraints: tableDef.constraints.map(c => ({
-      name: c.sourceName,
-      constraint: 'unique',
-      columns: c.data.value.columns.map(getColName) as [string],
-    })),
     // Expose resolved runtime indexes separately so runtime users don't have to
     // reinterpret `indexes` with unsafe casts.
     resolvedIndexes,
-    tableDef,
+    rawDef: tableDef,
     ...(tableDef.isEvent ? { isEvent: true } : {}),
   };
 }

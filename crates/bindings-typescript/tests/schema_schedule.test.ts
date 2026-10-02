@@ -239,6 +239,34 @@ describe('schema schedules', () => {
     );
   });
 
+  it('accepts a placed table as an onSchedule target', () => {
+    const scheduledMessages = table(
+      {},
+      {
+        scheduledId: t.u64().primaryKey().autoInc(),
+        scheduledAt: t.scheduleAt(),
+      }
+    );
+
+    const spacetimedb = schema({ scheduledMessages });
+    const processScheduledMessage = spacetimedb.reducer(
+      { onSchedule: spacetimedb.schemaType.tables.scheduledMessages },
+      { scheduledMessage: scheduledMessages.rowType },
+      () => {}
+    );
+
+    spacetimedb[moduleHooks]({ processScheduledMessage });
+
+    expect(spacetimedb.moduleDef.schedules).toEqual([
+      {
+        sourceName: undefined,
+        tableName: 'scheduledMessages',
+        scheduleAtCol: 1,
+        functionName: 'processScheduledMessage',
+      },
+    ]);
+  });
+
   it('rejects an onSchedule table that is not in the schema', () => {
     const scheduledMessages = table(
       {},
