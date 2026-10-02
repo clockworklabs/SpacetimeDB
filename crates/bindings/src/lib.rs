@@ -1066,7 +1066,7 @@ pub struct ReducerContext {
     /// including `init` and scheduled reducers.
     connection_id: Option<ConnectionId>,
 
-    sender_auth: AuthCtx,
+    sender_auth: AuthContext,
 
     /// Allows accessing the local database attached to a module.
     ///
@@ -1123,7 +1123,7 @@ impl ReducerContext {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
-            sender_auth: AuthCtx::internal(),
+            sender_auth: AuthContext::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1139,7 +1139,7 @@ impl ReducerContext {
             sender,
             timestamp,
             connection_id,
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthContext::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1161,7 +1161,7 @@ impl ReducerContext {
     }
 
     /// Returns the authorization information for the caller of this reducer.
-    pub fn sender_auth(&self) -> &AuthCtx {
+    pub fn sender_auth(&self) -> &AuthContext {
         &self.sender_auth
     }
 
@@ -1287,7 +1287,7 @@ fn try_with_tx<T, E>(
         let mut tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
         if is_http_handler {
             // HTTP requests have no connection ID, but are not host-originated calls.
-            tx.sender_auth = AuthCtx::new(false, || None);
+            tx.sender_auth = AuthContext::new(false, || None);
         }
         let tx = TxContext(tx);
 
@@ -1773,7 +1773,7 @@ impl CtxWithTimestamp for HandlerContext {
     }
 }
 
-/// Contexts which can retrieve the current [`AuthCtx`].
+/// Contexts which can retrieve the current [`AuthContext`].
 ///
 /// This trait is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from reducers and procedures.
@@ -1781,17 +1781,17 @@ impl CtxWithTimestamp for HandlerContext {
 /// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
 /// this trait is not necessary, as the context's sender_auth method provides the same access.
 pub trait CtxWithSenderAuth {
-    fn sender_auth(&self) -> &AuthCtx;
+    fn sender_auth(&self) -> &AuthContext;
 }
 
 impl CtxWithSenderAuth for ReducerContext {
-    fn sender_auth(&self) -> &AuthCtx {
+    fn sender_auth(&self) -> &AuthContext {
         self.sender_auth()
     }
 }
 
 impl CtxWithSenderAuth for TxContext {
-    fn sender_auth(&self) -> &AuthCtx {
+    fn sender_auth(&self) -> &AuthContext {
         self.0.sender_auth()
     }
 }
@@ -1930,7 +1930,7 @@ impl CtxWithHttp for ProcedureContext {
     }
 }
 
-/// The [JWT] of an [`AuthCtx`].
+/// The [JWT] of an [`AuthContext`].
 ///
 /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
 #[non_exhaustive]
@@ -1942,47 +1942,50 @@ pub struct JwtClaims {
 
 /// Authentication information for the caller of a reducer.
 #[derive(Clone)]
-pub struct AuthCtx {
+pub struct AuthContext {
     is_internal: bool,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
     jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
-impl AuthCtx {
-    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
+#[deprecated(note = "renamed to `AuthContext`")]
+pub type AuthCtx = AuthContext;
+
+impl AuthContext {
+    /// Creates an [`AuthContext`] both for cases where there's a [`ConnectionId`]
     /// and for when there isn't.
     fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
         conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
     }
 
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
-        AuthCtx {
+        AuthContext {
             is_internal,
             jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
 
-    /// Creates an [`AuthCtx`] for an internal call, with no [JWT].
+    /// Creates an [`AuthContext`] for an internal call, with no [JWT].
     /// This represents a scheduled reducer.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    pub fn internal() -> AuthCtx {
+    pub fn internal() -> AuthContext {
         Self::new(true, || None)
     }
 
-    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
+    /// Creates an [`AuthContext`] using the json claims from a [JWT].
     /// This can be used to write unit tests.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
+    pub fn from_jwt_payload(jwt_payload: String) -> AuthContext {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    /// Creates an [`AuthContext`] that reads the [JWT] for the given connection id.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
+    fn from_connection_id(connection_id: ConnectionId) -> AuthContext {
         Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
     }
 
@@ -1992,7 +1995,7 @@ impl AuthCtx {
     }
 
     /// Checks if there is a [JWT] without loading it.
-    /// If [`AuthCtx::is_internal`] returns true, this will return false.
+    /// If [`AuthContext::is_internal`] returns true, this will return false.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
@@ -2201,7 +2204,7 @@ mod tests {
           "picture": "https://lh3.googleusercontent.com/a-/profile.jpg"
         }
         "#;
-        let auth = AuthCtx::from_jwt_payload(example_payload.to_string());
+        let auth = AuthContext::from_jwt_payload(example_payload.to_string());
         let audience = auth.jwt().unwrap().audience();
         assert_eq!(audience.len(), 1);
         assert_eq!(audience, &["my-project-id".to_string()]);

@@ -460,7 +460,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 - `database_identity() -> Identity` - Get the module's identity
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
-- `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
+- `sender_auth() -> &AuthContext` - Get authorization context for the caller (includes JWT claims and internal call detection)
 </TabItem>
 <TabItem value="cpp" label="C++">
 
