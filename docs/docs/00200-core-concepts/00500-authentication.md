@@ -34,9 +34,11 @@ This matters when you persist tokens on the client:
   are unavailable, such as Unity WebGL builds.
 
 For C# clients with `.WithAutomaticReconnect()` enabled, the SDK retains the
-authentication token and reuses it during recovery. `OnConnect` receives that
-retained or refreshed token, including on Unity WebGL, so it can be persisted
-for future application sessions without saving the transport's short-lived token.
+authentication token and reuses it during recovery. `OnConnect` receives it on
+the initial connection; `OnAutomaticReconnect` receives the retained or refreshed
+token after each successful recovery. Persist tokens from both callbacks for
+future application sessions. This also applies on Unity WebGL: these callbacks
+receive the authentication token, rather than the transport's short-lived token.
 The WebGL precaution above still applies to C# connections without automatic reconnect.
 
 For expiring credentials, also configure `.WithTokenProvider(() => RefreshTokenAsync())`.
