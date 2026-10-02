@@ -543,7 +543,12 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     if (!probe && !failed && submissionFailure) throw submissionFailure;
     if (failed || !completionOnly && !writes.length || probe && (selected !== 1 || !requestPatch)) {
       if (completionOnly) inconclusive('transport-incomplete', {});
-      inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove the signup write sequence and one complete target request' });
+      // Writes are hashed (transport, destination, argument shape), so the inventory holds no credentials.
+      // A fresh client that cannot repeat the baseline sequence may have met a transport resend under
+      // load, so its suite may run once more from fresh state.
+      inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove the signup write sequence and one complete target request' },
+        { observation: { writes, ...(probe ? { baseline: probe.target.writes, target: probe.target.index } : {}) },
+          retryable: Boolean(probe) });
     }
     if (submissionFailure) throw submissionFailure;
     return { result: result as T, writes, requestPatch };

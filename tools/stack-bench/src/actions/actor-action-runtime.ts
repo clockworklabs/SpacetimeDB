@@ -162,9 +162,9 @@ export function fail<K extends FailedFindingKind>(kind: K, fields: FindingFields
 }
 
 export function inconclusive<K extends InconclusiveFindingKind>(kind: K,
-  fields: FindingFields[K]): never {
+  fields: FindingFields[K], details: { observation?: unknown; retryable?: boolean } = {}): never {
   const value = finding(kind, fields);
-  throw new ActionInconclusive(renderFinding(value), { finding: value });
+  throw new ActionInconclusive(renderFinding(value), { ...details, finding: value });
 }
 
 // Actions accepted for some actor in this run. A refusal only measures

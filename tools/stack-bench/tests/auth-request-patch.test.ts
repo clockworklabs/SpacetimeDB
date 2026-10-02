@@ -414,8 +414,15 @@ test('each signup write is patched once, including a bodyless account finalizer'
     }
     for (const mode of ['missing', 'changed', 'extra', 'duplicate']) {
       const page = await fresh(mode);
+      // A sequence the fresh client cannot repeat keeps both inventories and may run once more.
       await assert.rejects(withAuthRequestPatch(page, 'unused', 'unused', { fields: { role: 'admin' } },
-        () => submit(page, mode), undefined, 'signup', { writes: baseline.writes, index: 1 }), ActionInconclusive);
+        () => submit(page, mode), undefined, 'signup', { writes: baseline.writes, index: 1 }), (error: ActionInconclusive) => {
+        const observation = error.details.observation as { baseline: unknown; target: number; writes: unknown[] };
+        assert.equal(error.details.retryable, true, mode);
+        assert.deepEqual([observation.baseline, observation.target], [baseline.writes, 1]);
+        assert(observation.writes.length > 0);
+        return true;
+      });
       await page.context().close();
     }
     // The claim may change what the app does after the patched target, so a later

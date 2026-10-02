@@ -616,6 +616,7 @@ interface NestedActionEvidence {
   readonly status?: unknown;
   readonly summary?: string | null;
   readonly finding?: unknown;
+  readonly retryable?: boolean;
 }
 
 const errorShape = (error: unknown): ProcessErrorShape =>
@@ -655,7 +656,8 @@ export async function dispatchNested(
     }
     if (disposition?.outcomeKind === 'inconclusive') {
       throw new ActionInconclusive(evidence?.summary ?? `${step.do} was inconclusive`,
-        { finding: nested ?? finding('invalid-input', { detail: `${step.do} was inconclusive` }), observation: { nestedAction: evidence } });
+        { finding: nested ?? finding('invalid-input', { detail: `${step.do} was inconclusive` }),
+          observation: { nestedAction: evidence }, retryable: evidence?.retryable === true });
     }
     throw error;
   }
