@@ -22,14 +22,6 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ValidationError {
-    #[error("module has repeated environment declarations")]
-    RepeatedEnvironmentDeclaration,
-    #[error("invalid environment declaration: {error}")]
-    Environment {
-        error: spacetimedb_lib::environment::EnvironmentSchemaError,
-    },
-    #[error("submodule {namespace:?} cannot declare environment variables")]
-    EnvironmentInSubmodule { namespace: String },
     #[error("name `{name}` is used for multiple entities")]
     DuplicateName { name: RawIdentifier },
     #[error("name `{name}` is used for multiple types")]
@@ -82,12 +74,12 @@ pub enum ValidationError {
         column: RawColumnName,
         column_type: PrettyAlgebraicType,
     },
-    #[error("invalid sequence range information: expected {min_value:?} <= {start:?} <= {max_value:?} in sequence `{sequence}`")]
-    InvalidSequenceRange {
+    #[error("sequence definition `{sequence}` specifies unsupported option `{option}` with value {supplied_value}, should be {expected_value}")]
+    InvalidSequenceDefOption {
         sequence: RawIdentifier,
-        min_value: Option<i128>,
-        start: Option<i128>,
-        max_value: Option<i128>,
+        option: &'static str,
+        supplied_value: i128,
+        expected_value: &'static str,
     },
     #[error("View {view} has invalid return type {ty}")]
     InvalidViewReturnType {
@@ -191,6 +183,10 @@ pub enum ValidationError {
     LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
     #[error("submodule namespace `{namespace}` is {len} bytes, which exceeds the 63-byte limit")]
     NamespaceTooLong { namespace: RawIdentifier, len: usize },
+    #[error("invalid environment declaration: {0}")]
+    Environment(#[from] spacetimedb_lib::environment::EnvironmentSchemaError),
+    #[error("submodule {namespace:?} cannot declare environment variables")]
+    EnvironmentInSubmodule { namespace: String },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

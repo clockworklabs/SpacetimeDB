@@ -69,17 +69,19 @@ pub(crate) fn derive(item: DeriveInput) -> syn::Result<TokenStream> {
         values.push(value);
     }
     let constraint = match values.as_slice() {
-        [value] => quote!(::spacetimedb::spacetimedb_lib::environment::EnvVarType::StringLiteral(#value.into())),
-        values => quote!(::spacetimedb::spacetimedb_lib::environment::EnvVarType::Union(
-            ::std::vec![#(#values.into()),*]
-        )),
+        [value] => {
+            quote!(::spacetimedb::spacetimedb_lib::db::raw_def::v10::RawEnvVarTypeV10::StringLiteral(#value.into()))
+        }
+        values => quote!(
+            ::spacetimedb::spacetimedb_lib::db::raw_def::v10::RawEnvVarTypeV10::Union(::std::vec![#(#values.into()),*])
+        ),
     };
     let ident = &item.ident;
     Ok(quote! {
         impl ::spacetimedb::rt::EnvironmentValue for #ident {
             const OPTIONAL: bool = false;
 
-            fn constraint() -> ::spacetimedb::spacetimedb_lib::environment::EnvVarType {
+            fn constraint() -> ::spacetimedb::spacetimedb_lib::db::raw_def::v10::RawEnvVarTypeV10 {
                 #constraint
             }
 
