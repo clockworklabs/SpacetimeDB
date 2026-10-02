@@ -16,15 +16,15 @@ use syn::LitStr;
 use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
-    access: Option<TableAccess>,
-    name: Option<LitStr>,
+    pub(crate) access: Option<TableAccess>,
+    pub(crate) name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
-    accessor: Ident,
-    indices: Vec<IndexArg>,
-    event: Option<Span>,
+    pub(crate) accessor: Ident,
+    pub(crate) indices: Vec<IndexArg>,
+    pub(crate) event: Option<Span>,
 }
 
-enum TableAccess {
+pub(crate) enum TableAccess {
     Public(Span),
     Private(Span),
 }
@@ -47,11 +47,11 @@ struct ScheduledArg {
     at: Option<Ident>,
 }
 
-struct IndexArg {
+pub(crate) struct IndexArg {
     accessor: Ident,
     canonical_name: Option<LitStr>,
     is_unique: bool,
-    kind: IndexType,
+    pub(crate) kind: IndexType,
 }
 
 impl IndexArg {
@@ -68,7 +68,7 @@ impl IndexArg {
     }
 }
 
-enum IndexType {
+pub(crate) enum IndexType {
     BTree { columns: Vec<Ident> },
     Hash { columns: Vec<Ident> },
     Direct { column: Ident },
@@ -763,7 +763,7 @@ fn find_column<'a, 'b>(cols: &'a [Column<'b>], name: &Ident) -> syn::Result<&'a 
     try_find_column(cols, name).ok_or_else(|| syn::Error::new(name.span(), "not a column of the table"))
 }
 
-enum ColumnAttr {
+pub(crate) enum ColumnAttr {
     Unique(Span),
     AutoInc(Span),
     PrimaryKey(Span),
@@ -772,7 +772,7 @@ enum ColumnAttr {
 }
 
 impl ColumnAttr {
-    fn parse(attr: &syn::Attribute, field_ident: &Ident) -> syn::Result<Option<Self>> {
+    pub(crate) fn parse(attr: &syn::Attribute, field_ident: &Ident) -> syn::Result<Option<Self>> {
         let Some(ident) = attr.path().get_ident() else {
             return Ok(None);
         };

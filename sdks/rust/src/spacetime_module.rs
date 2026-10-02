@@ -323,3 +323,55 @@ pub fn transaction_update_iter_table_updates(
     Box::<[_]>::into_iter(tx_update.query_sets)
         .flat_map(|query_set_update| Box::<[_]>::into_iter(query_set_update.tables))
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Proposal 0040 spike: interfaces between the client expansions of the module macros.
+//
+// The client expansion of `#[spacetimedb::table]` and `#[spacetimedb::reducer]` runs at the declaration's location,
+// which may be any module. It cannot name the module-wide types (`RemoteModule`, `RemoteTables`, `Reducer`, ...),
+// so it reaches them through `<Row as InModule>::Module` projections.
+// `spacetimedb::client_module!` generates the module-wide types and links each item to them:
+// it implements `InModule` for each table's row type and each reducer's args type,
+// and reaches the per-item helpers below through the conventionally named `{Table}TableAccessor` and `{Reducer}Args`.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// Implemented by the client expansion of `#[spacetimedb::table]` for the table's `{Table}TableAccessor` marker.
+///
+/// `Row` is deliberately unbounded, so that `client_module!` can implement `InModule` for `<X as ClientTableDef>::Row`.
+pub trait ClientTableDef {
+    /// The table's row type.
+    type Row;
+    /// The table's canonical name.
+    const NAME: &'static str;
+
+    /// Register the table and its unique constraints in a new client cache.
+    fn register_table<M: SpacetimeModule>(client_cache: &mut ClientCache<M>)
+    where
+        Self::Row: InModule<Module = M> + Send + Sync + 'static;
+
+    /// Parse the rows for this table out of a `TableUpdate`.
+    fn parse_table_update(raw_updates: ws::v2::TableUpdate) -> crate::Result<TableUpdate<Self::Row>>;
+
+    /// Apply `update` to the client cache, or, for an event table, turn it directly into an applied diff.
+    fn apply_diff<'r, M: SpacetimeModule>(
+        cache: &mut ClientCache<M>,
+        update: &'r TableUpdate<Self::Row>,
+    ) -> crate::client_cache::TableAppliedDiff<'r, Self::Row>
+    where
+        Self::Row: InModule<Module = M> + Clone + Debug + Send + Sync + 'static;
+}
+
+/// Implemented by the client expansion of `#[spacetimedb::reducer]` for the reducer's `{Reducer}Args` struct.
+pub trait ClientReducerDef: InModule + Sized {
+    /// The reducer's canonical name.
+    const NAME: &'static str;
+
+    /// If `reducer` is this reducer's variant of the module's `Reducer` enum, extract its arguments.
+    fn from_reducer(reducer: &<Self::Module as SpacetimeModule>::Reducer) -> Option<Self>;
+}
+
+/// Implemented by `client_module!` for `RemoteTables`, `RemoteReducers` and `RemoteProcedures`,
+/// so per-item expansions, which may live in another module, can reach the private `imp` field.
+pub trait HasDbContextImpl: InModule {
+    fn db_context_impl(&self) -> &DbContextImpl<Self::Module>;
+}

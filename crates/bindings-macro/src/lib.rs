@@ -98,6 +98,25 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 mod util;
 mod view;
 
+// Proposal 0040 spike: client expansions of the module macros, re-exported by `spacetimedb-sdk`
+// as `spacetimedb_sdk::{table, reducer, client_module}`.
+mod client;
+
+#[proc_macro_attribute]
+pub fn client_table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_table(args.into(), item.into()))
+}
+
+#[proc_macro_attribute]
+pub fn client_reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_reducer(args.into(), item.into()))
+}
+
+#[proc_macro]
+pub fn client_module(input: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_module(input.into()))
+}
+
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     let item_ts: TokenStream = item.into();

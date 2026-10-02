@@ -36,6 +36,18 @@ pub use spacetimedb_client_api_messages::websocket::v1::Compression;
 pub use spacetimedb_lib::{ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp, Uuid};
 pub use spacetimedb_sats::{i256, u256};
 
+// Proposal 0040 spike: the client expansions of the module macros.
+// Generated bindings name them as `spacetimedb::table`, `spacetimedb::reducer` and `spacetimedb::client_module`,
+// with `use spacetimedb_sdk as spacetimedb;` in scope.
+#[doc(hidden)]
+pub use spacetimedb_bindings_macro::{client_module, client_reducer as reducer, client_table as table};
+
+/// Proposal 0040 spike: a placeholder so that module source which imports `spacetimedb::ReducerContext`
+/// resolves on the client. The client `#[reducer]` expansion discards the reducer's signature and body,
+/// so the type is never used.
+#[doc(hidden)]
+pub enum ReducerContext {}
+
 #[doc(hidden)]
 pub mod __codegen {
     //! Names and definitions referenced by the CLI's codegen.
@@ -55,9 +67,9 @@ pub mod __codegen {
     pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
         parse_row_list_as_deletes, parse_row_list_as_inserts, transaction_update_iter_table_updates,
-        AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext, InModule,
-        ProcedureEventContext, QueryBuilder, QueryTableAccessor, Reducer, ReducerEventContext, SpacetimeModule,
-        SubscriptionEventContext, SubscriptionHandle, TableUpdate,
+        AbstractEventContext, AppliedDiff, ClientReducerDef, ClientTableDef, DbConnection, DbUpdate, ErrorContext,
+        EventContext, HasDbContextImpl, InModule, ProcedureEventContext, QueryBuilder, QueryTableAccessor, Reducer,
+        ReducerEventContext, SpacetimeModule, SubscriptionEventContext, SubscriptionHandle, TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::table::{TableLike, WithDelete, WithInsert, WithUpdate};

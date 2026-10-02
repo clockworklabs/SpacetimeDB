@@ -8,7 +8,7 @@ use syn::{FnArg, Ident, ItemFn, LitStr, PatType};
 
 #[derive(Default)]
 pub(crate) struct ReducerArgs {
-    name: Option<LitStr>,
+    pub(crate) name: Option<LitStr>,
     lifecycle: Option<LifecycleReducer>,
 }
 
