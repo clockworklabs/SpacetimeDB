@@ -1,4 +1,5 @@
 import type {
+  ClientTable,
   DbConnectionImpl,
   RemoteModule,
   RemoteModuleDecl,
@@ -7,11 +8,26 @@ import type {
   TableDeclOf,
   TableDefByName,
   TableDefForTableName,
+  TableHandle,
   TableNames,
   TableNamesOf,
   TypedTableDecl,
   TypedTableDef,
 } from '..';
+import type {
+  AnonymousViewContext,
+  AnonymousViewCtx,
+  AuthContext,
+  AuthCtx,
+  ProcedureContext,
+  ProcedureCtx,
+  ReducerContext,
+  ReducerCtx,
+  TransactionCtx,
+  TxContext,
+  ViewContext,
+  ViewCtx,
+} from '../server';
 import type {
   UntypedProcedureDecl,
   UntypedProcedureDef,
@@ -170,5 +186,30 @@ type _TableDefForTableName = Assert<
   Equals<
     TableDefForTableName<UntypedSchemaDecl, string>,
     TableDeclOf<UntypedSchemaDecl, string>
+  >
+>;
+type _ReducerCtx = Assert<
+  Equals<ReducerCtx<UntypedSchemaDecl>, ReducerContext<UntypedSchemaDecl>>
+>;
+type _ProcedureCtx = Assert<
+  Equals<ProcedureCtx<UntypedSchemaDecl>, ProcedureContext<UntypedSchemaDecl>>
+>;
+type _ViewCtx = Assert<
+  Equals<ViewCtx<UntypedSchemaDecl>, ViewContext<UntypedSchemaDecl>>
+>;
+type _AnonymousViewCtx = Assert<
+  Equals<
+    AnonymousViewCtx<UntypedSchemaDecl>,
+    AnonymousViewContext<UntypedSchemaDecl>
+  >
+>;
+type _TransactionCtx = Assert<
+  Equals<TransactionCtx<UntypedSchemaDecl>, TxContext<UntypedSchemaDecl>>
+>;
+type _AuthCtx = Assert<Equals<AuthCtx, AuthContext>>;
+type _ClientTable = Assert<
+  Equals<
+    ClientTable<UntypedRemoteModuleDecl, TableNamesOf<UntypedRemoteModuleDecl>>,
+    TableHandle<UntypedRemoteModuleDecl, TableNamesOf<UntypedRemoteModuleDecl>>
   >
 >;
