@@ -994,7 +994,7 @@ impl Environment {
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub env: Environment,
-    pub db: LocalReadOnly,
+    pub db: ReadOnlyDbView,
     pub from: QueryBuilder,
 }
 
@@ -1002,7 +1002,7 @@ impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
             env: Environment::default(),
-            db: LocalReadOnly {},
+            db: ReadOnlyDbView {},
             from: QueryBuilder {},
         }
     }
@@ -1013,7 +1013,7 @@ impl Default for AnonymousViewContext {
 pub struct ViewContext {
     pub env: Environment,
     sender: Identity,
-    pub db: LocalReadOnly,
+    pub db: ReadOnlyDbView,
     pub from: QueryBuilder,
 }
 
@@ -1022,7 +1022,7 @@ impl ViewContext {
         Self {
             sender,
             env: Environment::default(),
-            db: LocalReadOnly {},
+            db: ReadOnlyDbView {},
             from: QueryBuilder {},
         }
     }
@@ -1104,7 +1104,7 @@ pub struct ReducerContext {
     /// # }
     /// ```
     /// See the [`#[table]`](macro@crate::table) macro for more information.
-    pub db: Local,
+    pub db: DbView,
 
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
@@ -1119,7 +1119,7 @@ impl ReducerContext {
     pub fn __dummy() -> Self {
         Self {
             env: Environment::default(),
-            db: Local {},
+            db: DbView {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
@@ -1132,7 +1132,7 @@ impl ReducerContext {
     }
 
     #[doc(hidden)]
-    fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+    fn new(db: DbView, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
             env: Environment::default(),
             db,
@@ -1284,7 +1284,7 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        let mut tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
+        let mut tx = ReducerContext::new(crate::DbView {}, identity, connection_id, timestamp);
         if is_http_handler {
             // HTTP requests have no connection ID, but are not host-originated calls.
             tx.sender_auth = AuthContext::new(false, || None);
@@ -1569,57 +1569,57 @@ pub trait DbContext {
     ///
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
-    fn db_read_only(&self) -> &LocalReadOnly;
+    fn db_read_only(&self) -> &ReadOnlyDbView;
 }
 
 #[allow(deprecated)]
 impl DbContext for AnonymousViewContext {
-    type DbView = LocalReadOnly;
+    type DbView = ReadOnlyDbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         &self.db
     }
 }
 
 #[allow(deprecated)]
 impl DbContext for ReducerContext {
-    type DbView = Local;
+    type DbView = DbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         self.db.get_read_only()
     }
 }
 
 #[allow(deprecated)]
 impl DbContext for TxContext {
-    type DbView = Local;
+    type DbView = DbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         self.db.get_read_only()
     }
 }
 
 #[allow(deprecated)]
 impl DbContext for ViewContext {
-    type DbView = LocalReadOnly;
+    type DbView = ReadOnlyDbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         &self.db
     }
 }
@@ -1633,11 +1633,14 @@ impl DbContext for ViewContext {
 /// The `#[table]` macro uses the trait system to add table accessors to this type.
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
-pub struct Local {}
+pub struct DbView {}
 
-impl Local {
-    fn get_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+#[deprecated(note = "renamed to `DbView`")]
+pub type Local = DbView;
+
+impl DbView {
+    fn get_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
@@ -1649,30 +1652,30 @@ impl Local {
 /// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
 /// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
 pub trait CtxDbRead {
-    fn db_read_only(&self) -> &LocalReadOnly;
+    fn db_read_only(&self) -> &ReadOnlyDbView;
 }
 
 impl CtxDbRead for TxContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
 impl CtxDbRead for ReducerContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
 impl CtxDbRead for ViewContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
 impl CtxDbRead for AnonymousViewContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
@@ -1684,18 +1687,18 @@ impl CtxDbRead for AnonymousViewContext {
 /// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
 /// as the context's `db` field provides the same access.
 pub trait CtxDbWrite: CtxDbRead {
-    fn db(&self) -> &Local;
+    fn db(&self) -> &DbView;
 }
 
 impl CtxDbWrite for TxContext {
-    fn db(&self) -> &Local {
-        &Local {}
+    fn db(&self) -> &DbView {
+        &DbView {}
     }
 }
 
 impl CtxDbWrite for ReducerContext {
-    fn db(&self) -> &Local {
-        &Local {}
+    fn db(&self) -> &DbView {
+        &DbView {}
     }
 }
 
@@ -2068,9 +2071,12 @@ impl JwtClaims {
         &self.payload
     }
 }
-/// The read-only version of [`Local`]
+/// The read-only version of [`DbView`]
 #[non_exhaustive]
-pub struct LocalReadOnly {}
+pub struct ReadOnlyDbView {}
+
+#[deprecated(note = "renamed to `ReadOnlyDbView`")]
+pub type LocalReadOnly = ReadOnlyDbView;
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]

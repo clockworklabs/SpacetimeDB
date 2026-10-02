@@ -542,8 +542,8 @@ Reducers have access to a special [`ReducerContext`] parameter. This parameter a
 
 Yes, that's the case. Dammit. TODO: check if this changes someday.
 
-To see all of the available methods on `ctx.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::Local` struct in the generated documentation. This will be at the path:
-- `[your_project_directory]/target/doc/spacetimedb/struct.Local.html`
+To see all of the available methods on `ctx.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::DbView` struct in the generated documentation. This will be at the path:
+- `[your_project_directory]/target/doc/spacetimedb/struct.DbView.html`
 -->
 
 #### The `log` crate
