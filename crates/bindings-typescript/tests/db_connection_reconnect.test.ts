@@ -40,6 +40,7 @@ type Harness = {
   connection: DbConnection;
   factory: WebsocketTestAdapterFactory;
   connects: { identity: Identity; token: string }[];
+  automaticReconnects: { identity: Identity; token: string }[];
   disconnects: ReconnectReport[];
   connectErrors: ReconnectReport[];
 };
@@ -54,6 +55,7 @@ function build(options?: {
 }): Harness {
   const factory = new WebsocketTestAdapterFactory();
   const connects: { identity: Identity; token: string }[] = [];
+  const automaticReconnects: { identity: Identity; token: string }[] = [];
   const disconnects: ReconnectReport[] = [];
   const connectErrors: ReconnectReport[] = [];
 
@@ -62,6 +64,9 @@ function build(options?: {
     .withDatabaseName('db')
     .withWSFn(factory.openWebSocket)
     .onConnect((_conn, identity, token) => connects.push({ identity, token }))
+    .onAutomaticReconnect((_conn, identity, token) =>
+      automaticReconnects.push({ identity, token })
+    )
     .onDisconnect((_ctx, error, nextReconnectAttempt, nextReconnectDelayMs) =>
       disconnects.push({ error, nextReconnectAttempt, nextReconnectDelayMs })
     )
@@ -82,6 +87,7 @@ function build(options?: {
     connection: builder.build(),
     factory,
     connects,
+    automaticReconnects,
     disconnects,
     connectErrors,
   };
@@ -257,21 +263,83 @@ describe('losing an established connection', () => {
     expect(harness.disconnects[0].error).toBeInstanceOf(Error);
   });
 
-  test('a reconnect opens a new socket and fires onConnect again', async () => {
+  test('each reconnect fires onAutomaticReconnect without repeating onConnect', async () => {
     const harness = build();
     await establish(harness);
-    expect(harness.factory.sockets).toHaveLength(1);
+    expect(harness.connects).toEqual([{ identity: anIdentity, token: TOKEN }]);
+    expect(harness.automaticReconnects).toEqual([]);
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      harness.factory.current.close();
+      await runReconnectTimer(harness);
+      expect(harness.factory.sockets).toHaveLength(attempt + 1);
+      await establish(harness);
+
+      expect(harness.connects).toHaveLength(1);
+      expect(harness.automaticReconnects).toHaveLength(attempt);
+      expect(harness.automaticReconnects.at(-1)).toEqual({
+        identity: anIdentity,
+        token: TOKEN,
+      });
+      expect(harness.connection.isActive).toBe(true);
+    }
+  });
+
+  test('removed automatic reconnect callbacks are not invoked', async () => {
+    const harness = build();
+    const callback =
+      vi.fn<(conn: DbConnection, identity: Identity, token: string) => void>();
+    harness.connection['onAutomaticReconnect'](callback);
+    await establish(harness);
+    expect(callback).not.toHaveBeenCalled();
 
     harness.factory.current.close();
     await runReconnectTimer(harness);
-    expect(harness.factory.sockets).toHaveLength(2);
+    await establish(harness);
+    expect(callback).toHaveBeenCalledExactlyOnceWith(
+      harness.connection,
+      anIdentity,
+      TOKEN
+    );
 
-    harness.factory.current.acceptConnection();
-    harness.factory.current.sendToClient(initialConnection());
-    await Promise.resolve();
+    harness.connection.removeOnAutomaticReconnect(callback);
+    harness.factory.current.close();
+    await runReconnectTimer(harness);
+    await establish(harness);
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(harness.automaticReconnects).toHaveLength(2);
+  });
 
-    expect(harness.connects).toHaveLength(2);
-    expect(harness.connection.isActive).toBe(true);
+  test('subscriptions initialized in onConnect are replayed without duplication', async () => {
+    const harness = build();
+    const initialize = vi.fn((conn: DbConnection) => {
+      conn.subscriptionBuilder().subscribe('SELECT * FROM user');
+      conn.subscriptionBuilder().subscribe('SELECT * FROM player');
+    });
+    harness.connection['onConnect'](initialize);
+    await establish(harness);
+    expect(harness.factory.current.outgoingMessages.map(m => m.tag)).toEqual([
+      'Subscribe',
+      'Subscribe',
+    ]);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      harness.factory.current.close();
+      await runReconnectTimer(harness);
+      await establish(harness);
+      expect(initialize).toHaveBeenCalledTimes(1);
+      expect(harness.factory.current.outgoingMessages).toMatchObject([
+        {
+          tag: 'SubscribeBatch',
+          value: {
+            sets: [
+              { queryStrings: ['SELECT * FROM user'] },
+              { queryStrings: ['SELECT * FROM player'] },
+            ],
+          },
+        },
+      ]);
+    }
   });
 
   test('the connection object and its cache survive a reconnect', async () => {
@@ -996,6 +1064,13 @@ describe('token provider', () => {
 
     expect(provider).toHaveBeenCalled();
     expect(harness.factory.current.connectArgs?.authToken).toBe('fresh-token');
+    await establish(harness);
+    expect(harness.connects).toEqual([
+      { identity: anIdentity, token: expiring },
+    ]);
+    expect(harness.automaticReconnects).toEqual([
+      { identity: anIdentity, token: 'fresh-token' },
+    ]);
   });
 
   test('a provider failure counts as a failed attempt, not a terminal error', async () => {
@@ -1065,7 +1140,8 @@ describe('reconnect regressions', () => {
     await establish(harness);
     old.sendToClient(initialConnection(bobIdentity));
     expect(harness.connection.identity).toEqual(anIdentity);
-    expect(harness.connects).toHaveLength(2);
+    expect(harness.connects).toHaveLength(1);
+    expect(harness.automaticReconnects).toHaveLength(1);
   });
 
   test('waits for InitialConnection before allowing calls on a reconnect', async () => {
@@ -1145,13 +1221,13 @@ describe('reconnect regressions', () => {
     expect(harness.connection.isReconnecting).toBe(false);
   });
 
-  test('subscribes during the outage and onConnect are sent only in the replay batch', async () => {
+  test('subscribes during the outage and onAutomaticReconnect are sent only in the replay batch', async () => {
     const harness = build();
     await establish(harness);
     harness.connection.subscriptionBuilder().subscribe('SELECT * FROM user');
     harness.factory.current.close();
     harness.connection.subscriptionBuilder().subscribe('SELECT * FROM player');
-    harness.connection['onConnect'](conn =>
+    harness.connection['onAutomaticReconnect'](conn =>
       conn.subscriptionBuilder().subscribe('SELECT * FROM user')
     );
     await runReconnectTimer(harness);
@@ -1313,12 +1389,14 @@ describe('handshake and replay boundaries', () => {
     expect(harness.factory.current.closed).toBe(true);
   });
 
-  test('disconnect in onConnect prevents subscription replay', async () => {
+  test('disconnect in onAutomaticReconnect prevents subscription replay', async () => {
     const harness = build();
     await establish(harness);
     harness.connection.subscriptionBuilder().subscribe('SELECT * FROM user');
     harness.factory.current.close();
-    harness.connection['onConnect'](() => harness.connection.disconnect());
+    harness.connection['onAutomaticReconnect'](() =>
+      harness.connection.disconnect()
+    );
     await runReconnectTimer(harness);
     await establish(harness);
     expect(harness.factory.current.closed).toBe(true);

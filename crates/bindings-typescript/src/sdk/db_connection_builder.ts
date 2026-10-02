@@ -182,7 +182,8 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   }
 
   /**
-   * Register a callback to be invoked upon authentication with the database.
+   * Register a callback for the first successful connection to the database.
+   * Automatic reconnects invoke {@link DbConnectionBuilder.onAutomaticReconnect} instead.
    *
    * @param identity A unique identifier for a client connected to a database.
    * @param token The credentials to use to authenticate with SpacetimeDB.
@@ -213,6 +214,23 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
     ) => void
   ): this {
     this.#emitter.on('connect', callback);
+    return this;
+  }
+
+  /**
+   * Register a callback for each successful automatic reconnect after the
+   * initial connection. Receives the current identity and authentication token.
+   * Runs before subscription replay; use subscription `onApplied` callbacks
+   * to observe refreshed data.
+   */
+  onAutomaticReconnect(
+    callback: (
+      connection: DbConnection,
+      identity: Identity,
+      token: string
+    ) => void
+  ): this {
+    this.#emitter.on('automaticReconnect', callback);
     return this;
   }
 

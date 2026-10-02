@@ -25,6 +25,7 @@ type Harness = {
   connection: DbConnection;
   factory: WebsocketTestAdapterFactory;
   connects: { identity: Identity; token: string }[];
+  automaticReconnects: { identity: Identity; token: string }[];
   disconnects: ReconnectReport[];
   connectErrors: ReconnectReport[];
 };
@@ -79,6 +80,7 @@ function listenerCounts(): Record<string, number> {
 function build(options?: { automaticReconnect?: boolean }): Harness {
   const factory = new WebsocketTestAdapterFactory();
   const connects: { identity: Identity; token: string }[] = [];
+  const automaticReconnects: { identity: Identity; token: string }[] = [];
   const disconnects: ReconnectReport[] = [];
   const connectErrors: ReconnectReport[] = [];
 
@@ -87,6 +89,9 @@ function build(options?: { automaticReconnect?: boolean }): Harness {
     .withDatabaseName('db')
     .withWSFn(factory.openWebSocket)
     .onConnect((_conn, identity, token) => connects.push({ identity, token }))
+    .onAutomaticReconnect((_conn, identity, token) =>
+      automaticReconnects.push({ identity, token })
+    )
     .onDisconnect((_ctx, error, nextReconnectAttempt, nextReconnectDelayMs) =>
       disconnects.push({ error, nextReconnectAttempt, nextReconnectDelayMs })
     )
@@ -101,6 +106,7 @@ function build(options?: { automaticReconnect?: boolean }): Harness {
     connection: builder.build(),
     factory,
     connects,
+    automaticReconnects,
     disconnects,
     connectErrors,
   };
@@ -195,7 +201,8 @@ describe('liveness recovery on page resume', () => {
     await settle(harness);
     expect(harness.factory.current).not.toBe(firstSocket);
     await establish(harness);
-    expect(harness.connects).toHaveLength(2);
+    expect(harness.connects).toHaveLength(1);
+    expect(harness.automaticReconnects).toHaveLength(1);
     expect(harness.connection.isActive).toBe(true);
   });
 
@@ -249,7 +256,8 @@ describe('liveness recovery on page resume', () => {
     expect(harness.factory.current).not.toBe(firstSocket);
 
     await establish(harness);
-    expect(harness.connects).toHaveLength(2);
+    expect(harness.connects).toHaveLength(1);
+    expect(harness.automaticReconnects).toHaveLength(1);
   });
 
   test('visibilitychange while still hidden does nothing', async () => {

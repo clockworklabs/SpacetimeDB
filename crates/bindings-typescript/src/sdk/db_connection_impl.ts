@@ -111,6 +111,7 @@ export type {
 
 export type ConnectionEventArgs = {
   connect: [identity: Identity, token: string];
+  automaticReconnect: [identity: Identity, token: string];
   disconnect: [
     error?: Error,
     nextReconnectAttempt?: number,
@@ -1654,7 +1655,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#socketEstablished = true;
         // A connection was established, so the backoff schedule starts over.
         this.#reconnectAttempt = 0;
-        this.#emitter.emit('connect', this, this.identity, this.token);
+        this.#emitter.emit(
+          isReconnect ? 'automaticReconnect' : 'connect',
+          this,
+          this.identity,
+          this.token
+        );
         if (this.#connectionEnded) break;
         if (isReconnect) {
           this.#replaySubscriptions();
@@ -2196,6 +2202,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#emitter.on('connect', callback);
   }
 
+  private onAutomaticReconnect(
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['automaticReconnect']
+    ) => void
+  ): void {
+    this.#emitter.on('automaticReconnect', callback);
+  }
+
   private onDisconnect(
     callback: (
       ctx: DbConnectionImpl<RemoteModule>,
@@ -2221,6 +2236,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     ) => void
   ): void {
     this.#emitter.off('connect', callback);
+  }
+
+  removeOnAutomaticReconnect(
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['automaticReconnect']
+    ) => void
+  ): void {
+    this.#emitter.off('automaticReconnect', callback);
   }
 
   removeOnDisconnect(
