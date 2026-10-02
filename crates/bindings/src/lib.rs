@@ -2212,9 +2212,31 @@ mod tests {
           "picture": "https://lh3.googleusercontent.com/a-/profile.jpg"
         }
         "#;
-        let auth = AuthContext::from_jwt_payload(example_payload.to_string());
+        // Use the deprecated `AuthCtx` name to check that the alias still resolves.
+        #[allow(deprecated)]
+        let auth = AuthCtx::from_jwt_payload(example_payload.to_string());
         let audience = auth.jwt().unwrap().audience();
         assert_eq!(audience.len(), 1);
         assert_eq!(audience, &["my-project-id".to_string()]);
+    }
+
+    // Each deprecated name must stay an alias of the type that replaced it.
+    #[allow(deprecated, dead_code, clippy::type_complexity)]
+    fn deprecated_aliases_are_identical<'a, Tbl: Table, T, Col, Idx: table::Index>(
+        a: &'a Local,
+        b: &'a LocalReadOnly,
+        c: &'a UniqueColumn<Tbl, T, Col>,
+        d: &'a UniqueColumnReadOnly<Tbl, T, Col>,
+        e: &'a PointIndexReadOnly<Tbl, T, Idx>,
+        f: &'a RangedIndexReadOnly<Tbl, T, Idx>,
+    ) -> (
+        &'a DbView,
+        &'a ReadOnlyDbView,
+        &'a UniqueIndex<Tbl, T, Col>,
+        &'a ReadOnlyUniqueIndex<Tbl, T, Col>,
+        &'a ReadOnlyPointIndex<Tbl, T, Idx>,
+        &'a ReadOnlyRangedIndex<Tbl, T, Idx>,
+    ) {
+        (a, b, c, d, e, f)
     }
 }
