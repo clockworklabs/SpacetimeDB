@@ -7,8 +7,8 @@ import {
   schema,
   t,
   table,
-  type ProcedureCtx,
-  type TransactionCtx,
+  type ProcedureContext,
+  type TxContext,
 } from 'spacetimedb/server';
 
 const ReturnStruct = t.object('ReturnStruct', {
@@ -117,12 +117,12 @@ export const invalid_request = spacetimedb.procedure(t.string(), ctx => {
   }
 });
 
-function insertMyTable(ctx: TransactionCtx<typeof spacetimedb.schemaType>) {
+function insertMyTable(ctx: TxContext<typeof spacetimedb.schemaType>) {
   ctx.db.myTable.insert({ field: { a: 42, b: 'magic' } });
 }
 
 function assertRowCount(
-  ctx: ProcedureCtx<typeof spacetimedb.schemaType>,
+  ctx: ProcedureContext<typeof spacetimedb.schemaType>,
   count: number
 ) {
   ctx.withTx(ctx => {

@@ -5,7 +5,7 @@ import {
   t,
   type InferSchema,
   type InferTypeOfRow,
-  type ReducerCtx,
+  type ReducerContext,
 } from 'spacetimedb/server';
 import {
   add,
@@ -156,7 +156,7 @@ const spacetimedb = schema({
 });
 export default spacetimedb;
 
-type BlackholioCtx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+type BlackholioCtx = ReducerContext<InferSchema<typeof spacetimedb>>;
 
 export const init = spacetimedb.init(ctx => {
   ctx.db.config.insert({ id: 0, world_size: 1000n });

@@ -1,13 +1,13 @@
 import { ConnectionId } from 'spacetimedb';
 import { schema, table, t } from 'spacetimedb/server';
-import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
+import type { InferSchema, ReducerContext } from 'spacetimedb/server';
 
 const presenceSession = table({ name: 'presence_session', public: true }, {
   connectionId: t.connectionId().primaryKey(), identity: t.identity().index('btree'), connectedAt: t.timestamp(),
 });
 const spacetimedb = schema({ presenceSession });
 export default spacetimedb;
-type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+type Ctx = ReducerContext<InferSchema<typeof spacetimedb>>;
 
 function addSession(ctx: Ctx, connectionId: ConnectionId) {
   ctx.db.presenceSession.insert({ connectionId, identity: ctx.sender, connectedAt: ctx.timestamp });

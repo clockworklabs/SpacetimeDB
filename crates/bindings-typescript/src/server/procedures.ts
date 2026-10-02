@@ -10,7 +10,7 @@ import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import type { ParamsObj, ReducerCtx } from '../lib/reducers';
+import type { ParamsObj, ReducerContext } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import type { ScheduleTableForParams } from '../lib/table_schema';
 import { Timestamp } from '../lib/timestamp';
@@ -84,7 +84,7 @@ export type ProcedureFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
-> = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
+> = (ctx: ProcedureContext<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
 
 export interface ProcedureOpts<
   Params extends ParamsObj = ParamsObj,
@@ -105,10 +105,10 @@ export type ProcedureAliasViews<SchemaDef extends UntypedSchemaDef> =
   SchemaDef extends {
     namespaces: infer NS extends Record<string, UntypedSchemaDef>;
   }
-    ? { readonly [K in keyof NS]: ProcedureCtx<NS[K]> }
+    ? { readonly [K in keyof NS]: ProcedureContext<NS[K]> }
     : {};
 
-export interface ProcedureCtx<S extends UntypedSchemaDef> {
+export interface ProcedureContext<S extends UntypedSchemaDef> {
   readonly env: EnvironmentFor<S>;
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
@@ -119,20 +119,26 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly http: HttpClient;
   readonly random: Random;
   readonly as: ProcedureAliasViews<S>;
-  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  withTx<T>(body: (ctx: TxContext<S>) => T): T;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtx<S> {}
+/** @deprecated Use `ProcedureContext` instead. */
+export type ProcedureCtx<S extends UntypedSchemaDef> = ProcedureContext<S>;
 
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface TxContext<S extends UntypedSchemaDef>
+  extends ReducerContext<S> {}
+
+/** @deprecated Use `TxContext` instead. */
+export type TransactionCtx<S extends UntypedSchemaDef> = TxContext<S>;
+
+type ITxContext<S extends UntypedSchemaDef> = TxContext<S>;
 
 const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
+  implements ITxContext<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -205,7 +211,7 @@ export function callProcedure(
     procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
-  const ctx: ProcedureCtx<UntypedSchemaDef> = new ProcedureCtxImpl(
+  const ctx: ProcedureContext<UntypedSchemaDef> = new ProcedureCtxImpl(
     sender,
     timestamp,
     connectionId,
@@ -220,9 +226,9 @@ export function callProcedure(
   return retBuf.getBuffer();
 }
 
-type IProcedureCtx<S extends UntypedSchemaDef> = ProcedureCtx<S>;
+type IProcedureContext<S extends UntypedSchemaDef> = ProcedureContext<S>;
 const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
-  implements IProcedureCtx<S>
+  implements IProcedureContext<S>
 {
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
@@ -270,7 +276,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     )) as any;
   }
 
-  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
+  withTx<T>(body: (ctx: TxContext<S>) => T): T {
     const dispatches = this.#dispatches;
     const parentPrefix = this.#parentPrefix;
     return runWithTx(timestamp => {
@@ -281,7 +287,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
         this.#dbView()
       );
       assignTxAliasViews(tx, dispatches, parentPrefix);
-      return tx as unknown as TransactionCtx<S>;
+      return tx as unknown as TxContext<S>;
     }, body);
   }
 
