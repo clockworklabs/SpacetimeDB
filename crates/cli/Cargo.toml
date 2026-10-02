@@ -42,6 +42,7 @@ dirs.workspace = true
 duct.workspace = true
 futures.workspace = true
 fs-err.workspace = true
+headers.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true

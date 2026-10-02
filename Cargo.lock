@@ -1052,6 +1052,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-new-script-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "ci-script-policy",
+ "clap 4.5.50",
+]
+
+[[package]]
 name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
@@ -1066,6 +1076,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "duct",
+]
+
+[[package]]
+name = "ci-script-policy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "tempfile",
 ]
 
 [[package]]
@@ -7376,6 +7395,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sdk-csharp-test-harness"
+version = "2.11.0"
+dependencies = [
+ "serial_test",
+ "spacetimedb-testing",
+]
+
+[[package]]
 name = "sdk-test-case-conversion"
 version = "0.1.0"
 dependencies = [
@@ -8034,6 +8061,7 @@ dependencies = [
  "futures",
  "git2",
  "glob",
+ "headers",
  "http",
  "ignore",
  "indicatif",
@@ -8141,7 +8169,9 @@ dependencies = [
  "bytestring",
  "derive_more 0.99.20",
  "enum-as-inner",
+ "headers",
  "hex",
+ "http",
  "itertools 0.12.1",
  "proptest",
  "serde",
