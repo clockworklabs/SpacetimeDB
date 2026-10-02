@@ -20,9 +20,3 @@ export type UntypedRemoteModule = RemoteModule<
   UntypedReducersDef,
   UntypedProceduresDef
 >;
-
-export type SchemaDef<RemoteModule extends UntypedRemoteModule> =
-  RemoteModule['tables'];
-
-export type ReducersDef<RemoteModule extends UntypedRemoteModule> =
-  RemoteModule['reducers'];
