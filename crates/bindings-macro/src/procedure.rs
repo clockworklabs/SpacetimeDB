@@ -1,6 +1,6 @@
 use crate::reducer::{assert_only_lifetime_generics, extract_typed_args, generate_explicit_names_impl};
 use crate::sym;
-use crate::util::{check_duplicate, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, ident_to_litstr, match_meta, preinit};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::Parser as _;
@@ -75,24 +75,21 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
         syn::ReturnType::Type(_, t) => quote!(#t),
     };
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{}", procedure_name.value());
-
     let lifetime_params = &original_function.sig.generics;
     let lifetime_where_clause = &lifetime_params.where_clause;
 
-    let generated_describe_function = quote! {
-        #[unsafe(export_name = #register_describer_symbol)]
-        pub extern "C" fn __register_describer() {
-            spacetimedb::rt::register_procedure::<_, _, #func_name>(#func_name)
-        }
-    };
+    let generated_describe_function = preinit(
+        20,
+        "register_describer",
+        procedure_name.value(),
+        quote!(spacetimedb::rt::register_procedure::<_, _, #func_name>(#func_name)),
+    );
 
     let generate_explicit_names = generate_explicit_names_impl(&procedure_name.value(), func_name, explicit_name);
 
     Ok(quote! {
-        const _: () = {
-            #generated_describe_function
-        };
+        #generated_describe_function
+
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }
         const _: () = {

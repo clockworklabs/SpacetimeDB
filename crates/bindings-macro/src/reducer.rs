@@ -1,5 +1,5 @@
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta, preinit};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
@@ -129,22 +129,19 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     }
     .into_iter();
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{}", reducer_name.value());
-
     let lt_params = &original_function.sig.generics;
     let lt_where_clause = &lt_params.where_clause;
 
-    let generated_describe_function = quote! {
-        #[unsafe(export_name = #register_describer_symbol)]
-        pub extern "C" fn __register_describer() {
-            spacetimedb::rt::register_reducer::<_, #func_name>(#func_name)
-        }
-    };
+    let generated_describe_function = preinit(
+        20,
+        "register_describer",
+        reducer_name.value(),
+        quote!(spacetimedb::rt::register_reducer::<_, #func_name>(#func_name)),
+    );
 
     Ok(quote! {
-        const _: () = {
-            #generated_describe_function
-        };
+        #generated_describe_function
+
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }
         const _: () = {

@@ -9,19 +9,22 @@
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
 mod environment;
-
-#[proc_macro_attribute]
-pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
-}
-
-#[proc_macro_derive(EnvironmentValue, attributes(env))]
-pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
-    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
-}
-
 mod http;
+mod migration;
 mod procedure;
+mod reducer;
+mod sats;
+mod table;
+mod util;
+mod view;
+
+use self::util::{cvt_attr, cvt_attr_mut, ok_or_compile_error};
+use proc_macro::TokenStream as StdTokenStream;
+use proc_macro2::TokenStream;
+use quote::quote;
+use std::time::Duration;
+use syn::{parse::ParseStream, Attribute};
+use syn::{ItemConst, ItemFn};
 
 #[proc_macro_attribute]
 pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -48,7 +51,6 @@ pub fn http_router(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream
         http::router_impl(args.into(), &original_function)
     })
 }
-mod reducer;
 
 #[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -57,8 +59,6 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         reducer::reducer_impl(args, original_function)
     })
 }
-mod sats;
-mod table;
 
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -90,13 +90,11 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             derive_input.attrs.push(derive_table_helper);
         }
 
-        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let args = table::TableArgs::parse(args.into(), proc_macro2::Span::call_site(), &derive_input.ident)?;
         let generated = table::table_impl(args, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }
-mod util;
-mod view;
 
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -115,13 +113,13 @@ pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     }
 }
 
-use proc_macro::TokenStream as StdTokenStream;
-use proc_macro2::TokenStream;
-use quote::quote;
-use std::time::Duration;
-use syn::{parse::ParseStream, Attribute};
-use syn::{ItemConst, ItemFn};
-use util::{cvt_attr, ok_or_compile_error};
+#[proc_macro_attribute]
+pub fn migration(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr_mut::<syn::ItemMod>(args, item, |args, mod_| {
+        let args = migration::MigrationArgs::parse(args)?;
+        migration::migration_impl(args, mod_)
+    })
+}
 
 mod sym {
     /// A symbol known at compile-time against
@@ -148,7 +146,10 @@ mod sym {
     symbol!(column);
     symbol!(columns);
     symbol!(crate_, crate);
+    symbol!(default);
     symbol!(direct);
+    symbol!(event);
+    symbol!(function);
     symbol!(hash);
     symbol!(index);
     symbol!(init);
@@ -161,8 +162,6 @@ mod sym {
     symbol!(scheduled);
     symbol!(unique);
     symbol!(update);
-    symbol!(default);
-    symbol!(event);
 
     symbol!(u8);
     symbol!(i8);
@@ -179,7 +178,7 @@ mod sym {
 
     impl PartialEq<Symbol> for syn::Ident {
         fn eq(&self, sym: &Symbol) -> bool {
-            self == sym.0
+            *self == *sym.0
         }
     }
     impl PartialEq<Symbol> for &syn::Ident {
@@ -216,13 +215,7 @@ mod sym {
 /// We need this [`Attribute`] in [`table`] so that we can "pushnew" it
 /// onto the end of a list of attributes. See comments within [`table`].
 fn derive_table_helper_attr() -> Attribute {
-    let source = quote!(#[derive(spacetimedb::__TableHelper)]);
-
-    syn::parse::Parser::parse2(Attribute::parse_outer, source)
-        .unwrap()
-        .into_iter()
-        .next()
-        .unwrap()
+    syn::parse_quote!(#[derive(spacetimedb::__TableHelper)])
 }
 
 /// Special alias for `derive(SpacetimeType)`, aka [`schema_type`], for use by [`table`].
@@ -315,18 +308,18 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
         }
 
         let item: ItemConst = syn::parse(item)?;
-        let rls_ident = item.ident.clone();
-        let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
+        let rls_ident = &item.ident;
+        let register_func = util::preinit(
+            20,
+            "register_row_level_security",
+            rls_ident,
+            quote!(spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())),
+        );
 
         Ok(quote! {
             #item
 
-            const _: () = {
-                #[unsafe(export_name = #register_rls_symbol)]
-                extern "C" fn __register_client_visibility_filter() {
-                    spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
-                }
-            };
+            #register_func
         })
     })
 }
@@ -358,10 +351,6 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             ));
         }
 
-        // Use a fixed export name so that two `#[spacetimedb::settings]` consts
-        // for the same setting produce a linker error (duplicate symbol).
-        let register_symbol = format!("__preinit__05_setting_{ident_str}");
-
         // Generate the registration call based on the setting name.
         let register_call = match ident_str.as_str() {
             "CASE_CONVERSION_POLICY" => quote! {
@@ -370,15 +359,24 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             _ => unreachable!("validated above"),
         };
 
+        // Use a fixed export name so that two `#[spacetimedb::settings]` consts
+        // for the same setting produce a linker error (duplicate symbol).
+        let register_func = util::preinit(5, "register_setting", ident_str, register_call);
+
         Ok(quote! {
             #item
 
-            const _: () = {
-                #[unsafe(export_name = #register_symbol)]
-                extern "C" fn __register_setting() {
-                    #register_call
-                }
-            };
+            #register_func
         })
     })
+}
+
+#[proc_macro_attribute]
+pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
+}
+
+#[proc_macro_derive(EnvironmentValue, attributes(env))]
+pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
 }
