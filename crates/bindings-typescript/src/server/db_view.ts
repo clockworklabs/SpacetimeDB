@@ -1,5 +1,5 @@
 import type { UntypedSchemaDef } from '../lib/schema';
-import type { ReadonlyTable, Table } from '../lib/table';
+import type { ReadonlyTableHandle, TableHandle } from '../lib/table';
 import type { Values } from '../lib/type_util';
 
 /**
@@ -8,7 +8,7 @@ import type { Values } from '../lib/type_util';
 export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in Values<
     SchemaDef['tables']
-  > as Tbl['accessorName']]: ReadonlyTable<Tbl>;
+  > as Tbl['accessorName']]: ReadonlyTableHandle<Tbl>;
 } & (SchemaDef extends {
   namespaces: infer NS extends Record<string, UntypedSchemaDef>;
 }
@@ -21,7 +21,7 @@ export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
 export type DbView<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in Values<
     SchemaDef['tables']
-  > as Tbl['accessorName']]: Table<Tbl>;
+  > as Tbl['accessorName']]: TableHandle<Tbl>;
 } & (SchemaDef extends {
   namespaces: infer NS extends Record<string, UntypedSchemaDef>;
 }

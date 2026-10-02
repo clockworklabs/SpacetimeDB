@@ -54,7 +54,7 @@ import {
 import { type UntypedSchemaDef } from '../lib/schema';
 import {
   type RowType,
-  type Table,
+  type TableHandle,
   type TableMethods,
   type UntypedTableDef,
 } from '../lib/table';
@@ -1079,7 +1079,7 @@ export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,
   namePrefix = ''
-): Table<any> {
+): TableHandle<any> {
   const table_id = sys.table_id_from_name(namePrefix + table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
@@ -1172,7 +1172,7 @@ export function makeTableView(
   const tableView = Object.assign(
     Object.create(null),
     tableMethods
-  ) as Table<any>;
+  ) as TableHandle<any>;
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
