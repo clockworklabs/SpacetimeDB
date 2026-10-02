@@ -11,7 +11,8 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { validateStackLeaseResources } from '../stacks/stack-lease-capabilities.js';
 import { resourceLockDescriptors } from './resource-lock-worker.js';
 import type { ResourceLockTransaction } from './resource-lock-worker.js';
-import { RESTRICTED_PORTS } from '../composition/product-config.js';
+import { GRADING_CAPACITY, RESTRICTED_PORTS } from '../composition/product-config.js';
+import { sleepSync } from './platform.js';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',
@@ -605,6 +606,90 @@ export async function claimBackendResourcesWhenAvailable(path: string, lease: Ba
       }
       await delay(1000);
     }
+  }
+}
+
+/** Gradings that may run on this host at once; STACK_BENCH_GRADING_CAPACITY overrides the default. */
+export function gradingCapacity(env: NodeJS.ProcessEnv = process.env): number {
+  const override = env.STACK_BENCH_GRADING_CAPACITY;
+  if (!override) return GRADING_CAPACITY;
+  if (!/^[1-9]\d*$/.test(override) || !Number.isSafeInteger(Number(override))) {
+    throw new Error('STACK_BENCH_GRADING_CAPACITY must be a positive safe integer');
+  }
+  return Number(override);
+}
+
+/** A supervisor that names this file pauses its timeout for every grading slot wait. */
+export const GRADING_WAIT_RECEIPT_ENV = 'STACK_BENCH_GRADING_WAIT_RECEIPT';
+/** The receipt's name inside a campaign execution's output directory. */
+export const GRADING_WAIT_RECEIPT_FILE = 'grading-waits.json';
+
+export function readGradingWaits(path: string): CapacityWait[] {
+  if (!existsSync(path)) return [];
+  const waits: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (!Array.isArray(waits) || !waits.every(wait => isRecord(wait) && Number.isSafeInteger(wait.startedAt)
+    && (wait.resumedAt === null || Number.isSafeInteger(wait.resumedAt)))) {
+    throw new Error('grading wait receipt is malformed');
+  }
+  return waits as CapacityWait[];
+}
+
+/** Total grading-slot wait in a receipt, counting an open wait up to `now`. */
+export function gradingWaitMs(path: string, now = Date.now()): number {
+  return readGradingWaits(path).reduce((total, wait) => total + (wait.resumedAt ?? now) - wait.startedAt, 0);
+}
+
+function writeGradingWaits(path: string, waits: readonly CapacityWait[]): void {
+  // Readers poll this file; a partial write must never be visible.
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(waits)}\n`, { mode: 0o600 });
+  renameSync(temporary, path);
+}
+
+/**
+ * Run `grade` while holding one of the host's grading slots (`grading:0`..`grading:N-1`), recorded in
+ * this run's lease so teardown and recovery release it like any other claim. Waiting for a slot is
+ * reported to the supervisor so it does not consume the run's working time; returns the wait.
+ */
+export function withGradingSlot<T>(grade: () => T, env: NodeJS.ProcessEnv = process.env,
+  sleep: (ms: number) => void = sleepSync): { result: T; waitedMs: number } {
+  const { path, lease } = leaseFromEnv(env);
+  const { root } = resourceLockScope(env);
+  const capacity = gradingCapacity(env);
+  const receipt = env[GRADING_WAIT_RECEIPT_ENV];
+  let waitStartedAt: number | null = null;
+  let slot: BackendResourceLock | undefined;
+  while (!slot) {
+    for (let index = 0; index < capacity && !slot; index++) {
+      try { [slot] = acquireResourceLocks({ root, keys: [`grading:${index}`], lease }); }
+      catch (error) {
+        // A held slot is busy; a crashed holder's slot stays busy until recovery releases it.
+        if (!(error instanceof Error) || !/is already leased by|remains leased by/.test(error.message)) throw error;
+      }
+    }
+    if (slot) break;
+    if (waitStartedAt === null) {
+      waitStartedAt = Date.now();
+      console.error(`Waiting for one of ${capacity} grading slots`);
+      if (receipt) writeGradingWaits(receipt, [...readGradingWaits(receipt), { startedAt: waitStartedAt, resumedAt: null }]);
+    }
+    sleep(1000);
+  }
+  const resumedAt = Date.now();
+  const waitedMs = waitStartedAt === null ? 0 : resumedAt - waitStartedAt;
+  if (receipt && waitStartedAt !== null) {
+    const waits = readGradingWaits(receipt);
+    waits[waits.length - 1] = { startedAt: waitStartedAt, resumedAt };
+    writeGradingWaits(receipt, waits);
+  }
+  lease.resources.locks.push(slot);
+  writeBackendLease(path, lease);
+  try { return { result: grade(), waitedMs }; }
+  finally {
+    lockedResources({ root, lease, operation: 'release', keys: [slot.key] });
+    const current = leaseFromEnv(env).lease;
+    current.resources.locks = current.resources.locks.filter(lock => lock.key !== slot!.key);
+    writeBackendLease(path, current);
   }
 }
 

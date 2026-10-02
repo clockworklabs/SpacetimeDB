@@ -17,7 +17,8 @@ import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, Campaig
   from './campaign-scheduler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
-import { readBackendLease } from '../runtime/backend-lease.js';
+import { GRADING_WAIT_RECEIPT_ENV, GRADING_WAIT_RECEIPT_FILE, gradingWaitMs as readGradingWaitMs,
+  readBackendLease, readGradingWaits } from '../runtime/backend-lease.js';
 import { runBounded } from '../runtime/bounded-process.js';
 import { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
 import { timeContinuationEligibility } from '../progression/live-progression.js';
@@ -525,6 +526,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
       attemptEnv: NodeJS.ProcessEnv): Promise<AttemptResult> => {
       const reservation = admission.reservation;
       const output = contained(initialized.paths.root, claim.output, 'attempt output');
+      // The run appends each grading-slot wait here; the controller pauses the working-time clock for it.
+      const gradingWaitReceipt = join(output, GRADING_WAIT_RECEIPT_FILE);
       // Create every execution output before preflight bind-mounts it.
       mkdirSync(output, { recursive: true });
       contained(initialized.paths.root, claim.output, 'attempt output');
@@ -538,6 +541,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
         depth: plan.definition.mode.pauseAfterDepth,
       };
       let pausedMs = 0;
+      let gradingWaitMs = 0;
       try {
         const previous = state.attempts.find(a => a.plan.id === claim.attempt.id)!.executions.at(-2);
         if (previous?.timeContinuation) {
@@ -560,6 +564,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
             pausedMs = depthPauseDurationMs(output, pauseContext);
             attempt.executions.at(-1)!.pausedMs = pausedMs;
           }
+          gradingWaitMs = readGradingWaitMs(gradingWaitReceipt);
+          if (gradingWaitMs) attempt.executions.at(-1)!.gradingWaitMs = gradingWaitMs;
           for (const request of readTimeGrantRequests(initialized.paths.root)
             .filter(r => r.attemptId === claim.attempt.id)) {
             if (attempt.timeGrants?.some(g => g.request.grantId === request.grantId)) continue;
@@ -593,20 +599,28 @@ export async function executeCampaign(campaignFile: string, directory: string,
               campaignSha256: plan.contentSha256, attemptId: claim.attempt.id,
               executionId: claim.executionId, ownershipMarkerSha256: lock.record.ownershipMarkerSha256,
               root: join(output, 'provider-waits') }),
+            [GRADING_WAIT_RECEIPT_ENV]: gradingWaitReceipt,
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },
           stdio: 'inherit',
           logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
           timeoutMs, refreshTimeoutMs,
           startedAt: Date.parse(attemptState().executions.at(-1)!.startedAt),
-          ...(pauseContext ? { pauseInterval: () => readDepthPause(output, pauseContext) } : {}),
+          // A depth hold and grading-slot waits never overlap: both happen inside the same process in turn.
+          pauseIntervals: () => {
+            const depth = pauseContext ? readDepthPause(output, pauseContext) : null;
+            return [...(depth ? [depth] : []), ...readGradingWaits(gradingWaitReceipt)]
+              .sort((a, b) => a.startedAt - b.startedAt);
+          },
           signal,
         });
         try { refreshTimeoutMs(timeoutMs, false); }
         catch (error) { processResult.error ??= error instanceof Error ? error : new Error(String(error)); }
-        if (pauseContext && processResult.pausedMs !== undefined) {
-          pausedMs = processResult.pausedMs;
+        if (pauseContext) {
+          pausedMs = depthPauseDurationMs(output, pauseContext);
           attemptState().executions.at(-1)!.pausedMs = pausedMs;
         }
+        gradingWaitMs = readGradingWaitMs(gradingWaitReceipt);
+        if (gradingWaitMs) attemptState().executions.at(-1)!.gradingWaitMs = gradingWaitMs;
         processResult.buildImage = attemptEnv.STACK_BENCH_IMAGE;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -663,7 +677,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
           reason: `attempt cleanup failed: ${cleanupError.message}` };
       }
       return { ...readAttemptResult(plan, claim.attempt, claim.executionId, output, processResult,
-        claim.extension), ...(pauseContext ? { pausedMs } : {}) };
+        claim.extension), ...(pauseContext ? { pausedMs } : {}), ...(gradingWaitMs ? { gradingWaitMs } : {}) };
     };
     cancellation.poll();
     const invalidAtStart = state.summary.invalid;

@@ -21,7 +21,7 @@ import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinu
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
-  claimBackendResourcesWhenAvailable, backendResourceLockKeys, resourceLockScope, loopbackHttpUri } from '../src/runtime/backend-lease.js';
+  claimBackendResourcesWhenAvailable, backendResourceLockKeys, resourceLockScope, loopbackHttpUri, withGradingSlot } from '../src/runtime/backend-lease.js';
 import { borrowCampaignReservation }
   from '../src/campaigns/campaign-admission.js';
 import { captureApplicationDiagnostics } from '../src/runtime/backend-control.js';
@@ -87,7 +87,7 @@ import type { GradeBundlePayload, BenchmarkRunRecord, RunLevelRecord,
   RunContinuation, RunRepairCandidate, RunSessionRecord, RunTotals }
   from '../src/evidence/benchmark-run.js';
 import { depthPauseDue, readDepthPauseContext, waitAtDepthBoundary } from '../src/campaigns/campaign-depth-pause.js';
-import { addCostUsd, finalizeRunTotals, runSessionRecord }
+import { addCostUsd, finalizeRunTotals, recordGradingWait, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { ProgressionAction } from '../src/progression/progression-engine.js';
@@ -715,6 +715,9 @@ export function archiveCandidateGrade(appDir: string, outputDir: string, label: 
   });
 }
 
+// Time this process waited for host grading slots; persisted with every run snapshot.
+let gradingWaitMs = 0;
+
 function grade(
   args: BenchArgs,
   appDir: string,
@@ -742,10 +745,15 @@ function grade(
   const sourceCount = task
     ? selectedGradingSourceCount(currentChecks, regressionChecks)
     : suitesFor(track, level).length;
-  try {
-    sh('node', argv, { stdio: 'inherit', timeout: gradingRunTimeoutMs(sourceCount,
-      args.recipeBindings.get(level)?.plan.packs ?? [], [...currentChecks, ...regressionChecks]) });
-  } catch { /* a current bundle may still explain a scored failure */ }
+  const run = () => {
+    try {
+      sh('node', argv, { stdio: 'inherit', timeout: gradingRunTimeoutMs(sourceCount,
+        args.recipeBindings.get(level)?.plan.packs ?? [], [...currentChecks, ...regressionChecks]) });
+    } catch { /* a current bundle may still explain a scored failure */ }
+  };
+  // The stub backend holds no host resources; every real grading takes one of the host's grading slots.
+  if (args.backend === 'stub') run();
+  else gradingWaitMs += withGradingSlot(run).waitedMs;
   return existsSync(bundle)
     ? readArtifactPayload<GradeBundlePayload>(bundle, { expectedKind: 'grade_bundle' }) : null;
 }
@@ -934,6 +942,7 @@ async function main() {
   let sessionInFlight = false;
   let runCostComplete = true;
   const persistRun = (path: string, value: unknown) => {
+    if (gradingWaitMs > 0) recordGradingWait(value as BenchmarkRunRecord, gradingWaitMs);
     if (pendingLevel || sessionInFlight) {
       return writeRunJson(path, pendingRunSnapshot(value as BenchmarkRunRecord,
         pendingLevel, runCostComplete && !sessionInFlight));

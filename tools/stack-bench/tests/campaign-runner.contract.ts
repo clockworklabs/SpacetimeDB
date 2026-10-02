@@ -283,6 +283,17 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   levels: [{ level: 1, selection: plannedSelection(attempt, 1) }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  const waits = mkdtempSync(join(tmpdir(), 'grading-waits-'));
+  try {
+    writeFileSync(join(waits, 'grading-waits.json'), JSON.stringify([{ startedAt: 0, resumedAt: 2_000 }]));
+    const queued = { ...run, gradingWaitMs: 3_000, totals: { ...run.totals, gradingWaitSec: 3 } };
+    assert.throws(() => validateCampaignRun(plan, attempt, queued, { buildImage: 'test-build-image' }),
+      /requires a positive duration and evidence directory/);
+    assert.throws(() => validateCampaignRun(plan, attempt, queued, { buildImage: 'test-build-image', resultDir: waits }),
+      /exceeds its receipt/);
+    assert.throws(() => validateCampaignRun(plan, attempt, { ...queued, gradingWaitMs: 2_000 },
+      { buildImage: 'test-build-image', resultDir: waits }), /does not match its record/);
+  } finally { rmSync(waits, { recursive: true, force: true }); }
   // A continuation that inherited the pause depth advances without pausing again.
   const paused = { ...attempt, mode: { ...attempt.mode, pauseAfterDepth: 1 } };
   const beyond = { ...run, mode: paused.mode, levels: [...run.levels, { level: 2 }] };

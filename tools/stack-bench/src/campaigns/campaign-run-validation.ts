@@ -24,6 +24,7 @@ import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { repairBudgetLimit } from '../progression/repair-plan.js';
 import { validateDepthPauseEvidence } from './campaign-depth-pause.js';
+import { GRADING_WAIT_RECEIPT_FILE, readGradingWaits } from '../runtime/backend-lease.js';
 import type { RepairPlan } from '../progression/repair-plan.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -99,7 +100,7 @@ interface RunLevel extends Omit<Partial<RunLevelRecord>,
 
 export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
 'parentAttemptId' | 'mode' | 'track' | 'backend' | 'model' | 'pricing' | 'guidance'
-| 'condition' | 'selectionRequest' | 'featureCatalog' | 'dependencyPolicy'
+| 'condition' | 'selectionRequest' | 'featureCatalog' | 'dependencyPolicy' | 'gradingWaitMs'
 >>, UnknownRecord {
   id?: string | null;
   progressionResume?: { inheritedLevels?: readonly number[] };
@@ -137,7 +138,7 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
   } };
   runtime?: { buildImage?: string | null };
   totals?: { score?: number; max?: number; costUsd?: number | null; costComplete?: boolean;
-    pausedDurationSec?: number };
+    pausedDurationSec?: number; gradingWaitSec?: number };
   backendLease?: { runId?: string; backend?: string; state?: string;
     ownership?: { markerSha256?: string } };
   contaminated?: boolean;
@@ -371,6 +372,18 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
     && !run.progressionResume?.inheritedLevels?.includes(pauseDepth)) {
     // A continuation that inherited the pause depth was released with its cohort.
     throw new Error('run advanced beyond its planned boundary without pause evidence');
+  }
+  if (run.gradingWaitMs !== undefined) {
+    if (!safeInteger(run.gradingWaitMs) || run.gradingWaitMs <= 0 || !resultDir) {
+      throw new Error('run grading wait requires a positive duration and evidence directory');
+    }
+    // A run killed after waiting may record less than its receipt, never more.
+    const receipted = readGradingWaits(join(resultDir, GRADING_WAIT_RECEIPT_FILE))
+      .reduce((total, wait) => total + (wait.resumedAt === null ? 0 : wait.resumedAt - wait.startedAt), 0);
+    if (run.gradingWaitMs > receipted) throw new Error('run grading wait exceeds its receipt');
+    if (run.totals?.gradingWaitSec !== run.gradingWaitMs / 1000) {
+      throw new Error('run grading wait total does not match its record');
+    }
   }
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
     && item.model === attempt.model && item.providerRoute === attempt.providerRoute

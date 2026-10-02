@@ -791,6 +791,8 @@ test('active time excludes this execution\'s provider waits and nothing it inher
     ],
     progressionResume: { inheritedLevels: [1] },
   } as never), 75_000);
+  assert.equal(campaignActiveDurationMs({ totals: { durationSec: 100, gradingWaitSec: 10 }, levels: [] } as never),
+    90_000, 'waiting for a grading slot is not working time');
 });
 
 test('a continued attempt measures time and tokens across its execution chain, like its cost', () => {

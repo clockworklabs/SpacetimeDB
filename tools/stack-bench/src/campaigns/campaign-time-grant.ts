@@ -10,6 +10,7 @@ import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 import { campaignChildPath } from './campaign-path.js';
 import { acquireCampaignLock, campaignLockIsActive, readCampaignLock, releaseCampaignLock, writeCampaignRecord } from './campaign-lock.js';
 import { depthPauseDurationMs } from './campaign-depth-pause.js';
+import { GRADING_WAIT_RECEIPT_FILE, gradingWaitMs } from '../runtime/backend-lease.js';
 import { timeContinuationEligibility } from '../progression/live-progression.js';
 import { publicRecoveryProvesCleanup, remainingAttemptCostBudget } from './campaign-runner.js';
 
@@ -33,6 +34,10 @@ export function readCampaignTimeBudget(directory: string, attemptId: string): Ca
     last.pausedMs = depthPauseDurationMs(campaignChildPath(directory, last.output, 'depth pause execution'),
       { directory, campaignSha256: plan.contentSha256, ownershipMarkerSha256: lock.ownershipMarkerSha256,
         attemptId, executionId: last.id, depth: attempt.plan.mode.pauseAfterDepth }, now);
+  }
+  if (last?.status === 'running') {
+    last.gradingWaitMs = gradingWaitMs(join(campaignChildPath(directory, last.output, 'grading wait execution'),
+      GRADING_WAIT_RECEIPT_FILE), now);
   }
   const budget = campaignTimeBudget(plan, attempt, now);
   if (['timed_out', 'interrupted'].includes(last?.outcome ?? '')) {

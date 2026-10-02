@@ -43,6 +43,11 @@ export const ATTEMPT_CONTAINER_LIMIT_TOTALS = Object.freeze({
 // at 1.9 GiB in an attempt's first minute and 3.1 GiB overall.
 export const ATTEMPT_STARTUP_MEMORY_BYTES = 2.5 * 1024 ** 3;
 
+// Gradings restart the app per suite and drive several browsers against fixed time budgets.
+// On 2026-10-02 (32-CPU Docker VM), seven at once failed those budgets in apps that pass when
+// three run at once, so at most three grade together; coding work keeps the runner capacity.
+export const GRADING_CAPACITY = 3;
+
 export const BUILD_OUTBOUND_DESTINATIONS = Object.freeze([
   'https://registry.npmjs.org',
 ]);

@@ -91,7 +91,7 @@ const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backen
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
   'skills', 'runtime', 'pricing', 'featureCatalog', 'dependencyPolicy', 'progressionOwner', 'progressionStatus',
-  'progressionResume', 'progressionSeed', 'checkpoints', 'pausedDurationMs']);
+  'progressionResume', 'progressionSeed', 'checkpoints', 'pausedDurationMs', 'gradingWaitMs']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -297,9 +297,11 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
       fail(`${kind} payload.progressionStatus.score must be an object`);
     }
   }
-  if (kind === 'benchmark_run' && payload.pausedDurationMs !== undefined
-    && (!isSafeInteger(payload.pausedDurationMs) || payload.pausedDurationMs < 0)) {
-    fail('benchmark_run payload.pausedDurationMs is invalid');
+  for (const field of ['pausedDurationMs', 'gradingWaitMs'] as const) {
+    if (kind === 'benchmark_run' && payload[field] !== undefined
+      && (!isSafeInteger(payload[field]) || (payload[field] as number) < 0)) {
+      fail(`benchmark_run payload.${field} is invalid`);
+    }
   }
   if (kind === 'benchmark_run' && payload.progressionResume !== undefined) {
     const progressionResume = asObject(payload.progressionResume,

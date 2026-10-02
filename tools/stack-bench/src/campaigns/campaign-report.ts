@@ -381,7 +381,7 @@ export function campaignFirstBuildRate(run: { progressionStatus?: unknown;
 
 // Duration covers this execution only, so subtract only its throttle and operator waits.
 export function campaignActiveDurationMs(run: {
-  totals?: { durationSec?: number | null; pausedDurationSec?: number | null };
+  totals?: { durationSec?: number | null; pausedDurationSec?: number | null; gradingWaitSec?: number | null };
   levels?: Array<{ level?: number; sessionTotals?: { providerThrottle?: { waitedMs?: number } } }>;
   progressionResume?: { inheritedLevels?: number[] } | null;
 }): number | null {
@@ -390,7 +390,8 @@ export function campaignActiveDurationMs(run: {
   const wait = (run.levels ?? []).filter(level => !inherited.includes(level.level ?? -1))
     .reduce((sum, level) => sum + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0)
     + (providerWaitSummary(run)?.waitedMs ?? 0);
-  return Math.max(0, run.totals!.durationSec! * 1000 - wait - (number(run.totals?.pausedDurationSec) ?? 0) * 1000);
+  return Math.max(0, run.totals!.durationSec! * 1000 - wait - (number(run.totals?.pausedDurationSec) ?? 0) * 1000
+    - (number(run.totals?.gradingWaitSec) ?? 0) * 1000);
 }
 
 // A continued run and the prior runs it resumed, or null when a link is missing or cyclic.

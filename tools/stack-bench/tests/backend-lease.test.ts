@@ -19,6 +19,11 @@ import {
   resourceLockScope,
   updateBackendLease,
   writeBackendLease,
+  GRADING_WAIT_RECEIPT_ENV,
+  gradingWaitMs,
+  readGradingWaits,
+  releaseResourceLocks,
+  withGradingSlot,
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
 import { ATTEMPT_CREATION_LABEL } from '../src/runtime/container-identity.js';
@@ -402,7 +407,7 @@ test('a supervised child waiting for host capacity does not spend its timeout', 
   try {
     const result = await runBounded(process.execPath, ['--input-type=module', '-e', child], {
       stdio: 'ignore', timeoutMs: 2500, env: { ...process.env, [CAPACITY_WAIT_RECEIPT_ENV]: receipt },
-      pauseInterval: () => readCapacityWait(receipt), terminate: pid => process.kill(pid, 'SIGKILL'),
+      pauseIntervals: () => { const wait = readCapacityWait(receipt); return wait ? [wait] : []; }, terminate: pid => process.kill(pid, 'SIGKILL'),
     });
     assert.equal(result.error, null);
     assert.equal(result.timedOut, false);
@@ -501,5 +506,36 @@ test('teardown removes platform services before their namespace anchor, includin
     const released = readBackendLease(path);
     assert.equal(released.state, 'released');
     assert(Object.values(released.resources.serviceContainers!).every(container => container.removedAt && !container.running));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a grading run waits for a free slot, holds it in its lease, and reports the wait', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-grading-slot-'));
+  const holder = createBackendLease({ runId: 'holder', backend: 'convex', track: 'ecommerce', runIndex: 0,
+    serverUri: 'http://127.0.0.1:14310' });
+  const waiter = createBackendLease({ runId: 'waiter', backend: 'convex', track: 'ecommerce', runIndex: 1,
+    serverUri: 'http://127.0.0.1:14311' });
+  const path = join(root, 'waiter.json');
+  const receipt = join(root, 'grading-waits.json');
+  const env = { STACK_BENCH_RESOURCE_LOCK_DIR: root, STACK_BENCH_GRADING_CAPACITY: '1',
+    STACK_BENCH_LEASE: path, STACK_BENCH_LEASE_TOKEN: waiter.ownershipToken, [GRADING_WAIT_RECEIPT_ENV]: receipt };
+  try {
+    holder.resources.locks.push(...acquireResourceLocks({ root, keys: ['grading:0'], lease: holder }));
+    writeBackendLease(path, waiter);
+    let sleeps = 0;
+    const { result, waitedMs } = withGradingSlot(() => {
+      assert.deepEqual(readBackendLease(path).resources.locks.map(lock => lock.key), ['grading:0']);
+      return 'graded';
+    }, env, () => {
+      sleeps++;
+      assert.equal(readGradingWaits(receipt).at(-1)?.resumedAt, null, 'an open wait pauses the clock');
+      releaseResourceLocks(holder);
+    });
+    assert.equal(result, 'graded');
+    assert.equal(sleeps, 1);
+    assert.deepEqual(readBackendLease(path).resources.locks, []);
+    assert.equal(gradingWaitMs(receipt), waitedMs);
+    assert.equal(withGradingSlot(() => 'free', env, () => assert.fail('a free slot never waits')).waitedMs, 0);
+    assert.equal(readGradingWaits(receipt).length, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

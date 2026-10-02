@@ -36,8 +36,10 @@ export function campaignTimeBudget(plan: CompiledCampaignPlan, attempt: Campaign
     if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
       throw new Error(`execution ${execution.id} has unknown consumed time`);
     }
-    if ((execution.pausedMs ?? 0) > end - start) throw new Error('paused time exceeds execution time');
-    return total + end - start - (execution.pausedMs ?? 0);
+    // Planned depth holds and grading-slot waits are not working time.
+    const heldMs = (execution.pausedMs ?? 0) + (execution.gradingWaitMs ?? 0);
+    if (heldMs > end - start) throw new Error('paused time exceeds execution time');
+    return total + end - start - heldMs;
   }, 0);
   return { originalMinutes, effectiveMinutes, consumedMs, extensionCount: accepted.length, grants,
     observedAt: new Date(at).toISOString(),
@@ -101,6 +103,8 @@ export interface CampaignExtensionSeed {
 
 export interface CampaignExecution {
   pausedMs?: number;
+  /** Time the run waited for a host grading slot; not working time. */
+  gradingWaitMs?: number;
   credentialAssignment?: CredentialAssignment | null;
   timeExtensionSupported?: boolean;
   timeContinuation?: { grantId: string; stateSha256: string };
@@ -169,6 +173,7 @@ interface RunArtifact {
 
 export interface CampaignExecutionResult {
   pausedMs?: number;
+  gradingWaitMs?: number;
   exitCode?: number | null;
   timedOut?: boolean;
   run?: RunArtifact | null;
@@ -244,6 +249,7 @@ export function validateCampaignExtensionSeed(input: unknown): CampaignExtension
 }
 const executionSchema = z.strictObject({
   pausedMs: z.number().int().nonnegative().safe().optional(),
+  gradingWaitMs: z.number().int().nonnegative().safe().optional(),
   id: z.string().min(1),
   ordinal: z.number().int(),
   status: z.enum(['running', 'completed', 'invalid']),
@@ -665,6 +671,7 @@ export function finishCampaignExecution(input: CampaignState, executionId: strin
   execution.status = classified.status;
   execution.completedAt = now;
   if (result.pausedMs !== undefined) execution.pausedMs = result.pausedMs;
+  if (result.gradingWaitMs !== undefined) execution.gradingWaitMs = result.gradingWaitMs;
   execution.exitCode = result.exitCode ?? null;
   execution.outcome = classified.outcome;
   execution.reason = classified.reason;

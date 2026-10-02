@@ -136,6 +136,13 @@ test('planned hold preserves the L3 action, repair history, cohort and cost acco
     attempt.executions[0]!.pausedMs = 5_000;
     const started = Date.parse(attempt.executions[0]!.startedAt);
     assert.equal(campaignTimeBudget(plan, attempt, started + 15_000).consumedMs, 10_000);
+    // Waiting for a grading slot is held time too, on top of the planned pause.
+    run.gradingWaitMs = 2_000;
+    const queued = finalizeRunTotals(run, 0, { now: 17_000 });
+    assert.equal(queued.gradingWaitSec, 2);
+    assert.equal(queued.activeDurationSec, baseline.durationSec);
+    attempt.executions[0]!.gradingWaitMs = 2_000;
+    assert.equal(campaignTimeBudget(plan, attempt, started + 17_000).consumedMs, 10_000);
   } finally {
     abort.abort();
     await Promise.allSettled(waits);
@@ -178,14 +185,14 @@ test('a planned process hold preserves remaining working time and still permits 
   const start = Date.now();
   const paused = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
     stdio: 'ignore', timeoutMs: 250, terminate: pid => process.kill(pid, 'SIGKILL'),
-    pauseInterval: () => ({ startedAt: start + 100, resumedAt: Date.now() >= start + 550 ? start + 550 : null }),
+    pauseIntervals: () => [{ startedAt: start + 100, resumedAt: Date.now() >= start + 550 ? start + 550 : null }],
   });
   assert(paused.timedOut);
   assert.equal(paused.error, null);
   assert(Date.now() - start >= 690);
   const late = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
     stdio: 'ignore', timeoutMs: 100, terminate: pid => process.kill(pid, 'SIGKILL'),
-    pauseInterval: () => ({ startedAt: Date.now(), resumedAt: null }),
+    pauseIntervals: () => [{ startedAt: Date.now(), resumedAt: null }],
   });
   assert.match(late.error!.message, /invalid planned process pause/);
   const abort = new AbortController();
@@ -195,11 +202,44 @@ test('a planned process hold preserves remaining working time and still permits 
     const cancelled = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
       stdio: 'ignore', timeoutMs: 250, signal: abort.signal,
       terminate: pid => process.kill(pid, 'SIGKILL'),
-      pauseInterval: () => ({ startedAt: heldAt + 100, resumedAt: null }),
+      pauseIntervals: () => [{ startedAt: heldAt + 100, resumedAt: null }],
     });
     assert(cancelled.cancelled);
     assert.equal(cancelled.timedOut, false);
   } finally { clearTimeout(timer); }
+});
+
+test('several planned holds add up, and a recorded hold cannot change', async () => {
+  const start = Date.now();
+  // Two 300 ms holds extend a 250 ms allowance to at least 850 ms.
+  const holds = () => [
+    { startedAt: start + 50, resumedAt: Date.now() >= start + 350 ? start + 350 : null },
+    ...(Date.now() >= start + 400 ? [{ startedAt: start + 400, resumedAt: Date.now() >= start + 700 ? start + 700 : null }] : []),
+  ].filter(hold => hold.startedAt <= Date.now());
+  const paused = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    stdio: 'ignore', timeoutMs: 250, terminate: pid => process.kill(pid, 'SIGKILL'), pauseIntervals: holds,
+  });
+  assert(paused.timedOut);
+  assert.equal(paused.error, null);
+  assert(Date.now() - start >= 840);
+  assert(paused.pausedMs! >= 600);
+  let rewritten = false;
+  const changed = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    stdio: 'ignore', timeoutMs: 2000, terminate: pid => process.kill(pid, 'SIGKILL'),
+    pauseIntervals: () => {
+      if (Date.now() < start + 1100) return [];
+      const recorded = { startedAt: start + 1000, resumedAt: start + 1050 };
+      if (rewritten) return [{ ...recorded, resumedAt: start + 1060 }];
+      rewritten = true;
+      return [recorded];
+    },
+  });
+  assert.match(changed.error!.message, /invalid planned process pause/);
+  const overlapping = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    stdio: 'ignore', timeoutMs: 1000, terminate: pid => process.kill(pid, 'SIGKILL'),
+    pauseIntervals: () => [{ startedAt: Date.now() - 1, resumedAt: null }, { startedAt: Date.now() - 1, resumedAt: null }],
+  });
+  assert.match(overlapping.error!.message, /invalid planned process pause/);
 });
 
 test('killing the pause owner preserves evidence and refuses a false live continuation', async () => {

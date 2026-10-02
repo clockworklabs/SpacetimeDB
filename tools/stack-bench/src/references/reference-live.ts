@@ -29,8 +29,8 @@ import { dockerCanPublish } from '../runtime/run-resource-selection.js';
 import { controllerRunner } from '../runtime/runner-environment.js';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.js';
-import { CAPACITY_WAIT_RECEIPT_ENV, existingResourceLockKeys, readCapacityWait,
-  resourceLockScope } from '../runtime/backend-lease.js';
+import { CAPACITY_WAIT_RECEIPT_ENV, GRADING_WAIT_RECEIPT_ENV, existingResourceLockKeys, gradingWaitMs as readGradingWaitMs,
+  readCapacityWait, readGradingWaits, resourceLockScope } from '../runtime/backend-lease.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
@@ -505,6 +505,12 @@ export function referenceQualificationEnvironment(backend: string,
       { spacetimePort: args.spacetimePort }) };
 }
 
+// Resources are claimed before any grading starts, so the capacity wait comes first.
+function heldIntervals(capacityWait: string, gradingWaits: string) {
+  const wait = readCapacityWait(capacityWait);
+  return [...(wait ? [wait] : []), ...readGradingWaits(gradingWaits)];
+}
+
 async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationArgs,
   context: QualificationContext, id: string, repetition: number): Promise<UnknownRecord> {
   const workRoot = referenceQualificationWorkRoot();
@@ -515,7 +521,8 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   const supervisorState = join(work, 'supervisor-state.json');
   // A mutation worker's parent names the receipt so both clocks pause together.
   const capacityWait = process.env[CAPACITY_WAIT_RECEIPT_ENV] || join(work, 'capacity-wait.json');
-  let capacityWaitMs = 0;
+  const gradingWaits = process.env[GRADING_WAIT_RECEIPT_ENV] || join(work, 'grading-waits.json');
+  let capacityWaitMs = 0, gradingWaitMs = 0;
   const started = Date.now();
   const harnessBefore = qualificationInputs();
   const cancellation = new AbortController();
@@ -526,7 +533,8 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   try {
     prepareReferenceFixtureSource(fixture, app);
     const env = { ...referenceQualificationEnvironment(fixture.backend, args),
-      STACK_BENCH_SUPERVISOR_STATE: supervisorState, [CAPACITY_WAIT_RECEIPT_ENV]: capacityWait };
+      STACK_BENCH_SUPERVISOR_STATE: supervisorState, [CAPACITY_WAIT_RECEIPT_ENV]: capacityWait,
+      [GRADING_WAIT_RECEIPT_ENV]: gradingWaits };
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(args.level), '--run-index', String(args.runIndex), '--repairs', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--no-media'];
@@ -562,8 +570,9 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
     }
     const child = await runBounded(process.execPath, benchArgs,
       { cwd: ROOT, stdio: 'inherit', env, timeoutMs: Number(args.timeoutMs),
-        pauseInterval: () => readCapacityWait(capacityWait), signal: cancellation.signal });
-    capacityWaitMs = child.pausedMs ?? 0;
+        pauseIntervals: () => heldIntervals(capacityWait, gradingWaits), signal: cancellation.signal });
+    gradingWaitMs = readGradingWaitMs(gradingWaits);
+    capacityWaitMs = (child.pausedMs ?? 0) - gradingWaitMs;
     if (!child.ok) {
       const reason = child.timedOut
         ? `benchmark exceeded ${args.timeoutMinutes} minute repetition deadline`
@@ -613,7 +622,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   audit.ok = audit.failures.length === 0;
   return { repetition: repetition + 1,
     output: relative(String(args.artifactDirectory), output).replaceAll('\\', '/'),
-    durationMs: Date.now() - started, capacityWaitMs, processError,
+    durationMs: Date.now() - started, capacityWaitMs, gradingWaitMs, processError,
     harnessSha256Before: harnessBefore.sha256, harnessSha256After: harnessAfter.sha256, ...audit };
 }
 
@@ -814,7 +823,8 @@ async function runParallelMutationRepetition(fixture: ReferenceFixture,
       outcome: 'incomplete', mutations: { caught: 0, total: 0 } };
   }
   if (onCleanBaseline) onCleanBaseline(clean);
-  const remainingMs = started + Number(args.timeoutMs) + Number(clean.capacityWaitMs ?? 0) - Date.now();
+  const remainingMs = started + Number(args.timeoutMs) + Number(clean.capacityWaitMs ?? 0)
+    + Number(clean.gradingWaitMs ?? 0) - Date.now();
   if (remainingMs <= 0) {
     return { ...clean, ok: false, durationMs: Date.now() - started,
       processError: 'mutation qualification exhausted its repetition deadline after the clean baseline',
@@ -842,10 +852,13 @@ async function runParallelMutationRepetition(fixture: ReferenceFixture,
         { artifactPath, baselineBundle, workerIndex,
           workerCount: args.mutationWorkers });
       const capacityWait = join(workerRoot, `w${workerIndex + 1}.capacity-wait.json`);
+      const gradingWaits = join(workerRoot, `w${workerIndex + 1}.grading-waits.json`);
       rmSync(capacityWait, { force: true });
+      rmSync(gradingWaits, { force: true });
       const processResult = await runBounded(process.execPath, argv,
-        { cwd: ROOT, env: { ...process.env, [CAPACITY_WAIT_RECEIPT_ENV]: capacityWait },
-          timeoutMs: remainingMs, logs, pauseInterval: () => readCapacityWait(capacityWait),
+        { cwd: ROOT, env: { ...process.env, [CAPACITY_WAIT_RECEIPT_ENV]: capacityWait,
+          [GRADING_WAIT_RECEIPT_ENV]: gradingWaits },
+          timeoutMs: remainingMs, logs, pauseIntervals: () => heldIntervals(capacityWait, gradingWaits),
           signal: cancellation.signal, gracefulCancellationMs: 10_000 });
       const worker = { workerIndex, runIndex: args.runIndex + workerIndex,
         artifactPath, logs, processResult };

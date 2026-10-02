@@ -159,6 +159,8 @@ export interface RunLevelRecord {
 
 export interface RunTotals {
   pausedDurationSec?: number;
+  /** Time spent waiting for a host grading slot; excluded from active time. */
+  gradingWaitSec?: number;
   activeDurationSec?: number;
   score: number;
   max: number;
@@ -225,6 +227,7 @@ export interface RunContinuation {
 
 export interface BenchmarkRunRecord {
   pausedDurationMs?: number;
+  gradingWaitMs?: number;
   checkpoints?: RunCheckpoint[];
   id: string;
   startedAt: string;
@@ -327,6 +330,7 @@ interface RunTotalsLevel {
 
 export interface RunTotalsInput {
   pausedDurationMs?: number;
+  gradingWaitMs?: number;
   levels: RunTotalsLevel[];
   progressionStatus?: Pick<RunProgressionStatus, 'score'>;
   progressionResume?: {
@@ -334,6 +338,23 @@ export interface RunTotalsInput {
     priorTotals: Pick<RunTotals, 'costUsd' | 'costComplete'> | null;
   };
   totals?: BenchmarkRunRecord['totals'];
+}
+
+function timingTotals(run: Pick<RunTotalsInput, 'pausedDurationMs' | 'gradingWaitMs'>, started: number, now: number) {
+  return {
+    durationSec: Math.round((now - started) / 1000),
+    ...(run.pausedDurationMs === undefined && run.gradingWaitMs === undefined ? {} : {
+      ...(run.pausedDurationMs === undefined ? {} : { pausedDurationSec: run.pausedDurationMs / 1000 }),
+      ...(run.gradingWaitMs === undefined ? {} : { gradingWaitSec: run.gradingWaitMs / 1000 }),
+      activeDurationSec: Math.max(0, now - started - (run.pausedDurationMs ?? 0) - (run.gradingWaitMs ?? 0)) / 1000,
+    }),
+  };
+}
+
+/** Grading-slot waits accumulate across levels; totals already written are refreshed to include them. */
+export function recordGradingWait(run: BenchmarkRunRecord, waitedMs: number, now = Date.now()): void {
+  run.gradingWaitMs = waitedMs;
+  if (run.totals) Object.assign(run.totals, timingTotals(run, Date.parse(run.startedAt), now));
 }
 
 export function finalizeRunTotals(
@@ -375,11 +396,7 @@ export function finalizeRunTotals(
     turns: run.levels.reduce((n, level) => n + (level.sessionTotals?.turns ?? 0), 0),
     modelDurationMs: run.levels.reduce((n, level) => n
       + (level.sessionTotals?.durationMs ?? 0), 0),
-    durationSec: Math.round((now - started) / 1000),
-    ...(run.pausedDurationMs === undefined ? {} : {
-      pausedDurationSec: run.pausedDurationMs / 1000,
-      activeDurationSec: Math.max(0, now - started - run.pausedDurationMs) / 1000,
-    }),
+    ...timingTotals(run, started, now),
     ungraded: run.levels.filter(level => !level.graded).map(level => level.level),
   };
   return run.totals;

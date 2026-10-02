@@ -36,11 +36,16 @@ export interface RunBoundedOptions {
   startedAt?: number;
   /** Owner may increase the total allowance. Called before each deadline check. */
   refreshTimeoutMs?: (current: number, canExtend: boolean) => number;
-  /** A single planned hold. It must start before the working-time deadline. */
-  pauseInterval?: () => { startedAt: number; resumedAt: number | null } | null;
+  /**
+   * Planned holds in order. Each starts before the working-time deadline; recorded holds never change,
+   * and only the last may still be open.
+   */
+  pauseIntervals?: () => readonly PauseInterval[];
   logs?: { stdout: string; stderr: string; maxBytes?: number } | null;
   signal?: AbortSignal | null;
 }
+
+export interface PauseInterval { startedAt: number; resumedAt: number | null }
 
 type StreamName = 'stdout' | 'stderr';
 
@@ -64,7 +69,7 @@ function openCapture(path: string): CaptureState {
 export function runBounded(command: string, argv: readonly string[],
   { cwd = process.cwd(), env = process.env, stdio = 'inherit', timeoutMs,
     terminate = killDetachedTree, logs = null, signal = null, gracefulCancellationMs = 0,
-    refreshTimeoutMs, pauseInterval, startedAt = Date.now() }:
+    refreshTimeoutMs, pauseIntervals, startedAt = Date.now() }:
     RunBoundedOptions & {
       terminate?: (pid: number) => void; gracefulCancellationMs?: number;
     }): Promise<BoundedProcessResult> {
@@ -161,27 +166,32 @@ export function runBounded(command: string, argv: readonly string[],
     }
     let deadline = timeoutMs === null ? Infinity : startedAt + timeoutMs;
     let pausedMs = 0;
-    let pauseStart: number | null = null;
-    let pauseEnd: number | null = null;
+    let seen: readonly PauseInterval[] = [];
     let timer: NodeJS.Timeout | null = null;
     const refresh = (closing = false): void => {
       if (timeoutMs === null) return;
       try {
-        const pause = pauseInterval?.();
-        if (pause) {
-          const now = Date.now();
+        const pauses = pauseIntervals?.() ?? [];
+        if (pauses.length < seen.length) throw new Error('planned process pause disappeared');
+        const now = Date.now();
+        let total = 0;
+        let previousEnd = startedAt;
+        for (const [index, pause] of pauses.entries()) {
           const end = pause.resumedAt ?? now;
+          const known = seen[index];
           if (!Number.isSafeInteger(pause.startedAt) || !Number.isSafeInteger(end)
-            || pause.startedAt < startedAt || pause.startedAt >= startedAt + timeoutMs
-            || (pauseStart !== null && pause.startedAt !== pauseStart)
-            || (pauseEnd !== null && pause.resumedAt !== pauseEnd)
-            || end < pause.startedAt || end > now || end - pause.startedAt < pausedMs) {
+            || pause.startedAt < previousEnd || pause.startedAt >= startedAt + timeoutMs + total
+            || end < pause.startedAt || end > now
+            || (pause.resumedAt === null && index !== pauses.length - 1)
+            || (known && (pause.startedAt !== known.startedAt
+              || (known.resumedAt !== null && pause.resumedAt !== known.resumedAt)))) {
             throw new Error('invalid planned process pause');
           }
-          pauseStart = pause.startedAt;
-          pauseEnd = pause.resumedAt;
-          pausedMs = end - pause.startedAt;
-        } else if (pauseStart !== null) throw new Error('planned process pause disappeared');
+          total += end - pause.startedAt;
+          previousEnd = end;
+        }
+        seen = pauses.map(pause => ({ ...pause }));
+        pausedMs = total;
         deadline = startedAt + timeoutMs + pausedMs;
         const allowed = !closing && !timedOut && !cancelled && !captureError && Date.now() < deadline;
         const next = refreshTimeoutMs?.(timeoutMs, allowed) ?? timeoutMs;
@@ -230,7 +240,7 @@ export function runBounded(command: string, argv: readonly string[],
       })) : null;
       const error = captureError ?? spawnError;
       resolveRun({ ok: !timedOut && !cancelled && !error && code === 0,
-        ...(pauseInterval ? { pausedMs } : {}),
+        ...(pauseIntervals ? { pausedMs } : {}),
         code, signal: childSignal, timedOut, cancelled,
         error, logs: captured,
         stdoutTail: streams?.stdout.tail.trim() ?? '',
