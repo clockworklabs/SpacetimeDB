@@ -175,9 +175,12 @@ type CompoundTypeCache = Map<
   RefBuilder<any, any>
 >;
 
-export type ModuleDef = {
+export type RawModuleDefSections = {
   [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
 };
+
+/** @deprecated Use `RawModuleDefSections` instead. */
+export type ModuleDef = RawModuleDefSections;
 
 type Section = RawModuleDefV10Section;
 
@@ -187,7 +190,7 @@ export class ModuleContext {
   /**
    * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
    */
-  #moduleDef: ModuleDef = {
+  #moduleDef: RawModuleDefSections = {
     typespace: { types: [] },
     tables: [],
     reducers: [],
@@ -208,7 +211,7 @@ export class ModuleContext {
     environment: [],
   };
 
-  get moduleDef(): ModuleDef {
+  get moduleDef(): RawModuleDefSections {
     return this.#moduleDef;
   }
 
