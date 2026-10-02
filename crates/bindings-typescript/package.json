@@ -37,6 +37,7 @@
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
     "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
     "generate:test-utils-wasm": "node scripts/generate-test-utils-wasm.mjs",
+    "check:test-utils-wasm": "node scripts/generate-test-utils-wasm.mjs --check",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
     "generate:examples:chat-react-ts": "pnpm --filter @clockworklabs/chat-react-ts generate",
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",

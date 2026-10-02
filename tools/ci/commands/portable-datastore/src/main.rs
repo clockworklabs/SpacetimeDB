@@ -70,6 +70,12 @@ fn main() -> Result<()> {
     )
     .run()?;
     cmd!("cargo", "test", "-p", "spacetimedb-portable-datastore").run()?;
+    cmd!(
+        "node",
+        "crates/bindings-typescript/scripts/generate-test-utils-wasm.mjs",
+        "--check"
+    )
+    .run()?;
 
     Ok(())
 }

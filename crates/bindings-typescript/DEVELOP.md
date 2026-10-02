@@ -29,6 +29,10 @@ checks the `wasm-bindgen` version, and replaces the generated directory with
 exactly the three files consumed by the package. Run it whenever the portable
 datastore, its Wasm adapter, or their Rust dependencies change.
 
+To verify that the committed artifacts match the Rust source without modifying
+them, run `pnpm check:test-utils-wasm`. This check also runs as part of
+`cargo ci portable-datastore`.
+
 `pnpm build` copies these files into `dist`. Only the `dist` copy is included
 in the published npm package.
 
