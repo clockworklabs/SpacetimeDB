@@ -16,12 +16,7 @@ npm install @spacetimedb/posthog spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add PostHog to your module and initialize it. This example records an
 `order_completed` event when your application completes an order. Include your
@@ -65,15 +60,14 @@ back the host reducer. It returns `{ outboxId, inserted, error }`; an invalid
 event is stored with status `Rejected` and the error code in `lastError`, and is
 never sent.
 
-The client calls the business operation. Analytics remain a server-side
-concern:
+Call the application reducer from the client:
 
 ```ts
 await conn.reducers.completeOrder({ orderId, totalCents });
 ```
 
-See the [Context Cafe example](./example/) for event tracking and an
-administrator's delivery dashboard.
+See the [Context Cafe example](./example/) for event tracking and delivery
+counts.
 
 ### Standalone configuration
 
@@ -99,9 +93,6 @@ Verify:
 ```bash
 spacetime call --server http://127.0.0.1:3000 spacetime-posthog get_posthog_config_status '{}'
 ```
-
-`get_posthog_config_status` is admin-only. The project token stays in private
-module state.
 
 ## Public views
 
@@ -170,14 +161,6 @@ Package entrypoints:
 - `@spacetimedb/posthog/submodule` supplies submodule state, configuration,
   scheduled delivery, `enqueueEventInTx`, and admin views.
 
-## Architecture notes
-
-- **Synchronous HTTP API.** Module procedures call PostHog's HTTP endpoints
-  directly through `ctx.http.fetch`.
-- **Direct plus outbox.** Immediate capture is useful for important events. The outbox is for reducer-safe transactional queueing and scheduled delivery.
-- **Browser analytics.** Applications can add `posthog-js` in the frontend for
-  autocapture and session replay.
-
 ## Testing
 
 ```bash
@@ -187,11 +170,6 @@ pnpm run build
 pnpm --dir spacetimedb run build
 ```
 
-`pnpm run build` compiles `src` to `dist`, which is what the published package
-contains.
-
-The example app in `example/` mounts the submodule under the `posthog` namespace.
-
 ## License
 
-Apache-2.0. The published package includes the license text in `LICENSE`.
+Apache-2.0.
