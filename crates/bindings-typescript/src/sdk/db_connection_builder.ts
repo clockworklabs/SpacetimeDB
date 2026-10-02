@@ -4,7 +4,7 @@ import type {
   DbConnectionConfig,
   ErrorContextInterface,
   Identity,
-  RemoteModuleOf,
+  RemoteModuleDeclOf,
 } from '../';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
@@ -12,11 +12,11 @@ import type { WebSocketFactory } from './ws';
 
 /**
  * The database client connection to a SpacetimeDB server.
- * NOTE: DbConnectionImpl<any> is used here because UntypedRemoteModule causes
+ * NOTE: DbConnectionImpl<any> is used here because UntypedRemoteModuleDecl causes
  * variance issues with function paramters, and the end user will never be
  * constructing a DbConnectionBuilder directly since it's code generated. We will
- * always have a concrete RemoteModule type in those cases. Even if they user
- * did do this, they would just lose type safety on the RemoteModule.
+ * always have a concrete RemoteModuleDecl type in those cases. Even if they user
+ * did do this, they would just lose type safety on the RemoteModuleDecl.
  */
 export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #uri?: URL;
@@ -38,9 +38,9 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    * @param dbConnectionConstructor The constructor to use to create a new `DbConnection`.
    */
   constructor(
-    private remoteModule: RemoteModuleOf<DbConnection>,
+    private remoteModule: RemoteModuleDeclOf<DbConnection>,
     private dbConnectionCtor: (
-      config: DbConnectionConfig<RemoteModuleOf<DbConnection>>
+      config: DbConnectionConfig<RemoteModuleDeclOf<DbConnection>>
     ) => DbConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.openWebSocket;
@@ -193,7 +193,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    */
   onConnectError(
     callback: (
-      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
       error: Error
     ) => void
   ): this {
@@ -230,7 +230,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    */
   onDisconnect(
     callback: (
-      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
       error?: Error | undefined
     ) => void
   ): this {

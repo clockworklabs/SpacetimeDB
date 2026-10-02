@@ -1,7 +1,7 @@
 import type { TableNamesOf, UntypedSchemaDecl } from '../lib/schema.ts';
 import type { UntypedTableDecl } from '../lib/table.ts';
 import type { Values } from '../lib/type_util.ts';
-import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { UntypedRemoteModuleDecl } from './spacetime_module.ts';
 import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
 type TableName<SchemaDecl> = [SchemaDecl] extends [UntypedSchemaDecl]
@@ -16,42 +16,42 @@ export type TableDefForTableName<
   : UntypedTableDecl & { accessorName: N };
 
 type TableCacheForTableName<
-  RemoteModule extends UntypedRemoteModule,
-  TableName extends TableNamesOf<RemoteModule>,
-> = TableCache<RemoteModule, TableName>;
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+  TableName extends TableNamesOf<RemoteModuleDecl>,
+> = TableCache<RemoteModuleDecl, TableName>;
 
 /**
  * This is a helper class that provides a mapping from table names to their corresponding TableCache instances
  * while preserving the correspondence between the key and value type.
  */
-class TableMap<RemoteModule extends UntypedRemoteModule> {
+class TableMap<RemoteModuleDecl extends UntypedRemoteModuleDecl> {
   private readonly map: Map<
     string,
-    TableCacheForTableName<RemoteModule, TableName<RemoteModule>>
+    TableCacheForTableName<RemoteModuleDecl, TableName<RemoteModuleDecl>>
   > = new Map();
 
-  get<K extends TableName<RemoteModule>>(
+  get<K extends TableName<RemoteModuleDecl>>(
     key: K
-  ): TableCacheForTableName<RemoteModule, K> | undefined {
+  ): TableCacheForTableName<RemoteModuleDecl, K> | undefined {
     // Cast required: a Map<string, Union> can't refine the union to the exact K-specific member on get<K>(key: K).
     return this.map.get(key) as
-      | TableCacheForTableName<RemoteModule, K>
+      | TableCacheForTableName<RemoteModuleDecl, K>
       | undefined;
   }
 
-  set<K extends TableName<RemoteModule>>(
+  set<K extends TableName<RemoteModuleDecl>>(
     key: K,
-    value: TableCacheForTableName<RemoteModule, K>
+    value: TableCacheForTableName<RemoteModuleDecl, K>
   ): this {
     this.map.set(key, value);
     return this;
   }
 
-  has(key: TableName<RemoteModule>): boolean {
+  has(key: TableName<RemoteModuleDecl>): boolean {
     return this.map.has(key);
   }
 
-  delete(key: TableName<RemoteModule>): boolean {
+  delete(key: TableName<RemoteModuleDecl>): boolean {
     return this.map.delete(key);
   }
 
@@ -60,12 +60,15 @@ class TableMap<RemoteModule extends UntypedRemoteModule> {
     return this.map.keys();
   }
   values(): IterableIterator<
-    TableCacheForTableName<RemoteModule, TableName<RemoteModule>>
+    TableCacheForTableName<RemoteModuleDecl, TableName<RemoteModuleDecl>>
   > {
     return this.map.values();
   }
   entries(): IterableIterator<
-    [string, TableCacheForTableName<RemoteModule, TableName<RemoteModule>>]
+    [
+      string,
+      TableCacheForTableName<RemoteModuleDecl, TableName<RemoteModuleDecl>>,
+    ]
   > {
     return this.map.entries();
   }
@@ -79,11 +82,11 @@ class TableMap<RemoteModule extends UntypedRemoteModule> {
  * It provides methods to get or create TableCache instances by table name,
  * ensuring type safety based on the provided SchemaDecl.
  */
-export class ClientCache<RemoteModule extends UntypedRemoteModule> {
+export class ClientCache<RemoteModuleDecl extends UntypedRemoteModuleDecl> {
   /**
    * The tables in the database.
    */
-  readonly tables = new TableMap<RemoteModule>();
+  readonly tables = new TableMap<RemoteModuleDecl>();
 
   /**
    * Returns the table with the given name.
@@ -91,9 +94,9 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
    *   and the return type matches that table.
    * - If SchemaDecl is undefined, `name` is string and the return type is untyped.
    */
-  getTable<N extends TableName<RemoteModule>>(
+  getTable<N extends TableName<RemoteModuleDecl>>(
     name: N
-  ): TableCacheForTableName<RemoteModule, N> {
+  ): TableCacheForTableName<RemoteModuleDecl, N> {
     const table = this.tables.get(name);
     if (!table) {
       console.error(
@@ -110,9 +113,9 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
    *   the return type matches that table.
    * - Untyped mode: accepts any string and returns an untyped TableCache.
    */
-  getOrCreateTable<N extends TableName<RemoteModule>>(
-    tableDef: TableDefForTableName<RemoteModule, N>
-  ): TableCacheForTableName<RemoteModule, N> {
+  getOrCreateTable<N extends TableName<RemoteModuleDecl>>(
+    tableDef: TableDefForTableName<RemoteModuleDecl, N>
+  ): TableCacheForTableName<RemoteModuleDecl, N> {
     const name = tableDef.accessorName;
 
     const table = this.tables.get(name);
@@ -120,9 +123,9 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
       return table;
     }
 
-    const newTable = new TableCacheImpl<RemoteModule, N>(
+    const newTable = new TableCacheImpl<RemoteModuleDecl, N>(
       tableDef
-    ) as TableCache<RemoteModule, N>;
+    ) as TableCache<RemoteModuleDecl, N>;
     this.tables.set(name, newTable);
     return newTable;
   }

@@ -5,7 +5,7 @@ import type {
   SubscriptionEventContextInterface,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModuleDecl } from './spacetime_module';
 import {
   isRowTypedQuery,
   toSql,
@@ -14,11 +14,14 @@ import {
 } from '../lib/query';
 import type { UntypedSchemaDecl } from '../lib/schema';
 
-export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
-  #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
-    undefined;
-  #onError?: (ctx: ErrorContextInterface<RemoteModule>) => void = undefined;
-  constructor(private db: DbConnectionImpl<RemoteModule>) {}
+export class SubscriptionBuilderImpl<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> {
+  #onApplied?: (
+    ctx: SubscriptionEventContextInterface<RemoteModuleDecl>
+  ) => void = undefined;
+  #onError?: (ctx: ErrorContextInterface<RemoteModuleDecl>) => void = undefined;
+  constructor(private db: DbConnectionImpl<RemoteModuleDecl>) {}
 
   /**
    * Registers `callback` to run when this query is successfully added to our subscribed set,
@@ -36,8 +39,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * @returns The current `SubscriptionBuilder` instance.
    */
   onApplied(
-    cb: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void
-  ): SubscriptionBuilderImpl<RemoteModule> {
+    cb: (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void
+  ): SubscriptionBuilderImpl<RemoteModuleDecl> {
     this.#onApplied = cb;
     return this;
   }
@@ -63,8 +66,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * @returns The current `SubscriptionBuilder` instance.
    */
   onError(
-    cb: (ctx: ErrorContextInterface<RemoteModule>) => void
-  ): SubscriptionBuilderImpl<RemoteModule> {
+    cb: (ctx: ErrorContextInterface<RemoteModuleDecl>) => void
+  ): SubscriptionBuilderImpl<RemoteModuleDecl> {
     this.#onError = cb;
     return this;
   }
@@ -87,10 +90,10 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    */
   subscribe(
     query_sql: string | RowTypedQuery<any, any>
-  ): SubscriptionHandleImpl<RemoteModule>;
+  ): SubscriptionHandleImpl<RemoteModuleDecl>;
   subscribe(
     query_sql: Array<string | RowTypedQuery<any, any>>
-  ): SubscriptionHandleImpl<RemoteModule>;
+  ): SubscriptionHandleImpl<RemoteModuleDecl>;
   /**
    * @param queryFn - Receives the query builder for all tables (root and namespaced), e.g.
    *   `tables => tables.players.build()` or, for a submodule table,
@@ -98,19 +101,21 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    */
   subscribe(
     queryFn: (
-      tables: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDecl>
+      tables: NamespacedQueryBuilder<RemoteModuleDecl & UntypedSchemaDecl>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
-  ): SubscriptionHandleImpl<RemoteModule>;
+  ): SubscriptionHandleImpl<RemoteModuleDecl>;
   subscribe(
     query_sql:
       | string
       | RowTypedQuery<any, any>
       | Array<string | RowTypedQuery<any, any>>
       | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
-  ): SubscriptionHandleImpl<RemoteModule> {
+  ): SubscriptionHandleImpl<RemoteModuleDecl> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
-      const tables = this.db.getFromBuilder<RemoteModule & UntypedSchemaDecl>();
+      const tables = this.db.getFromBuilder<
+        RemoteModuleDecl & UntypedSchemaDecl
+      >();
       const result = query_sql(tables);
       queries = Array.isArray(result) ? result : [result];
     } else {
@@ -160,17 +165,21 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
 
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
-export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
+export class SubscriptionManager<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> {
   subscriptions: Map<
     number,
     {
-      handle: SubscriptionHandleImpl<RemoteModule>;
+      handle: SubscriptionHandleImpl<RemoteModuleDecl>;
       emitter: EventEmitter<SubscribeEvent>;
     }
   > = new Map();
 }
 
-export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
+export class SubscriptionHandleImpl<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> {
   #querySetId: number;
   #unsubscribeCalled: boolean = false;
   #endedState: boolean = false;
@@ -179,14 +188,19 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
     new EventEmitter();
 
   constructor(
-    private db: DbConnectionImpl<RemoteModule>,
+    private db: DbConnectionImpl<RemoteModuleDecl>,
     querySql: string[],
-    onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void,
-    onError?: (ctx: ErrorContextInterface<RemoteModule>, error: Error) => void
+    onApplied?: (
+      ctx: SubscriptionEventContextInterface<RemoteModuleDecl>
+    ) => void,
+    onError?: (
+      ctx: ErrorContextInterface<RemoteModuleDecl>,
+      error: Error
+    ) => void
   ) {
     this.#emitter.on(
       'applied',
-      (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
+      (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => {
         this.#activeState = true;
         if (onApplied) {
           onApplied(ctx);
@@ -195,7 +209,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
     );
     this.#emitter.on(
       'error',
-      (ctx: ErrorContextInterface<RemoteModule>, error: Error) => {
+      (ctx: ErrorContextInterface<RemoteModuleDecl>, error: Error) => {
         this.#activeState = false;
         this.#endedState = true;
         if (onError) {
@@ -223,7 +237,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
     this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
-      (_ctx: SubscriptionEventContextInterface<RemoteModule>) => {
+      (_ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => {
         this.#endedState = true;
         this.#activeState = false;
       }
@@ -241,7 +255,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
    * @param onEnd - Callback to run upon successful unsubscribe.
    */
   unsubscribeThen(
-    onEnd: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void
+    onEnd: (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void
   ): void {
     if (this.#endedState) {
       throw new Error('Subscription has already ended');
@@ -253,7 +267,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
     this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
-      (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
+      (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => {
         this.#endedState = true;
         this.#activeState = false;
         onEnd(ctx);

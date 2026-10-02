@@ -6,7 +6,7 @@ import type {
 } from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { coerceParams, toCamelCase, type CoerceParams } from '../lib/util';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModuleDecl } from './spacetime_module';
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
@@ -17,13 +17,13 @@ type ProceduresViewLoose = {
   [k: string]: (params: any) => Promise<any>;
 };
 
-export type ProceduresView<RemoteModule> = IfAny<
-  RemoteModule,
+export type ProceduresView<RemoteModuleDecl> = IfAny<
+  RemoteModuleDecl,
   ProceduresViewLoose,
-  RemoteModule extends UntypedRemoteModule
+  RemoteModuleDecl extends UntypedRemoteModuleDecl
     ? // x: camelCase(name)
       {
-        [K in RemoteModule['procedures'][number] as K['accessorName']]: (
+        [K in RemoteModuleDecl['procedures'][number] as K['accessorName']]: (
           params: InferTypeOfParams<K['params']>
         ) => Promise<Infer<K['returnType']>>;
       }

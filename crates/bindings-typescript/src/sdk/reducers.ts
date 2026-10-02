@@ -5,11 +5,11 @@ import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
 import type { SubscriptionEventContextInterface } from './event_context';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModuleDecl } from './spacetime_module';
 
 export type SubscriptionEventCallback<
-  RemoteModule extends UntypedRemoteModule,
-> = (ctx: SubscriptionEventContextInterface<RemoteModule>) => void;
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void;
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
@@ -20,12 +20,12 @@ type ReducersViewLoose = {
   [k: string]: (params: any) => Promise<void>;
 };
 
-export type ReducersView<RemoteModule> = IfAny<
-  RemoteModule,
+export type ReducersView<RemoteModuleDecl> = IfAny<
+  RemoteModuleDecl,
   ReducersViewLoose,
-  RemoteModule extends UntypedRemoteModule
+  RemoteModuleDecl extends UntypedRemoteModuleDecl
     ? {
-        [K in RemoteModule['reducers'][number] as K['accessorName']]: (
+        [K in RemoteModuleDecl['reducers'][number] as K['accessorName']]: (
           params: InferTypeOfParams<K['params']>
         ) => Promise<void>;
       }
