@@ -18,6 +18,15 @@ pub struct FailingScheduledTable {
     prev: Timestamp,
 }
 
+#[spacetimedb::table(accessor = capped_scheduled_table, public, scheduled(capped_self_update, at = sched_at))]
+pub struct CappedScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    sched_at: spacetimedb::ScheduleAt,
+    n: u16,
+}
+
 #[spacetimedb::table(accessor = player_entity, public)]
 pub struct PlayerEntity {
     #[primary_key]
@@ -78,6 +87,15 @@ fn schedule_repeated_reducer(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
+fn schedule_capped_self_update(ctx: &ReducerContext) {
+    ctx.db.capped_scheduled_table().insert(CappedScheduledTable {
+        scheduled_id: 1,
+        sched_at: duration!(50ms).into(),
+        n: 0,
+    });
+}
+
+#[spacetimedb::reducer]
 fn seed_player_entity(ctx: &ReducerContext, entity_id: u64) {
     ctx.db.player_entity().entity_id().delete(&entity_id);
     ctx.db.player_entity().insert(PlayerEntity {
@@ -98,4 +116,13 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
 #[spacetimedb::reducer]
 pub fn failing_reducer(_ctx: &ReducerContext, _arg: FailingScheduledTable) -> Result<(), String> {
     Err("scheduled reducer failed".into())
+}
+
+#[spacetimedb::reducer]
+pub fn capped_self_update(ctx: &ReducerContext, arg: CappedScheduledTable) {
+    log::info!("CappedSelfUpdate");
+    ctx.db.capped_scheduled_table().scheduled_id().update(CappedScheduledTable {
+        n: arg.n.saturating_add(1).min(10),
+        ..arg
+    });
 }
