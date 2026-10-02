@@ -698,9 +698,10 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                 let (name,name_str) = (var.ident, &var.name);
                 let tag = i as u8;
                 if let (Some(member), Some(ty)) = (&var.member, var.ty) {
+                    let serializer = quote!(__serializer);
                     quote_spanned! {ty.span()=>
                         // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
-                        Self::#name { #member: __variant } => __serializer.serialize_variant::<#ty>(#tag, Some(#name_str), __variant),
+                        Self::#name { #member: __variant } => #serializer.serialize_variant::<#ty>(#tag, Some(#name_str), __variant),
                     }
                 } else {
                     quote! {

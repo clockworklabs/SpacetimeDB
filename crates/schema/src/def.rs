@@ -33,9 +33,10 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
-    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
-    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawMigrationDefV10, RawModuleDefV10,
+    RawModuleDefV10Sections, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -186,6 +187,9 @@ pub struct ModuleDef {
 
     /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
     environment: Option<EnvironmentSchema>,
+
+    /// Migrations, keyed by the schema hash of the old module.
+    migrations: IndexMap<spacetimedb_lib::Hash, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -1043,6 +1047,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             submodules: _,
             accessor_path: _,
             environment: _,
+            migrations: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1105,17 +1110,10 @@ impl From<ModuleDef> for RawModuleDefV10 {
             submodules,
             accessor_path: _,
             environment,
+            migrations,
         } = val;
 
-        let mut sections = Vec::new();
-        if let Some(environment) = environment {
-            sections.push(RawModuleDefV10Section::Environment(
-                environment.into_declarations().into_iter().map(|x| x.into()).collect(),
-            ));
-        }
         let mut explicit_names = ExplicitNames::default();
-
-        sections.push(RawModuleDefV10Section::Typespace(typespace));
 
         // Extract lifecycle reducer names before consuming reducers.
         let raw_lifecycle: Vec<RawLifeCycleReducerDefV10> = lifecycle_reducers
@@ -1131,9 +1129,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
             .collect();
 
         let raw_types: Vec<RawTypeDefV10> = types.into_values().map(Into::into).collect();
-        if !raw_types.is_empty() {
-            sections.push(RawModuleDefV10Section::Types(raw_types));
-        }
 
         // Collect schedules from tables (V10 stores them in a separate section).
         // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
@@ -1157,9 +1152,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 td.into()
             })
             .collect();
-        if !raw_tables.is_empty() {
-            sections.push(RawModuleDefV10Section::Tables(raw_tables));
-        }
 
         // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
         // local name so re-validating this raw def doesn't reject dotted identifiers.
@@ -1173,9 +1165,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 rd.into()
             })
             .collect();
-        if !raw_reducers.is_empty() {
-            sections.push(RawModuleDefV10Section::Reducers(raw_reducers));
-        }
 
         // Collect ExplicitNames for procedures: accessor_name → source_name, name → canonical_name.
         let raw_procedures: Vec<RawProcedureDefV10> = procedures
@@ -1188,9 +1177,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 pd.into()
             })
             .collect();
-        if !raw_procedures.is_empty() {
-            sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
-        }
 
         let raw_http_handlers: Vec<RawHttpHandlerDefV10> = http_handlers
             .into_values()
@@ -1198,15 +1184,15 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 source_name: hd.accessor_name.into(),
             })
             .collect();
-        if !raw_http_handlers.is_empty() {
-            sections.push(RawModuleDefV10Section::HttpHandlers(raw_http_handlers));
-        }
 
-        if !http_routes.is_empty() {
-            let raw_http_routes: Vec<RawHttpRouteDefV10> =
-                http_routes.into_iter().map(RawHttpRouteDefV10::from).collect();
-            sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
-        }
+        let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
+            .into_iter()
+            .map(|route| RawHttpRouteDefV10 {
+                handler_function: route.handler_name.into(),
+                method: route.method,
+                path: RawIdentifier::new(route.path.as_ref()),
+            })
+            .collect();
 
         // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
         let mut raw_view_primary_keys = Vec::new();
@@ -1240,26 +1226,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 vd.into()
             })
             .collect();
-        if !raw_views.is_empty() {
-            sections.push(RawModuleDefV10Section::Views(raw_views));
-        }
-        if !raw_view_primary_keys.is_empty() {
-            sections.push(RawModuleDefV10Section::ViewPrimaryKeys(raw_view_primary_keys));
-        }
-
-        if !schedules.is_empty() {
-            sections.push(RawModuleDefV10Section::Schedules(schedules));
-        }
-
-        if !raw_lifecycle.is_empty() {
-            sections.push(RawModuleDefV10Section::LifeCycleReducers(raw_lifecycle));
-        }
 
         let raw_rls: Vec<RawRowLevelSecurityDefV10> = row_level_security_raw.into_values().collect();
-        if !raw_rls.is_empty() {
-            sections.push(RawModuleDefV10Section::RowLevelSecurity(raw_rls));
-        }
-
         let submodules: Vec<_> = submodules
             .into_iter()
             .map(|(namespace, module)| {
@@ -1271,14 +1239,38 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 }
             })
             .collect();
-        if !submodules.is_empty() {
-            sections.push(RawModuleDefV10Section::Submodules(submodules));
+
+        let environment = environment.map(|env| env.into_declarations().into_iter().map(|x| x.into()).collect());
+
+        let migrations: Vec<RawMigrationDefV10> = migrations
+            .into_iter()
+            .map(|(schema_hash, dropped)| RawMigrationDefV10 {
+                schema_hash,
+                dropped: dropped.into(),
+            })
+            .collect();
+
+        RawModuleDefV10Sections {
+            typespace: Some(typespace),
+            types: Some(raw_types),
+            tables: Some(raw_tables),
+            reducers: Some(raw_reducers),
+            procedures: Some(raw_procedures),
+            views: Some(raw_views),
+            schedules: Some(schedules),
+            life_cycle_reducers: Some(raw_lifecycle),
+            row_level_security: Some(raw_rls),
+            case_conversion_policy: None,
+            // Always emit ExplicitNames so canonical names survive the round-trip.
+            explicit_names: Some(explicit_names),
+            http_handlers: Some(raw_http_handlers),
+            http_routes: Some(raw_http_routes),
+            view_primary_keys: Some(raw_view_primary_keys),
+            submodules: Some(submodules),
+            environment,
+            migrations: Some(migrations),
         }
-
-        // Always emit ExplicitNames so canonical names survive the round-trip.
-        sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
-
-        RawModuleDefV10 { sections }
+        .into()
     }
 }
 
@@ -2778,8 +2770,8 @@ mod tests {
             .finish();
 
         let module_def: ModuleDef = builder.finish().try_into().expect("valid module");
-        let raw = RawModuleDefV10::from(module_def);
-        let tables = raw.tables().expect("tables section");
+        let raw = RawModuleDefV10::from(module_def).into_sections();
+        let tables = raw.tables.expect("tables section");
         let defaults = &tables[0].default_values;
         assert_eq!(defaults.len(), 1);
         assert_eq!(defaults[0].col_id, ColId(1));
