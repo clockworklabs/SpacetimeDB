@@ -46,11 +46,33 @@ jobs:
         run: node scripts/generate-llms.mjs
 
       - name: Commit updated llms files
-        working-directory: docs
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add static/llms.md
-          git diff --staged --quiet && echo "No changes" && exit 0
-          git commit -m "Update llms files from docs build"
-          git push
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const branch = 'docs/release';
+            const path = 'docs/static/llms.md';
+            if (await exec.exec('git', ['diff', '--quiet', '--', path], {
+              ignoreReturnCode: true,
+            }) === 0) return;
+
+            await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) { commit { oid } }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: `${context.repo.owner}/${context.repo.repo}`,
+                  branchName: branch,
+                },
+                expectedHeadOid: context.sha,
+                message: { headline: 'Update llms files from docs build' },
+                fileChanges: {
+                  additions: [{
+                    path,
+                    contents: fs.readFileSync(path, 'base64'),
+                  }],
+                },
+              },
+            });
