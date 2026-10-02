@@ -270,9 +270,12 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, '.app.pid'), '4242\n');
     put(join(app, '.run', 'frontend.log'), 'ready\n');
     assert.equal(hashAppSource(app).sha256, first.sha256);
-    put(join(app, '.run', 'frontend.json'), '{}\n');
+    // The .run directory is runtime state; other files an app writes still count as source.
+    put(join(app, '.run', 'frontend-build'), 'marker\n');
+    assert.equal(hashAppSource(app).sha256, first.sha256);
+    put(join(app, 'state', 'frontend.json'), '{}\n');
     assert.notEqual(hashAppSource(app).sha256, first.sha256);
-    rmSync(join(app, '.run', 'frontend.json'));
+    rmSync(join(app, 'state'), { recursive: true });
     put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = 2;\n');
     assert.notEqual(hashAppSource(app).sha256, first.sha256);
     put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = 1;\n');

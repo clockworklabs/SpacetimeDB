@@ -11,7 +11,7 @@ const PRESERVED_DIRS = new Set(['node_modules']);
 const ROOT_PRESERVED_DIRS = new Set(['.git', 'stack-bench']);
 const TRANSIENT_DIRS = new Set([
   'dist', '.vite', 'coverage',
-  '.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache',
+  '.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache', '.run',
 ]);
 const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
 const ROOT_RUNTIME_FILES = new Set([

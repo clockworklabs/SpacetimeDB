@@ -101,7 +101,11 @@ test('startup may add runtime files but not change or remove accepted source', a
     mkdirSync(app);
     writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
     writeFileSync(join(app, 'app.js'), 'export const ready = true;\n');
+    // A build marker left in the app directory is runtime state, not source.
+    mkdirSync(join(app, '.run'));
+    writeFileSync(join(app, '.run', 'frontend-build'), 'stale marker');
     snapshotAppSource(app, accepted);
+    assert.equal(existsSync(join(accepted, '.run')), false);
     const start = (write: () => void) => materializeAcceptedSource(accepted, app,
       { backend: 'spacetime', app, port: 0, probe: '' }, async (_spec, mode) => { if (mode === 'start') write(); });
     await start(() => {
