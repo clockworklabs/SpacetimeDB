@@ -657,7 +657,7 @@ export const SumType = {
         typespace
       );
       const serializeErr = AlgebraicType.makeSerializer(
-        ty.variants[0].algebraicType,
+        ty.variants[1].algebraicType,
         typespace
       );
 
