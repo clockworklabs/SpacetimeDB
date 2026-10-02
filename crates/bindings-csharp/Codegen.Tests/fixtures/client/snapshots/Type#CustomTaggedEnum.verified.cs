@@ -27,10 +27,9 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             {
                 0 => new IntVariant(IntVariantRW.Read(reader)),
                 1 => new StringVariant(StringVariantRW.Read(reader)),
-                _
-                    => throw new System.InvalidOperationException(
-                        "Invalid tag value, this state should be unreachable."
-                    )
+                _ => throw new System.InvalidOperationException(
+                    "Invalid tag value, this state should be unreachable."
+                ),
             };
         }
 
@@ -56,7 +55,7 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new("IntVariant", IntVariantRW.GetAlgebraicType(registrar)),
-                    new("StringVariant", StringVariantRW.GetAlgebraicType(registrar))
+                    new("StringVariant", StringVariantRW.GetAlgebraicType(registrar)),
                 }
             ));
 

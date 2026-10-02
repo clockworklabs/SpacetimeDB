@@ -19,10 +19,9 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
             return reader.ReadByte() switch
             {
                 0 => new Item1(Item1RW.Read(reader)),
-                _
-                    => throw new System.InvalidOperationException(
-                        "Invalid tag value, this state should be unreachable."
-                    )
+                _ => throw new System.InvalidOperationException(
+                    "Invalid tag value, this state should be unreachable."
+                ),
             };
         }
 
@@ -44,7 +43,7 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Item1", Item1RW.GetAlgebraicType(registrar))
+                        new("Item1", Item1RW.GetAlgebraicType(registrar)),
                     }
                 )
             );

@@ -48,6 +48,23 @@ When SDK code needs to refer to generated types, we have two options:
 
 The most important generated types are `RemoteTables` -- also known as the **client cache** -- and `RemoteReducers`. `RemoteTables` stores the local view of subscribed data from the database. For a `DbConnection conn`, `conn.Db` is an instance of `RemoteTables`. `RemoteReducers` allows calling reducers on the server, and is accessible at `conn.Reducers`. Types are also generated for all server-side types referred to by tables or modules.
 
+### Namespace bindings
+
+Suppose a dependency is mounted with `Accessor = "MyAuth", Name = "auth_data"`.
+Generated C# clients expose its tables through
+`conn.Db.MyAuth`, reducers through `conn.Reducers.MyAuth`, procedures through
+`conn.Procedures.MyAuth`, and query factories through `q.From.MyAuth`.
+Generated SQL and network messages use the database namespace `auth_data`.
+The C# accessor remains `MyAuth`. When `Name` is omitted, the host derives the
+database namespace from the accessor using the root module's case policy.
+
+The `--namespace` option of `spacetime generate` controls where generated C#
+classes are declared; it does not name or rename database namespaces. With
+`--namespace Game.Bindings`, a root `User` row becomes `Game.Bindings.User`,
+while a `User` row in that dependency becomes
+`Game.Bindings.MyAuth.User`. Their table handles remain `conn.Db.User` and
+`conn.Db.MyAuth.User`, respectively.
+
 ### Runtime Structure
 
 Most of the core logic of the SDK lives in [`DbConnectionBase<...>`](./src/SpacetimeDBClient.cs). This handles:
@@ -99,4 +116,3 @@ We could deduplicate multiply-subscribed rows server-side, but this represents a
 There is also a class `MultiDictionaryDelta`. This represents a pre-processed batch of changes to a `MultiDictionary`. We prepare `MultiDictionaryDelta`s on a background thread and `Apply` them on the main thread. This allows us to do at least some work without blocking the main thread.
 
 Note that if multiple subscriptions are subscribed to a row, when a server-side transaction updates that row, exactly the right number of updates will be sent over the network, in a single `ServerMessage`. `MultiDictionary` and `MultiDictionaryDelta` rely on this guarantee for correct operation, and will throw exceptions in debug mode if it is not met.
-

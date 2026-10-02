@@ -61,42 +61,86 @@ async fn expect_view_update(handle: &mut ModuleHandle) {
     assert_eq!(message.num_rows(), Some(2));
 }
 
-async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
-    values.insert("EMPTY".into(), "root-visible".into());
-    let module = publish(handle, values).await;
-    assert!(module
-        .info
-        .module_def
-        .reducer_by_name("my_lib.env_read_reducer")
-        .is_some());
+struct SubmoduleScopeCases {
+    reducer: &'static str,
+    procedures: &'static [&'static str],
+    // Canonical lookup name and SQL table expression, respectively.
+    views: &'static [(&'static str, &'static str)],
+    root_http_routes: &'static [&'static str],
+    secret_marker: &'static str,
+}
+
+const TYPESCRIPT_SCOPE: SubmoduleScopeCases = SubmoduleScopeCases {
+    reducer: "my_lib.env_read_reducer",
+    procedures: &["my_lib.env_read_procedure", "my_lib.env_read_in_tx"],
+    views: &[
+        ("my_lib.env_read_view", "my_lib.env_read_view"),
+        ("my_lib.env_read_sql_view", "my_lib.env_read_sql_view"),
+        ("env_read_root_sql_view", "env_read_root_sql_view"),
+    ],
+    root_http_routes: &["/env-child"],
+    secret_marker: "root-visible",
+};
+
+const CSHARP_SCOPE: SubmoduleScopeCases = SubmoduleScopeCases {
+    // The fixture omits Name: the root's default policy converts MyAuth to my_auth.
+    reducer: "my_auth.expect_environment",
+    procedures: &["my_auth.read_environment", "my_auth.read_environment_in_tx"],
+    // C# covers both view context types. The raw-SQL bypass cases above remain TS-only.
+    views: &[
+        ("my_auth.environment_value", "my_auth.environment_value"),
+        (
+            "my_auth.anonymous_environment_value",
+            "my_auth.anonymous_environment_value",
+        ),
+    ],
+    root_http_routes: &["/root-environment", "/auth-environment"],
+    secret_marker: "root-secret-",
+};
+
+async fn check_submodule_scope(
+    handle: &ModuleHandle,
+    cases: &SubmoduleScopeCases,
+    reducer_args: FunctionArgs,
+    expected_http: &str,
+) {
+    let module = handle.client.module();
+    assert!(module.info.module_def.reducer_by_name(cases.reducer).is_some());
     let child = module
-        .call_reducer(
-            Identity::ZERO,
-            None,
-            None,
-            None,
-            None,
-            "my_lib.env_read_reducer",
-            FunctionArgs::Nullary,
-        )
+        .call_reducer(Identity::ZERO, None, None, None, None, cases.reducer, reducer_args)
         .await;
-    assert!(child.is_err() || child.unwrap().outcome.into_result().is_err());
-    for procedure in ["my_lib.env_read_procedure", "my_lib.env_read_in_tx"] {
+    let error = match child {
+        Err(error) => format!("{error:#}"),
+        Ok(result) => format!(
+            "{:?}",
+            result
+                .outcome
+                .into_result()
+                .expect_err("submodule reducer read the root environment")
+        ),
+    };
+    assert!(
+        !error.contains(cases.secret_marker),
+        "reducer error exposed environment data"
+    );
+    for &procedure in cases.procedures {
         assert!(module.info.module_def.procedure_by_name(procedure).is_some());
         let result = module
             .call_procedure(Identity::ZERO, None, None, procedure, FunctionArgs::Nullary)
             .await;
-        assert!(result.result.is_err(), "submodule procedure read the root environment");
+        let error = result
+            .result
+            .expect_err("submodule procedure read the root environment");
+        assert!(
+            !format!("{error:#}").contains(cases.secret_marker),
+            "procedure error exposed environment data"
+        );
     }
-    for view in [
-        "my_lib.env_read_view",
-        "my_lib.env_read_sql_view",
-        "env_read_root_sql_view",
-    ] {
+    for &(view, sql_table) in cases.views {
         assert!(module.info.module_def.view_by_name_with_module(view).is_some());
         let result = spacetimedb::sql::execute::run(
             module.relational_db().clone(),
-            format!("SELECT * FROM {view}"),
+            format!("SELECT * FROM {sql_table}"),
             AuthCtx::for_current(Identity::ZERO),
             Some(module.info.subscriptions.clone()),
             Some(module.clone()),
@@ -110,17 +154,22 @@ async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
             Err(error) => {
                 let error = format!("{error:#}");
                 assert!(!error.contains("not found"), "view failed before dispatch: {error}");
-                assert!(!error.contains("root-visible"), "view error exposed environment data");
+                assert!(
+                    !error.contains(cases.secret_marker),
+                    "view error exposed environment data"
+                );
             }
         }
     }
 
     // HTTP routes are root entries today. Calling an exported child callback
     // as an ordinary helper retains that root entry's authority.
-    assert_eq!(
-        &handle.call_http_route_get("/env-child").await.unwrap()[..],
-        b"root-visible"
-    );
+    for route in cases.root_http_routes {
+        assert_eq!(
+            handle.call_http_route_get(route).await.unwrap().as_ref(),
+            expected_http.as_bytes()
+        );
+    }
 }
 
 // Qualification can pin locally built inputs without invoking a nested build.
@@ -292,7 +341,9 @@ fn exercise_fixture(name: &str) {
             }
         }
         if name == "module-test-ts" {
-            check_submodule_scope(&mut handle, &mut values).await;
+            values.insert("EMPTY".into(), "root-visible".into());
+            publish(&handle, &values).await;
+            check_submodule_scope(&handle, &TYPESCRIPT_SCOPE, FunctionArgs::Nullary, "root-visible").await;
         }
         for key in ["UNDECLARED", "A=B"] {
             let result = handle
@@ -341,6 +392,67 @@ fn cpp_environment_publish_and_checked_reads() {
 #[serial]
 fn csharp_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_environment_security() {
+    compiled_fixture("namespace-environment-test-cs").with_module_async_with_environment(
+        DEFAULT_CONFIG,
+        Values::from([
+            ("NAMESPACE_TEST".into(), "root-secret-first".into()),
+            ("PUBLIC_LIBRARY_TEST".into(), "public-library-secret".into()),
+        ]),
+        |handle| async move {
+            for value in [Some("root-secret-first"), Some("root-secret-second"), Some(""), None] {
+                let mut values = Values::from([("PUBLIC_LIBRARY_TEST".into(), "public-library-secret".into())]);
+                if let Some(value) = value {
+                    values.insert("NAMESPACE_TEST".into(), value.into());
+                }
+                let module = publish(&handle, &values).await;
+                let expected = value.unwrap_or("unset");
+                handle
+                    .call_reducer_binary("expect_environment", &product![value])
+                    .await
+                    .unwrap();
+                check_submodule_scope(
+                    &handle,
+                    &CSHARP_SCOPE,
+                    FunctionArgs::Bsatn(bsatn::to_vec(&product![value]).unwrap().into()),
+                    expected,
+                )
+                .await;
+                // Denied child calls must not leave subsequent root calls in the child scope.
+                // The root procedure also checks ordinary library helpers and transactions.
+                assert_eq!(
+                    handle.call_procedure_with_args("read_environment", "[]").await.unwrap(),
+                    AlgebraicValue::String(expected.into())
+                );
+                assert_eq!(
+                    handle
+                        .call_procedure_with_args("read_public_environment", "[]")
+                        .await
+                        .unwrap(),
+                    AlgebraicValue::String("public-library-secret".into())
+                );
+                for view in ["environment_value", "anonymous_environment_value"] {
+                    assert_eq!(
+                        sql(&module, &format!("SELECT * FROM {view}")).await,
+                        vec![product![expected]]
+                    );
+                }
+                let denied = handle
+                    .call_procedure_with_args("read_environment_key", r#"["UNDECLARED"]"#)
+                    .await
+                    .expect_err("even root calls must not read undeclared keys");
+                assert!(!format!("{denied:#}").contains(CSHARP_SCOPE.secret_marker));
+                assert_eq!(
+                    handle.call_procedure_with_args("read_environment", "[]").await.unwrap(),
+                    AlgebraicValue::String(expected.into())
+                );
+            }
+        },
+    );
 }
 
 #[cfg(feature = "allow_loopback_http_for_tests")]
