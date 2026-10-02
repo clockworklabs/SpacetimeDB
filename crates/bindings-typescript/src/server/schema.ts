@@ -267,6 +267,8 @@ type PendingHttpRoute = {
 // TODO(cloutiertyler): It might be nice to have a way to access the types
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
+// TODO: Split the registration code out of `Schema`, so that a client that only
+// declares a module doesn't bundle it. It is about 6 kB of the client bundle.
 export class Schema<S extends UntypedSchemaDef> {
   #ctx: SchemaInner<S>;
 
