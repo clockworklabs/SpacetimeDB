@@ -1,4 +1,5 @@
 use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
+use spacetimedb_lib::container::{ContainerInfo, ContainerSpec};
 use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentRemove, EnvironmentUpdate};
 
 use std::borrow::Cow;
@@ -16,8 +17,8 @@ use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::serde::humantime_duration;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
-    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
-    NodeDelegate, Unauthorized,
+    log_and_500, Action, Authorization, ContainerError, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host,
+    MaybeMisdirected, NodeDelegate, Unauthorized,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{OriginalUri, Path, Query, Request, State};
@@ -720,6 +721,93 @@ where
 }
 
 type EnvironmentPublishResult = axum::response::Result<(StatusCode, axum::Json<Result<(), EnvironmentPublishError>>)>;
+
+pub async fn container_get<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<axum::Json<ContainerInfo>>
+where
+    S: ControlStateDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
+        .await?;
+    let info = ctx
+        .get_container(&database.database_identity)
+        .await?
+        .ok_or_else(|| ContainerError::NotFound("database has no container".into()))?;
+    Ok(axum::Json(info))
+}
+
+pub async fn container_put<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    axum::Json(spec): axum::Json<ContainerSpec>,
+) -> axum::response::Result<()>
+where
+    S: ControlStateDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    spec.validate().map_err(ContainerError::Invalid)?;
+    ctx.set_container(&auth.claims.identity, &database.database_identity, Some(spec))
+        .await?;
+    Ok(())
+}
+
+pub async fn container_delete<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<()>
+where
+    S: ControlStateDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    ctx.set_container(&auth.claims.identity, &database.database_identity, None)
+        .await?;
+    Ok(())
+}
+
+pub async fn container_start<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<()>
+where
+    S: ControlStateDelegate + Authorization,
+{
+    set_container_running(ctx, database, auth, true).await
+}
+
+pub async fn container_stop<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<()>
+where
+    S: ControlStateDelegate + Authorization,
+{
+    set_container_running(ctx, database, auth, false).await
+}
+
+async fn set_container_running<S>(
+    ctx: S,
+    database: Database,
+    auth: SpacetimeAuth,
+    running: bool,
+) -> axum::response::Result<()>
+where
+    S: ControlStateDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    ctx.set_container_running(&auth.claims.identity, &database.database_identity, running)
+        .await?;
+    Ok(())
+}
 
 async fn environment_publish_result(result: anyhow::Result<UpdateEnvironmentResult>) -> EnvironmentPublishResult {
     let result = match result {
@@ -1676,6 +1764,16 @@ pub struct DatabaseRoutes<S> {
     pub environment_put: MethodRouter<S>,
     /// PATCH: /database/:name_or_identity/environment
     pub environment_patch: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/container
+    pub container_get: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/container
+    pub container_put: MethodRouter<S>,
+    /// DELETE: /database/:name_or_identity/container
+    pub container_delete: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/container/start
+    pub container_start: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/container/stop
+    pub container_stop: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
@@ -1721,6 +1819,11 @@ where
             environment_get: get(environment_metadata::<S>),
             environment_put: put(environment_set::<S>),
             environment_patch: patch(environment_patch::<S>),
+            container_get: get(container_get::<S>),
+            container_put: put(container_put::<S>),
+            container_delete: delete(container_delete::<S>),
+            container_start: post(container_start::<S>),
+            container_stop: post(container_stop::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
             mcp_post: post(crate::routes::mcp::mcp::<S>),
@@ -1756,6 +1859,11 @@ where
             .route("/environment", self.environment_get)
             .route("/environment", self.environment_put)
             .route("/environment", self.environment_patch)
+            .route("/container", self.container_get)
+            .route("/container", self.container_put)
+            .route("/container", self.container_delete)
+            .route("/container/start", self.container_start)
+            .route("/container/stop", self.container_stop)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
             .route("/mcp", self.mcp_post)
@@ -2138,6 +2246,9 @@ mod tests {
         }
     }
 
+    use crate::ContainerError;
+    use spacetimedb_lib::container::{ContainerInfo, ContainerSpec};
+
     #[async_trait]
     impl NodeDelegate for DummyState {
         type GetLeaderHostError = DummyLeaderError;
@@ -2231,6 +2342,10 @@ mod tests {
         async fn is_database_locked(&self, _database_identity: &Identity) -> anyhow::Result<bool> {
             Ok(false)
         }
+
+        async fn get_container(&self, _database_identity: &Identity) -> Result<Option<ContainerInfo>, ContainerError> {
+            Err(ContainerError::Unsupported)
+        }
     }
 
     #[async_trait]
@@ -2317,6 +2432,24 @@ mod tests {
             _expected_module_hash: Hash,
         ) -> anyhow::Result<UpdateEnvironmentResult> {
             Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn set_container(
+            &self,
+            _caller: &Identity,
+            _database_identity: &Identity,
+            _spec: Option<ContainerSpec>,
+        ) -> Result<(), ContainerError> {
+            Err(ContainerError::Unsupported)
+        }
+
+        async fn set_container_running(
+            &self,
+            _caller: &Identity,
+            _database_identity: &Identity,
+            _running: bool,
+        ) -> Result<(), ContainerError> {
+            Err(ContainerError::Unsupported)
         }
     }
 
