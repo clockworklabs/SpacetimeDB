@@ -3,7 +3,7 @@ import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
 import type { UntypedSchemaDef } from './schema';
 import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+import type { UntypedTableDecl } from './table_schema';
 import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
@@ -444,7 +444,8 @@ export type TypedTableDef<
   rowType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
-export type TableSchemaAsTableDef<TSchema extends UntypedTableSchema> = {
+/** @deprecated This type is not used by the SDK. */
+export type TableSchemaAsTableDef<TSchema extends UntypedTableDecl> = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
   indexes: TSchema['idxs'];

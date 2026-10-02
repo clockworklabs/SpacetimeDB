@@ -19,10 +19,10 @@ import {
 import {
   ModuleContext,
   tableToSchema,
-  type TablesToSchema,
+  type SchemaDef,
   type UntypedSchemaDef,
 } from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
+import type { UntypedTableDecl } from '../lib/table_schema';
 import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
 import { hasOwn } from '../lib/util';
 import {
@@ -108,7 +108,7 @@ export class SchemaInner<
    * Used for resolving scheduled table targets.
    */
   functionExports: Map<UntypedScheduledFunctionExport, string> = new Map();
-  tableSourceNames: Map<UntypedTableSchema, string[]> = new Map();
+  tableSourceNames: Map<UntypedTableDecl, string[]> = new Map();
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
@@ -223,7 +223,7 @@ export class SchemaInner<
 }
 
 type PendingSchedule = {
-  table: UntypedTableSchema;
+  table: UntypedTableDecl;
   tableName?: string;
   scheduleAtCol?: number;
   reducer?: () => UntypedScheduledFunctionExport;
@@ -273,7 +273,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
-    // TODO: TableSchema and TableDef should really be unified
+    // TODO: TableDecl and TableDef should really be unified
     this.#ctx = ctx;
   }
 
@@ -793,12 +793,12 @@ export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
     module: M;
   };
 
-type SchemaEntry = UntypedTableSchema | SubmoduleNamespace | SubmoduleMount;
+type SchemaEntry = UntypedTableDecl | SubmoduleNamespace | SubmoduleMount;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
+  [K in keyof H as H[K] extends UntypedTableDecl ? K : never]: Extract<
     H[K],
-    UntypedTableSchema
+    UntypedTableDecl
   >;
 };
 
@@ -819,12 +819,13 @@ type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
     : never;
 };
 
-type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
-  TablesToSchema<ExtractTableEntries<H>> & {
-    namespaces: ExtractSubmoduleSchemas<H>;
-  };
+type SchemaDefForEntries<H extends Record<string, SchemaEntry>> = SchemaDef<
+  ExtractTableEntries<H>
+> & {
+  namespaces: ExtractSubmoduleSchemas<H>;
+};
 
-function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
+function isUntypedTableSchema(x: unknown): x is UntypedTableDecl {
   return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
 }
 

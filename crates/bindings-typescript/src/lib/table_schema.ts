@@ -10,7 +10,7 @@ import type { ProcedureExport, ReducerExport } from '../server';
  * Internal erased form of a scheduled reducer/procedure export.
  *
  * The legacy `TableOpts.scheduled` option checks the scheduled function shape
- * before it reaches `TableSchema`. From here, schedule resolution only needs
+ * before it reaches `TableDecl`. From here, schedule resolution only needs
  * the export object identity to look up its registered function name.
  */
 export type UntypedScheduledFunctionExport =
@@ -27,14 +27,15 @@ export type ScheduleTableForParams<Params extends Record<string, any>> =
     ? Params[keyof Params] extends RowBuilder<
         infer Row extends Record<string, ColumnBuilder<any, any, any>>
       >
-      ? TableSchema<Row, readonly IndexOpts<keyof Row & string>[]>
+      ? TableDecl<Row, readonly IndexOpts<keyof Row & string>[]>
       : never
     : never;
 
 /**
- * Represents a handle to a database table, including its name, row type, and row spacetime type.
+ * A table declaration: what `table()` returns, before `schema({...})` places it
+ * under an accessor name.
  */
-export type TableSchema<
+export type TableDecl<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
@@ -90,7 +91,22 @@ export type TableSchema<
   readonly schedule?: TableSchedule;
 };
 
-export type UntypedTableSchema = TableSchema<
+export type UntypedTableDecl = TableDecl<
   Record<string, ColumnBuilder<any, any, any>>,
   readonly IndexOpts<string>[]
 >;
+
+/**
+ * @deprecated Use `TableDecl` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type TableSchema<
+  Row extends Record<string, ColumnBuilder<any, any, any>>,
+  Idx extends readonly IndexOpts<keyof Row & string>[],
+> = TableDecl<Row, Idx>;
+
+/**
+ * @deprecated Use `UntypedTableDecl` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedTableSchema = UntypedTableDecl;

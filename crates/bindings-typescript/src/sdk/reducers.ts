@@ -60,7 +60,7 @@ class Reducers<ReducersDef extends UntypedReducersDef> {
 }
 
 /**
- * Helper type to convert an array of TableSchema into a schema definition
+ * Helper type to convert an array of ReducerSchema into a schema definition
  */
 type ReducersToSchema<T extends readonly ReducerSchema<any, any, any>[]> = {
   reducers: {

@@ -20,7 +20,7 @@ import type {
   UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { TableSchema, TableSchedule } from './table_schema';
+import type { TableDecl, TableSchedule } from './table_schema';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -335,7 +335,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
+): TableDecl<CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
     public: isPublic = false,

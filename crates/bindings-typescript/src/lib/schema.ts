@@ -15,7 +15,7 @@ import type {
 } from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+import type { UntypedTableDecl } from './table_schema';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -47,19 +47,17 @@ export type UntypedSchemaDef = {
 };
 
 /**
- * Helper type to convert an array of TableSchema into a schema definition
+ * Helper type to convert a record of table declarations into a schema definition
  */
-export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
+export interface SchemaDef<T extends Record<string, UntypedTableDecl>>
   extends UntypedSchemaDef {
   tables: {
-    readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
+    readonly [AccName in keyof T & string]: TableDef<AccName, T[AccName]>;
   };
 }
 
-export interface TableToSchema<
-  AccName extends string,
-  T extends UntypedTableSchema,
-> extends UntypedTableDef {
+export interface TableDef<AccName extends string, T extends UntypedTableDecl>
+  extends UntypedTableDef {
   accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
@@ -70,13 +68,29 @@ export interface TableToSchema<
   constraints: T['constraints'];
 }
 
+/**
+ * @deprecated Use `TableDef` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type TableToSchema<
+  AccName extends string,
+  T extends UntypedTableDecl,
+> = TableDef<AccName, T>;
+
+/**
+ * @deprecated Use `SchemaDef` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type TablesToSchema<T extends Record<string, UntypedTableDecl>> =
+  SchemaDef<T>;
+
 export function tablesToSchema<
-  const T extends Record<string, UntypedTableSchema>,
->(ctx: ModuleContext, tables: T): TablesToSchema<T> {
-  // `TablesToSchema<T>['tables']` is intentionally readonly in the public type,
+  const T extends Record<string, UntypedTableDecl>,
+>(ctx: ModuleContext, tables: T): SchemaDef<T> {
+  // `SchemaDef<T>['tables']` is intentionally readonly in the public type,
   // but we need a mutable builder while materializing it from entries.
   type MutableTableDefs = {
-    -readonly [AccName in keyof TablesToSchema<T>['tables']]: TablesToSchema<T>['tables'][AccName];
+    -readonly [AccName in keyof SchemaDef<T>['tables']]: SchemaDef<T>['tables'][AccName];
   };
   const tableDefs = Object.create(null) as MutableTableDefs;
   for (const [accName, schema] of Object.entries(tables) as [
@@ -87,22 +101,18 @@ export function tablesToSchema<
       accName,
       schema,
       schema.tableDef(ctx, accName)
-    ) as TablesToSchema<T>['tables'][typeof accName];
+    ) as SchemaDef<T>['tables'][typeof accName];
   }
 
   return {
-    tables: tableDefs as TablesToSchema<T>['tables'],
+    tables: tableDefs as SchemaDef<T>['tables'],
   };
 }
 
 export function tableToSchema<
   AccName extends string,
-  const T extends UntypedTableSchema,
->(
-  accName: AccName,
-  schema: T,
-  tableDef: RawTableDefV10
-): TableToSchema<AccName, T> {
+  const T extends UntypedTableDecl,
+>(accName: AccName, schema: T, tableDef: RawTableDefV10): TableDef<AccName, T> {
   const getColName = (i: number) =>
     schema.rowType.algebraicType.value.elements[i].name;
 
@@ -153,7 +163,7 @@ export function tableToSchema<
     // be used, it is stored as alias in database, hence works in query builder.
     sourceName: schema.tableName || accName,
     accessorName: accName,
-    columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
+    columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under SchemaDef<T>
     rowType: schema.rowSpacetimeType,
     // Keep declarative indexes in their original shape for type-level consumers.
     indexes: schema.idxs,
