@@ -1,13 +1,13 @@
 import type { UntypedProceduresDef } from './procedures';
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedSchemaDecl } from '../lib/schema';
 import type { UntypedReducersDef } from './reducers';
 
 export type RemoteModule<
-  SchemaDef extends UntypedSchemaDef,
+  SchemaDecl extends UntypedSchemaDecl,
   ReducersDef extends UntypedReducersDef,
   ProceduresDef extends UntypedProceduresDef,
   CLI extends string = string,
-> = SchemaDef &
+> = SchemaDecl &
   ReducersDef &
   ProceduresDef & {
     versionInfo: {
@@ -16,7 +16,7 @@ export type RemoteModule<
   };
 
 export type UntypedRemoteModule = RemoteModule<
-  UntypedSchemaDef,
+  UntypedSchemaDecl,
   UntypedReducersDef,
   UntypedProceduresDef
 >;

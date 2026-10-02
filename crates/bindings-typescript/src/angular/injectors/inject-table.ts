@@ -5,7 +5,7 @@ import {
   effect,
   type Signal,
 } from '@angular/core';
-import type { RowType, UntypedTableDef } from '../../lib/table';
+import type { RowType, UntypedTableDecl } from '../../lib/table';
 import type { Prettify } from '../../lib/type_util';
 import { SPACETIMEDB_CONNECTION } from '../connection_state';
 import {
@@ -19,12 +19,12 @@ import {
 import type { EventContextInterface } from '../../sdk';
 import type { UntypedRemoteModule } from '../../sdk/spacetime_module';
 
-export type RowTypeDef<TableDef extends UntypedTableDef> = Prettify<
-  RowType<TableDef>
+export type RowTypeDef<TableDecl extends UntypedTableDecl> = Prettify<
+  RowType<TableDecl>
 >;
 
-export interface TableRows<TableDef extends UntypedTableDef> {
-  rows: readonly RowTypeDef<TableDef>[];
+export interface TableRows<TableDecl extends UntypedTableDecl> {
+  rows: readonly RowTypeDef<TableDecl>[];
   isLoading: boolean;
 }
 
@@ -59,7 +59,7 @@ function classifyMembership(
  * - `tables.user` — subscribe to all rows
  * - `tables.user.where(r => r.online.eq(true))` — subscribe with a filter
  *
- * @template TableDef The table definition type.
+ * @template TableDecl The table declaration type.
  *
  * @param query - A query builder expression (table reference or filtered query).
  * @param callbacks - Optional callbacks for row insert, delete, and update events.
@@ -86,10 +86,10 @@ function classifyMembership(
  * }
  * ```
  */
-export function injectTable<TableDef extends UntypedTableDef>(
-  query: Query<TableDef>,
-  callbacks?: InjectTableCallbacks<RowTypeDef<TableDef>>
-): Signal<TableRows<TableDef>> {
+export function injectTable<TableDecl extends UntypedTableDecl>(
+  query: Query<TableDecl>,
+  callbacks?: InjectTableCallbacks<RowTypeDef<TableDecl>>
+): Signal<TableRows<TableDecl>> {
   assertInInjectionContext(injectTable);
 
   const connState = inject(SPACETIMEDB_CONNECTION);
@@ -98,7 +98,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
   const whereExpr = getQueryWhereClause(query);
   const querySql = toSql(query);
 
-  const tableSignal = signal<TableRows<TableDef>>({
+  const tableSignal = signal<TableRows<TableDecl>>({
     isLoading: true,
     rows: [],
   });
@@ -109,7 +109,7 @@ export function injectTable<TableDef extends UntypedTableDef>(
   // Note: this code is mostly derived from the React useTable implementation
   // in order to keep behavior consistent across frameworks.
 
-  const computeSnapshot = (): readonly RowTypeDef<TableDef>[] => {
+  const computeSnapshot = (): readonly RowTypeDef<TableDecl>[] => {
     const state = connState();
     if (!state.isActive) {
       return [];
@@ -125,10 +125,10 @@ export function injectTable<TableDef extends UntypedTableDef>(
     if (whereExpr) {
       return Array.from(table.iter()).filter(row =>
         evaluateBooleanExpr(whereExpr, row as Record<string, any>)
-      ) as RowTypeDef<TableDef>[];
+      ) as RowTypeDef<TableDecl>[];
     }
 
-    return Array.from(table.iter()) as RowTypeDef<TableDef>[];
+    return Array.from(table.iter()) as RowTypeDef<TableDecl>[];
   };
 
   const updateSnapshot = () => {

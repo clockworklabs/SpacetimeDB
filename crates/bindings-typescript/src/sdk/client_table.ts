@@ -4,7 +4,7 @@ import type {
   ReadonlyTableMethods,
   RowType,
   TableIndexes,
-  UntypedTableDef,
+  UntypedTableDecl,
 } from '../lib/table';
 import type { ColumnBuilder } from '../lib/type_builders';
 import type { Prettify } from '../lib/type_util';
@@ -118,14 +118,14 @@ export type ClientTable<
     >
 >;
 
-type IsEventTable<TableDef extends UntypedTableDef> = TableDef extends {
+type IsEventTable<TableDecl extends UntypedTableDecl> = TableDecl extends {
   isEvent: true;
 }
   ? true
   : false;
 
-type HasPrimaryKey<TableDef extends UntypedTableDef> = ColumnsHavePrimaryKey<
-  TableDef['columns']
+type HasPrimaryKey<TableDecl extends UntypedTableDecl> = ColumnsHavePrimaryKey<
+  TableDecl['columns']
 >;
 
 type ColumnsHavePrimaryKey<

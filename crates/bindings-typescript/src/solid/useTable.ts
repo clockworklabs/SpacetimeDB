@@ -2,7 +2,7 @@ import { createSignal, onCleanup, createMemo, createComputed } from 'solid-js';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
+import type { RowType, UntypedTableDecl } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
   type Query,
@@ -58,11 +58,11 @@ function classifyMembership(
  * );
  * ```
  */
-export function useTable<TableDef extends UntypedTableDef>(
-  query: () => Query<TableDef>,
-  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [readonly Prettify<RowType<TableDef>>[], () => boolean] {
-  type UseTableRowType = RowType<TableDef>;
+export function useTable<TableDecl extends UntypedTableDecl>(
+  query: () => Query<TableDecl>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDecl>>>
+): [readonly Prettify<RowType<TableDecl>>[], () => boolean] {
+  type UseTableRowType = RowType<TableDecl>;
   const enabled = callbacks?.enabled ?? (() => true);
   const q = createMemo(query);
   const accessorName = createMemo(() => getQueryAccessorName(q()));

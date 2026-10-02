@@ -100,7 +100,7 @@ TypeScript exports a `from()` function that wraps a `TableRef` in a `FromBuilder
 from(qb.person).where(row => row.name.eq('Alice')).build()
 ```
 
-But `TableRefImpl` already implements `From<TableDef>`, so you can call `.where()` directly:
+But `TableRefImpl` already implements `From<TableDecl>`, so you can call `.where()` directly:
 
 ```ts
 qb.person.where(row => row.name.eq('Alice')).build()
@@ -136,7 +136,7 @@ conn.subscriptionBuilder().subscribe(ctx => [
 
 Users should not need to call `.build()` at the end of every query.
 
-**TypeScript:** The builder types already carry the `QueryBrand` and implement `toSql()`. Update the types so `From<TableDef>` and `SemijoinBuilder<TableDef>` are assignable to `Query<TableDef>`. Keep `.build()` as a deprecated no-op for backwards compatibility.
+**TypeScript:** The builder types already carry the `QueryBrand` and implement `toSql()`. Update the types so `From<TableDecl>` and `SemijoinBuilder<TableDecl>` are assignable to `Query<TableDecl>`. Keep `.build()` as a deprecated no-op for backwards compatibility.
 
 **Rust:** Implementation approach TBD (e.g. `Into<Query<T>>`, a custom trait, or macro-level changes). The `#[view]` macro should accept builder types directly, not just `Query<T>`.
 

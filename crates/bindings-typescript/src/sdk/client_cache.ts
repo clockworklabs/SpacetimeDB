@@ -1,19 +1,19 @@
-import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
-import type { UntypedTableDef } from '../lib/table.ts';
+import type { TableNamesOf, UntypedSchemaDecl } from '../lib/schema.ts';
+import type { UntypedTableDecl } from '../lib/table.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
-type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
-  ? TableNamesOf<SchemaDef>
+type TableName<SchemaDecl> = [SchemaDecl] extends [UntypedSchemaDecl]
+  ? TableNamesOf<SchemaDecl>
   : string;
 
 export type TableDefForTableName<
-  SchemaDef extends UntypedSchemaDef,
-  N extends TableName<SchemaDef>,
-> = [SchemaDef] extends [UntypedSchemaDef]
-  ? Values<SchemaDef['tables']> & { accessorName: N }
-  : UntypedTableDef & { accessorName: N };
+  SchemaDecl extends UntypedSchemaDecl,
+  N extends TableName<SchemaDecl>,
+> = [SchemaDecl] extends [UntypedSchemaDecl]
+  ? Values<SchemaDecl['tables']> & { accessorName: N }
+  : UntypedTableDecl & { accessorName: N };
 
 type TableCacheForTableName<
   RemoteModule extends UntypedRemoteModule,
@@ -77,7 +77,7 @@ class TableMap<RemoteModule extends UntypedRemoteModule> {
 /**
  * ClientCache maintains a cache of TableCache instances for each table in the database.
  * It provides methods to get or create TableCache instances by table name,
- * ensuring type safety based on the provided SchemaDef.
+ * ensuring type safety based on the provided SchemaDecl.
  */
 export class ClientCache<RemoteModule extends UntypedRemoteModule> {
   /**
@@ -87,9 +87,9 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
 
   /**
    * Returns the table with the given name.
-   * - If SchemaDef is a concrete schema, `name` is constrained to known table names,
+   * - If SchemaDecl is a concrete schema, `name` is constrained to known table names,
    *   and the return type matches that table.
-   * - If SchemaDef is undefined, `name` is string and the return type is untyped.
+   * - If SchemaDecl is undefined, `name` is string and the return type is untyped.
    */
   getTable<N extends TableName<RemoteModule>>(
     name: N

@@ -11,8 +11,8 @@ import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
-import type { ScheduleTableForParams } from '../lib/table_schema';
+import { type UntypedSchemaDecl } from '../lib/schema';
+import type { ScheduleTableForParams } from '../lib/table_body';
 import { Timestamp } from '../lib/timestamp';
 import {
   type Infer,
@@ -42,13 +42,13 @@ import {
 } from './schema';
 
 export type ProcedureExport<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 > = ProcedureFn<S, Params, Ret> & ModuleExport;
 
 export function makeProcedureExport<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 >(
@@ -81,7 +81,7 @@ export function makeProcedureExport<
 }
 
 export type ProcedureFn<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 > = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
@@ -101,14 +101,14 @@ export type ProcedureOptsWithOptionalName<
   Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
 > = Omit<ProcedureOpts<Params, Ret>, 'name'> & { name?: string };
 
-export type ProcedureAliasViews<SchemaDef extends UntypedSchemaDef> =
-  SchemaDef extends {
-    namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+export type ProcedureAliasViews<SchemaDecl extends UntypedSchemaDecl> =
+  SchemaDecl extends {
+    namespaces: infer NS extends Record<string, UntypedSchemaDecl>;
   }
     ? { readonly [K in keyof NS]: ProcedureCtx<NS[K]> }
     : {};
 
-export interface ProcedureCtx<S extends UntypedSchemaDef> {
+export interface ProcedureCtx<S extends UntypedSchemaDecl> {
   readonly env: EnvironmentFor<S>;
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
@@ -125,17 +125,17 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TransactionCtx<S extends UntypedSchemaDef>
+export interface TransactionCtx<S extends UntypedSchemaDecl>
   extends ReducerCtx<S> {}
 
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
+type ITransactionCtx<S extends UntypedSchemaDecl> = TransactionCtx<S>;
 
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
+const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDecl>
   extends ReducerCtxImpl<S>
   implements ITransactionCtx<S> {};
 
 function registerProcedure<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 >(
@@ -205,7 +205,7 @@ export function callProcedure(
     procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
-  const ctx: ProcedureCtx<UntypedSchemaDef> = new ProcedureCtxImpl(
+  const ctx: ProcedureCtx<UntypedSchemaDecl> = new ProcedureCtxImpl(
     sender,
     timestamp,
     connectionId,
@@ -220,8 +220,8 @@ export function callProcedure(
   return retBuf.getBuffer();
 }
 
-type IProcedureCtx<S extends UntypedSchemaDef> = ProcedureCtx<S>;
-const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
+type IProcedureCtx<S extends UntypedSchemaDecl> = ProcedureCtx<S>;
+const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDecl>
   implements IProcedureCtx<S>
 {
   #identity: Identity | undefined;

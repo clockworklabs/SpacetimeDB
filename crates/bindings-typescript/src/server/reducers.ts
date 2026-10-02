@@ -1,8 +1,8 @@
 import { AlgebraicType } from '../lib/algebraic_type';
 import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types';
 import type { ParamsObj, Reducer } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
-import type { ScheduleTableForParams } from '../lib/table_schema';
+import { type UntypedSchemaDecl } from '../lib/schema';
+import type { ScheduleTableForParams } from '../lib/table_body';
 import { RowBuilder, type RowObj } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
 import {
@@ -13,7 +13,7 @@ import {
 } from './schema';
 
 export interface ReducerExport<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
 > extends Reducer<S, Params>,
     ModuleExport {}
@@ -27,7 +27,7 @@ export type ReducerOptsWithOptionalName<Params extends ParamsObj = ParamsObj> =
   Omit<ReducerOpts<Params>, 'name'> & { name?: string };
 
 export function makeReducerExport<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
 >(
   ctx: SchemaInner,

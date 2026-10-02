@@ -3,7 +3,7 @@ import { EventEmitter } from './event_emitter.ts';
 import { stdbLogger } from './logger.ts';
 import { deepEqual, type ComparablePrimitive } from '../';
 import type { EventContextInterface, TableDefForTableName } from './index.ts';
-import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
+import type { RowType, TableIndexes, UntypedTableDecl } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import type { TableNamesOf } from '../lib/schema.ts';
@@ -26,9 +26,9 @@ export type Operation<
   row: RowType;
 };
 
-export type TableUpdate<TableDef extends UntypedTableDef> = {
+export type TableUpdate<TableDecl extends UntypedTableDecl> = {
   tableName: string;
-  operations: Operation<RowType<TableDef>>[];
+  operations: Operation<RowType<TableDecl>>[];
 };
 
 export type PendingCallback = {
@@ -112,8 +112,8 @@ export class TableCacheImpl<
     tableDef: TableDefForTableName<RemoteModule, TableName>,
     idx: I
   ): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
-    type TableDef = TableDefForTableName<RemoteModule, TableName>;
-    type Row = Prettify<RowType<TableDef>>;
+    type TableDecl = TableDefForTableName<RemoteModule, TableName>;
+    type Row = Prettify<RowType<TableDecl>>;
 
     // We do not yet support non-btree indexes
     if (idx.algorithm !== 'btree') {
@@ -196,7 +196,7 @@ export class TableCacheImpl<
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     if (isUnique) {
-      const impl: ReadonlyUniqueIndex<TableDef, I> = {
+      const impl: ReadonlyUniqueIndex<TableDecl, I> = {
         find: (colVal: any): Row | null => {
           // For unique btree, caller supplies the *full* key (tuple if multi-col).
           const expected = Array.isArray(colVal) ? colVal : [colVal];
@@ -206,16 +206,16 @@ export class TableCacheImpl<
           return null;
         },
       };
-      return impl as ReadonlyIndex<TableDef, I>;
+      return impl as ReadonlyIndex<TableDecl, I>;
     } else {
-      const impl: ReadonlyRangedIndex<TableDef, I> = {
+      const impl: ReadonlyRangedIndex<TableDecl, I> = {
         *filter(range: any): IteratorObject<Row, undefined> {
           for (const row of self.iter()) {
             if (matchRange(row, range)) yield row;
           }
         },
       };
-      return impl as ReadonlyIndex<TableDef, I>;
+      return impl as ReadonlyIndex<TableDecl, I>;
     }
   }
 

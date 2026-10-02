@@ -12,7 +12,7 @@ import {
   type NamespacedQueryBuilder,
   type RowTypedQuery,
 } from '../lib/query';
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedSchemaDecl } from '../lib/schema';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -98,7 +98,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    */
   subscribe(
     queryFn: (
-      tables: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDef>
+      tables: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDecl>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
@@ -110,7 +110,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   ): SubscriptionHandleImpl<RemoteModule> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
-      const tables = this.db.getFromBuilder<RemoteModule & UntypedSchemaDef>();
+      const tables = this.db.getFromBuilder<RemoteModule & UntypedSchemaDecl>();
       const result = query_sql(tables);
       queries = Array.isArray(result) ? result : [result];
     } else {

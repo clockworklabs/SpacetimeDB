@@ -10,7 +10,7 @@ import type { ProcedureExport, ReducerExport } from '../server';
  * Internal erased form of a scheduled reducer/procedure export.
  *
  * The legacy `TableOpts.scheduled` option checks the scheduled function shape
- * before it reaches `TableSchema`. From here, schedule resolution only needs
+ * before it reaches `TableBody`. From here, schedule resolution only needs
  * the export object identity to look up its registered function name.
  */
 export type UntypedScheduledFunctionExport =
@@ -27,14 +27,15 @@ export type ScheduleTableForParams<Params extends Record<string, any>> =
     ? Params[keyof Params] extends RowBuilder<
         infer Row extends Record<string, ColumnBuilder<any, any, any>>
       >
-      ? TableSchema<Row, readonly IndexOpts<keyof Row & string>[]>
+      ? TableBody<Row, readonly IndexOpts<keyof Row & string>[]>
       : never
     : never;
 
 /**
- * Represents a handle to a database table, including its name, row type, and row spacetime type.
+ * A table body: what `table()` returns. Placing it under an accessor name in
+ * `schema({...})` forms a table declaration.
  */
-export type TableSchema<
+export type TableBody<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
@@ -90,7 +91,22 @@ export type TableSchema<
   readonly schedule?: TableSchedule;
 };
 
-export type UntypedTableSchema = TableSchema<
+export type UntypedTableBody = TableBody<
   Record<string, ColumnBuilder<any, any, any>>,
   readonly IndexOpts<string>[]
 >;
+
+/**
+ * @deprecated Use `TableBody` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type TableSchema<
+  Row extends Record<string, ColumnBuilder<any, any, any>>,
+  Idx extends readonly IndexOpts<keyof Row & string>[],
+> = TableBody<Row, Idx>;
+
+/**
+ * @deprecated Use `UntypedTableBody` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedTableSchema = UntypedTableBody;

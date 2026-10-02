@@ -20,7 +20,7 @@ import type {
   UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { TableSchema, TableSchedule } from './table_schema';
+import type { TableBody, TableSchedule } from './table_body';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -81,10 +81,10 @@ type ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
 };
 
 /**
- * A helper type to extract the row type from a TableDef
+ * A helper type to extract the row type from a TableDecl
  */
-export type RowType<TableDef extends Pick<UntypedTableDef, 'columns'>> =
-  InferTypeOfRow<TableDef['columns']>;
+export type RowType<TableDecl extends Pick<UntypedTableDecl, 'columns'>> =
+  InferTypeOfRow<TableDecl['columns']>;
 
 /**
  * Coerces a column which may be a TypeBuilder or ColumnBuilder into a ColumnBuilder
@@ -111,7 +111,7 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 /**
  * An untyped representation of a table's schema.
  */
-export type UntypedTableDef = {
+export type UntypedTableDecl = {
   sourceName: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
@@ -142,42 +142,48 @@ export type UntypedTableDef = {
 };
 
 /**
+ * @deprecated Use `UntypedTableDecl` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedTableDef = UntypedTableDecl;
+
+/**
  * A type representing the indexes defined on a table.
  */
-export type TableIndexes<TableDef extends UntypedTableDef> = {
-  [K in keyof TableDef['columns'] & string as ColumnIndex<
+export type TableIndexes<TableDecl extends UntypedTableDecl> = {
+  [K in keyof TableDecl['columns'] & string as ColumnIndex<
     K,
-    TableDef['columns'][K]['columnMetadata']
+    TableDecl['columns'][K]['columnMetadata']
   > extends never
     ? never
-    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
+    : K]: ColumnIndex<K, TableDecl['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
-    TableDef,
+  [I in TableDecl['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
+    TableDecl,
     I
   >;
 };
 
 type TableIndexFromDef<
-  TableDef extends UntypedTableDef,
-  I extends IndexOpts<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends IndexOpts<keyof TableDecl['columns'] & string>,
 > =
-  NormalizeIndexColumns<TableDef, I> extends infer Cols extends ReadonlyArray<
-    keyof TableDef['columns'] & string
+  NormalizeIndexColumns<TableDecl, I> extends infer Cols extends ReadonlyArray<
+    keyof TableDecl['columns'] & string
   >
     ? {
         name: I['accessor'];
-        unique: AllUnique<TableDef, Cols>;
+        unique: AllUnique<TableDecl, Cols>;
         algorithm: Lowercase<I['algorithm']>;
         columns: Cols;
       }
     : never;
 
 type NormalizeIndexColumns<
-  TableDef extends UntypedTableDef,
-  I extends IndexOpts<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends IndexOpts<keyof TableDecl['columns'] & string>,
 > =
-  IndexColumns<I> extends ReadonlyArray<keyof TableDef['columns'] & string>
+  IndexColumns<I> extends ReadonlyArray<keyof TableDecl['columns'] & string>
     ? IndexColumns<I>
     : never;
 
@@ -234,16 +240,16 @@ type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
  * - UCV: unique-constraint violation error type (never if none)
  * - AIO: auto-increment overflow error type (never if none)
  */
-export type Table<TableDef extends UntypedTableDef> = Prettify<
-  TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
+export type Table<TableDecl extends UntypedTableDecl> = Prettify<
+  TableMethods<TableDecl> & Indexes<TableDecl, TableIndexes<TableDecl>>
 >;
 
-export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
-  ReadonlyTableMethods<TableDef> &
-    ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+export type ReadonlyTable<TableDecl extends UntypedTableDecl> = Prettify<
+  ReadonlyTableMethods<TableDecl> &
+    ReadonlyIndexes<TableDecl, TableIndexes<TableDecl>>
 >;
 
-export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
+export interface ReadonlyTableMethods<TableDecl extends UntypedTableDecl> {
   /**
    * Returns the number of rows in this table.
    *
@@ -253,15 +259,15 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
-  iter(): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
-  [Symbol.iterator](): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
+  iter(): IteratorObject<Prettify<RowType<TableDecl>>, undefined>;
+  [Symbol.iterator](): IteratorObject<Prettify<RowType<TableDecl>>, undefined>;
 }
 
 /**
  * A type representing the methods available on a table.
  */
-export interface TableMethods<TableDef extends UntypedTableDef>
-  extends ReadonlyTableMethods<TableDef> {
+export interface TableMethods<TableDecl extends UntypedTableDecl>
+  extends ReadonlyTableMethods<TableDecl> {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *
@@ -269,10 +275,10 @@ export interface TableMethods<TableDef extends UntypedTableDef>
    * * If there are any unique or primary key columns in this table, may throw {@link errors.UniqueAlreadyExists}.
    * * If there are any auto-incrementing columns in this table, may throw {@link errors.AutoIncOverflow}.
    * */
-  insert(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
+  insert(row: Prettify<RowType<TableDecl>>): Prettify<RowType<TableDecl>>;
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
-  delete(row: Prettify<RowType<TableDef>>): boolean;
+  delete(row: Prettify<RowType<TableDecl>>): boolean;
 
   /**
    * Clears the table of all rows.
@@ -335,7 +341,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
+): TableBody<CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
     public: isPublic = false,

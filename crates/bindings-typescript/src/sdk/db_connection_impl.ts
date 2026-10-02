@@ -56,8 +56,8 @@ import type {
   SubscriptionEventCallback,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
-import type { RowType, UntypedTableDef } from '../lib/table.ts';
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { RowType, UntypedTableDecl } from '../lib/table.ts';
+import type { UntypedSchemaDecl } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -545,10 +545,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   };
 
   getFromBuilder<
-    SchemaDef extends UntypedSchemaDef,
-  >(): NamespacedQueryBuilder<SchemaDef> {
-    return makeFromBuilder<SchemaDef>(
-      this.#remoteModule.tables as SchemaDef['tables']
+    SchemaDecl extends UntypedSchemaDecl,
+  >(): NamespacedQueryBuilder<SchemaDecl> {
+    return makeFromBuilder<SchemaDecl>(
+      this.#remoteModule.tables as SchemaDecl['tables']
     );
   }
 
@@ -629,8 +629,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   // Take a bunch of table updates and ensure that there is at most one update per table.
   #mergeTableUpdates(
-    updates: CacheTableUpdate<UntypedTableDef>[]
-  ): CacheTableUpdate<UntypedTableDef>[] {
+    updates: CacheTableUpdate<UntypedTableDecl>[]
+  ): CacheTableUpdate<UntypedTableDecl>[] {
     const merged = new Map<string, Operation[]>();
     for (const update of updates) {
       const ops = merged.get(update.tableName);
@@ -649,8 +649,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #queryRowsToTableUpdates(
     rows: QueryRows,
     opType: 'insert' | 'delete'
-  ): CacheTableUpdate<UntypedTableDef>[] {
-    const updates: CacheTableUpdate<UntypedTableDef>[] = [];
+  ): CacheTableUpdate<UntypedTableDecl>[] {
+    const updates: CacheTableUpdate<UntypedTableDecl>[] = [];
     for (const tableRows of rows.tables) {
       updates.push({
         tableName: tableRows.table,
@@ -687,8 +687,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #querySetUpdateToTableUpdates(
     querySetUpdate: QuerySetUpdate
-  ): CacheTableUpdate<UntypedTableDef>[] {
-    const updates: CacheTableUpdate<UntypedTableDef>[] = [];
+  ): CacheTableUpdate<UntypedTableDecl>[] {
+    const updates: CacheTableUpdate<UntypedTableDecl>[] = [];
     for (const tableUpdate of querySetUpdate.tables) {
       let operations: Operation[] = [];
       for (const rows of tableUpdate.rows) {
@@ -880,7 +880,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   #applyTableUpdates(
-    tableUpdates: CacheTableUpdate<UntypedTableDef>[],
+    tableUpdates: CacheTableUpdate<UntypedTableDecl>[],
     eventContext: EventContextInterface<RemoteModule>
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
@@ -906,7 +906,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     eventContext: EventContextInterface<RemoteModule>,
     tu: TransactionUpdate
   ): PendingCallback[] {
-    const allUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
+    const allUpdates: CacheTableUpdate<UntypedTableDecl>[] = [];
     for (const querySetUpdate of tu.querySets) {
       const tableUpdates = this.#querySetUpdateToTableUpdates(querySetUpdate);
       for (const update of tableUpdates) {

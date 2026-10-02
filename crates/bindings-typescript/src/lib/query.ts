@@ -1,9 +1,9 @@
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
-import type { UntypedSchemaDef } from './schema';
-import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+import type { UntypedSchemaDecl } from './schema';
+import type { UntypedTableDecl } from './table';
+import type { UntypedTableBody } from './table_body';
 import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
@@ -18,24 +18,24 @@ import { Uuid } from './uuid';
 /**
  * Helper to get the set of table names.
  */
-export type TableNames<SchemaDef extends UntypedSchemaDef> = Values<
-  SchemaDef['tables']
+export type TableNames<SchemaDecl extends UntypedSchemaDecl> = Values<
+  SchemaDecl['tables']
 >['accessorName'] &
   string;
 
 /** helper: pick the table def object from the schema by its name */
 export type TableDefByName<
-  SchemaDef extends UntypedSchemaDef,
-  Name extends TableNames<SchemaDef>,
-> = Extract<Values<SchemaDef['tables']>, { accessorName: Name }>;
+  SchemaDecl extends UntypedSchemaDecl,
+  Name extends TableNames<SchemaDecl>,
+> = Extract<Values<SchemaDecl['tables']>, { accessorName: Name }>;
 
 // internal only — NOT exported.
 // This is how we make sure queries are only created with our helpers.
 const QueryBrand = Symbol('QueryBrand');
 
-export interface TableTypedQuery<TableDef extends TypedTableDef> {
+export interface TableTypedQuery<TableDecl extends TypedTableDecl> {
   readonly [QueryBrand]: true;
-  readonly __table?: TableDef;
+  readonly __table?: TableDecl;
 }
 
 export interface RowTypedQuery<Row, ST> {
@@ -45,9 +45,9 @@ export interface RowTypedQuery<Row, ST> {
   readonly __algebraicType?: ST;
 }
 
-export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
-  RowType<TableDef>,
-  TableDef['rowType']
+export type Query<TableDecl extends TypedTableDecl> = RowTypedQuery<
+  RowType<TableDecl>,
+  TableDecl['rowType']
 >;
 
 export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any, any> =>
@@ -61,54 +61,54 @@ export function toSql(q: Query<any>): string {
 }
 
 // A query builder with a single table.
-type From<TableDef extends TypedTableDef> = RowTypedQuery<
-  RowType<TableDef>,
-  TableDef['rowType']
+type From<TableDecl extends TypedTableDecl> = RowTypedQuery<
+  RowType<TableDecl>,
+  TableDecl['rowType']
 > &
   Readonly<{
     toSql(): string;
     where(
-      predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
-    ): From<TableDef>;
-    rightSemijoin<RightTable extends TypedTableDef>(
+      predicate: (row: RowExpr<TableDecl>) => PredicateExpr<TableDecl>
+    ): From<TableDecl>;
+    rightSemijoin<RightTable extends TypedTableDecl>(
       other: TableRef<RightTable>,
       on: (
-        left: IndexedRowExpr<TableDef>,
+        left: IndexedRowExpr<TableDecl>,
         right: IndexedRowExpr<RightTable>
-      ) => BooleanExpr<TableDef | RightTable>
+      ) => BooleanExpr<TableDecl | RightTable>
     ): SemijoinBuilder<RightTable>;
-    leftSemijoin<RightTable extends TypedTableDef>(
+    leftSemijoin<RightTable extends TypedTableDecl>(
       other: TableRef<RightTable>,
       on: (
-        left: IndexedRowExpr<TableDef>,
+        left: IndexedRowExpr<TableDecl>,
         right: IndexedRowExpr<RightTable>
-      ) => BooleanExpr<TableDef | RightTable>
-    ): SemijoinBuilder<TableDef>;
+      ) => BooleanExpr<TableDecl | RightTable>
+    ): SemijoinBuilder<TableDecl>;
     /** @deprecated No longer needed — builder is already a valid query. */
-    build(): Query<TableDef>;
+    build(): Query<TableDecl>;
   }>;
 
 // A query builder with a semijoin.
-type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
-  RowType<TableDef>,
-  TableDef['rowType']
+type SemijoinBuilder<TableDecl extends TypedTableDecl> = RowTypedQuery<
+  RowType<TableDecl>,
+  TableDecl['rowType']
 > &
   Readonly<{
     toSql(): string;
     where(
-      predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
-    ): SemijoinBuilder<TableDef>;
+      predicate: (row: RowExpr<TableDecl>) => PredicateExpr<TableDecl>
+    ): SemijoinBuilder<TableDecl>;
     /** @deprecated No longer needed — builder is already a valid query. */
-    build(): Query<TableDef>;
+    build(): Query<TableDecl>;
   }>;
 
-class SemijoinImpl<TableDef extends TypedTableDef>
-  implements SemijoinBuilder<TableDef>, TableTypedQuery<TableDef>
+class SemijoinImpl<TableDecl extends TypedTableDecl>
+  implements SemijoinBuilder<TableDecl>, TableTypedQuery<TableDecl>
 {
   readonly [QueryBrand] = true;
   readonly type = 'semijoin' as const;
   constructor(
-    readonly sourceQuery: FromBuilder<TableDef>,
+    readonly sourceQuery: FromBuilder<TableDecl>,
     readonly filterQuery: FromBuilder<any>,
     readonly joinCondition: BooleanExpr<any>
   ) {
@@ -118,15 +118,15 @@ class SemijoinImpl<TableDef extends TypedTableDef>
     }
   }
 
-  build(): Query<TableDef> {
-    return this as Query<TableDef>;
+  build(): Query<TableDecl> {
+    return this as Query<TableDecl>;
   }
 
   where(
-    predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
-  ): SemijoinImpl<TableDef> {
+    predicate: (row: RowExpr<TableDecl>) => PredicateExpr<TableDecl>
+  ): SemijoinImpl<TableDecl> {
     const nextSourceQuery = this.sourceQuery.where(predicate);
-    return new SemijoinImpl<TableDef>(
+    return new SemijoinImpl<TableDecl>(
       nextSourceQuery,
       this.filterQuery,
       this.joinCondition
@@ -160,31 +160,31 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   }
 }
 
-class FromBuilder<TableDef extends TypedTableDef>
-  implements From<TableDef>, TableTypedQuery<TableDef>
+class FromBuilder<TableDecl extends TypedTableDecl>
+  implements From<TableDecl>, TableTypedQuery<TableDecl>
 {
   readonly [QueryBrand] = true;
   constructor(
-    readonly table: TableRef<TableDef>,
-    readonly whereClause?: BooleanExpr<TableDef>
+    readonly table: TableRef<TableDecl>,
+    readonly whereClause?: BooleanExpr<TableDecl>
   ) {}
 
   where(
-    predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
-  ): FromBuilder<TableDef> {
+    predicate: (row: RowExpr<TableDecl>) => PredicateExpr<TableDecl>
+  ): FromBuilder<TableDecl> {
     const newCondition = normalizePredicateExpr(predicate(this.table.cols));
     const nextWhere = this.whereClause
       ? this.whereClause.and(newCondition)
       : newCondition;
-    return new FromBuilder<TableDef>(this.table, nextWhere);
+    return new FromBuilder<TableDecl>(this.table, nextWhere);
   }
 
-  rightSemijoin<OtherTable extends TypedTableDef>(
+  rightSemijoin<OtherTable extends TypedTableDecl>(
     right: TableRef<OtherTable>,
     on: (
-      left: IndexedRowExpr<TableDef>,
+      left: IndexedRowExpr<TableDecl>,
       right: IndexedRowExpr<OtherTable>
-    ) => BooleanExpr<TableDef | OtherTable>
+    ) => BooleanExpr<TableDecl | OtherTable>
   ): SemijoinBuilder<OtherTable> {
     const sourceQuery = new FromBuilder(right);
     const joinCondition = on(
@@ -194,33 +194,33 @@ class FromBuilder<TableDef extends TypedTableDef>
     return new SemijoinImpl<OtherTable>(sourceQuery, this, joinCondition);
   }
 
-  leftSemijoin<OtherTable extends TypedTableDef>(
+  leftSemijoin<OtherTable extends TypedTableDecl>(
     right: TableRef<OtherTable>,
     on: (
-      left: IndexedRowExpr<TableDef>,
+      left: IndexedRowExpr<TableDecl>,
       right: IndexedRowExpr<OtherTable>
-    ) => BooleanExpr<TableDef | OtherTable>
-  ): SemijoinBuilder<TableDef> {
+    ) => BooleanExpr<TableDecl | OtherTable>
+  ): SemijoinBuilder<TableDecl> {
     const filterQuery = new FromBuilder(right);
     const joinCondition = on(
       this.table.indexedCols,
       right.indexedCols
     ) as BooleanExpr<any>;
-    return new SemijoinImpl<TableDef>(this, filterQuery, joinCondition);
+    return new SemijoinImpl<TableDecl>(this, filterQuery, joinCondition);
   }
 
   toSql(): string {
     return renderSelectSqlWithJoins(this.table, this.whereClause);
   }
 
-  build(): Query<TableDef> {
-    return this as Query<TableDef>;
+  build(): Query<TableDecl> {
+    return this as Query<TableDecl>;
   }
 }
 
-export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
+export type QueryBuilder<SchemaDecl extends UntypedSchemaDecl> = {
   readonly [Tbl in Values<
-    SchemaDef['tables']
+    SchemaDecl['tables']
   > as Tbl['accessorName']]: TableRef<Tbl> & From<Tbl>;
 } & {};
 
@@ -232,47 +232,47 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
  * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
  * namespace's schema, so `tables.<namespace>.<table>` is fully typed.
  *
- * When `SchemaDef['namespaces']` is absent or `{}`, no namespace properties appear —
+ * When `SchemaDecl['namespaces']` is absent or `{}`, no namespace properties appear —
  * accessing an undeclared namespace is a compile error.
  */
-export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
-  QueryBuilder<SchemaDef> & {
-    readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
-      SchemaDef['namespaces']
-    >[NS] extends UntypedSchemaDef
-      ? QueryBuilder<NonNullable<SchemaDef['namespaces']>[NS]>
+export type NamespacedQueryBuilder<SchemaDecl extends UntypedSchemaDecl> =
+  QueryBuilder<SchemaDecl> & {
+    readonly [NS in keyof NonNullable<SchemaDecl['namespaces']>]: NonNullable<
+      SchemaDecl['namespaces']
+    >[NS] extends UntypedSchemaDecl
+      ? QueryBuilder<NonNullable<SchemaDecl['namespaces']>[NS]>
       : never;
   };
 
 /**
  * A runtime reference to a table. This materializes the RowExpr for us.
- * TODO: Maybe add the full SchemaDef to the type signature depending on how joins will work.
+ * TODO: Maybe add the full SchemaDecl to the type signature depending on how joins will work.
  */
-export type TableRef<TableDef extends TypedTableDef> = Readonly<{
+export type TableRef<TableDecl extends TypedTableDecl> = Readonly<{
   type: 'table';
-  sourceName: TableDef['sourceName'];
+  sourceName: TableDecl['sourceName'];
   accessorName: string;
-  cols: RowExpr<TableDef>;
-  indexedCols: IndexedRowExpr<TableDef>;
-  tableDef: TableDef;
-  // Delegated UntypedTableDef properties for compatibility.
-  columns: TableDef['columns'];
-  indexes: TableDef['indexes'];
-  rowType: TableDef['rowType'];
+  cols: RowExpr<TableDecl>;
+  indexedCols: IndexedRowExpr<TableDecl>;
+  tableDef: TableDecl;
+  // Delegated UntypedTableDecl properties for compatibility.
+  columns: TableDecl['columns'];
+  indexes: TableDecl['indexes'];
+  rowType: TableDecl['rowType'];
   constraints: any;
 }>;
 
-class TableRefImpl<TableDef extends TypedTableDef>
-  implements TableRef<TableDef>, From<TableDef>
+class TableRefImpl<TableDecl extends TypedTableDecl>
+  implements TableRef<TableDecl>, From<TableDecl>
 {
   readonly [QueryBrand] = true;
   readonly type = 'table' as const;
   sourceName: string;
   accessorName: string;
-  cols: RowExpr<TableDef>;
-  indexedCols: IndexedRowExpr<TableDef>;
-  tableDef: TableDef;
-  // Delegate UntypedTableDef properties from tableDef so this can be used as a table def.
+  cols: RowExpr<TableDecl>;
+  indexedCols: IndexedRowExpr<TableDecl>;
+  tableDef: TableDecl;
+  // Delegate UntypedTableDecl properties from tableDef so this can be used as a table declaration.
   get columns() {
     return this.tableDef.columns;
   }
@@ -285,7 +285,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
   get constraints() {
     return (this.tableDef as any).constraints;
   }
-  constructor(tableDef: TableDef) {
+  constructor(tableDef: TableDecl) {
     this.sourceName = tableDef.sourceName;
     this.accessorName = tableDef.accessorName;
     this.cols = createRowExpr(tableDef);
@@ -298,31 +298,31 @@ class TableRefImpl<TableDef extends TypedTableDef>
     Object.freeze(this);
   }
 
-  asFrom(): FromBuilder<TableDef> {
-    return new FromBuilder<TableDef>(this);
+  asFrom(): FromBuilder<TableDecl> {
+    return new FromBuilder<TableDecl>(this);
   }
 
-  rightSemijoin<RightTable extends TypedTableDef>(
+  rightSemijoin<RightTable extends TypedTableDecl>(
     other: TableRef<RightTable>,
     on: (
-      left: IndexedRowExpr<TableDef>,
+      left: IndexedRowExpr<TableDecl>,
       right: IndexedRowExpr<RightTable>
-    ) => EqExpr<TableDef | RightTable>
+    ) => EqExpr<TableDecl | RightTable>
   ): SemijoinBuilder<RightTable> {
     return this.asFrom().rightSemijoin(other, on);
   }
 
-  leftSemijoin<RightTable extends TypedTableDef>(
+  leftSemijoin<RightTable extends TypedTableDecl>(
     other: TableRef<RightTable>,
     on: (
-      left: IndexedRowExpr<TableDef>,
+      left: IndexedRowExpr<TableDecl>,
       right: IndexedRowExpr<RightTable>
-    ) => EqExpr<TableDef | RightTable>
-  ): SemijoinBuilder<TableDef> {
+    ) => EqExpr<TableDecl | RightTable>
+  ): SemijoinBuilder<TableDecl> {
     return this.asFrom().leftSemijoin(other, on);
   }
 
-  build(): Query<TableDef> {
+  build(): Query<TableDecl> {
     return this.asFrom().build();
   }
 
@@ -331,29 +331,29 @@ class TableRefImpl<TableDef extends TypedTableDef>
   }
 
   where(
-    predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
-  ): FromBuilder<TableDef> {
+    predicate: (row: RowExpr<TableDecl>) => PredicateExpr<TableDecl>
+  ): FromBuilder<TableDecl> {
     return this.asFrom().where(predicate);
   }
 }
 
-export function createTableRefFromDef<TableDef extends TypedTableDef>(
-  tableDef: TableDef
-): TableRef<TableDef> {
-  return new TableRefImpl<TableDef>(tableDef);
+export function createTableRefFromDef<TableDecl extends TypedTableDecl>(
+  tableDef: TableDecl
+): TableRef<TableDecl> {
+  return new TableRefImpl<TableDecl>(tableDef);
 }
 
-export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
-  schema: SchemaDef
-): QueryBuilder<SchemaDef> {
-  const qb = Object.create(null) as QueryBuilder<SchemaDef>;
+export function makeQueryBuilder<SchemaDecl extends UntypedSchemaDecl>(
+  schema: SchemaDecl
+): QueryBuilder<SchemaDecl> {
+  const qb = Object.create(null) as QueryBuilder<SchemaDecl>;
   for (const table of Object.values(schema.tables)) {
     const ref = createTableRefFromDef(
-      table as TableDefByName<SchemaDef, TableNames<SchemaDef>>
+      table as TableDefByName<SchemaDecl, TableNames<SchemaDecl>>
     );
     (qb as Record<string, TableRef<any>>)[table.accessorName] = ref;
   }
-  return Object.freeze(qb) as QueryBuilder<SchemaDef>;
+  return Object.freeze(qb) as QueryBuilder<SchemaDecl>;
 }
 
 /**
@@ -364,15 +364,15 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
  * sub-object keyed by the namespace alias, with the part after the dot as the
  * property key within that namespace.
  */
-export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
-  tables: SchemaDef['tables']
-): NamespacedQueryBuilder<SchemaDef> {
+export function makeFromBuilder<SchemaDecl extends UntypedSchemaDecl>(
+  tables: SchemaDecl['tables']
+): NamespacedQueryBuilder<SchemaDecl> {
   const result: Record<string, unknown> = Object.create(null);
   const namespaces: Record<string, Record<string, unknown>> = Object.create(
     null
   );
 
-  for (const table of Object.values(tables) as UntypedTableDef[]) {
+  for (const table of Object.values(tables) as UntypedTableDecl[]) {
     const dotIdx = table.sourceName.indexOf('.');
     if (dotIdx === -1) {
       result[table.accessorName] = createTableRefFromDef(table as any);
@@ -389,32 +389,32 @@ export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
     result[ns] = Object.freeze(nsTables);
   }
 
-  return Object.freeze(result) as unknown as NamespacedQueryBuilder<SchemaDef>;
+  return Object.freeze(result) as unknown as NamespacedQueryBuilder<SchemaDecl>;
 }
 
-function createRowExpr<TableDef extends TypedTableDef>(
-  tableDef: TableDef
-): RowExpr<TableDef> {
-  const row: Record<string, ColumnExpr<TableDef, any>> = {};
+function createRowExpr<TableDecl extends TypedTableDecl>(
+  tableDef: TableDecl
+): RowExpr<TableDecl> {
+  const row: Record<string, ColumnExpr<TableDecl, any>> = {};
   for (const columnName of Object.keys(tableDef.columns) as Array<
-    keyof TableDef['columns'] & string
+    keyof TableDecl['columns'] & string
   >) {
     const columnBuilder = tableDef.columns[columnName];
-    const column = new ColumnExpression<TableDef, typeof columnName>(
+    const column = new ColumnExpression<TableDecl, typeof columnName>(
       tableDef.sourceName,
       columnName,
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
-        TableDef,
+        TableDecl,
         typeof columnName
       >,
       columnBuilder.columnMetadata.name
     );
     row[columnName] = Object.freeze(column);
   }
-  return Object.freeze(row) as RowExpr<TableDef>;
+  return Object.freeze(row) as RowExpr<TableDecl>;
 }
 
-function renderSelectSqlWithJoins<Table extends TypedTableDef>(
+function renderSelectSqlWithJoins<Table extends TypedTableDecl>(
   table: TableRef<Table>,
   where?: BooleanExpr<Table>,
   extraClauses: readonly string[] = []
@@ -430,8 +430,8 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   return `${sql} WHERE ${whereSql}`;
 }
 
-// TODO: Just use UntypedTableDef if they end up being the same.
-export type TypedTableDef<
+// TODO: Just use UntypedTableDecl if they end up being the same.
+export type TypedTableDecl<
   Columns extends Record<
     string,
     ColumnBuilder<any, any, ColumnMetadata<any>>
@@ -444,14 +444,23 @@ export type TypedTableDef<
   rowType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
-export type TableSchemaAsTableDef<TSchema extends UntypedTableSchema> = {
+/** @deprecated Use `TypedTableDecl` instead. */
+export type TypedTableDef<
+  Columns extends Record<
+    string,
+    ColumnBuilder<any, any, ColumnMetadata<any>>
+  > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
+> = TypedTableDecl<Columns>;
+
+/** @deprecated This type is not used by the SDK. */
+export type TableSchemaAsTableDef<TSchema extends UntypedTableBody> = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
   indexes: TSchema['idxs'];
 };
 
-type RowType<TableDef extends TypedTableDef> = {
-  [K in keyof TableDef['columns']]: TableDef['columns'][K] extends ColumnBuilder<
+type RowType<TableDecl extends TypedTableDecl> = {
+  [K in keyof TableDecl['columns']]: TableDecl['columns'][K] extends ColumnBuilder<
     infer T,
     any,
     any
@@ -463,9 +472,9 @@ type RowType<TableDef extends TypedTableDef> = {
 // TODO: Consider making a smaller version of these types that doesn't expose the internals.
 // Restricting it later should not break anyone in practice.
 export type ColumnExpr<
-  TableDef extends TypedTableDef,
-  ColumnName extends ColumnNames<TableDef>,
-> = ColumnExpression<TableDef, ColumnName>;
+  TableDecl extends TypedTableDecl,
+  ColumnName extends ColumnNames<TableDecl>,
+> = ColumnExpression<TableDecl, ColumnName>;
 
 type ColumnSpacetimeType<Col extends ColumnExpr<any, any>> =
   Col extends ColumnExpr<infer T, infer N>
@@ -475,7 +484,7 @@ type ColumnSpacetimeType<Col extends ColumnExpr<any, any>> =
 // TODO: This checks that they match, but we also need to make sure that they are comparable types,
 // since you can use product types at all.
 type ColumnSameSpacetime<
-  ThisTable extends TypedTableDef,
+  ThisTable extends TypedTableDecl,
   ThisCol extends ColumnNames<ThisTable>,
   OtherCol extends ColumnExpr<any, any>,
 > = [InferSpacetimeTypeOfColumn<ThisTable, ThisCol>] extends [
@@ -493,23 +502,23 @@ type ExtractTable<Col extends ColumnExpr<any, any>> =
   Col extends ColumnExpr<infer T, any> ? T : never;
 
 export class ColumnExpression<
-  TableDef extends TypedTableDef,
-  ColumnName extends ColumnNames<TableDef>,
+  TableDecl extends TypedTableDecl,
+  ColumnName extends ColumnNames<TableDecl>,
 > {
   readonly type = 'column' as const;
   // This is the column accessor
   readonly column: ColumnName;
   // The name of the column in the database.
   readonly columnName: string;
-  readonly table: TableDef['sourceName'];
+  readonly table: TableDecl['sourceName'];
   // phantom: actual runtime value is undefined
-  readonly tsValueType?: RowType<TableDef>[ColumnName];
-  readonly spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>;
+  readonly tsValueType?: RowType<TableDecl>[ColumnName];
+  readonly spacetimeType: InferSpacetimeTypeOfColumn<TableDecl, ColumnName>;
 
   constructor(
-    table: TableDef['sourceName'],
+    table: TableDecl['sourceName'],
     column: ColumnName,
-    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>,
+    spacetimeType: InferSpacetimeTypeOfColumn<TableDecl, ColumnName>,
     columnName?: string
   ) {
     this.table = table;
@@ -519,92 +528,92 @@ export class ColumnExpression<
   }
 
   eq(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
-  ): BooleanExpr<TableDef>;
+    literal: LiteralValue & RowType<TableDecl>[ColumnName]
+  ): BooleanExpr<TableDecl>;
   eq<OtherCol extends ColumnExpr<any, any>>(
-    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+    value: ColumnSameSpacetime<TableDecl, ColumnName, OtherCol>
+  ): BooleanExpr<TableDecl | ExtractTable<OtherCol>>;
 
   eq(x: any): any {
     return new BooleanExpr({
       type: 'eq',
-      left: this as unknown as ValueExpr<TableDef, any>,
-      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+      left: this as unknown as ValueExpr<TableDecl, any>,
+      right: normalizeValue(x) as ValueExpr<TableDecl, any>,
     });
   }
 
   ne(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
-  ): BooleanExpr<TableDef>;
+    literal: LiteralValue & RowType<TableDecl>[ColumnName]
+  ): BooleanExpr<TableDecl>;
   ne<OtherCol extends ColumnExpr<any, any>>(
-    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+    value: ColumnSameSpacetime<TableDecl, ColumnName, OtherCol>
+  ): BooleanExpr<TableDecl | ExtractTable<OtherCol>>;
 
   ne(x: any): any {
     return new BooleanExpr({
       type: 'ne',
-      left: this as unknown as ValueExpr<TableDef, any>,
-      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+      left: this as unknown as ValueExpr<TableDecl, any>,
+      right: normalizeValue(x) as ValueExpr<TableDecl, any>,
     });
   }
 
   lt(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
-  ): BooleanExpr<TableDef>;
+    literal: LiteralValue & RowType<TableDecl>[ColumnName]
+  ): BooleanExpr<TableDecl>;
   lt<OtherCol extends ColumnExpr<any, any>>(
-    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+    value: ColumnSameSpacetime<TableDecl, ColumnName, OtherCol>
+  ): BooleanExpr<TableDecl | ExtractTable<OtherCol>>;
 
   lt(x: any): any {
     return new BooleanExpr({
       type: 'lt',
-      left: this as unknown as ValueExpr<TableDef, any>,
-      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+      left: this as unknown as ValueExpr<TableDecl, any>,
+      right: normalizeValue(x) as ValueExpr<TableDecl, any>,
     });
   }
 
   lte(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
-  ): BooleanExpr<TableDef>;
+    literal: LiteralValue & RowType<TableDecl>[ColumnName]
+  ): BooleanExpr<TableDecl>;
   lte<OtherCol extends ColumnExpr<any, any>>(
-    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+    value: ColumnSameSpacetime<TableDecl, ColumnName, OtherCol>
+  ): BooleanExpr<TableDecl | ExtractTable<OtherCol>>;
 
   lte(x: any): any {
     return new BooleanExpr({
       type: 'lte',
-      left: this as unknown as ValueExpr<TableDef, any>,
-      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+      left: this as unknown as ValueExpr<TableDecl, any>,
+      right: normalizeValue(x) as ValueExpr<TableDecl, any>,
     });
   }
 
   gt(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
-  ): BooleanExpr<TableDef>;
+    literal: LiteralValue & RowType<TableDecl>[ColumnName]
+  ): BooleanExpr<TableDecl>;
   gt<OtherCol extends ColumnExpr<any, any>>(
-    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+    value: ColumnSameSpacetime<TableDecl, ColumnName, OtherCol>
+  ): BooleanExpr<TableDecl | ExtractTable<OtherCol>>;
 
   gt(x: any): any {
     return new BooleanExpr({
       type: 'gt',
-      left: this as unknown as ValueExpr<TableDef, any>,
-      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+      left: this as unknown as ValueExpr<TableDecl, any>,
+      right: normalizeValue(x) as ValueExpr<TableDecl, any>,
     });
   }
 
   gte(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
-  ): BooleanExpr<TableDef>;
+    literal: LiteralValue & RowType<TableDecl>[ColumnName]
+  ): BooleanExpr<TableDecl>;
   gte<OtherCol extends ColumnExpr<any, any>>(
-    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
-  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+    value: ColumnSameSpacetime<TableDecl, ColumnName, OtherCol>
+  ): BooleanExpr<TableDecl | ExtractTable<OtherCol>>;
 
   gte(x: any): any {
     return new BooleanExpr({
       type: 'gte',
-      left: this as unknown as ValueExpr<TableDef, any>,
-      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+      left: this as unknown as ValueExpr<TableDecl, any>,
+      right: normalizeValue(x) as ValueExpr<TableDecl, any>,
     });
   }
 }
@@ -613,17 +622,17 @@ export class ColumnExpression<
  * Helper to get the spacetime type of a column.
  */
 type InferSpacetimeTypeOfColumn<
-  TableDef extends TypedTableDef,
-  ColumnName extends ColumnNames<TableDef>,
+  TableDecl extends TypedTableDecl,
+  ColumnName extends ColumnNames<TableDecl>,
 > =
-  TableDef['columns'][ColumnName]['typeBuilder'] extends TypeBuilder<
+  TableDecl['columns'][ColumnName]['typeBuilder'] extends TypeBuilder<
     any,
     infer U
   >
     ? U
     : never;
 
-type ColumnNames<TableDef extends TypedTableDef> = keyof RowType<TableDef> &
+type ColumnNames<TableDecl extends TypedTableDecl> = keyof RowType<TableDecl> &
   string;
 
 // For composite indexes, we only consider it as an index over the first column in the index.
@@ -633,43 +642,43 @@ type FirstIndexColumn<I extends IndexOpts<any>> =
     : never;
 
 // Columns that are indexed by something in the indexes: [...] part.
-type ExplicitIndexedColumns<TableDef extends TypedTableDef> =
-  TableDef['indexes'][number] extends infer I
-    ? I extends IndexOpts<ColumnNames<TableDef>>
-      ? FirstIndexColumn<I> & ColumnNames<TableDef>
+type ExplicitIndexedColumns<TableDecl extends TypedTableDecl> =
+  TableDecl['indexes'][number] extends infer I
+    ? I extends IndexOpts<ColumnNames<TableDecl>>
+      ? FirstIndexColumn<I> & ColumnNames<TableDecl>
       : never
     : never;
 
 // Columns with an index defined on the column definition.
-type MetadataIndexedColumns<TableDef extends TypedTableDef> = {
-  [K in ColumnNames<TableDef>]: ColumnIndex<
+type MetadataIndexedColumns<TableDecl extends TypedTableDecl> = {
+  [K in ColumnNames<TableDecl>]: ColumnIndex<
     K,
-    TableDef['columns'][K]['columnMetadata']
+    TableDecl['columns'][K]['columnMetadata']
   > extends never
     ? never
     : K;
-}[ColumnNames<TableDef>];
+}[ColumnNames<TableDecl>];
 
-export type IndexedColumnNames<TableDef extends TypedTableDef> =
-  | ExplicitIndexedColumns<TableDef>
-  | MetadataIndexedColumns<TableDef>;
+export type IndexedColumnNames<TableDecl extends TypedTableDecl> =
+  | ExplicitIndexedColumns<TableDecl>
+  | MetadataIndexedColumns<TableDecl>;
 
-export type IndexedRowExpr<TableDef extends TypedTableDef> = Readonly<{
-  readonly [C in IndexedColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
+export type IndexedRowExpr<TableDecl extends TypedTableDecl> = Readonly<{
+  readonly [C in IndexedColumnNames<TableDecl>]: ColumnExpr<TableDecl, C>;
 }>;
 
 /**
  * Acts as a row when writing filters for queries. It is a way to get column references.
  */
-export type RowExpr<TableDef extends TypedTableDef> = Readonly<{
-  readonly [C in ColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
+export type RowExpr<TableDecl extends TypedTableDecl> = Readonly<{
+  readonly [C in ColumnNames<TableDecl>]: ColumnExpr<TableDecl, C>;
 }>;
 
 /**
  * Union of ColumnExprs from Table whose spacetimeType is compatible with Value
  * (produces a union of ColumnExpr<Table, C> for matching columns).
  */
-export type ColumnExprForValue<Table extends TypedTableDef, Value> = {
+export type ColumnExprForValue<Table extends TypedTableDecl, Value> = {
   [C in ColumnNames<Table>]: InferSpacetimeTypeOfColumn<Table, C> extends Value
     ? ColumnExpr<Table, C>
     : never;
@@ -686,17 +695,17 @@ type LiteralValue =
   | ConnectionId;
 
 type ValueLike = LiteralValue | ColumnExpr<any, any> | LiteralExpr<any>;
-type ValueInput<TableDef extends TypedTableDef> =
+type ValueInput<TableDecl extends TypedTableDecl> =
   | ValueLike
-  | ValueExpr<TableDef, any>;
+  | ValueExpr<TableDecl, any>;
 
-export type ValueExpr<TableDef extends TypedTableDef, Value> =
+export type ValueExpr<TableDecl extends TypedTableDecl, Value> =
   | LiteralExpr<Value & LiteralValue>
-  | ColumnExprForValue<TableDef, Value>;
+  | ColumnExprForValue<TableDecl, Value>;
 
-type PredicateExpr<TableDef extends TypedTableDef> =
-  | BooleanExpr<TableDef>
-  | ColumnExprForValue<TableDef, SatsBool>
+type PredicateExpr<TableDecl extends TypedTableDecl> =
+  | BooleanExpr<TableDecl>
+  | ColumnExprForValue<TableDecl, SatsBool>
   | boolean;
 
 type LiteralExpr<Value> = {
@@ -725,9 +734,9 @@ function normalizeValue(val: ValueInput<any>): ValueExpr<any, any> {
   return literal(val as LiteralValue);
 }
 
-function normalizePredicateExpr<TableDef extends TypedTableDef>(
-  value: PredicateExpr<TableDef>
-): BooleanExpr<TableDef> {
+function normalizePredicateExpr<TableDecl extends TypedTableDecl>(
+  value: PredicateExpr<TableDecl>
+): BooleanExpr<TableDecl> {
   if (value instanceof BooleanExpr) return value;
   if (typeof value === 'boolean') {
     return new BooleanExpr({
@@ -738,14 +747,14 @@ function normalizePredicateExpr<TableDef extends TypedTableDef>(
   }
   return new BooleanExpr({
     type: 'eq',
-    left: value as ValueExpr<TableDef, any>,
+    left: value as ValueExpr<TableDecl, any>,
     right: literal(true),
   });
 }
 
-type EqExpr<Table extends TypedTableDef = any> = BooleanExpr<Table>;
+type EqExpr<Table extends TypedTableDecl = any> = BooleanExpr<Table>;
 
-type BooleanExprData<Table extends TypedTableDef> = (
+type BooleanExprData<Table extends TypedTableDecl> = (
   | {
       type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
       left: ValueExpr<Table, any>;
@@ -780,18 +789,18 @@ type AndOrMixedTableScopeError = {
 };
 
 type RequireSameAndOrTable<
-  Expected extends TypedTableDef,
-  Actual extends TypedTableDef,
+  Expected extends TypedTableDecl,
+  Actual extends TypedTableDecl,
 > = [Expected] extends [Actual]
   ? [Actual] extends [Expected]
     ? unknown
     : AndOrMixedTableScopeError
   : AndOrMixedTableScopeError;
 
-export class BooleanExpr<Table extends TypedTableDef> {
+export class BooleanExpr<Table extends TypedTableDecl> {
   constructor(readonly data: BooleanExprData<Table>) {}
 
-  and<OtherTable extends TypedTableDef>(
+  and<OtherTable extends TypedTableDecl>(
     other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
   ): BooleanExpr<Table> {
     return new BooleanExpr({
@@ -800,7 +809,7 @@ export class BooleanExpr<Table extends TypedTableDef> {
     });
   }
 
-  or<OtherTable extends TypedTableDef>(
+  or<OtherTable extends TypedTableDecl>(
     other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
   ): BooleanExpr<Table> {
     return new BooleanExpr({
@@ -814,15 +823,15 @@ export class BooleanExpr<Table extends TypedTableDef> {
   }
 }
 
-export function not<T extends TypedTableDef>(
+export function not<T extends TypedTableDecl>(
   clause: BooleanExpr<T>
 ): BooleanExpr<T> {
   return new BooleanExpr({ type: 'not', clause: clause.data });
 }
 
 export function and<
-  Table extends TypedTableDef,
-  OtherTable extends TypedTableDef,
+  Table extends TypedTableDecl,
+  OtherTable extends TypedTableDecl,
 >(
   first: BooleanExpr<Table>,
   second: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>,
@@ -840,8 +849,8 @@ export function and<
 }
 
 export function or<
-  Table extends TypedTableDef,
-  OtherTable extends TypedTableDef,
+  Table extends TypedTableDecl,
+  OtherTable extends TypedTableDecl,
 >(
   first: BooleanExpr<Table>,
   second: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>,
@@ -858,7 +867,7 @@ export function or<
   });
 }
 
-function booleanExprToSql<Table extends TypedTableDef>(
+function booleanExprToSql<Table extends TypedTableDecl>(
   expr: BooleanExpr<Table> | BooleanExprData<Table>,
   tableAlias?: string
 ): string {
@@ -895,7 +904,7 @@ function wrapInParens(sql: string): string {
   return `(${sql})`;
 }
 
-function valueExprToSql<Table extends TypedTableDef>(
+function valueExprToSql<Table extends TypedTableDecl>(
   expr: ValueExpr<Table, any>,
   tableAlias?: string
 ): string {
@@ -1065,11 +1074,11 @@ export function getQueryWhereClause(query: any): BooleanExpr<any> | undefined {
 }
 
 // TODO: Fix this.
-function _createIndexedRowExpr<TableDef extends TypedTableDef>(
-  tableDef: TableDef,
-  cols: RowExpr<TableDef>
-): IndexedRowExpr<TableDef> {
-  const indexed = new Set<ColumnNames<TableDef>>();
+function _createIndexedRowExpr<TableDecl extends TypedTableDecl>(
+  tableDef: TableDecl,
+  cols: RowExpr<TableDecl>
+): IndexedRowExpr<TableDecl> {
+  const indexed = new Set<ColumnNames<TableDecl>>();
   for (const idx of tableDef.indexes) {
     if ('columns' in idx) {
       const [first] = idx.columns;
@@ -1081,5 +1090,5 @@ function _createIndexedRowExpr<TableDef extends TypedTableDef>(
   const pickedEntries = [...indexed].map(name => [name, cols[name]]);
   return Object.freeze(
     Object.fromEntries(pickedEntries)
-  ) as IndexedRowExpr<TableDef>;
+  ) as IndexedRowExpr<TableDecl>;
 }

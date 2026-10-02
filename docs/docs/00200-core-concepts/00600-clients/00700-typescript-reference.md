@@ -1115,10 +1115,10 @@ function MyComponent() {
 ```tsx
 import { useTable } from 'spacetimedb/react';
 
-function useTable<TableDef extends UntypedTableDef>(
-  query: Query<TableDef>,
-  callbacks?: UseTableCallbacks<RowType<TableDef>>
-): [readonly RowType<TableDef>[], boolean];
+function useTable<TableDecl extends UntypedTableDecl>(
+  query: Query<TableDecl>,
+  callbacks?: UseTableCallbacks<RowType<TableDecl>>
+): [readonly RowType<TableDecl>[], boolean];
 ```
 
 Subscribe to a table or filtered query and receive automatic re-renders when rows change. Returns a tuple of `[rows, isReady]`.

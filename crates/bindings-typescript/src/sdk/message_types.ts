@@ -1,22 +1,22 @@
 import type { TableUpdate } from './table_cache.ts';
-import type { UntypedTableDef } from '../lib/table.ts';
+import type { UntypedTableDecl } from '../lib/table.ts';
 import type { ReducerOutcome } from './client_api/types';
 
 export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';
-  tableUpdates: TableUpdate<UntypedTableDef>[];
+  tableUpdates: TableUpdate<UntypedTableDecl>[];
 };
 
 export type SubscribeAppliedMessage = {
   tag: 'SubscribeApplied';
   querySetId: number;
-  tableUpdates: TableUpdate<UntypedTableDef>[];
+  tableUpdates: TableUpdate<UntypedTableDecl>[];
 };
 
 export type UnsubscribeAppliedMessage = {
   tag: 'UnsubscribeApplied';
   querySetId: number;
-  tableUpdates: TableUpdate<UntypedTableDef>[];
+  tableUpdates: TableUpdate<UntypedTableDecl>[];
 };
 
 export type SubscriptionError = {

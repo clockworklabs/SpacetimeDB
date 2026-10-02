@@ -197,7 +197,7 @@ function App() {
 
 **Key differences from the React API:**
 
-- `useTable` takes a _getter function_ `() => Query<TableDef>` instead of a plain value, so the query can be reactive and update when signals change.
+- `useTable` takes a _getter function_ `() => Query<TableDecl>` instead of a plain value, so the query can be reactive and update when signals change.
 - `useTable` returns `[rows, isReady]` where `rows` is a Solid reactive store and `isReady` is an accessor function `() => boolean`.
 - The `enabled` callback option is a getter `() => boolean` instead of a plain boolean, allowing it to depend on reactive state.
 - `useReducer` and `useProcedure` queue calls made before the connection is ready and flush them once connected.

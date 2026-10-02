@@ -1,16 +1,16 @@
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedSchemaDecl } from '../lib/schema';
 import type { ReadonlyTable, Table } from '../lib/table';
 import type { Values } from '../lib/type_util';
 
 /**
  * A type representing a read-only database view, mapping table names to their corresponding read-only Table handles.
  */
-export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
+export type ReadonlyDbView<SchemaDecl extends UntypedSchemaDecl> = {
   readonly [Tbl in Values<
-    SchemaDef['tables']
+    SchemaDecl['tables']
   > as Tbl['accessorName']]: ReadonlyTable<Tbl>;
-} & (SchemaDef extends {
-  namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+} & (SchemaDecl extends {
+  namespaces: infer NS extends Record<string, UntypedSchemaDecl>;
 }
   ? { readonly [K in keyof NS]: ReadonlyDbView<NS[K]> }
   : {});
@@ -18,12 +18,12 @@ export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
 /**
  * A type representing the database view, mapping table names to their corresponding Table handles.
  */
-export type DbView<SchemaDef extends UntypedSchemaDef> = {
+export type DbView<SchemaDecl extends UntypedSchemaDecl> = {
   readonly [Tbl in Values<
-    SchemaDef['tables']
+    SchemaDecl['tables']
   > as Tbl['accessorName']]: Table<Tbl>;
-} & (SchemaDef extends {
-  namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+} & (SchemaDecl extends {
+  namespaces: infer NS extends Record<string, UntypedSchemaDecl>;
 }
   ? { readonly [K in keyof NS]: DbView<NS[K]> }
   : {});
