@@ -1,194 +1,76 @@
 # Starclash lobby example
 
-Starclash is a ranked one-on-one spaceship duel built with
-[`@spacetimedb/lobby`](../). The Lobby submodule owns queue tickets,
-rooms, seats, and ratings; the host module owns ship selection, duel state,
-maneuvers, combat resolution, and round logs.
+A one-on-one spaceship game. Find an opponent, choose maneuvers, and finish
+a duel to update your rating. You can also play against the computer.
 
-## What this demonstrates
+## Run it locally
 
-- Mounting the Lobby submodule in a host game module.
-- Ranked queue matching, room joining, rematches, and rating updates.
-- Falling back from a public queue to a server-controlled AI opponent.
-- Keeping submodule matchmaking state separate from application game state.
-- Resolving forfeits, disconnects, and abandoned rooms so no duel stays open.
-- Using the submodule's caller-scoped ticket, room, seat, and rating views
-  alongside host duel views.
-- Driving a realtime UI entirely from SpacetimeDB subscriptions.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server registered as `local`.
-- A logged-in CLI identity for publishing the example.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+From `spacetime-lobby-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
-## Quick start
+Then publish the example and start its web server:
 
-From `spacetime-lobby-ts/example`:
-
-```powershell
+```bash
 pnpm install
-pnpm --dir spacetimedb install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://127.0.0.1:8797> in two independent browser profiles or one normal
-and one private/incognito window. Choose ships and queue both pilots. Separate
-profiles are important because ordinary tabs share the same persisted development
-SpacetimeDB identity.
+Open <http://127.0.0.1:8797>.
 
-`build:module:fresh` deletes and recreates only the local `spacetime-lobby-example`
-database. Use `pnpm run build:module` when existing ratings and duel history must
-be preserved.
+## Try it
 
-## Use in your project
+1. Open the app in a normal window and a private browser window.
+2. Choose a pilot name and ship in each window.
+3. Click **Find Match** in both windows to queue the two pilots.
+4. Choose a maneuver for each pilot. The round resolves after both choose.
+5. Continue until one ship is destroyed, then check the ratings.
 
-This workspace tests the submodule source in this repository. Consumer
-applications install the published release:
+Use separate browser profiles or a private window. Two normal tabs share the
+same pilot identity.
 
-```bash
-npm install @spacetimedb/lobby spacetimedb
-```
+If no opponent joins, the app starts a duel against the computer.
+Computer duels do not affect ratings.
 
-Follow the package's
-[integration guide](../README.md#integrate-into-an-application). Copy the
-subject-mapping and result-reporting boundaries; ships, maneuvers, and duel
-simulation are application-specific demonstration code.
+## Leaving a duel
+
+**Forfeit** ends an active duel as a loss. Starting another duel also forfeits
+the current one. If your last connection closes and you do not reconnect within
+30 seconds, you forfeit. The opponent wins a rated active duel in these cases.
 
 ## Configuration
 
-| Variable              | Default                   | Purpose                              |
-| --------------------- | ------------------------- | ------------------------------------ |
-| `HOST`                | `127.0.0.1`               | Development web-server bind address. |
-| `PORT`                | `8797`                    | Development web-server port.         |
-| `STDB_URI`            | `ws://127.0.0.1:3000`     | Browser WebSocket endpoint.          |
-| `SPACETIMEDB_DB_NAME` | `spacetime-lobby-example` | Published database name.             |
+See [.env.example](./.env.example) for the database address and web-server port.
 
-The Node process serves static files, `GET /api/health`, and browser-safe
-`GET /api/config`. Matchmaking and combat calls travel directly to SpacetimeDB.
+## Before deploying
 
-## Match and duel lifecycle
-
-1. A player sets a display name and ship class.
-2. `find_duel` joins the ranked public pool through the Lobby submodule.
-3. Once two compatible tickets are matched, both subjects join the resulting
-   room and the host module creates duel state.
-4. Each pilot chooses a maneuver. The module resolves the round only when the
-   required choices exist, then records combat changes and a round log. Dodge
-   and critical rolls come from the transaction's RNG.
-5. When a ship is destroyed, the module reports the winner with
-   `reportMatchResult`, which updates both ratings and closes the room.
-6. Players can queue again with `find_duel`.
-
-A duel can also end early:
-
-- `leave_duel`, or calling `find_duel` during an unfinished duel, forfeits it.
-- A pilot whose last connection closes and does not reconnect within 30
-  seconds forfeits their unfinished duels and loses their queued ticket.
-- In an active room a forfeit reports the opponent as winner, so the loss is
-  rated. A room that is not active yet is left and abandoned without a rating
-  change.
-- A scheduled `duel_sweep` runs every 5 seconds. It abandons a duel whose lobby
-  room closed or timed out, forfeits a player who left an active room through
-  `lobby.leave_room`, and deletes finished duels after the lobby's
-  `retentionSeconds`.
-
-`fallback_to_ai` does nothing if the player already holds a seat in an open
-room, so a real match that formed just before the client's timer is kept.
-Otherwise it replaces the player's public ticket with a match against the Arena
-AI. Every AI match uses the same AI pilot and pool, so public views do not show
-who is playing the AI. The AI picks its maneuver from the RNG of the
-transaction that resolves the round. AI rooms close without a result, so AI
-duels never change ratings or appear on the leaderboard.
-
-## Visibility and authority
-
-The browser subscribes to the public ship and maneuver catalogs, the
-submodule's `lobby.lobby_ranked_leaderboard`, `lobby.my_lobby_tickets`,
-`lobby.my_lobby_rooms`, `lobby.my_lobby_room_seats`, and
-`lobby.my_lobby_ratings`, and the host views `my_profile`, `players`,
-`my_duels`, `my_duel_combatants`, `my_duel_round_logs`, and
-`my_duel_maneuvers`. Scoped views derive their subject from `ctx.sender`.
-`my_duel_maneuvers` returns the caller's own choices and choices from resolved
-rounds, so the opponent's choice for the current round stays hidden. The public
-display-name roster returns at most 1,000 pilots.
-
-Reducers repeat the membership, room, turn, and combat checks. A player cannot
-choose for the opponent, resolve an unrelated room, or read another room merely
-by changing a client query.
-
-This example uses anonymous SpacetimeDB identities. Display names are profile
-metadata. Applications that need verified accounts can register Auth.
-
-## Security and deployment boundaries
-
-- Persisted browser tokens are development identity credentials. Do not log or
-  commit them.
-- Matchmaking and combat inputs are untrusted even when generated by the bundled
-  UI; validate all state transitions in reducers.
-- Rating changes should be reported once for each terminal room. Production game
-  logic should include durable idempotency and abuse controls.
-- Anonymous identities suit this demo. Account recovery, moderation, purchases,
-  and durable competitive identity require application authentication.
-- The included Express process is a local static server. Production needs TLS,
-  explicit binding, origin policy, asset hardening, and supervision.
-
-## Build and verification
-
-```powershell
-pnpm --dir spacetimedb run build
-pnpm run build
-pnpm exec tsc -p tsconfig.json
-```
-
-For a release smoke test:
-
-1. Queue two independent identities and verify exactly one room with two seats.
-2. Join both seats, play several rounds, and confirm both browsers receive the same
-   combat state and logs.
-3. Finish a duel and verify room closure, winner state, and rating changes happen
-   once.
-4. Forfeit a duel, queue again mid-duel, and close one browser for 30 seconds;
-   confirm the opponent wins and ratings change once each time.
-5. Exercise AI fallback and complete a solo duel.
-6. Attempt to submit a maneuver or room action from an unrelated third identity
-   and confirm the module rejects it.
+The demo identifies pilots by browser identity. Add accounts if players need
+account recovery or lasting competitive profiles.
 
 ## Troubleshooting
 
-- **Both windows appear as one pilot:** use independent browser profiles or an
-  incognito window to give each player a separate SpacetimeDB token.
-- **A ticket never matches:** confirm both pilots selected the public duel pool and
-  inspect `lobby.lobby_queue_summary` for queued tickets.
-- **The page connects to stale state:** verify `STDB_URI` targets the server
-  registered as `local` by the publish scripts.
-- **State disappears after republishing:** `build:module:fresh`
-  deletes all local rows, including ratings.
+- **Pilots do not match:** queue both before the computer fallback starts.
+- **Ratings do not change:** computer duels are unrated.
 
-## Important files
+## Change the example
 
-- `spacetimedb/src/schema.ts` - Lobby mount and host tables.
-- `spacetimedb/src/index.ts` - matchmaking, combat, result reporting, forfeits,
-  AI fallback, and the duel sweep.
-- `spacetimedb/src/views.ts` - caller-scoped duel views and the pilot roster.
-- `spacetimedb/src/catalog.ts` - ship and maneuver definitions used to seed the
-  public catalogs.
-- `src/app.ts` - browser identity, subscriptions, rendering, and controls.
-- `server.ts` - static development server and browser-safe configuration.
-- `public/index.html` - Starclash interface.
-- `public/styles.css` - Starclash presentation.
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts): matchmaking, combat, and results.
+- [spacetimedb/src/catalog.ts](./spacetimedb/src/catalog.ts): ships and maneuvers.
+- [src/app.ts](./src/app.ts): pilot controls and duel display.
+
+After changing server code, run `pnpm run build:module`. Restart
+`pnpm run dev` after changing browser code or `.env`.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in
+the local `spacetime-lobby-example` database.**
+
+To use the submodule in your own app, see the
+[package integration guide](../README.md#integrate-into-an-application).

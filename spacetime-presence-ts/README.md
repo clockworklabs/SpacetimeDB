@@ -4,9 +4,9 @@ Show who is online and what they are doing in your SpacetimeDB application.
 Use presence for an online-user list, room membership indicators, or typing
 indicators in chat.
 
-Clients send regular heartbeats to keep their presence active. Entries expire
-when those updates stop and are removed by scheduled cleanup. Your application
-can keep separate presence lists for rooms or groups and control who sees them.
+Clients send regular updates, called heartbeats, to stay listed as active.
+Their presence expires when those updates stop. Your application can keep
+separate lists for rooms or groups and control who sees them.
 
 ## Install
 
@@ -16,12 +16,7 @@ npm install @spacetimedb/presence spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Presence to your module and initialize it. This example lets a room member
 send a heartbeat and see who is active in their rooms. Presence records are

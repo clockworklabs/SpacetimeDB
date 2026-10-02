@@ -1,209 +1,71 @@
 # Presence chat example
 
-This example is a small authenticated chat application built with
-[`@spacetimedb/presence`](../). It combines presence, auth, files, and rate
-limiting in one SpacetimeDB module and uses caller-scoped views for the browser.
+A chat app with rooms, messages, and online status. Use two accounts to see
+when someone is online, typing, or reading a conversation.
 
-## What this demonstrates
+## Run it locally
 
-- Email/password accounts and optional Google or GitHub OAuth.
-- Online, away, do-not-disturb, and invisible presence states.
-- A server directory, public rooms that server members join, and private rooms
-  whose admins add members.
-- Messages, replies, reactions, pins, attachments, edits, and deletion.
-- Typing indicators, read cursors, unread badges, and room activity labels.
-- Procedure and reducer rate limits for user-generated activity.
-- Authenticated, user-scoped subscriptions over private tables.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server registered as `local`.
-- A logged-in CLI identity. A fresh publish seeds the publisher as the initial
-  authentication administrator.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-Confirm the local environment first:
+From `spacetime-presence-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+Then publish the example and start its web server:
 
-## Quick start
-
-From `spacetime-presence-ts/example`:
-
-```powershell
+```bash
 pnpm install
-pnpm --dir spacetimedb install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://localhost:8794>, create an account, and create a server. Open a
-private/incognito window with a second account, join that server from **Add a
-server**, and open its `general` room to exercise presence, typing, unread
-counts, and isolation between users.
+Open <http://localhost:8794>.
 
-`build:module:fresh` deletes and recreates only the local `spacetime-presence-example`
-database. Use `pnpm run build:module` when existing local data must be preserved.
+## Try it
 
-## Use in your project
+1. Create an account, then create a server. Here, a server is a group of chat rooms.
+2. Open a private browser window and create a second account.
+3. Use **Add a server** to join the first account's server, then open its
+   `general` room.
+4. Send a message and start typing a reply. Watch the typing indicator and
+   online status in the other window.
+5. Try a reaction, a reply, and a small attachment.
+6. Change one account's status to invisible. The other account sees it as offline.
 
-This workspace tests the submodule source in this repository. Consumer applications install published releases:
+You can also create a private room. A room administrator must add people before
+they can read its messages or attachments.
 
-```bash
-npm install @spacetimedb/presence spacetimedb
-```
-
-Follow the package's
-[integration guide](../README.md#integrate-into-an-application). Add Auth,
-Files, and Rate Limit for the corresponding application features. Chat servers,
-rooms, messages, and reactions belong to the host application.
+After someone closes the app, their online status may take about 30 seconds
+to expire.
 
 ## Configuration
 
-| Variable                       | Default                      | Purpose                                                           |
-| ------------------------------ | ---------------------------- | ----------------------------------------------------------------- |
-| `HOST`                         | `127.0.0.1`                  | Development web-server bind address.                              |
-| `PORT`                         | `8794`                       | Development web-server port.                                      |
-| `STDB_URI`                     | `ws://127.0.0.1:3000`        | Browser WebSocket endpoint.                                       |
-| `STDB_HTTP`                    | `http://127.0.0.1:3000`      | HTTP endpoint used by the auth/file proxy.                        |
-| `STDB_SERVER`                  | `STDB_HTTP`                  | CLI target used during startup configuration.                     |
-| `SPACETIMEDB_DB_NAME`          | `spacetime-presence-example` | Published database name.                                          |
-| `AUTH_ISSUER_URL`              | `http://localhost:8794`      | JWT issuer and OAuth redirect origin.                             |
-| `AUTH_BASE_URL`                | `AUTH_ISSUER_URL`            | Browser-visible auth base URL.                                    |
-| `AUTH_COOKIE_NAME`             | `stdb_auth`                  | Session-cookie name.                                              |
-| `AUTH_SESSION_TTL_SECONDS`     | `604800`                     | Session lifetime in seconds.                                      |
-| `AUTH_ES256_PRIVATE_KEY_PEM`   | generated by the dev server  | Optional persistent ES256 signing key.                            |
-| Google/GitHub client variables | empty                        | Enables the matching OAuth provider when both values are present. |
-
-The development server loads `.env` and calls `auth.set_auth_config`
-automatically on startup using the logged-in CLI identity. Without
-`AUTH_ES256_PRIVATE_KEY_PEM` the database keeps its stored signing key, and a
-fresh database gets a newly generated one.
-
-`STDB_URI`, `STDB_HTTP`, and `STDB_SERVER` must all address the same SpacetimeDB
-instance. `AUTH_ISSUER_URL` must match the origin users actually load, including
-its scheme and port.
-
-## Architecture and data visibility
-
-```text
-Browser
-  -> /auth/* and /files through the same-origin development proxy
-  -> SpacetimeDB reducers, procedures, and scoped subscriptions
-
-SpacetimeDB module
-  -> auth session -> linked application connection
-  -> presence, chat, files, and rate-limit submodules
-  -> my_* views filtered for the linked user and room membership
-```
-
-The browser subscribes only to views such as `my_servers`, `server_directory`,
-`my_rooms`, `my_room_messages`, `my_presence_entries`, and
-`my_rate_limit_status`. Server-side view logic determines which rows the linked
-user may see. Client-side filters provide presentation behavior only.
-`server_directory` lists servers the caller has not joined, and `my_rooms`
-lists the caller's rooms plus the public rooms of their servers.
-
-Presence is lease-based and keyed by the auth user ID. The client sends a
-heartbeat every 15 seconds, and each heartbeat renews the user's `chat.global`
-presence row for the presence submodule's configured TTL (30 seconds by
-default). A closed tab stops heartbeating and its row expires; there is no
-disconnect handler. Invisible users have no presence row and publish no typing
-state, so other users see them as offline. The presence submodule's scheduled
-sweep deletes expired rows, and the scheduled `chat_sweep` reducer prunes room
-activity events.
-
-## Authentication flow
-
-1. The browser sends signup, login, refresh, logout, or OAuth requests to the
-   same-origin `/auth/*` path.
-2. The Node server forwards the request to the module HTTP router.
-3. A successful auth response supplies a short-lived application token.
-4. The browser opens a SpacetimeDB connection and calls `auth.link_connection` with
-   that token before subscribing to user-scoped views.
-
-The SpacetimeDB connection identity and the authenticated application user are
-different concepts. Chat users, messages, reactions, read cursors, and presence
-are keyed by the auth user ID, and authorization derives from linked auth users
-and membership tables. Signing out unlinks the connection and discards the
-stored SpacetimeDB token, so the next sign-in in that browser uses a new
-connection identity.
-
-## Security and deployment boundaries
-
-- A fresh publish seeds the publisher as the auth administrator.
-- Passwords, OAuth secrets, signing keys, `.env`, and browser tokens must not be
-  committed or logged.
-- Private-room and attachment access checks belong in the module and must remain
-  effective even if a client issues its own subscription query.
-- The included Express process serves local development. Production deployment
-  needs TLS, explicit network binding, trusted-proxy rules,
-  origin controls, durable key management, and process supervision.
-
-## Build and verification
-
-```powershell
-pnpm --dir spacetimedb run build
-pnpm run build
-pnpm exec tsc -p tsconfig.json
-```
-
-For a release smoke test, use two accounts and verify:
-
-1. Signup, login, refresh after reload, and logout all work. Signing in as the
-   second user in the same browser after logout shows only that user's
-   authorship.
-2. The second user joins the first user's server from **Add a server**. Both
-   users can join a public room and see messages, typing state, reactions,
-   presence changes, and read progress in real time. An invisible user appears
-   offline to the other.
-3. A user outside a private room cannot subscribe to its messages or retrieve its
-   attachments until a room admin adds them from the channel settings.
-4. Edits, deletes, pins, room administration, and server administration reject
-   unauthorized users.
-5. Repeated writes eventually expose the expected rate-limit status and recover
-   after its window resets.
+See [.env.example](./.env.example) for the server and optional Google/GitHub
+sign-in settings. Keep `AUTH_ISSUER_URL` and `AUTH_BASE_URL` set to the address you open
+in the browser. Restart the example server after changes.
 
 ## Troubleshooting
 
-- **The server exits during startup:** verify the local server is running, the
-  database is published, and the CLI identity is an auth administrator.
-- **Auth works but subscriptions are empty:** inspect the `auth.link_connection` call.
-  Scoped views begin returning rows after the connection is linked.
-- **OAuth callback mismatch:** configure the provider with the exact callback URL
-  derived from `AUTH_ISSUER_URL`.
-- **Users appear offline too quickly:** confirm the browser remains connected and
-  heartbeat calls reach the module within the configured limit.
-- **A browser token is rejected after a fresh publish:** clear site data and sign in
-  again because the database and signing state were reset.
+- **Startup configuration fails:** use the CLI account that published the database.
+- **Sign-in fails after a database reset:** clear this site's browser data and
+  create an account again.
 
-## Important files
+## Change the example
 
-- `spacetimedb/src/index.ts` - reducers, procedures, HTTP handlers, and
-  submodule installation.
-- `spacetimedb/src/schema.ts` - the schema, including the mounted auth, files,
-  rate-limit, and presence submodules.
-- `spacetimedb/src/model.ts` - chat tables and row types.
-- `spacetimedb/src/views.ts` - the caller-scoped `my_*` and `server_directory`
-  views.
-- `spacetimedb/src/domain.ts` - shared chat helpers and authorization checks.
-- `spacetimedb/src/chat-policy.ts` - presence scopes and rate-limit policies.
-- `server.ts` - environment loading, auth bootstrap, and HTTP proxy.
-- `src/app.ts` - browser connection, linked-session setup, and subscriptions.
-- `public/index.html` - the example interface.
-- `public/ui.js` - rendering and interaction handling.
-- `public/chat-model.js` and `public/chat-state.js` - client state and derived
-  data, tested by `scripts/test-ui-model.mjs`.
-- `public/styles.css` and `public/chat.css` - chat presentation.
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts): chat and presence actions.
+- [spacetimedb/src/chat-policy.ts](./spacetimedb/src/chat-policy.ts): presence and activity limits.
+- [public/ui.js](./public/ui.js): rooms and message controls.
+
+After changing server code, run `pnpm run build:module`. Restart
+`pnpm run dev` after changing browser code or `.env`.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in
+the local `spacetime-presence-example` database.**
+
+To use the submodule in your own app, see the
+[package integration guide](../README.md#integrate-into-an-application).

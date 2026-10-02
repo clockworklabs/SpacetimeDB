@@ -1,13 +1,11 @@
 # @spacetimedb/api-keys
 
-Give scripts and external services access to your SpacetimeDB application with
-API keys. For example, issue a key that lets a deployment tool upload files
-without signing in through your application's UI.
+Create and manage API keys for your SpacetimeDB application.
 
 Create keys with permissions and an expiration time, check them before an
-operation, and revoke or rotate them when needed. Your application defines
-what each permission allows. The submodule stores key hashes and usage history;
-each raw key is returned only when it is created or rotated.
+operation, and revoke or replace them when needed. Your application defines
+what each permission allows. Copy each key when you create or replace it;
+you cannot retrieve it later.
 
 ## Install
 
@@ -17,12 +15,7 @@ npm install @spacetimedb/api-keys spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add API Keys to your module and initialize it:
 
@@ -178,14 +171,8 @@ window every minute.
 
 ## Security model
 
-- Raw keys are returned once. Persistent state contains the hash and lookup
-  prefix.
 - Key secrets are 256-bit HMAC-SHA256 outputs keyed by the operator secret
-  over a stored counter and the transaction timestamp. The module never uses
-  `ctx.random` for key material.
-- A short key prefix is stored for lookup and display.
-- Public views expose safe summaries and omit key hashes and raw secrets.
-- The submodule validates scopes as strings; the host app defines their meaning.
+  over a stored counter and the transaction timestamp.
 - Audit rows cover recognized keys, including wrong secrets for a known prefix
   and expired, revoked, and scope-denied keys. Malformed and unknown input is
   rejected before audit storage.

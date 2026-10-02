@@ -4,9 +4,8 @@ Build square or hex-based game maps in your SpacetimeDB application. Place
 units, mark obstacles, find paths, and calculate which cells a unit can reach
 with its movement budget.
 
-Grid state is stored in your database. Your game can give each player their
-own map or let players share one, with server-side checks on who can move each
-unit.
+Maps can belong to one player or be shared. Each unit has an owner who can
+move it.
 
 ## Install
 
@@ -16,12 +15,7 @@ npm install @spacetimedb/grid spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Grid to your module, then expose operations to create a map and move a
 unit. This example uses the caller's identity as the owner. Use an authenticated
@@ -224,11 +218,6 @@ Types: `Coord`, `GridKind`, `Connectivity`.
 pnpm test
 pnpm run typecheck
 ```
-
-Build the
-[example host module](./example/spacetimedb/)
-to verify the
-submodule schema, helpers, and generated bindings.
 
 ## License
 

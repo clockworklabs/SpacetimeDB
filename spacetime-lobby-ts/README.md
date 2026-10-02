@@ -17,12 +17,7 @@ npm install @spacetimedb/lobby spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Lobby to your module and initialize its matchmaking settings and cleanup:
 
