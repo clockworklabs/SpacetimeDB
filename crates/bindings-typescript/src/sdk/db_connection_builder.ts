@@ -1,4 +1,8 @@
-import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
+import {
+  DbConnectionImpl,
+  type ConnectionEvent,
+  type TokenProvider,
+} from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type {
   DbConnectionConfig,
@@ -22,7 +26,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #uri?: URL;
   #nameOrAddress?: string;
   #identity?: Identity;
-  #token?: string;
+  #token?: string | TokenProvider;
   #emitter: EventEmitter<ConnectionEvent> = new EventEmitter();
   #compression: 'gzip' | 'brotli' | 'none' = 'gzip';
   #lightMode: boolean = false;
@@ -76,11 +80,26 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    * is optional. You can store the token returned by the `onConnect` callback
    * to use in future connections.
    *
+   * Pass a function instead of a string for short-lived tokens, such as OIDC
+   * session JWTs. It is called, and may return a promise, on every connection
+   * attempt, including automatic reconnects by the framework providers, so
+   * each attempt authenticates with a fresh token. Returning `undefined`
+   * connects anonymously.
+   *
    * @returns The `DbConnectionBuilder` instance.
    */
-  withToken(token?: string): this {
+  withToken(token?: string | TokenProvider): this {
     this.#token = token;
     return this;
+  }
+
+  /**
+   * Whether the token was set as a {@link TokenProvider}. The
+   * `ConnectionManager` does not resume a session's token over a provider,
+   * which already decides the identity for each attempt.
+   */
+  hasTokenProvider(): boolean {
+    return typeof this.#token === 'function';
   }
 
   withWSFn(createWSFn: WebSocketFactory): this {

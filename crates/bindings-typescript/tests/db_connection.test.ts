@@ -338,6 +338,52 @@ describe('DbConnection', () => {
     expect(called).toBeTruthy();
   });
 
+  test.each([
+    ['sync', (token: string) => token],
+    ['async', async (token: string) => token],
+  ])(
+    'asks a %s token provider for a fresh token on every build',
+    async (_kind, provide) => {
+      let issued = 0;
+      const authTokens: (string | undefined)[] = [];
+      const builder = DbConnection.builder()
+        .withUri('ws://127.0.0.1:1234')
+        .withDatabaseName('db')
+        .withToken(() => provide(`token-${++issued}`))
+        .withWSFn(args => {
+          authTokens.push(args.authToken);
+          return new WebsocketTestAdapter().openWebSocket(args);
+        });
+
+      const first = builder.build();
+      await first['wsPromise'];
+      const second = builder.build();
+      await second['wsPromise'];
+
+      expect(authTokens).toEqual(['token-1', 'token-2']);
+      expect(first.token).toBe('token-1');
+      expect(second.token).toBe('token-2');
+    }
+  );
+
+  test('reports a throwing token provider through onConnectError', async () => {
+    let connectError: Error | undefined;
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withToken(() => {
+        throw new Error('token fetch failed');
+      })
+      .withWSFn(new WebsocketTestAdapter().openWebSocket)
+      .onConnectError((_ctx, error) => {
+        connectError = error;
+      })
+      .build();
+
+    await client['wsPromise'];
+    expect(connectError?.message).toBe('token fetch failed');
+  });
+
   test('batches same-tick reducer calls when v3 is negotiated', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
