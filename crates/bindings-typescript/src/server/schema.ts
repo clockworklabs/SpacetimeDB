@@ -1,5 +1,4 @@
 import { environmentDeclarations, type EnvironmentSchema } from './environment';
-import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
 import {
   CaseConversionPolicy,
   Lifecycle,
@@ -48,7 +47,6 @@ import {
   type ReducerOptsWithOptionalName,
   type Reducers,
 } from './reducers';
-import { makeHooks } from './runtime';
 
 import {
   makeAnonViewExport,
@@ -269,17 +267,22 @@ type PendingHttpRoute = {
 // TODO(cloutiertyler): It might be nice to have a way to access the types
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
-export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
+export class Schema<S extends UntypedSchemaDef> {
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
     this.#ctx = ctx;
   }
 
-  [moduleHooks](exports: object) {
+  /**
+   * @internal Registers `exports` for the host. The host's entry point,
+   * `[moduleHooks]`, lives in `./module_hooks` so that this class loads without
+   * the host, as it does on a client.
+   */
+  registerForHost(exports: object): SchemaInner<S> {
     this.buildRawModuleDefV10(exports);
     this.#ctx.resolveHttpRoutes();
-    return makeHooks(this.#ctx);
+    return this.#ctx;
   }
 
   get schemaType(): S {

@@ -1,23 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
-
-vi.mock(
-  'spacetime:sys@2.0',
-  () => ({
-    moduleHooks: Symbol('moduleHooks'),
-  }),
-  { virtual: true }
-);
-
-vi.mock('../src/server/runtime', () => ({
-  makeHooks: () => ({}),
-  callProcedure: () => new Uint8Array(),
-  callUserFunction: (fn: (...args: any[]) => any, ...args: any[]) =>
-    fn(...args),
-  ReducerCtxImpl: class {},
-  sys: {
-    row_iter_bsatn_close: () => {},
-  },
-}));
+import { beforeAll, describe, expect, it } from 'vitest';
 
 describe('schema submodules', () => {
   let schema: typeof import('../src/server/schema').schema;
