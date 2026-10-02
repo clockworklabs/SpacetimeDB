@@ -70,7 +70,7 @@ enum JoinHandleInner<T> {
     //
     // This happens in two cases:
     //
-    // 1. After the task output has been yielded — the backend handle no longer
+    // 1. After the task output has been yielded -- the backend handle no longer
     //    owns `T`, so we swap it out for a neutral placeholder rather than
     //    leave a semantically-invalid variant in place.
     // 2. In `Drop`, so we can call `detach()` on the simulation handle (which
