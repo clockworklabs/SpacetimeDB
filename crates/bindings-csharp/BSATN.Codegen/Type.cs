@@ -473,6 +473,14 @@ public static class SpacetimeDbFieldDiscovery
             .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
             .Where(f => !f.IsStatic);
 
+    /// <summary>
+    /// The BSATN fields of a type, in declaration order: the instance fields declared in its
+    /// partial declarations that carry <c>[SpacetimeDB.Type]</c> or <c>[SpacetimeDB.Table]</c>.
+    /// </summary>
+    public static IEnumerable<IFieldSymbol> GetSpacetimeDbFields(INamedTypeSymbol type) =>
+        GetAnnotatedPartialDeclarations(type)
+            .SelectMany(typeSyntax => GetFieldsDeclaredInAnnotatedPartial(typeSyntax, type));
+
     public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
     {
         if (rowType is not INamedTypeSymbol namedRowType)
@@ -521,6 +529,24 @@ public abstract record BaseTypeDeclaration<M>
     public string ShortNameIdentifier => EscapeIdentifier(ShortName);
 
     protected abstract M ConvertMember(int index, IFieldSymbol field, DiagReporter diag);
+
+    /// <summary>
+    /// Declares a product type that has no source of its own, for generators that emit both
+    /// the type and its BSATN implementation.
+    /// </summary>
+    protected BaseTypeDeclaration(
+        Scope scope,
+        string shortName,
+        string fullName,
+        ImmutableArray<M> members
+    )
+    {
+        Scope = scope;
+        ShortName = shortName;
+        FullName = fullName;
+        Kind = TypeKind.Product;
+        Members = new(members);
+    }
 
     public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
