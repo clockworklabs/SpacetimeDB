@@ -1,0 +1,698 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T04-58-54-230Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T04-58-54-230Z",
+    "parentId": "ecommerce-postgres-run408-20260928045831-d7d92fb4"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:58:54.231Z",
+    "completedAt": "2026-09-28T05:05:05.802Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 371572,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-6b4Syn/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-6b4Syn/selected-mutations.json",
+    "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-restock-race.json",
+      "../tracks/ecommerce/scenarios/02-strengthened.json",
+      "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "../tracks/ecommerce/scenarios/03-server-time.json",
+      "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+      "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "../tracks/ecommerce/scenarios/01-purchase-session.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "restock-race-records-wrong-order-total",
+        "operator-authorization-allows-customer-transfer",
+        "progression-cart-line-does-not-increment",
+        "progression-restock-does-not-survive-restart",
+        "transfer-overdraft-guard-skips-bulk-transfers",
+        "restock-trusts-submitted-admin-role",
+        "checkout-trusts-submitted-price",
+        "checkout-missing-sibling-line",
+        "purchase-trusts-cross-origin-cookie",
+        "purchase-session-rejects-returning-login"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "9d3e9a4bcaaa7f97d16a02e6108b5d7711883fdcb899f1f38074e112185048a7"
+      },
+      "total": 19,
+      "max": 19,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "identitySha256": "0800339bfb71ce651321c3b36e87bf3771abee25afda83e4cfeb77c03b99a778",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "c8eaa9fd547b03d89afcf2f3f1870a7da3d806f4c768fa16e9244bf1894fa08d",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "identitySha256": "363ad7ca0e93b117170342401b9d0eace2ce8f1932b22189758a8aa7f7fb2818",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+          "identitySha256": "044aaf8ebe024172f97d52466a24bb2e261c2eead932f5e0856dbb4dfd2ba3f2",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+          "identitySha256": "6ac7857a34608aae5812741bf0d3663d859fc3fe285232f0fb9c6aed3d704ad2",
+          "total": 2,
+          "max": 2
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "identitySha256": "15b37451833095adfd92f8cef0e863d13f1dd077e4922935a6a82ddd4ae21d28",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "identitySha256": "b193ccb3035a63562bb203b544d96a78f1b302d00023976397558040464273bb",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 10,
+      "completed": 10,
+      "total": 10,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "restock-race-records-wrong-order-total",
+        "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 202,
+            "criterion": "202a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase order total control reads 8050, expected exactly 7950",
+            "failedAction": "dbExpectPurchases",
+            "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the transfer action was accepted for customer, who must be refused",
+            "failedAction": "expectActionOutcome",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "progression-cart-line-does-not-increment",
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "targets": [
+          "ecommerce.feature.cart-checkout.cart.4a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.cart-checkout.cart.4a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 4,
+            "criterion": "4a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the cart-quantity control reads 1, expected exactly 2 in the entry matching \"Headphones\"",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.feature.cart-checkout.cart.4a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "progression-restock-does-not-survive-restart",
+        "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+        "targets": [
+          "ecommerce.l3.server-time.server-time.312a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.l3.server-time.server-time.312a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 312,
+            "criterion": "312a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the pending-restock-item control did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.l3.server-time.server-time.312a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "transfer-overdraft-guard-skips-bulk-transfers",
+        "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the order-error control did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "restock-trusts-submitted-admin-role",
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 103,
+            "criterion": "103b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-trusts-submitted-price",
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "targets": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 4,
+            "criterion": "4d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the checkout order total in minor units control reads 100, expected exactly 10600",
+            "failedAction": "dbExpectCheckout",
+            "key": "ecommerce.feature.cart-checkout.cart.4d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-missing-sibling-line",
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "targets": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 4,
+            "criterion": "4d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the checkout order quantity control reads 1, expected exactly 2",
+            "failedAction": "dbExpectCheckout",
+            "key": "ecommerce.feature.cart-checkout.cart.4d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "purchase-trusts-cross-origin-cookie",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase orders for account kimf7415d7f-f37b-4ff101 control reads 1, expected exactly 0",
+            "failedAction": "dbExpectNoPurchase",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "purchase-session-rejects-returning-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"kim3cb3f1f7-d592-44f101\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5",
+      "recipeSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474",
+      "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+      "calibrationSha256": "ae3a0b216bc06c917b0a3489993a2f1ea2362dbec2c1a754cfb2119fd4f3d5e4",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "restock-race-records-wrong-order-total",
+          "operator-authorization-allows-customer-transfer",
+          "progression-cart-line-does-not-increment",
+          "progression-restock-does-not-survive-restart",
+          "transfer-overdraft-guard-skips-bulk-transfers",
+          "restock-trusts-submitted-admin-role",
+          "checkout-trusts-submitted-price",
+          "checkout-missing-sibling-line",
+          "purchase-trusts-cross-origin-cookie",
+          "purchase-session-rejects-returning-login"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "scenarioSha256": "fcac088f2477396a80bf506feb25c81c502bfad626761d704ea10b6f5d89e56c",
+          "mutationSha256": "fe2f6bc77c61566691c7df698cbff3db63f70858bb919eb08afa4fb23a837cbc",
+          "selectionSha256": "927ccffa556c5c1183b5d6aa48d3e485f05efca8d3a3d821acae647245dfea3e",
+          "identitySha256": "0800339bfb71ce651321c3b36e87bf3771abee25afda83e4cfeb77c03b99a778",
+          "mutationIds": [
+            "restock-race-records-wrong-order-total"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "2fa6bceb0d87eaa39c00c901b710653ddc0870b922edd2b9ea5de6e9f5e10aa9",
+          "mutationSha256": "f891dd4a8c34e581bafb486c73d1597a82d160ff40cb514987c6c2c22965e8cf",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "c8eaa9fd547b03d89afcf2f3f1870a7da3d806f4c768fa16e9244bf1894fa08d",
+          "mutationIds": [
+            "operator-authorization-allows-customer-transfer"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "scenarioSha256": "8e629381acd57f501ec9fd071f8fce3229a54cb4a9a125bf449f77b6624a0cc3",
+          "mutationSha256": "f236983eb10afc3323b9033ef8616e660347515a2c20feaa9fd1caabbb9ec9ea",
+          "selectionSha256": "9983c83e224a2e861e29cde5d2c0f00e09cf895853e600b7960d0698fe06d83e",
+          "identitySha256": "363ad7ca0e93b117170342401b9d0eace2ce8f1932b22189758a8aa7f7fb2818",
+          "mutationIds": [
+            "progression-cart-line-does-not-increment",
+            "checkout-trusts-submitted-price",
+            "checkout-missing-sibling-line"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+          "scenarioSha256": "ecb028ada567a263f3b71bd98e23e1b7fbbaf411f81d599646b9eb300d47994d",
+          "mutationSha256": "00a4507253de47b0af925872832248c55f06035677b745f7eb890595d2b81228",
+          "selectionSha256": "249a43f11167630329481eaca91c1724559619698fe460d82e120d0303b5b8ce",
+          "identitySha256": "044aaf8ebe024172f97d52466a24bb2e261c2eead932f5e0856dbb4dfd2ba3f2",
+          "mutationIds": [
+            "progression-restock-does-not-survive-restart"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+          "scenarioSha256": "aa85197e383460f1484e5629e02db2a321f076fc62270a7843394453de5f30b0",
+          "mutationSha256": "024ce934ad73e7763a92f9484c48a18c91be83bf0ce9bf224d7bd21c6e77421e",
+          "selectionSha256": "60161c6f79ce540e7481dc127071cf1aca08310571716245a3fb2156c7dbc06b",
+          "identitySha256": "6ac7857a34608aae5812741bf0d3663d859fc3fe285232f0fb9c6aed3d704ad2",
+          "mutationIds": [
+            "transfer-overdraft-guard-skips-bulk-transfers"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "scenarioSha256": "26a72bfe910bedbd86b93c77426e4ed563e0fe02b796120e5d8b058b3d5c11aa",
+          "mutationSha256": "5b4106a7c378ca488e6f8014c82dd58382e0507e14d4b4ff6255dddc93763a96",
+          "selectionSha256": "bd93e0f7ed3cbc398e8633c33bd54bd305e73fd7fc95cf7da498a89402d1e772",
+          "identitySha256": "15b37451833095adfd92f8cef0e863d13f1dd077e4922935a6a82ddd4ae21d28",
+          "mutationIds": [
+            "restock-trusts-submitted-admin-role"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "scenarioSha256": "68a86b2164627ecc5ede0d916e98881e77e731f6f840e9637bfa2b5f6cda5b01",
+          "mutationSha256": "e33283c30001ea17a1ac1e77d5c5136dd8306604113c911645f837b608486683",
+          "selectionSha256": "93900497e87d382fb33acbd636b7bb3d8c6165595640215e49c5a1e0deeb6c1f",
+          "identitySha256": "b193ccb3035a63562bb203b544d96a78f1b302d00023976397558040464273bb",
+          "mutationIds": [
+            "purchase-trusts-cross-origin-cookie",
+            "purchase-session-rejects-returning-login"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-28T05:05:05.803Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+        "mutationId": "restock-race-records-wrong-order-total",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-9Y9oY3/grade.json",
+          "sha256": "775df14d684a1108fe53b5d6c6716fabb4c593f3eba0cba4b738a84103db0059"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "operator-authorization-allows-customer-transfer",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-KfPW6R/grade.json",
+          "sha256": "7ab59fe916a28cbe46090c52f7c0e8b3ccc027febb6c528bf3ec198a93daf753"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "mutationId": "progression-cart-line-does-not-increment",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-JQXwuv/grade.json",
+          "sha256": "45598ea9d4096049216d93b0f72175b54906f93c75793f5b7f947454a8208a33"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "mutationId": "checkout-trusts-submitted-price",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-W03f6X/grade.json",
+          "sha256": "29e21ef9425f25e05d10f41258fa457494f90eb61b7d691a77241ae576b686b8"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "mutationId": "checkout-missing-sibling-line",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-HNo8Wf/grade.json",
+          "sha256": "5af8bfd12ecbc828e54b5312e8420704bd3b3f99ea00bedda0ba1d87858173d3"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+        "mutationId": "progression-restock-does-not-survive-restart",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-EoQr1D/grade.json",
+          "sha256": "7764a16d92d5675c0ab4f3f69f65442f3feeea6e2b459354bf898fd533b60f6a"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+        "mutationId": "transfer-overdraft-guard-skips-bulk-transfers",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-ryNXS8/grade.json",
+          "sha256": "91c24a276bc1d1d1269ade085e53f35018c8f8b8731df3c0ace5e2caea3b9660"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "mutationId": "restock-trusts-submitted-admin-role",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-SN8TX4/grade.json",
+          "sha256": "ee6d88599ddaaf468d72fd94e4d4ee8ac4c6c84ba22de45548bf7976e5e78bfc"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "purchase-trusts-cross-origin-cookie",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-DBlS8m/grade.json",
+          "sha256": "77a0e44ec0b3c8efea2c471c66435325db2ab8d17a7728bcc5447418d6a39e58"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "purchase-session-rejects-returning-login",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-NNWlbe/grade.json",
+          "sha256": "81357e06221982a8586fd03ee8b74a63476bdae9bf4ab3e87b1eb9fa89858c53"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

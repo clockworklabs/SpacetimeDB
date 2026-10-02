@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "kind": "postgres-stock-interface-behavior",
+  "createdAt": "2026-09-27T04:51:18.331265+00:00",
+  "baseCommit": "69d6dff0cbf488d61baa762b491a28cb357f59f5",
+  "runtime": {
+    "node": "v22.22.1",
+    "databaseImage": "sha256:8ef47cb3d2582a664062404e8e578c5339a8df7f5df82ea1f1446c7b5d8cef15",
+    "network": "none",
+    "databaseFixture": "tests/stock-read.integration.ts: inline PostgreSQL tables, views and no-op trigger"
+  },
+  "sourceSha256": {
+    "src/stacks/postgres-sql.ts": "835eb89ef778037912c3cc66c0f1565e9c6d235d80f435cf7ac7b415afcc4911",
+    "tests/stock-read.integration.ts": "4583a884879a03b085e33651d153359db90021ac96f047c57e9ad189f18def8c",
+    "tests/stock-read-postgres.test.ts": "c6e5c2ba68709768c8f226eeb7675ed20099352625ad1cbd2a0f401bc0b02a85",
+    "tests/stock-read-backends.test.ts": "017db19bb5ebdd2d062ddad205dfc42884c70964deb8e7a564a371cb4da158fe",
+    "tracks/ecommerce/contracts/warehouse-administration.md": "c0d10ad42d8c9e4773a78f8df62aa0d047a6c9b5d10bf892a5cc16ec213a1d84"
+  },
+  "commands": {
+    "compile": "node node_modules/typescript/bin/tsc tests/stock-read.integration.ts tests/stock-read-postgres.test.ts tests/stock-read-backends.test.ts --outDir local-notes/readiness-20260927/stock-build --rootDir . --target ES2023 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --noEmitOnError --esModuleInterop",
+    "e2e": "$env:STACK_BENCH_STOCK_READ_DOCKER='1'; node --test --test-name-pattern=postgres local-notes/readiness-20260927/stock-build/tests/stock-read.integration.js",
+    "retainedTests": "node --test local-notes/readiness-20260927/stock-build/tests/stock-read-postgres.test.js local-notes/readiness-20260927/stock-build/tests/stock-read-backends.test.js"
+  },
+  "results": {
+    "before": {
+      "status": "failed",
+      "expected": true,
+      "reason": "Valid holding became unreadable after dropping warehouse foreign key",
+      "log": "stock-red.log",
+      "sha256": "b4ac7dd64b73b6b588312106fdb516bea114fcd66ac11a4c768549b6af7af0d5"
+    },
+    "after": {
+      "status": "passed",
+      "realPostgresCases": 1,
+      "durationMs": 25883,
+      "log": "stock-green.log",
+      "sha256": "b3cb0a0648f88a25e4666967cc3b0e20875c34f51c7b48f15f92260ebc5dc81d"
+    },
+    "retainedTests": {
+      "passed": 12,
+      "failed": 0
+    },
+    "cleanup": {
+      "remainingOwnedDatabaseContainers": [],
+      "compiledOutput": "local-notes/readiness-20260927/stock-build",
+      "compiledOutputRetained": true
+    }
+  },
+  "limits": [
+    "No normal reference/mutation qualification is claimed by this adapter E2E. Parent owns targeted901a qualification and validated reuse.",
+    "Supabase quiet SQL is exercised against PostgreSQL16; no hosted Supabase platform qualification is claimed.",
+    "Stored negative integers remain measurable; only requested setup writes reject negative quantities.",
+    "The initial broad compile was blocked by an unrelated in-progress preflight type error; targeted entry compilation passed."
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.store-credit",
+  "moduleType": "feature",
+  "title": "Store credit",
+  "description": "Store credit",
+  "requiresPacks": [
+    "ecommerce.progression.payment-records",
+    "ecommerce.progression.staff-roles"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "direct-server-call"
+  ],
+  "evidence": [
+    "browser-observation",
+    "fresh-client-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 180000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.store-credit",
+        "path": "prompts/modular/store-credit.md",
+        "order": 5100,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.store-credit.interface",
+        "path": "contracts/store-credit.md",
+        "order": 5900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "feature-750",
+      "stableId": "store-credit-750",
+      "source": "scenarios/progression-store-credit.json",
+      "feature": 750,
+      "criteria": [
+        "750a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

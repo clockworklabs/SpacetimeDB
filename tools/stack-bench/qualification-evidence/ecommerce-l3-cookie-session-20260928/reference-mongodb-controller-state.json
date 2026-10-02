@@ -1,0 +1,25 @@
+{
+  "Id": "e8ed104f69b1be4d88a41963d19067434da18201bd911f562a3ac8a4a04f77ee",
+  "Image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+  "Name": "/stack-bench-cookie-reference-mongodb-0ab41064a",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-28T23:41:17.985211764Z",
+    "FinishedAt": "2026-09-28T23:44:15.422932088Z"
+  },
+  "Labels": {
+    "org.opencontainers.image.title": "Stack Bench controller",
+    "org.opencontainers.image.version": "24.04",
+    "stack-bench.candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+    "stack-bench.diagnostic": "unqualified-cookie-session",
+    "stack-bench.inputs": "93e7fb015821348de16f11b4e33c1465d024431e9e79f330acbec0d069b47b57"
+  }
+}

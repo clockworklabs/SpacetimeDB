@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Automatic reorder rules",
+  "features": [
+    {
+      "id": 502,
+      "name": "Warehouse staff manage automatic reorder rules",
+      "actors": [
+        "staff",
+        "admin",
+        "buyer-a"
+      ],
+      "setup": [
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":2,"settleMs":2000},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":1,"settleMs":2000},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"expect","actor":"staff","testid":"reorder-link","within":6000},
+        {"do":"click","actor":"staff","testid":"reorder-link"},
+        {"do":"fill","actor":"staff","testid":"reorder-item","text":"Desk Lamp"},
+        {"do":"fill","actor":"staff","testid":"reorder-threshold","text":"2"},
+        {"do":"fill","actor":"staff","testid":"reorder-quantity","text":"5"},
+        {"do":"callAction","actor":"staff","action":"saveReorderRule","namedAction":{"id":"saveReorderRule","path":"/api/reorders/{itemId}","method":"PUT","reducer":"save_reorder_rule","args":[0,2,5],"params":[{"name":"itemId","in":"path","placeholder":"{itemId}","wireType":"u64"},{"name":"threshold","in":"body"},{"name":"quantity","in":"body"}]},"input":{"testid":"reorder-submit","attribute":"data-action-input"}},
+        {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"staff","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true,"readyTestid":"current-user"},
+        {"do":"click","actor":"staff","testid":"reorder-link","unlessVisible":"reorder-submit"},
+        {"do":"expectElementCount","actor":"staff","testid":"reorder-rule-item","contains":"Desk Lamp","equals":1,"within":10000},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"click","actor":"admin","testid":"restocks-link","ifAvailable":true,"within":1000},
+        {"do":"signUp","actor":"buyer-a","name":"reorder-a"}
+      ],
+      "criteria": [
+        {
+          "id": "502a",
+          "category": "feature",
+          "desc": "crossing the threshold creates one pending restock",
+          "points": 3,
+          "statedBy": "Crossing a reorder threshold schedules a restock.",
+          "steps": [
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
+            {"do":"click","actor":"admin","testid":"restocks-link","ifAvailable":true,"within":1000},
+            {"do":"expect","actor":"admin","testid":"schedule-restock-submit"},
+            {"do":"expectElementCount","actor":"admin","testid":"pending-restock-item","equals":0},
+            {"do":"callAction","actor":"buyer-a","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Desk Lamp","attribute":"data-buy-input"}},
+            {"do":"expectActionOutcome","actor":"buyer-a","outcome":"accepted"},
+            {"do":"dbExpectStock","item":"Desk Lamp","equals":2},
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
+            {"do":"click","actor":"admin","testid":"restocks-link","ifAvailable":true,"within":1000},
+            {"do":"expect","actor":"admin","testid":"schedule-restock-submit"},
+            {"do":"expectElementCount","actor":"admin","testid":"pending-restock-item","equals":1,"within":10000},
+            {"do":"expect","actor":"admin","testid":"pending-restock-item","contains":"Desk Lamp","attribute":"data-quantity","value":"5","count":1}
+          ]
+        }
+      ]
+    }
+  ],
+  "note": "Draft: revised observations require matching reference and defect-control qualification."
+}

@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "container": "8faa0282fde68c3fcc8e6b24e29d48193f403442eeeb527114bf296d6aca478d",
+  "image": "sha256:f30e6181c83206f039fc69c8b2b346d58608a99f3866d1068cfc068cac6e710a",
+  "exitCode": 0,
+  "files": [
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-probe.mjs",
+      "sha256": "c21a4a2647dd3513b1fb21322bd0510637e16ba10ab4e1c138d7ca4e5f7fc0ad"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-probe.json",
+      "sha256": "bdde644d1229a6fba31c6d88fb0c00171606f4c75c16f74b317832b39f1b3759"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-launch.json",
+      "sha256": "09ea062e53068174e93ba9a001d0357505d27e66d482f89ef04430679f7ee548"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-controller.json",
+      "sha256": "ec94dce47755b2780413405a341fa14e4c8a29e256a34a28ebfcc6f185ef8964"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-stdout.log",
+      "sha256": "690d54efb185c21231fde4ad037d9265ba5aaa0b3d15102426093ed55f2dbc77"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "cleanup": {
+    "browserClosed": true,
+    "viteClosed": true,
+    "socketsClosed": true
+  },
+  "controllerRetained": true,
+  "paidCalls": 0,
+  "network": "none",
+  "historicalCauseProved": false
+}

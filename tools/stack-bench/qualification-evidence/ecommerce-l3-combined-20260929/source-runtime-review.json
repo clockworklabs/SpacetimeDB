@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-09-29T01:09:23.453Z",
+  "candidate": "fae0df803d79b2068c725d46d77b3d6bab05b17e",
+  "base": "a9da55ac4c4ff2ae553344f2ab6285734e684ffd",
+  "reviewer": "root",
+  "sourceDiffSha256": "6ac65380781689f1584b0455e539a3b56273659d395260a037ce9e71a7daa0e4",
+  "files": [
+    {
+      "path": "tools/stack-bench/grader/grade.ts",
+      "sha256": "2ea8b2c29791e634cd896258ddf9157118eeb437e893cb2462a309de2d5cf13b"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/action-catalog.ts",
+      "sha256": "7e9bcf70e540a8259695506597bd872f448ad5c622ee637b75d52fcbc48da31d"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/auth-request-patch.ts",
+      "sha256": "d83925e7ddadd70a1b639677859ed1f0364270294932f1581dce90346a4d77b8"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/browser-action-executors.ts",
+      "sha256": "5705fc2d07472cb047da8c36d44ec8ba877b322db886d3b9a69b86b416c61204"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/runtime-action-executors.ts",
+      "sha256": "5377ac88d8791997af6362d3fd89bf8da4be944732f2073fd2a249130a7d4ed2"
+    },
+    {
+      "path": "tools/stack-bench/src/composition/definition-compiler.ts",
+      "sha256": "7a6eebb042ebee3dccbe0b4195d0627cce196440aba131e83986833d16266ec8"
+    },
+    {
+      "path": "tools/stack-bench/tests/account-navigation.integration.ts",
+      "sha256": "fbe7dfdc55cbfc2c61f95d72cd854884203c4c2ba200ad5ab4eed0a18f8e0d41"
+    },
+    {
+      "path": "tools/stack-bench/tests/auth-request-patch.test.ts",
+      "sha256": "a6fe08419b00e67bf6303291e54e31d64cd321746a19c1d80957bfc0f389cf31"
+    },
+    {
+      "path": "tools/stack-bench/tests/browser-action-executors.test.ts",
+      "sha256": "284da4291c2cefee5e5aa27f2f7aa362ed3493ca118e41113378337879991985"
+    },
+    {
+      "path": "tools/stack-bench/tests/checkout-state.test.ts",
+      "sha256": "1f5d827f9783e8dc3a96382ba0c3f868cd74728f934b564e613a4a93d9c16ad3"
+    },
+    {
+      "path": "tools/stack-bench/tests/snapshots/definitions/all-actions.snapshot.json",
+      "sha256": "1f7d8f96996f62470bfe6a8f2c1302b89995a7c92de07cb1c2ea074cfdde359d"
+    },
+    {
+      "path": "tools/stack-bench/tests/snapshots/definitions/ecommerce.snapshot.json",
+      "sha256": "ae78f81d3b208addf3a60b4efc31e9985fac26b771eff6fa8938eafbd0c7f157"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/contracts/operations-access.md",
+      "sha256": "026cf0f69454dda8368c599b7b245081ba18bea26bfe8d0eb867418849fd3cc5"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/contracts/order-cancellation.md",
+      "sha256": "597f2b2f8a5a4aef3e78a7555e24b776720b8f4f2c12e66304ef08a17714a820"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "sha256": "8eb59d03747c9d93e6933b60c06ab5094983598040453ab80a815b3835cd61eb"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "sha256": "94d46955d3a2e0d8bec8f059d015f286fbcff89d40aef7ba8b03067415cdcdee"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-invariants.json",
+      "sha256": "53c95ddf0a86879c5e42bfc8dad0aa9c6581d2bb9959d84a2bbcc3d9bda0ccda"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "sha256": "fe288366d28c776bfd903624254632c28a1dfacd113904c0fc98426f95ede4e5"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-history.json",
+      "sha256": "feb7875f0cc8719c4d4ccb57b3215a9b050e6544ec53d26ab82411900b665565"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-server-actions.json",
+      "sha256": "c971a4b15a799482aa81ff5e43ae722f66c0ace3cce6ac01394964545f04523a"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "sha256": "03db162e91a3ac4bec1ea0bbae1198448def0cb5fd60bfb1f563ff77b4d203c6"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "sha256": "d8f25ae51ce340fd82f1bcca018eaf9c089f44b07e644e5ba56461fa8085a4bc"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/03-order-delivery.json",
+      "sha256": "adcf782a3c061f29b2f6bbc3cd682ba9d69af1fc6d7122df3120db3e4d77bf4b"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "sha256": "14820070ec8269e9340f409c1ed5443b44f2aa1983d972e0c8a7c4e6ed3fa63d"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "sha256": "c52db23c36b776d4b0da764172bb724c68c205b3edff25e9130e363b2559b590"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "sha256": "54a89a73a9a8179774fc2166720c35ee52c1c1aa64febd0147444d716b8d9fa5"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "sha256": "5e447be4b30bd78bd46857bfd5f1b2923225e0cec4f497e50a66404624b494d7"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-order-return-boundary.json",
+      "sha256": "4a70a811b47801be5db6f88fe487ae4be073e45d49d9f4a9f60f31034310b330"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-order-return-complete.json",
+      "sha256": "730dcdb6ed6a6398f5e4e65260b71a4c43a42aecc26baf5c2534f9c507b9dde7"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "sha256": "48dc312d8f986269f26a2f21b0d6138b269c4ddbf4bb54d6dc00e39ddedc49f7"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
+      "sha256": "f49f0d93a734349a579477fe1048ead58b924f59da23d6b0f54e747786575e12"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-support-history.json",
+      "sha256": "ebaf98b4dd13df0ee866b77015ea03ebd72bebe435710a2c09e7ac6d0fa4ff00"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-support-refunds-access.json",
+      "sha256": "b62cc3eccbd99076341f08f9424c2e4aee2c0af55cf4a31a3aa8b4d0848dab0b"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "sha256": "176e4c756701287ff7bdeda08fe55b9a05a038f75405e9369b096e60efccedbd"
+    }
+  ],
+  "sourceReviewPassed": true,
+  "qualificationApproved": false,
+  "review": [
+    "Support navigation changes only history-entry guards. Intake guards remain support-email; history guards use support-ticket. Generic click semantics unchanged.",
+    "Purchase observation enables awaitWrites only in the signed-out-purchase criterion. Native WebSocket routing gains only that opt-in branch. Other auth capture callers retain completionOnly=false; no-op and raw body allowance applies only to completion capture.",
+    "dbExpectPurchaseCount with no within keeps one immediate database read. With within, it retries only unchanged state; partial or corrupt effects fail. Clock capability was added to support this branch.",
+    "statusText is opt-in. Existing exact value, attribute and protocol reads retain their semantics. New mode allows only declared boundary whitespace/dot/bullet and preserves observed text. Text input/textarea and selected option labels remain supported; masked or non-text input values and mixed selected states do not pass as visible status.",
+    "Current status callers were migrated across their scenario sources. Nine selected checks require fresh status evidence, including 311a by shared scenario source closure. Higher-depth definitions are not qualified by this review.",
+    "Two contract paragraphs add only the allowed decoration. Fixed reference text equivalence must be verified against those exact insertions and approved prior task-text equivalences. This does not establish model prompt equivalence or correct historical scores."
+  ],
+  "validation": {
+    "support": "Four references, 27 defects and null completed on c8a83a6b86ba25fe9111707ec31acf252b01ac54.",
+    "purchase": "Four references, four defects and null completed on a7b9bf72925ef5dcd778e731b4efed7114c37c95.",
+    "status": "73 focused browser tests, typecheck and focused lint passed; final candidate controls pending."
+  },
+  "limits": [
+    "Final 17 fresh / 95 retained coverage requires normal slice validation, hash-bound original artifacts and final status source/image/emitted-code proof. Runtime review alone is not qualification.",
+    "Write capture covers dispatch during the action, its declared settle interval and receipt drain; later independent tasks remain outside that bounded observation.",
+    "Historical studies and generated sources remain unchanged. No paid launch approved by this artifact alone."
+  ]
+}

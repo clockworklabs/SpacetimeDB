@@ -1,0 +1,233 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "preflight",
+  "id": "ecommerce-postgres-run410-20260928045831-6672aa21-preflight",
+  "attempt": {
+    "id": "ecommerce-postgres-run410-20260928045831-6672aa21-preflight",
+    "parentId": "ecommerce-postgres-run410-20260928045831-6672aa21"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:58:39.180Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null,
+      "version": "1.6.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-09-28T04:58:37.358Z",
+    "request": {
+      "backends": [
+        "postgres"
+      ],
+      "track": "ecommerce",
+      "levels": [
+        3
+      ],
+      "runIndex": 410,
+      "parallelism": 1,
+      "agentAdapter": "reference-fixture",
+      "guidance": "prescribed",
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.concurrency-safety.restock-race.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a",
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+        "ecommerce.l3.deferred-integrity.exactly-once.311a",
+        "ecommerce.l3.server-time.server-time.312a",
+        "ecommerce.feature.cart-checkout.cart.4a",
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "recipe": "ecommerce.progression-catalog",
+      "requestedScopeCount": 0,
+      "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "resultsDir": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/postgres.runs/r1-workers/w3.runs/r1",
+      "agentSkills": null,
+      "smoke": true,
+      "modelFree": false
+    },
+    "ok": true,
+    "summary": {
+      "passed": 25,
+      "failed": 0,
+      "warnings": 1
+    },
+    "checks": [
+      {
+        "id": "request.scope",
+        "status": "pass",
+        "summary": "ecommerce L3 on postgres"
+      },
+      {
+        "id": "runner.node",
+        "status": "pass",
+        "summary": "Node 24.18.1"
+      },
+      {
+        "id": "ownership.lease",
+        "status": "pass",
+        "summary": "Private lease matches this run and selected scope"
+      },
+      {
+        "id": "image.controller-reference",
+        "status": "pass",
+        "summary": "Controller image is immutable: sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730"
+      },
+      {
+        "id": "image.build-reference",
+        "status": "pass",
+        "summary": "Build image is immutable: sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      },
+      {
+        "id": "runner.architecture",
+        "status": "pass",
+        "summary": "linux/x64"
+      },
+      {
+        "id": "ambient.stack_bench_supervisor_state",
+        "status": "pass",
+        "summary": "Private supervisor handoff matches this run"
+      },
+      {
+        "id": "ambient.docker-host",
+        "status": "pass",
+        "summary": "Docker endpoint is local/default"
+      },
+      {
+        "id": "agent.credentials",
+        "status": "pass",
+        "summary": "Credential source available (not-required)"
+      },
+      {
+        "id": "storage.results",
+        "status": "pass",
+        "summary": "576.7 GiB free at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/postgres.runs/r1-workers/w3.runs/r1"
+      },
+      {
+        "id": "docker.engine",
+        "status": "pass",
+        "summary": "Docker 29.6.2 (linux/x86_64)"
+      },
+      {
+        "id": "docker.compose",
+        "status": "pass",
+        "summary": "Docker Compose 5.3.1"
+      },
+      {
+        "id": "runner.co-resident",
+        "status": "warn",
+        "summary": "26 co-resident container(s): sb-5bc8103f80ad2470-browser, sb-3e5fc14ea9314967-browser, sb-42728011d98bb143-browser, sb-5bc8103f80ad2470-backend, sb-3e5fc14ea9314967-backend, sb-42728011d98bb143-backend",
+        "remediation": "Run paid campaigns on a dedicated runner."
+      },
+      {
+        "id": "docker.cpu",
+        "status": "pass",
+        "summary": "32 CPUs reported by Docker"
+      },
+      {
+        "id": "docker.memory",
+        "status": "pass",
+        "summary": "45.9 GiB total memory allocation reported by Docker"
+      },
+      {
+        "id": "docker.capacity",
+        "status": "pass",
+        "summary": "1-worker container caps: 4 CPUs and 10.3 GiB RAM. Shared services and uncapped CPU are additional; this is not a measured minimum."
+      },
+      {
+        "id": "docker.clock",
+        "status": "pass",
+        "summary": "host/engine skew 0 ms"
+      },
+      {
+        "id": "image.build",
+        "status": "pass",
+        "summary": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455 -> sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      },
+      {
+        "id": "image.platform",
+        "status": "pass",
+        "summary": "linux/amd64"
+      },
+      {
+        "id": "registry.cache",
+        "status": "pass",
+        "summary": "http://127.0.0.1:4873/ answered 200"
+      },
+      {
+        "id": "image.postgres",
+        "status": "pass",
+        "summary": "Owned postgres backend image sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7 is available"
+      },
+      {
+        "id": "materials.postgres.skills",
+        "status": "pass",
+        "summary": "No skill documents are required",
+        "evidence": {
+          "skills": [],
+          "missing": []
+        }
+      },
+      {
+        "id": "port.postgres.vite",
+        "status": "pass",
+        "summary": "Port 6983 belongs to the active attempt namespace"
+      },
+      {
+        "id": "port.postgres.express",
+        "status": "pass",
+        "summary": "Port 6711 belongs to the active attempt namespace"
+      },
+      {
+        "id": "smoke.container",
+        "status": "pass",
+        "summary": "Container linux/x64 v22.22.0; 1 outbound destination(s); 1 database route(s); 0 agent executable(s); result mount persistent",
+        "evidence": {
+          "platform": "linux",
+          "arch": "x64",
+          "node": "v22.22.0",
+          "reached": [
+            {
+              "url": "https://registry.npmjs.org",
+              "status": 200,
+              "elapsedMs": 97
+            }
+          ],
+          "tcpReached": [
+            5432
+          ],
+          "executables": {},
+          "credentialStatus": "not-checked",
+          "diskFreeBytes": 619267137536
+        }
+      },
+      {
+        "id": "storage.container",
+        "status": "pass",
+        "summary": "576.7 GiB free in Docker storage"
+      }
+    ]
+  }
+}

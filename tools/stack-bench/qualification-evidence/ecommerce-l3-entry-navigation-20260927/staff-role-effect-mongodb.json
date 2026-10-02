@@ -1,0 +1,208 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260927125345-31",
+  "attempt": {
+    "id": "reference-live-mongodb-20260927125345-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T12:53:45.905Z",
+    "completedAt": "2026-09-27T12:57:31.590Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "009ccf742fc1e4ab7e88348812b383b095ffcae43b7e30e52e3fdc3376cf4bf4"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 22,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "77a54248df123bf42ae2c24f4bb0063a61f382b090b00f1330d31c527d2c2894",
+      "executableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "kind": "mutation",
+      "mutationSha256": "6b92fea5190e7760574350e5ee4eddc5e450bace7bbb7306a3825251db8b2bfc",
+      "recipe": {
+        "contentSha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "8b3e48b585692bf7b87f9a758fd67216ca5c024cf22dba1b2f11f1de55377c76"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "mongodb.runs/r1-workers",
+        "durationMs": 222424,
+        "processError": null,
+        "harnessSha256Before": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "harnessSha256After": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-mongodb-20260927125345-31",
+        "score": "7/7",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 4,
+        "zeroPointCriteria": 0,
+        "fingerprint": "200f0c6055efb2ec2e83d11caa1d2ef69ef9ddbb223894d31df6d0c6d540ac77",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.progression.staff-roles",
+              "checkCount": 1,
+              "setupRuntimeMs": 860,
+              "criterionRuntimeMs": 31,
+              "measuredRuntimeMs": 891,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 2,
+              "setupRuntimeMs": 860,
+              "criterionRuntimeMs": 9833,
+              "measuredRuntimeMs": 10693,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 1,
+              "setupRuntimeMs": 860,
+              "criterionRuntimeMs": 8227,
+              "measuredRuntimeMs": 9087,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 5,
+          "total": 5
+        },
+        "baselineDurationMs": 83426,
+        "baselineOutput": "mongodb.runs/r1",
+        "baselineHarnessSha256Before": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "baselineHarnessSha256After": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 38,
+            "artifact": "mongodb.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "staff-admin-access-survives-role-removal",
+              "staff-can-assign-roles"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w1.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 39,
+            "artifact": "mongodb.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "role-assignment-drops-role",
+              "role-editor-snaps-back-to-stored-role"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w2.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 40,
+            "artifact": "mongodb.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "staff-role-write-precedes-denial"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w3.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+    "qualifiedCheckKeys": [
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.state-durability.staff-role-reload.621a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

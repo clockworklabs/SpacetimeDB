@@ -1,0 +1,459 @@
+{
+  "schemaVersion": 1,
+  "kind": "saved-source-regrade",
+  "diagnosticOnly": true,
+  "id": "ecommerce-convex-run0-20260926230455-f319e8cc",
+  "startedAt": "2026-09-26T23:05:00.930Z",
+  "completedAt": "2026-09-26T23:06:12.612Z",
+  "parent": {
+    "id": "ecommerce-convex-run0-20260926210609-c958271e",
+    "runSha256": "2edf3b86967c28a150ab2235e0e23fded026ca3676a90d79a94ee6ec043340a4",
+    "completedAt": null,
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "b118444a9f6a79cb936594fa37f7ae59fb838e3deeebec70f0a7d429ee7a9352"
+    },
+    "source": {
+      "sha256": "3712b85864ecd64bb9324b09488392f9fff378f32fbafed29369dc8a6ff8b777",
+      "files": 15
+    },
+    "serverUri": "http://127.0.0.1:13210",
+    "selectionSha256": "7c5f876043575c6d06dd01c77da29dc647ce60947420406744f3892ec2f61fc9",
+    "recipe": {
+      "contentSha256": "5af86e8add240d37f660a30a1e9fca7ec7313f19647af57c8c95c57111ce2de3",
+      "executionSha256": "0cf90995b7022728a423c331cd79acd84ad8b9fed228f8cf560c199dda3722ea",
+      "id": "ecommerce.progression-catalog",
+      "meaningSha256": "56f2d9d499ad1de51025ea6d53ddc8c3059b92446c7ee2a2008d7bdcc5047603"
+    },
+    "task": {
+      "contractIds": [
+        "ecommerce.application-interface",
+        "ecommerce.progression.staff-access-hooks",
+        "ecommerce.progression.customer-profile-hooks",
+        "ecommerce.progression.staff-role-hooks",
+        "ecommerce.feature.catalog-items.hooks",
+        "ecommerce.feature.catalog-discovery.hooks",
+        "ecommerce.feature.accounts.hooks",
+        "ecommerce.feature.purchasing.hooks",
+        "ecommerce.feature.cart.hooks",
+        "ecommerce.orders.data",
+        "ecommerce.feature.warehouse-admin.hooks",
+        "ecommerce.progression.support-history-hooks",
+        "ecommerce.progression.support-intake-hooks",
+        "ecommerce.progression.support-triage-hooks",
+        "ecommerce.progression.promotion-rules-hooks",
+        "ecommerce.progression.notification-preferences-hooks"
+      ],
+      "contractSha256": "e7a7374200bea9a8fc1c772a2966176d1c63a346ab010bd511abd08e58622527",
+      "mode": "upgrade",
+      "requirementIds": [
+        "ecommerce.progression.upgrade",
+        "ecommerce.feature.accounts.requirement",
+        "ecommerce.feature.catalog-items.requirement",
+        "ecommerce.feature.catalog-discovery.requirement",
+        "ecommerce.feature.purchasing.requirement",
+        "ecommerce.feature.cart.requirement",
+        "ecommerce.feature.warehouse-admin.requirement",
+        "ecommerce.progression.staff-access",
+        "ecommerce.progression.customer-profile",
+        "ecommerce.progression.support-intake",
+        "ecommerce.progression.staff-roles",
+        "ecommerce.progression.support-triage",
+        "ecommerce.progression.support-history",
+        "ecommerce.progression.promotion-rules",
+        "ecommerce.progression.notification-preferences"
+      ],
+      "requirementSha256": "bc1d634778e717fedf7334b66855b3a86c7ce32b76ec712a97f56f5db11ff758",
+      "sha256": "c247da9142066900b645a4791634008d01bebbb28fccf73f0d63d10b4adbd3e4"
+    },
+    "mode": {
+      "id": "dependency",
+      "retainPriorContracts": true,
+      "unchangedFailureLimit": 7,
+      "workSelection": "progressive"
+    },
+    "outcome": {
+      "kind": "ungraded",
+      "phase": "interrupted-level",
+      "reason": "level has not completed",
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "candidate": {
+      "kind": "first-build",
+      "directory": "first-build-l2",
+      "level": 2,
+      "grade": {
+        "path": "first-build-l2-grading/bundle.json",
+        "sha256": "78671cb18836875eed4f612975b27f908c78b11cfd54f05dcf6496e5bd0be450",
+        "id": "ecommerce-convex-run0-20260926210609-c958271e-grade-bundle-l2",
+        "identities": {
+          "engine": {
+            "id": "stack-bench",
+            "sha256": "b118444a9f6a79cb936594fa37f7ae59fb838e3deeebec70f0a7d429ee7a9352"
+          },
+          "recipe": {
+            "id": "ecommerce.progression-catalog",
+            "sha256": "5af86e8add240d37f660a30a1e9fca7ec7313f19647af57c8c95c57111ce2de3"
+          },
+          "fixture": {
+            "id": "ecommerce.operations",
+            "sha256": "d06444b72dc94fe1ef5e08867d875e1f3bbaa5cd82c35a3558f399c1fcb5ceae"
+          },
+          "calibration": {
+            "id": "ecommerce.dependency-l3-calibration",
+            "sha256": "fbdbe6b2fcfe00156ff177ad67902e4267147a5524ac9e242563c6b6fb8003d4"
+          },
+          "experiment": null,
+          "agentAdapter": null,
+          "stackAdapter": {
+            "id": "convex",
+            "sha256": null
+          },
+          "packs": [
+            {
+              "id": "ecommerce.feature.accounts",
+              "sha256": "df539bbe2bec914c98dc3fc47552b98daece8ea63613948012506a50508b9744"
+            },
+            {
+              "id": "ecommerce.feature.bundle-checkout",
+              "sha256": "2905f7ee7d8ae6d1086d2194649242b68ef871d10ec60e1bc0382baf5cb6e7df"
+            },
+            {
+              "id": "ecommerce.feature.bundle-returns",
+              "sha256": "c0f9424066d11efd12bf2c88ec3607ac1152ba5b1e34d7fe598529c03035e352"
+            },
+            {
+              "id": "ecommerce.feature.cart",
+              "sha256": "217d2a7af92bc0551e17c12376b15668431619cc42f919f9d5a0a709f11eba78"
+            },
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "sha256": "9aeea0db86cdacc386e5a26fed12b5604d674047c57c792e9aac3a5eabf14b42"
+            },
+            {
+              "id": "ecommerce.feature.catalog-items",
+              "sha256": "fce1929f7932d508f463793be463896fbb13ad6da2b7c57e0838188579f7a95f"
+            },
+            {
+              "id": "ecommerce.feature.checkout",
+              "sha256": "660aaf39db20b4fd6e405948b45f816c6733a2be37b8190b989a4d18c59eb214"
+            },
+            {
+              "id": "ecommerce.feature.product-bundles",
+              "sha256": "e768568827d4febae15fe2ec1d25410d86f78ada77debf9cb047d70fe3fdb12c"
+            },
+            {
+              "id": "ecommerce.feature.purchasing",
+              "sha256": "d21746b5e7246b1771ee9f72d0cc66ef2c2cc9573485ffc839f6ca4b1b01ddff"
+            },
+            {
+              "id": "ecommerce.feature.reviews",
+              "sha256": "385771e4c68dbc7afbc0d68af897d698a66f744f50e4f580a813db580cf4615c"
+            },
+            {
+              "id": "ecommerce.feature.split-tender-refunds",
+              "sha256": "8d12162887644dc6bca1fbcccfd06ebd679bd8017b9234cc5632e6a1f508eba8"
+            },
+            {
+              "id": "ecommerce.feature.store-credit",
+              "sha256": "f252e74cb95d87a6a7cec629d59bc7a37cac133e6abee255738ff9a1fca50fcd"
+            },
+            {
+              "id": "ecommerce.feature.subscriptions",
+              "sha256": "31bbe7f11ac99af6eeeeadcd62c49bc635bb20384a6b5e3724b8ba9124530799"
+            },
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "sha256": "9230ca4ddfe048fd3903f3b90aee16a4711c6d53fbe37478917b16a6e550d66d"
+            },
+            {
+              "id": "ecommerce.l2.inventory-dashboard",
+              "sha256": "98d6ac14b32e61e976377df4687a13d6a780a0e96d2e49a05ce2a386e4588778"
+            },
+            {
+              "id": "ecommerce.l2.order-cancellation-features",
+              "sha256": "21f8663b36ea0871493903776ed32fae619183dc5fc0f74a8c1a5e8bc932f561"
+            },
+            {
+              "id": "ecommerce.l2.price-history-features",
+              "sha256": "786b9f48b9670aa9cb02a439b7eda2feff11c5163a4d49939c892d604206e924"
+            },
+            {
+              "id": "ecommerce.l2.recommendations",
+              "sha256": "a21e16ece7b0c4c6e2f0871428af4e4311ae5a91c46174a7ad644b6b93f2c18b"
+            },
+            {
+              "id": "ecommerce.l2.sales-dashboard",
+              "sha256": "5e9b1693dcea799edd672e276257a87ad6d7d88099d60be072e952e22e75ca77"
+            },
+            {
+              "id": "ecommerce.l2.stock-transfers-features",
+              "sha256": "fa9514e71b90d38623ede3aa4108cb8a53ca72ed95fc69858733ad38da7235ad"
+            },
+            {
+              "id": "ecommerce.l3.cart-expiration-features",
+              "sha256": "38029c5ea6d34974b155ef66c311dc500fcece1f82746cffa57ec5f0695f6a5d"
+            },
+            {
+              "id": "ecommerce.l3.deferred-access-specifications",
+              "sha256": "cc47732a893439472253b8e209d653959966ca7be20ef0616ab24f8695096814"
+            },
+            {
+              "id": "ecommerce.l3.deferred-durability-specifications",
+              "sha256": "e12ab68b5d10e4860fec384d8365054f178a67124423ec69eb10d59b956e6e7e"
+            },
+            {
+              "id": "ecommerce.l3.deferred-integrity-specifications",
+              "sha256": "1a3d27f25be0b41f87afff3412b6f2c93617a68306309f471e0120d1ea359056"
+            },
+            {
+              "id": "ecommerce.l3.order-delivery-features",
+              "sha256": "7f86ba1b2a2791ba38ba6abeeee6078b061bdf03ea951647d79a74f6fe435b95"
+            },
+            {
+              "id": "ecommerce.l3.order-returns-features",
+              "sha256": "cd5dc23d3c7514df91d0a54d92d97e7604e6828b1a287d0c79c714724cdc2206"
+            },
+            {
+              "id": "ecommerce.l3.reservations-features",
+              "sha256": "972b14948d5dea26cadab3567fc5bbd2c42d4feed5c428c004117b723acecd12"
+            },
+            {
+              "id": "ecommerce.l3.scheduled-restocks-features",
+              "sha256": "305c2cf78bc84c63b20cb3e5531760174355128332a365d741dbbd0d64c938cb"
+            },
+            {
+              "id": "ecommerce.l3.server-time-specifications",
+              "sha256": "75ad830a0023bf1fe8022695f0776854d75cdbd87f5120a25312c7de33bf57c9"
+            },
+            {
+              "id": "ecommerce.progression.automatic-reorder",
+              "sha256": "a1d14fcb9cd6c9e96b71d2bacdd4865badaeda913ba9cb3cb5fab8f1eb8497e7"
+            },
+            {
+              "id": "ecommerce.progression.cancellation-accounting-specifications",
+              "sha256": "29b290a1356e63a9d2e937c7f92ad540403b27ebcef94df15451d12e59ac86cc"
+            },
+            {
+              "id": "ecommerce.progression.cancellation-queue-specifications",
+              "sha256": "cf3f68e3ba88bf533f3c315671f1bb0917a0dc745306f9046a9a2f4a52621e35"
+            },
+            {
+              "id": "ecommerce.progression.cart-recovery",
+              "sha256": "ca6d95040f5b81478546b9afedcc428114e795ced11b8364eb2542c258aec794"
+            },
+            {
+              "id": "ecommerce.progression.catalog-management",
+              "sha256": "f12e7e37d031f470683ff74671b22c1de08eb8f7fe0e9cf03cbcfb4604dd2f06"
+            },
+            {
+              "id": "ecommerce.progression.customer-profile",
+              "sha256": "731eeced13c1053432560d4149d2de29fa2cd2b0051759d705cb36e92ad16bb3"
+            },
+            {
+              "id": "ecommerce.progression.delivery-notifications",
+              "sha256": "60b58c4327d74f710f94ffc0deae1b51ef40ca1d2146e45b8e02d1b28e1146bc"
+            },
+            {
+              "id": "ecommerce.progression.faceted-search",
+              "sha256": "5a967859348f967bdc43e0e2490289a859f568e4e8d809c21d5f4404d85e4dd7"
+            },
+            {
+              "id": "ecommerce.progression.fulfilment-queue",
+              "sha256": "811eeb166f261e32b5338e118b0851aa1ffeb06b3107dafb6861057e11004db4"
+            },
+            {
+              "id": "ecommerce.progression.inventory-conservation-specifications",
+              "sha256": "039e62b9d4dd69f2ba4f1b9eebee58e54d0aa141e65da440d789a2e5a4b652e7"
+            },
+            {
+              "id": "ecommerce.progression.managed-support",
+              "sha256": "6546f37be296605cad2e06bbe71d0cf014d1025a5a4b3b8997f4c38cf6329841"
+            },
+            {
+              "id": "ecommerce.progression.notification-preferences",
+              "sha256": "e8423fe1a2a615a1f2b5bd7073e9cc7040c8d2e2eadc0ef466d50e5d21aaf134"
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "sha256": "9a425f56c33b27a08bec1c0ea24f168408352f540e8e4dda5bbe9d25dd0ac288"
+            },
+            {
+              "id": "ecommerce.progression.order-support",
+              "sha256": "1e1a1722adc4c72fdbf31aa34261b73975df53ffab27b28134d71b09ada1b27f"
+            },
+            {
+              "id": "ecommerce.progression.payment-records",
+              "sha256": "f9203b2def92ee787077b88ae9e31425c03cff7b43a039823c160bc69303cc3f"
+            },
+            {
+              "id": "ecommerce.progression.personalized-recommendations",
+              "sha256": "fafda848a453566e61af3513659a8884979ae49218e490830774bb4c25f7b383"
+            },
+            {
+              "id": "ecommerce.progression.price-accounting-specifications",
+              "sha256": "f49fa571d5e63617537742620e92e95a9671ee87f52fd1abc15c2daaf2a6a195"
+            },
+            {
+              "id": "ecommerce.progression.price-history-specifications",
+              "sha256": "5882d2b0daee49ff6f3b8b6aace9fd63f6dca52b18f4dc72f8329e59ffcb9664"
+            },
+            {
+              "id": "ecommerce.progression.promotion-checkout",
+              "sha256": "ead1c8b0ab75a29bc55eaf71ceb216f881655ce20321dc0e36ee8e72271383a9"
+            },
+            {
+              "id": "ecommerce.progression.promotion-reporting",
+              "sha256": "a0c28a936e0929584ccf418dbbe5f53ba6b6beccd33a5a8255bbfb334a3ddca8"
+            },
+            {
+              "id": "ecommerce.progression.promotion-rules",
+              "sha256": "4275d81b85379c0030abd92208b732f616a53a2bad8054e0ee6c7f745488105c"
+            },
+            {
+              "id": "ecommerce.progression.recommendation-feedback",
+              "sha256": "e7e703471cb30e8caf6acf89e3a0ad089dcde8d9320ceaf4fba7132add4007e5"
+            },
+            {
+              "id": "ecommerce.progression.review-access-specifications",
+              "sha256": "d89b6e559244faed30648f2ebdb462913c0b882c614ffe51821c1eb446e66d55"
+            },
+            {
+              "id": "ecommerce.progression.staff-access",
+              "sha256": "440a036f482be11c4954abbb478693a995aea0fe0843f1959a641f3ab6733539"
+            },
+            {
+              "id": "ecommerce.progression.staff-activity",
+              "sha256": "129e48d11c4b24ae94d45350ffc93e190265dd69eb7948fc34c24c49b438db2e"
+            },
+            {
+              "id": "ecommerce.progression.staff-roles",
+              "sha256": "341efe45e33b4e2fd94a19036034963393b6f9d3749c63faf0bbff0415d0ead8"
+            },
+            {
+              "id": "ecommerce.progression.stock-alerts",
+              "sha256": "837f8fcb2c0c023704372810efdc8532246df2b795b94b8503f9d17dae415db9"
+            },
+            {
+              "id": "ecommerce.progression.support-history",
+              "sha256": "23d9dd3e5132a88f3ed0d1c65afac0f6ca769f886b6fb531718831358699b90a"
+            },
+            {
+              "id": "ecommerce.progression.support-intake",
+              "sha256": "6458979c3421deb9916903854a1889580b122813500e3437c475fd3bf73d7721"
+            },
+            {
+              "id": "ecommerce.progression.support-refunds",
+              "sha256": "fd05f39442798d4bae9e96c65230268bd80be46f40a57007ede06d02d5a28e7c"
+            },
+            {
+              "id": "ecommerce.progression.support-triage",
+              "sha256": "2c90c09870de8922db55a9fd8a1b07553c60fd3aebc679f3e4ff1649c752df85"
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "sha256": "a2eef326cd1e28ecb5e96970ba1afcff8b3a62dfbf90f5986c59e4ff380d01f4"
+            },
+            {
+              "id": "ecommerce.spec.bundle-integrity",
+              "sha256": "e0ca540f434e643c5ddbe7fb204fe1edad39376c719d48d4d544caef559595f9"
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "sha256": "60c1b80d464438e20fb7c379cde3de09cae5810230c77195b21c01c78626f91d"
+            },
+            {
+              "id": "ecommerce.spec.external-data-sync",
+              "sha256": "505b40f2e652dbe2d230e6f73b4892c1d01c69f9a12eea865be33676b93fb7b2"
+            },
+            {
+              "id": "ecommerce.spec.live-state",
+              "sha256": "3a309333b465eaa377a324bf214c6cf33733ace855570d1ad5ee01300d588596"
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "sha256": "f33275ca6a9593135c94170bd262203eaf65d980e6f810c393f6d07a28bffa50"
+            },
+            {
+              "id": "ecommerce.spec.split-tender-refunds",
+              "sha256": "91ca0be0e80ea7d001cdd9a2959c7b2c00be3b87aeb5dc06c7db8b9d179ead8c"
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "sha256": "df7c5808d25201493e6eafd46e37091a5f3b9d8f70f2c6ac708d59395137019d"
+            },
+            {
+              "id": "ecommerce.spec.store-credit",
+              "sha256": "4d858d568aabb314ad118b3e2b5003e43710585fdbf4a85b71b9971ca636843c"
+            },
+            {
+              "id": "ecommerce.spec.subscriptions",
+              "sha256": "7dac820cfeec043b619d468be0c6b0d7e022093851e7884ad573a80aeeb468f2"
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "sha256": "71c8b69723a3e4e9c6ae023674535eb9675b1c008b264a453019d0bcdf9af146"
+            }
+          ]
+        }
+      },
+      "outcome": {
+        "kind": "app_failure",
+        "phase": "grading",
+        "reason": null,
+        "appFailures": [
+          "selected-source-022/101/101a"
+        ],
+        "inconclusive": [],
+        "harnessFailures": []
+      }
+    }
+  },
+  "engine": {
+    "id": "stack-bench",
+    "sha256": "45f7f8ac22d4c9815d5626c2913ca3a5591e05f9153c4a62e8cf38d2dc8f6c36"
+  },
+  "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+  "controllerImage": "sha256:9314ed27658f3d034b9c07efd08bbebfb3f84972477bb16b7df0ae2b51e2b8bf",
+  "dependencyVolume": "stack-bench-release-deps-abb64ef60",
+  "backend": "convex",
+  "track": "ecommerce",
+  "level": 2,
+  "recipe": {
+    "id": "ecommerce.progression-catalog",
+    "contentSha256": "9d06d25620b5a607118333982959fd7e4d10e7f411f8f0320d70890e09942718"
+  },
+  "task": {
+    "mode": "upgrade",
+    "sha256": "fd944b45d1dc733d33859b0fd5dd7edda4c48a4ecfb49f33aa1bc2f38f8a39eb",
+    "requirementSha256": "bc1d634778e717fedf7334b66855b3a86c7ce32b76ec712a97f56f5db11ff758",
+    "contractSha256": "e7a7374200bea9a8fc1c772a2966176d1c63a346ab010bd511abd08e58622527"
+  },
+  "selectionSha256": "5a0930ebfc51ec58d05e8cbae30b7a6f007addebfb8933d726d13893c4b3d321",
+  "selectedChecks": [
+    "ecommerce.spec.access-control.purchase-session.101a"
+  ],
+  "grading": "grading/bundle.json",
+  "gradingSha256": "6a7580ec3d690f9dc921bdff46e4445ffacf33388f9ec6c3785ae0adc2a2c060",
+  "outcome": {
+    "kind": "app_failure",
+    "phase": "grading",
+    "reason": null,
+    "appFailures": [
+      "selected-source-022/101/101a"
+    ],
+    "inconclusive": [],
+    "harnessFailures": []
+  },
+  "failure": null,
+  "diagnostics": {
+    "captured": true,
+    "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-refusal-20260927/before/backend.log"
+  },
+  "cleanupSucceeded": true,
+  "modelCalls": 0,
+  "additionalModelCostUsd": 0,
+  "comparisonNote": "Dependency first-build diagnostic; not terminal completion, a new build, or a replacement for the original outcome or spend."
+}

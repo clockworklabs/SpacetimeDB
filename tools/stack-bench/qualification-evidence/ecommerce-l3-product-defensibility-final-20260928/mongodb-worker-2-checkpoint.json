@@ -1,0 +1,226 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T21-41-55-564Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T21-41-55-564Z",
+    "parentId": "ecommerce-mongodb-run657-20260928214123-6017f24c"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T21:41:55.564Z",
+    "completedAt": "2026-09-28T21:43:12.179Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 76616,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-HtX2JZ/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-HtX2JZ/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/02-strengthened.json",
+      "../tracks/ecommerce/scenarios/02-transfer-overdraw.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 3,
+      "mutationIds": [
+        "operator-authorization-allows-customer-transfer",
+        "overdraw-transfer-is-accepted"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "b0d9540901c5ee2d9bc738e7563d3972d79c3d148e94c74ca3337d30f32a63df"
+      },
+      "total": 7,
+      "max": 7,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "590574bcc6891f435cd5b34a6c495238ef079df97731457e44f5ba04cfe6ff45",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+          "identitySha256": "a1b8e5d6d99e73adab5db5d6403ca42acbf94cac8ff66d567c6ebf8175e8da9a",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 2,
+      "completed": 2,
+      "total": 2,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the transfer action was accepted for customer, who must be refused",
+            "failedAction": "expectActionOutcome",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "overdraw-transfer-is-accepted",
+        "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the order-error control did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84",
+      "recipeSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "6812ff2a29d3f4fc278e3e5f6f5a994cce483514154408e48e6ccdfdb75d70a0",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 3,
+        "mutationIds": [
+          "operator-authorization-allows-customer-transfer",
+          "overdraw-transfer-is-accepted"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+          "mutationSha256": "154d3fed62965d5c5dfaf0cad9943ade0a722f3157b2c84ff2743568facbc951",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "590574bcc6891f435cd5b34a6c495238ef079df97731457e44f5ba04cfe6ff45",
+          "mutationIds": [
+            "operator-authorization-allows-customer-transfer"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+          "scenarioSha256": "4fe9dd3ee1577773535ae51e00df43128a3975529fe24559878f8077a96a9c17",
+          "mutationSha256": "09400336a3ef5cabeeb15e13c09a7c3d6ea1b14093aea991fc6be0a0a9ce3d49",
+          "selectionSha256": "60161c6f79ce540e7481dc127071cf1aca08310571716245a3fb2156c7dbc06b",
+          "identitySha256": "a1b8e5d6d99e73adab5db5d6403ca42acbf94cac8ff66d567c6ebf8175e8da9a",
+          "mutationIds": [
+            "overdraw-transfer-is-accepted"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T21:43:12.180Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "operator-authorization-allows-customer-transfer",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-tI4cye/grade.json",
+          "sha256": "a3656e22fe67d6464c3ef070fcd0ea6b00e86efc97bd4f913004ba86b02db3cc"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+        "mutationId": "overdraw-transfer-is-accepted",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-DXIkkV/grade.json",
+          "sha256": "61f527f1dc6be5f0c8fb63b49e2ab0f9c9963e490a80952156dd9f2326f8062b"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

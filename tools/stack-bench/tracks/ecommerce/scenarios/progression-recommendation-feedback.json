@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Recommendation feedback",
+  "features": [
+    {
+      "id": 504,
+      "name": "Recommendation dismissal",
+      "actors": ["customer", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "feedback-owner" },
+        { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
+        { "do": "signUp", "actor": "other", "name": "feedback-other" },
+        { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
+        { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones" },
+        { "do": "expect", "actor": "other", "testid": "recommended-item", "contains": "Headphones" },
+        { "do": "click", "actor": "customer", "testid": "dismiss-recommendation", "in": { "testid": "recommended-item", "contains": "Headphones" } }
+      ],
+      "criteria": [
+        {
+          "id": "504a",
+          "category": "feature",
+          "desc": "dismissing a recommendation removes it from the customer view",
+          "points": 2,
+          "statedBy": "Customers can dismiss a recommendation.",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "absent": true,
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "504b",
+          "category": "production",
+          "desc": "one customer's dismissal does not hide another customer's result",
+          "points": 2,
+          "statedBy": "Recommendation feedback belongs to one customer.",
+          "steps": [
+            {
+              "do": "waitUntilAbsent",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "other",
+              "testid": "recommended-item",
+              "contains": "Headphones"
+            }
+          ]
+        },
+        {
+          "id": "504c",
+          "category": "production",
+          "desc": "a dismissed recommendation stays absent after reload and backend restart in a fresh browser",
+          "points": 2,
+          "statedBy": "A dismissed recommendation stays dismissed for that customer.",
+          "steps": [
+            {
+              "do": "reload",
+              "actor": "customer",
+              "settleMs": 3000
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "customer",
+              "name": "feedback-owner",
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "absent": true
+            },
+            {
+              "do": "restartBackend",
+              "settleMs": 1000
+            },
+            {
+              "do": "freshClient",
+              "actor": "customer"
+            },
+            {
+              "do": "signIn",
+              "actor": "customer-fresh",
+              "name": "feedback-owner"
+            },
+            {
+              "do": "expect",
+              "actor": "customer-fresh",
+              "testid": "recommendations",
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "customer-fresh",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "absent": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

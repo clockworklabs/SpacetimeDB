@@ -1,0 +1,12 @@
+{
+  "browser": "151.0.7922.34",
+  "evidence": [],
+  "requests": [
+    {
+      "path": "/echo",
+      "cookie": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    }
+  ],
+  "pageResponses": 0
+}

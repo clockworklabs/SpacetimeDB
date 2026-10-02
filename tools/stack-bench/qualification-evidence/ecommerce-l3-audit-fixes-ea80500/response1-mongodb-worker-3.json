@@ -1,0 +1,120 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260927185413-3501",
+  "attempt": {
+    "id": "reference-live-mongodb-20260927185413-3501",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:54:13.997Z",
+    "completedAt": "2026-09-27T18:55:52.079Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "8a6b9f7f96b7bbefc9e9592c1020843c7a57131f9b351cdcf9d546494db67255"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "554c67b92aea78fe8d3ba7b65cd88fc2599915ab90eeb3159b6014e154287783"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 35,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "b44cb5d2b1147cce629b8d0eafa4f0177a16ed3e32b2956263325aa0bbd18061",
+      "executableSha256": "458259a69d687e297ae69a082699e0a201ef852dcf4742496db704baf5eaebae",
+      "kind": "mutation",
+      "mutationSha256": "07f4810fd12042b59494cbbbd87e08ff087b848ab375035e91231ac520697914",
+      "recipe": {
+        "contentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "1a28993178f900ebe7b85980a98073de77aa3ecc45d589c3ae23f061664225e0"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "w3.runs/r1",
+        "durationMs": 97947,
+        "capacityWaitMs": 0,
+        "processError": null,
+        "harnessSha256Before": "7e59e44144c66438838179a7e47c263f927207df322796669effacbe71b73f87",
+        "harnessSha256After": "7e59e44144c66438838179a7e47c263f927207df322796669effacbe71b73f87",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-mongodb-run158-20260927185415-8465ac27",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "outcome": "passed",
+        "mutations": {
+          "caught": 1,
+          "completed": 1,
+          "total": 1,
+          "remaining": 0
+        },
+        "score": null,
+        "criteria": null,
+        "zeroPointCriteria": null,
+        "fingerprint": null,
+        "packRuntime": null
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "7e59e44144c66438838179a7e47c263f927207df322796669effacbe71b73f87",
+    "qualifiedCheckKeys": [
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "Id": "0a95f1bab38b672aa48614722da01c4e5a7b02563e35022e82bfaf83d86f8a9b",
+  "Image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "Name": "/stack-bench-crash-qual-postgres-473ca5c2d",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-27T22:56:35.519812297Z",
+    "FinishedAt": "2026-09-27T22:59:56.727663598Z"
+  }
+}

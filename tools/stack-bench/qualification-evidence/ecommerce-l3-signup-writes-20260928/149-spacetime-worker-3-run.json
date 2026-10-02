@@ -1,0 +1,362 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-spacetime-run402-20260928045305-2d57e848",
+  "attempt": {
+    "id": "ecommerce-spacetime-run402-20260928045305-2d57e848",
+    "parentId": "reference-live-spacetime-20260928045304-4344"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:53:10.565Z",
+    "completedAt": "2026-09-28T04:55:03.637Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null,
+      "version": "1.4.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "spacetime",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-spacetime-run402-20260928045305-2d57e848",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "runIndex": 402,
+      "ownerPid": 4500,
+      "createdAt": "2026-09-28T04:53:05.601Z",
+      "state": "released",
+      "resources": {
+        "serverUri": "http://127.0.0.1:3712",
+        "database": null,
+        "module": "app-ecom-run402",
+        "dataDir": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/runtime/ecommerce-spacetime-run402-20260928045305-2d57e848/spacetime-data",
+        "container": {
+          "name": "sb-31ba41671e0d63f4-backend",
+          "id": "83dc4884f977cf88da07cc06feb1715d3da927b3d61d06bdb9a267af91a7dc47",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "86cb70ab6ce44e63e00e950f736a763b88fae7c6af8b716583337dd4d42ea23a",
+          "running": false,
+          "removedAt": "2026-09-28T04:55:05.561Z"
+        },
+        "buildContainer": {
+          "name": "sb-31ba41671e0d63f4-build",
+          "id": "0a3668353fbb1fb47a94d70e1d6d0dcb82380200e9aff12941fa86c7c42447a3",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:83dc4884f977cf88da07cc06feb1715d3da927b3d61d06bdb9a267af91a7dc47",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T04:55:04.461Z",
+          "removedAt": "2026-09-28T04:55:04.675Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/90c603307117fbd0460d96a7df3b257e0ce3cbd22377212e04b413c03714115a.lock.json",
+            "key": "listener:http://127.0.0.1:3712",
+            "digest": "90c603307117fbd0460d96a7df3b257e0ce3cbd22377212e04b413c03714115a",
+            "acquiredAt": "2026-09-28T04:53:05.652Z",
+            "releasedAt": "2026-09-28T04:55:06.356Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/230defc8cdb1f73d3dc723a9905b1b657aeee34698d1ba50ee6a85174ca35c82.lock.json",
+            "key": "port:3712",
+            "digest": "230defc8cdb1f73d3dc723a9905b1b657aeee34698d1ba50ee6a85174ca35c82",
+            "acquiredAt": "2026-09-28T04:53:05.652Z",
+            "releasedAt": "2026-09-28T04:55:06.356Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/a28fd5804e2f34d510f6990d990e06a23c98ce30b1a601a5c2b486626209e3d6.lock.json",
+            "key": "port:6875",
+            "digest": "a28fd5804e2f34d510f6990d990e06a23c98ce30b1a601a5c2b486626209e3d6",
+            "acquiredAt": "2026-09-28T04:53:05.652Z",
+            "releasedAt": "2026-09-28T04:55:06.356Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/3b0f20c86f676dd200c30345797ffd3e86bb62d4118cc069bddd76835101aae7.lock.json",
+            "key": "slot:ecommerce:spacetime:run402",
+            "digest": "3b0f20c86f676dd200c30345797ffd3e86bb62d4118cc069bddd76835101aae7",
+            "acquiredAt": "2026-09-28T04:53:05.652Z",
+            "releasedAt": "2026-09-28T04:55:06.356Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/266bedde064f93514bd95ed048a59102e7a784df76af5a7018413b074ae37d46.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-OfqJdi/app",
+            "digest": "266bedde064f93514bd95ed048a59102e7a784df76af5a7018413b074ae37d46",
+            "acquiredAt": "2026-09-28T04:53:05.652Z",
+            "releasedAt": "2026-09-28T04:55:06.356Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-31ba41671e0d63f4-network",
+          "id": "86cb70ab6ce44e63e00e950f736a763b88fae7c6af8b716583337dd4d42ea23a",
+          "namespaceContainerId": "83dc4884f977cf88da07cc06feb1715d3da927b3d61d06bdb9a267af91a7dc47",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.9",
+            "10.0.0.17",
+            "10.0.0.1"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.3",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "19ca430032f615fc4c87dd1a321434b6c801e13a70c8ca96a4f7b8abee250406",
+          "firewallInstalledAt": "2026-09-28T04:53:08.213Z",
+          "ownAddresses": [
+            "10.0.0.2"
+          ],
+          "namespaceStartedAt": "2026-09-28T04:53:07.071898737Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-31ba41671e0d63f4-browser",
+          "id": "d202c627ec1797199ff19255510ef82397bf98500457e13233604361f8864d82",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:83dc4884f977cf88da07cc06feb1715d3da927b3d61d06bdb9a267af91a7dc47",
+          "running": false,
+          "removedAt": "2026-09-28T04:55:03.910Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T04:55:06.300Z",
+      "releasedAt": "2026-09-28T04:55:06.356Z",
+      "ownership": {
+        "markerSha256": "8d8c632c8a1b437e1653d9fb71cf5de52fb6acd7bc83ba002c421744019e86f0"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": false,
+      "reason": "backend has no hosted app restart log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "score": null,
+        "max": null,
+        "graded": false,
+        "contractPass": null,
+        "selection": null,
+        "outcome": {
+          "kind": "ungraded",
+          "phase": "reference-mutation-only",
+          "reason": "the parent qualification owns the full clean grade",
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "buildSessions": [
+          {
+            "sessionId": "reference-spacetime-1790571220446",
+            "costUsd": 0,
+            "durationMs": 29675,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-spacetime-1790571220446"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "buildCostUsd": 0,
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 29675,
+          "activeDurationMs": 29675,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "costUsd": 0,
+        "durationMs": 29927
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "mutationControl": {
+      "ok": true,
+      "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json",
+      "processError": null,
+      "summary": {
+        "caught": 1,
+        "completed": 1,
+        "total": 1,
+        "remaining": 0
+      },
+      "outcome": null,
+      "results": [
+        {
+          "id": "signup-accepts-admin-claim",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        }
+      ]
+    },
+    "totals": {
+      "score": 0,
+      "max": 0,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 29675,
+      "durationSec": 113,
+      "ungraded": [
+        3
+      ]
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "mutation-control",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:6875"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

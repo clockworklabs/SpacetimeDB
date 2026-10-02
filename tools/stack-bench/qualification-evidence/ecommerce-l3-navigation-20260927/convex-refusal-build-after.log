@@ -1,0 +1,221 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 8.35kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/stack-bench-controller:qual-abb64ef60
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 70.49kB 0.0s done
+#4 DONE 0.0s
+
+#5 [ 1/63] FROM docker.io/library/stack-bench-controller:qual-abb64ef60@sha256:fb6ddea7ecc226c37e0067b3c150db7202627ffdea46be59ca4707a3e2e03d7b
+#5 resolve docker.io/library/stack-bench-controller:qual-abb64ef60@sha256:fb6ddea7ecc226c37e0067b3c150db7202627ffdea46be59ca4707a3e2e03d7b 0.0s done
+#5 DONE 0.0s
+
+#6 [ 2/63] COPY tracks__ecommerce__scenarios__01-admin-write-staff.json /opt/stack-bench/tracks/ecommerce/scenarios/01-admin-write-staff.json
+#6 CACHED
+
+#7 [ 3/63] COPY tracks__ecommerce__scenarios__01-buying.json /opt/stack-bench/tracks/ecommerce/scenarios/01-buying.json
+#7 DONE 0.0s
+
+#8 [ 4/63] COPY tracks__ecommerce__scenarios__01-cart-boundary.json /opt/stack-bench/tracks/ecommerce/scenarios/01-cart-boundary.json
+#8 DONE 0.1s
+
+#9 [ 5/63] COPY tracks__ecommerce__scenarios__01-cart.json /opt/stack-bench/tracks/ecommerce/scenarios/01-cart.json
+#9 DONE 0.1s
+
+#10 [ 6/63] COPY tracks__ecommerce__scenarios__01-catalog-ranking.json /opt/stack-bench/tracks/ecommerce/scenarios/01-catalog-ranking.json
+#10 DONE 0.1s
+
+#11 [ 7/63] COPY tracks__ecommerce__scenarios__01-catalog-search.json /opt/stack-bench/tracks/ecommerce/scenarios/01-catalog-search.json
+#11 DONE 0.1s
+
+#12 [ 8/63] COPY tracks__ecommerce__scenarios__01-core.json /opt/stack-bench/tracks/ecommerce/scenarios/01-core.json
+#12 DONE 0.1s
+
+#13 [ 9/63] COPY tracks__ecommerce__scenarios__01-duplicate-checkout.json /opt/stack-bench/tracks/ecommerce/scenarios/01-duplicate-checkout.json
+#13 DONE 0.1s
+
+#14 [10/63] COPY tracks__ecommerce__scenarios__01-external-live-sync.json /opt/stack-bench/tracks/ecommerce/scenarios/01-external-live-sync.json
+#14 DONE 0.1s
+
+#15 [11/63] COPY tracks__ecommerce__scenarios__01-external-reconnect-sync.json /opt/stack-bench/tracks/ecommerce/scenarios/01-external-reconnect-sync.json
+#15 DONE 0.1s
+
+#16 [12/63] COPY tracks__ecommerce__scenarios__01-last-unit.json /opt/stack-bench/tracks/ecommerce/scenarios/01-last-unit.json
+#16 DONE 0.1s
+
+#17 [13/63] COPY tracks__ecommerce__scenarios__01-order-ownership.json /opt/stack-bench/tracks/ecommerce/scenarios/01-order-ownership.json
+#17 DONE 0.1s
+
+#18 [14/63] COPY tracks__ecommerce__scenarios__01-purchase-attribution.json /opt/stack-bench/tracks/ecommerce/scenarios/01-purchase-attribution.json
+#18 DONE 0.1s
+
+#19 [15/63] COPY tracks__ecommerce__scenarios__01-purchase-session.json /opt/stack-bench/tracks/ecommerce/scenarios/01-purchase-session.json
+#19 DONE 0.1s
+
+#20 [16/63] COPY tracks__ecommerce__scenarios__01-restock-race.json /opt/stack-bench/tracks/ecommerce/scenarios/01-restock-race.json
+#20 DONE 0.6s
+
+#21 [17/63] COPY tracks__ecommerce__scenarios__01-review-eligibility.json /opt/stack-bench/tracks/ecommerce/scenarios/01-review-eligibility.json
+#21 DONE 0.1s
+
+#22 [18/63] COPY tracks__ecommerce__scenarios__01-review-rating-live.json /opt/stack-bench/tracks/ecommerce/scenarios/01-review-rating-live.json
+#22 DONE 0.1s
+
+#23 [19/63] COPY tracks__ecommerce__scenarios__01-review-uniqueness.json /opt/stack-bench/tracks/ecommerce/scenarios/01-review-uniqueness.json
+#23 DONE 0.1s
+
+#24 [20/63] COPY tracks__ecommerce__scenarios__01-review-visibility.json /opt/stack-bench/tracks/ecommerce/scenarios/01-review-visibility.json
+#24 DONE 0.4s
+
+#25 [21/63] COPY tracks__ecommerce__scenarios__01-server-price.json /opt/stack-bench/tracks/ecommerce/scenarios/01-server-price.json
+#25 DONE 0.1s
+
+#26 [22/63] COPY tracks__ecommerce__scenarios__01-warehouse-stock-live-staff.json /opt/stack-bench/tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json
+#26 DONE 0.1s
+
+#27 [23/63] COPY tracks__ecommerce__scenarios__02-fulfilment-live.json /opt/stack-bench/tracks/ecommerce/scenarios/02-fulfilment-live.json
+#27 DONE 0.1s
+
+#28 [24/63] COPY tracks__ecommerce__scenarios__02-fulfilment-ship.json /opt/stack-bench/tracks/ecommerce/scenarios/02-fulfilment-ship.json
+#28 DONE 0.4s
+
+#29 [25/63] COPY tracks__ecommerce__scenarios__02-invariants.json /opt/stack-bench/tracks/ecommerce/scenarios/02-invariants.json
+#29 DONE 0.1s
+
+#30 [26/63] COPY tracks__ecommerce__scenarios__02-low-stock.json /opt/stack-bench/tracks/ecommerce/scenarios/02-low-stock.json
+#30 DONE 0.1s
+
+#31 [27/63] COPY tracks__ecommerce__scenarios__02-operational-best-sellers.json /opt/stack-bench/tracks/ecommerce/scenarios/02-operational-best-sellers.json
+#31 DONE 0.1s
+
+#32 [28/63] COPY tracks__ecommerce__scenarios__02-operational-category-totals.json /opt/stack-bench/tracks/ecommerce/scenarios/02-operational-category-totals.json
+#32 DONE 0.4s
+
+#33 [29/63] COPY tracks__ecommerce__scenarios__02-operational-recommendations.json /opt/stack-bench/tracks/ecommerce/scenarios/02-operational-recommendations.json
+#33 DONE 0.1s
+
+#34 [30/63] COPY tracks__ecommerce__scenarios__02-order-cancellation-core.json /opt/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-core.json
+#34 DONE 0.1s
+
+#35 [31/63] COPY tracks__ecommerce__scenarios__02-order-cancellation-history.json /opt/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-history.json
+#35 DONE 0.1s
+
+#36 [32/63] COPY tracks__ecommerce__scenarios__02-queue-warehouse.json /opt/stack-bench/tracks/ecommerce/scenarios/02-queue-warehouse.json
+#36 DONE 0.1s
+
+#37 [33/63] COPY tracks__ecommerce__scenarios__02-self-contained.json /opt/stack-bench/tracks/ecommerce/scenarios/02-self-contained.json
+#37 DONE 0.1s
+
+#38 [34/63] COPY tracks__ecommerce__scenarios__02-server-actions.json /opt/stack-bench/tracks/ecommerce/scenarios/02-server-actions.json
+#38 DONE 0.1s
+
+#39 [35/63] COPY tracks__ecommerce__scenarios__02-strengthened.json /opt/stack-bench/tracks/ecommerce/scenarios/02-strengthened.json
+#39 DONE 0.1s
+
+#40 [36/63] COPY tracks__ecommerce__scenarios__02-transfer-overdraw.json /opt/stack-bench/tracks/ecommerce/scenarios/02-transfer-overdraw.json
+#40 DONE 0.1s
+
+#41 [37/63] COPY tracks__ecommerce__scenarios__03-scheduled-restock-apply.json /opt/stack-bench/tracks/ecommerce/scenarios/03-scheduled-restock-apply.json
+#41 DONE 0.1s
+
+#42 [38/63] COPY tracks__ecommerce__scenarios__03-scheduled-restock-cancel.json /opt/stack-bench/tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json
+#42 DONE 0.1s
+
+#43 [39/63] COPY tracks__ecommerce__scenarios__mixed-operation-history.json /opt/stack-bench/tracks/ecommerce/scenarios/mixed-operation-history.json
+#43 DONE 0.1s
+
+#44 [40/63] COPY tracks__ecommerce__scenarios__progression-account-state-reconnect.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-account-state-reconnect.json
+#44 DONE 0.1s
+
+#45 [41/63] COPY tracks__ecommerce__scenarios__progression-account-state-reload.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-account-state-reload.json
+#45 DONE 0.1s
+
+#46 [42/63] COPY tracks__ecommerce__scenarios__progression-books-balance.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-books-balance.json
+#46 DONE 0.1s
+
+#47 [43/63] COPY tracks__ecommerce__scenarios__progression-cart-checkout.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-cart-checkout.json
+#47 DONE 0.1s
+
+#48 [44/63] COPY tracks__ecommerce__scenarios__progression-catalog-management.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-catalog-management.json
+#48 DONE 0.1s
+
+#49 [45/63] COPY tracks__ecommerce__scenarios__progression-catalog-volume.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-catalog-volume.json
+#49 DONE 0.1s
+
+#50 [46/63] COPY tracks__ecommerce__scenarios__progression-checkout-crash.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json
+#50 DONE 0.1s
+
+#51 [47/63] COPY tracks__ecommerce__scenarios__progression-customer-profile.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-customer-profile.json
+#51 DONE 0.1s
+
+#52 [48/63] COPY tracks__ecommerce__scenarios__progression-faceted-filters.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-faceted-filters.json
+#52 DONE 0.1s
+
+#53 [49/63] COPY tracks__ecommerce__scenarios__progression-faceted-pagination.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-faceted-pagination.json
+#53 DONE 0.1s
+
+#54 [50/63] COPY tracks__ecommerce__scenarios__progression-notification-preferences.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-notification-preferences.json
+#54 DONE 0.1s
+
+#55 [51/63] COPY tracks__ecommerce__scenarios__progression-open-list-live.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-open-list-live.json
+#55 DONE 0.1s
+
+#56 [52/63] COPY tracks__ecommerce__scenarios__progression-purchasing.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-purchasing.json
+#56 DONE 0.1s
+
+#57 [53/63] COPY tracks__ecommerce__scenarios__progression-review-access.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-review-access.json
+#57 DONE 0.1s
+
+#58 [54/63] COPY tracks__ecommerce__scenarios__progression-review-script.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-review-script.json
+#58 DONE 0.1s
+
+#59 [55/63] COPY tracks__ecommerce__scenarios__progression-search-ordering.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-search-ordering.json
+#59 DONE 0.1s
+
+#60 [56/63] COPY tracks__ecommerce__scenarios__progression-shipping-accounting.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-shipping-accounting.json
+#60 DONE 0.1s
+
+#61 [57/63] COPY tracks__ecommerce__scenarios__progression-signed-out-purchase.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-signed-out-purchase.json
+#61 DONE 0.1s
+
+#62 [58/63] COPY tracks__ecommerce__scenarios__progression-stock-alert-delivery.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-stock-alert-delivery.json
+#62 DONE 0.1s
+
+#63 [59/63] COPY tracks__ecommerce__scenarios__progression-stock-alerts.json /opt/stack-bench/tracks/ecommerce/scenarios/progression-stock-alerts.json
+#63 DONE 0.1s
+
+#64 [60/63] COPY dependency-l3.json /opt/stack-bench/tracks/ecommerce/composition/calibrations/dependency-l3.json
+#64 DONE 0.1s
+
+#65 [61/63] COPY named-action-executors.ts /opt/stack-bench/src/actions/named-action-executors.ts
+#65 DONE 0.1s
+
+#66 [62/63] COPY named-action-executors.js /opt/stack-bench/dist/src/actions/named-action-executors.js
+#66 DONE 0.1s
+
+#67 [63/63] COPY application-interface.md /opt/stack-bench/tracks/ecommerce/contracts/application-interface.md
+#67 DONE 0.1s
+
+#68 exporting to image
+#68 exporting layers
+#68 exporting layers 3.3s done
+#68 exporting manifest sha256:f575968de667348d23b14d7e69081f489e2f8cd8f7a269238db3db57ff7395f3 0.0s done
+#68 exporting config sha256:87d3f0ced0c5ccf40f633f1cc6eee3f3a181b9db28cbd72b1d93a133c684eaf0 0.0s done
+#68 exporting attestation manifest sha256:b6b359cc68ab271137634b81465e111432dca3479bc1a889f4bb5abb21beafa9 0.0s done
+#68 exporting manifest list sha256:30cd4486206669d551bf112e59bcbd9dd1419a543fbd0c8b07f19513ceeca6b0
+#68 exporting manifest list sha256:30cd4486206669d551bf112e59bcbd9dd1419a543fbd0c8b07f19513ceeca6b0 0.0s done
+#68 naming to docker.io/library/stack-bench-controller:diag-convex-refusal-after-20260927 done
+#68 unpacking to docker.io/library/stack-bench-controller:diag-convex-refusal-after-20260927
+#68 unpacking to docker.io/library/stack-bench-controller:diag-convex-refusal-after-20260927 1.2s done
+#68 DONE 4.8s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/r9xj1enhfqo7oj0eo3sxmdj5h

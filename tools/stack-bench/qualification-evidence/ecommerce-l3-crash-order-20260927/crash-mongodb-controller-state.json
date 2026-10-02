@@ -1,0 +1,18 @@
+{
+  "Id": "cfa65cc166c769d097843ad6f70928b94caa10af6c33155a0d5eac187cdcf5c0",
+  "Image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "Name": "/stack-bench-crash-qual-mongodb-473ca5c2d",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-27T22:56:36.355901508Z",
+    "FinishedAt": "2026-09-27T23:00:26.842861209Z"
+  }
+}

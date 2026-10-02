@@ -267,3 +267,6 @@ nul
 
 # Any local file
 *.local
+
+# Local working notes and temporary builds
+/local-notes/

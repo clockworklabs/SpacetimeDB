@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "b4e47456da68f49210cda0ee82ed05f9c06abb10",
+  "changedBehavior": {
+    "responseCapture": "Disable native HTTP caching only for actors named by selected expectNotReceived steps, including nested branches and fresh/reopened clients. Ordinary actors retain cache behavior. No payload filter, domain exemption, capture bound, transport decoder, or pass rule is removed.",
+    "completion": "After the absence observation window, allow up to one second for pending body reads. Stop immediately on captured forbidden text. Reads still pending or incomplete remain inconclusive.",
+    "diagnostics": "Classify the observed Chromium No data found for resource with given identifier error as resource-unavailable; retain fixed labels without private URLs or raw error messages."
+  },
+  "sources": [
+    {
+      "path": "grader/grade.ts",
+      "lineEndings": "lf",
+      "sha256": "a2566ca0a0dc9c5e6b012c5dfa21d9def55cebbfef5a42e62307a824ffe27f78"
+    },
+    {
+      "path": "grader/transport-frames.ts",
+      "lineEndings": "lf",
+      "sha256": "525586a484dd59f371ee10fa653e4f8ec87fb81fff771983da5658a7d2b2cc46"
+    },
+    {
+      "path": "src/actions/actor-action-runtime.ts",
+      "lineEndings": "lf",
+      "sha256": "06d541af3d6fc0b802f5ad1672c5dc27d986228675cd311e2c9d865fd3f6e168"
+    },
+    {
+      "path": "src/actions/actor-transport-action-executors.ts",
+      "lineEndings": "lf",
+      "sha256": "2636da97e394fc4676c76fa22169bb4ab765a2d506bda51ca40e23f85a88d194"
+    }
+  ],
+  "validation": {
+    "controls": "Each stack passed 9 checks / 14 points; PostgreSQL, MongoDB and SpacetimeDB caught 12/12 applicable defects; Convex caught 10/10. The null app failed all nine checks. Original reports are retained in this directory and full execution evidence in appliance results/diagnostics/cache-capture-20260926.",
+    "browser": {
+      "path": "qualification-evidence/ecommerce-l3-capture-20260926/capture-controls.tap",
+      "sha256": "6a295a6056bdf7e1c7a664a64326510498047a13143b1e735281ceb9acfe640c",
+      "result": "26/26 passed: decoded cached font reproduction, ordinary-cache preservation, leak detection on initial/reopened/fresh/branch actors, delayed and stalled bodies, immediate known-leak failure, reload durability, HTML/SSE capture, bounds and safe diagnostics."
+    },
+    "receipts": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/capture-controls.json",
+        "sha256": "483875fb1679fe66c6554cf4cc490645aa6517a0234e717807392326440d1171"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/pending-controls.json",
+        "sha256": "30d046032cbdaaaba50c69d0aea50c4a7b9fef87d55e616dff7c6db6c05b6615"
+      }
+    ],
+    "before": "The pre-fix real-browser fixture reproduced missing cached font bodies with pageClosed=false and no network failure. A second pre-fix fixture marked both clean and leaking finite delayed bodies inconclusive. Failed evidence remains in ignored study notes.",
+    "limits": "The historical Google responses could not be read, so their exact bytes and the historical font error mechanism remain unproved. The first PostgreSQL cache-only reference had one pending body at 620b; an isolated replay passed. The finite-response race is independently reproduced, not claimed as proof of that historical request cause."
+  },
+  "reuseBoundary": "Replace all reference/mutation/null coverage for the nine affected L3 checks. Other actors and checks preserve caching and execution. Reuse passing cache-only MongoDB/SpacetimeDB/Convex and null evidence for the final bounded-drain change: an old absence pass had zero pending reads, so the added loop does not run; an already captured leak exits immediately and still fails. PostgreSQL uses the later candidate and verifies the formerly inconclusive scope. The final early-exit guard preserves all conclusive results. Prompt, guidance, check population, requirements, points, fixture source, budgets, and native transport paths are unchanged. Supabase, L6 and sequential recipes remain outside qualified scope. No historical campaign grade is changed."
+}

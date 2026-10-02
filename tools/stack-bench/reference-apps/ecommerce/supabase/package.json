@@ -1,0 +1,13 @@
+{
+  "name": "stackbench-supabase-reference",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pg": "8.16.3"
+  },
+  "scripts": {
+    "migrate": "node migrate.mjs",
+    "seed": "node seed.mjs",
+    "start": "bash ./start.sh"
+  }
+}

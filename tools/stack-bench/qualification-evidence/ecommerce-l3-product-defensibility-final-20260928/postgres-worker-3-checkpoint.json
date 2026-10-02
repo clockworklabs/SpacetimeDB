@@ -1,0 +1,226 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T21-41-23-101Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T21-41-23-101Z",
+    "parentId": "ecommerce-postgres-run650-20260928214054-c7cb8e89"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T21:41:23.101Z",
+    "completedAt": "2026-09-28T21:42:50.286Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 87186,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-QRjzW1/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-QRjzW1/selected-mutations.json",
+    "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+    "spec": [
+      "../tracks/ecommerce/scenarios/02-strengthened.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "transfer-debits-source-without-crediting-existing-destination",
+        "transfer-does-not-publish-warehouse-totals"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "bc595238c9ecff43d2d770c76eceb6583232d1a53b45fb7b2c15384e13d2dc92"
+      },
+      "total": 5,
+      "max": 5,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "8105677d0b63815a21e0f6d9b0fd2c8341f906465d5d87c5a13d17104842cc5e",
+          "total": 5,
+          "max": 5
+        }
+      ]
+    },
+    "summary": {
+      "caught": 2,
+      "completed": 2,
+      "total": 2,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Headphones in West control reads 40, expected exactly 50",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "expected": true
+          },
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Headphones in West control reads 40, expected exactly 65",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "transfer-does-not-publish-warehouse-totals",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the warehouse-total control reads 697, expected exactly 687 in the entry matching \"East\"",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84",
+      "recipeSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+      "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+      "calibrationSha256": "6812ff2a29d3f4fc278e3e5f6f5a994cce483514154408e48e6ccdfdb75d70a0",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "transfer-debits-source-without-crediting-existing-destination",
+          "transfer-does-not-publish-warehouse-totals"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+          "mutationSha256": "c85c867f1213c72490640e8c8072e4c2433052ba8e199594d336a63e1f78a706",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "8105677d0b63815a21e0f6d9b0fd2c8341f906465d5d87c5a13d17104842cc5e",
+          "mutationIds": [
+            "transfer-debits-source-without-crediting-existing-destination",
+            "transfer-does-not-publish-warehouse-totals"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T21:42:50.287Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "transfer-debits-source-without-crediting-existing-destination",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-ZChRMn/grade.json",
+          "sha256": "0f6d2d7523b04ee428b194e30312897ebda84c75df7a578e04ea2f8b308946f5"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "transfer-does-not-publish-warehouse-totals",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-HKClUD/grade.json",
+          "sha256": "d258c53ca031b4be2212ea9c20274b12c95d18493eaed0e23b8c759b06a379ad"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Fresh staff seed observation",
+  "note": "Draft: updated observations require matching reference and defect-control qualification.",
+  "features": [
+    {
+      "id": 621,
+      "name": "Staff roles",
+      "actors": [
+        "admin"
+      ],
+      "setup": [
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "current-user",
+          "ifAvailable": true,
+          "unlessVisible": [
+            "admin-link",
+            "staff-roles-link",
+            "staff-role-account-staff"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "unlessVisible": [
+            "staff-roles-link",
+            "staff-role-account-staff"
+          ]
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "staff-roles-link",
+          "ifAvailable": true,
+          "unlessVisible": "staff-role-account-staff"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "621-seed",
+          "category": "feature",
+          "desc": "Both fresh staff accounts have the staff role before any assignment",
+          "points": 0,
+          "statedBy": "The reference must seed the declared staff role.",
+          "steps": [
+            {
+              "within": 10000,
+              "testid": "staff-role-select",
+              "actor": "admin",
+              "value": "staff",
+              "in": {
+                "testid": "staff-role-account-staff"
+              },
+              "do": "expect"
+            },
+            {
+              "within": 10000,
+              "testid": "staff-role-select",
+              "actor": "admin",
+              "value": "staff",
+              "in": {
+                "testid": "staff-role-account-staff2"
+              },
+              "do": "expect"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

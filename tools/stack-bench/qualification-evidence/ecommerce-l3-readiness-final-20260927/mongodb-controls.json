@@ -1,0 +1,201 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260927092238-31",
+  "attempt": {
+    "id": "reference-live-mongodb-20260927092238-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T09:22:39.015Z",
+    "completedAt": "2026-09-27T09:31:57.867Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "df4bfdc0eb89888aca4e300e1e062629fd561f3995292cb64f481b2b87ada435"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 22,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "d09034ab7a6f05fa6c7d17be56fef2673ce9132580926d1803e5b02536364b78",
+      "executableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "kind": "mutation",
+      "mutationSha256": "84913d36fe75b04a9b5e716703d9832d00f83107d2c10e00158d253eef623b83",
+      "recipe": {
+        "contentSha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "63dfc54248d78596b15a2d1a7f251a55cf06bc75382dfc2a27661b2aeb919436"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "mongodb-controls.runs/r1-workers",
+        "durationMs": 556878,
+        "processError": null,
+        "harnessSha256Before": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "harnessSha256After": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-mongodb-20260927092238-31",
+        "score": "6/6",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 4,
+        "zeroPointCriteria": 0,
+        "fingerprint": "53f5934e5f21847ee3cff5abfb0cfd89f224e36b2c51a3247a52f57f316a825d",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.progression.stock-alerts",
+              "checkCount": 1,
+              "setupRuntimeMs": 26799,
+              "criterionRuntimeMs": 12028,
+              "measuredRuntimeMs": 38827,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 2,
+              "setupRuntimeMs": 63788,
+              "criterionRuntimeMs": 47942,
+              "measuredRuntimeMs": 111730,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 58833,
+              "criterionRuntimeMs": 12908,
+              "measuredRuntimeMs": 71741,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 10,
+          "total": 10
+        },
+        "baselineDurationMs": 241833,
+        "baselineOutput": "mongodb-controls.runs/r1",
+        "baselineHarnessSha256Before": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "baselineHarnessSha256After": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 66,
+            "artifact": "mongodb-controls.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "unauthenticated-purchase-defaults-to-admin",
+              "stock-alert-repeats-while-in-stock",
+              "tampered-session-can-purchase",
+              "signout-keeps-session",
+              "purchase-session-rejects-returning-login"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb-controls.runs/r1-workers/w1.stdout.log",
+              "stderr": "mongodb-controls.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 67,
+            "artifact": "mongodb-controls.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "stock-alert-delivery-is-suppressed",
+              "stock-alerts-are-not-owner-scoped",
+              "tampered-session-commits-then-refuses",
+              "query-like-password-bypasses-signin",
+              "rejected-query-login-creates-order"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb-controls.runs/r1-workers/w2.stdout.log",
+              "stderr": "mongodb-controls.runs/r1-workers/w2.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "6a021101f3d82469859a5b729c88a24f2d9c3c204eb411a5e98592fc8c705b63",
+    "qualifiedCheckKeys": [
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

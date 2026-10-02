@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1, "track": "ecommerce", "level": 3,
+  "name": "Shipping versus cancellation",
+  "note": "Draft, unscored. Two serial controls and three independent one-pair races. Each trial starts with one independently verified order. Admit shipped with no refund/restoration, or cancelled with exactly one refund/restoration. Both refusals with pending state fail. Request dispatch overlap is not proof of overlapping server execution; no launch-order requirement. Retain every outcome and native stored-state snapshot. No cart, payment-provider or delivery timing claim.",
+  "features": [
+    {
+      "id": 9250, "name": "ship-first", "actors": ["customer", "staff"],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"ship-first"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbRecordCheckout","account":"{user:ship-first}","item":"Coffee Grinder","as":"before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"callConcurrently","actors":["customer"],"action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"},"requests":1,"settleMs":0},
+        {"do":"expectCallOutcomes","accepted":1},
+        {"do":"dbExpectPurchases","before":{"customer":"before"},"purchases":1},
+        {"do":"dbRecordCheckout","account":"{user:ship-first}","item":"Coffee Grinder","as":"pending","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000,"unlessVisible":"order-item"},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [{"id": "9250a", "category": "production", "points": 0,
+        "desc": "shipping and cancellation produce one legal stored outcome without double effects", "steps": [
+          {"do":"callAction","actor":"staff","from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"settleMs":0},
+          {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+          {"do":"dbExpectCancellation","before":"pending","shipping":"wins"},
+          {"do":"callAction","actor":"customer","from":"customer","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-cancel-input"},"settleMs":0},
+          {"do":"expectActionOutcome","actor":"customer","outcome":"completed"},
+          {"do":"dbExpectCancellation","before":"pending","shipping":"wins"}
+        ]}]
+    },
+    {
+      "id": 9251, "name": "cancel-first", "actors": ["customer", "staff"],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"cancel-first"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbRecordCheckout","account":"{user:cancel-first}","item":"Coffee Grinder","as":"before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"callConcurrently","actors":["customer"],"action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"},"requests":1,"settleMs":0},
+        {"do":"expectCallOutcomes","accepted":1},
+        {"do":"dbExpectPurchases","before":{"customer":"before"},"purchases":1},
+        {"do":"dbRecordCheckout","account":"{user:cancel-first}","item":"Coffee Grinder","as":"pending","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000,"unlessVisible":"order-item"},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [{"id": "9251a", "category": "production", "points": 0,
+        "desc": "shipping and cancellation produce one legal stored outcome without double effects", "steps": [
+          {"do":"callAction","actor":"customer","from":"customer","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-cancel-input"},"settleMs":0},
+          {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+          {"do":"dbExpectCancellation","before":"pending"},
+          {"do":"callAction","actor":"staff","from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"settleMs":0},
+          {"do":"expectActionOutcome","actor":"staff","outcome":"completed"},
+          {"do":"dbExpectCancellation","before":"pending"}
+        ]}]
+    },
+    {
+      "id": 9252, "name": "race-1", "actors": ["customer", "staff"],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"race-1"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbRecordCheckout","account":"{user:race-1}","item":"Coffee Grinder","as":"before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"callConcurrently","actors":["customer"],"action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"},"requests":1,"settleMs":0},
+        {"do":"expectCallOutcomes","accepted":1},
+        {"do":"dbExpectPurchases","before":{"customer":"before"},"purchases":1},
+        {"do":"dbRecordCheckout","account":"{user:race-1}","item":"Coffee Grinder","as":"pending","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000,"unlessVisible":"order-item"},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [{"id": "9252a", "category": "production", "points": 0,
+        "desc": "shipping and cancellation produce one legal stored outcome without double effects", "steps": [
+          {"do":"callConcurrently","actors":["customer"],"from":"customer","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-cancel-input"},"requests":1,"settleMs":0,"alongside":[{"actors":["staff"],"from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"requests":1}]},
+          {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCancellation","before":"pending","shipping":"competes"}
+        ]}]
+    },
+    {
+      "id": 9253, "name": "race-2", "actors": ["customer", "staff"],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"race-2"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbRecordCheckout","account":"{user:race-2}","item":"Coffee Grinder","as":"before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"callConcurrently","actors":["customer"],"action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"},"requests":1,"settleMs":0},
+        {"do":"expectCallOutcomes","accepted":1},
+        {"do":"dbExpectPurchases","before":{"customer":"before"},"purchases":1},
+        {"do":"dbRecordCheckout","account":"{user:race-2}","item":"Coffee Grinder","as":"pending","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000,"unlessVisible":"order-item"},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [{"id": "9253a", "category": "production", "points": 0,
+        "desc": "shipping and cancellation produce one legal stored outcome without double effects", "steps": [
+          {"do":"callConcurrently","actors":["customer"],"from":"customer","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-cancel-input"},"requests":1,"settleMs":0,"alongside":[{"actors":["staff"],"from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"requests":1}]},
+          {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCancellation","before":"pending","shipping":"competes"}
+        ]}]
+    },
+    {
+      "id": 9254, "name": "race-3", "actors": ["customer", "staff"],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"race-3"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbRecordCheckout","account":"{user:race-3}","item":"Coffee Grinder","as":"before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"callConcurrently","actors":["customer"],"action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"},"requests":1,"settleMs":0},
+        {"do":"expectCallOutcomes","accepted":1},
+        {"do":"dbExpectPurchases","before":{"customer":"before"},"purchases":1},
+        {"do":"dbRecordCheckout","account":"{user:race-3}","item":"Coffee Grinder","as":"pending","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000,"unlessVisible":"order-item"},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [{"id": "9254a", "category": "production", "points": 0,
+        "desc": "shipping and cancellation produce one legal stored outcome without double effects", "steps": [
+          {"do":"callConcurrently","actors":["customer"],"from":"customer","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-cancel-input"},"requests":1,"settleMs":0,"alongside":[{"actors":["staff"],"from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"requests":1}]},
+          {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCancellation","before":"pending","shipping":"competes"}
+        ]}]
+    }
+  ]
+}

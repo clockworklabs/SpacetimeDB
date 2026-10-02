@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Checkout database crash diagnostic",
+  "note": "Draft reference diagnostic, zero points, not selected by scored campaigns. Run ten fresh trials per width/offset on disposable leased apps. STDB uses only the database boundary, with confirmed native WebSocket acknowledgements. PG/Mongo test application and database separately. Failed responses may follow a commit. Unknown checkout effects must be absent or complete; confirmed success and earlier confirmed state must survive. Missed fault windows, expired reservations and incomplete injection stay unmeasured. The baseline retains a synchronous HTTP or confirmed native WebSocket completion receipt before stored-state reconciliation. A separate post-recovery checkout tests app progress. State is compared after process recovery and reader connection; valid reconstruction from current durable data is allowed. This tests recovered application consistency, not untouched physical rows or raw database transaction atomicity. No power-loss or storage-device guarantee is claimed.",
+  "features": [
+    {
+      "id": 9800,
+      "name": "database crash, 1 checkout calls, 0ms offset",
+      "actors": ["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"crash"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-prepared"},
+        {"do":"confirmCheckout","actor":"a","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]}},
+        {"do":"dbExpectCheckout","before":"baseline-before","prepared":"baseline-prepared","quantity":1},
+        {"do":"reload","actor":"a","settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"prepared"}
+      ],
+      "criteria": [
+        {
+          "id": "9800a",
+          "category": "production",
+          "points": 0,
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
+          "steps": [
+            {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":1,"offsetMs":0,"target":"database"}
+          ]
+        },
+        {
+          "id": "9800b",
+          "category": "production",
+          "points": 0,
+          "desc": "a fresh customer can complete checkout after recovery",
+          "steps": [
+            {"do":"signUp","actor":"b","name":"recovered"},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-before"},
+            {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-prepared"},
+            {"do":"click","actor":"b","testid":"cart-toggle"},
+            {"do":"click","actor":"b","testid":"checkout-submit"},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":0,"within":10000},
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true},
+            {"do":"dbExpectCheckout","before":"recovered-before","prepared":"recovered-prepared","quantity":1}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9801,
+      "name": "database crash, 1 checkout calls, 5ms offset",
+      "actors": ["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"crash"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-prepared"},
+        {"do":"confirmCheckout","actor":"a","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]}},
+        {"do":"dbExpectCheckout","before":"baseline-before","prepared":"baseline-prepared","quantity":1},
+        {"do":"reload","actor":"a","settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"prepared"}
+      ],
+      "criteria": [
+        {
+          "id": "9801a",
+          "category": "production",
+          "points": 0,
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
+          "steps": [
+            {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":1,"offsetMs":5,"target":"database"}
+          ]
+        },
+        {
+          "id": "9801b",
+          "category": "production",
+          "points": 0,
+          "desc": "a fresh customer can complete checkout after recovery",
+          "steps": [
+            {"do":"signUp","actor":"b","name":"recovered"},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-before"},
+            {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-prepared"},
+            {"do":"click","actor":"b","testid":"cart-toggle"},
+            {"do":"click","actor":"b","testid":"checkout-submit"},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":0,"within":10000},
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true},
+            {"do":"dbExpectCheckout","before":"recovered-before","prepared":"recovered-prepared","quantity":1}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9802,
+      "name": "database crash, 1 checkout calls, 20ms offset",
+      "actors": ["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"crash"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-prepared"},
+        {"do":"confirmCheckout","actor":"a","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]}},
+        {"do":"dbExpectCheckout","before":"baseline-before","prepared":"baseline-prepared","quantity":1},
+        {"do":"reload","actor":"a","settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"prepared"}
+      ],
+      "criteria": [
+        {
+          "id": "9802a",
+          "category": "production",
+          "points": 0,
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
+          "steps": [
+            {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":1,"offsetMs":20,"target":"database"}
+          ]
+        },
+        {
+          "id": "9802b",
+          "category": "production",
+          "points": 0,
+          "desc": "a fresh customer can complete checkout after recovery",
+          "steps": [
+            {"do":"signUp","actor":"b","name":"recovered"},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-before"},
+            {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-prepared"},
+            {"do":"click","actor":"b","testid":"cart-toggle"},
+            {"do":"click","actor":"b","testid":"checkout-submit"},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":0,"within":10000},
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true},
+            {"do":"dbExpectCheckout","before":"recovered-before","prepared":"recovered-prepared","quantity":1}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9803,
+      "name": "database crash, 16 checkout calls, 0ms offset",
+      "actors": ["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"crash"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-prepared"},
+        {"do":"confirmCheckout","actor":"a","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]}},
+        {"do":"dbExpectCheckout","before":"baseline-before","prepared":"baseline-prepared","quantity":1},
+        {"do":"reload","actor":"a","settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"prepared"}
+      ],
+      "criteria": [
+        {
+          "id": "9803a",
+          "category": "production",
+          "points": 0,
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
+          "steps": [
+            {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":16,"offsetMs":0,"target":"database"}
+          ]
+        },
+        {
+          "id": "9803b",
+          "category": "production",
+          "points": 0,
+          "desc": "a fresh customer can complete checkout after recovery",
+          "steps": [
+            {"do":"signUp","actor":"b","name":"recovered"},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-before"},
+            {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-prepared"},
+            {"do":"click","actor":"b","testid":"cart-toggle"},
+            {"do":"click","actor":"b","testid":"checkout-submit"},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":0,"within":10000},
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true},
+            {"do":"dbExpectCheckout","before":"recovered-before","prepared":"recovered-prepared","quantity":1}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9804,
+      "name": "database crash, 16 checkout calls, 5ms offset",
+      "actors": ["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"crash"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-prepared"},
+        {"do":"confirmCheckout","actor":"a","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]}},
+        {"do":"dbExpectCheckout","before":"baseline-before","prepared":"baseline-prepared","quantity":1},
+        {"do":"reload","actor":"a","settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"prepared"}
+      ],
+      "criteria": [
+        {
+          "id": "9804a",
+          "category": "production",
+          "points": 0,
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
+          "steps": [
+            {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":16,"offsetMs":5,"target":"database"}
+          ]
+        },
+        {
+          "id": "9804b",
+          "category": "production",
+          "points": 0,
+          "desc": "a fresh customer can complete checkout after recovery",
+          "steps": [
+            {"do":"signUp","actor":"b","name":"recovered"},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-before"},
+            {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-prepared"},
+            {"do":"click","actor":"b","testid":"cart-toggle"},
+            {"do":"click","actor":"b","testid":"checkout-submit"},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":0,"within":10000},
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true},
+            {"do":"dbExpectCheckout","before":"recovered-before","prepared":"recovered-prepared","quantity":1}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9805,
+      "name": "database crash, 16 checkout calls, 20ms offset",
+      "actors": ["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"crash"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"baseline-prepared"},
+        {"do":"confirmCheckout","actor":"a","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]}},
+        {"do":"dbExpectCheckout","before":"baseline-before","prepared":"baseline-prepared","quantity":1},
+        {"do":"reload","actor":"a","settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"before"},
+        {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"dbRecordCheckout","account":"{user:crash}","item":"Keyboard","as":"prepared"}
+      ],
+      "criteria": [
+        {
+          "id": "9805a",
+          "category": "production",
+          "points": 0,
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
+          "steps": [
+            {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":16,"offsetMs":20,"target":"database"}
+          ]
+        },
+        {
+          "id": "9805b",
+          "category": "production",
+          "points": 0,
+          "desc": "a fresh customer can complete checkout after recovery",
+          "steps": [
+            {"do":"signUp","actor":"b","name":"recovered"},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-before"},
+            {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"dbRecordCheckout","account":"{user:recovered}","item":"Keyboard","as":"recovered-prepared"},
+            {"do":"click","actor":"b","testid":"cart-toggle"},
+            {"do":"click","actor":"b","testid":"checkout-submit"},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":0,"within":10000},
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true},
+            {"do":"dbExpectCheckout","before":"recovered-before","prepared":"recovered-prepared","quantity":1}
+          ]
+        }
+      ]
+    }
+  ]
+}

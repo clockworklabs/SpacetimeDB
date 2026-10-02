@@ -1,0 +1,243 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-convex-20260927084117-29",
+  "attempt": {
+    "id": "reference-live-convex-20260927084117-29",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T08:41:17.103Z",
+    "completedAt": "2026-09-27T09:06:56.464Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a2df8bfcc481c060903ee29a325e5badf028f37c0778bc476188aea344552032"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-convex",
+      "sha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "d68704b751883dd91b4cfcdf2030387a32209551ccbb475f4491318e9eeb6164"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-convex",
+    "fixtureSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 35,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "dacff94c546a277dabfd9c4f800864624609eba03e50987e586e41f4aa91a0fc",
+      "executableSha256": "99f7ce3c13b11bf3c7fdc742656a0a482742814826a51bc2db36a19a178132a7",
+      "kind": "mutation",
+      "mutationSha256": "dbde47b76376f69ed0dff8b326d27da8625a4af4d57950ff021369735c7d0e81",
+      "recipe": {
+        "contentSha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "convex",
+        "reference": {
+          "id": "ecommerce-reference-convex",
+          "sourceSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c"
+        },
+        "version": "1.0.0"
+      },
+      "sha256": "a562649c9c0d7be0f26cc569f2299499236f6fe1783623af687d95f01d4762e6"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "convex-controls.runs/r1-workers",
+        "durationMs": 1536725,
+        "processError": null,
+        "harnessSha256Before": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "harnessSha256After": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-convex-20260927084117-29",
+        "score": "16/16",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 10,
+        "zeroPointCriteria": 0,
+        "fingerprint": "c2b8020e1ac0746252103f4712ce52e4eb856bf30ab59bd286d237d9f6242fd6",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "checkCount": 1,
+              "setupRuntimeMs": 209,
+              "criterionRuntimeMs": 1640,
+              "measuredRuntimeMs": 1849,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.catalog-management",
+              "checkCount": 2,
+              "setupRuntimeMs": 4216,
+              "criterionRuntimeMs": 67,
+              "measuredRuntimeMs": 4283,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.faceted-search",
+              "checkCount": 2,
+              "setupRuntimeMs": 43626,
+              "criterionRuntimeMs": 25827,
+              "measuredRuntimeMs": 69453,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 141000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-triage",
+              "checkCount": 3,
+              "setupRuntimeMs": 940,
+              "criterionRuntimeMs": 6513,
+              "measuredRuntimeMs": 7453,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "checkCount": 1,
+              "setupRuntimeMs": 21235,
+              "criterionRuntimeMs": 5269,
+              "measuredRuntimeMs": 26504,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 737,
+              "criterionRuntimeMs": 544729,
+              "measuredRuntimeMs": 545466,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 10,
+          "total": 10
+        },
+        "baselineDurationMs": 864431,
+        "baselineOutput": "convex-controls.runs/r1",
+        "baselineHarnessSha256Before": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "baselineHarnessSha256After": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 49,
+            "artifact": "convex-controls.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "catalog-search-requires-exact-name",
+              "catalog-variants-are-discarded",
+              "active-search-uses-purchase-ranking",
+              "support-triage-discards-updates",
+              "catalog-discards-product-writes"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls.runs/r1-workers/w1.stdout.log",
+              "stderr": "convex-controls.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 50,
+            "artifact": "convex-controls.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "catalog-product-name-is-not-published",
+              "faceted-search-ignores-category",
+              "pagination-repeats-first-page",
+              "catalog-truncates-created-population",
+              "catalog-rejects-all-product-writes"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls.runs/r1-workers/w2.stdout.log",
+              "stderr": "convex-controls.runs/r1-workers/w2.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.progression.catalog-management.catalog-management.622a",
+      "ecommerce.progression.catalog-management.catalog-management.622b",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.progression.support-triage.support-assignment.611a",
+      "ecommerce.progression.support-triage.support-priority.611b",
+      "ecommerce.progression.support-triage.support-status.611c",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

@@ -1,0 +1,199 @@
+TAP version 13
+# Subtest: evaluator requests preserve actor cookies without the browser-only proxy
+    # Subtest: controller request avoids unreachable browser proxy and consumes the full body
+    not ok 1 - controller request avoids unreachable browser proxy and consumes the full body
+      ---
+      duration_ms: 20.7818
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:52:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1
+        Call log:
+        [2m  - → GET http://127.0.0.1:53782/body[22m
+        [2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36[22m
+        [2m    - accept: */*[22m
+        [2m    - accept-encoding: gzip,deflate,br[22m
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:57:40
+        withBrowserRequest (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\src\actions\browser-request.js:3:12)
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:55:30)
+        async TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:52:5)
+      ...
+    # Subtest: current cookies rotate and delete without losing unrelated concurrent cookies
+    not ok 2 - current cookies rotate and delete without losing unrelated concurrent cookies
+      ---
+      duration_ms: 8.718
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:68:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1
+        Call log:
+        [2m  - → GET http://127.0.0.1:53782/rotate[22m
+        [2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36[22m
+        [2m    - accept: */*[22m
+        [2m    - accept-encoding: gzip,deflate,br[22m
+        [2m    - cookie: session=initial; remove=old[22m
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:71:40
+        withBrowserRequest (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\src\actions\browser-request.js:3:12)
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:70:30)
+        async TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:68:5)
+      ...
+    # Subtest: another actor stays isolated and explicit forged Cookie is preserved
+    not ok 3 - another actor stays isolated and explicit forged Cookie is preserved
+      ---
+      duration_ms: 5.2988
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:85:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1
+        Call log:
+        [2m  - → GET http://127.0.0.1:53782/echo[22m
+        [2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36[22m
+        [2m    - accept: */*[22m
+        [2m    - accept-encoding: gzip,deflate,br[22m
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:86:88
+        withBrowserRequest (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\src\actions\browser-request.js:3:12)
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:86:32)
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:85:13)
+      ...
+    # Subtest: partitioned cookies are not flattened into an evaluator cookie jar
+    not ok 4 - partitioned cookies are not flattened into an evaluator cookie jar
+      ---
+      duration_ms: 4.1107
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:95:13'
+      failureType: 'testCodeFailure'
+      error: 'Missing expected rejection.'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      operator: 'rejects'
+      stack: |-
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:100:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:95:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: a concurrent change to the same cookie is not overwritten
+    not ok 5 - a concurrent change to the same cookie is not overwritten
+      ---
+      duration_ms: 5.5623
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:103:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /cookie.*chang|concurrent|reconcil/i. Input:
+        
+        'Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1\n' +
+          'Call log:\n' +
+          '\x1B[2m  - → GET http://127.0.0.1:53782/rotate\x1B[22m\n' +
+          '\x1B[2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36\x1B[22m\n' +
+          '\x1B[2m    - accept: */*\x1B[22m\n' +
+          '\x1B[2m    - accept-encoding: gzip,deflate,br\x1B[22m\n' +
+          '\x1B[2m    - cookie: remove=old; session=before-race\x1B[22m\n'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+      error: |-
+        apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1
+        Call log:
+        [2m  - → GET http://127.0.0.1:53782/rotate[22m
+        [2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36[22m
+        [2m    - accept: */*[22m
+        [2m    - accept-encoding: gzip,deflate,br[22m
+        [2m    - cookie: remove=old; session=before-race[22m
+        
+      stack: |-
+        D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:106:30
+        withBrowserRequest (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\src\actions\browser-request.js:3:12)
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:105:30)
+        async TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:103:5)
+      operator: 'rejects'
+      stack: |-
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:105:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: unregistered contexts use their original request unchanged
+    ok 6 - unregistered contexts use their original request unchanged
+      ---
+      duration_ms: 9.9783
+      type: 'test'
+      ...
+    # Subtest: callback and network failures dispose their temporary request context
+    not ok 7 - callback and network failures dispose their temporary request context
+      ---
+      duration_ms: 3.062
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:117:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /disposed|closed/i. Input:
+        
+        'Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1\n' +
+          'Call log:\n' +
+          '\x1B[2m  - → GET http://127.0.0.1:53782/echo\x1B[22m\n' +
+          '\x1B[2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36\x1B[22m\n' +
+          '\x1B[2m    - accept: */*\x1B[22m\n' +
+          '\x1B[2m    - accept-encoding: gzip,deflate,br\x1B[22m\n' +
+          '\x1B[2m    - cookie: remove=old; session=before-race\x1B[22m\n'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+      error: |-
+        apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:1
+        Call log:
+        [2m  - → GET http://127.0.0.1:53782/echo[22m
+        [2m    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36[22m
+        [2m    - accept: */*[22m
+        [2m    - accept-encoding: gzip,deflate,br[22m
+        [2m    - cookie: remove=old; session=before-race[22m
+        
+      stack: |-
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:127:39)
+        async TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\browser-request.integration.js:117:5)
+      operator: 'rejects'
+      stack: |-
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:127:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:117:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..7
+not ok 1 - evaluator requests preserve actor cookies without the browser-only proxy
+  ---
+  duration_ms: 1008.1003
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:12:1'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 8
+# suites 0
+# pass 1
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1499.5417

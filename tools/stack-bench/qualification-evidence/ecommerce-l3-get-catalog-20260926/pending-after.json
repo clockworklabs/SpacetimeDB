@@ -1,0 +1,929 @@
+{
+  "browser": "151.0.7922.34",
+  "evidence": [
+    {
+      "mode": "clean",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455295557,
+                "completedAtMs": 1790455295994,
+                "durationMs": 437
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295557,
+                      "completedAtMs": 1790455295572,
+                      "durationMs": 15,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-body-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295572,
+                      "completedAtMs": 1790455295994,
+                      "durationMs": 422,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455295557,
+            "completedAtMs": 1790455295557,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "mode": "leak",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455296057,
+                "completedAtMs": 1790455296473,
+                "durationMs": 416
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455296057,
+                      "completedAtMs": 1790455296072,
+                      "durationMs": 15,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455296072,
+                      "completedAtMs": 1790455296473,
+                      "durationMs": 401,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455296057,
+            "completedAtMs": 1790455296057,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "mode": "captured",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455296529,
+                "completedAtMs": 1790455296598,
+                "durationMs": 69
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455296529,
+                      "completedAtMs": 1790455296544,
+                      "durationMs": 15,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455296544,
+                      "completedAtMs": 1790455296597,
+                      "durationMs": 53,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455296529,
+            "completedAtMs": 1790455296529,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "mode": "stalled",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "inconclusive",
+              "code": "inconclusive",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; retained bytes: 181)",
+              "finding": {
+                "kind": "transport-incomplete",
+                "fields": {
+                  "capture": {
+                    "byteLimit": 0,
+                    "bodyReadFailures": 0,
+                    "unsupportedStreams": 0,
+                    "pendingBodies": 1,
+                    "retainedBytes": 181
+                  }
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455296654,
+                "completedAtMs": 1790455297744,
+                "durationMs": 1090
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455296654,
+                      "completedAtMs": 1790455296669,
+                      "durationMs": 15,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "inconclusive",
+                    "type": "transport-evidence",
+                    "code": "inconclusive",
+                    "phase": "execute",
+                    "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; retained bytes: 181)",
+                    "finding": {
+                      "kind": "transport-incomplete",
+                      "fields": {
+                        "capture": {
+                          "byteLimit": 0,
+                          "bodyReadFailures": 0,
+                          "unsupportedStreams": 0,
+                          "pendingBodies": 1,
+                          "retainedBytes": 181
+                        }
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455296669,
+                      "completedAtMs": 1790455297743,
+                      "durationMs": 1074,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455296654,
+            "completedAtMs": 1790455296654,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        },
+        "inconclusive": [
+          {
+            "id": "capture",
+            "points": 1,
+            "status": "inconclusive",
+            "code": "inconclusive",
+            "phase": "assertion",
+            "summary": "transport evidence is incomplete; absence cannot be established (byte-limit losses: 0; body-read failures: 0; unsupported streams: 0; pending bodies: 1; retained bytes: 181)"
+          }
+        ]
+      }
+    },
+    {
+      "mode": "late-clean",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455297799,
+                "completedAtMs": 1790455298391,
+                "durationMs": 592
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455297799,
+                      "completedAtMs": 1790455297815,
+                      "durationMs": 16,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-body-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455297815,
+                      "completedAtMs": 1790455298391,
+                      "durationMs": 576,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455297799,
+            "completedAtMs": 1790455297799,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "mode": "late-leak",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455298447,
+                "completedAtMs": 1790455299046,
+                "durationMs": 599
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455298447,
+                      "completedAtMs": 1790455298462,
+                      "durationMs": 15,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455298462,
+                      "completedAtMs": 1790455299046,
+                      "durationMs": 584,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455298447,
+            "completedAtMs": 1790455298447,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "mode": "headers-stalled",
+      "result": {
+        "id": 1,
+        "name": "response completion",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "no private response body",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "inconclusive",
+              "code": "inconclusive",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "transport evidence is incomplete; absence cannot be established",
+              "finding": {
+                "kind": "transport-incomplete",
+                "fields": {}
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455299105,
+                "completedAtMs": 1790455300193,
+                "durationMs": 1088
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455299105,
+                      "completedAtMs": 1790455299119,
+                      "durationMs": 14,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "inconclusive",
+                    "type": "transport-evidence",
+                    "code": "inconclusive",
+                    "phase": "execute",
+                    "summary": "transport evidence is incomplete; absence cannot be established",
+                    "finding": {
+                      "kind": "transport-incomplete",
+                      "fields": {}
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455299119,
+                      "completedAtMs": 1790455300193,
+                      "durationMs": 1074,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455299105,
+            "completedAtMs": 1790455299105,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        },
+        "inconclusive": [
+          {
+            "id": "capture",
+            "points": 1,
+            "status": "inconclusive",
+            "code": "inconclusive",
+            "phase": "assertion",
+            "summary": "transport evidence is incomplete; absence cannot be established"
+          }
+        ]
+      }
+    }
+  ]
+}

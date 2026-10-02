@@ -1,0 +1,3173 @@
+{
+  "result": "cases finished; assertion results are in the accompanying TAP output",
+  "image": "sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133",
+  "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+  "ports": {
+    "vite": 14570,
+    "express": 14571,
+    "dbPort": null
+  },
+  "fixtureSha256": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c",
+  "rerun": "STACK_BENCH_HOSTED_CRASH_TEST=1 STACK_BENCH_HOSTED_CRASH_EVIDENCE=<file> node --test --test-name-pattern=\"hosted crash uses owned\" dist/tests/hosted-crash-window.integration.js",
+  "runtimeSha256": {
+    "../src/actions/crash-action-executors.js": "b90fb53dfe520437aeabe1ee5a773a58002bd2c4b3ec44bd54bc205268f2aa49",
+    "../src/stacks/process-crash.js": "22e380cd2ba144fa099e0313b61a730a8f51c5c5120f1141764c5b6e4ce4dbf8",
+    "../src/runtime/backend-control.js": "576484764482a3a718234066a64b6e090e62b9abdbacd983cf7bbcb631f7eeed",
+    "../src/stacks/hosted-lifecycle.js": "cda82cc241872aedb2cc2e71bef0c27c149db67375c9c3fc004a63a30b49c19b"
+  },
+  "cases": [
+    {
+      "mode": "direct",
+      "entry": {
+        "pid": 69,
+        "port": 14570,
+        "aux": [
+          82,
+          83,
+          84,
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105,
+          106,
+          107,
+          108,
+          109,
+          110,
+          111,
+          112,
+          113,
+          114,
+          115,
+          116,
+          117,
+          118,
+          119,
+          120,
+          121,
+          122
+        ]
+      },
+      "api": null,
+      "quietBeforeRecovery": true,
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "crashCheckout",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "lifecycle-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "before": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606140202
+          },
+          "prepared": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [
+                {
+                  "itemId": "i",
+                  "quantity": 1
+                }
+              ],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606140203
+          },
+          "outcomes": [
+            {
+              "requestIndex": 1,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140515,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 2,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140519,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 3,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140520,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 4,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140521,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 5,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140521,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 6,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140521,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 7,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140522,
+              "completedAtMs": 1790606140768,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 8,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140522,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 9,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140523,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 10,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140523,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 11,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140524,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 12,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140524,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 13,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140524,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 14,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140524,
+              "completedAtMs": 1790606140769,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 15,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140524,
+              "completedAtMs": 1790606140771,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 16,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606140524,
+              "completedAtMs": 1790606140765,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            }
+          ],
+          "unsettled": false,
+          "databaseDrain": {
+            "backend": "postgres",
+            "database": "crash_window",
+            "startedAtMs": 1790606142206,
+            "completedAtMs": 1790606142320,
+            "settled": true,
+            "samples": [
+              {
+                "atMs": 1790606142320,
+                "pending": 0
+              }
+            ]
+          },
+          "receipt": {
+            "backend": "postgres",
+            "target": "application",
+            "containerId": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+            "requestedAtMs": 1790606140619,
+            "completedAtMs": 1790606140885,
+            "signal": "SIGKILL",
+            "processEvidence": "ARMED\nSTOP 100 58696800 1790606140632\nSTOP 101 58696800 1790606140633\nSTOP 102 58696800 1790606140634\nSTOP 103 58696800 1790606140636\nSTOP 104 58696800 1790606140637\nSTOP 105 58696800 1790606140638\nSTOP 106 58696800 1790606140639\nSTOP 107 58696800 1790606140640\nSTOP 108 58696800 1790606140641\nSTOP 109 58696800 1790606140642\nSTOP 110 58696801 1790606140643\nSTOP 111 58696801 1790606140645\nSTOP 112 58696801 1790606140646\nSTOP 113 58696801 1790606140647\nSTOP 114 58696801 1790606140648\nSTOP 115 58696801 1790606140649\nSTOP 116 58696801 1790606140650\nSTOP 117 58696801 1790606140651\nSTOP 118 58696801 1790606140653\nSTOP 119 58696801 1790606140653\nSTOP 120 58696801 1790606140654\nSTOP 121 58696806 1790606140655\nSTOP 122 58696806 1790606140657\nSTOP 69 58696783 1790606140658\nSTOP 82 58696794 1790606140659\nSTOP 83 58696794 1790606140660\nSTOP 84 58696794 1790606140661\nSTOP 85 58696794 1790606140662\nSTOP 86 58696794 1790606140663\nSTOP 87 58696795 1790606140664\nSTOP 88 58696795 1790606140665\nSTOP 89 58696795 1790606140667\nSTOP 90 58696795 1790606140668\nSTOP 91 58696795 1790606140669\nSTOP 92 58696795 1790606140670\nSTOP 93 58696795 1790606140671\nSTOP 94 58696795 1790606140672\nFROZEN_PROCESS 100:58696800:100\nFROZEN_PROCESS 101:58696800:101\nFROZEN_PROCESS 102:58696800:102\nFROZEN_PROCESS 103:58696800:103\nFROZEN_PROCESS 104:58696800:104\nFROZEN_PROCESS 105:58696800:105\nFROZEN_PROCESS 106:58696800:106\nFROZEN_PROCESS 107:58696800:107\nFROZEN_PROCESS 108:58696800:108\nFROZEN_PROCESS 109:58696800:109\nFROZEN_PROCESS 110:58696801:110\nFROZEN_PROCESS 111:58696801:111\nFROZEN_PROCESS 112:58696801:112\nFROZEN_PROCESS 113:58696801:113\nFROZEN_PROCESS 114:58696801:114\nFROZEN_PROCESS 115:58696801:115\nFROZEN_PROCESS 116:58696801:116\nFROZEN_PROCESS 117:58696801:117\nFROZEN_PROCESS 118:58696801:118\nFROZEN_PROCESS 119:58696801:119\nFROZEN_PROCESS 120:58696801:120\nFROZEN_PROCESS 121:58696806:121\nFROZEN_PROCESS 122:58696806:122\nFROZEN_PROCESS 69:58696783:69,75,76,77,78,79,80\nFROZEN_PROCESS 82:58696794:82\nFROZEN_PROCESS 83:58696794:83\nFROZEN_PROCESS 84:58696794:84\nFROZEN_PROCESS 85:58696794:85\nFROZEN_PROCESS 86:58696794:86\nFROZEN_PROCESS 87:58696795:87\nFROZEN_PROCESS 88:58696795:88\nFROZEN_PROCESS 89:58696795:89\nFROZEN_PROCESS 90:58696795:90\nFROZEN_PROCESS 91:58696795:91\nFROZEN_PROCESS 92:58696795:92\nFROZEN_PROCESS 93:58696795:93\nFROZEN_PROCESS 94:58696795:94\nFROZEN 1790606140704\nKILLED 100 58696800 1790606140715\nKILLED 101 58696800 1790606140717\nKILLED 102 58696800 1790606140719\nKILLED 103 58696800 1790606140720\nKILLED 104 58696800 1790606140722\nKILLED 105 58696800 1790606140724\nKILLED 106 58696800 1790606140727\nKILLED 107 58696800 1790606140735\nKILLED 108 58696800 1790606140737\nKILLED 109 58696800 1790606140738\nKILLED 110 58696801 1790606140740\nKILLED 111 58696801 1790606140741\nKILLED 112 58696801 1790606140742\nKILLED 113 58696801 1790606140744\nKILLED 114 58696801 1790606140746\nKILLED 115 58696801 1790606140747\nKILLED 116 58696801 1790606140749\nKILLED 117 58696801 1790606140750\nKILLED 118 58696801 1790606140752\nKILLED 119 58696801 1790606140753\nKILLED 120 58696801 1790606140755\nKILLED 121 58696806 1790606140756\nKILLED 122 58696806 1790606140757\nKILLED 69 58696783 1790606140759\nKILLED 82 58696794 1790606140760\nKILLED 83 58696794 1790606140762\nKILLED 84 58696794 1790606140763\nKILLED 85 58696794 1790606140764\nKILLED 86 58696794 1790606140765\nKILLED 87 58696795 1790606140767\nKILLED 88 58696795 1790606140768\nKILLED 89 58696795 1790606140770\nKILLED 90 58696795 1790606140771\nKILLED 91 58696795 1790606140772\nKILLED 92 58696795 1790606140773\nKILLED 93 58696795 1790606140774\nKILLED 94 58696795 1790606140775\nQUIET\n",
+            "clockOffsetBeforeMs": 0,
+            "clockOffsetAfterMs": 0,
+            "applicationFreeze": {
+              "startedAtMs": 1790606140632,
+              "completedAtMs": 1790606140704,
+              "processes": [
+                {
+                  "pid": 100,
+                  "startTicks": 58696800,
+                  "threads": [
+                    100
+                  ]
+                },
+                {
+                  "pid": 101,
+                  "startTicks": 58696800,
+                  "threads": [
+                    101
+                  ]
+                },
+                {
+                  "pid": 102,
+                  "startTicks": 58696800,
+                  "threads": [
+                    102
+                  ]
+                },
+                {
+                  "pid": 103,
+                  "startTicks": 58696800,
+                  "threads": [
+                    103
+                  ]
+                },
+                {
+                  "pid": 104,
+                  "startTicks": 58696800,
+                  "threads": [
+                    104
+                  ]
+                },
+                {
+                  "pid": 105,
+                  "startTicks": 58696800,
+                  "threads": [
+                    105
+                  ]
+                },
+                {
+                  "pid": 106,
+                  "startTicks": 58696800,
+                  "threads": [
+                    106
+                  ]
+                },
+                {
+                  "pid": 107,
+                  "startTicks": 58696800,
+                  "threads": [
+                    107
+                  ]
+                },
+                {
+                  "pid": 108,
+                  "startTicks": 58696800,
+                  "threads": [
+                    108
+                  ]
+                },
+                {
+                  "pid": 109,
+                  "startTicks": 58696800,
+                  "threads": [
+                    109
+                  ]
+                },
+                {
+                  "pid": 110,
+                  "startTicks": 58696801,
+                  "threads": [
+                    110
+                  ]
+                },
+                {
+                  "pid": 111,
+                  "startTicks": 58696801,
+                  "threads": [
+                    111
+                  ]
+                },
+                {
+                  "pid": 112,
+                  "startTicks": 58696801,
+                  "threads": [
+                    112
+                  ]
+                },
+                {
+                  "pid": 113,
+                  "startTicks": 58696801,
+                  "threads": [
+                    113
+                  ]
+                },
+                {
+                  "pid": 114,
+                  "startTicks": 58696801,
+                  "threads": [
+                    114
+                  ]
+                },
+                {
+                  "pid": 115,
+                  "startTicks": 58696801,
+                  "threads": [
+                    115
+                  ]
+                },
+                {
+                  "pid": 116,
+                  "startTicks": 58696801,
+                  "threads": [
+                    116
+                  ]
+                },
+                {
+                  "pid": 117,
+                  "startTicks": 58696801,
+                  "threads": [
+                    117
+                  ]
+                },
+                {
+                  "pid": 118,
+                  "startTicks": 58696801,
+                  "threads": [
+                    118
+                  ]
+                },
+                {
+                  "pid": 119,
+                  "startTicks": 58696801,
+                  "threads": [
+                    119
+                  ]
+                },
+                {
+                  "pid": 120,
+                  "startTicks": 58696801,
+                  "threads": [
+                    120
+                  ]
+                },
+                {
+                  "pid": 121,
+                  "startTicks": 58696806,
+                  "threads": [
+                    121
+                  ]
+                },
+                {
+                  "pid": 122,
+                  "startTicks": 58696806,
+                  "threads": [
+                    122
+                  ]
+                },
+                {
+                  "pid": 69,
+                  "startTicks": 58696783,
+                  "threads": [
+                    69,
+                    75,
+                    76,
+                    77,
+                    78,
+                    79,
+                    80
+                  ]
+                },
+                {
+                  "pid": 82,
+                  "startTicks": 58696794,
+                  "threads": [
+                    82
+                  ]
+                },
+                {
+                  "pid": 83,
+                  "startTicks": 58696794,
+                  "threads": [
+                    83
+                  ]
+                },
+                {
+                  "pid": 84,
+                  "startTicks": 58696794,
+                  "threads": [
+                    84
+                  ]
+                },
+                {
+                  "pid": 85,
+                  "startTicks": 58696794,
+                  "threads": [
+                    85
+                  ]
+                },
+                {
+                  "pid": 86,
+                  "startTicks": 58696794,
+                  "threads": [
+                    86
+                  ]
+                },
+                {
+                  "pid": 87,
+                  "startTicks": 58696795,
+                  "threads": [
+                    87
+                  ]
+                },
+                {
+                  "pid": 88,
+                  "startTicks": 58696795,
+                  "threads": [
+                    88
+                  ]
+                },
+                {
+                  "pid": 89,
+                  "startTicks": 58696795,
+                  "threads": [
+                    89
+                  ]
+                },
+                {
+                  "pid": 90,
+                  "startTicks": 58696795,
+                  "threads": [
+                    90
+                  ]
+                },
+                {
+                  "pid": 91,
+                  "startTicks": 58696795,
+                  "threads": [
+                    91
+                  ]
+                },
+                {
+                  "pid": 92,
+                  "startTicks": 58696795,
+                  "threads": [
+                    92
+                  ]
+                },
+                {
+                  "pid": 93,
+                  "startTicks": 58696795,
+                  "threads": [
+                    93
+                  ]
+                },
+                {
+                  "pid": 94,
+                  "startTicks": 58696795,
+                  "threads": [
+                    94
+                  ]
+                }
+              ]
+            }
+          },
+          "recoveredAtMs": 1790606143133,
+          "faultError": null,
+          "recoveryError": null,
+          "after": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [
+                {
+                  "itemId": "i",
+                  "quantity": 1
+                }
+              ],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606143134
+          },
+          "observedAtMs": 1790606143135,
+          "differences": [],
+          "verdicts": {
+            "atomicity": [],
+            "durability": []
+          },
+          "confirmed": false,
+          "faultAtMs": 1790606140715,
+          "faultEndMs": 1790606140775,
+          "interruptionAtMs": 1790606140632,
+          "interruptionEndMs": 1790606140704,
+          "outstandingAtFault": 16
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790606140203,
+          "completedAtMs": 1790606143136,
+          "durationMs": 2933,
+          "deadlineMs": 900000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "proxy",
+      "entry": {
+        "pid": 353,
+        "port": 14570,
+        "aux": [
+          371,
+          373,
+          374,
+          375,
+          376,
+          377,
+          378,
+          380,
+          381,
+          382,
+          383,
+          384,
+          385,
+          391,
+          392,
+          393,
+          394,
+          395,
+          396,
+          397,
+          398,
+          399,
+          400,
+          401,
+          402,
+          403,
+          404,
+          405,
+          406,
+          407,
+          408,
+          409,
+          410,
+          411,
+          412,
+          413
+        ]
+      },
+      "api": {
+        "pid": 365,
+        "port": 14571,
+        "aux": []
+      },
+      "quietBeforeRecovery": true,
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "crashCheckout",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "lifecycle-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "before": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606144763
+          },
+          "prepared": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [
+                {
+                  "itemId": "i",
+                  "quantity": 1
+                }
+              ],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606144763
+          },
+          "outcomes": [
+            {
+              "requestIndex": 1,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145111,
+              "completedAtMs": 1790606145329,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 2,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145113,
+              "completedAtMs": 1790606145329,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 3,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145114,
+              "completedAtMs": 1790606145329,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 4,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145114,
+              "completedAtMs": 1790606145329,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 5,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145114,
+              "completedAtMs": 1790606145329,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 6,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145115,
+              "completedAtMs": 1790606145330,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 7,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145115,
+              "completedAtMs": 1790606145330,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 8,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145115,
+              "completedAtMs": 1790606145330,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 9,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145330,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 10,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145330,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 11,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145327,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 12,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145328,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 13,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145328,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 14,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145328,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 15,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145328,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 16,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606145116,
+              "completedAtMs": 1790606145328,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            }
+          ],
+          "unsettled": false,
+          "databaseDrain": {
+            "backend": "postgres",
+            "database": "crash_window",
+            "startedAtMs": 1790606146898,
+            "completedAtMs": 1790606147018,
+            "settled": true,
+            "samples": [
+              {
+                "atMs": 1790606147018,
+                "pending": 0
+              }
+            ]
+          },
+          "receipt": {
+            "backend": "postgres",
+            "target": "application",
+            "containerId": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+            "requestedAtMs": 1790606145216,
+            "completedAtMs": 1790606145505,
+            "signal": "SIGKILL",
+            "processEvidence": "ARMED\nSTOP 353 58697213 1790606145227\nSTOP 365 58697223 1790606145228\nSTOP 371 58697223 1790606145229\nSTOP 373 58697224 1790606145230\nSTOP 374 58697224 1790606145232\nSTOP 375 58697224 1790606145233\nSTOP 376 58697224 1790606145234\nSTOP 377 58697224 1790606145235\nSTOP 378 58697224 1790606145236\nSTOP 380 58697224 1790606145238\nSTOP 381 58697224 1790606145239\nSTOP 382 58697224 1790606145240\nSTOP 383 58697224 1790606145241\nSTOP 384 58697225 1790606145242\nSTOP 385 58697225 1790606145243\nSTOP 391 58697229 1790606145245\nSTOP 392 58697229 1790606145246\nSTOP 393 58697229 1790606145248\nSTOP 394 58697229 1790606145249\nSTOP 395 58697230 1790606145250\nSTOP 396 58697230 1790606145251\nSTOP 397 58697230 1790606145252\nSTOP 398 58697230 1790606145253\nSTOP 399 58697230 1790606145254\nSTOP 400 58697230 1790606145255\nSTOP 401 58697230 1790606145257\nSTOP 402 58697230 1790606145258\nSTOP 403 58697230 1790606145259\nSTOP 404 58697230 1790606145260\nSTOP 405 58697231 1790606145261\nSTOP 406 58697231 1790606145263\nSTOP 407 58697231 1790606145264\nSTOP 408 58697231 1790606145265\nSTOP 409 58697231 1790606145267\nSTOP 410 58697231 1790606145268\nSTOP 411 58697231 1790606145269\nSTOP 412 58697234 1790606145270\nSTOP 413 58697234 1790606145272\nFROZEN_PROCESS 353:58697213:353,359,360,361,362,363,364\nFROZEN_PROCESS 365:58697223:365,366,367,368,369,370,379\nFROZEN_PROCESS 371:58697223:371\nFROZEN_PROCESS 373:58697224:373\nFROZEN_PROCESS 374:58697224:374\nFROZEN_PROCESS 375:58697224:375\nFROZEN_PROCESS 376:58697224:376\nFROZEN_PROCESS 377:58697224:377\nFROZEN_PROCESS 378:58697224:378\nFROZEN_PROCESS 380:58697224:380\nFROZEN_PROCESS 381:58697224:381\nFROZEN_PROCESS 382:58697224:382\nFROZEN_PROCESS 383:58697224:383\nFROZEN_PROCESS 384:58697225:384\nFROZEN_PROCESS 385:58697225:385\nFROZEN_PROCESS 391:58697229:391\nFROZEN_PROCESS 392:58697229:392\nFROZEN_PROCESS 393:58697229:393\nFROZEN_PROCESS 394:58697229:394\nFROZEN_PROCESS 395:58697230:395\nFROZEN_PROCESS 396:58697230:396\nFROZEN_PROCESS 397:58697230:397\nFROZEN_PROCESS 398:58697230:398\nFROZEN_PROCESS 399:58697230:399\nFROZEN_PROCESS 400:58697230:400\nFROZEN_PROCESS 401:58697230:401\nFROZEN_PROCESS 402:58697230:402\nFROZEN_PROCESS 403:58697230:403\nFROZEN_PROCESS 404:58697230:404\nFROZEN_PROCESS 405:58697231:405\nFROZEN_PROCESS 406:58697231:406\nFROZEN_PROCESS 407:58697231:407\nFROZEN_PROCESS 408:58697231:408\nFROZEN_PROCESS 409:58697231:409\nFROZEN_PROCESS 410:58697231:410\nFROZEN_PROCESS 411:58697231:411\nFROZEN_PROCESS 412:58697234:412\nFROZEN_PROCESS 413:58697234:413\nFROZEN 1790606145306\nKILLED 353 58697213 1790606145322\nKILLED 365 58697223 1790606145324\nKILLED 371 58697223 1790606145326\nKILLED 373 58697224 1790606145333\nKILLED 374 58697224 1790606145335\nKILLED 375 58697224 1790606145337\nKILLED 376 58697224 1790606145339\nKILLED 377 58697224 1790606145340\nKILLED 378 58697224 1790606145342\nKILLED 380 58697224 1790606145344\nKILLED 381 58697224 1790606145346\nKILLED 382 58697224 1790606145348\nKILLED 383 58697224 1790606145350\nKILLED 384 58697225 1790606145351\nKILLED 385 58697225 1790606145353\nKILLED 391 58697229 1790606145355\nKILLED 392 58697229 1790606145356\nKILLED 393 58697229 1790606145358\nKILLED 394 58697229 1790606145360\nKILLED 395 58697230 1790606145362\nKILLED 396 58697230 1790606145364\nKILLED 397 58697230 1790606145366\nKILLED 398 58697230 1790606145367\nKILLED 399 58697230 1790606145369\nKILLED 400 58697230 1790606145371\nKILLED 401 58697230 1790606145373\nKILLED 402 58697230 1790606145375\nKILLED 403 58697230 1790606145376\nKILLED 404 58697230 1790606145378\nKILLED 405 58697231 1790606145379\nKILLED 406 58697231 1790606145381\nKILLED 407 58697231 1790606145382\nKILLED 408 58697231 1790606145384\nKILLED 409 58697231 1790606145387\nKILLED 410 58697231 1790606145388\nKILLED 411 58697231 1790606145390\nKILLED 412 58697234 1790606145392\nKILLED 413 58697234 1790606145393\nQUIET\n",
+            "clockOffsetBeforeMs": -1,
+            "clockOffsetAfterMs": -1,
+            "applicationFreeze": {
+              "startedAtMs": 1790606145227,
+              "completedAtMs": 1790606145306,
+              "processes": [
+                {
+                  "pid": 353,
+                  "startTicks": 58697213,
+                  "threads": [
+                    353,
+                    359,
+                    360,
+                    361,
+                    362,
+                    363,
+                    364
+                  ]
+                },
+                {
+                  "pid": 365,
+                  "startTicks": 58697223,
+                  "threads": [
+                    365,
+                    366,
+                    367,
+                    368,
+                    369,
+                    370,
+                    379
+                  ]
+                },
+                {
+                  "pid": 371,
+                  "startTicks": 58697223,
+                  "threads": [
+                    371
+                  ]
+                },
+                {
+                  "pid": 373,
+                  "startTicks": 58697224,
+                  "threads": [
+                    373
+                  ]
+                },
+                {
+                  "pid": 374,
+                  "startTicks": 58697224,
+                  "threads": [
+                    374
+                  ]
+                },
+                {
+                  "pid": 375,
+                  "startTicks": 58697224,
+                  "threads": [
+                    375
+                  ]
+                },
+                {
+                  "pid": 376,
+                  "startTicks": 58697224,
+                  "threads": [
+                    376
+                  ]
+                },
+                {
+                  "pid": 377,
+                  "startTicks": 58697224,
+                  "threads": [
+                    377
+                  ]
+                },
+                {
+                  "pid": 378,
+                  "startTicks": 58697224,
+                  "threads": [
+                    378
+                  ]
+                },
+                {
+                  "pid": 380,
+                  "startTicks": 58697224,
+                  "threads": [
+                    380
+                  ]
+                },
+                {
+                  "pid": 381,
+                  "startTicks": 58697224,
+                  "threads": [
+                    381
+                  ]
+                },
+                {
+                  "pid": 382,
+                  "startTicks": 58697224,
+                  "threads": [
+                    382
+                  ]
+                },
+                {
+                  "pid": 383,
+                  "startTicks": 58697224,
+                  "threads": [
+                    383
+                  ]
+                },
+                {
+                  "pid": 384,
+                  "startTicks": 58697225,
+                  "threads": [
+                    384
+                  ]
+                },
+                {
+                  "pid": 385,
+                  "startTicks": 58697225,
+                  "threads": [
+                    385
+                  ]
+                },
+                {
+                  "pid": 391,
+                  "startTicks": 58697229,
+                  "threads": [
+                    391
+                  ]
+                },
+                {
+                  "pid": 392,
+                  "startTicks": 58697229,
+                  "threads": [
+                    392
+                  ]
+                },
+                {
+                  "pid": 393,
+                  "startTicks": 58697229,
+                  "threads": [
+                    393
+                  ]
+                },
+                {
+                  "pid": 394,
+                  "startTicks": 58697229,
+                  "threads": [
+                    394
+                  ]
+                },
+                {
+                  "pid": 395,
+                  "startTicks": 58697230,
+                  "threads": [
+                    395
+                  ]
+                },
+                {
+                  "pid": 396,
+                  "startTicks": 58697230,
+                  "threads": [
+                    396
+                  ]
+                },
+                {
+                  "pid": 397,
+                  "startTicks": 58697230,
+                  "threads": [
+                    397
+                  ]
+                },
+                {
+                  "pid": 398,
+                  "startTicks": 58697230,
+                  "threads": [
+                    398
+                  ]
+                },
+                {
+                  "pid": 399,
+                  "startTicks": 58697230,
+                  "threads": [
+                    399
+                  ]
+                },
+                {
+                  "pid": 400,
+                  "startTicks": 58697230,
+                  "threads": [
+                    400
+                  ]
+                },
+                {
+                  "pid": 401,
+                  "startTicks": 58697230,
+                  "threads": [
+                    401
+                  ]
+                },
+                {
+                  "pid": 402,
+                  "startTicks": 58697230,
+                  "threads": [
+                    402
+                  ]
+                },
+                {
+                  "pid": 403,
+                  "startTicks": 58697230,
+                  "threads": [
+                    403
+                  ]
+                },
+                {
+                  "pid": 404,
+                  "startTicks": 58697230,
+                  "threads": [
+                    404
+                  ]
+                },
+                {
+                  "pid": 405,
+                  "startTicks": 58697231,
+                  "threads": [
+                    405
+                  ]
+                },
+                {
+                  "pid": 406,
+                  "startTicks": 58697231,
+                  "threads": [
+                    406
+                  ]
+                },
+                {
+                  "pid": 407,
+                  "startTicks": 58697231,
+                  "threads": [
+                    407
+                  ]
+                },
+                {
+                  "pid": 408,
+                  "startTicks": 58697231,
+                  "threads": [
+                    408
+                  ]
+                },
+                {
+                  "pid": 409,
+                  "startTicks": 58697231,
+                  "threads": [
+                    409
+                  ]
+                },
+                {
+                  "pid": 410,
+                  "startTicks": 58697231,
+                  "threads": [
+                    410
+                  ]
+                },
+                {
+                  "pid": 411,
+                  "startTicks": 58697231,
+                  "threads": [
+                    411
+                  ]
+                },
+                {
+                  "pid": 412,
+                  "startTicks": 58697234,
+                  "threads": [
+                    412
+                  ]
+                },
+                {
+                  "pid": 413,
+                  "startTicks": 58697234,
+                  "threads": [
+                    413
+                  ]
+                }
+              ]
+            }
+          },
+          "recoveredAtMs": 1790606147818,
+          "faultError": null,
+          "recoveryError": null,
+          "after": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [
+                {
+                  "itemId": "i",
+                  "quantity": 1
+                }
+              ],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606147818
+          },
+          "observedAtMs": 1790606147818,
+          "differences": [],
+          "verdicts": {
+            "atomicity": [],
+            "durability": []
+          },
+          "confirmed": false,
+          "faultAtMs": 1790606145323,
+          "faultEndMs": 1790606145394,
+          "interruptionAtMs": 1790606145228,
+          "interruptionEndMs": 1790606145307,
+          "outstandingAtFault": 16
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790606144765,
+          "completedAtMs": 1790606147820,
+          "durationMs": 3055,
+          "deadlineMs": 900000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "late-auxiliary",
+      "entry": {
+        "pid": 664,
+        "port": 14570,
+        "aux": [
+          676,
+          677,
+          678,
+          679,
+          680,
+          681,
+          682,
+          683,
+          684,
+          685,
+          686,
+          687,
+          688,
+          689,
+          690,
+          691,
+          692,
+          693,
+          694,
+          695,
+          696,
+          697,
+          698,
+          699,
+          700,
+          701,
+          702,
+          703,
+          704,
+          705,
+          706,
+          707,
+          708,
+          709,
+          710,
+          711,
+          712
+        ]
+      },
+      "api": null,
+      "quietBeforeRecovery": true,
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "crashCheckout",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "lifecycle-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "before": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606149019
+          },
+          "prepared": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [
+                {
+                  "itemId": "i",
+                  "quantity": 1
+                }
+              ],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606149019
+          },
+          "outcomes": [
+            {
+              "requestIndex": 1,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149336,
+              "completedAtMs": 1790606149884,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 2,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149338,
+              "completedAtMs": 1790606149884,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 3,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149339,
+              "completedAtMs": 1790606149884,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 4,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149339,
+              "completedAtMs": 1790606149884,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 5,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149339,
+              "completedAtMs": 1790606149884,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 6,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149340,
+              "completedAtMs": 1790606149884,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 7,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149340,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 8,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149340,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 9,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149340,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 10,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149340,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 11,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149341,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 12,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149341,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 13,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149341,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 14,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149341,
+              "completedAtMs": 1790606149885,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 15,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149341,
+              "completedAtMs": 1790606149886,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            },
+            {
+              "requestIndex": 16,
+              "actor": "buyer",
+              "action": "checkout",
+              "startedAtMs": 1790606149342,
+              "completedAtMs": 1790606149881,
+              "outcome": "not-confirmed",
+              "status": null,
+              "responseFailed": false,
+              "cancelled": false,
+              "timedOut": false,
+              "protocol": "http"
+            }
+          ],
+          "unsettled": false,
+          "databaseDrain": {
+            "backend": "postgres",
+            "database": "crash_window",
+            "startedAtMs": 1790606151963,
+            "completedAtMs": 1790606152137,
+            "settled": true,
+            "samples": [
+              {
+                "atMs": 1790606152137,
+                "pending": 0
+              }
+            ]
+          },
+          "receipt": {
+            "backend": "postgres",
+            "target": "application",
+            "containerId": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+            "requestedAtMs": 1790606149738,
+            "completedAtMs": 1790606150076,
+            "signal": "SIGKILL",
+            "processEvidence": "ARMED\nSTOP 664 58697710 1790606149755\nSTOP 676 58697723 1790606149757\nSTOP 677 58697724 1790606149758\nSTOP 678 58697724 1790606149759\nSTOP 679 58697724 1790606149761\nSTOP 680 58697724 1790606149762\nSTOP 681 58697724 1790606149764\nSTOP 682 58697724 1790606149765\nSTOP 683 58697724 1790606149767\nSTOP 684 58697725 1790606149768\nSTOP 685 58697725 1790606149770\nSTOP 686 58697725 1790606149771\nSTOP 687 58697725 1790606149772\nSTOP 688 58697725 1790606149773\nSTOP 689 58697728 1790606149774\nSTOP 690 58697729 1790606149776\nSTOP 691 58697729 1790606149777\nSTOP 692 58697729 1790606149779\nSTOP 693 58697729 1790606149780\nSTOP 694 58697729 1790606149781\nSTOP 695 58697729 1790606149783\nSTOP 696 58697729 1790606149784\nSTOP 697 58697729 1790606149785\nSTOP 698 58697729 1790606149786\nSTOP 699 58697729 1790606149789\nSTOP 700 58697730 1790606149792\nSTOP 701 58697730 1790606149794\nSTOP 702 58697730 1790606149795\nSTOP 703 58697730 1790606149797\nSTOP 704 58697730 1790606149799\nSTOP 705 58697731 1790606149801\nSTOP 706 58697731 1790606149802\nSTOP 707 58697731 1790606149804\nSTOP 708 58697731 1790606149805\nSTOP 709 58697731 1790606149808\nSTOP 710 58697734 1790606149809\nSTOP 711 58697734 1790606149811\nSTOP 712 58697735 1790606149813\nFROZEN_PROCESS 664:58697710:664,670,671,672,673,674,675\nFROZEN_PROCESS 676:58697723:676\nFROZEN_PROCESS 677:58697724:677\nFROZEN_PROCESS 678:58697724:678\nFROZEN_PROCESS 679:58697724:679\nFROZEN_PROCESS 680:58697724:680\nFROZEN_PROCESS 681:58697724:681\nFROZEN_PROCESS 682:58697724:682\nFROZEN_PROCESS 683:58697724:683\nFROZEN_PROCESS 684:58697725:684\nFROZEN_PROCESS 685:58697725:685\nFROZEN_PROCESS 686:58697725:686\nFROZEN_PROCESS 687:58697725:687\nFROZEN_PROCESS 688:58697725:688\nFROZEN_PROCESS 689:58697728:689\nFROZEN_PROCESS 690:58697729:690\nFROZEN_PROCESS 691:58697729:691\nFROZEN_PROCESS 692:58697729:692\nFROZEN_PROCESS 693:58697729:693\nFROZEN_PROCESS 694:58697729:694\nFROZEN_PROCESS 695:58697729:695\nFROZEN_PROCESS 696:58697729:696\nFROZEN_PROCESS 697:58697729:697\nFROZEN_PROCESS 698:58697729:698\nFROZEN_PROCESS 699:58697729:699\nFROZEN_PROCESS 700:58697730:700\nFROZEN_PROCESS 701:58697730:701\nFROZEN_PROCESS 702:58697730:702\nFROZEN_PROCESS 703:58697730:703\nFROZEN_PROCESS 704:58697730:704\nFROZEN_PROCESS 705:58697731:705\nFROZEN_PROCESS 706:58697731:706\nFROZEN_PROCESS 707:58697731:707\nFROZEN_PROCESS 708:58697731:708\nFROZEN_PROCESS 709:58697731:709\nFROZEN_PROCESS 710:58697734:710\nFROZEN_PROCESS 711:58697734:711\nFROZEN_PROCESS 712:58697735:712,713,714,715,716,717,719\nFROZEN 1790606149858\nKILLED 664 58697710 1790606149876\nKILLED 676 58697723 1790606149879\nKILLED 677 58697724 1790606149880\nKILLED 678 58697724 1790606149882\nKILLED 679 58697724 1790606149884\nKILLED 680 58697724 1790606149885\nKILLED 681 58697724 1790606149886\nKILLED 682 58697724 1790606149887\nKILLED 683 58697724 1790606149888\nKILLED 684 58697725 1790606149890\nKILLED 685 58697725 1790606149891\nKILLED 686 58697725 1790606149893\nKILLED 687 58697725 1790606149894\nKILLED 688 58697725 1790606149895\nKILLED 689 58697728 1790606149896\nKILLED 690 58697729 1790606149898\nKILLED 691 58697729 1790606149899\nKILLED 692 58697729 1790606149900\nKILLED 693 58697729 1790606149901\nKILLED 694 58697729 1790606149903\nKILLED 695 58697729 1790606149905\nKILLED 696 58697729 1790606149908\nKILLED 697 58697729 1790606149912\nKILLED 698 58697729 1790606149914\nKILLED 699 58697729 1790606149916\nKILLED 700 58697730 1790606149918\nKILLED 701 58697730 1790606149920\nKILLED 702 58697730 1790606149941\nKILLED 703 58697730 1790606149943\nKILLED 704 58697730 1790606149945\nKILLED 705 58697731 1790606149946\nKILLED 706 58697731 1790606149949\nKILLED 707 58697731 1790606149951\nKILLED 708 58697731 1790606149952\nKILLED 709 58697731 1790606149954\nKILLED 710 58697734 1790606149956\nKILLED 711 58697734 1790606149958\nKILLED 712 58697735 1790606149961\nQUIET\n",
+            "clockOffsetBeforeMs": -1,
+            "clockOffsetAfterMs": -1,
+            "applicationFreeze": {
+              "startedAtMs": 1790606149755,
+              "completedAtMs": 1790606149858,
+              "processes": [
+                {
+                  "pid": 664,
+                  "startTicks": 58697710,
+                  "threads": [
+                    664,
+                    670,
+                    671,
+                    672,
+                    673,
+                    674,
+                    675
+                  ]
+                },
+                {
+                  "pid": 676,
+                  "startTicks": 58697723,
+                  "threads": [
+                    676
+                  ]
+                },
+                {
+                  "pid": 677,
+                  "startTicks": 58697724,
+                  "threads": [
+                    677
+                  ]
+                },
+                {
+                  "pid": 678,
+                  "startTicks": 58697724,
+                  "threads": [
+                    678
+                  ]
+                },
+                {
+                  "pid": 679,
+                  "startTicks": 58697724,
+                  "threads": [
+                    679
+                  ]
+                },
+                {
+                  "pid": 680,
+                  "startTicks": 58697724,
+                  "threads": [
+                    680
+                  ]
+                },
+                {
+                  "pid": 681,
+                  "startTicks": 58697724,
+                  "threads": [
+                    681
+                  ]
+                },
+                {
+                  "pid": 682,
+                  "startTicks": 58697724,
+                  "threads": [
+                    682
+                  ]
+                },
+                {
+                  "pid": 683,
+                  "startTicks": 58697724,
+                  "threads": [
+                    683
+                  ]
+                },
+                {
+                  "pid": 684,
+                  "startTicks": 58697725,
+                  "threads": [
+                    684
+                  ]
+                },
+                {
+                  "pid": 685,
+                  "startTicks": 58697725,
+                  "threads": [
+                    685
+                  ]
+                },
+                {
+                  "pid": 686,
+                  "startTicks": 58697725,
+                  "threads": [
+                    686
+                  ]
+                },
+                {
+                  "pid": 687,
+                  "startTicks": 58697725,
+                  "threads": [
+                    687
+                  ]
+                },
+                {
+                  "pid": 688,
+                  "startTicks": 58697725,
+                  "threads": [
+                    688
+                  ]
+                },
+                {
+                  "pid": 689,
+                  "startTicks": 58697728,
+                  "threads": [
+                    689
+                  ]
+                },
+                {
+                  "pid": 690,
+                  "startTicks": 58697729,
+                  "threads": [
+                    690
+                  ]
+                },
+                {
+                  "pid": 691,
+                  "startTicks": 58697729,
+                  "threads": [
+                    691
+                  ]
+                },
+                {
+                  "pid": 692,
+                  "startTicks": 58697729,
+                  "threads": [
+                    692
+                  ]
+                },
+                {
+                  "pid": 693,
+                  "startTicks": 58697729,
+                  "threads": [
+                    693
+                  ]
+                },
+                {
+                  "pid": 694,
+                  "startTicks": 58697729,
+                  "threads": [
+                    694
+                  ]
+                },
+                {
+                  "pid": 695,
+                  "startTicks": 58697729,
+                  "threads": [
+                    695
+                  ]
+                },
+                {
+                  "pid": 696,
+                  "startTicks": 58697729,
+                  "threads": [
+                    696
+                  ]
+                },
+                {
+                  "pid": 697,
+                  "startTicks": 58697729,
+                  "threads": [
+                    697
+                  ]
+                },
+                {
+                  "pid": 698,
+                  "startTicks": 58697729,
+                  "threads": [
+                    698
+                  ]
+                },
+                {
+                  "pid": 699,
+                  "startTicks": 58697729,
+                  "threads": [
+                    699
+                  ]
+                },
+                {
+                  "pid": 700,
+                  "startTicks": 58697730,
+                  "threads": [
+                    700
+                  ]
+                },
+                {
+                  "pid": 701,
+                  "startTicks": 58697730,
+                  "threads": [
+                    701
+                  ]
+                },
+                {
+                  "pid": 702,
+                  "startTicks": 58697730,
+                  "threads": [
+                    702
+                  ]
+                },
+                {
+                  "pid": 703,
+                  "startTicks": 58697730,
+                  "threads": [
+                    703
+                  ]
+                },
+                {
+                  "pid": 704,
+                  "startTicks": 58697730,
+                  "threads": [
+                    704
+                  ]
+                },
+                {
+                  "pid": 705,
+                  "startTicks": 58697731,
+                  "threads": [
+                    705
+                  ]
+                },
+                {
+                  "pid": 706,
+                  "startTicks": 58697731,
+                  "threads": [
+                    706
+                  ]
+                },
+                {
+                  "pid": 707,
+                  "startTicks": 58697731,
+                  "threads": [
+                    707
+                  ]
+                },
+                {
+                  "pid": 708,
+                  "startTicks": 58697731,
+                  "threads": [
+                    708
+                  ]
+                },
+                {
+                  "pid": 709,
+                  "startTicks": 58697731,
+                  "threads": [
+                    709
+                  ]
+                },
+                {
+                  "pid": 710,
+                  "startTicks": 58697734,
+                  "threads": [
+                    710
+                  ]
+                },
+                {
+                  "pid": 711,
+                  "startTicks": 58697734,
+                  "threads": [
+                    711
+                  ]
+                },
+                {
+                  "pid": 712,
+                  "startTicks": 58697735,
+                  "threads": [
+                    712,
+                    713,
+                    714,
+                    715,
+                    716,
+                    717,
+                    719
+                  ]
+                }
+              ]
+            }
+          },
+          "recoveredAtMs": 1790606153180,
+          "faultError": null,
+          "recoveryError": null,
+          "after": {
+            "state": {
+              "accountId": "a",
+              "itemId": "i",
+              "priceMinor": 100,
+              "cart": [
+                {
+                  "itemId": "i",
+                  "quantity": 1
+                }
+              ],
+              "stock": [
+                {
+                  "warehouseId": "w",
+                  "quantity": 10
+                }
+              ],
+              "reservations": [],
+              "orders": [],
+              "payments": [],
+              "orphanOrderLines": 0
+            },
+            "schemaSha256": {
+              "fixture": "39ad9e6be31537ecf95e111bac252e5b703f97a002811ebe5b79b0ef54efcd1c"
+            },
+            "account": "a",
+            "item": "i",
+            "recordedAtMs": 1790606153181
+          },
+          "observedAtMs": 1790606153181,
+          "differences": [],
+          "verdicts": {
+            "atomicity": [],
+            "durability": []
+          },
+          "confirmed": false,
+          "faultAtMs": 1790606149877,
+          "faultEndMs": 1790606149962,
+          "interruptionAtMs": 1790606149756,
+          "interruptionEndMs": 1790606149859,
+          "outstandingAtFault": 16
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790606149021,
+          "completedAtMs": 1790606153183,
+          "durationMs": 4162,
+          "deadlineMs": 900000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "disarm",
+      "entry": {
+        "pid": 971,
+        "port": 14570,
+        "aux": [
+          984,
+          985,
+          986,
+          987,
+          988,
+          989,
+          990,
+          991,
+          992,
+          993,
+          994,
+          995,
+          996,
+          1002,
+          1003,
+          1004,
+          1005,
+          1006,
+          1007,
+          1008,
+          1009,
+          1010,
+          1011,
+          1012,
+          1013,
+          1014,
+          1015,
+          1016,
+          1017,
+          1018,
+          1019,
+          1020,
+          1021,
+          1022,
+          1023,
+          1024
+        ]
+      },
+      "states": [
+        "Ssl",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S",
+        "S"
+      ],
+      "healthy": true
+    },
+    {
+      "mode": "missing",
+      "entry": {
+        "pid": 1074,
+        "port": 14570,
+        "aux": [
+          1086,
+          1087,
+          1089,
+          1090,
+          1091,
+          1092,
+          1093,
+          1094,
+          1095,
+          1096,
+          1097,
+          1098,
+          1099,
+          1100,
+          1106,
+          1107,
+          1108,
+          1109,
+          1110,
+          1111,
+          1112,
+          1113,
+          1114,
+          1115,
+          1116,
+          1117,
+          1118,
+          1119,
+          1120,
+          1121,
+          1122,
+          1123,
+          1124,
+          1125,
+          1126,
+          1127
+        ]
+      },
+      "rejected": true,
+      "error": "fault process exited before it was armed"
+    },
+    {
+      "mode": "foreign",
+      "entry": {
+        "pid": 1178,
+        "port": 14570,
+        "aux": [
+          1191,
+          1192,
+          1193,
+          1194,
+          1195,
+          1196,
+          1197,
+          1198,
+          1199,
+          1200,
+          1201,
+          1202,
+          1203,
+          1209,
+          1210,
+          1211,
+          1212,
+          1213,
+          1214,
+          1215,
+          1216,
+          1217,
+          1218,
+          1219,
+          1220,
+          1221,
+          1222,
+          1223,
+          1224,
+          1225,
+          1226,
+          1227,
+          1228,
+          1229,
+          1230,
+          1231
+        ]
+      },
+      "rejected": true,
+      "error": "fault process exited before it was armed"
+    },
+    {
+      "mode": "stale",
+      "entry": {
+        "pid": 1510,
+        "port": 14570,
+        "aux": [
+          1522,
+          1523,
+          1524,
+          1525,
+          1526,
+          1527,
+          1528,
+          1529,
+          1530,
+          1531,
+          1532,
+          1533,
+          1534,
+          1541,
+          1542,
+          1543,
+          1544,
+          1545,
+          1546,
+          1547,
+          1548,
+          1549,
+          1550,
+          1551,
+          1552,
+          1553,
+          1554,
+          1555,
+          1556,
+          1557,
+          1558,
+          1559,
+          1560,
+          1561,
+          1562,
+          1563
+        ]
+      },
+      "rejected": true,
+      "error": "process crash was not verified"
+    },
+    {
+      "mode": "added-listener",
+      "entry": {
+        "pid": 1742,
+        "port": 14570,
+        "aux": [
+          1755,
+          1756,
+          1757,
+          1758,
+          1759,
+          1760,
+          1761,
+          1762,
+          1763,
+          1764,
+          1765,
+          1766,
+          1767,
+          1769,
+          1770,
+          1771,
+          1772,
+          1773,
+          1774,
+          1775,
+          1776,
+          1777,
+          1778,
+          1779,
+          1780,
+          1781,
+          1782,
+          1783,
+          1784,
+          1785,
+          1786,
+          1787,
+          1788,
+          1789,
+          1795,
+          1796
+        ]
+      },
+      "added": {
+        "pid": 1818,
+        "port": 14571,
+        "aux": []
+      },
+      "quiet": true,
+      "receipt": {
+        "backend": "postgres",
+        "target": "application",
+        "containerId": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+        "requestedAtMs": 1790606166578,
+        "completedAtMs": 1790606166848,
+        "signal": "SIGKILL",
+        "processEvidence": "ARMED\nSTOP 1742 58699352 1790606166588\nSTOP 1755 58699362 1790606166589\nSTOP 1756 58699362 1790606166591\nSTOP 1757 58699362 1790606166592\nSTOP 1758 58699362 1790606166593\nSTOP 1759 58699362 1790606166594\nSTOP 1760 58699362 1790606166595\nSTOP 1761 58699362 1790606166596\nSTOP 1762 58699362 1790606166597\nSTOP 1763 58699362 1790606166598\nSTOP 1764 58699363 1790606166599\nSTOP 1765 58699363 1790606166600\nSTOP 1766 58699363 1790606166601\nSTOP 1767 58699363 1790606166602\nSTOP 1769 58699368 1790606166604\nSTOP 1770 58699368 1790606166605\nSTOP 1771 58699368 1790606166607\nSTOP 1772 58699368 1790606166608\nSTOP 1773 58699368 1790606166609\nSTOP 1774 58699368 1790606166609\nSTOP 1775 58699368 1790606166610\nSTOP 1776 58699368 1790606166612\nSTOP 1777 58699368 1790606166613\nSTOP 1778 58699368 1790606166614\nSTOP 1779 58699368 1790606166615\nSTOP 1780 58699368 1790606166616\nSTOP 1781 58699369 1790606166618\nSTOP 1782 58699369 1790606166619\nSTOP 1783 58699369 1790606166620\nSTOP 1784 58699369 1790606166621\nSTOP 1785 58699369 1790606166623\nSTOP 1786 58699369 1790606166624\nSTOP 1787 58699369 1790606166625\nSTOP 1788 58699369 1790606166626\nSTOP 1789 58699369 1790606166627\nSTOP 1795 58699375 1790606166629\nSTOP 1796 58699375 1790606166630\nSTOP 1818 58699475 1790606166631\nFROZEN_PROCESS 1742:58699352:1742,1749,1750,1751,1752,1753,1754\nFROZEN_PROCESS 1755:58699362:1755\nFROZEN_PROCESS 1756:58699362:1756\nFROZEN_PROCESS 1757:58699362:1757\nFROZEN_PROCESS 1758:58699362:1758\nFROZEN_PROCESS 1759:58699362:1759\nFROZEN_PROCESS 1760:58699362:1760\nFROZEN_PROCESS 1761:58699362:1761\nFROZEN_PROCESS 1762:58699362:1762\nFROZEN_PROCESS 1763:58699362:1763\nFROZEN_PROCESS 1764:58699363:1764\nFROZEN_PROCESS 1765:58699363:1765\nFROZEN_PROCESS 1766:58699363:1766\nFROZEN_PROCESS 1767:58699363:1767\nFROZEN_PROCESS 1769:58699368:1769\nFROZEN_PROCESS 1770:58699368:1770\nFROZEN_PROCESS 1771:58699368:1771\nFROZEN_PROCESS 1772:58699368:1772\nFROZEN_PROCESS 1773:58699368:1773\nFROZEN_PROCESS 1774:58699368:1774\nFROZEN_PROCESS 1775:58699368:1775\nFROZEN_PROCESS 1776:58699368:1776\nFROZEN_PROCESS 1777:58699368:1777\nFROZEN_PROCESS 1778:58699368:1778\nFROZEN_PROCESS 1779:58699368:1779\nFROZEN_PROCESS 1780:58699368:1780\nFROZEN_PROCESS 1781:58699369:1781\nFROZEN_PROCESS 1782:58699369:1782\nFROZEN_PROCESS 1783:58699369:1783\nFROZEN_PROCESS 1784:58699369:1784\nFROZEN_PROCESS 1785:58699369:1785\nFROZEN_PROCESS 1786:58699369:1786\nFROZEN_PROCESS 1787:58699369:1787\nFROZEN_PROCESS 1788:58699369:1788\nFROZEN_PROCESS 1789:58699369:1789\nFROZEN_PROCESS 1795:58699375:1795\nFROZEN_PROCESS 1796:58699375:1796\nFROZEN_PROCESS 1818:58699475:1818,1824,1825,1826,1827,1828,1829\nFROZEN 1790606166661\nKILLED 1742 58699352 1790606166673\nKILLED 1755 58699362 1790606166675\nKILLED 1756 58699362 1790606166676\nKILLED 1757 58699362 1790606166678\nKILLED 1758 58699362 1790606166679\nKILLED 1759 58699362 1790606166680\nKILLED 1760 58699362 1790606166682\nKILLED 1761 58699362 1790606166683\nKILLED 1762 58699362 1790606166684\nKILLED 1763 58699362 1790606166685\nKILLED 1764 58699363 1790606166686\nKILLED 1765 58699363 1790606166688\nKILLED 1766 58699363 1790606166690\nKILLED 1767 58699363 1790606166691\nKILLED 1769 58699368 1790606166692\nKILLED 1770 58699368 1790606166694\nKILLED 1771 58699368 1790606166695\nKILLED 1772 58699368 1790606166696\nKILLED 1773 58699368 1790606166698\nKILLED 1774 58699368 1790606166699\nKILLED 1775 58699368 1790606166700\nKILLED 1776 58699368 1790606166701\nKILLED 1777 58699368 1790606166702\nKILLED 1778 58699368 1790606166704\nKILLED 1779 58699368 1790606166705\nKILLED 1780 58699368 1790606166706\nKILLED 1781 58699369 1790606166707\nKILLED 1782 58699369 1790606166709\nKILLED 1783 58699369 1790606166710\nKILLED 1784 58699369 1790606166711\nKILLED 1785 58699369 1790606166712\nKILLED 1786 58699369 1790606166714\nKILLED 1787 58699369 1790606166715\nKILLED 1788 58699369 1790606166716\nKILLED 1789 58699369 1790606166718\nKILLED 1795 58699375 1790606166719\nKILLED 1796 58699375 1790606166733\nKILLED 1818 58699475 1790606166735\nQUIET\n",
+        "clockOffsetBeforeMs": -1,
+        "clockOffsetAfterMs": -1,
+        "applicationFreeze": {
+          "startedAtMs": 1790606166588,
+          "completedAtMs": 1790606166661,
+          "processes": [
+            {
+              "pid": 1742,
+              "startTicks": 58699352,
+              "threads": [
+                1742,
+                1749,
+                1750,
+                1751,
+                1752,
+                1753,
+                1754
+              ]
+            },
+            {
+              "pid": 1755,
+              "startTicks": 58699362,
+              "threads": [
+                1755
+              ]
+            },
+            {
+              "pid": 1756,
+              "startTicks": 58699362,
+              "threads": [
+                1756
+              ]
+            },
+            {
+              "pid": 1757,
+              "startTicks": 58699362,
+              "threads": [
+                1757
+              ]
+            },
+            {
+              "pid": 1758,
+              "startTicks": 58699362,
+              "threads": [
+                1758
+              ]
+            },
+            {
+              "pid": 1759,
+              "startTicks": 58699362,
+              "threads": [
+                1759
+              ]
+            },
+            {
+              "pid": 1760,
+              "startTicks": 58699362,
+              "threads": [
+                1760
+              ]
+            },
+            {
+              "pid": 1761,
+              "startTicks": 58699362,
+              "threads": [
+                1761
+              ]
+            },
+            {
+              "pid": 1762,
+              "startTicks": 58699362,
+              "threads": [
+                1762
+              ]
+            },
+            {
+              "pid": 1763,
+              "startTicks": 58699362,
+              "threads": [
+                1763
+              ]
+            },
+            {
+              "pid": 1764,
+              "startTicks": 58699363,
+              "threads": [
+                1764
+              ]
+            },
+            {
+              "pid": 1765,
+              "startTicks": 58699363,
+              "threads": [
+                1765
+              ]
+            },
+            {
+              "pid": 1766,
+              "startTicks": 58699363,
+              "threads": [
+                1766
+              ]
+            },
+            {
+              "pid": 1767,
+              "startTicks": 58699363,
+              "threads": [
+                1767
+              ]
+            },
+            {
+              "pid": 1769,
+              "startTicks": 58699368,
+              "threads": [
+                1769
+              ]
+            },
+            {
+              "pid": 1770,
+              "startTicks": 58699368,
+              "threads": [
+                1770
+              ]
+            },
+            {
+              "pid": 1771,
+              "startTicks": 58699368,
+              "threads": [
+                1771
+              ]
+            },
+            {
+              "pid": 1772,
+              "startTicks": 58699368,
+              "threads": [
+                1772
+              ]
+            },
+            {
+              "pid": 1773,
+              "startTicks": 58699368,
+              "threads": [
+                1773
+              ]
+            },
+            {
+              "pid": 1774,
+              "startTicks": 58699368,
+              "threads": [
+                1774
+              ]
+            },
+            {
+              "pid": 1775,
+              "startTicks": 58699368,
+              "threads": [
+                1775
+              ]
+            },
+            {
+              "pid": 1776,
+              "startTicks": 58699368,
+              "threads": [
+                1776
+              ]
+            },
+            {
+              "pid": 1777,
+              "startTicks": 58699368,
+              "threads": [
+                1777
+              ]
+            },
+            {
+              "pid": 1778,
+              "startTicks": 58699368,
+              "threads": [
+                1778
+              ]
+            },
+            {
+              "pid": 1779,
+              "startTicks": 58699368,
+              "threads": [
+                1779
+              ]
+            },
+            {
+              "pid": 1780,
+              "startTicks": 58699368,
+              "threads": [
+                1780
+              ]
+            },
+            {
+              "pid": 1781,
+              "startTicks": 58699369,
+              "threads": [
+                1781
+              ]
+            },
+            {
+              "pid": 1782,
+              "startTicks": 58699369,
+              "threads": [
+                1782
+              ]
+            },
+            {
+              "pid": 1783,
+              "startTicks": 58699369,
+              "threads": [
+                1783
+              ]
+            },
+            {
+              "pid": 1784,
+              "startTicks": 58699369,
+              "threads": [
+                1784
+              ]
+            },
+            {
+              "pid": 1785,
+              "startTicks": 58699369,
+              "threads": [
+                1785
+              ]
+            },
+            {
+              "pid": 1786,
+              "startTicks": 58699369,
+              "threads": [
+                1786
+              ]
+            },
+            {
+              "pid": 1787,
+              "startTicks": 58699369,
+              "threads": [
+                1787
+              ]
+            },
+            {
+              "pid": 1788,
+              "startTicks": 58699369,
+              "threads": [
+                1788
+              ]
+            },
+            {
+              "pid": 1789,
+              "startTicks": 58699369,
+              "threads": [
+                1789
+              ]
+            },
+            {
+              "pid": 1795,
+              "startTicks": 58699375,
+              "threads": [
+                1795
+              ]
+            },
+            {
+              "pid": 1796,
+              "startTicks": 58699375,
+              "threads": [
+                1796
+              ]
+            },
+            {
+              "pid": 1818,
+              "startTicks": 58699475,
+              "threads": [
+                1818,
+                1824,
+                1825,
+                1826,
+                1827,
+                1828,
+                1829
+              ]
+            }
+          ]
+        }
+      },
+      "error": null
+    },
+    {
+      "mode": "dead-leader",
+      "fixtureSha256": "e7481febb417604d95ca1a8766fc8fedb660eb6d349d4a766fd2a660a616c4f4",
+      "before": {
+        "pid": 2030,
+        "state": "Z",
+        "tick": "17",
+        "tasks": [
+          {
+            "tid": 2030,
+            "state": "Z"
+          },
+          {
+            "tid": 2036,
+            "state": "S"
+          }
+        ]
+      },
+      "after": {
+        "pid": 2030,
+        "state": null,
+        "tick": "24",
+        "tasks": []
+      },
+      "receipt": {
+        "backend": "postgres",
+        "target": "application",
+        "containerId": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+        "requestedAtMs": 1790606169614,
+        "completedAtMs": 1790606169902,
+        "signal": "SIGKILL",
+        "processEvidence": "ARMED\nSTOP 1963 58699599 1790606169631\nSTOP 1976 58699611 1790606169633\nSTOP 1977 58699612 1790606169635\nSTOP 1978 58699612 1790606169636\nSTOP 1979 58699612 1790606169637\nSTOP 1980 58699612 1790606169639\nSTOP 1981 58699612 1790606169640\nSTOP 1982 58699613 1790606169641\nSTOP 1983 58699613 1790606169643\nSTOP 1984 58699613 1790606169644\nSTOP 1985 58699613 1790606169645\nSTOP 1986 58699613 1790606169646\nSTOP 1987 58699613 1790606169647\nSTOP 1988 58699613 1790606169649\nSTOP 1994 58699618 1790606169650\nSTOP 1995 58699618 1790606169652\nSTOP 1996 58699618 1790606169653\nSTOP 1997 58699618 1790606169654\nSTOP 1998 58699618 1790606169655\nSTOP 1999 58699618 1790606169657\nSTOP 2000 58699619 1790606169658\nSTOP 2001 58699619 1790606169660\nSTOP 2002 58699619 1790606169661\nSTOP 2003 58699619 1790606169662\nSTOP 2004 58699619 1790606169663\nSTOP 2005 58699619 1790606169665\nSTOP 2006 58699620 1790606169666\nSTOP 2007 58699620 1790606169667\nSTOP 2008 58699620 1790606169668\nSTOP 2009 58699620 1790606169669\nSTOP 2010 58699620 1790606169671\nSTOP 2011 58699620 1790606169672\nSTOP 2012 58699620 1790606169673\nSTOP 2013 58699620 1790606169675\nSTOP 2014 58699621 1790606169676\nSTOP 2015 58699625 1790606169677\nSTOP 2016 58699625 1790606169678\nSTOP 2030 58699694 1790606169679\nFROZEN_PROCESS 1963:58699599:1963,1969,1970,1971,1972,1973,1974\nFROZEN_PROCESS 1976:58699611:1976\nFROZEN_PROCESS 1977:58699612:1977\nFROZEN_PROCESS 1978:58699612:1978\nFROZEN_PROCESS 1979:58699612:1979\nFROZEN_PROCESS 1980:58699612:1980\nFROZEN_PROCESS 1981:58699612:1981\nFROZEN_PROCESS 1982:58699613:1982\nFROZEN_PROCESS 1983:58699613:1983\nFROZEN_PROCESS 1984:58699613:1984\nFROZEN_PROCESS 1985:58699613:1985\nFROZEN_PROCESS 1986:58699613:1986\nFROZEN_PROCESS 1987:58699613:1987\nFROZEN_PROCESS 1988:58699613:1988\nFROZEN_PROCESS 1994:58699618:1994\nFROZEN_PROCESS 1995:58699618:1995\nFROZEN_PROCESS 1996:58699618:1996\nFROZEN_PROCESS 1997:58699618:1997\nFROZEN_PROCESS 1998:58699618:1998\nFROZEN_PROCESS 1999:58699618:1999\nFROZEN_PROCESS 2000:58699619:2000\nFROZEN_PROCESS 2001:58699619:2001\nFROZEN_PROCESS 2002:58699619:2002\nFROZEN_PROCESS 2003:58699619:2003\nFROZEN_PROCESS 2004:58699619:2004\nFROZEN_PROCESS 2005:58699619:2005\nFROZEN_PROCESS 2006:58699620:2006\nFROZEN_PROCESS 2007:58699620:2007\nFROZEN_PROCESS 2008:58699620:2008\nFROZEN_PROCESS 2009:58699620:2009\nFROZEN_PROCESS 2010:58699620:2010\nFROZEN_PROCESS 2011:58699620:2011\nFROZEN_PROCESS 2012:58699620:2012\nFROZEN_PROCESS 2013:58699620:2013\nFROZEN_PROCESS 2014:58699621:2014\nFROZEN_PROCESS 2015:58699625:2015\nFROZEN_PROCESS 2016:58699625:2016\nFROZEN_PROCESS 2030:58699694:2036\nFROZEN 1790606169717\nKILLED 1963 58699599 1790606169730\nKILLED 1976 58699611 1790606169732\nKILLED 1977 58699612 1790606169733\nKILLED 1978 58699612 1790606169734\nKILLED 1979 58699612 1790606169736\nKILLED 1980 58699612 1790606169738\nKILLED 1981 58699612 1790606169739\nKILLED 1982 58699613 1790606169741\nKILLED 1983 58699613 1790606169743\nKILLED 1984 58699613 1790606169745\nKILLED 1985 58699613 1790606169746\nKILLED 1986 58699613 1790606169748\nKILLED 1987 58699613 1790606169749\nKILLED 1988 58699613 1790606169751\nKILLED 1994 58699618 1790606169753\nKILLED 1995 58699618 1790606169754\nKILLED 1996 58699618 1790606169757\nKILLED 1997 58699618 1790606169759\nKILLED 1998 58699618 1790606169761\nKILLED 1999 58699618 1790606169762\nKILLED 2000 58699619 1790606169764\nKILLED 2001 58699619 1790606169765\nKILLED 2002 58699619 1790606169766\nKILLED 2003 58699619 1790606169767\nKILLED 2004 58699619 1790606169769\nKILLED 2005 58699619 1790606169770\nKILLED 2006 58699620 1790606169772\nKILLED 2007 58699620 1790606169773\nKILLED 2008 58699620 1790606169775\nKILLED 2009 58699620 1790606169776\nKILLED 2010 58699620 1790606169778\nKILLED 2011 58699620 1790606169779\nKILLED 2012 58699620 1790606169781\nKILLED 2013 58699620 1790606169782\nKILLED 2014 58699621 1790606169784\nKILLED 2015 58699625 1790606169786\nKILLED 2016 58699625 1790606169787\nKILLED 2030 58699694 1790606169789\nQUIET\n",
+        "clockOffsetBeforeMs": -2,
+        "clockOffsetAfterMs": -1,
+        "applicationFreeze": {
+          "startedAtMs": 1790606169631,
+          "completedAtMs": 1790606169717,
+          "processes": [
+            {
+              "pid": 1963,
+              "startTicks": 58699599,
+              "threads": [
+                1963,
+                1969,
+                1970,
+                1971,
+                1972,
+                1973,
+                1974
+              ]
+            },
+            {
+              "pid": 1976,
+              "startTicks": 58699611,
+              "threads": [
+                1976
+              ]
+            },
+            {
+              "pid": 1977,
+              "startTicks": 58699612,
+              "threads": [
+                1977
+              ]
+            },
+            {
+              "pid": 1978,
+              "startTicks": 58699612,
+              "threads": [
+                1978
+              ]
+            },
+            {
+              "pid": 1979,
+              "startTicks": 58699612,
+              "threads": [
+                1979
+              ]
+            },
+            {
+              "pid": 1980,
+              "startTicks": 58699612,
+              "threads": [
+                1980
+              ]
+            },
+            {
+              "pid": 1981,
+              "startTicks": 58699612,
+              "threads": [
+                1981
+              ]
+            },
+            {
+              "pid": 1982,
+              "startTicks": 58699613,
+              "threads": [
+                1982
+              ]
+            },
+            {
+              "pid": 1983,
+              "startTicks": 58699613,
+              "threads": [
+                1983
+              ]
+            },
+            {
+              "pid": 1984,
+              "startTicks": 58699613,
+              "threads": [
+                1984
+              ]
+            },
+            {
+              "pid": 1985,
+              "startTicks": 58699613,
+              "threads": [
+                1985
+              ]
+            },
+            {
+              "pid": 1986,
+              "startTicks": 58699613,
+              "threads": [
+                1986
+              ]
+            },
+            {
+              "pid": 1987,
+              "startTicks": 58699613,
+              "threads": [
+                1987
+              ]
+            },
+            {
+              "pid": 1988,
+              "startTicks": 58699613,
+              "threads": [
+                1988
+              ]
+            },
+            {
+              "pid": 1994,
+              "startTicks": 58699618,
+              "threads": [
+                1994
+              ]
+            },
+            {
+              "pid": 1995,
+              "startTicks": 58699618,
+              "threads": [
+                1995
+              ]
+            },
+            {
+              "pid": 1996,
+              "startTicks": 58699618,
+              "threads": [
+                1996
+              ]
+            },
+            {
+              "pid": 1997,
+              "startTicks": 58699618,
+              "threads": [
+                1997
+              ]
+            },
+            {
+              "pid": 1998,
+              "startTicks": 58699618,
+              "threads": [
+                1998
+              ]
+            },
+            {
+              "pid": 1999,
+              "startTicks": 58699618,
+              "threads": [
+                1999
+              ]
+            },
+            {
+              "pid": 2000,
+              "startTicks": 58699619,
+              "threads": [
+                2000
+              ]
+            },
+            {
+              "pid": 2001,
+              "startTicks": 58699619,
+              "threads": [
+                2001
+              ]
+            },
+            {
+              "pid": 2002,
+              "startTicks": 58699619,
+              "threads": [
+                2002
+              ]
+            },
+            {
+              "pid": 2003,
+              "startTicks": 58699619,
+              "threads": [
+                2003
+              ]
+            },
+            {
+              "pid": 2004,
+              "startTicks": 58699619,
+              "threads": [
+                2004
+              ]
+            },
+            {
+              "pid": 2005,
+              "startTicks": 58699619,
+              "threads": [
+                2005
+              ]
+            },
+            {
+              "pid": 2006,
+              "startTicks": 58699620,
+              "threads": [
+                2006
+              ]
+            },
+            {
+              "pid": 2007,
+              "startTicks": 58699620,
+              "threads": [
+                2007
+              ]
+            },
+            {
+              "pid": 2008,
+              "startTicks": 58699620,
+              "threads": [
+                2008
+              ]
+            },
+            {
+              "pid": 2009,
+              "startTicks": 58699620,
+              "threads": [
+                2009
+              ]
+            },
+            {
+              "pid": 2010,
+              "startTicks": 58699620,
+              "threads": [
+                2010
+              ]
+            },
+            {
+              "pid": 2011,
+              "startTicks": 58699620,
+              "threads": [
+                2011
+              ]
+            },
+            {
+              "pid": 2012,
+              "startTicks": 58699620,
+              "threads": [
+                2012
+              ]
+            },
+            {
+              "pid": 2013,
+              "startTicks": 58699620,
+              "threads": [
+                2013
+              ]
+            },
+            {
+              "pid": 2014,
+              "startTicks": 58699621,
+              "threads": [
+                2014
+              ]
+            },
+            {
+              "pid": 2015,
+              "startTicks": 58699625,
+              "threads": [
+                2015
+              ]
+            },
+            {
+              "pid": 2016,
+              "startTicks": 58699625,
+              "threads": [
+                2016
+              ]
+            },
+            {
+              "pid": 2030,
+              "startTicks": 58699694,
+              "threads": [
+                2036
+              ]
+            }
+          ]
+        }
+      },
+      "error": null
+    },
+    {
+      "mode": "respawn",
+      "entry": {
+        "pid": 2201,
+        "port": 14570,
+        "aux": [
+          2213,
+          2215,
+          2216,
+          2217,
+          2218,
+          2219,
+          2220,
+          2221,
+          2222,
+          2223,
+          2224,
+          2225,
+          2226,
+          2232,
+          2233,
+          2234,
+          2235,
+          2236,
+          2237,
+          2238,
+          2239,
+          2240,
+          2241,
+          2242,
+          2243,
+          2244,
+          2245,
+          2246,
+          2247,
+          2248,
+          2249,
+          2250,
+          2251,
+          2252,
+          2253,
+          2254
+        ]
+      },
+      "replacement": {
+        "pid": 2341
+      },
+      "quiet": true,
+      "receipt": {
+        "backend": "postgres",
+        "target": "application",
+        "containerId": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+        "requestedAtMs": 1790606171784,
+        "completedAtMs": 1790606172292,
+        "signal": "SIGKILL",
+        "processEvidence": "ARMED\nSTOP 2201 58699905 1790606171794\nSTOP 2213 58699915 1790606171795\nSTOP 2215 58699915 1790606171796\nSTOP 2216 58699915 1790606171797\nSTOP 2217 58699915 1790606171798\nSTOP 2218 58699916 1790606171799\nSTOP 2219 58699916 1790606171800\nSTOP 2220 58699916 1790606171801\nSTOP 2221 58699916 1790606171802\nSTOP 2222 58699916 1790606171803\nSTOP 2223 58699916 1790606171804\nSTOP 2224 58699916 1790606171804\nSTOP 2225 58699916 1790606171806\nSTOP 2226 58699916 1790606171807\nSTOP 2232 58699920 1790606171807\nSTOP 2233 58699920 1790606171808\nSTOP 2234 58699920 1790606171809\nSTOP 2235 58699920 1790606171811\nSTOP 2236 58699920 1790606171812\nSTOP 2237 58699920 1790606171813\nSTOP 2238 58699921 1790606171814\nSTOP 2239 58699921 1790606171815\nSTOP 2240 58699921 1790606171816\nSTOP 2241 58699921 1790606171817\nSTOP 2242 58699921 1790606171818\nSTOP 2243 58699921 1790606171819\nSTOP 2244 58699921 1790606171820\nSTOP 2245 58699921 1790606171821\nSTOP 2246 58699921 1790606171822\nSTOP 2247 58699921 1790606171823\nSTOP 2248 58699921 1790606171825\nSTOP 2249 58699921 1790606171826\nSTOP 2250 58699922 1790606171827\nSTOP 2251 58699922 1790606171828\nSTOP 2252 58699922 1790606171829\nSTOP 2253 58699926 1790606171831\nSTOP 2254 58699926 1790606171832\nFROZEN_PROCESS 2201:58699905:2201,2207,2208,2209,2210,2211,2212\nFROZEN_PROCESS 2213:58699915:2213\nFROZEN_PROCESS 2215:58699915:2215\nFROZEN_PROCESS 2216:58699915:2216\nFROZEN_PROCESS 2217:58699915:2217\nFROZEN_PROCESS 2218:58699916:2218\nFROZEN_PROCESS 2219:58699916:2219\nFROZEN_PROCESS 2220:58699916:2220\nFROZEN_PROCESS 2221:58699916:2221\nFROZEN_PROCESS 2222:58699916:2222\nFROZEN_PROCESS 2223:58699916:2223\nFROZEN_PROCESS 2224:58699916:2224\nFROZEN_PROCESS 2225:58699916:2225\nFROZEN_PROCESS 2226:58699916:2226\nFROZEN_PROCESS 2232:58699920:2232\nFROZEN_PROCESS 2233:58699920:2233\nFROZEN_PROCESS 2234:58699920:2234\nFROZEN_PROCESS 2235:58699920:2235\nFROZEN_PROCESS 2236:58699920:2236\nFROZEN_PROCESS 2237:58699920:2237\nFROZEN_PROCESS 2238:58699921:2238\nFROZEN_PROCESS 2239:58699921:2239\nFROZEN_PROCESS 2240:58699921:2240\nFROZEN_PROCESS 2241:58699921:2241\nFROZEN_PROCESS 2242:58699921:2242\nFROZEN_PROCESS 2243:58699921:2243\nFROZEN_PROCESS 2244:58699921:2244\nFROZEN_PROCESS 2245:58699921:2245\nFROZEN_PROCESS 2246:58699921:2246\nFROZEN_PROCESS 2247:58699921:2247\nFROZEN_PROCESS 2248:58699921:2248\nFROZEN_PROCESS 2249:58699921:2249\nFROZEN_PROCESS 2250:58699922:2250\nFROZEN_PROCESS 2251:58699922:2251\nFROZEN_PROCESS 2252:58699922:2252\nFROZEN_PROCESS 2253:58699926:2253\nFROZEN_PROCESS 2254:58699926:2254\nFROZEN 1790606171861\nKILLED 2201 58699905 1790606171872\nKILLED 2213 58699915 1790606171873\nKILLED 2215 58699915 1790606171874\nKILLED 2216 58699915 1790606171875\nKILLED 2217 58699915 1790606171876\nKILLED 2218 58699916 1790606171878\nKILLED 2219 58699916 1790606171879\nKILLED 2220 58699916 1790606171880\nKILLED 2221 58699916 1790606171881\nKILLED 2222 58699916 1790606171882\nKILLED 2223 58699916 1790606171884\nKILLED 2224 58699916 1790606171885\nKILLED 2225 58699916 1790606171886\nKILLED 2226 58699916 1790606171888\nKILLED 2232 58699920 1790606171889\nKILLED 2233 58699920 1790606171890\nKILLED 2234 58699920 1790606171891\nKILLED 2235 58699920 1790606171893\nKILLED 2236 58699920 1790606171894\nKILLED 2237 58699920 1790606171895\nKILLED 2238 58699921 1790606171896\nKILLED 2239 58699921 1790606171898\nKILLED 2240 58699921 1790606171933\nKILLED 2241 58699921 1790606171934\nKILLED 2242 58699921 1790606171936\nKILLED 2243 58699921 1790606171937\nKILLED 2244 58699921 1790606171938\nKILLED 2245 58699921 1790606171939\nKILLED 2246 58699921 1790606171940\nKILLED 2247 58699921 1790606171941\nKILLED 2248 58699921 1790606171942\nKILLED 2249 58699921 1790606171943\nKILLED 2250 58699922 1790606171945\nKILLED 2251 58699922 1790606171946\nKILLED 2252 58699922 1790606171947\nKILLED 2253 58699926 1790606171948\nKILLED 2254 58699926 1790606171949\nKILLED 2341 58700043 1790606172060\nKILLED 2377 58700050 1790606172061\nKILLED 2378 58700050 1790606172062\nKILLED 2379 58700050 1790606172063\nKILLED 2380 58700050 1790606172064\nKILLED 2381 58700050 1790606172065\nKILLED 2382 58700050 1790606172066\nKILLED 2383 58700050 1790606172067\nKILLED 2384 58700050 1790606172068\nKILLED 2385 58700051 1790606172069\nKILLED 2386 58700051 1790606172070\nKILLED 2387 58700051 1790606172072\nKILLED 2388 58700051 1790606172073\nKILLED 2389 58700051 1790606172073\nKILLED 2390 58700055 1790606172084\nKILLED 2391 58700055 1790606172115\nKILLED 2392 58700055 1790606172116\nKILLED 2393 58700055 1790606172117\nKILLED 2394 58700055 1790606172118\nKILLED 2395 58700055 1790606172119\nKILLED 2396 58700055 1790606172120\nKILLED 2397 58700055 1790606172120\nKILLED 2398 58700055 1790606172121\nKILLED 2399 58700055 1790606172122\nKILLED 2400 58700056 1790606172123\nKILLED 2401 58700056 1790606172124\nKILLED 2402 58700056 1790606172165\nKILLED 2403 58700056 1790606172167\nKILLED 2404 58700056 1790606172168\nKILLED 2405 58700056 1790606172170\nKILLED 2406 58700056 1790606172171\nKILLED 2407 58700056 1790606172173\nKILLED 2408 58700056 1790606172173\nKILLED 2409 58700056 1790606172174\nKILLED 2410 58700056 1790606172175\nKILLED 2411 58700059 1790606172177\nKILLED 2412 58700059 1790606172178\nQUIET\n",
+        "clockOffsetBeforeMs": -1,
+        "clockOffsetAfterMs": -2
+      },
+      "error": "process crash was not verified"
+    },
+    {
+      "mode": "database",
+      "receipt": {
+        "backend": "postgres",
+        "target": "database",
+        "containerId": "9dbba31249563fa3f57fcc21781be52fbc99e6b9d1d950c083fd8eb037e17cc9",
+        "requestedAtMs": 1790606173801,
+        "completedAtMs": 1790606173916,
+        "signal": "SIGKILL",
+        "processEvidence": "ARMED\nKILLED 106 58696571 1790606173801\nKILLED 107 58696571 1790606173802\nKILLED 8 58696343 1790606173804\nQUIET\n",
+        "clockOffsetBeforeMs": -2,
+        "clockOffsetAfterMs": -3
+      },
+      "drain": null
+    }
+  ],
+  "resourceLimits": {
+    "declared": {
+      "cpuCount": 1,
+      "memoryBytes": 536870912,
+      "memorySwapBytes": 536870912,
+      "pids": 256
+    },
+    "observed": {
+      "cpuCount": 1,
+      "memoryBytes": 536870912,
+      "memorySwapBytes": 536870912,
+      "pids": 256
+    }
+  },
+  "lease": {
+    "version": 1,
+    "runId": "stack-bench-hosted-crash-FoHSfr",
+    "backend": "postgres",
+    "track": "ecommerce",
+    "runIndex": 0,
+    "ownerPid": 15,
+    "createdAt": "2026-09-28T14:35:32.977Z",
+    "state": "active",
+    "resources": {
+      "serverUri": null,
+      "database": "crash_window",
+      "module": null,
+      "dataDir": null,
+      "container": {
+        "name": "sb-d52e27c1f90eb7d3-backend",
+        "id": "9dbba31249563fa3f57fcc21781be52fbc99e6b9d1d950c083fd8eb037e17cc9",
+        "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+        "owned": true,
+        "networkMode": "51452e471cd6f2f8c5b956b29b547866b509cad3f411a8a59632b956073cdc5d"
+      },
+      "buildContainer": {
+        "name": "sb-d52e27c1f90eb7d3-build",
+        "id": "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "networkMode": "container:9dbba31249563fa3f57fcc21781be52fbc99e6b9d1d950c083fd8eb037e17cc9",
+        "resourceLimits": {
+          "cpuCount": 1,
+          "memoryBytes": 536870912,
+          "memorySwapBytes": 536870912,
+          "pids": 256
+        }
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/cc8f558b329ea6a5e6a3d0824429f8cddd526cab361a845dc63d80869d18f931.lock.json",
+          "key": "port:14570",
+          "digest": "cc8f558b329ea6a5e6a3d0824429f8cddd526cab361a845dc63d80869d18f931",
+          "acquiredAt": "2026-09-28T14:35:33.166Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/1c725a220af1920df37d616847770f555ebf1752902966a575da43a5de4ed024.lock.json",
+          "key": "port:14571",
+          "digest": "1c725a220af1920df37d616847770f555ebf1752902966a575da43a5de4ed024",
+          "acquiredAt": "2026-09-28T14:35:33.166Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d744407fc68c266cedcf7483a4e8f420ea2678888aafac99d425efd1ebeb7f96.lock.json",
+          "key": "slot:ecommerce:postgres:run0",
+          "digest": "d744407fc68c266cedcf7483a4e8f420ea2678888aafac99d425efd1ebeb7f96",
+          "acquiredAt": "2026-09-28T14:35:33.166Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-d52e27c1f90eb7d3-network",
+        "id": "51452e471cd6f2f8c5b956b29b547866b509cad3f411a8a59632b956073cdc5d",
+        "namespaceContainerId": "9dbba31249563fa3f57fcc21781be52fbc99e6b9d1d950c083fd8eb037e17cc9",
+        "hostAddresses": [
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "192.168.192.1",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.1"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.3",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "1e980afddf2da5fe2673946fa4f1cbe6b78f257a24583e1d4b4e440f45ffec05",
+        "firewallInstalledAt": "2026-09-28T14:35:34.832Z",
+        "ownAddresses": [
+          "10.0.0.2"
+        ],
+        "namespaceStartedAt": "2026-09-28T14:35:33.695007851Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-d52e27c1f90eb7d3-browser",
+        "id": "032dae3981a17d754694713a5bd7467415a084b55ce7560c95b5429c8810107d",
+        "image": "sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133",
+        "owned": true,
+        "networkMode": "container:9dbba31249563fa3f57fcc21781be52fbc99e6b9d1d950c083fd8eb037e17cc9"
+      }
+    },
+    "ownership": {
+      "markerSha256": "f28a5758c9d8d90b51ebf7ba64b5f8c4d216f6acbbb575f372dfb1082a153a46"
+    }
+  },
+  "cleanup": {
+    "released": true,
+    "network": "51452e471cd6f2f8c5b956b29b547866b509cad3f411a8a59632b956073cdc5d",
+    "owned": [
+      "28073f6d7dcc7defd0459fb7a8806b313a31088eb72f9b449fd062c4edbc3e2f",
+      "032dae3981a17d754694713a5bd7467415a084b55ce7560c95b5429c8810107d",
+      "9dbba31249563fa3f57fcc21781be52fbc99e6b9d1d950c083fd8eb037e17cc9"
+    ],
+    "remaining": [],
+    "networkRemaining": ""
+  }
+}

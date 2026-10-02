@@ -1,0 +1,75 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "recovery",
+  "id": "ecommerce-spacetime-run400-20260928045022-6093736f-recovery",
+  "attempt": {
+    "id": "ecommerce-spacetime-run400-20260928045022-6093736f-recovery",
+    "parentId": "ecommerce-spacetime-run400-20260928045022-6093736f"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:52:59.829Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-spacetime-run400-20260928045022-6093736f",
+    "backend": "spacetime",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "0a14cd7ea4499c95776662b0f9669c6d1c16d662b623a71d3320f9890538ad72",
+        "name": "sb-1d825dcfd0422dc7-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "listener:http://127.0.0.1:3710",
+          "released": true
+        },
+        {
+          "key": "port:3710",
+          "released": true
+        },
+        {
+          "key": "port:6873",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:spacetime:run400",
+          "released": true
+        },
+        {
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-cHnnBX/app",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "60be4cdcd1f8b125bbbb2a21f921f770d7c82dace4c026f7374772878c957c47"
+  }
+}

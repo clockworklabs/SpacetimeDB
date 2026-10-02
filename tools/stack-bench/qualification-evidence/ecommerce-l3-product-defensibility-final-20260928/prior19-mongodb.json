@@ -1,0 +1,333 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260928210344-30",
+  "attempt": {
+    "id": "reference-live-mongodb-20260928210344-30",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T21:03:45.012Z",
+    "completedAt": "2026-09-28T21:22:35.985Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "9d329bf4ba29bc7ad99f2962f7d54a2c6ed3912400cfa4952fb4a6e7f09816c2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "eafc0d64ec059d1708ce99fd22c99dc454a9029bd0c2c4971475048fe0444a46"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 23,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "0b332c372b8e9b6f4e2b67cfacf06eacb4f195845089171c6c42627a27eec92c",
+      "executableSha256": "f2815c4d4dab37fb035dbcc475080d2c5844ef119e04502854cda5923ff1c4dd",
+      "kind": "mutation",
+      "mutationSha256": "316dae69f4f84a14e41313dd9a2ef7ad561235b4c01bd53ff04b80ef177332c0",
+      "recipe": {
+        "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "b84b0cbc95bf76ee623df20d1df5a72c7f3abdb9413a8c8afc5cf6378493a200"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "mongodb.runs/r1-workers",
+        "durationMs": 1127811,
+        "processError": null,
+        "harnessSha256Before": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "harnessSha256After": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-mongodb-20260928210344-30",
+        "score": "34/34",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 19,
+        "zeroPointCriteria": 0,
+        "fingerprint": "ceb0bca8885228406aec880a8ec8743a2692236c60ec30e1f5a75d3b426e8baa",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 2,
+              "setupRuntimeMs": 2835,
+              "criterionRuntimeMs": 4337,
+              "measuredRuntimeMs": 7172,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.stock-transfers-features",
+              "checkCount": 1,
+              "setupRuntimeMs": 946,
+              "criterionRuntimeMs": 3060,
+              "measuredRuntimeMs": 4006,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.deferred-access-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 2068,
+              "criterionRuntimeMs": 4340,
+              "measuredRuntimeMs": 6408,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.inventory-conservation-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 1300,
+              "criterionRuntimeMs": 32379,
+              "measuredRuntimeMs": 33679,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 338000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "checkCount": 3,
+              "setupRuntimeMs": 11919,
+              "criterionRuntimeMs": 49515,
+              "measuredRuntimeMs": 61434,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 138000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.promotion-rules",
+              "checkCount": 1,
+              "setupRuntimeMs": 1256,
+              "criterionRuntimeMs": 567,
+              "measuredRuntimeMs": 1823,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.staff-roles",
+              "checkCount": 1,
+              "setupRuntimeMs": 1626,
+              "criterionRuntimeMs": 33,
+              "measuredRuntimeMs": 1659,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 7,
+              "setupRuntimeMs": 9994,
+              "criterionRuntimeMs": 93492,
+              "measuredRuntimeMs": 103486,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 1,
+              "setupRuntimeMs": 1626,
+              "criterionRuntimeMs": 9046,
+              "measuredRuntimeMs": 10672,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 1387,
+              "criterionRuntimeMs": 6419,
+              "measuredRuntimeMs": 7806,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 31,
+          "total": 31
+        },
+        "baselineDurationMs": 389189,
+        "baselineOutput": "mongodb.runs/r1",
+        "baselineHarnessSha256Before": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "baselineHarnessSha256After": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 576,
+            "artifact": "mongodb.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "staff-admin-access-survives-role-removal",
+              "operator-authorization-allows-customer-transfer",
+              "transfer-debits-source-without-crediting-existing-destination",
+              "transfer-creates-stock-during-race",
+              "promotion-save-drops-bounded-values",
+              "staff-role-write-precedes-denial",
+              "role-editor-snaps-back-to-stored-role",
+              "password-verification-rejects-every-login",
+              "opposing-transfer-rejected",
+              "cancel-trusts-submitted-owner",
+              "admin-boundary-rejects-all-signups"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w1.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 577,
+            "artifact": "mongodb.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "signin-skips-password-verification",
+              "customer-can-ship-order-direct-1-1",
+              "staff-can-see-admin-navigation",
+              "customer-can-cancel-scheduled-restock",
+              "customer-can-create-promotion",
+              "staff-can-assign-roles",
+              "overdraw-transfer-is-accepted",
+              "restock-trusts-submitted-admin-role",
+              "shipping-trusts-submitted-staff-role",
+              "cancel-rejects-every-request"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w2.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 578,
+            "artifact": "mongodb.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "warehouse-view-omits-one-location",
+              "customer-can-cancel-foreign-order-1-1",
+              "staff-can-use-direct-restock",
+              "managed-support-allows-another-customer",
+              "role-assignment-drops-role",
+              "authorized-restock-does-not-change-stock",
+              "password-verification-truncates-utf8",
+              "opposing-transfer-ignored",
+              "shipping-rejects-every-request",
+              "signup-accepts-admin-claim"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w3.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.spec.access-control.account-password.1c",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.state-durability.staff-role-reload.621a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "featureCatalog": {
+      "contentSha256": "81293ef69fefd55d3744d5adcbb3e70bd06d339f7810e2017f2efe229616d3e0",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

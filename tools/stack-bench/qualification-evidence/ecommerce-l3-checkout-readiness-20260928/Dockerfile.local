@@ -1,0 +1,4 @@
+FROM stack-bench-controller:3943a8eaab
+LABEL stack-bench.diagnostic="unqualified-checkout-readiness" stack-bench.candidate="d9cf20f6d7512b7b8e8e7c2cb17d433624da9712" stack-bench.inputs="72610dbdb8ef30d75929552a6f7a28d388eb7a6f970c23e424809748ec5368dc"
+COPY overlay/ /opt/stack-bench/
+

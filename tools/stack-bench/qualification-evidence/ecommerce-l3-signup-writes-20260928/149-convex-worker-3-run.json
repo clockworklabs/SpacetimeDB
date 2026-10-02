@@ -1,0 +1,373 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-convex-run426-20260928050027-c7a6a4e7",
+  "attempt": {
+    "id": "ecommerce-convex-run426-20260928050027-c7a6a4e7",
+    "parentId": "reference-live-convex-20260928050025-4848"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:00:33.018Z",
+    "completedAt": "2026-09-28T05:01:40.501Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null,
+      "version": "1.0.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "convex",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-convex-run426-20260928050027-c7a6a4e7",
+      "backend": "convex",
+      "track": "ecommerce",
+      "runIndex": 426,
+      "ownerPid": 4990,
+      "createdAt": "2026-09-28T05:00:27.129Z",
+      "state": "released",
+      "resources": {
+        "serverUri": "http://127.0.0.1:13636",
+        "database": null,
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-65d1922a21f8632d-backend",
+          "id": "1c2fb69dc0d2e3b490bd9c368e0eaafe535fa4f238cf2355a1d7df27a9147007",
+          "image": "sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743",
+          "owned": true,
+          "networkMode": "137098aab0a2ebebac149818c3046649fccaea78e1481fa5d15e5e9b14c77a03",
+          "running": false,
+          "removedAt": "2026-09-28T05:01:42.731Z"
+        },
+        "buildContainer": {
+          "name": "sb-65d1922a21f8632d-build",
+          "id": "1d9078399f8f0d0a0a337bcbafdaa82cee85d236bd4da0b58664e4dc18c9a217",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:1c2fb69dc0d2e3b490bd9c368e0eaafe535fa4f238cf2355a1d7df27a9147007",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T05:01:41.422Z",
+          "removedAt": "2026-09-28T05:01:41.736Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/06500b3e3550e747812bd054bc14a18fe2d1f9786817c0b75255e31f81bae4cf.lock.json",
+            "key": "listener:http://127.0.0.1:13636",
+            "digest": "06500b3e3550e747812bd054bc14a18fe2d1f9786817c0b75255e31f81bae4cf",
+            "acquiredAt": "2026-09-28T05:00:27.179Z",
+            "releasedAt": "2026-09-28T05:01:43.526Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/daf053b3cdfc7495d6ee52bb09f50adfd56a5491cafde9410dd4c5edcc56b042.lock.json",
+            "key": "port:13636",
+            "digest": "daf053b3cdfc7495d6ee52bb09f50adfd56a5491cafde9410dd4c5edcc56b042",
+            "acquiredAt": "2026-09-28T05:00:27.179Z",
+            "releasedAt": "2026-09-28T05:01:43.526Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f9b148b4cf6a6bafd0b443be3c3146aaf2a5b110745167c55782bdffa03cead0.lock.json",
+            "key": "port:7349",
+            "digest": "f9b148b4cf6a6bafd0b443be3c3146aaf2a5b110745167c55782bdffa03cead0",
+            "acquiredAt": "2026-09-28T05:00:27.179Z",
+            "releasedAt": "2026-09-28T05:01:43.526Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/672c586cf2047478b5a12d0f55a9e2f66473a893a30cc5ca142786793e4b6857.lock.json",
+            "key": "port:7427",
+            "digest": "672c586cf2047478b5a12d0f55a9e2f66473a893a30cc5ca142786793e4b6857",
+            "acquiredAt": "2026-09-28T05:00:27.179Z",
+            "releasedAt": "2026-09-28T05:01:43.526Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f388d9d635cf719d8c24beeba0950011c3b67238903d2c2c8ee61df4b1c8f7a7.lock.json",
+            "key": "slot:ecommerce:convex:run426",
+            "digest": "f388d9d635cf719d8c24beeba0950011c3b67238903d2c2c8ee61df4b1c8f7a7",
+            "acquiredAt": "2026-09-28T05:00:27.179Z",
+            "releasedAt": "2026-09-28T05:01:43.526Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f4b02b336885742068b668f554d44fa74dbc2fe6ed73342061cdf5e24e078f9a.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-6XUVaO/app",
+            "digest": "f4b02b336885742068b668f554d44fa74dbc2fe6ed73342061cdf5e24e078f9a",
+            "acquiredAt": "2026-09-28T05:00:27.179Z",
+            "releasedAt": "2026-09-28T05:01:43.526Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-65d1922a21f8632d-network",
+          "id": "137098aab0a2ebebac149818c3046649fccaea78e1481fa5d15e5e9b14c77a03",
+          "namespaceContainerId": "1c2fb69dc0d2e3b490bd9c368e0eaafe535fa4f238cf2355a1d7df27a9147007",
+          "hostAddresses": [
+            "10.0.0.65",
+            "10.0.0.73",
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.9",
+            "10.0.0.33",
+            "10.0.0.41",
+            "10.0.0.17",
+            "10.0.0.1"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.3",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "cf6d51ff4f33ef0350a8c5e36b2fb73ee2a7ebc1cc9180f172ceffce65059fc5",
+          "firewallInstalledAt": "2026-09-28T05:00:30.101Z",
+          "ownAddresses": [
+            "10.0.0.2"
+          ],
+          "namespaceStartedAt": "2026-09-28T05:00:28.985751444Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-65d1922a21f8632d-browser",
+          "id": "c768102498f64436f047f0bef4c62f2b433232225b8416300fdc8e8792d1bf91",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:1c2fb69dc0d2e3b490bd9c368e0eaafe535fa4f238cf2355a1d7df27a9147007",
+          "running": false,
+          "removedAt": "2026-09-28T05:01:40.962Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T05:01:43.444Z",
+      "releasedAt": "2026-09-28T05:01:43.526Z",
+      "ownership": {
+        "markerSha256": "aecfdc3d5b50932e8551c49fdf20b7a0987a3d551bca0dc9bd643b2c986a769c"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1-workers/w3.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "score": null,
+        "max": null,
+        "graded": false,
+        "contractPass": null,
+        "selection": null,
+        "outcome": {
+          "kind": "ungraded",
+          "phase": "reference-mutation-only",
+          "reason": "the parent qualification owns the full clean grade",
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "buildSessions": [
+          {
+            "sessionId": "reference-convex-1790571655119",
+            "costUsd": 0,
+            "durationMs": 21917,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-convex-1790571655119"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "buildCostUsd": 0,
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 21917,
+          "activeDurationMs": 21917,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "costUsd": 0,
+        "durationMs": 22153
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "mutationControl": {
+      "ok": true,
+      "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1-workers/w3.runs/r1/mutation-control.json",
+      "processError": null,
+      "summary": {
+        "caught": 1,
+        "completed": 1,
+        "total": 1,
+        "remaining": 0
+      },
+      "outcome": null,
+      "results": [
+        {
+          "id": "restock-trusts-submitted-admin-role",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        }
+      ]
+    },
+    "totals": {
+      "score": 0,
+      "max": 0,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 21917,
+      "durationSec": 67,
+      "ungraded": [
+        3
+      ]
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "mutation-control",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7349"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

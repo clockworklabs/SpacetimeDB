@@ -1,0 +1,481 @@
+{
+  "result": "passed",
+  "observations": [
+    {
+      "mode": "accepted",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "spacetime-reducer",
+          "accepted": true,
+          "result": "OkEmpty"
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521375843,
+          "completedAtMs": 1790521375860,
+          "durationMs": 17,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "changing-argument",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "ui",
+          "reason": "no uniquely confirmed supported write with current credentials",
+          "observations": [
+            {
+              "filled": "name"
+            },
+            {
+              "clicked": "save"
+            }
+          ]
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521376241,
+          "completedAtMs": 1790521376310,
+          "durationMs": 69,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "unsupported-schema",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "ui",
+          "reason": "no uniquely confirmed supported write with current credentials",
+          "observations": [
+            {
+              "filled": "name"
+            },
+            {
+              "clicked": "save"
+            }
+          ]
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521376687,
+          "completedAtMs": 1790521376743,
+          "durationMs": 56,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "unsupported-protocol",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "ui",
+          "reason": "no uniquely confirmed supported write with current credentials",
+          "observations": [
+            {
+              "filled": "name"
+            },
+            {
+              "clicked": "save"
+            }
+          ]
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521377118,
+          "completedAtMs": 1790521377175,
+          "durationMs": 57,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "unconfirmed",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "ui",
+          "reason": "no uniquely confirmed supported write with current credentials",
+          "observations": [
+            {
+              "filled": "name"
+            },
+            {
+              "clicked": "save"
+            }
+          ]
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521377595,
+          "completedAtMs": 1790521377658,
+          "durationMs": 63,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "wrong-module",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "ui",
+          "reason": "no uniquely confirmed supported write with current credentials",
+          "observations": [
+            {
+              "filled": "name"
+            },
+            {
+              "clicked": "save"
+            }
+          ]
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521377997,
+          "completedAtMs": 1790521378058,
+          "durationMs": 61,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "reconnect",
+      "calls": 3,
+      "connections": 2,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "method": "ui",
+          "reason": "no uniquely confirmed supported write with current credentials",
+          "observations": [
+            {
+              "filled": "name"
+            },
+            {
+              "clicked": "save"
+            }
+          ]
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521378436,
+          "completedAtMs": 1790521378492,
+          "durationMs": 56,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "refused",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the repeatFormWrite action returned no server response for admin; this does not meet the success status contract",
+        "finding": {
+          "kind": "call-error",
+          "fields": {
+            "action": "repeatFormWrite",
+            "actor": "admin",
+            "status": null,
+            "required": "accepted",
+            "operation": null
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521378843,
+          "completedAtMs": 1790521378847,
+          "durationMs": 4,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "lost",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "inconclusive",
+        "type": "transport-evidence",
+        "code": "inconclusive",
+        "phase": "execute",
+        "summary": "transport evidence is incomplete; absence cannot be established",
+        "finding": {
+          "kind": "transport-incomplete",
+          "fields": {}
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521379224,
+          "completedAtMs": 1790521379230,
+          "durationMs": 6,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "malformed",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "inconclusive",
+        "type": "transport-evidence",
+        "code": "inconclusive",
+        "phase": "execute",
+        "summary": "transport evidence is incomplete; absence cannot be established",
+        "finding": {
+          "kind": "transport-incomplete",
+          "fields": {}
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521379578,
+          "completedAtMs": 1790521379583,
+          "durationMs": 5,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "collision",
+      "calls": 4,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "inconclusive",
+        "type": "transport-evidence",
+        "code": "inconclusive",
+        "phase": "execute",
+        "summary": "transport evidence is incomplete; absence cannot be established",
+        "finding": {
+          "kind": "transport-incomplete",
+          "fields": {}
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521379946,
+          "completedAtMs": 1790521379955,
+          "durationMs": 9,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    },
+    {
+      "mode": "timeout",
+      "calls": 3,
+      "connections": 1,
+      "outcome": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "repeatFormWrite",
+          "version": "1.0.0"
+        },
+        "status": "inconclusive",
+        "type": "transport-evidence",
+        "code": "inconclusive",
+        "phase": "execute",
+        "summary": "transport evidence is incomplete; absence cannot be established",
+        "finding": {
+          "kind": "transport-incomplete",
+          "fields": {}
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790521380333,
+          "completedAtMs": 1790521390353,
+          "durationMs": 10020,
+          "deadlineMs": 300000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    }
+  ],
+  "rerun": "node --test dist/tests/spacetime-captured-replay.integration.js"
+}

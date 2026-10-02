@@ -1,0 +1,163 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260927075519-31",
+  "attempt": {
+    "id": "reference-live-spacetime-20260927075519-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T07:55:19.735Z",
+    "completedAt": "2026-09-27T08:03:05.893Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "ae8798bce6cf45f3e76f5b189a024a2704e2420143c0e1d431323507a872608a"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f161f9ee7884c6cfde45d8e9378339062a6262c159452d488b5c74a8bd1a2eb7"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-spacetime",
+      "sha256": "fbd3c09759587f14781d5bc5b8d0357aec59aaaf34f8fe29f721a2a62d70fe52"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "054d78d1b5520d3bd837796bd61b0c36d6fbad43c0e3ef1207c7d9f9a585ca35"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-spacetime",
+    "fixtureSha256": "fbd3c09759587f14781d5bc5b8d0357aec59aaaf34f8fe29f721a2a62d70fe52",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 49,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "edbb523cf685494c537d90b237b34d1be0b6b2d666a3d0fe650b0b7abc312a0a",
+      "executableSha256": "1f0545921fdd8e193175641155f990802ec5ecef338f93b80b41512df239f974",
+      "kind": "mutation",
+      "mutationSha256": "e76dcd6b0419b1bdaf763fad46f4081be10e1e6e2285e932b14e97f6c7375de3",
+      "recipe": {
+        "contentSha256": "f161f9ee7884c6cfde45d8e9378339062a6262c159452d488b5c74a8bd1a2eb7",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "spacetime",
+        "reference": {
+          "id": "ecommerce-reference-spacetime",
+          "sourceSha256": "fbd3c09759587f14781d5bc5b8d0357aec59aaaf34f8fe29f721a2a62d70fe52"
+        },
+        "version": "1.4.0"
+      },
+      "sha256": "ec79693af2d2778f83a8b552981ed840151d0cfc6ea89416362165a816a3b0c4"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "spacetime-controls.runs/r1",
+        "durationMs": 466067,
+        "capacityWaitMs": 0,
+        "processError": null,
+        "harnessSha256Before": "6c6343ccf67262fca6a169fb5c966012a56d015f4d54242ba46798b9c7bda7e7",
+        "harnessSha256After": "6c6343ccf67262fca6a169fb5c966012a56d015f4d54242ba46798b9c7bda7e7",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-spacetime-run30-20260927075521-06f5cd93",
+        "score": "4/4",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 3,
+        "zeroPointCriteria": 0,
+        "fingerprint": "0e82c0f6fa4cfa75660bef161086a5a9436ae62865a943edd16a3c1094ce6eb2",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.accounts",
+              "checkCount": 1,
+              "setupRuntimeMs": 1,
+              "criterionRuntimeMs": 2116,
+              "measuredRuntimeMs": 2117,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 52000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 4243,
+              "criterionRuntimeMs": 5063,
+              "measuredRuntimeMs": 9306,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 1,
+              "setupRuntimeMs": 4243,
+              "criterionRuntimeMs": 19163,
+              "measuredRuntimeMs": 23406,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 6,
+          "completed": 6,
+          "total": 6,
+          "remaining": 0
+        }
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "6c6343ccf67262fca6a169fb5c966012a56d015f4d54242ba46798b9c7bda7e7",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.accounts.accounts.1a",
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

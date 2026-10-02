@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T11-23-00-809Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T11-23-00-809Z",
+    "parentId": "ecommerce-spacetime-run401-20260928112217-9a77767d"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:23:00.809Z",
+    "completedAt": "2026-09-28T11:23:52.627Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 51818,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-fcQ7TW/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-fcQ7TW/selected-mutations.json",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-core.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 3,
+      "mutationIds": [
+        "purchase-does-not-update-ranking-count"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "d3d855efa8d6e3ab24ccd05e42d5b026646c1a1c80977a82862f6c5e2f4f6895"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+          "identitySha256": "f1012024b25c7026d85fb9040b09ccda002f7451f9cf2b228eaa23c5ffe65b60",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "purchase-does-not-update-ranking-count",
+        "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+        "targets": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.spec.live-state.ranking.2c",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c",
+      "recipeSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "calibrationSha256": "dd9eb769e56f3b8bc1348f1fccac8b49db7da12f2c8ffd800051c425aed8bc51",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 3,
+        "mutationIds": [
+          "purchase-does-not-update-ranking-count"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+          "scenarioSha256": "75d1622ecbf6c18c26aa941518748656116f5ae41d664c11d96ecf192fd7aaf3",
+          "mutationSha256": "b28e533d5419a1c83b1d919d0e20970823041e8b451dab92c1f7b98256b876f3",
+          "selectionSha256": "06c35a8376748f7c404e0d94d594929d108aa85a73bbb1d28787d74108b627b6",
+          "identitySha256": "f1012024b25c7026d85fb9040b09ccda002f7451f9cf2b228eaa23c5ffe65b60",
+          "mutationIds": [
+            "purchase-does-not-update-ranking-count"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T11:23:52.627Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+        "mutationId": "purchase-does-not-update-ranking-count",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-kAV3py/grade.json",
+          "sha256": "87371d55f429f9260229a8dc395b9d020ffefdd706ccd945d8c610c683fc2841"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

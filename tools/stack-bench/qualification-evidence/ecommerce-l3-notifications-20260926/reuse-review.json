@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "ff3f2d2b8a",
+  "changedBehavior": {
+    "notificationPrivacy": "After the preceding restart, reload and restore the other account before testing preference isolation. Requested behavior, points and check ownership do not change.",
+    "captureDiagnostics": "Replace the generic error name with a fixed safe error category. Body collection, byte limits, fail-closed outcomes and retry policy do not change."
+  },
+  "sources": [
+    {
+      "path": "grader/transport-frames.ts",
+      "sha256": "9000e4f67884bdb732841a11bdb3d85333f9fcbe738354761116350fd13dfed9"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "sha256": "6024cd252945dd09b9403b18fec4b39cc40f4357b8e362bf2e54c28090816dbf"
+    }
+  ],
+  "validation": {
+    "controls": "Four clean references passed 5/5; all 12 selected defects were caught; the null app failed all three checks. Raw reports and shared inputs are retained beside this review.",
+    "savedApp": "The unchanged PostgreSQL L3 source passed all three checks (5/5) after the fix. Evidence: results/diagnostics/notifications-20260926/saved-postgres. Historical grades remain unchanged.",
+    "savedAppRegradeSha256": "a412d3070a7b9cde18964e7e1424a5fcd42106aef6c307095339998a52d74fd4",
+    "capture": {
+      "path": "qualification-evidence/ecommerce-l3-notifications-20260926/capture-controls.tap",
+      "sha256": "180c5772aaac2b132a5dffb17a4aa0d0692bf0c26de20e4d948e8b6c57a05045",
+      "result": "11/11 passed, including real HTML/SSE disclosure, immediate-reload capture, disabled-durability negative control, fail-closed body loss and safe bounded diagnostics."
+    }
+  },
+  "reuseBoundary": "The whole notification scenario (630a, 630b, 630c) receives new reference, mutation and null evidence. The slice validator confirms all other retained scenarios are unchanged. Executable reuse covers only the diagnostic logging change. This review does not claim to fix or explain the earlier intermittent Google font body-read failure. Supabase and L6 remain outside qualified scope."
+}

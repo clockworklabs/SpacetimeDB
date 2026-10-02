@@ -1,0 +1,210 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T12-56-57-991Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T12-56-57-991Z",
+    "parentId": "ecommerce-spacetime-run30-20260927125617-d93e872a"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T12:56:57.991Z",
+    "completedAt": "2026-09-27T12:59:03.694Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 125703,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-cTC62v/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-cTC62v/selected-mutations.json",
+    "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-staff-roles.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "staff-admin-access-survives-role-removal",
+        "saving-a-staff-role-snaps-the-input-back-to-the-stored-role"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "be1a6fccbb4bef859c385d3bafc0c20416656fdc3eefc69c9ab2f8bbfd2a5e2e"
+      },
+      "total": 7,
+      "max": 7,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "identitySha256": "ff72b25f850fc9fe98f739da436c7184939f2072557ce002d26a3dbad15241bb",
+          "total": 7,
+          "max": 7
+        }
+      ]
+    },
+    "summary": {
+      "caught": 2,
+      "completed": 2,
+      "total": 2,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "staff-admin-access-survives-role-removal",
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "targets": [
+          "ecommerce.spec.access-control.staff-role-revocation.621d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.staff-role-revocation.621d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 621,
+            "criterion": "621d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "a request replayed as promotedStaff, who must be refused, was accepted (HTTP 200)",
+            "failedAction": "expectReplayRejected",
+            "key": "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "targets": [
+          "ecommerce.progression.staff-roles.staff-roles.621c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.staff-roles.staff-roles.621c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 621,
+            "criterion": "621c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the staff-role-select control shows \"operations\", expected \"inventory\"",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.staff-roles.staff-roles.621c",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b",
+      "recipeSha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe",
+      "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+      "calibrationSha256": "92ca9b28199ffb4d3dcef11fecda778b03b2925efffb3d31f57b4807dc9a20f3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "staff-admin-access-survives-role-removal",
+          "saving-a-staff-role-snaps-the-input-back-to-the-stored-role"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "scenarioSha256": "bfe392b6cfb5b918b847778ee9fbf94521a647859617970e1e0d44109567c784",
+          "mutationSha256": "a8a7bccec25a98d42e127062d50a7e645ceef7e27a71c16c21db7768e9b59e9b",
+          "selectionSha256": "c22761b31be21bcc70de2c8911188a0b47c36eca3f65e6d7fa8f2e5d08edf8fe",
+          "identitySha256": "ff72b25f850fc9fe98f739da436c7184939f2072557ce002d26a3dbad15241bb",
+          "mutationIds": [
+            "staff-admin-access-survives-role-removal",
+            "saving-a-staff-role-snaps-the-input-back-to-the-stored-role"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T12:59:03.694Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "mutationId": "staff-admin-access-survives-role-removal",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-Ce7NNM/grade.json",
+          "sha256": "9db3a2a121f2e1a3a3f02a29d98f820dc311118100b1121fd431dd780f59a448"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "mutationId": "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-wwsRrB/grade.json",
+          "sha256": "474440af3c2a1eacf2adb6ad42e94caa31c1be2cd55714419a5db7fa0878061b"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

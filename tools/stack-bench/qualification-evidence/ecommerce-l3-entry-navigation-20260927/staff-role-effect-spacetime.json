@@ -1,0 +1,207 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260927125344-29",
+  "attempt": {
+    "id": "reference-live-spacetime-20260927125344-29",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T12:53:44.702Z",
+    "completedAt": "2026-09-27T12:59:06.307Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-spacetime",
+      "sha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "009ccf742fc1e4ab7e88348812b383b095ffcae43b7e30e52e3fdc3376cf4bf4"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-spacetime",
+    "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 21,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "77a54248df123bf42ae2c24f4bb0063a61f382b090b00f1330d31c527d2c2894",
+      "executableSha256": "7797b69093145170dc055c05838039a3c2d9a086c3fe56f0192f439c2292701e",
+      "kind": "mutation",
+      "mutationSha256": "0c45eed7605e9270d2c749ac4634db8532ba001af6e230fead689bc513f27687",
+      "recipe": {
+        "contentSha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "spacetime",
+        "reference": {
+          "id": "ecommerce-reference-spacetime",
+          "sourceSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+        },
+        "version": "1.4.0"
+      },
+      "sha256": "78e6d0f1f94a030df2f178fd004fe5ed03db6442b00a67e8a91fa8522f9a96c4"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "spacetime.runs/r1-workers",
+        "durationMs": 319493,
+        "processError": null,
+        "harnessSha256Before": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "harnessSha256After": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-spacetime-20260927125344-29",
+        "score": "7/7",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 4,
+        "zeroPointCriteria": 0,
+        "fingerprint": "200f0c6055efb2ec2e83d11caa1d2ef69ef9ddbb223894d31df6d0c6d540ac77",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.progression.staff-roles",
+              "checkCount": 1,
+              "setupRuntimeMs": 2902,
+              "criterionRuntimeMs": 58,
+              "measuredRuntimeMs": 2960,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 2,
+              "setupRuntimeMs": 2902,
+              "criterionRuntimeMs": 23357,
+              "measuredRuntimeMs": 26259,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 1,
+              "setupRuntimeMs": 2902,
+              "criterionRuntimeMs": 8925,
+              "measuredRuntimeMs": 11827,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 4,
+          "total": 4
+        },
+        "baselineDurationMs": 144142,
+        "baselineOutput": "spacetime.runs/r1",
+        "baselineHarnessSha256Before": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "baselineHarnessSha256After": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 30,
+            "artifact": "spacetime.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "staff-admin-access-survives-role-removal",
+              "saving-a-staff-role-snaps-the-input-back-to-the-stored-role"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime.runs/r1-workers/w1.stdout.log",
+              "stderr": "spacetime.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 31,
+            "artifact": "spacetime.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "administrator-role-assignment-is-discarded"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime.runs/r1-workers/w2.stdout.log",
+              "stderr": "spacetime.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 32,
+            "artifact": "spacetime.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "staff-can-assign-roles"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime.runs/r1-workers/w3.stdout.log",
+              "stderr": "spacetime.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "1249d24adbec027f50d11fc794e5083734153fc6973033678d38a1bc6060b0d3",
+    "qualifiedCheckKeys": [
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.state-durability.staff-role-reload.621a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

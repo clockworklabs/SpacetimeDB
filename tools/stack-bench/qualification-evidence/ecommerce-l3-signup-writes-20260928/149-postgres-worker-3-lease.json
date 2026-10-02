@@ -1,0 +1,153 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "backend_lease_evidence",
+  "id": "ecommerce-postgres-run410-20260928045831-6672aa21-backend-lease",
+  "attempt": {
+    "id": "ecommerce-postgres-run410-20260928045831-6672aa21-backend-lease",
+    "parentId": "ecommerce-postgres-run410-20260928045831-6672aa21"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:58:31.155Z",
+    "completedAt": "2026-09-28T05:06:30.257Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "version": 1,
+    "runId": "ecommerce-postgres-run410-20260928045831-6672aa21",
+    "backend": "postgres",
+    "track": "ecommerce",
+    "runIndex": 410,
+    "ownerPid": 9238,
+    "createdAt": "2026-09-28T04:58:31.155Z",
+    "stoppedAt": "2026-09-28T05:06:30.190Z",
+    "releasedAt": "2026-09-28T05:06:30.250Z",
+    "state": "released",
+    "resources": {
+      "serverUri": null,
+      "database": "app_ecom_run410",
+      "module": null,
+      "dataDir": null,
+      "container": {
+        "name": "sb-5bc8103f80ad2470-backend",
+        "id": "69989f5338c16ba182c2cba2aeb5a71ef562db795972c362c2959003d4052de7",
+        "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+        "owned": true,
+        "networkMode": "346ca6d38192ba4a16ba41a7e1af7a4e9a5c72585990212701c523ec55940687",
+        "running": false,
+        "removedAt": "2026-09-28T05:06:29.396Z"
+      },
+      "buildContainer": {
+        "name": "sb-5bc8103f80ad2470-build",
+        "id": "56524bd68220ac96e7c8f7bf8fc1f53e818f740d661084d6168d09bdeeb779ce",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "running": false,
+        "networkMode": "container:69989f5338c16ba182c2cba2aeb5a71ef562db795972c362c2959003d4052de7",
+        "resourceLimits": {
+          "cpuCount": 2,
+          "memoryBytes": 4294967296,
+          "memorySwapBytes": 4294967296,
+          "pids": 512
+        },
+        "workspaceHandedBackAt": "2026-09-28T05:06:28.348Z",
+        "removedAt": "2026-09-28T05:06:28.543Z"
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f2d07fa7322eddc871e134d21494e808844aacbc5bb3ae4403b428b5d26fefd1.lock.json",
+          "key": "port:6711",
+          "digest": "f2d07fa7322eddc871e134d21494e808844aacbc5bb3ae4403b428b5d26fefd1",
+          "acquiredAt": "2026-09-28T04:58:31.209Z",
+          "releasedAt": "2026-09-28T05:06:30.250Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/11fe0d13900ab3f778274b9ede7a362c9726b16ca44e979a6db09fa971eed343.lock.json",
+          "key": "port:6983",
+          "digest": "11fe0d13900ab3f778274b9ede7a362c9726b16ca44e979a6db09fa971eed343",
+          "acquiredAt": "2026-09-28T04:58:31.209Z",
+          "releasedAt": "2026-09-28T05:06:30.250Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/c81bb3843493a6b895115e78e484e0d200095e761e00646387dc65fcfc3d363d.lock.json",
+          "key": "slot:ecommerce:postgres:run410",
+          "digest": "c81bb3843493a6b895115e78e484e0d200095e761e00646387dc65fcfc3d363d",
+          "acquiredAt": "2026-09-28T04:58:31.209Z",
+          "releasedAt": "2026-09-28T05:06:30.250Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/ff185c3a5d86f771e13520bf798d656d9a58ba64e62dd6d8187d1b76841ccf9c.lock.json",
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-WJl0ay/app",
+          "digest": "ff185c3a5d86f771e13520bf798d656d9a58ba64e62dd6d8187d1b76841ccf9c",
+          "acquiredAt": "2026-09-28T04:58:31.209Z",
+          "releasedAt": "2026-09-28T05:06:30.250Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-5bc8103f80ad2470-network",
+        "id": "346ca6d38192ba4a16ba41a7e1af7a4e9a5c72585990212701c523ec55940687",
+        "namespaceContainerId": "69989f5338c16ba182c2cba2aeb5a71ef562db795972c362c2959003d4052de7",
+        "hostAddresses": [
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "192.168.192.1",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.17",
+          "10.0.0.1",
+          "10.0.0.33",
+          "10.0.0.41"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.43",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "4062fa1690fc2afd969fa93c31ab4fa1d33419ebedd8eb20a808b2d010df5bb3",
+        "firewallInstalledAt": "2026-09-28T04:58:34.554Z",
+        "ownAddresses": [
+          "10.0.0.42"
+        ],
+        "namespaceStartedAt": "2026-09-28T04:58:33.087418296Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-5bc8103f80ad2470-browser",
+        "id": "d4e0cbcd9e2f6af4a91ed9bb85ffaf53bbce52cbfa9c1fa68076c2589d518c1b",
+        "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+        "owned": true,
+        "networkMode": "container:69989f5338c16ba182c2cba2aeb5a71ef562db795972c362c2959003d4052de7",
+        "running": false,
+        "removedAt": "2026-09-28T05:06:27.875Z"
+      }
+    },
+    "ownership": {
+      "markerSha256": "478d563a2c18424ee048caf0b940959439394c87681968f84bd3aa616c8f48bd"
+    }
+  }
+}

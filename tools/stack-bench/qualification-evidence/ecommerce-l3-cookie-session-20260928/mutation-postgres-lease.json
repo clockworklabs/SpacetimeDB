@@ -1,0 +1,160 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "backend_lease_evidence",
+  "id": "ecommerce-postgres-run808-20260928234956-e6a0a994-backend-lease",
+  "attempt": {
+    "id": "ecommerce-postgres-run808-20260928234956-e6a0a994-backend-lease",
+    "parentId": "ecommerce-postgres-run808-20260928234956-e6a0a994"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:49:56.906Z",
+    "completedAt": "2026-09-28T23:56:12.622Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "version": 1,
+    "runId": "ecommerce-postgres-run808-20260928234956-e6a0a994",
+    "backend": "postgres",
+    "track": "ecommerce",
+    "runIndex": 808,
+    "ownerPid": 80,
+    "createdAt": "2026-09-28T23:49:56.906Z",
+    "stoppedAt": "2026-09-28T23:56:12.510Z",
+    "releasedAt": "2026-09-28T23:56:12.614Z",
+    "state": "released",
+    "resources": {
+      "serverUri": null,
+      "database": "app_ecom_run808",
+      "module": null,
+      "dataDir": null,
+      "container": {
+        "name": "sb-0d6961beaddaf579-backend",
+        "id": "de947660d9e8cba18e89a88dba41cb592e3ccd3502d4660e2a462d19d812f15c",
+        "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+        "owned": true,
+        "networkMode": "3ecbeb8fee4cc62b9d9b163cc6e22be96fa41baba30a24d2c2ff0b60a04b43ce",
+        "running": false,
+        "removedAt": "2026-09-28T23:56:11.553Z"
+      },
+      "buildContainer": {
+        "name": "sb-0d6961beaddaf579-build",
+        "id": "ce761c9f2671ebeba223e753ddf4600edaa2ed661b6adb479ff00fa0343bd65d",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "running": false,
+        "networkMode": "container:de947660d9e8cba18e89a88dba41cb592e3ccd3502d4660e2a462d19d812f15c",
+        "resourceLimits": {
+          "cpuCount": 2,
+          "memoryBytes": 4294967296,
+          "memorySwapBytes": 4294967296,
+          "pids": 512
+        },
+        "workspaceHandedBackAt": "2026-09-28T23:56:10.102Z",
+        "removedAt": "2026-09-28T23:56:10.433Z"
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/9d5c4c7da6452e52609119ff55427687b6e1774ffe84cdc01df3ffde444a4506.lock.json",
+          "key": "port:7109",
+          "digest": "9d5c4c7da6452e52609119ff55427687b6e1774ffe84cdc01df3ffde444a4506",
+          "acquiredAt": "2026-09-28T23:49:56.972Z",
+          "releasedAt": "2026-09-28T23:56:12.614Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/32c3a4edb54b52069f9e955858146f978ad6e28a72f56d09f247bf6ba84aa9d2.lock.json",
+          "key": "port:7381",
+          "digest": "32c3a4edb54b52069f9e955858146f978ad6e28a72f56d09f247bf6ba84aa9d2",
+          "acquiredAt": "2026-09-28T23:49:56.972Z",
+          "releasedAt": "2026-09-28T23:56:12.614Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f4d7efe62351195aadb1bc52e7827689909bd534b72b8d82f4ef89adc7d56abb.lock.json",
+          "key": "slot:ecommerce:postgres:run808",
+          "digest": "f4d7efe62351195aadb1bc52e7827689909bd534b72b8d82f4ef89adc7d56abb",
+          "acquiredAt": "2026-09-28T23:49:56.972Z",
+          "releasedAt": "2026-09-28T23:56:12.614Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/026878272231b533d8b88dcf81143acad1af979175e383a6d7fd1bba1a1bd13c.lock.json",
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-MD2m5i/app",
+          "digest": "026878272231b533d8b88dcf81143acad1af979175e383a6d7fd1bba1a1bd13c",
+          "acquiredAt": "2026-09-28T23:49:56.972Z",
+          "releasedAt": "2026-09-28T23:56:12.614Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-0d6961beaddaf579-network",
+        "id": "3ecbeb8fee4cc62b9d9b163cc6e22be96fa41baba30a24d2c2ff0b60a04b43ce",
+        "namespaceContainerId": "de947660d9e8cba18e89a88dba41cb592e3ccd3502d4660e2a462d19d812f15c",
+        "hostAddresses": [
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.21.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.9",
+          "10.0.0.33",
+          "10.0.0.41",
+          "10.0.0.65",
+          "10.0.0.73",
+          "10.0.0.81",
+          "10.0.0.97",
+          "10.0.0.105",
+          "10.0.0.113",
+          "10.0.0.1",
+          "10.0.0.17"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.19",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "8338956457d903e983f18162b14cabc2ec9eabd82ac824c38ceaf855a260060d",
+        "firewallInstalledAt": "2026-09-28T23:50:01.828Z",
+        "ownAddresses": [
+          "10.0.0.18"
+        ],
+        "namespaceStartedAt": "2026-09-28T23:50:00.06198805Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-0d6961beaddaf579-browser",
+        "id": "8fe0573e378461e545228b011564be5eb097ecd15d0f9ea66a76c0084d1a0eaf",
+        "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+        "owned": true,
+        "networkMode": "container:de947660d9e8cba18e89a88dba41cb592e3ccd3502d4660e2a462d19d812f15c",
+        "running": false,
+        "removedAt": "2026-09-28T23:56:09.221Z"
+      }
+    },
+    "ownership": {
+      "markerSha256": "a8c57dc81fb66f2281563e50b528c109315e4a56b68e96a0dea3dbfa49975c20"
+    }
+  }
+}

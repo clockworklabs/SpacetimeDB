@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 1,
+  "diagnostic": true,
+  "paidCalls": 0,
+  "id": "b7785c2a-0306-493a-9749-ba1c6f15ad80",
+  "planSha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98",
+  "controllerImage": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+  "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+  "resumedFrom": null,
+  "runner": {
+    "schemaVersion": 1,
+    "mode": "appliance",
+    "platform": "linux",
+    "architecture": "x64",
+    "hostname": "docker-desktop",
+    "dockerEngineVersion": "29.6.2",
+    "dockerOs": "linux",
+    "dockerArchitecture": "x86_64",
+    "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+    "cpuCount": 32,
+    "memoryBytes": 49232826368,
+    "containersRunning": 25,
+    "packageRegistry": "http://127.0.0.1:4873/"
+  },
+  "workers": 1,
+  "startedAt": "2026-09-27T16:15:15.964Z",
+  "finishedAt": "2026-09-27T16:22:25.561Z",
+  "plannedTrials": [
+    {
+      "key": "b5c3e30d80b9c21fa2e6ece669c48a288eedfa377caf5afa4fa539f9defff9f9",
+      "feature": 101,
+      "repetition": 1
+    },
+    {
+      "key": "eb358b57f5292a1ffe2f1f50ba801ae39fe3f45f6566ac060a8a16501e8e6e96",
+      "feature": 101,
+      "repetition": 1
+    },
+    {
+      "key": "b5527c95916c416c2d9730728c8aafb7e5f3697cdbe2945974e5ea653392354e",
+      "feature": 103,
+      "repetition": 1
+    },
+    {
+      "key": "fd33abe78d278fed1e8b0f095568a4f3a9b344e15e178726ea30c5444c4473ee",
+      "feature": 103,
+      "repetition": 1
+    },
+    {
+      "key": "f957d3cd648cf62e6a7e6362b5fe791f0f762d44124988a035cb7065d847b77d",
+      "feature": 621,
+      "repetition": 1
+    }
+  ],
+  "population": {
+    "planned": 5,
+    "started": 5,
+    "collected": 5,
+    "executions": 5,
+    "interrupted": 0,
+    "unstarted": [],
+    "checkOutcomes": {
+      "passed": 5,
+      "failed": 2
+    }
+  },
+  "groups": [
+    {
+      "backend": "spacetime",
+      "groupIndex": 0,
+      "directory": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-0",
+      "state": "collected",
+      "error": "",
+      "audit": {
+        "id": "493f8401-c07a-4e73-b118-91560a314f28",
+        "planSha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98",
+        "groupIndex": 0,
+        "backend": "spacetime",
+        "sourceSha256": "79bff72087c0242f148b9ed3e30957df4c1afae4c396bc4a62a66225774beb83",
+        "scenarioSha256": "f977355d9eccd99a98a0c836388e2bdf514ac8a021a55ab7010ecd50eb0acf76",
+        "controllerImage": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+        "plannedTrials": [
+          {
+            "key": "b5c3e30d80b9c21fa2e6ece669c48a288eedfa377caf5afa4fa539f9defff9f9",
+            "feature": 101,
+            "repetition": 1
+          }
+        ],
+        "trials": [
+          {
+            "key": "b5c3e30d80b9c21fa2e6ece669c48a288eedfa377caf5afa4fa539f9defff9f9",
+            "feature": 101,
+            "repetition": 1,
+            "executionId": "fe90152e-f1ca-4000-a6a8-9877349e14f9",
+            "state": "collected",
+            "startedAt": "2026-09-27T16:16:10.828Z",
+            "resetMs": 0,
+            "gradeMs": 61202,
+            "grade": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-0/fe90152e-f1ca-4000-a6a8-9877349e14f9.json",
+            "checkOutcomes": {
+              "passed": 1
+            }
+          }
+        ],
+        "startedAt": "2026-09-27T16:15:16.278Z",
+        "phases": {
+          "admissionMs": 1666,
+          "deploymentMs": 52882,
+          "cleanupMs": 3394
+        },
+        "runIndex": 0,
+        "sourceAfter": "79bff72087c0242f148b9ed3e30957df4c1afae4c396bc4a62a66225774beb83",
+        "applicationDiagnostics": {
+          "captured": false,
+          "reason": "backend has no hosted app restart log"
+        },
+        "released": true,
+        "finishedAt": "2026-09-27T16:17:15.447Z"
+      }
+    },
+    {
+      "backend": "spacetime",
+      "groupIndex": 1,
+      "directory": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-1",
+      "state": "collected",
+      "error": "",
+      "audit": {
+        "id": "2f81a4e2-965c-4635-ba55-a9e6792e123f",
+        "planSha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98",
+        "groupIndex": 1,
+        "backend": "spacetime",
+        "sourceSha256": "b09860c72d5cce5ae44db188ad18f888384fc3099d1e716d86ebbfe0b8e98227",
+        "scenarioSha256": "f977355d9eccd99a98a0c836388e2bdf514ac8a021a55ab7010ecd50eb0acf76",
+        "controllerImage": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+        "plannedTrials": [
+          {
+            "key": "eb358b57f5292a1ffe2f1f50ba801ae39fe3f45f6566ac060a8a16501e8e6e96",
+            "feature": 101,
+            "repetition": 1
+          }
+        ],
+        "trials": [
+          {
+            "key": "eb358b57f5292a1ffe2f1f50ba801ae39fe3f45f6566ac060a8a16501e8e6e96",
+            "feature": 101,
+            "repetition": 1,
+            "executionId": "1f9ff94b-6682-4724-967d-eda7142e9632",
+            "state": "collected",
+            "startedAt": "2026-09-27T16:18:10.866Z",
+            "resetMs": 0,
+            "gradeMs": 32462,
+            "grade": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-1/1f9ff94b-6682-4724-967d-eda7142e9632.json",
+            "checkOutcomes": {
+              "failed": 1
+            }
+          }
+        ],
+        "startedAt": "2026-09-27T16:17:15.808Z",
+        "phases": {
+          "admissionMs": 1643,
+          "deploymentMs": 53414,
+          "cleanupMs": 3358
+        },
+        "runIndex": 0,
+        "sourceAfter": "b09860c72d5cce5ae44db188ad18f888384fc3099d1e716d86ebbfe0b8e98227",
+        "applicationDiagnostics": {
+          "captured": false,
+          "reason": "backend has no hosted app restart log"
+        },
+        "released": true,
+        "finishedAt": "2026-09-27T16:18:46.706Z"
+      }
+    },
+    {
+      "backend": "spacetime",
+      "groupIndex": 2,
+      "directory": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-2",
+      "state": "collected",
+      "error": "",
+      "audit": {
+        "id": "f3d0d449-21ef-441c-974c-5109965fe63e",
+        "planSha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98",
+        "groupIndex": 2,
+        "backend": "spacetime",
+        "sourceSha256": "ad341270373e2a54226f4f8884bfa71aef587e193c5ca0b7ea51c6d80db67ca7",
+        "scenarioSha256": "10cba98c8d86102dd6151009fbac60c9bed36e027e88c5924be7ef50a3927e0c",
+        "controllerImage": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+        "plannedTrials": [
+          {
+            "key": "b5527c95916c416c2d9730728c8aafb7e5f3697cdbe2945974e5ea653392354e",
+            "feature": 103,
+            "repetition": 1
+          }
+        ],
+        "trials": [
+          {
+            "key": "b5527c95916c416c2d9730728c8aafb7e5f3697cdbe2945974e5ea653392354e",
+            "feature": 103,
+            "repetition": 1,
+            "executionId": "f930a7b6-32d7-4baa-97ab-d5ccd1e92fa6",
+            "state": "collected",
+            "startedAt": "2026-09-27T16:19:38.093Z",
+            "resetMs": 0,
+            "gradeMs": 38326,
+            "grade": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-2/f930a7b6-32d7-4baa-97ab-d5ccd1e92fa6.json",
+            "checkOutcomes": {
+              "passed": 2
+            }
+          }
+        ],
+        "startedAt": "2026-09-27T16:18:46.980Z",
+        "phases": {
+          "admissionMs": 1549,
+          "deploymentMs": 49564,
+          "cleanupMs": 2956
+        },
+        "runIndex": 0,
+        "sourceAfter": "ad341270373e2a54226f4f8884bfa71aef587e193c5ca0b7ea51c6d80db67ca7",
+        "applicationDiagnostics": {
+          "captured": false,
+          "reason": "backend has no hosted app restart log"
+        },
+        "released": true,
+        "finishedAt": "2026-09-27T16:20:19.402Z"
+      }
+    },
+    {
+      "backend": "spacetime",
+      "groupIndex": 3,
+      "directory": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-3",
+      "state": "collected",
+      "error": "",
+      "audit": {
+        "id": "a0af50ad-d127-4ae6-8fc0-2db58e9f223d",
+        "planSha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98",
+        "groupIndex": 3,
+        "backend": "spacetime",
+        "sourceSha256": "bc793c132df04befbf5277e038c74be47bfe48c0a1509d6dfa4ff8b52d4e610b",
+        "scenarioSha256": "10cba98c8d86102dd6151009fbac60c9bed36e027e88c5924be7ef50a3927e0c",
+        "controllerImage": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+        "plannedTrials": [
+          {
+            "key": "fd33abe78d278fed1e8b0f095568a4f3a9b344e15e178726ea30c5444c4473ee",
+            "feature": 103,
+            "repetition": 1
+          }
+        ],
+        "trials": [
+          {
+            "key": "fd33abe78d278fed1e8b0f095568a4f3a9b344e15e178726ea30c5444c4473ee",
+            "feature": 103,
+            "repetition": 1,
+            "executionId": "1fb550ab-6b49-47bb-ac87-47142f194c94",
+            "state": "collected",
+            "startedAt": "2026-09-27T16:21:09.103Z",
+            "resetMs": 0,
+            "gradeMs": 34959,
+            "grade": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-3/1fb550ab-6b49-47bb-ac87-47142f194c94.json",
+            "checkOutcomes": {
+              "passed": 1,
+              "failed": 1
+            }
+          }
+        ],
+        "startedAt": "2026-09-27T16:20:19.679Z",
+        "phases": {
+          "admissionMs": 1537,
+          "deploymentMs": 47886,
+          "cleanupMs": 3302
+        },
+        "runIndex": 0,
+        "sourceAfter": "bc793c132df04befbf5277e038c74be47bfe48c0a1509d6dfa4ff8b52d4e610b",
+        "applicationDiagnostics": {
+          "captured": false,
+          "reason": "backend has no hosted app restart log"
+        },
+        "released": true,
+        "finishedAt": "2026-09-27T16:21:47.394Z"
+      }
+    },
+    {
+      "backend": "spacetime",
+      "groupIndex": 4,
+      "directory": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-4",
+      "state": "collected",
+      "error": "",
+      "audit": {
+        "id": "5f0c15d4-0225-4522-b1bb-11340297a583",
+        "planSha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98",
+        "groupIndex": 4,
+        "backend": "spacetime",
+        "sourceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+        "scenarioSha256": "442f7b5188cf6a33c6ef219e75bcce0cbb9e230e22e3295e16e3d283faeb8044",
+        "controllerImage": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+        "plannedTrials": [
+          {
+            "key": "f957d3cd648cf62e6a7e6362b5fe791f0f762d44124988a035cb7065d847b77d",
+            "feature": 621,
+            "repetition": 1
+          }
+        ],
+        "trials": [
+          {
+            "key": "f957d3cd648cf62e6a7e6362b5fe791f0f762d44124988a035cb7065d847b77d",
+            "feature": 621,
+            "repetition": 1,
+            "executionId": "53a571b6-b8c7-4958-83de-bd242d8c902e",
+            "state": "collected",
+            "startedAt": "2026-09-27T16:22:16.971Z",
+            "resetMs": 0,
+            "gradeMs": 5476,
+            "grade": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/review-native-27e01bd86/report.json.runs/group-4/53a571b6-b8c7-4958-83de-bd242d8c902e.json",
+            "checkOutcomes": {
+              "passed": 1
+            }
+          }
+        ],
+        "startedAt": "2026-09-27T16:21:47.661Z",
+        "phases": {
+          "admissionMs": 1553,
+          "deploymentMs": 27756,
+          "cleanupMs": 3071
+        },
+        "runIndex": 0,
+        "sourceAfter": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+        "applicationDiagnostics": {
+          "captured": false,
+          "reason": "backend has no hosted app restart log"
+        },
+        "released": true,
+        "finishedAt": "2026-09-27T16:22:25.543Z"
+      }
+    }
+  ]
+}

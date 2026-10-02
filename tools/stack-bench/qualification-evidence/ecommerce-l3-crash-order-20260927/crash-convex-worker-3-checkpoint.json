@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T22-59-35-674Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T22-59-35-674Z",
+    "parentId": "ecommerce-convex-run266-20260927225856-09aeae53"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T22:59:35.674Z",
+    "completedAt": "2026-09-27T23:00:44.426Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 68753,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-AJsizn/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-AJsizn/selected-mutations.json",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-checkout-crash.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "checkout-crash-durability"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "c12f25c39896e7eec1624063164e4a570ee22a0bd16f8f3bd7c2e3ed2c2b4299"
+      },
+      "total": 2,
+      "max": 2,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "identitySha256": "f244c7652249142c5f47c26c197bb49a1b54ee58910c26b2b3f3f6d57776e149",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "checkout-crash-durability",
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 910,
+            "criterion": "910b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the acknowledged orders preserved control reads 0, expected exactly 1",
+            "failedAction": "expectCrashCheckout",
+            "key": "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c",
+      "recipeSha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f",
+      "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+      "calibrationSha256": "3d86dc87f1d8607c2587a5bb2cfd4fb7a066fee29f997927de567e5c90c5ab65",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "checkout-crash-durability"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "scenarioSha256": "a53ddfa1802a484691ed4632f3461d0e8bebca95086b6bc3d6161d44eae6cb7b",
+          "mutationSha256": "f1e40e88124e9f0c967a9548ad8c2dc0235cea087f8fe43b5781798d349b16f7",
+          "selectionSha256": "2a39cea079f06a3090f95fbbdddb808f63dbc34af61d1478c3d5c3bc111bf981",
+          "identitySha256": "f244c7652249142c5f47c26c197bb49a1b54ee58910c26b2b3f3f6d57776e149",
+          "mutationIds": [
+            "checkout-crash-durability"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T23:00:44.427Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "mutationId": "checkout-crash-durability",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-RD7Njj/grade.json",
+          "sha256": "dd56679458545f97712f3a7983649655edc671d0d3ec638a623e2f4bb360d93c"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

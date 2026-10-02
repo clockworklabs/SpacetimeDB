@@ -1,0 +1,34 @@
+TAP version 13
+# transport body unavailable {"origin":"http://127.0.0.1:63013","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:63013","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# Subtest: support save completes before verification reload without changing timed reloads
+not ok 1 - support save completes before verification reload without changing timed reloads
+  ---
+  duration_ms: 9786.6048
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\support-save.integration.js:14:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"mode":"delayed","grade":{"id":611,"name":"Support triage","score":0,"max":1,"criteria":[{"id":"611a","desc":"staff can assign a new ticket","points":1,"evidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"assertion","actor":"staff","summary":"the support-assignee control shows \"\", expected \"staff\"","finding":{"kind":"value-mismatch","fields":{"control":"support-assignee","observed":"","expected":"staff"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790497068641,"completedAtMs":1790497078019,"durationMs":9378},"actions":[{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"fill","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"filled":"support-assignee"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497068642,"completedAtMs":1790497068763,"durationMs":121,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"support-update"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497068764,"completedAtMs":1790497070319,"durationMs":1555,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"reload","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"reloaded":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497070320,"completedAtMs":1790497072843,"durationMs":2523,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"ensureSignedIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"restored":false,"user":"staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497072844,"completedAtMs":1790497072862,"durationMs":18,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-link","visible":"support-assignee"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497072862,"completedAtMs":1790497072898,"durationMs":36,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"support-queue-link","visible":"support-assignee"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790497072898,"completedAtMs":1790497072912,"durationMs":14,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"failed","type":"browser-observation-evidence","code":"application_failure","phase":"execute","summary":"the support-assignee control shows \"\", expected \"staff\"","finding":{"kind":"value-mismatch","fields":{"control":"support-assignee","observed":"","expected":"staff"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790497072913,"completedAtMs":1790497078018,"durationMs":5105,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Staff can assign support tickets."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"setup","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790497068636,"completedAtMs":1790497068636,"durationMs":0},"actions":[],"attachments":[],"sensitivity":[]}},"events":[{"event":"page-load","at":1790497068613,"value":""},{"event":"poll-start","at":1790497068632},{"event":"save-start","at":1790497068812,"value":"staff"},{"event":"page-load","at":1790497070327,"value":""},{"event":"poll-start","at":1790497070341},{"event":"save-committed","at":1790497070813,"value":"staff"}]}
+    
+    'failed' !== 'passed'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'passed'
+  actual: 'failed'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/support-save.integration.js:101:20)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10573.4662

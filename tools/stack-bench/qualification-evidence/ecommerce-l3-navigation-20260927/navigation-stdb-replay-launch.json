@@ -1,0 +1,16 @@
+{
+  "args": [
+    "run",
+    "--grade-from",
+    "/var/lib/docker/volumes/stack-bench-state/_data/results/campaigns/job-993215036f6fc527cbeb47060ff33051eece01a71626acb5b352662084479cb0/attempts/sol6-norepair-four-stack-12-abb64ef60-r3-c1-a1-spacetime/execution-1",
+    "--grade-level",
+    "2",
+    "--check",
+    "ecommerce.spec.live-state.purchase-stock.3b",
+    "--out",
+    "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/navigation-20260926/stdb-r3-purchase"
+  ],
+  "image": "sha256:91b1a3c6d98f9c1cd740d17d86b8d4536fed058255cdd43d4da3f7aad04b6a16",
+  "container": "548dd228b46eebd221907a7327b9c8431d5f1c5ed25bf25999a49aaeec512163",
+  "name": "stack-bench-navigation-stdb-r3-replay"
+}

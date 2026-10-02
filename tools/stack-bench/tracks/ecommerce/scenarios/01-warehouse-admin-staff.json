@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Warehouse administration through staff access",
+  "features": [
+    {
+      "id": 7,
+      "name": "Admin and warehouses",
+      "actors": ["admin", "staff"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
+        { "do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": "admin-panel" }
+      ],
+      "criteria": [
+        {
+          "id": "7a",
+          "category": "production",
+          "desc": "the administrator area stays unavailable to other staff",
+          "points": 1,
+          "statedBy": "Administrators can open the administration area; other staff cannot.",
+          "steps": [
+            {"do": "expect", "actor": "admin", "testid": "admin-item-row"},
+            {"do": "click", "actor": "staff", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link"]},
+            {"do": "click", "actor": "staff", "testid": "admin-link", "ifAvailable": true, "settleMs": 1500},
+            {"do": "expect", "actor": "staff", "testid": "admin-item-row", "absent": true}
+          ]
+        },
+        {
+          "id": "7b",
+          "category": "feature",
+          "desc": "admin lists every item, every warehouse, and what each warehouse holds",
+          "points": 1,
+          "statedBy": "admin lists every item with its stock, every warehouse, and the stock of each item in each warehouse",
+          "steps": [
+            { "do": "expectWarehouseInventory", "actor": "admin", "items": [
+              {"name": "Air Purifier", "stock": {"East": 60, "West": 40}},
+              {"name": "Bluetooth Speaker", "stock": {"East": 50, "West": 50}},
+              {"name": "Coffee Grinder", "stock": {"East": 70, "West": 30}},
+              {"name": "Desk Lamp", "stock": {"East": 55, "West": 45}},
+              {"name": "Espresso Machine", "stock": {"East": 80, "West": 20}},
+              {"name": "Gaming Mouse", "stock": {"East": 50, "West": 50}},
+              {"name": "Headphones", "stock": {"East": 60, "West": 40}},
+              {"name": "Induction Cooktop", "stock": {"East": 50, "West": 50}},
+              {"name": "Keyboard", "stock": {"East": 70, "West": 30}},
+              {"name": "Laptop Stand", "stock": {"East": 90, "West": 10}},
+              {"name": "Mirrorless Camera", "stock": {"East": 2, "West": 1}},
+              {"name": "USB Cable", "stock": {"East": 0, "West": 0}},
+              {"name": "Webcam", "stock": {"East": 60, "West": 40}}
+            ] }
+          ]
+        }
+      ]
+    }
+  ]
+}

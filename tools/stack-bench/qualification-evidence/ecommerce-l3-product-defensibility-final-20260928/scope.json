@@ -1,0 +1,253 @@
+{
+  "track": "ecommerce",
+  "level": 3,
+  "recipe": "ecommerce.progression-catalog",
+  "featureCatalog": "progression/ecommerce.json",
+  "candidate": "3926fa8ae1ac948b61f2320c8cd7ae462f991a93",
+  "finalized": true,
+  "preparationInputsSha256": "15e3ff88b8ac9f6d1a9a2d7cf187e8c8c209e05682d8c1e1ddb3536bb99aa212",
+  "recipeSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+  "checks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "slots": {
+    "spacetime": 640,
+    "postgres": 648,
+    "mongodb": 656,
+    "convex": 664
+  },
+  "mutations": {
+    "spacetime": [
+      "every-signed-in-customer-is-treated-as-an-admin",
+      "warehouse-view-omits-west",
+      "operator-authorization-allows-customer-transfer",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "warehouse-totals-are-frozen-at-page-load",
+      "transfer-skips-the-source-holding-check"
+    ],
+    "postgres": [
+      "admin-warehouse-view-drops-one-location",
+      "operator-authorization-allows-customer-transfer",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "progression-staff-sees-admin-navigation",
+      "transfer-overdraft-guard-skips-bulk-transfers",
+      "transfer-does-not-publish-warehouse-totals"
+    ],
+    "mongodb": [
+      "warehouse-view-omits-one-location",
+      "operator-authorization-allows-customer-transfer",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "staff-can-see-admin-navigation",
+      "overdraw-transfer-is-accepted"
+    ],
+    "convex": [
+      "warehouse-view-omits-one-location",
+      "transfer-debits-source-without-crediting-existing-destination",
+      "overdraw-transfer-is-accepted",
+      "staff-can-see-admin-navigation"
+    ]
+  },
+  "controls": {
+    "spacetime": [
+      {
+        "id": "every-signed-in-customer-is-treated-as-an-admin",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "warehouse-view-omits-west",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "warehouse-totals-are-frozen-at-page-load",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a"
+        ]
+      },
+      {
+        "id": "transfer-skips-the-source-holding-check",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      }
+    ],
+    "postgres": [
+      {
+        "id": "admin-warehouse-view-drops-one-location",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "progression-staff-sees-admin-navigation",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "transfer-overdraft-guard-skips-bulk-transfers",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      },
+      {
+        "id": "transfer-does-not-publish-warehouse-totals",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a"
+        ]
+      }
+    ],
+    "mongodb": [
+      {
+        "id": "warehouse-view-omits-one-location",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "staff-can-see-admin-navigation",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      },
+      {
+        "id": "overdraw-transfer-is-accepted",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      }
+    ],
+    "convex": [
+      {
+        "id": "warehouse-view-omits-one-location",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+        ]
+      },
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ]
+      },
+      {
+        "id": "overdraw-transfer-is-accepted",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+        ]
+      },
+      {
+        "id": "staff-can-see-admin-navigation",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ]
+      }
+    ]
+  },
+  "mutationManifestSha256": {
+    "spacetime": "5d37f436793c4311671c50578e84b3656a1124c76cba1625b6c7a9b5d48b1dbb",
+    "postgres": "ce0c0c10dad084ed5c694c0db8afa40cb3ae101484c24fe64eda07ad2563f37e",
+    "mongodb": "c34fb587384594e4b4367231e1bd322cbfa5d01d849661959b5ec8e7b609f75a",
+    "convex": "13b26c47cb482ed3e1ff4338d603e1d524c20bfbffe2cf4ee8d746c413b7efeb"
+  },
+  "ports": [
+    3950,
+    3951,
+    3952,
+    6949,
+    6950,
+    6951,
+    7057,
+    7058,
+    7059,
+    7113,
+    7114,
+    7115,
+    7221,
+    7222,
+    7223,
+    7379,
+    7380,
+    7381,
+    7587,
+    7588,
+    7589,
+    7665,
+    7666,
+    7667,
+    13874,
+    13875,
+    13876
+  ],
+  "locks": [
+    "listener:http://127.0.0.1:3950",
+    "listener:http://127.0.0.1:3951",
+    "listener:http://127.0.0.1:3952",
+    "slot:ecommerce:spacetime:run640",
+    "slot:ecommerce:spacetime:run641",
+    "slot:ecommerce:spacetime:run642",
+    "slot:ecommerce:postgres:run648",
+    "slot:ecommerce:postgres:run649",
+    "slot:ecommerce:postgres:run650",
+    "slot:ecommerce:mongodb:run656",
+    "slot:ecommerce:mongodb:run657",
+    "slot:ecommerce:mongodb:run658",
+    "listener:http://127.0.0.1:13874",
+    "listener:http://127.0.0.1:13875",
+    "listener:http://127.0.0.1:13876",
+    "slot:ecommerce:convex:run664",
+    "slot:ecommerce:convex:run665",
+    "slot:ecommerce:convex:run666"
+  ],
+  "repetitions": 1,
+  "mutationWorkers": 3,
+  "modelCalls": 0,
+  "qualified": false
+}

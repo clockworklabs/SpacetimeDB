@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "container": "37c676127b61be5bdf4bb574c0a6e97dc09495a435274b2bd5fd57f2efd87c93",
+  "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+  "exitCode": 0,
+  "files": [
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-3-launch.json",
+      "sha256": "0b0bd17e3eb1af8b34b4cd84babb15eaa8188cf8e1905c0701617628c2518e29"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-3-probe.mjs",
+      "sha256": "9424b1347dee987d37d8a7dd9fbe92a3a247a8ea1f1b84689348171173a2a1d7"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-3-probe.json",
+      "sha256": "474d79817f389ecbd4e7fbfe9001b91d2e897f45390d9a116823f164d2068031"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-3-controller.json",
+      "sha256": "8c83c6a48c5f37d519d6ea175c07e6a2f0d3393912331013d025e4ef99d87448"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-3-stdout.log",
+      "sha256": "13dde333551aed0c0432860509b9f3c751dcfc29f775cd2081d1021e9a20a35d"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-3-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "cleanup": {
+    "browserClosed": true,
+    "viteClosed": true,
+    "socketsClosed": true
+  },
+  "paidCalls": 0,
+  "proved": "Real Vite no longer reloads the document during response-loss cleanup; application reply is dropped and browser app socket closes",
+  "historicalCauseProved": false
+}

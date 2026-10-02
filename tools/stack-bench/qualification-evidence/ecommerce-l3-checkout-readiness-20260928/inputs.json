@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 1,
+  "candidate": "d9cf20f6d7512b7b8e8e7c2cb17d433624da9712",
+  "baseCommit": "3943a8eaab4b94d5246e0b6d7c63739feda83294",
+  "baseImage": "sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133",
+  "dependencyVolume": "stack-bench-release-deps-3943a8eaab",
+  "qualified": false,
+  "modelCalls": 0,
+  "calibrationMode": "Diagnostic overlay only: empty qualification evidence and no reuse claims. Preserve source calibration and historical evidence bytes.",
+  "checks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "preparationInputsSha256": "f3c5156d636a4345e286bbadc5ce1b927ddbadb92008e4678da8dfadb323b1ad",
+  "preparationScriptSha256": "7eb9c790cd1ce3e9908550091d273c70d7ef8b4525c1ee5aa851eab3a60c45ab",
+  "launcherSha256": "5a2ae44507f70c305d32691d3bbf1634b22c8d35726c237e3e57b1051d6d5bb2",
+  "reviewedScopeSha256": "899e548c81ed890e9a8a030aaaefc3cfd59803590724e446f2a102786df7cbb3",
+  "scopeSha256": "2de58edf99c392b8a10506fb9f10c8c2834a0312de9a79b335fd38a0f2802b71",
+  "recipeSha256": "aada3dfbfd205afed9ac7019f0b5ea21985f94263efbffc126485fb305e1e316",
+  "changes": [
+    {
+      "status": "M",
+      "file": ".gitattributes"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/container/broker-protocols.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/container/credential-broker.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/dashboard/check-guide-steps.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/grader/grade.ts"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/Dockerfile"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/baseline-calibration.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/catalog-scope-49b405390-frozen.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/catalog-scope-49b405390-launch.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/cleanup-verification.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/convex-worker-1-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/convex-worker-2-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/convex-worker-3-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/convex.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/fallback-green.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/fallback-red.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/inputs.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/mongodb-worker-1-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/mongodb-worker-2-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/mongodb-worker-3-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/mongodb.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/null.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/postgres-worker-1-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/postgres-worker-2-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/postgres-worker-3-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/postgres.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/reuse-review.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/scope-review.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/scope.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/spacetime-worker-1-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/spacetime-worker-2-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/spacetime-worker-3-checkpoint.json"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/spacetime.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/action-catalog.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/actor-action-runtime.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/browser-action-executors.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/crash-action-executors.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/named-action-executors.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/composition/definition-compiler.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/runtime/backend-control.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/stacks/process-crash.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/account-navigation.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/crash-diagnostic.test.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/credential-broker.test.ts"
+    },
+    {
+      "status": "A",
+      "file": "tools/stack-bench/tests/hosted-crash-window.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/item-navigation.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/response-loss.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/review-owner.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/calibrations/dependency-l3.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-duplicate-checkout.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/01-warehouse-admin-staff.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-strengthened.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/mixed-operation-history.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-faceted-filters.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-faceted-pagination.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/progression-search-ordering.json"
+    }
+  ],
+  "files": [
+    {
+      "path": "container/broker-protocols.ts",
+      "sourceSha256": "bc7890b26ab4bd21da63cc8ac1e2fccdef3eacbaecd99b1caaea09b042641d08",
+      "sha256": "bc7890b26ab4bd21da63cc8ac1e2fccdef3eacbaecd99b1caaea09b042641d08"
+    },
+    {
+      "path": "container/credential-broker.ts",
+      "sourceSha256": "982caf9b8e032a0e83e4bc65aa9413db6c1d3960e2013c0230e247630dfb7287",
+      "sha256": "982caf9b8e032a0e83e4bc65aa9413db6c1d3960e2013c0230e247630dfb7287"
+    },
+    {
+      "path": "dashboard/check-guide-steps.ts",
+      "sourceSha256": "931fa438e048f76b8205112b46c6cd9c292d9e6c94faf98dc279d15ef5594599",
+      "sha256": "931fa438e048f76b8205112b46c6cd9c292d9e6c94faf98dc279d15ef5594599"
+    },
+    {
+      "path": "grader/grade.ts",
+      "sourceSha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c",
+      "sha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c"
+    },
+    {
+      "path": "src/actions/action-catalog.ts",
+      "sourceSha256": "22f5d0bbe5d96a5df766ea9e4f478b383c082c89dbec272ed054d1dbad5ed230",
+      "sha256": "22f5d0bbe5d96a5df766ea9e4f478b383c082c89dbec272ed054d1dbad5ed230"
+    },
+    {
+      "path": "src/actions/actor-action-runtime.ts",
+      "sourceSha256": "caa6f983f7321acede15c18d6536153a8b0098072a84e6bb6d4de98d50399a42",
+      "sha256": "caa6f983f7321acede15c18d6536153a8b0098072a84e6bb6d4de98d50399a42"
+    },
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sourceSha256": "a71a7b2d936a213b6ace91de9af610dcdc78aed7e31a436b4cc8bc6c1f4ddc2e",
+      "sha256": "a71a7b2d936a213b6ace91de9af610dcdc78aed7e31a436b4cc8bc6c1f4ddc2e"
+    },
+    {
+      "path": "src/actions/crash-action-executors.ts",
+      "sourceSha256": "40d0d16e2eb04c8adc1e501ffaccd7b09ee3d92d7bafbc7b150efde76f3d600a",
+      "sha256": "40d0d16e2eb04c8adc1e501ffaccd7b09ee3d92d7bafbc7b150efde76f3d600a"
+    },
+    {
+      "path": "src/actions/named-action-executors.ts",
+      "sourceSha256": "a4248f6311f9cf5fa0f139ce2ad3d045f58aacdad4191a96915cd766dabb654d",
+      "sha256": "a4248f6311f9cf5fa0f139ce2ad3d045f58aacdad4191a96915cd766dabb654d"
+    },
+    {
+      "path": "src/composition/definition-compiler.ts",
+      "sourceSha256": "58c301af193aa4f3b3f6ffd8bb1774a81423a0db947438fc3982be1705d91c40",
+      "sha256": "58c301af193aa4f3b3f6ffd8bb1774a81423a0db947438fc3982be1705d91c40"
+    },
+    {
+      "path": "src/runtime/backend-control.ts",
+      "sourceSha256": "40e80f8745991d887bef1d408d9b025a98566301d9053357e9e2b36567527531",
+      "sha256": "40e80f8745991d887bef1d408d9b025a98566301d9053357e9e2b36567527531"
+    },
+    {
+      "path": "src/stacks/process-crash.ts",
+      "sourceSha256": "7c59ce771982adeac65960db1d59400d5ec916c766a27cb7e73088946c6cf2b2",
+      "sha256": "7c59ce771982adeac65960db1d59400d5ec916c766a27cb7e73088946c6cf2b2"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "sourceSha256": "4933df77596f6249c6342da01959d44b1fcd599d646e4df174361595082de775",
+      "sha256": "4933df77596f6249c6342da01959d44b1fcd599d646e4df174361595082de775"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "sourceSha256": "fb7ec9cf42565d1f607f7433cb2cec9f9e682b421121f59b202823a78199ac1c",
+      "sha256": "fb7ec9cf42565d1f607f7433cb2cec9f9e682b421121f59b202823a78199ac1c"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "sourceSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+      "sha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "sourceSha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6",
+      "sha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "sourceSha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47",
+      "sha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "sourceSha256": "95ced495d967609e53a4c69193552a1d6170e5e6f6ba57f621b0a6bc495c1ce3",
+      "sha256": "95ced495d967609e53a4c69193552a1d6170e5e6f6ba57f621b0a6bc495c1ce3"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "sourceSha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5",
+      "sha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "sourceSha256": "ff5d5db9f1a5820ead5b991cc31e5dd9346776702e94a678c9bd03cd68ab7aa3",
+      "sha256": "ff5d5db9f1a5820ead5b991cc31e5dd9346776702e94a678c9bd03cd68ab7aa3"
+    },
+    {
+      "path": "dist/container/broker-protocols.js",
+      "sourceSha256": "105ee2291560f3af3df79e8abdc77caf85f0e748d6d571e70305b166a8659b27",
+      "sha256": "105ee2291560f3af3df79e8abdc77caf85f0e748d6d571e70305b166a8659b27"
+    },
+    {
+      "path": "dist/container/broker-protocols.js.map",
+      "sourceSha256": "28d099ea7adc42e54a3d0bf935235dc6fd1d5dab2708fbb13b7ffc2570da83b2",
+      "sha256": "28d099ea7adc42e54a3d0bf935235dc6fd1d5dab2708fbb13b7ffc2570da83b2"
+    },
+    {
+      "path": "dist/container/credential-broker.js",
+      "sourceSha256": "cb47d6706a373ffb5d159735dcbb6a81d52d2d394cd527d02a8c5b0b896a1736",
+      "sha256": "cb47d6706a373ffb5d159735dcbb6a81d52d2d394cd527d02a8c5b0b896a1736"
+    },
+    {
+      "path": "dist/container/credential-broker.js.map",
+      "sourceSha256": "031459d37b4f9101861b52b264e2874dbe7c3e4c7243be2fe625ae0f4aa0c947",
+      "sha256": "031459d37b4f9101861b52b264e2874dbe7c3e4c7243be2fe625ae0f4aa0c947"
+    },
+    {
+      "path": "dist/dashboard/check-guide-steps.js",
+      "sourceSha256": "60d85ebf4ad0dd847cae8484fdd8f651c34928357fe268465d0b415763e6d42e",
+      "sha256": "60d85ebf4ad0dd847cae8484fdd8f651c34928357fe268465d0b415763e6d42e"
+    },
+    {
+      "path": "dist/dashboard/check-guide-steps.js.map",
+      "sourceSha256": "75eab448db8ea73d2d9dee34c2dfcc02c489af76f5278e68d48b6241b17f0417",
+      "sha256": "75eab448db8ea73d2d9dee34c2dfcc02c489af76f5278e68d48b6241b17f0417"
+    },
+    {
+      "path": "dist/grader/grade.js",
+      "sourceSha256": "73cd98ee959d7bc0f9674dde9ddae3d20dd27cf8324e9cb35cea0d4924a90397",
+      "sha256": "73cd98ee959d7bc0f9674dde9ddae3d20dd27cf8324e9cb35cea0d4924a90397"
+    },
+    {
+      "path": "dist/grader/grade.js.map",
+      "sourceSha256": "652851717d8acc093f916bec92ade2abdc7336abe8d0a8ab4d4690e93b936031",
+      "sha256": "652851717d8acc093f916bec92ade2abdc7336abe8d0a8ab4d4690e93b936031"
+    },
+    {
+      "path": "dist/src/actions/action-catalog.js",
+      "sourceSha256": "39243e31b49f736c03d96cc8f3269ebf2bcf96cabe36abdda52f4d300a8a5966",
+      "sha256": "39243e31b49f736c03d96cc8f3269ebf2bcf96cabe36abdda52f4d300a8a5966"
+    },
+    {
+      "path": "dist/src/actions/action-catalog.js.map",
+      "sourceSha256": "c0b402ea1b317f07b3286dfaea9b30eabf71719fd13217db31def969946dffb2",
+      "sha256": "c0b402ea1b317f07b3286dfaea9b30eabf71719fd13217db31def969946dffb2"
+    },
+    {
+      "path": "dist/src/actions/actor-action-runtime.js",
+      "sourceSha256": "51ef26be5cd573baac2c1467b07242208c2124d7752e75d0f2689d8fcdf8b2a6",
+      "sha256": "51ef26be5cd573baac2c1467b07242208c2124d7752e75d0f2689d8fcdf8b2a6"
+    },
+    {
+      "path": "dist/src/actions/actor-action-runtime.js.map",
+      "sourceSha256": "d05b42912d4cd99b711c9d765cc5548cbd4294bcf7afdcfc8f67dc28d81deb8f",
+      "sha256": "d05b42912d4cd99b711c9d765cc5548cbd4294bcf7afdcfc8f67dc28d81deb8f"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js",
+      "sourceSha256": "f48fb1426670b42042dc6c988d324e4c1cb3ee38b284b7b9c20cf7613aca5843",
+      "sha256": "f48fb1426670b42042dc6c988d324e4c1cb3ee38b284b7b9c20cf7613aca5843"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js.map",
+      "sourceSha256": "b7034bc2dcb7ce7c3101e4325dcac41ee4d0c2af4f965567a7018ab5f49380c7",
+      "sha256": "b7034bc2dcb7ce7c3101e4325dcac41ee4d0c2af4f965567a7018ab5f49380c7"
+    },
+    {
+      "path": "dist/src/actions/crash-action-executors.js",
+      "sourceSha256": "b90fb53dfe520437aeabe1ee5a773a58002bd2c4b3ec44bd54bc205268f2aa49",
+      "sha256": "b90fb53dfe520437aeabe1ee5a773a58002bd2c4b3ec44bd54bc205268f2aa49"
+    },
+    {
+      "path": "dist/src/actions/crash-action-executors.js.map",
+      "sourceSha256": "54749e519eca0e4baf6a9ee80f5f394a9167a6e923cac3ce0befce259a0dc44e",
+      "sha256": "54749e519eca0e4baf6a9ee80f5f394a9167a6e923cac3ce0befce259a0dc44e"
+    },
+    {
+      "path": "dist/src/actions/named-action-executors.js",
+      "sourceSha256": "dc94497d8ab1417043a81d7edf8b74304c52575d4efebd044e71493113251bed",
+      "sha256": "dc94497d8ab1417043a81d7edf8b74304c52575d4efebd044e71493113251bed"
+    },
+    {
+      "path": "dist/src/actions/named-action-executors.js.map",
+      "sourceSha256": "555dfd7631981f8a2e7899851022af90038cee21b6b20a5856d2f9bed04fb733",
+      "sha256": "555dfd7631981f8a2e7899851022af90038cee21b6b20a5856d2f9bed04fb733"
+    },
+    {
+      "path": "dist/src/composition/definition-compiler.js",
+      "sourceSha256": "ee93af2e5bed5c8e27e85f429e386d6a8de7e8ef468c4d458adadab6bc69e610",
+      "sha256": "ee93af2e5bed5c8e27e85f429e386d6a8de7e8ef468c4d458adadab6bc69e610"
+    },
+    {
+      "path": "dist/src/composition/definition-compiler.js.map",
+      "sourceSha256": "baf7d72e068cea60b5c6c0499105ad37e127582474b962600375a870fab35999",
+      "sha256": "baf7d72e068cea60b5c6c0499105ad37e127582474b962600375a870fab35999"
+    },
+    {
+      "path": "dist/src/runtime/backend-control.js",
+      "sourceSha256": "576484764482a3a718234066a64b6e090e62b9abdbacd983cf7bbcb631f7eeed",
+      "sha256": "576484764482a3a718234066a64b6e090e62b9abdbacd983cf7bbcb631f7eeed"
+    },
+    {
+      "path": "dist/src/runtime/backend-control.js.map",
+      "sourceSha256": "e4e037009434663d7471be73a7a9e05664eb6c48f9373acbb9bfd4c1957e7de4",
+      "sha256": "e4e037009434663d7471be73a7a9e05664eb6c48f9373acbb9bfd4c1957e7de4"
+    },
+    {
+      "path": "dist/src/stacks/process-crash.js",
+      "sourceSha256": "22e380cd2ba144fa099e0313b61a730a8f51c5c5120f1141764c5b6e4ce4dbf8",
+      "sha256": "22e380cd2ba144fa099e0313b61a730a8f51c5c5120f1141764c5b6e4ce4dbf8"
+    },
+    {
+      "path": "dist/src/stacks/process-crash.js.map",
+      "sourceSha256": "029f2e7363259237bfe23f993a2b59ce4495c8a4316b5a3527764b1e0baf4149",
+      "sha256": "029f2e7363259237bfe23f993a2b59ce4495c8a4316b5a3527764b1e0baf4149"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sourceSha256": "16b8cbfd99d48433620e6fad49247d451deb9b0a6e1cb119e09f2c3c5bfb0e8d",
+      "sha256": "0ef967d0a1f7effc94ec55ced04edddb7b3dd1f5fd7aa5e06a32710d75ad44ce"
+    }
+  ]
+}

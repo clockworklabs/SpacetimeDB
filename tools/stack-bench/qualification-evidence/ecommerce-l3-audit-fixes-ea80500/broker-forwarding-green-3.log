@@ -1,0 +1,389 @@
+TAP version 13
+# Subtest: coding result parsing rejects non-object and malformed output
+ok 1 - coding result parsing rejects non-object and malformed output
+  ---
+  duration_ms: 1.7545
+  type: 'test'
+  ...
+# Subtest: provider connection failures resume the exact paid session
+ok 2 - provider connection failures resume the exact paid session
+  ---
+  duration_ms: 5.2542
+  type: 'test'
+  ...
+# Subtest: unpriced receipts prevent capped automatic and operator continuations without losing spend
+ok 3 - unpriced receipts prevent capped automatic and operator continuations without losing spend
+  ---
+  duration_ms: 0.7204
+  type: 'test'
+  ...
+# Subtest: a refused local credential broker is a harness failure and cannot auto-retry unknown cost
+ok 4 - a refused local credential broker is a harness failure and cannot auto-retry unknown cost
+  ---
+  duration_ms: 0.679
+  type: 'test'
+  ...
+# Subtest: a real broker child exit reaches the run result and stops recovery as a harness failure
+ok 5 - a real broker child exit reaches the run result and stops recovery as a harness failure
+  ---
+  duration_ms: 264.6675
+  type: 'test'
+  ...
+# Subtest: throttle waits back off, resume the paid session, and do not spend interruption retries
+ok 6 - throttle waits back off, resume the paid session, and do not spend interruption retries
+  ---
+  duration_ms: 3.1368
+  type: 'test'
+  ...
+# Subtest: provider failure without native identity cannot restart the task
+ok 7 - provider failure without native identity cannot restart the task
+  ---
+  duration_ms: 0.3541
+  type: 'test'
+  ...
+# Subtest: an unbroken throttle stops at the wait budget with a throttle-specific failure
+ok 8 - an unbroken throttle stops at the wait budget with a throttle-specific failure
+  ---
+  duration_ms: 1.6011
+  type: 'test'
+  ...
+# Subtest: operator continuation keeps the action and candidate, persists each charge once, and resumes natively
+ok 9 - operator continuation keeps the action and candidate, persists each charge once, and resumes natively
+  ---
+  duration_ms: 1.7869
+  type: 'test'
+  ...
+# Subtest: persistence failure and rejected native validation retain paid evidence without another invocation
+ok 10 - persistence failure and rejected native validation retain paid evidence without another invocation
+  ---
+  duration_ms: 0.6374
+  type: 'test'
+  ...
+# Subtest: structured transport, permanent request and broker budget failures never enter operator waiting
+ok 11 - structured transport, permanent request and broker budget failures never enter operator waiting
+  ---
+  duration_ms: 0.5591
+  type: 'test'
+  ...
+# Subtest: a CLI-only 429 never authorizes manual waiting without a broker-confirmed rejection
+ok 12 - a CLI-only 429 never authorizes manual waiting without a broker-confirmed rejection
+  ---
+  duration_ms: 0.2497
+  type: 'test'
+  ...
+# Subtest: a bounded coding-session timeout continues from the existing app
+ok 13 - a bounded coding-session timeout continues from the existing app
+  ---
+  duration_ms: 0.2357
+  type: 'test'
+  ...
+# Subtest: the retry loop resumes in place and deducts the failed call from the cost cap
+ok 14 - the retry loop resumes in place and deducts the failed call from the cost cap
+  ---
+  duration_ms: 0.9194
+  type: 'test'
+  ...
+# Subtest: a capped session does not treat a numeric cost as a broker receipt
+ok 15 - a capped session does not treat a numeric cost as a broker receipt
+  ---
+  duration_ms: 1.2797
+  type: 'test'
+  ...
+# Subtest: a non-OOM kill recovers the container without pretending to resume a missing session
+ok 16 - a non-OOM kill recovers the container without pretending to resume a missing session
+  ---
+  duration_ms: 0.7639
+  type: 'test'
+  ...
+# Subtest: stopped-container recovery removes only the exact authenticated lease target
+ok 17 - stopped-container recovery removes only the exact authenticated lease target
+  ---
+  duration_ms: 31.4322
+  type: 'test'
+  ...
+# Subtest: missing-container recovery clears only the authenticated lease target
+ok 18 - missing-container recovery clears only the authenticated lease target
+  ---
+  duration_ms: 17.8459
+  type: 'test'
+  ...
+# Subtest: an invocation that leaves no result makes the session cost unaccounted
+ok 19 - an invocation that leaves no result makes the session cost unaccounted
+  ---
+  duration_ms: 0.5974
+  type: 'test'
+  ...
+# Subtest: credential broker rejects unauthorized and unsupported requests before upstream
+ok 20 - credential broker rejects unauthorized and unsupported requests before upstream
+  ---
+  duration_ms: 46.7217
+  type: 'test'
+  ...
+# Subtest: Anthropic requests preserve the selected capacity tier under a cap
+ok 21 - Anthropic requests preserve the selected capacity tier under a cap
+  ---
+  duration_ms: 36.5566
+  type: 'test'
+  ...
+# Subtest: Anthropic forwards nested remote content and retains unpriced spend
+    # Subtest: image-url-capped
+    ok 1 - image-url-capped
+      ---
+      duration_ms: 21.42
+      type: 'test'
+      ...
+    # Subtest: image-url-uncapped
+    ok 2 - image-url-uncapped
+      ---
+      duration_ms: 22.3299
+      type: 'test'
+      ...
+    # Subtest: document-url-capped
+    ok 3 - document-url-capped
+      ---
+      duration_ms: 23.0736
+      type: 'test'
+      ...
+    # Subtest: document-url-uncapped
+    ok 4 - document-url-uncapped
+      ---
+      duration_ms: 18.0672
+      type: 'test'
+      ...
+    # Subtest: image-file-capped
+    ok 5 - image-file-capped
+      ---
+      duration_ms: 23.5889
+      type: 'test'
+      ...
+    # Subtest: image-file-uncapped
+    ok 6 - image-file-uncapped
+      ---
+      duration_ms: 22.4828
+      type: 'test'
+      ...
+    # Subtest: document-file-capped
+    ok 7 - document-file-capped
+      ---
+      duration_ms: 25.2557
+      type: 'test'
+      ...
+    # Subtest: document-file-uncapped
+    ok 8 - document-file-uncapped
+      ---
+      duration_ms: 20.2789
+      type: 'test'
+      ...
+    1..8
+ok 22 - Anthropic forwards nested remote content and retains unpriced spend
+  ---
+  duration_ms: 179.0915
+  type: 'test'
+  ...
+# Subtest: Anthropic broker forwards server-side features and marks spend it cannot price
+ok 23 - Anthropic broker forwards server-side features and marks spend it cannot price
+  ---
+  duration_ms: 277.1661
+  type: 'test'
+  ...
+# Subtest: credential broker rejects an unauthorized request before its body completes
+ok 24 - credential broker rejects an unauthorized request before its body completes
+  ---
+  duration_ms: 9.8049
+  type: 'test'
+  ...
+# Subtest: credential broker survives a downstream disconnect and settles exact upstream usage
+ok 25 - credential broker survives a downstream disconnect and settles exact upstream usage
+  ---
+  duration_ms: 94.3718
+  type: 'test'
+  ...
+# Subtest: credential broker survives malformed client socket input
+ok 26 - credential broker survives malformed client socket input
+  ---
+  duration_ms: 7.0678
+  type: 'test'
+  ...
+# Subtest: credential broker replaces the session credential for api-key
+ok 27 - credential broker replaces the session credential for api-key
+  ---
+  duration_ms: 4.766
+  type: 'test'
+  ...
+# Subtest: credential broker replaces the session credential for subscription-token
+ok 28 - credential broker replaces the session credential for subscription-token
+  ---
+  duration_ms: 4.5909
+  type: 'test'
+  ...
+# Subtest: credential broker limits body size without truncating authorized sessions at 512 requests
+ok 29 - credential broker limits body size without truncating authorized sessions at 512 requests
+  ---
+  duration_ms: 2522.7244
+  type: 'test'
+  ...
+# Subtest: credential broker enforces model, output token, and session cost limits
+ok 30 - credential broker enforces model, output token, and session cost limits
+  ---
+  duration_ms: 6.4519
+  type: 'test'
+  ...
+# Subtest: credential broker charges reported usage and reserves enough for the next request
+ok 31 - credential broker charges reported usage and reserves enough for the next request
+  ---
+  duration_ms: 35.0651
+  type: 'test'
+  ...
+# Subtest: credential broker clears different concurrent reservations before the next request
+ok 32 - credential broker clears different concurrent reservations before the next request
+  ---
+  duration_ms: 7.6452
+  type: 'test'
+  ...
+# Subtest: credential broker prices repeated compressed streams instead of exhausting the request cap
+ok 33 - credential broker prices repeated compressed streams instead of exhausting the request cap
+  ---
+  duration_ms: 44.4706
+  type: 'test'
+  ...
+# Subtest: credential broker estimates a settled request without exact provider usage
+ok 34 - credential broker estimates a settled request without exact provider usage
+  ---
+  duration_ms: 35.6176
+  type: 'test'
+  ...
+# Subtest: streamed provider usage produces a reconciled campaign-priced receipt
+ok 35 - streamed provider usage produces a reconciled campaign-priced receipt
+  ---
+  duration_ms: 25.8212
+  type: 'test'
+  ...
+# Subtest: campaign pricing is authoritative when CLI pricing differs
+ok 36 - campaign pricing is authoritative when CLI pricing differs
+  ---
+  duration_ms: 0.6973
+  type: 'test'
+  ...
+# Subtest: spend ledgers count unpriced requests consistently and still read version 4
+ok 37 - spend ledgers count unpriced requests consistently and still read version 4
+  ---
+  duration_ms: 27.4847
+  type: 'test'
+  ...
+# Subtest: broker retains cache write classes that the CLI summary combines
+ok 38 - broker retains cache write classes that the CLI summary combines
+  ---
+  duration_ms: 0.4463
+  type: 'test'
+  ...
+# Subtest: missing or incomplete broker ledgers fail closed with a conservative receipt
+ok 39 - missing or incomplete broker ledgers fail closed with a conservative receipt
+  ---
+  duration_ms: 1.2142
+  type: 'test'
+  ...
+# Subtest: receipt reconciliation accepts provider usage that includes CLI-omitted calls
+ok 40 - receipt reconciliation accepts provider usage that includes CLI-omitted calls
+  ---
+  duration_ms: 0.413
+  type: 'test'
+  ...
+# Subtest: receipt reconciliation rejects provider usage below the CLI lower bound
+ok 41 - receipt reconciliation rejects provider usage below the CLI lower bound
+  ---
+  duration_ms: 0.2876
+  type: 'test'
+  ...
+# Subtest: estimated receipts cover both recorders without making missing usage exact
+ok 42 - estimated receipts cover both recorders without making missing usage exact
+  ---
+  duration_ms: 0.5853
+  type: 'test'
+  ...
+# Subtest: receipt reconciliation rejects spend that cannot be reproduced from broker usage
+ok 43 - receipt reconciliation rejects spend that cannot be reproduced from broker usage
+  ---
+  duration_ms: 0.219
+  type: 'test'
+  ...
+# Subtest: credential broker lifecycle removes credentials and retains its spend ledger
+ok 44 - credential broker lifecycle removes credentials and retains its spend ledger
+  ---
+  duration_ms: 247.3298
+  type: 'test'
+  ...
+# Subtest: credential broker diagnostics retain child exit, stderr, and the final ledger
+ok 45 - credential broker diagnostics retain child exit, stderr, and the final ledger
+  ---
+  duration_ms: 239.963
+  type: 'test'
+  ...
+# Subtest: credential broker closes an active request after its parent exits
+ok 46 - credential broker closes an active request after its parent exits
+  ---
+  duration_ms: 420.3428
+  type: 'test'
+  ...
+# Subtest: credential broker shutdown retains settled spend even if its caller later loses the receipt
+ok 47 - credential broker shutdown retains settled spend even if its caller later loses the receipt
+  ---
+  duration_ms: 27.3253
+  type: 'test'
+  ...
+# Subtest: credential broker forces termination and records typed shutdown errors
+ok 48 - credential broker forces termination and records typed shutdown errors
+  ---
+  duration_ms: 2.6183
+  type: 'test'
+  ...
+# Subtest: OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars
+ok 49 - OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars
+  ---
+  duration_ms: 113.9843
+  type: 'test'
+  ...
+# Subtest: broker persists structured quota rejection without recording secret error text
+ok 50 - broker persists structured quota rejection without recording secret error text
+  ---
+  duration_ms: 20.6032
+  type: 'test'
+  ...
+# Subtest: OpenRouter broker freezes routing and records reported cost, not reservation pricing
+ok 51 - OpenRouter broker freezes routing and records reported cost, not reservation pricing
+  ---
+  duration_ms: 189.0839
+  type: 'test'
+  ...
+# Subtest: OpenAI inline screenshots retain input and reserve bounded vision tokens
+ok 52 - OpenAI inline screenshots retain input and reserve bounded vision tokens
+  ---
+  duration_ms: 8.7135
+  type: 'test'
+  ...
+# Subtest: Sol screenshots under a priced-spend cap retain unpriced input without a full-context reservation
+ok 53 - Sol screenshots under a priced-spend cap retain unpriced input without a full-context reservation
+  ---
+  duration_ms: 24.724
+  type: 'test'
+  ...
+# Subtest: output reservations honor API caps without assuming account endpoints enforce them
+ok 54 - output reservations honor API caps without assuming account endpoints enforce them
+  ---
+  duration_ms: 0.5125
+  type: 'test'
+  ...
+# Subtest: a Docker broker treats a missing or stale controller heartbeat as controller loss
+ok 55 - a Docker broker treats a missing or stale controller heartbeat as controller loss
+  ---
+  duration_ms: 1.6791
+  type: 'test'
+  ...
+1..55
+# tests 63
+# suites 0
+# pass 63
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5491.5831

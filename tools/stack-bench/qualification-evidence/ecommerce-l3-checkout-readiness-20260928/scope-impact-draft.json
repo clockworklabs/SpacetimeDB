@@ -1,0 +1,228 @@
+{
+  "status": "draft scope impact only; no qualification claim",
+  "at": "2026-09-28T14:18:48.289Z",
+  "baseCommit": "3943a8eaab4b94d5246e0b6d7c63739feda83294",
+  "reviewedHead": "b58dd7f49a644164f33ca35e1f41d53c230b66df",
+  "candidate": null,
+  "scope": {
+    "path": "tools/stack-bench/local-notes/sol6-four-stack-20260925/sol6-four-stack-qualified-3943a8eaab/l3-checkout-readiness-qualification/scope.json",
+    "sha256": "2fa7faf96d3f2b33250f36eb35fb27b75175ab13293468e400103c7bdc7f6aab",
+    "inputsSha256": "64a73712a43e87cfdd31d1cffcd0db834b8081eb0512b37408692286ed3c722b",
+    "checks": [
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.stock-conservation.202f",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "counts": {
+      "spacetime": 28,
+      "postgres": 30,
+      "mongodb": 28,
+      "convex": 26
+    },
+    "controlsVerified": "Recomputed mutationForRecipe/mutationTargetKeys using current release: exact ID order, all targets within scope, target union equals all 15 checks per stack."
+  },
+  "sameScenarioOwners": [
+    {
+      "source": "scenarios/01-duplicate-checkout.json",
+      "keys": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ]
+    },
+    {
+      "source": "scenarios/01-warehouse-admin-staff.json",
+      "keys": [
+        "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+        "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+      ]
+    },
+    {
+      "source": "scenarios/02-strengthened.json",
+      "keys": [
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a"
+      ]
+    },
+    {
+      "source": "scenarios/mixed-operation-history.json",
+      "keys": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ]
+    },
+    {
+      "source": "scenarios/progression-checkout-crash.json",
+      "keys": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      ]
+    },
+    {
+      "source": "scenarios/progression-faceted-filters.json",
+      "keys": [
+        "ecommerce.progression.faceted-search.faceted-search.401a"
+      ]
+    },
+    {
+      "source": "scenarios/progression-faceted-pagination.json",
+      "keys": [
+        "ecommerce.progression.faceted-search.faceted-search.402a"
+      ]
+    },
+    {
+      "source": "scenarios/progression-search-ordering.json",
+      "keys": [
+        "ecommerce.spec.search-ordering.search-ordering.402b"
+      ]
+    }
+  ],
+  "sharedConsumers": {
+    "warehouseTotal": [
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "warehouseInventory": [
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+    ],
+    "namedInputReachable": 34,
+    "namedInputRetained": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.review-eligibility.108a",
+      "ecommerce.spec.access-control.review-eligibility.108b",
+      "ecommerce.spec.live-state.rating.6c",
+      "ecommerce.spec.transactional-integrity.unique-review.6b",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.returns-pricing.refund-accounting.203a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.feature.cart-checkout.cart.4d",
+      "ecommerce.spec.live-state.open-list.902a",
+      "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+      "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+      "ecommerce.inventory-operations.shipping-accounting.202e",
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b"
+    ],
+    "crash": [
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+    ]
+  },
+  "conclusion": "15 replacement checks and 112 defects are the minimal current planned closure: 12 same-scenario owners, plus shared numeric 2c and named-input representatives 204a/202a. No missing owner found. 97 checks remain candidates for validated reuse, including already qualified b58 catalog ranking 2b/2c.",
+  "sourceSnapshot": [
+    {
+      "path": "tools/stack-bench/container/broker-protocols.ts",
+      "sha256": "bc7890b26ab4bd21da63cc8ac1e2fccdef3eacbaecd99b1caaea09b042641d08"
+    },
+    {
+      "path": "tools/stack-bench/container/credential-broker.ts",
+      "sha256": "982caf9b8e032a0e83e4bc65aa9413db6c1d3960e2013c0230e247630dfb7287"
+    },
+    {
+      "path": "tools/stack-bench/dashboard/check-guide-steps.ts",
+      "sha256": "931fa438e048f76b8205112b46c6cd9c292d9e6c94faf98dc279d15ef5594599"
+    },
+    {
+      "path": "tools/stack-bench/grader/grade.ts",
+      "sha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/action-catalog.ts",
+      "sha256": "22f5d0bbe5d96a5df766ea9e4f478b383c082c89dbec272ed054d1dbad5ed230"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/actor-action-runtime.ts",
+      "sha256": "caa6f983f7321acede15c18d6536153a8b0098072a84e6bb6d4de98d50399a42"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/browser-action-executors.ts",
+      "sha256": "a71a7b2d936a213b6ace91de9af610dcdc78aed7e31a436b4cc8bc6c1f4ddc2e"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/crash-action-executors.ts",
+      "sha256": "40d0d16e2eb04c8adc1e501ffaccd7b09ee3d92d7bafbc7b150efde76f3d600a"
+    },
+    {
+      "path": "tools/stack-bench/src/actions/named-action-executors.ts",
+      "sha256": "a4248f6311f9cf5fa0f139ce2ad3d045f58aacdad4191a96915cd766dabb654d"
+    },
+    {
+      "path": "tools/stack-bench/src/composition/definition-compiler.ts",
+      "sha256": "58c301af193aa4f3b3f6ffd8bb1774a81423a0db947438fc3982be1705d91c40"
+    },
+    {
+      "path": "tools/stack-bench/src/runtime/backend-control.ts",
+      "sha256": "40e80f8745991d887bef1d408d9b025a98566301d9053357e9e2b36567527531"
+    },
+    {
+      "path": "tools/stack-bench/src/stacks/process-crash.ts",
+      "sha256": "96b7850a707997d7eefbb276002eb7b4c1e4f67e35638240e31157d8c339aaf2"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "sha256": "4933df77596f6249c6342da01959d44b1fcd599d646e4df174361595082de775"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "sha256": "fb7ec9cf42565d1f607f7433cb2cec9f9e682b421121f59b202823a78199ac1c"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-strengthened.json",
+      "sha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "sha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "sha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "sha256": "95ced495d967609e53a4c69193552a1d6170e5e6f6ba57f621b0a6bc495c1ce3"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "sha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "sha256": "ff5d5db9f1a5820ead5b991cc31e5dd9346776702e94a678c9bd03cd68ab7aa3"
+    }
+  ],
+  "unchangedInputs": "git diff 3943a8eaab for reference-apps, ecommerce contracts, recipes, fixtures and conditions is empty. Existing task text, fixtures and control definitions are not changed by this work.",
+  "accounting": "Broker pricing changes only reservation/usage settlement. No model call is used by fixed-reference qualification. These changes need their separate broker behavioral evidence; they add no ecommerce check owner.",
+  "limits": [
+    "STOP boundary implementation is unfinished. Only 910a/b ownership is confirmed; this note does not approve the pending crash receipt logic.",
+    "Snapshot hashes describe the review time only. Freeze final source, emitted JS, image and scope after STOP evidence passes.",
+    "Named-input waiting reaches 34 checks; 30 retained ready-attribute consumers require explicit source/control reuse proof. Follow-on review pending.",
+    "Exact executable equivalence mappings, current artifact hashes, unchanged selected check identities and normal validator acceptance remain required before promotion. No historical app results are relabeled."
+  ]
+}

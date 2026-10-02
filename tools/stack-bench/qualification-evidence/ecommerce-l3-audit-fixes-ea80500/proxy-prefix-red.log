@@ -1,0 +1,29 @@
+TAP version 13
+# Subtest: HTTP privacy fragments do not become completed source or confirmed writes
+not ok 1 - HTTP privacy fragments do not become completed source or confirmed writes
+  ---
+  duration_ms: 1615.7691
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\transport-cache.integration.js:424:1'
+  failureType: 'testCodeFailure'
+  error: 'transport evidence is incomplete; absence cannot be established (byte-limit losses: 7; body-read failures: 0; unsupported streams: 0; pending bodies: 0; navigation interruptions: 0; retained bytes: 7602256)'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ActionInconclusive'
+  stack: |-
+    inconclusive (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/actor-action-runtime.js:11:11)
+    ReceivedTransport.contains (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/grader/transport-frames.js:98:13)
+    Actor.wasSent (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/grader/grade.js:390:38)
+    TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/transport-cache.integration.js:488:24)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2439.6906

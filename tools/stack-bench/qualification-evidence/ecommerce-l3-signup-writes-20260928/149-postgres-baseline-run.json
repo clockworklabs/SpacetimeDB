@@ -1,0 +1,983 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-postgres-run408-20260928045024-38beaebd",
+  "attempt": {
+    "id": "ecommerce-postgres-run408-20260928045024-38beaebd",
+    "parentId": "reference-live-postgres-20260928045020-31"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:50:31.732Z",
+    "completedAt": "2026-09-28T04:58:22.566Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null,
+      "version": "1.6.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "postgres",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-postgres-run408-20260928045024-38beaebd",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "runIndex": 408,
+      "ownerPid": 97,
+      "createdAt": "2026-09-28T04:50:24.126Z",
+      "state": "released",
+      "resources": {
+        "serverUri": null,
+        "database": "app_ecom_run408",
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-66ae7b19c05dce3f-backend",
+          "id": "13f84bdc05c0bd12d8f1fa5066c90de8bb3567ea0866b3e5556450f3e59f0edf",
+          "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+          "owned": true,
+          "networkMode": "bc5b3ae48d0b67c1b0a2e66aebc28c23e8c4b982ba15452d40b74d4132f4bfbc",
+          "running": false,
+          "removedAt": "2026-09-28T04:58:24.450Z"
+        },
+        "buildContainer": {
+          "name": "sb-66ae7b19c05dce3f-build",
+          "id": "30c7bfe8d0a7b3b984173592956e350b71cf1a386c23300d4c99f70b447484ec",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:13f84bdc05c0bd12d8f1fa5066c90de8bb3567ea0866b3e5556450f3e59f0edf",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T04:58:23.396Z",
+          "removedAt": "2026-09-28T04:58:23.648Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/efc85bef0665305617e44e4ba6566f4eb04139e23ea57112c343ed5486d0bf4a.lock.json",
+            "key": "port:6709",
+            "digest": "efc85bef0665305617e44e4ba6566f4eb04139e23ea57112c343ed5486d0bf4a",
+            "acquiredAt": "2026-09-28T04:50:24.181Z",
+            "releasedAt": "2026-09-28T04:58:25.311Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/7304da4d66a1fd3f7fb290973d6c4130bbe1303ccfc51f562b3ca092ca9f0105.lock.json",
+            "key": "port:6981",
+            "digest": "7304da4d66a1fd3f7fb290973d6c4130bbe1303ccfc51f562b3ca092ca9f0105",
+            "acquiredAt": "2026-09-28T04:50:24.181Z",
+            "releasedAt": "2026-09-28T04:58:25.311Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/49bedd298fa208df25daf0dbf150cf1f380952f81186917b9340ce8a163c93c0.lock.json",
+            "key": "slot:ecommerce:postgres:run408",
+            "digest": "49bedd298fa208df25daf0dbf150cf1f380952f81186917b9340ce8a163c93c0",
+            "acquiredAt": "2026-09-28T04:50:24.181Z",
+            "releasedAt": "2026-09-28T04:58:25.311Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/bf710eaf86546edcb1495069189a31eccb693e6d771af62667fdba6db5ede1f2.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-VIfJ4t/app",
+            "digest": "bf710eaf86546edcb1495069189a31eccb693e6d771af62667fdba6db5ede1f2",
+            "acquiredAt": "2026-09-28T04:50:24.181Z",
+            "releasedAt": "2026-09-28T04:58:25.311Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-66ae7b19c05dce3f-network",
+          "id": "bc5b3ae48d0b67c1b0a2e66aebc28c23e8c4b982ba15452d40b74d4132f4bfbc",
+          "namespaceContainerId": "13f84bdc05c0bd12d8f1fa5066c90de8bb3567ea0866b3e5556450f3e59f0edf",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.1",
+            "10.0.0.9"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.11",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "0c23fa1de814cfe58f9fa6eb06abae3a951b786d5419b246ada359f40cd5f959",
+          "firewallInstalledAt": "2026-09-28T04:50:27.360Z",
+          "ownAddresses": [
+            "10.0.0.10"
+          ],
+          "namespaceStartedAt": "2026-09-28T04:50:25.998484602Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-66ae7b19c05dce3f-browser",
+          "id": "ce3282abc4361eaab5ba93719c2839fd4ac532c39415ba829c3d79b175239151",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:13f84bdc05c0bd12d8f1fa5066c90de8bb3567ea0866b3e5556450f3e59f0edf",
+          "running": false,
+          "removedAt": "2026-09-28T04:58:22.971Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T04:58:25.246Z",
+      "releasedAt": "2026-09-28T04:58:25.311Z",
+      "ownership": {
+        "markerSha256": "a81c180b682d1261d47e44aee3a30a9345ea44b3026762291d3594d01d97b55b"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/postgres.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [
+          3
+        ],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "graded": true,
+        "score": 22,
+        "max": 22,
+        "regression": null,
+        "selection": {
+          "schemaVersion": 3,
+          "recipe": {
+            "id": "ecommerce.progression-catalog",
+            "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+          },
+          "requested": {
+            "features": [
+              "ecommerce.feature.accounts",
+              "ecommerce.feature.cart",
+              "ecommerce.feature.catalog-discovery",
+              "ecommerce.feature.catalog-items",
+              "ecommerce.feature.checkout",
+              "ecommerce.feature.purchasing",
+              "ecommerce.feature.reviews",
+              "ecommerce.feature.warehouse-admin",
+              "ecommerce.l2.inventory-dashboard",
+              "ecommerce.l2.order-cancellation-features",
+              "ecommerce.l2.recommendations",
+              "ecommerce.l2.sales-dashboard",
+              "ecommerce.l2.stock-transfers-features",
+              "ecommerce.l3.scheduled-restocks-features",
+              "ecommerce.progression.catalog-management",
+              "ecommerce.progression.customer-profile",
+              "ecommerce.progression.faceted-search",
+              "ecommerce.progression.fulfilment-queue",
+              "ecommerce.progression.managed-support",
+              "ecommerce.progression.notification-preferences",
+              "ecommerce.progression.promotion-rules",
+              "ecommerce.progression.staff-access",
+              "ecommerce.progression.staff-roles",
+              "ecommerce.progression.stock-alerts",
+              "ecommerce.progression.support-history",
+              "ecommerce.progression.support-intake",
+              "ecommerce.progression.support-triage"
+            ],
+            "specifications": {
+              "requested": [],
+              "expected": [
+                "ecommerce.l3.deferred-access-specifications",
+                "ecommerce.l3.deferred-integrity-specifications",
+                "ecommerce.l3.server-time-specifications",
+                "ecommerce.progression.cancellation-accounting-specifications",
+                "ecommerce.progression.inventory-conservation-specifications",
+                "ecommerce.progression.operations-access-specifications",
+                "ecommerce.progression.review-access-specifications",
+                "ecommerce.spec.access-control",
+                "ecommerce.spec.concurrency-safety",
+                "ecommerce.spec.external-data-sync",
+                "ecommerce.spec.live-state",
+                "ecommerce.spec.search-ordering",
+                "ecommerce.spec.state-durability",
+                "ecommerce.spec.transactional-integrity"
+              ],
+              "observed": []
+            },
+            "checks": [
+              "ecommerce.feature.cart-checkout.cart.4a",
+              "ecommerce.feature.cart-checkout.cart.4d",
+              "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "ecommerce.inventory-operations.warehouse-transfer.2a",
+              "ecommerce.l3.deferred-integrity.exactly-once.311a",
+              "ecommerce.l3.server-time.server-time.312a",
+              "ecommerce.operations-access.operator-authorization.201a",
+              "ecommerce.spec.access-control.purchase-session.101a",
+              "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "ecommerce.spec.concurrency-safety.restock-race.202a",
+              "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+            ]
+          },
+          "features": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "specifications": {
+            "requested": [],
+            "expected": [
+              "ecommerce.l3.deferred-access-specifications",
+              "ecommerce.l3.deferred-integrity-specifications",
+              "ecommerce.l3.server-time-specifications",
+              "ecommerce.progression.cancellation-accounting-specifications",
+              "ecommerce.progression.inventory-conservation-specifications",
+              "ecommerce.progression.operations-access-specifications",
+              "ecommerce.progression.review-access-specifications",
+              "ecommerce.spec.access-control",
+              "ecommerce.spec.concurrency-safety",
+              "ecommerce.spec.external-data-sync",
+              "ecommerce.spec.live-state",
+              "ecommerce.spec.search-ordering",
+              "ecommerce.spec.state-durability",
+              "ecommerce.spec.transactional-integrity"
+            ],
+            "observed": []
+          },
+          "promptPacks": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "scoredChecks": [
+            {
+              "category": "feature",
+              "checkGroupId": "admin-write",
+              "criterionId": "103a",
+              "description": "an administrator can restock a warehouse",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "packId": "ecommerce.feature.warehouse-admin",
+              "points": 1,
+              "role": "feature",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "treatment": "requested"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "warehouse-transfer",
+              "criterionId": "2a",
+              "description": "a transfer decreases the source, increases the destination, and preserves the item's exact total",
+              "executionId": "selected-source-047",
+              "featureId": 2,
+              "packId": "ecommerce.l2.stock-transfers-features",
+              "points": 3,
+              "role": "feature",
+              "source": "scenarios/02-strengthened.json",
+              "stableKey": "ecommerce.inventory-operations.warehouse-transfer.2a",
+              "stablePackId": "ecommerce.inventory-operations",
+              "treatment": "requested"
+            },
+            {
+              "category": "feature",
+              "checkGroupId": "cart",
+              "criterionId": "4a",
+              "description": "adding the same item twice raises its quantity instead of adding a second line",
+              "executionId": "selected-source-068",
+              "featureId": 4,
+              "packId": "ecommerce.feature.cart",
+              "points": 1,
+              "role": "feature",
+              "source": "scenarios/progression-cart-checkout.json",
+              "stableKey": "ecommerce.feature.cart-checkout.cart.4a",
+              "stablePackId": "ecommerce.feature.cart-checkout",
+              "treatment": "requested"
+            },
+            {
+              "category": "feature",
+              "checkGroupId": "cart",
+              "criterionId": "4d",
+              "description": "checkout creates one order, reduces stock, and empties the cart",
+              "executionId": "selected-source-068",
+              "featureId": 4,
+              "packId": "ecommerce.feature.checkout",
+              "points": 2,
+              "role": "feature",
+              "source": "scenarios/progression-cart-checkout.json",
+              "stableKey": "ecommerce.feature.cart-checkout.cart.4d",
+              "stablePackId": "ecommerce.feature.cart-checkout",
+              "treatment": "requested"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "warehouse-write-boundary",
+              "criterionId": "103b",
+              "description": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.accounts",
+                "ecommerce.feature.warehouse-admin"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "purchase-session",
+              "criterionId": "101a",
+              "description": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+              "executionId": "selected-source-022",
+              "featureId": 101,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-purchase-session.json",
+              "stableKey": "ecommerce.spec.access-control.purchase-session.101a",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "restock-race",
+              "criterionId": "202a",
+              "description": "restocking during purchases preserves stock, complete buyer orders and their warehouse allocations",
+              "executionId": "selected-source-023",
+              "featureId": 202,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.concurrency-safety",
+              "points": 1,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing",
+                "ecommerce.feature.warehouse-admin"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-restock-race.json",
+              "stableKey": "ecommerce.spec.concurrency-safety.restock-race.202a",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "operator-authorization",
+              "criterionId": "201a",
+              "description": "the server refuses a customer's direct transfer and neither warehouse nor the item total changes",
+              "executionId": "selected-source-047",
+              "featureId": 201,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.progression.operations-access-specifications",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.l2.stock-transfers-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/02-strengthened.json",
+              "stableKey": "ecommerce.operations-access.operator-authorization.201a",
+              "stablePackId": "ecommerce.operations-access",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "stock-transfer-overdraw",
+              "criterionId": "2c",
+              "description": "a transfer that would overdraw a warehouse is refused and changes neither warehouse nor the item total",
+              "executionId": "selected-source-048",
+              "featureId": 2,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.transactional-integrity",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.l2.stock-transfers-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/02-transfer-overdraw.json",
+              "stableKey": "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "exactly-once",
+              "criterionId": "311a",
+              "description": "restart cannot replay a completed restock",
+              "executionId": "selected-source-052",
+              "featureId": 311,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.l3.deferred-integrity-specifications",
+              "points": 3,
+              "requiresFeatures": [
+                "ecommerce.l3.scheduled-restocks-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/03-deferred-integrity.json",
+              "stableKey": "ecommerce.l3.deferred-integrity.exactly-once.311a",
+              "stablePackId": "ecommerce.l3.deferred-integrity",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "server-time",
+              "criterionId": "312a",
+              "description": "restart preserves the due time and the work later completes",
+              "executionId": "selected-source-058",
+              "featureId": 312,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.l3.server-time-specifications",
+              "points": 3,
+              "requiresFeatures": [
+                "ecommerce.l3.scheduled-restocks-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/03-server-time.json",
+              "stableKey": "ecommerce.l3.server-time.server-time.312a",
+              "stablePackId": "ecommerce.l3.server-time",
+              "treatment": "expected"
+            }
+          ],
+          "checks": [
+            {
+              "category": "feature",
+              "checkGroupId": "admin-write",
+              "criterionId": "103a",
+              "description": "an administrator can restock a warehouse",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "packId": "ecommerce.feature.warehouse-admin",
+              "points": 1,
+              "role": "feature",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "treatment": "requested"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "warehouse-transfer",
+              "criterionId": "2a",
+              "description": "a transfer decreases the source, increases the destination, and preserves the item's exact total",
+              "executionId": "selected-source-047",
+              "featureId": 2,
+              "packId": "ecommerce.l2.stock-transfers-features",
+              "points": 3,
+              "role": "feature",
+              "source": "scenarios/02-strengthened.json",
+              "stableKey": "ecommerce.inventory-operations.warehouse-transfer.2a",
+              "stablePackId": "ecommerce.inventory-operations",
+              "treatment": "requested"
+            },
+            {
+              "category": "feature",
+              "checkGroupId": "cart",
+              "criterionId": "4a",
+              "description": "adding the same item twice raises its quantity instead of adding a second line",
+              "executionId": "selected-source-068",
+              "featureId": 4,
+              "packId": "ecommerce.feature.cart",
+              "points": 1,
+              "role": "feature",
+              "source": "scenarios/progression-cart-checkout.json",
+              "stableKey": "ecommerce.feature.cart-checkout.cart.4a",
+              "stablePackId": "ecommerce.feature.cart-checkout",
+              "treatment": "requested"
+            },
+            {
+              "category": "feature",
+              "checkGroupId": "cart",
+              "criterionId": "4d",
+              "description": "checkout creates one order, reduces stock, and empties the cart",
+              "executionId": "selected-source-068",
+              "featureId": 4,
+              "packId": "ecommerce.feature.checkout",
+              "points": 2,
+              "role": "feature",
+              "source": "scenarios/progression-cart-checkout.json",
+              "stableKey": "ecommerce.feature.cart-checkout.cart.4d",
+              "stablePackId": "ecommerce.feature.cart-checkout",
+              "treatment": "requested"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "warehouse-write-boundary",
+              "criterionId": "103b",
+              "description": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.accounts",
+                "ecommerce.feature.warehouse-admin"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "purchase-session",
+              "criterionId": "101a",
+              "description": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+              "executionId": "selected-source-022",
+              "featureId": 101,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-purchase-session.json",
+              "stableKey": "ecommerce.spec.access-control.purchase-session.101a",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "restock-race",
+              "criterionId": "202a",
+              "description": "restocking during purchases preserves stock, complete buyer orders and their warehouse allocations",
+              "executionId": "selected-source-023",
+              "featureId": 202,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.concurrency-safety",
+              "points": 1,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing",
+                "ecommerce.feature.warehouse-admin"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-restock-race.json",
+              "stableKey": "ecommerce.spec.concurrency-safety.restock-race.202a",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "operator-authorization",
+              "criterionId": "201a",
+              "description": "the server refuses a customer's direct transfer and neither warehouse nor the item total changes",
+              "executionId": "selected-source-047",
+              "featureId": 201,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.progression.operations-access-specifications",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.l2.stock-transfers-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/02-strengthened.json",
+              "stableKey": "ecommerce.operations-access.operator-authorization.201a",
+              "stablePackId": "ecommerce.operations-access",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "stock-transfer-overdraw",
+              "criterionId": "2c",
+              "description": "a transfer that would overdraw a warehouse is refused and changes neither warehouse nor the item total",
+              "executionId": "selected-source-048",
+              "featureId": 2,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.transactional-integrity",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.l2.stock-transfers-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/02-transfer-overdraw.json",
+              "stableKey": "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "exactly-once",
+              "criterionId": "311a",
+              "description": "restart cannot replay a completed restock",
+              "executionId": "selected-source-052",
+              "featureId": 311,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.l3.deferred-integrity-specifications",
+              "points": 3,
+              "requiresFeatures": [
+                "ecommerce.l3.scheduled-restocks-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/03-deferred-integrity.json",
+              "stableKey": "ecommerce.l3.deferred-integrity.exactly-once.311a",
+              "stablePackId": "ecommerce.l3.deferred-integrity",
+              "treatment": "expected"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "server-time",
+              "criterionId": "312a",
+              "description": "restart preserves the due time and the work later completes",
+              "executionId": "selected-source-058",
+              "featureId": 312,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.l3.server-time-specifications",
+              "points": 3,
+              "requiresFeatures": [
+                "ecommerce.l3.scheduled-restocks-features"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/03-server-time.json",
+              "stableKey": "ecommerce.l3.server-time.server-time.312a",
+              "stablePackId": "ecommerce.l3.server-time",
+              "treatment": "expected"
+            }
+          ],
+          "observedChecks": [],
+          "scoredPoints": 22,
+          "taskSelectionSha256": "d87ed8644ee94d049dd4719cff243cbb5287f96b1fbfd93a2f4bb05704024cdc",
+          "sha256": "e821f45fe1a917cc4a124ff600e5f8cd3e37a7dedfeaaae60956ed2b4d0e478f",
+          "attemptedChecks": [
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "reportedChecks": [
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "ecommerce.spec.access-control.purchase-session.101a",
+            "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.operations-access.operator-authorization.201a",
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+            "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "ecommerce.l3.server-time.server-time.312a",
+            "ecommerce.feature.cart-checkout.cart.4a",
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "notRun": []
+        },
+        "firstBuild": {
+          "score": 22,
+          "max": 22,
+          "regression": null,
+          "contractPass": true,
+          "outcome": {
+            "kind": "passed",
+            "phase": "grading",
+            "reason": null,
+            "appFailures": [],
+            "inconclusive": [],
+            "harnessFailures": []
+          },
+          "source": {
+            "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+            "files": 30
+          },
+          "missed": []
+        },
+        "buildCostUsd": 0,
+        "buildSessions": [
+          {
+            "sessionId": "reference-postgres-1790571045426",
+            "costUsd": 0,
+            "durationMs": 13494,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-postgres-1790571045426"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "contractPass": true,
+        "code": {
+          "serverLoc": 2608,
+          "serverFiles": 11,
+          "totalLoc": 4526,
+          "totalFiles": 19,
+          "runtimeDeps": 10
+        },
+        "repairCostUsd": 0,
+        "repairSessions": [],
+        "repairHistory": [],
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 13494,
+          "activeDurationMs": 13494,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "tokens": 0,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheWrite": 0,
+          "cacheRead": 0
+        },
+        "turns": 0,
+        "promptBytes": 0,
+        "tokensPerTurn": null,
+        "thinking": null,
+        "repairs": 0,
+        "repair": {
+          "status": "not-needed",
+          "limit": 0,
+          "used": 0,
+          "stallLimitRounds": 3,
+          "stopReason": "not-needed"
+        },
+        "checkpoint": {
+          "artifact": "level-l3-checkpoint.json",
+          "directory": "level-l3-source",
+          "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+          "files": 30
+        },
+        "stalled": false,
+        "regressed": false,
+        "outcome": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "durationSec": 471
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "totals": {
+      "score": 22,
+      "max": 22,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 13494,
+      "durationSec": 471,
+      "ungraded": []
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "grading",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": [],
+      "levels": {
+        "3": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        }
+      }
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.concurrency-safety.restock-race.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a",
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+        "ecommerce.l3.deferred-integrity.exactly-once.311a",
+        "ecommerce.l3.server-time.server-time.312a",
+        "ecommerce.feature.cart-checkout.cart.4a",
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:6981"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

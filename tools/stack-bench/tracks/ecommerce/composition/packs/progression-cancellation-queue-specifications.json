@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.cancellation-queue-specifications",
+  "stableId": "ecommerce.returns-pricing",
+  "moduleType": "specification",
+  "title": "Cancellation and fulfilment",
+  "description": "Cancellation leaves the live queue and remains consistent with shipping.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-server-call", "database-observation", "concurrent-actors"],
+  "evidence": ["browser-observation", "database-observation", "concurrent-outcome"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 90000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/modular/cancellation-queue.md", "order": 2045, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "queue-removal", "stableId": "cancellation-and-return", "source": "scenarios/02-cancellation-queue.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue", "ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] }
+  ]
+}

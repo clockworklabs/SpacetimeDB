@@ -1,0 +1,187 @@
+{
+  "kind": "scoped_cleanup_verification",
+  "rows": [
+    {
+      "stack": "spacetime",
+      "image": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+      "reportSha256": "f108017a151aad19d6e0afa3eaf9b8d3bf5ae7e124b43566f2427c59674093ea",
+      "releasedLeases": [
+        "ecommerce-spacetime-run60-20260927161243-5e71a68a",
+        "ecommerce-spacetime-run60-20260927162804-ccb9dc09",
+        "ecommerce-spacetime-run61-20260927162804-a73fe3bf",
+        "ecommerce-spacetime-run62-20260927162804-43a8105f"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "postgres",
+      "image": "sha256:a079e53f7ba298804d0e79185cf903e83e110771fd3cfff326113969ffaf5d0d",
+      "reportSha256": "2cd4f9b5d2ef4e0085f4c060c0281f2d310155a15bed41109359fcbd5aa51504",
+      "releasedLeases": [
+        "ecommerce-postgres-run64-20260927151922-0d90dc78",
+        "ecommerce-postgres-run64-20260927153001-6bdd91c8",
+        "ecommerce-postgres-run65-20260927153001-21747751",
+        "ecommerce-postgres-run66-20260927153001-0f46abe3"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "mongodb",
+      "image": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+      "reportSha256": "46f0c2ed442cade8142d0404b3a0f3ff8e4e16e2c4ff9153f80aae8309c1cee5",
+      "releasedLeases": [
+        "ecommerce-mongodb-run68-20260927161244-145ee53a",
+        "ecommerce-mongodb-run68-20260927162330-960b5bd3",
+        "ecommerce-mongodb-run69-20260927162330-cd1423ff",
+        "ecommerce-mongodb-run70-20260927162330-01611ee0"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "convex",
+      "image": "sha256:a079e53f7ba298804d0e79185cf903e83e110771fd3cfff326113969ffaf5d0d",
+      "reportSha256": "e1d367d3c57a9880d83bd0ad44424ed2373715ff3f921d642c5c85467ffdb235",
+      "releasedLeases": [
+        "ecommerce-convex-run72-20260927151926-efea427d",
+        "ecommerce-convex-run72-20260927153152-e1abd3f4",
+        "ecommerce-convex-run73-20260927153152-146e12ef",
+        "ecommerce-convex-run74-20260927153152-d4a465a3"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "spacetime",
+      "image": "sha256:c39b77a16cc38daaad89f2acfd2207cf9368588188aed9a0f235a1730a08c7d5",
+      "reportSha256": "c672f7c24ce611cd1235e97e688c334020a5392881fbc48b09a4e88dc8d28e24",
+      "releasedLeases": [
+        "ecommerce-spacetime-run100-20260927181132-e28faeab",
+        "ecommerce-spacetime-run100-20260927181844-a56ca024",
+        "ecommerce-spacetime-run101-20260927181844-4128b138",
+        "ecommerce-spacetime-run102-20260927181843-3af04522"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "postgres",
+      "image": "sha256:c39b77a16cc38daaad89f2acfd2207cf9368588188aed9a0f235a1730a08c7d5",
+      "reportSha256": "ee4647ef1fd5220de7032d64f0b48ea9128077192a66a6181247ddc1883f08f0",
+      "releasedLeases": [
+        "ecommerce-postgres-run108-20260927181133-cec6b3a9",
+        "ecommerce-postgres-run108-20260927181556-e2a8a887",
+        "ecommerce-postgres-run109-20260927181556-60ec2283",
+        "ecommerce-postgres-run110-20260927181556-1e3ae047"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "mongodb",
+      "image": "sha256:c39b77a16cc38daaad89f2acfd2207cf9368588188aed9a0f235a1730a08c7d5",
+      "reportSha256": "92f3114ac287e3e9c1c8e3cdda193729d872372c840fa999c5135ca4e8d81003",
+      "releasedLeases": [
+        "ecommerce-mongodb-run116-20260927181134-bf0ec8c1",
+        "ecommerce-mongodb-run116-20260927181608-ad1f4ed6",
+        "ecommerce-mongodb-run117-20260927181608-9d471da9",
+        "ecommerce-mongodb-run118-20260927181608-3e0375ec"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "convex",
+      "image": "sha256:c39b77a16cc38daaad89f2acfd2207cf9368588188aed9a0f235a1730a08c7d5",
+      "reportSha256": "6f396ab7fded12bb05aed3400906d02abe6293ecd0a7b279b8b66afb539cd36d",
+      "releasedLeases": [
+        "ecommerce-convex-run124-20260927181136-0ceb7a07",
+        "ecommerce-convex-run124-20260927181703-72a100fd",
+        "ecommerce-convex-run125-20260927181703-bc02bdc6",
+        "ecommerce-convex-run126-20260927181704-480ef985"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "spacetime",
+      "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+      "reportSha256": "97cd4dca73a1df2be8897a7ecddc32cb173e4f090d3337dcf57d8db0304e59c1",
+      "releasedLeases": [
+        "ecommerce-spacetime-run140-20260927185155-8fcd831e",
+        "ecommerce-spacetime-run140-20260927185510-e009a0df",
+        "ecommerce-spacetime-run141-20260927185510-9002b5ae",
+        "ecommerce-spacetime-run142-20260927185510-fe532bad"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "postgres",
+      "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+      "reportSha256": "e246c40929afafa34732b745a261de7c1b3d26a9349df2c1ab5aab7816621ec7",
+      "releasedLeases": [
+        "ecommerce-postgres-run148-20260927185157-b345cad6",
+        "ecommerce-postgres-run148-20260927185401-753819fb",
+        "ecommerce-postgres-run149-20260927185401-148d7145",
+        "ecommerce-postgres-run150-20260927185401-929c3a9b"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "mongodb",
+      "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+      "reportSha256": "909353cfb8795f26b59a67e5376910f90dbbd9a71a1d46e55d2379b4fc7c2312",
+      "releasedLeases": [
+        "ecommerce-mongodb-run156-20260927185158-816fb5c8",
+        "ecommerce-mongodb-run156-20260927185415-441c5c65",
+        "ecommerce-mongodb-run157-20260927185415-c3fc3eba",
+        "ecommerce-mongodb-run158-20260927185415-8465ac27"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    },
+    {
+      "stack": "convex",
+      "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+      "reportSha256": "34fe5b3c6e1e272ae01242de9532ed1e6df64cbca150ec4aae80901967c8d512",
+      "releasedLeases": [
+        "ecommerce-convex-run164-20260927185200-15829488",
+        "ecommerce-convex-run164-20260927185442-17f7835c",
+        "ecommerce-convex-run165-20260927185442-32c5d528",
+        "ecommerce-convex-run166-20260927185442-e8f76711"
+      ],
+      "remainingOwnedResources": 0,
+      "locksReleased": true
+    }
+  ],
+  "null": {
+    "image": "sha256:7c31bbcb35577c3b894c084491a8c638bfcc7dc1225d31cd9097bdbec9058fb1",
+    "exitCode": 0,
+    "reportSha256": "57e7ba0d3937a3e4554743a2e96fb299851b76abfcff408f4fa520b35d18dfa6"
+  },
+  "freshNull": [
+    {
+      "generation": "privacy9",
+      "image": "sha256:c39b77a16cc38daaad89f2acfd2207cf9368588188aed9a0f235a1730a08c7d5",
+      "exitCode": 0,
+      "reportSha256": "5d6b05d8683498b67f6eb95a790fe776aabb4c87401aa80da4257917ab77cab0"
+    },
+    {
+      "generation": "response1",
+      "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+      "exitCode": 0,
+      "reportSha256": "85aafc97e77e5c79ae9e3323d5eca086aa2a6c6f57a3f8e45ce4917b5b9f90d2"
+    }
+  ],
+  "native": {
+    "image": "sha256:8ab84965ad52561b203a7bab06d1020c3b3b434a061657ad5a94f923ad17b10c",
+    "reportSha256": "d28d157d5c40cf8cbe7216e0f473641bf2480bc3b09e749f17b6ace73a608069",
+    "groups": 5,
+    "remainingOwnedResources": 0
+  },
+  "method": "Collector checks released leases, actual lock paths and absence of owned resource IDs. Full raw leases and Docker inventories stay private."
+}

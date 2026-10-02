@@ -18,7 +18,7 @@ Generated bindings convert snake_case names to camelCase, including row fields: 
 ## React: main.tsx
 
 ```typescript
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';
@@ -30,6 +30,7 @@ function Root() {
     DbConnection.builder()
       .withUri(SPACETIMEDB_URI)
       .withDatabaseName(MODULE_NAME)
+      // Reuse the token issued on the previous connection.
       .withToken(localStorage.getItem('auth_token') || undefined),
     []
   );
@@ -46,27 +47,18 @@ ReactDOM.createRoot(document.getElementById('root')!).render(<Root />);
 ## React: App.tsx
 
 ```typescript
+import { useEffect } from 'react';
 import { useTable, useSpacetimeDB } from 'spacetimedb/react';
 import { DbConnection, tables } from './module_bindings';
 
 function App() {
-  const { isActive, identity: myIdentity, token, getConnection } = useSpacetimeDB();
+  const { identity: myIdentity, token, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConnection | null;
 
-  // Save auth token
+  // Persist the issued token for the next page load.
   useEffect(() => { if (token) localStorage.setItem('auth_token', token); }, [token]);
 
-  // Subscribe when connected. Prefer typed query builders over raw SQL
-  useEffect(() => {
-    if (!conn || !isActive) return;
-    conn.subscriptionBuilder()
-      .onApplied(() => setSubscribed(true))
-      .subscribe([tables.entity, tables.record]);
-      // Or with filters: tables.entity.where(r => r.active.eq(true))
-      // Or raw SQL:      'SELECT * FROM entity'
-  }, [conn, isActive]);
-
-  // Reactive data. Returns [rows, isReady]
+  // useTable owns the subscription and cleanup. Returns [rows, isReady].
   const [entities, entitiesReady] = useTable(tables.entity);
   const [records, recordsReady] = useTable(tables.record);
 
@@ -80,8 +72,8 @@ function App() {
     }
   );
 
-  // Call reducers with object syntax
-  conn?.reducers.addRecord({ data }).catch(console.error);
+  // A callback for a UI event; defining it does not call the reducer during render.
+  const addRecord = (data: string) => conn?.reducers.addRecord({ data }).catch(console.error);
 
   // Compare identities
   const isMe = row.owner.toHexString() === myIdentity?.toHexString();
@@ -111,7 +103,9 @@ conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser
 
 ## Gotchas
 
-- **`useTable` rows are `readonly`.** Copy before sorting/mutating, or it fails to type-check:
+- **Subscription rows have no presentation order.** A server view's array order does not
+  define client cache iteration order. `useTable` rows are `readonly`; a sorted copy can
+  express the application's display order:
   `const [rows] = useTable(tables.message); const sorted = [...rows].sort(...)`.
-- **bigint in JSX.** ids/counts from `t.u64()`/`t.i64()` columns are `bigint`, which React
-  cannot render. Wrap it: `{Number(row.id)}` or `{String(count)}`.
+- **64-bit display values.** `{String(row.id)}` preserves the full `bigint` value.
+  Conversion to `Number` can lose precision outside JavaScript's safe integer range.

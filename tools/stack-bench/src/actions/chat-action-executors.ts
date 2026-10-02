@@ -1,0 +1,310 @@
+import { actionImplementation, ActionApplicationFailure } from './action-contract.js';
+import { harnessBrowserFailure } from '../evidence/harness-errors.js';
+import {
+  actorFor,
+  browserFor,
+  inconclusive,
+  pad,
+} from './actor-action-runtime.js';
+import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
+import { browserApplicationBoundary } from './browser-action-executors.js';
+import { captureAuthSubmit, hasAuthWriteTarget, stopAuthWriteInventory, withAuthRequestPatch, withAuthSubmitCapture,
+  type AuthRequestPatch } from './auth-request-patch.js';
+import { beginSpacetimeAuthObservation, confirmSpacetimeSignup } from '../stacks/backends/spacetime-browser-session.js';
+
+type ChatArguments<Input extends { readonly actor: string }> =
+  ActorActionArguments<Input, BrowserActorCapabilities>;
+
+interface AccountInput {
+  readonly actor: string;
+  // False leaves the final session assertion to the next observation.
+  readonly awaitSignedIn?: boolean;
+  readonly deferAuthFailureToExpect?: boolean;
+  readonly exact?: boolean;
+  readonly expectFailure?: boolean;
+  readonly name: string;
+  readonly password?: string;
+  readonly readyTestid?: string;
+  readonly settleMs?: number;
+  readonly requestPatch?: AuthRequestPatch;
+}
+
+interface RoomInput {
+  readonly actor: string;
+  readonly private?: boolean;
+  readonly room: string;
+}
+
+interface MessageInput {
+  readonly actor: string;
+  readonly text: string;
+}
+
+interface ManyMessagesInput {
+  readonly actor: string;
+  readonly count: number;
+  readonly delayMs?: number;
+  readonly prefix: string;
+}
+
+async function finishRegistration(args: ChatArguments<AccountInput>, beforeFallback?: () => void): Promise<void> {
+  const actor = actorFor(args.capabilities, args.input.actor);
+  const browser = browserFor(args.capabilities);
+  try {
+    // A visible sign-in form alone does not mean the signup request has finished.
+    await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+  } catch (error) {
+    if (args.signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+      || 'classification' in error || harnessBrowserFailure(error)) throw error;
+    // Registration need not create a session. Use the same credentials once;
+    // never retry registration or erase an explicit registration refusal.
+    if (await actor.loc('auth-error').isVisible()) return;
+    if (!(await actor.loc('signin-username').or(actor.loc('signin-toggle'))
+      .filter({ visible: true }).first().isVisible())) return;
+    beforeFallback?.();
+    await signIn({ ...args, input: { ...args.input, requestPatch: undefined, awaitSignedIn: false } }, true);
+  }
+}
+
+async function signUp({ input, capabilities, signal }: ChatArguments<AccountInput>): Promise<Record<string, unknown>> {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const user = input.exact ? input.name : browser.scopedUser(input.name);
+  const password = input.password ?? `pw-${user}`;
+  if (input.requestPatch) {
+    if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
+    const targeted = hasAuthWriteTarget(actor.page);
+    const complete = async (receipt: { success?: boolean; status?: number }) => {
+      if (receipt.success !== false && (receipt.status ?? 200) < 400) {
+        await finishRegistration({ input, capabilities, signal }, () => stopAuthWriteInventory(actor.page));
+      }
+      await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    };
+    const run = () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal });
+    const patch = input.requestPatch;
+    const capture = (submit: () => Promise<Record<string, unknown>>) => withAuthRequestPatch(
+      actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>, user, password, patch, submit,
+      browser.authRequestPatch, 'signup', undefined, targeted ? complete : undefined);
+    if (targeted) return withAuthSubmitCapture(actor.page, run, capture);
+    const result = await capture(run);
+    await complete(result.requestPatch);
+    return result;
+  }
+  const username = actor.page.locator(browser.testId('signup-username')).first();
+  if (!(await username.isVisible())) {
+    const toggle = actor.loc('signup-toggle');
+    const signInToggle = actor.loc('signin-toggle');
+    // A shared authentication dialog may expose signup only after it opens.
+    await username.or(toggle).or(signInToggle).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    if (!(await username.isVisible()) && !(await toggle.isVisible())) {
+      await signInToggle.click({ timeout: browser.defaultWithin });
+      await username.or(toggle).filter({ visible: true }).first()
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    }
+    if (!(await username.isVisible())) {
+      await toggle.click({ timeout: browser.defaultWithin });
+      await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    }
+  }
+  await username.fill(user);
+  if (await username.inputValue() !== user) {
+    inconclusive('invalid-input', { detail: 'signup input changed the requested username; use a compatible scenario account name' });
+  }
+  await actor.page.locator(browser.testId('signup-password')).first().fill(password);
+  return captureAuthSubmit(actor.page, async () => {
+    const observation = beginSpacetimeAuthObservation(actor.page, 'signup', user);
+    try {
+      await actor.page.locator(browser.testId('signup-submit')).first().click();
+      if (input.expectFailure) {
+        await browser.sleep(input.settleMs ?? 2000, signal);
+        return { user, authenticationPath: 'local-form', expectedFailure: true };
+      }
+      let usedFallback = false;
+      await finishRegistration({ input, capabilities, signal }, () => {
+        usedFallback = true;
+        observation?.stop();
+        stopAuthWriteInventory(actor.page);
+      });
+      observation?.stop();
+      if (input.awaitSignedIn === false) {
+        return { user, authenticationPath: 'local-form', submitted: true };
+      }
+      try {
+        await actor.page.locator(browser.testId('current-user')).first()
+          .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+      } catch (error) {
+        if (!input.deferAuthFailureToExpect || signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+          || 'classification' in error || harnessBrowserFailure(error)) throw error;
+        return { user, authenticationPath: 'local-form', submitted: true };
+      }
+      const correctUser = (await actor.loc('current-user').innerText()).includes(user);
+      await observation?.finish(true, correctUser);
+      if (correctUser && usedFallback) confirmSpacetimeSignup(actor.page, user);
+      return input.deferAuthFailureToExpect
+        ? { user, authenticationPath: 'local-form', submitted: true }
+        : { user, authenticationPath: 'local-form', signedUp: true };
+    } finally {
+      observation?.discard();
+    }
+  });
+}
+
+async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false): Promise<Record<string, unknown>> {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const user = input.exact ? input.name : browser.scopedUser(input.name);
+  const password = input.password ?? `pw-${user}`;
+  const currentUser = actor.page.locator(browser.testId('current-user')).first();
+  if (input.requestPatch) {
+    if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
+    const result = await withAuthRequestPatch(actor.page as Required<Pick<typeof actor.page, 'route' | 'unroute'>>,
+      user, password, input.requestPatch, () => signIn({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }),
+      browser.authRequestPatch, 'signin');
+    await currentUser.or(actor.loc('auth-error')).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    return result;
+  }
+  const restoredSession = async () => {
+    if (!acceptRestoredSession || !(await currentUser.isVisible())) return false;
+    if (!(await currentUser.innerText()).includes(user)) {
+      throw new ActionApplicationFailure(`${actor.name} is already signed in as a different account`);
+    }
+    return true;
+  };
+  if (await restoredSession()) return { user, signedIn: false };
+  const username = actor.page.locator(browser.testId('signin-username')).first();
+  const toggle = actor.loc('signin-toggle');
+  let observation: ReturnType<typeof beginSpacetimeAuthObservation> = null;
+  try {
+    const entry = username.or(toggle);
+    await (acceptRestoredSession ? entry.or(currentUser) : entry)
+      .filter({ visible: true }).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    if (await restoredSession()) return { user, signedIn: false };
+    if (!(await username.isVisible())) {
+      await toggle.click({ timeout: browser.defaultWithin });
+      await (acceptRestoredSession ? username.or(currentUser).filter({ visible: true }).first() : username)
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+      if (await restoredSession()) return { user, signedIn: false };
+    }
+    await username.fill(user);
+    if (!input.expectFailure && await username.inputValue() !== user) {
+      inconclusive('invalid-input', { detail: 'signin input changed the requested username; use a compatible scenario account name' });
+    }
+    await actor.page.locator(browser.testId('signin-password')).first().fill(password);
+    observation = beginSpacetimeAuthObservation(actor.page, 'signin', user);
+    await actor.page.locator(browser.testId('signin-submit')).first().click();
+    if (input.expectFailure) {
+      if (observation) {
+        try { await actor.loc('auth-error').waitFor({ state: 'visible', timeout: Math.min(browser.defaultWithin * 2, 6000) }); }
+        catch (error) {
+          if (!(error instanceof Error) || error.name !== 'TimeoutError') throw error;
+        }
+      } else await browser.sleep(input.settleMs ?? 2000, signal);
+      observation?.stop();
+      await observation?.finish(false, await actor.loc('auth-error').isVisible() && !(await currentUser.isVisible()));
+      return { user, authenticationPath: 'local-form', expectedFailure: true };
+    }
+    if (input.awaitSignedIn === false) {
+      observation?.discard();
+      return { user, authenticationPath: 'local-form', submitted: true };
+    }
+    try {
+      await currentUser.waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    } catch (error) {
+      if (!input.deferAuthFailureToExpect || signal?.aborted || !(error instanceof Error) || error.name !== 'TimeoutError'
+        || 'classification' in error || harnessBrowserFailure(error)) throw error;
+      observation?.discard();
+      return { user, authenticationPath: 'local-form', submitted: true };
+    }
+    observation?.stop();
+    const correctUser = (await currentUser.innerText()).includes(user);
+    await observation?.finish(true, correctUser);
+    if (correctUser) confirmSpacetimeSignup(actor.page, user);
+    return input.deferAuthFailureToExpect
+      ? { user, authenticationPath: 'local-form', submitted: true }
+      : { user, authenticationPath: 'local-form', signedIn: true };
+  } catch (error) {
+    observation?.discard();
+    // Restoration can remove the form between the readiness check and an interaction.
+    if (!signal?.aborted && error instanceof Error && error.name === 'TimeoutError'
+      && !('classification' in error) && !harnessBrowserFailure(error) && await restoredSession()) {
+      return { user, signedIn: false };
+    }
+    throw error;
+  }
+}
+
+async function createRoom({ input, capabilities }: ChatArguments<RoomInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const room = browser.roomName(input.room);
+  const nameInput = actor.page.locator(browser.testId('room-name-input')).first();
+  if (!(await nameInput.isVisible())) {
+    await actor.page.locator(browser.testId('room-create')).first().click();
+  }
+  await nameInput.fill(room);
+  if (input.private) await actor.page.locator(browser.testId('room-private-toggle')).first().click();
+  await actor.page.locator(browser.testId('room-name-submit')).first().click();
+  await actor.page.locator(browser.testId('room-item'), { hasText: room }).first()
+    .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  return { room, private: input.private === true };
+}
+
+async function enterRoom({ input, capabilities, signal }: ChatArguments<RoomInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const room = browser.roomName(input.room);
+  const item = actor.page.locator(browser.testId('room-item'), { hasText: room }).first();
+  await item.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  await item.click();
+  const message = actor.loc('message-input');
+  if (!(await message.isVisible())) {
+    await browser.sleep(750, signal);
+    if (!(await message.isVisible())) await item.click();
+  }
+  await message.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  return { room, entered: true };
+}
+
+async function send({ input, capabilities }: ChatArguments<MessageInput>) {
+  const message = actorFor(capabilities, input.actor).loc('message-input');
+  await message.fill(input.text);
+  await message.press('Enter');
+  return { sent: input.text };
+}
+
+async function sendMany({ input, capabilities, signal }: ChatArguments<ManyMessagesInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const message = actor.loc('message-input');
+  for (let index = 1; index <= input.count; index++) {
+    await message.fill(`${input.prefix}-${pad(index, input.count)}`);
+    await message.press('Enter');
+    if (input.delayMs) await browser.sleep(input.delayMs, signal);
+  }
+  return { sent: input.count, prefix: input.prefix };
+}
+
+async function ensureSignedIn({ input, capabilities, signal }: ChatArguments<AccountInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const result = await signIn({ input, capabilities, signal }, true);
+  if (!result.signedIn) return { restored: false, user: result.user };
+  await actor.page.locator(browser.testId(input.readyTestid ?? 'room-list')).first()
+    .waitFor({ state: 'attached', timeout: browser.defaultWithin });
+  await browser.sleep(input.settleMs ?? 1500, signal);
+  return { restored: true, user: result.user };
+}
+
+export const CHAT_ACTION_IMPLEMENTATIONS = Object.freeze({
+  createRoom: actionImplementation(browserApplicationBoundary(createRoom)),
+  ensureSignedIn: actionImplementation(browserApplicationBoundary(ensureSignedIn)),
+  enterRoom: actionImplementation(browserApplicationBoundary(enterRoom)),
+  send: actionImplementation(browserApplicationBoundary(send)),
+  sendMany: actionImplementation(browserApplicationBoundary(sendMany)),
+  signIn: actionImplementation(browserApplicationBoundary(signIn)),
+  signUp: actionImplementation(browserApplicationBoundary(signUp)),
+});
