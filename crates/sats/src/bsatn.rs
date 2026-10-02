@@ -231,9 +231,98 @@ mod tests {
     use super::{to_vec, DecodeError, Deserializer};
     use crate::de::DeserializeSeed;
     use crate::proptest::{generate_algebraic_type, generate_typed_value};
-    use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue, WithTypespace};
+    use crate::{
+        meta_type::MetaType, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, Typespace, WithTypespace,
+    };
     use proptest::prelude::*;
     use proptest::{collection::vec, proptest};
+
+    #[test]
+    fn decode_invalid_type_reference() {
+        let ty: AlgebraicType = super::from_slice(&[0, 0, 0, 0, 0]).unwrap();
+        assert_eq!(
+            AlgebraicValue::decode(&ty, &mut &[0u8; 8][..]),
+            Err(DecodeError::Other("Type reference &0 out of bounds".into()))
+        );
+    }
+
+    fn check_invalid_reference(typespace: &Typespace, ty: &AlgebraicType, bytes: &[u8], invalid: u32) {
+        let seed = WithTypespace::new(typespace, ty);
+        let expected = DecodeError::Other(format!("Type reference &{invalid} out of bounds"));
+        assert_eq!(seed.deserialize(Deserializer::new(&mut &*bytes)), Err(expected.clone()));
+        assert_eq!(seed.validate(Deserializer::new(&mut &*bytes)), Err(expected.clone()));
+        if let AlgebraicType::Array(array) = ty {
+            let seed = seed.with(array);
+            assert_eq!(seed.deserialize(Deserializer::new(&mut &*bytes)), Err(expected.clone()));
+            assert_eq!(seed.validate(Deserializer::new(&mut &*bytes)), Err(expected));
+        }
+    }
+
+    #[test]
+    fn decode_and_validate_invalid_type_references() {
+        for typespace in [Typespace::default(), Typespace::new(vec![AlgebraicType::U8])] {
+            for invalid in [typespace.types.len() as u32, u32::MAX] {
+                let ty = AlgebraicType::Ref(AlgebraicTypeRef(invalid));
+                check_invalid_reference(&typespace, &ty, &[], invalid);
+                check_invalid_reference(&typespace, &AlgebraicType::product([ty.clone()]), &[], invalid);
+                check_invalid_reference(&typespace, &AlgebraicType::option(ty.clone()), &[0], invalid);
+                for bytes in [&[0, 0, 0, 0][..], &[1, 0, 0, 0, 42][..]] {
+                    check_invalid_reference(&typespace, &AlgebraicType::array(ty.clone()), bytes, invalid);
+                }
+            }
+        }
+
+        let ty = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        let typespace = Typespace::new(vec![AlgebraicType::Ref(AlgebraicTypeRef(1))]);
+        check_invalid_reference(&typespace, &ty, &[], 1);
+        check_invalid_reference(&typespace, &AlgebraicType::array(ty), &[0, 0, 0, 0], 1);
+
+        // An unselected sum branch does not need to be resolved.
+        check_reference_value(
+            Typespace::EMPTY,
+            &AlgebraicType::option(AlgebraicType::Ref(AlgebraicTypeRef(0))),
+            AlgebraicValue::sum(1, AlgebraicValue::unit()),
+        );
+    }
+
+    fn check_reference_value(typespace: &Typespace, ty: &AlgebraicType, value: AlgebraicValue) {
+        let bytes = to_vec(&value).unwrap();
+        let seed = WithTypespace::new(typespace, ty);
+        let mut input = &bytes[..];
+        assert_eq!(seed.deserialize(Deserializer::new(&mut input)), Ok(value));
+        assert!(input.is_empty());
+        let mut input = &bytes[..];
+        assert_eq!(seed.validate(Deserializer::new(&mut input)), Ok(()));
+        assert!(input.is_empty());
+    }
+
+    #[test]
+    fn decode_and_validate_valid_type_references() {
+        let ty = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        let typespace = Typespace::new(vec![AlgebraicType::Ref(AlgebraicTypeRef(1)), AlgebraicType::U8]);
+        check_reference_value(&typespace, &ty, AlgebraicValue::U8(42));
+        check_reference_value(
+            &typespace,
+            &AlgebraicType::array(ty),
+            AlgebraicValue::Array(ArrayValue::U8(vec![42, 7].into())),
+        );
+    }
+
+    #[test]
+    fn decode_and_validate_recursive_type_references() {
+        let ty = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        let typespace = Typespace::new(vec![AlgebraicType::option(ty.clone())]);
+        let nil = AlgebraicValue::sum(1, AlgebraicValue::unit());
+        check_reference_value(&typespace, &ty, AlgebraicValue::sum(0, AlgebraicValue::sum(0, nil)));
+
+        let typespace = Typespace::new(vec![AlgebraicType::array(ty.clone())]);
+        let empty = ArrayValue::Array(vec![].into());
+        check_reference_value(
+            &typespace,
+            &ty,
+            AlgebraicValue::Array(ArrayValue::Array(vec![empty].into())),
+        );
+    }
 
     #[test]
     fn type_to_binary_equivalent() {
