@@ -450,7 +450,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 
 | Property        | Type                  | Description                                     |
 | --------------- | --------------------- | ----------------------------------------------- |
-| `db`            | `Local`               | Access to the module's database tables          |
+| `db`            | `DbView`              | Access to the module's database tables          |
 | `sender`        | `Identity`            | Identity of the caller                          |
 | `connection_id` | `Option<ConnectionId>`| Connection ID of the caller, if available       |
 | `timestamp`     | `Timestamp`           | Time when the reducer was invoked               |

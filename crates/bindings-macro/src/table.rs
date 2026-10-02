@@ -1189,7 +1189,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#tablehandle_ident;
         }
-        impl #table_ident for spacetimedb::Local {
+        impl #table_ident for spacetimedb::DbView {
             #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#tablehandle_ident {
                 &#tablehandle_ident {}
@@ -1203,7 +1203,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #[allow(non_camel_case_types, dead_code)]
             fn #table_ident(&self) -> &#viewhandle_ident;
         }
-        impl #view_trait_ident for spacetimedb::LocalReadOnly {
+        impl #view_trait_ident for spacetimedb::ReadOnlyDbView {
             #[inline]
             fn #table_ident(&self) -> &#viewhandle_ident {
                 &#viewhandle_ident {}
