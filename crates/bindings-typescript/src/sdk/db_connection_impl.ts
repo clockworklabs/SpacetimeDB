@@ -339,7 +339,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedModuleDef>
     this.#sourceNameToTableDef = Object.create(null);
     for (const table of Object.values(remoteModule.tables)) {
       this.#rowDeserializers[table.sourceName] = ProductType.makeDeserializer(
-        table.rowType
+        table.rowSpacetimeType
       );
       this.#sourceNameToTableDef[table.sourceName] = table as Values<
         RemoteModule['tables']

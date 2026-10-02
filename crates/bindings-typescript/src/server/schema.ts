@@ -273,7 +273,6 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
-    // TODO: TableDecl and TableDef should really be unified
     this.#ctx = ctx;
   }
 
@@ -340,7 +339,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         typespace: this.#ctx.moduleDef.typespace,
         tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
           accessorName: t.accessorName,
-          tableDef: t.tableDef,
+          tableDef: t.rawDef,
         })),
         schemaTables: this.#ctx.schemaType.tables,
         subDispatches: [...this.#ctx.submoduleDispatchInfos],
@@ -826,7 +825,7 @@ type SchemaDefForEntries<H extends Record<string, SchemaEntry>> = SchemaDef<
 };
 
 function isUntypedTableSchema(x: unknown): x is UntypedTableDecl {
-  return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
+  return typeof x === 'object' && x !== null && hasOwn(x, 'buildRawDef');
 }
 
 function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
@@ -847,7 +846,7 @@ function isSubmoduleMount(x: unknown): x is SubmoduleMount {
     x !== null &&
     hasOwn(x, 'module') &&
     !hasOwn(x, 'default') &&
-    !hasOwn(x, 'tableDef')
+    !hasOwn(x, 'buildRawDef')
   );
 }
 
@@ -957,7 +956,7 @@ export function schema<
       }
 
       const table = entry;
-      const tableDef = table.tableDef(ctx, accName);
+      const tableDef = table.buildRawDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
       const tableSourceNames = ctx.tableSourceNames.get(table);
       if (tableSourceNames === undefined) {

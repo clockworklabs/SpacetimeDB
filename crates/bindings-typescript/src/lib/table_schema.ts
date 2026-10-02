@@ -55,17 +55,26 @@ export type TableDecl<
   readonly rowSpacetimeType: RowBuilder<Row>['algebraicType']['value'];
 
   /**
-   * The {@link RawTableDefV10} of the configured table
+   * The columns of the table, keyed by name. This is `rowType.row`.
    */
-  tableDef(
+  readonly columns: RowBuilder<Row>['row'];
+
+  /**
+   * Builds the {@link RawTableDefV10} of the configured table
+   */
+  buildRawDef(
     ctx: ModuleContext,
     accName: string
   ): RawTableDefV10 & { schedule?: RawScheduleDefV10 };
 
   /**
-   * The indexes defined on the table.
+   * Declarative multi-column indexes supplied by user code in `table({ indexes: [...] }, ...)`.
+   *
+   * This is intentionally the *declarative* shape (`IndexOpts`) because a lot of
+   * type-level behavior is derived from these entries (for example query-builder
+   * inference over composite indexes).
    */
-  readonly idxs: Idx;
+  readonly indexes: Idx;
 
   /**
    * The constraints defined on the table.

@@ -43,7 +43,7 @@ export interface RowTypedQuery<Row, ST> {
 
 export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
-  TableDef['rowType']
+  TableDef['rowSpacetimeType']
 >;
 
 export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any, any> =>
@@ -59,7 +59,7 @@ export function toSql(q: Query<any>): string {
 // A query builder with a single table.
 type From<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
-  TableDef['rowType']
+  TableDef['rowSpacetimeType']
 > &
   Readonly<{
     toSql(): string;
@@ -87,7 +87,7 @@ type From<TableDef extends TypedTableDef> = RowTypedQuery<
 // A query builder with a semijoin.
 type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
-  TableDef['rowType']
+  TableDef['rowSpacetimeType']
 > &
   Readonly<{
     toSql(): string;
@@ -255,6 +255,7 @@ export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   columns: TableDef['columns'];
   indexes: TableDef['indexes'];
   rowType: TableDef['rowType'];
+  rowSpacetimeType: TableDef['rowSpacetimeType'];
   constraints: any;
 }>;
 
@@ -277,6 +278,9 @@ class TableRefImpl<TableDef extends TypedTableDef>
   }
   get rowType() {
     return this.tableDef.rowType;
+  }
+  get rowSpacetimeType() {
+    return this.tableDef.rowSpacetimeType;
   }
   get constraints() {
     return (this.tableDef as any).constraints;
@@ -438,14 +442,15 @@ export type TypedTableDef<
   accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
-  rowType: RowBuilder<Columns>['algebraicType']['value'];
+  rowType: RowBuilder<Columns>;
+  rowSpacetimeType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
 /** @deprecated This type is not used by the SDK. */
 export type TableSchemaAsTableDef<TSchema extends UntypedTableDecl> = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
-  indexes: TSchema['idxs'];
+  indexes: TSchema['indexes'];
 };
 
 type RowType<TableDef extends TypedTableDef> = {
