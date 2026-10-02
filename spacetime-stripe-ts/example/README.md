@@ -1,220 +1,99 @@
-# Premium Store
+# Premium Store Stripe example
 
-Premium Store demonstrates a host database that mounts
-`@spacetimedb/stripe/submodule` and delegates customer, price, checkout, and
-webhook operations through the `stripe` namespace. The browser calls buyer
-procedures with its own identity to create its Stripe customer and Checkout
-sessions, but it cannot configure Stripe or mutate administrative catalog state.
+A small storefront with a cart and Stripe Checkout. Use it to try a purchase
+with Stripe test payments.
 
-## What this demonstrates
+## Run it locally
 
-- Mounting the Stripe submodule inside an application-owned store module.
-- Keeping Stripe credentials in private module state.
-- Buyer procedures (`create_store_checkout_session`,
-  `get_or_create_store_customer`) that the browser calls directly. Each buyer's
-  identity owns its Stripe customer, and prices, modes, and return URLs come from
-  server-owned state.
-- One administrator list: the store checks the Stripe submodule's
-  `stripe_admin_identity` table.
-- Composing submodules: `@spacetimedb/rate-limit` limits each buyer identity to
-  five buyer procedure calls per 10 minutes, since each call reaches Stripe.
-- Seeding an application catalog independently of Stripe provider records.
-- Creating or linking idempotent Stripe test prices during explicit server setup.
-- Receiving Stripe webhooks through the module's native HTTP route.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server reachable as `local`.
-- A logged-in CLI identity that publishes the database.
-- A Stripe **test-mode** secret key (`sk_test_...`).
-- Optional: the Stripe CLI or another tunnel for forwarding test webhooks.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+From `spacetime-stripe-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
-## Quick start
+You also need a Stripe **test-mode** secret key. In `.env`, replace
+`STRIPE_SECRET_KEY` with your `sk_test_...` key and set `STRIPE_SYNC_PRICES=1`.
+The first start creates or reuses three test prices in your Stripe account.
 
-From `spacetime-stripe-ts/example`:
+Then publish the example and start its web server:
 
-```powershell
+```bash
 pnpm install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-```
-
-Set `STRIPE_SECRET_KEY=sk_test_...` in `.env`. Set
-`STRIPE_SYNC_PRICES=1` for the first full checkout run; this creates or reuses
-three Stripe test prices and writes their IDs to `store_product`.
-
-```powershell
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://127.0.0.1:8787>. Add a product to the cart and create a Stripe test
-Checkout session. No charge occurs unless the Checkout page is completed with a
-Stripe test payment method.
+Open <http://127.0.0.1:8787>.
 
-`build:module:fresh` deletes and recreates only the local `spacetime-stripe-example`
-database. Use `pnpm run build:module` to preserve existing data.
+## Try it
 
-## Use in your project
+1. Add a product to the cart.
+2. Start checkout. The app opens a Stripe Checkout page.
+3. Complete checkout with a Stripe test payment method.
+4. Return to the store. Set up webhooks below to receive the payment result
+   in SpacetimeDB.
 
-This workspace tests the submodule source in this repository. Consumer applications install published releases:
+Use test mode throughout. Do not enter real card details.
 
-```bash
-npm install @spacetimedb/stripe spacetimedb
-```
+## Receive payment updates
 
-Follow the package's
-[integration guide](../README.md#integrate-into-an-application). Copy the
-buyer procedures, the shared administrator check, and the signed webhook
-route. The product catalog and storefront are demonstration code.
-
-## Configuration
-
-| Variable                                | Default                              | Purpose                                                       |
-| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------- |
-| `STRIPE_SECRET_KEY`                     | empty                                | Required for provider operations. Use a test-mode key.        |
-| `STRIPE_WEBHOOK_SECRET`                 | empty                                | Verifies incoming Stripe webhook signatures.                  |
-| `STRIPE_VERSION`                        | submodule default                    | Optional Stripe API-version override.                         |
-| `STRIPE_SYNC_PRICES`                    | `0`                                  | Set to `1` to create/link missing test prices during startup. |
-| `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS` | automatic on non-production loopback | Enables the price-validation and webhook-count debug routes.  |
-| `STRIPE_RETURN_BASE_URL`                | `http://127.0.0.1:8787`              | Checkout return origin, stored in the module at startup.      |
-| `NODE_ENV`                              | empty                                | Set to `production` to disable development-only defaults.     |
-| `STDB_URI`                              | `ws://127.0.0.1:3000`                | Browser and server WebSocket endpoint.                        |
-| `STDB_HTTP`                             | `http://127.0.0.1:3000`              | CLI administration endpoint. Must match `STDB_URI`.           |
-| `SPACETIMEDB_DB_NAME`                   | `spacetime-stripe-example`           | Published database name.                                      |
-| `STDB_SERVER_TOKEN`                     | generated locally                    | Optional pre-provisioned server identity token.               |
-| `HOST`                                  | `127.0.0.1`                          | Static-server bind address.                                   |
-| `PORT`                                  | `8787`                               | Static-server port.                                           |
-
-When no server token is supplied, the server persists one in the ignored
-`.stdb-server-token` file. The logged-in publishing identity registers that server
-identity with `stripe.add_admin_identity`, the administrator list shared by the
-store and the Stripe submodule. The browser identity is never an administrator.
-The browser keeps its own identity token in `localStorage`, so the buyer and its
-Stripe customer survive the Checkout redirect.
-
-## Startup behavior
-
-The example server performs the following bounded setup before accepting HTTP:
-
-1. Connect with the persistent server identity.
-2. Authorize it through the logged-in CLI publishing identity.
-3. Store the Checkout return origin from `STRIPE_RETURN_BASE_URL`.
-4. Seed the default store catalog if it is empty.
-5. Store Stripe configuration when `STRIPE_SECRET_KEY` is present.
-6. Synchronize missing prices only when `STRIPE_SYNC_PRICES=1`.
-
-Price synchronization is opt-in because it creates test-mode objects in the linked
-Stripe account. Existing prices use stable lookup keys and are reused.
-
-## Architecture
-
-```text
-Browser storefront (own identity)
-  -> public store_product subscription
-  -> create_store_checkout_session / get_or_create_store_customer
-  -> stripe submodule host helpers
-  -> Stripe API
-
-Stripe
-  -> POST /route/stripe/webhook on the SpacetimeDB database
-  -> host router
-  -> stripe submodule webhook handler
-
-Authorized example server
-  -> private configuration and catalog setup during startup
-  -> stripe.validate_stripe_price and stripe.get_webhook_event_count for the
-     debug routes
-```
-
-The Node server serves the storefront and these routes:
-
-| Route                          | Purpose                                         |
-| ------------------------------ | ----------------------------------------------- |
-| `GET /api/health`              | Local health probe.                             |
-| `GET /api/config`              | Browser-safe database/setup status.             |
-| `POST /api/validate-price`     | Checks a catalog price with Stripe (debug).     |
-| `GET /api/webhook-event-count` | Reports the stored webhook event count (debug). |
-
-The debug routes are enabled only when browser provider actions are allowed.
-
-## Webhooks
-
-Forward Stripe test events to the database's native route:
+Forward Stripe test webhooks to this URL with the Stripe CLI or a tunnel:
 
 ```text
 http://127.0.0.1:3000/v1/database/spacetime-stripe-example/route/stripe/webhook
 ```
 
-Use the signing secret produced by the forwarding tool as
-`STRIPE_WEBHOOK_SECRET`, then restart so the private submodule configuration is
-updated.
+Put the signing secret for that endpoint in `STRIPE_WEBHOOK_SECRET`, then
+restart `pnpm run dev`. Incoming events update the stored Stripe records.
 
-## Security and deployment boundaries
+A successful browser redirect is not proof of payment. In your own app, fulfill
+an order only after a verified webhook records its payment status as `paid`
+or `no_payment_required`.
 
-- Never use a live-mode Stripe key for casual example testing.
-- Stripe secrets and the persistent server token must never be committed or sent to
-  the browser.
-- The server binds to loopback by default.
-- Production deployments should provision an authenticated service identity
-  through deployment infrastructure.
-- The debug routes are automatic only for a non-production loopback host.
-  Production and externally bound development servers default to disabled. Set
-  `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS=1` only when required.
-- The buyer procedures create Stripe customers and Checkout sessions for any
-  connected identity, limited per identity. A client can open new anonymous
-  identities, so add application authentication before exposing them publicly.
-- The module owns Checkout return URLs. Set `STRIPE_RETURN_BASE_URL` to the public
-  HTTPS origin in production; the browser cannot supply redirect URLs.
-- Checkout success in the UI is a redirect result. Fulfill from verified
-  webhook state: grant access when `stripe_checkout_session.paymentStatus` is
-  `paid` or `no_payment_required`.
+## Configuration
 
-## Verification
+- `STRIPE_SYNC_PRICES=1` creates or links missing test prices at startup.
+  You can set it back to `0` once the catalog is ready.
+- `STRIPE_RETURN_BASE_URL` is where Checkout returns the buyer. Change it if
+  you change the store's address.
+- Price-check and webhook-count debug controls are enabled during local
+  development. For public deployments, set `NODE_ENV=production` and keep
+  `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS=0`.
 
-```powershell
-pnpm --dir spacetimedb run build
-pnpm run build
-pnpm exec tsc -p tsconfig.json
-```
+See [.env.example](./.env.example) for the remaining settings.
 
-For the provider-backed smoke test, set `STRIPE_SYNC_PRICES=1`, fresh-publish,
-start the server, confirm three prices synchronize, add a product to the cart, and
-create a test Checkout session.
+## Before deploying
+
+Add account-based access checks before exposing checkout to the public.
+The demo accepts any browser identity and limits its Stripe calls to five
+per ten minutes; a new browser identity gets a new allowance.
+The server saves its admin credential in `.stdb-server-token`. Keep that file
+and `.env` private.
 
 ## Troubleshooting
 
-- **Products say “Sync price first”:** set `STRIPE_SYNC_PRICES=1` and restart with
-  a valid test key.
-- **`stripe.not_authorized` or `store.not_authorized`:** publish with the
-  logged-in CLI identity and restart so it can grant the server identity through
-  `stripe.add_admin_identity`.
-- **`store.rate_limited`:** the buyer identity used its five Stripe calls for
-  the current 10-minute window; wait for the window to reset.
-- **Connection targets disagree:** make `STDB_URI`, `STDB_HTTP`, and the publish
-  target refer to the same server.
-- **Webhook state is stale:** verify the forwarding URL and
-  `STRIPE_WEBHOOK_SECRET`.
+- **Sync price first:** set `STRIPE_SYNC_PRICES=1` and restart with a valid test key.
+- **`stripe.not_authorized` or `store.not_authorized`:** use the CLI account
+  that published the database, then restart.
+- **`store.rate_limited`:** wait for the ten-minute limit to reset.
+- **Payment records do not update:** check webhook forwarding and the signing secret.
 
-## Important files
+## Change the example
 
-- `spacetimedb/src/store/operations.ts`: application catalog, buyer procedures,
-  and Stripe delegation.
-- `server.ts`: safe startup configuration and server identity authorization.
-- `src/app.ts`: typed browser-side SpacetimeDB adapter.
-- `public/index.html`: storefront and buyer tools.
-- `public/ui.js`: storefront state, rendering, and interaction handling.
-- `public/styles.css`: storefront presentation.
+- [spacetimedb/src/store/operations.ts](./spacetimedb/src/store/operations.ts): catalog and checkout logic.
+- [server.ts](./server.ts): Stripe setup.
+- [public/ui.js](./public/ui.js): cart and storefront controls.
+
+After changing server code, run `pnpm run build:module`. Restart
+`pnpm run dev` after changing browser code or `.env`.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in
+the local `spacetime-stripe-example` database.**
+
+To use the submodule in your own app, see the
+[package integration guide](../README.md#integrate-into-an-application).

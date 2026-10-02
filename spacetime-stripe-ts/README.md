@@ -16,14 +16,7 @@ npm install @spacetimedb/stripe spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-This submodule can be published directly as its own SpacetimeDB module from the root entry point.
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Stripe to your module, initialize it, and register a webhook route. The
 example below starts Checkout for a product in your application's `storeProduct`
@@ -124,9 +117,6 @@ Verify:
 spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status '{}'
 ```
 
-The Stripe secret stays in private module state. Every procedure is
-admin-gated, and `ingest_stripe_webhook` accepts only correctly signed events.
-
 ## Private tables
 
 | Table                     | Key                          | Indexed by                        |
@@ -226,6 +216,7 @@ payment_intent.succeeded
 ```
 
 Other event types are accepted and stored with status `Ignored`.
+Repeated processed or ignored event IDs are acknowledged without reapplying them.
 
 Stripe does not deliver events in order. Each customer, subscription, Checkout
 session, and invoice row stores the `created` time of the event it reflects in
@@ -309,21 +300,12 @@ The Stripe CLI E2E suite likewise defaults to the dedicated `stripe-ts-e2e`
 database, forwards the original signed body, and rotates only that database's
 ephemeral listener secret.
 
-## Architecture notes
-
-- **valibot for runtime validation.** `vStripeEvent` is a `v.variant('type', [...])` over the supported event types, and `assertExhaustive` makes the typed `switch` compiler-checked.
-- **Sync HTTP.** Procedures call Stripe with the synchronous `ctx.http.fetch` API through the request boundary in `submodule/http.ts`.
-- **Compile-time SDK alignment.** `scripts/type-alignment.ts` asserts that the `stripe` package's `Stripe.*Event` types are assignable to the valibot output, so `pnpm run typecheck` fails if Stripe ships an incompatible payload change.
-- **Idempotency.** Each webhook event is keyed by `event.id`. Processed and ignored events are acknowledged without re-applying them. Failed events are retried using the stored payload. The HTTP handler retains failures and returns `400`; the reducer commits them as `Failed`. `replay_webhook_event` applies the stored event state again.
-
 ## Testing
 
 ```bash
 pnpm test
 pnpm run lint
 ```
-
-Credentialed sandbox coverage is described in **Integration testing** above.
 
 ## License
 
