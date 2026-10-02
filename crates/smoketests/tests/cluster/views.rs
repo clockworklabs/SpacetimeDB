@@ -636,6 +636,117 @@ fn test_view_accessibility() {
 }
 
 #[test]
+fn test_parameterized_view_accessibility() {
+    let test = Smoketest::builder().precompiled_module("views-callable").build();
+
+    test.new_identity().unwrap();
+
+    // A reducer can call a parameterized view directly.
+    test.call("baz_with_value", &["42"]).unwrap();
+    test.assert_sql(
+        "SELECT * FROM items",
+        r#" value
+-------
+ 42"#,
+    );
+
+    // SQL can call it with an argument.
+    test.assert_sql(
+        "SELECT * FROM item_with_value(9)",
+        r#" value
+-------
+ 9"#,
+    );
+}
+
+/// Each call of a parameterized view is its own instance:
+/// each refreshes on writes to its rows, and each subscription sees only its own rows.
+#[test]
+fn test_parameterized_view_instances_are_isolated() {
+    let test = Smoketest::builder().precompiled_module("views-args").build();
+
+    let sub_1 = test
+        .subscribe(&["select * from by_id(1)"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    let sub_2 = test
+        .subscribe(&["select * from by_id(2)"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+
+    test.call("add_item", &["1", "10"]).unwrap();
+    test.call("add_item", &["2", "20"]).unwrap();
+
+    // If the instances weren't isolated, `by_id(2)`'s first update would be id 1's row.
+    let events_1 = project_fields(sub_1.collect().unwrap(), "by_id", &["id", "value"]);
+    let events_2 = project_fields(sub_2.collect().unwrap(), "by_id", &["id", "value"]);
+    assert_eq!(
+        serde_json::json!(events_1),
+        json!([
+            {
+                "by_id": {
+                    "deletes": [],
+                    "inserts": [{ "id": 1, "value": 10 }]
+                }
+            }
+        ])
+    );
+    assert_eq!(
+        serde_json::json!(events_2),
+        json!([
+            {
+                "by_id": {
+                    "deletes": [],
+                    "inserts": [{ "id": 2, "value": 20 }]
+                }
+            }
+        ])
+    );
+}
+
+/// A sender-scoped parameterized view is scoped to the caller as well as its args.
+#[test]
+fn test_parameterized_sender_view_per_caller() {
+    let test = Smoketest::builder().precompiled_module("views-args").build();
+
+    test.call("add_item", &["1", "10"]).unwrap();
+    test.assert_sql(
+        "SELECT value FROM mine_by_id(1)",
+        r#" value
+-------
+ 10"#,
+    );
+
+    // A second caller with the same args sees only its own rows.
+    test.new_identity().unwrap();
+    test.call("add_item", &["1", "20"]).unwrap();
+    test.assert_sql(
+        "SELECT value FROM mine_by_id(1)",
+        r#" value
+-------
+ 20"#,
+    );
+}
+
+/// A parameterized view call can be joined.
+#[test]
+fn test_parameterized_view_join() {
+    let test = Smoketest::builder().precompiled_module("views-args").build();
+
+    test.call("add_item", &["1", "10"]).unwrap();
+    test.call("add_item", &["2", "20"]).unwrap();
+
+    test.assert_sql(
+        "SELECT v.value FROM by_id(1) AS v JOIN item ON v.id = item.id",
+        r#" value
+-------
+ 10"#,
+    );
+}
+
+#[test]
 fn test_recovery_from_trapped_views_auto_migration() {
     let mut test = Smoketest::builder().precompiled_module("views-auto-migrate").build();
 

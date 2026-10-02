@@ -222,6 +222,33 @@ where
         .ok_or_else(|| anyhow!("{literal} is not a valid {}", fmt_algebraic_type(&ty)))
 }
 
+/// Can a SQL literal express a value of this type?
+pub(crate) fn is_sql_literal_type(ty: &AlgebraicType) -> bool {
+    matches!(
+        ty,
+        AlgebraicType::Bool
+            | AlgebraicType::I8
+            | AlgebraicType::U8
+            | AlgebraicType::I16
+            | AlgebraicType::U16
+            | AlgebraicType::I32
+            | AlgebraicType::U32
+            | AlgebraicType::I64
+            | AlgebraicType::U64
+            | AlgebraicType::I128
+            | AlgebraicType::U128
+            | AlgebraicType::I256
+            | AlgebraicType::U256
+            | AlgebraicType::F32
+            | AlgebraicType::F64
+            | AlgebraicType::String
+    ) || ty.is_timestamp()
+        || ty.is_bytes()
+        || ty.is_identity()
+        || ty.is_connection_id()
+        || ty.is_uuid()
+}
+
 /// Parses a source text literal as a particular type
 pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
     let to_timestamp = || {

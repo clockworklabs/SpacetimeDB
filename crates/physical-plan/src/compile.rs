@@ -6,7 +6,7 @@ use crate::plan::{
     PARAM_SENDER,
 };
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar};
+use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar, ViewArgs};
 use spacetimedb_expr::statement::DML;
 use spacetimedb_sql_parser::ast::Parameter;
 
@@ -62,9 +62,25 @@ fn compile_field_project(var: &mut impl VarLabel, expr: FieldProject) -> TupleFi
     }
 }
 
+/// Checks that a view call's `arg_hash` was bound before physical compilation.
+fn bound_view_args(view_args: Option<ViewArgs>) -> Option<ViewArgs> {
+    if let Some(view_args) = &view_args {
+        assert!(
+            view_args.arg_hash.is_some(),
+            "bind_view_arg_hashes must run before physical compilation"
+        );
+    }
+    view_args
+}
+
 fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
     match ast {
-        RelExpr::RelVar(Relvar { schema, alias, delta }) => {
+        RelExpr::RelVar(Relvar {
+            schema,
+            alias,
+            delta,
+            view_args,
+        }) => {
             let label = var.label(alias.as_ref());
             let schema = schema.inner();
             PhysicalPlan::TableScan(
@@ -72,6 +88,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     schema,
                     limit: None,
                     delta,
+                    view_args: bound_view_args(view_args),
                 },
                 label,
             )
@@ -89,7 +106,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                         schema: rhs_schema,
                         alias: rhs_alias,
                         delta,
-                        ..
+                        view_args,
                     },
             },
             FieldProject { table: u, field: a, .. },
@@ -102,6 +119,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                         schema: rhs_schema.inner(),
                         limit: None,
                         delta,
+                        view_args: bound_view_args(view_args),
                     },
                     var.label(&rhs_alias),
                 )),
@@ -126,7 +144,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     schema: rhs_schema,
                     alias: rhs_alias,
                     delta,
-                    ..
+                    view_args,
                 },
         }) => {
             let lhs = compile_rel_expr(var, *lhs);
@@ -135,6 +153,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     schema: rhs_schema.inner(),
                     limit: None,
                     delta,
+                    view_args: bound_view_args(view_args),
                 },
                 var.label(&rhs_alias),
             );

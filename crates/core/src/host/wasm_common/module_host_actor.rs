@@ -17,8 +17,8 @@ use crate::host::module_host::{
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, FunctionArgs, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult,
+    ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -1425,6 +1425,7 @@ impl InstanceCommon {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             view_typespace,
@@ -1443,6 +1444,7 @@ impl InstanceCommon {
                         fn_ptr,
                         sender: &sender,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1454,6 +1456,7 @@ impl InstanceCommon {
                         table_id,
                         fn_ptr,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1478,13 +1481,9 @@ impl InstanceCommon {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            (Ok(raw), sender) => {
+            (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender),
-                        None => ViewCallInfo::anonymous(view_id),
-                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let row_product_type = view_typespace
                         .resolve(row_type)
@@ -1663,23 +1662,30 @@ fn collect_subscribed_view_calls(
             if subs.is_empty() {
                 continue;
             }
-            view_calls.push(CallViewParams {
-                view_name: view_name.clone(),
-                view_id,
-                table_id,
-                fn_ptr: global_fn_ptr,
-                caller: owner_identity,
-                sender: None,
-                args: ArgsTuple::nullary(),
-                row_type: *product_type_ref,
-                timestamp: Timestamp::now(),
-                view_typespace: view_typespace.clone(),
-            });
+            // Each anonymous instance is keyed by its args, so each needs its own call.
+            for (view_call, sub) in subs {
+                let ViewInstanceArgs::Anonymous { args } = sub else {
+                    continue;
+                };
+                view_calls.push(CallViewParams {
+                    view_name: view_name.clone(),
+                    view_id,
+                    table_id,
+                    fn_ptr: global_fn_ptr,
+                    caller: owner_identity,
+                    sender: None,
+                    args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                    view_call,
+                    row_type: *product_type_ref,
+                    timestamp: Timestamp::now(),
+                    view_typespace: view_typespace.clone(),
+                });
+            }
             continue;
         }
 
-        for sub in subs {
-            let ViewInstanceArgs::Sender(identity) = sub else {
+        for (view_call, sub) in subs {
+            let ViewInstanceArgs::Sender { sender: identity, args } = sub else {
                 continue;
             };
             view_calls.push(CallViewParams {
@@ -1689,7 +1695,8 @@ fn collect_subscribed_view_calls(
                 fn_ptr: global_fn_ptr,
                 caller: owner_identity,
                 sender: Some(identity),
-                args: ArgsTuple::nullary(),
+                args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                view_call,
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
                 view_typespace: view_typespace.clone(),
@@ -1981,6 +1988,7 @@ pub struct ViewOp<'a> {
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
     pub sender: &'a Identity,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -1994,7 +2002,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -2006,6 +2014,7 @@ pub struct AnonymousViewOp<'a> {
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -2019,7 +2028,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -2138,9 +2147,11 @@ impl InstanceOp for HttpHandlerOp {
 mod tests {
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+    use crate::host::FunctionArgs;
     use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
-    use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
+    use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductValue};
+    use spacetimedb_sats::product;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
@@ -2212,9 +2223,14 @@ mod tests {
             update::create_table_from_def(&db, &mut tx, &old, table)?;
         }
         let (view_id, _) = db.create_view(&mut tx, &old, old.view("environment_view").unwrap())?;
-        let call = ViewCallInfo::anonymous(view_id);
+        let call = ViewCallInfo::anonymous(view_id, &ProductValue::default());
         // Ordinary SQL materialization has no live subscriber to disconnect.
-        tx.update_view_timestamp(call.clone(), ViewInstanceArgs::Anonymous)?;
+        tx.update_view_timestamp(
+            call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+        )?;
         tx.record_table_scan(&FuncCallType::View(call.clone()), ST_ENV_ID);
         environment::replace(&db, &mut tx, old.environment(), &before)?;
         db.commit_tx(tx)?;
@@ -2287,7 +2303,7 @@ mod tests {
             &BTreeMap::from([("TOKEN".into(), "private-value".into())]),
         )?;
         let row_type = ProductType::from_iter([("key", AlgebraicType::String), ("value", AlgebraicType::String)]);
-        let call = ViewCallInfo::anonymous(ViewId(99));
+        let call = ViewCallInfo::anonymous(ViewId(99), &ProductValue::default());
         let run = |tx: &mut _, query| run_query_for_view(tx, query, &row_type, &call, db.database_identity());
         assert_eq!(
             run(&mut tx, "SELECT * FROM visible")?,
@@ -2381,6 +2397,10 @@ mod tests {
     }
 
     fn module_def_for_view(name: &str, is_anonymous: bool) -> ModuleDef {
+        module_def_for_view_with_params(name, is_anonymous, ProductType::unit())
+    }
+
+    fn module_def_for_view_with_params(name: &str, is_anonymous: bool, params: ProductType) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         let name = RawIdentifier::new(name);
         let type_ref = builder.add_algebraic_type(
@@ -2395,7 +2415,7 @@ mod tests {
             0,
             true,
             is_anonymous,
-            ProductType::unit(),
+            params,
             AlgebraicType::array(AlgebraicType::Ref(type_ref)),
         );
 
@@ -2415,13 +2435,17 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
-            ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
-            ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2452,13 +2476,19 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
-            ViewCallInfo::sender(view_id, Identity::ZERO),
-            ViewInstanceArgs::Sender(Identity::ZERO),
+            ViewCallInfo::sender(view_id, Identity::ZERO, &ProductValue::default()),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ZERO,
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
-            ViewCallInfo::sender(view_id, Identity::ONE),
-            ViewInstanceArgs::Sender(Identity::ONE),
+            ViewCallInfo::sender(view_id, Identity::ONE, &ProductValue::default()),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ONE,
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2470,6 +2500,110 @@ mod tests {
         assert_eq!(calls.len(), 2, "sender views should still reevaluate once per sender");
         assert!(senders.contains(&Identity::ZERO));
         assert!(senders.contains(&Identity::ONE));
+        Ok(())
+    }
+
+    /// Anonymous views with different args have separate materializations,
+    /// so reevaluation must emit one call per instance, each with its own args.
+    #[test]
+    fn test_distinct_anonymous_view_calls_by_args() -> anyhow::Result<()> {
+        let stdb = TestDB::in_memory()?;
+        let module_def = module_def_for_view_with_params(
+            "anonymous_view",
+            true,
+            ProductType::from_iter([("id", AlgebraicType::U32)]),
+        );
+        let view_def = module_def.view("anonymous_view").expect("view should exist");
+
+        let mut tx = begin_mut_tx(&stdb);
+        let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        let mut keys = Vec::new();
+        for arg in [42u32, 43u32] {
+            let args = ViewInstanceArgs::Anonymous { args: product![arg] };
+            let key = ViewCallInfo::from_args(view_id, &args);
+            keys.push((product![arg], key.clone()));
+            tx.subscribe_view(key, args, Identity::ZERO)?;
+        }
+
+        let calls = collect_subscribed_view_calls(&tx, &module_def, Identity::ZERO)?;
+        let mut evaluated: Vec<_> = calls
+            .iter()
+            .map(|call| (call.args.tuple().clone(), call.view_call.clone()))
+            .collect();
+        evaluated.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Each instance is evaluated with its own args, under the key it is stored under.
+        assert_eq!(evaluated, keys);
+        assert!(calls.iter().all(|call| call.sender.is_none()));
+        Ok(())
+    }
+
+    /// Stored view args are passed as BSATN and decoded against the view's params,
+    /// reproducing the stored values for every type a SQL literal can express.
+    #[test]
+    fn test_view_args_bsatn_round_trip() -> anyhow::Result<()> {
+        use spacetimedb_lib::{ConnectionId, Timestamp, Uuid};
+        use spacetimedb_sats::{i256, u256, AlgebraicValue};
+
+        let params = ProductType::from_iter([
+            ("bool", AlgebraicType::Bool),
+            ("i8", AlgebraicType::I8),
+            ("u8", AlgebraicType::U8),
+            ("i16", AlgebraicType::I16),
+            ("u16", AlgebraicType::U16),
+            ("i32", AlgebraicType::I32),
+            ("u32", AlgebraicType::U32),
+            ("i64", AlgebraicType::I64),
+            ("u64", AlgebraicType::U64),
+            ("i128", AlgebraicType::I128),
+            ("u128", AlgebraicType::U128),
+            ("i256", AlgebraicType::I256),
+            ("u256", AlgebraicType::U256),
+            ("f32", AlgebraicType::F32),
+            ("f64", AlgebraicType::F64),
+            ("string", AlgebraicType::String),
+            ("bytes", AlgebraicType::bytes()),
+            ("identity", AlgebraicType::identity()),
+            ("connection_id", AlgebraicType::connection_id()),
+            ("timestamp", AlgebraicType::timestamp()),
+            ("uuid", AlgebraicType::uuid()),
+        ]);
+        let stored = ProductValue::from_iter([
+            AlgebraicValue::Bool(true),
+            AlgebraicValue::I8(-8),
+            AlgebraicValue::U8(8),
+            AlgebraicValue::I16(-16),
+            AlgebraicValue::U16(16),
+            AlgebraicValue::I32(-32),
+            AlgebraicValue::U32(32),
+            AlgebraicValue::I64(-64),
+            AlgebraicValue::U64(64),
+            AlgebraicValue::I128((-128).into()),
+            AlgebraicValue::U128(128.into()),
+            AlgebraicValue::I256(Box::new(i256::new(-256))),
+            AlgebraicValue::U256(Box::new(u256::new(256))),
+            AlgebraicValue::F32(1.5f32.into()),
+            AlgebraicValue::F64(2.5f64.into()),
+            AlgebraicValue::String("hello".into()),
+            AlgebraicValue::Bytes([1u8, 2, 3].into()),
+            Identity::ONE.into(),
+            ConnectionId::from_u128(7).into(),
+            Timestamp::UNIX_EPOCH.into(),
+            Uuid::from_u128(9).into(),
+        ]);
+
+        for is_anonymous in [true, false] {
+            let module_def = module_def_for_view_with_params("v", is_anonymous, params.clone());
+            let view_def = module_def.view("v").expect("view should exist");
+
+            let decoded = FunctionArgs::from_view_args(&stored).into_tuple_for_def(&module_def, view_def)?;
+            assert_eq!(decoded.tuple(), &stored);
+
+            // Args that don't match the params fail to decode instead of reaching the guest.
+            assert!(FunctionArgs::from_view_args(&product![1u32])
+                .into_tuple_for_def(&module_def, view_def)
+                .is_err());
+        }
         Ok(())
     }
 }

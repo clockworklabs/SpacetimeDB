@@ -1,6 +1,6 @@
 use spacetimedb_lib::{
     sats::{i256, u256},
-    ConnectionId, Identity, Timestamp,
+    ConnectionId, Identity, Timestamp, Uuid,
 };
 
 use crate::{Col, ColumnRef};
@@ -95,7 +95,7 @@ pub fn format_expr<T>(expr: &BoolExpr<T>) -> String {
 }
 
 #[derive(Clone, Debug)]
-pub struct LiteralValue(String);
+pub struct LiteralValue(pub(super) String);
 
 impl LiteralValue {
     pub fn new(s: String) -> Self {
@@ -103,11 +103,23 @@ impl LiteralValue {
     }
 }
 
+/// Trait for values that can be written as a SQL literal,
+/// either in a comparison or as an argument to a view call.
+pub trait SqlLiteral {
+    fn to_sql_literal(self) -> LiteralValue;
+}
+
 macro_rules! impl_rhs {
     ($ty:ty, $formatter:expr) => {
+        impl SqlLiteral for $ty {
+            fn to_sql_literal(self) -> LiteralValue {
+                LiteralValue($formatter(self))
+            }
+        }
+
         impl<T> RHS<T, $ty> for $ty {
             fn to_expr(self) -> Operand<T> {
-                Operand::Literal(LiteralValue($formatter(self)))
+                Operand::Literal(self.to_sql_literal())
             }
         }
     };
@@ -140,6 +152,7 @@ impl_rhs!(bool, |b: bool| if b { "TRUE".into() } else { "FALSE".into() });
 impl_rhs!(Identity, |id: Identity| format!("0x{}", id.to_hex()));
 impl_rhs!(ConnectionId, |id: ConnectionId| format!("0x{}", id.to_hex()));
 impl_rhs!(Timestamp, |ts: Timestamp| format!("'{}'", ts));
+impl_rhs!(Uuid, |uuid: Uuid| format!("'{}'", uuid));
 
 impl_rhs!(Vec<u8>, |b: Vec<u8>| {
     let hex: String = b.iter().map(|x| format!("{:02x}", x)).collect();
