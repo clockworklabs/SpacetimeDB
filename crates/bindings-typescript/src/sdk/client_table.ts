@@ -100,13 +100,13 @@ export type ClientTableMethods<
   ClientTableDeleteMethods<RemoteModule, TableName>;
 
 /**
- * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
+ * TableHandle<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
  *
  * - Row: row shape
  * - UCV: unique-constraint violation error type (never if none)
  * - AIO: auto-increment overflow error type (never if none)
  */
-export type ClientTable<
+export type TableHandle<
   RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = Prettify<
@@ -116,6 +116,12 @@ export type ClientTable<
       TableIndexes<TableDefOf<RemoteModule, TableName>>
     >
 >;
+
+/** @deprecated Use `TableHandle` instead. */
+export type ClientTable<
+  RemoteModule extends UntypedModuleDef,
+  TableName extends TableNamesOf<RemoteModule>,
+> = TableHandle<RemoteModule, TableName>;
 
 type IsEventTable<TableDef extends UntypedTableDef> = TableDef extends {
   isEvent: true;
@@ -157,7 +163,7 @@ export type ClientTableCoreImplementable<
   MaybePKMethods<RemoteModule, TableName>;
 
 /**
- * Core methods of ClientTable, without the indexes mixed in.
+ * Core methods of TableHandle, without the indexes mixed in.
  * Includes only statically known methods.
  *
  * Event tables only expose insert callbacks (no delete or update),
