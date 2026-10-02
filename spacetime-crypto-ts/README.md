@@ -1,8 +1,7 @@
 # @spacetimedb/crypto
 
-Check that incoming webhooks came from Stripe, Resend, or GitHub before your
-SpacetimeDB application acts on them. The package also provides SHA-256 hashing,
-HMAC signatures, encoding helpers, and constant-time byte comparison.
+Hash data, create HMAC signatures, and verify webhook signatures in SpacetimeDB.
+The package also includes byte comparison and hex and base64 conversion helpers.
 
 ## Install
 
@@ -10,12 +9,7 @@ HMAC signatures, encoding helpers, and constant-time byte comparison.
 npm install @spacetimedb/crypto
 ```
 
-For the surrounding SpacetimeDB module workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Verify a webhook
 
 In your HTTP handler, verify a Stripe webhook with the raw request body and
 the module's timestamp:
@@ -40,8 +34,6 @@ tables and keep them out of public rows and procedure results.
 
 ## API
 
-These helpers do not create database tables. Hashing uses `@noble/hashes`.
-
 - `sha256(data)` and `hmacSha256(key, message)` return `Uint8Array` digests.
 - `timingSafeEqual(a, b)` compares every byte in equal-length arrays.
 - `hexToBytes`, `bytesToHex`, and `base64ToBytes` convert common encodings.
@@ -52,8 +44,8 @@ These helpers do not create database tables. Hashing uses `@noble/hashes`.
   Resend webhooks.
 - `verifyGithubSignature(options)` verifies GitHub's SHA-256 webhook signature.
 
-The verifiers return `{ ok: true }` or `{ ok: false, reason }`. `reason` is one
-of the `errors` codes, so the caller decides what to log or return:
+The verifiers return `{ ok: true }` or `{ ok: false, reason }`, with these
+`errors` codes:
 
 | Code                                 | Meaning                                                |
 | ------------------------------------ | ------------------------------------------------------ |

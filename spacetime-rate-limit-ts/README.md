@@ -13,12 +13,7 @@ tracking records are cleaned up automatically.
 npm install @spacetimedb/rate-limit spacetimedb
 ```
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Add Rate Limit to your module and initialize it. This example limits each user
 to 10 posts per minute:

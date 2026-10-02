@@ -14,12 +14,7 @@ npm install @spacetimedb/retry spacetimedb
 `spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
 to build the host module.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
-## Usage
-
-### Integrate into an application
+## Integrate into an application
 
 Define the task's arguments, add Retry's tables to your module, then register
 the function that does the work. In this example, replace `sendReceipt` with
@@ -103,8 +98,8 @@ await conn.reducers.submitRetryTask({
 });
 ```
 
-Product-facing applications usually expose a narrower reducer that authorizes
-the caller, fixes the retry limits, and calls `retry.submit`:
+For user-facing operations, check permissions and set retry limits in a host
+reducer:
 
 ```ts
 export const requestReceipt = db.reducer(
@@ -121,8 +116,6 @@ export const requestReceipt = db.reducer(
 );
 ```
 
-Operational screens can subscribe to the admin task and history views.
-
 Package entrypoints:
 
 - `@spacetimedb/retry` exports `client`, `errors`, `retryOk`, `retryFailed`,
@@ -136,8 +129,6 @@ pnpm test
 pnpm run lint
 pnpm --dir spacetimedb run build
 ```
-
-The build compiles the fixture module that registers Retry's tables and reducers.
 
 ## License
 
