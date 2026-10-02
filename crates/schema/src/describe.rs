@@ -992,8 +992,8 @@ mod tests {
     use super::*;
     use crate::identifier::Identifier;
     use spacetimedb_lib::db::raw_def::v10::{
-        CaseConversionPolicy, FunctionVisibility as RawFunctionVisibility, RawModuleDefV10Builder,
-        RawModuleDefV10Section, RawSubmoduleV10,
+        CaseConversionPolicy, FunctionVisibility as RawFunctionVisibility, RawEnvVarTypeV10,
+        RawEnvironmentDeclarationV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10,
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::{ProductType, ScheduleAt};
@@ -1364,16 +1364,16 @@ mod tests {
         // Declared after `/webhook`, so the output shows declaration order is kept.
         builder.add_http_route("health", MethodOrAny::Any, "/health");
         builder.add_environment(vec![
-            env_declaration("API_KEY", EnvVarType::String, false),
+            env_declaration("API_KEY", RawEnvVarTypeV10::String, false),
             env_declaration(
                 "MODE",
-                EnvVarType::Union(vec!["production".into(), "development".into()]),
+                RawEnvVarTypeV10::Union(vec!["production".into(), "development".into()]),
                 false,
             ),
-            env_declaration("REGION", EnvVarType::StringLiteral("eu west".into()), true),
+            env_declaration("REGION", RawEnvVarTypeV10::StringLiteral("eu west".into()), true),
             env_declaration(
                 "LOG_LEVEL",
-                EnvVarType::Union(vec!["info".into(), "debug".into()]),
+                RawEnvVarTypeV10::Union(vec!["info".into(), "debug".into()]),
                 true,
             ),
         ]);
@@ -1414,8 +1414,8 @@ mod tests {
             .expect("the describe fixture should be a valid module definition")
     }
 
-    fn env_declaration(name: &str, ty: EnvVarType, optional: bool) -> EnvironmentDeclaration {
-        EnvironmentDeclaration {
+    fn env_declaration(name: &str, ty: RawEnvVarTypeV10, optional: bool) -> RawEnvironmentDeclarationV10 {
+        RawEnvironmentDeclarationV10 {
             name: name.into(),
             ty,
             optional,

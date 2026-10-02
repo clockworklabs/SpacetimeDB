@@ -899,7 +899,7 @@ jobs:
             --client-dir "${SDK_TEST_CLIENT_DIR}" \
             -- \
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
-            -E 'not test(/unreal/)'
+            -E 'not test(/unreal/) & not test(/csharp/)'
 
   sdk_tests_browser:
     needs: [upload-build-artifacts-linux, sdk_test_prepare_browser]
@@ -980,7 +980,7 @@ jobs:
             --exclude spacetimedb-smoketests \
             --exclude spacetimedb-sdk \
             --exclude spacetimedb \
-            -- --test-threads=2 --skip unreal
+            -- --test-threads=2 --skip unreal --skip csharp
           cargo test -p spacetimedb --features unstable --doc -- --test-threads=2
           cargo test -p spacetimedb-durability --features fallocate --doc -- --test-threads=1
           bash tools/check-diff.sh
@@ -1061,7 +1061,7 @@ jobs:
             --archive-file "${RUST_TEST_ARCHIVE}" \
             --workspace-remap "${GITHUB_WORKSPACE}" \
             --partition hash:${{ matrix.partition }}/${RUST_TEST_PARTITIONS} \
-            -E 'not binary(=spacetimedb_bench) & not binary(=codegen) & not binary(=ensure_same_schema) & not binary(=standalone_integration_test) & not test(/unreal/)' \
+            -E 'not binary(=spacetimedb_bench) & not binary(=codegen) & not binary(=ensure_same_schema) & not binary(=standalone_integration_test) & not test(/unreal/) & not test(/csharp/)' \
             --no-fail-fast \
             --no-tests pass \
             -j 2
@@ -1395,6 +1395,39 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-codeowners-check
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
+
+  new_script_check:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: New script check
+    runs-on: spacetimedb-linux-small
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Check for new Bash or Python scripts
+        run: |
+          cargo ci other-workflows new-script-check \
+            --base-ref "origin/${{ github.event.pull_request.base.ref }}"
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-new-script-check
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
@@ -2002,10 +2035,15 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload update --from-previous-sdk
           # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
-          dotnet workload install wasi-experimental
-          rm global.json
+          # Create temp global.json to target .NET 8 SDK for workload install without
+          # overwriting the repository's .NET 10 global.json, which later C# harness
+          # tests rely on for SDK selection.
+          workload_dir="$(mktemp -d)"
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > "$workload_dir/global.json"
+          (
+            cd "$workload_dir"
+            dotnet workload install wasi-experimental
+          )
 
       - name: Override NuGet packages
         run: |
@@ -2041,6 +2079,9 @@ jobs:
       - *download-build-artifacts
       - *extract-build-artifacts
       - *expose-spacetime-cli
+
+      - name: Run C# SDK harness tests
+        run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
 
       - name: Check quickstart-chat bindings are up to date
         run: |

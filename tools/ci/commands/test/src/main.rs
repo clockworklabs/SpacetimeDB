@@ -81,7 +81,9 @@ fn rust_tests() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
+        "unreal",
+        "--skip",
+        "csharp",
     )
     .run()?;
     // Bindings snapshot tests rely on the unstable feature,

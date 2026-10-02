@@ -90,6 +90,8 @@ fn run_local() -> Result<()> {
                 "--test-threads=2",
                 "--skip",
                 "unreal",
+                "--skip",
+                "csharp",
             ])
             .status()?;
         ensure!(status.success(), "SDK tests failed");
