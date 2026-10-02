@@ -34,9 +34,22 @@ import {
 } from './type_builders';
 import type { Values } from './type_util';
 
+/**
+ * Helper to get the set of table names.
+ */
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
 >['accessorName'];
+
+/**
+ * Helper to get the table definition with the given name.
+ */
+export type TableDefOf<
+  S extends UntypedSchemaDef,
+  N extends TableNamesOf<S>,
+> = [S] extends [UntypedSchemaDef]
+  ? Values<S['tables']> & { accessorName: N }
+  : UntypedTableDef & { accessorName: N };
 
 /**
  * An untyped representation of the database schema.

@@ -1,7 +1,7 @@
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
-import type { UntypedSchemaDef } from './schema';
+import type { TableDefOf, TableNamesOf, UntypedSchemaDef } from './schema';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableDecl } from './table_schema';
 import { Timestamp } from './timestamp';
@@ -15,19 +15,15 @@ import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
 import { Uuid } from './uuid';
 
-/**
- * Helper to get the set of table names.
- */
-export type TableNames<SchemaDef extends UntypedSchemaDef> = Values<
-  SchemaDef['tables']
->['accessorName'] &
-  string;
+/** @deprecated Use `TableNamesOf` instead. */
+export type TableNames<SchemaDef extends UntypedSchemaDef> =
+  TableNamesOf<SchemaDef>;
 
-/** helper: pick the table def object from the schema by its name */
+/** @deprecated Use `TableDefOf` instead. */
 export type TableDefByName<
   SchemaDef extends UntypedSchemaDef,
   Name extends TableNames<SchemaDef>,
-> = Extract<Values<SchemaDef['tables']>, { accessorName: Name }>;
+> = TableDefOf<SchemaDef, Name>;
 
 // internal only — NOT exported.
 // This is how we make sure queries are only created with our helpers.
@@ -349,7 +345,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
   const qb = Object.create(null) as QueryBuilder<SchemaDef>;
   for (const table of Object.values(schema.tables)) {
     const ref = createTableRefFromDef(
-      table as TableDefByName<SchemaDef, TableNames<SchemaDef>>
+      table as TableDefOf<SchemaDef, TableNamesOf<SchemaDef>>
     );
     (qb as Record<string, TableRef<any>>)[table.accessorName] = ref;
   }
@@ -430,7 +426,8 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   return `${sql} WHERE ${whereSql}`;
 }
 
-// TODO: Just use UntypedTableDef if they end up being the same.
+// The table shape the query builder accepts. Both `UntypedTableDef` and
+// `TableRef` satisfy it, so a `TableRef` can be used as a table def.
 export type TypedTableDef<
   Columns extends Record<
     string,

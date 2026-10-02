@@ -1,5 +1,5 @@
 import type { ReadonlyIndexes } from '../lib/indexes';
-import type { TableNamesOf } from '../lib/schema';
+import type { TableDefOf, TableNamesOf } from '../lib/schema';
 import type {
   ReadonlyTableMethods,
   RowType,
@@ -8,7 +8,6 @@ import type {
 } from '../lib/table';
 import type { ColumnBuilder } from '../lib/type_builders';
 import type { Prettify } from '../lib/type_util';
-import type { TableDefForTableName } from './client_cache';
 import type { EventContextInterface } from './event_context';
 import type { UntypedModuleDef } from './spacetime_module';
 
@@ -24,8 +23,8 @@ export type ClientTablePrimaryKeyMethods<
   onUpdate(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-      newRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      oldRow: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
+      newRow: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -36,8 +35,8 @@ export type ClientTablePrimaryKeyMethods<
   removeOnUpdate(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-      newRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      oldRow: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
+      newRow: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void;
 };
@@ -52,7 +51,7 @@ export type ClientTableInsertMethods<
   onInsert(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -63,7 +62,7 @@ export type ClientTableInsertMethods<
   removeOnInsert(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void;
 };
@@ -78,7 +77,7 @@ export type ClientTableDeleteMethods<
   onDelete(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -89,7 +88,7 @@ export type ClientTableDeleteMethods<
   removeOnDelete(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void;
 };
@@ -113,8 +112,8 @@ export type ClientTable<
 > = Prettify<
   ClientTableCore<RemoteModule, TableName> &
     ReadonlyIndexes<
-      TableDefForTableName<RemoteModule, TableName>,
-      TableIndexes<TableDefForTableName<RemoteModule, TableName>>
+      TableDefOf<RemoteModule, TableName>,
+      TableIndexes<TableDefOf<RemoteModule, TableName>>
     >
 >;
 
@@ -152,7 +151,7 @@ type MaybePKMethods<
 export type ClientTableCoreImplementable<
   RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
-> = ReadonlyTableMethods<TableDefForTableName<RemoteModule, TableName>> &
+> = ReadonlyTableMethods<TableDefOf<RemoteModule, TableName>> &
   ClientTableMethods<RemoteModule, TableName> &
   // always present but optional -> statically known member set
   MaybePKMethods<RemoteModule, TableName>;
@@ -167,13 +166,11 @@ export type ClientTableCoreImplementable<
 export type ClientTableCore<
   RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
-> = ReadonlyTableMethods<TableDefForTableName<RemoteModule, TableName>> &
+> = ReadonlyTableMethods<TableDefOf<RemoteModule, TableName>> &
   ClientTableInsertMethods<RemoteModule, TableName> &
-  (IsEventTable<TableDefForTableName<RemoteModule, TableName>> extends true
+  (IsEventTable<TableDefOf<RemoteModule, TableName>> extends true
     ? {}
     : ClientTableDeleteMethods<RemoteModule, TableName> &
-        (HasPrimaryKey<
-          TableDefForTableName<RemoteModule, TableName>
-        > extends true
+        (HasPrimaryKey<TableDefOf<RemoteModule, TableName>> extends true
           ? ClientTablePrimaryKeyMethods<RemoteModule, TableName>
           : {}));

@@ -2,11 +2,11 @@ import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
 import { deepEqual, type ComparablePrimitive } from '../';
-import type { EventContextInterface, TableDefForTableName } from './index.ts';
+import type { EventContextInterface } from './index.ts';
 import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';
 import type { UntypedModuleDef } from './spacetime_module.ts';
-import type { TableNamesOf } from '../lib/schema.ts';
+import type { TableDefOf, TableNamesOf } from '../lib/schema.ts';
 import type {
   ReadonlyIndex,
   ReadonlyIndexes,
@@ -48,8 +48,8 @@ export type TableIndexView<
   RemoteModule extends UntypedModuleDef,
   TableName extends TableNamesOf<RemoteModule>,
 > = ReadonlyIndexes<
-  TableDefForTableName<RemoteModule, TableName>,
-  TableIndexes<TableDefForTableName<RemoteModule, TableName>>
+  TableDefOf<RemoteModule, TableName>,
+  TableIndexes<TableDefOf<RemoteModule, TableName>>
 >;
 
 export type TableCache<
@@ -69,9 +69,9 @@ export class TableCacheImpl<
   private readonly hasPrimaryKey: boolean;
   private rows: Map<
     ComparablePrimitive,
-    [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
+    [RowType<TableDefOf<RemoteModule, TableName>>, number]
   >;
-  private tableDef: TableDefForTableName<RemoteModule, TableName>;
+  private tableDef: TableDefOf<RemoteModule, TableName>;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
   /**
@@ -80,7 +80,7 @@ export class TableCacheImpl<
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableDef: TableDefForTableName<RemoteModule, TableName>) {
+  constructor(tableDef: TableDefOf<RemoteModule, TableName>) {
     this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
@@ -104,15 +104,12 @@ export class TableCacheImpl<
 
   // TODO: this just scans the whole table; we should build proper index structures
   #makeReadonlyIndex<
-    I extends TableDefForTableName<
-      RemoteModule,
-      TableName
-    >['resolvedIndexes'][number],
+    I extends TableDefOf<RemoteModule, TableName>['resolvedIndexes'][number],
   >(
-    tableDef: TableDefForTableName<RemoteModule, TableName>,
+    tableDef: TableDefOf<RemoteModule, TableName>,
     idx: I
-  ): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
-    type TableDef = TableDefForTableName<RemoteModule, TableName>;
+  ): ReadonlyIndex<TableDefOf<RemoteModule, TableName>, I> {
+    type TableDef = TableDefOf<RemoteModule, TableName>;
     type Row = Prettify<RowType<TableDef>>;
 
     // We do not yet support non-btree indexes
@@ -230,22 +227,20 @@ export class TableCacheImpl<
    * @returns The values of the rows in the table
    */
   iter(): IteratorObject<
-    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+    Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
     undefined
   > {
     function* generator(
       rows: Map<
         ComparablePrimitive,
-        [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
+        [RowType<TableDefOf<RemoteModule, TableName>>, number]
       >
     ): IteratorObject<
-      Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
       undefined
     > {
       for (const [row] of rows.values()) {
-        yield row as Prettify<
-          RowType<TableDefForTableName<RemoteModule, TableName>>
-        >;
+        yield row as Prettify<RowType<TableDefOf<RemoteModule, TableName>>>;
       }
     }
     return generator(this.rows);
@@ -256,16 +251,14 @@ export class TableCacheImpl<
    * @returns An iterator over the rows in the table
    */
   [Symbol.iterator](): IteratorObject<
-    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+    Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
     undefined
   > {
     return this.iter();
   }
 
   applyOperations = (
-    operations: Operation<
-      RowType<TableDefForTableName<RemoteModule, TableName>>
-    >[],
+    operations: Operation<RowType<TableDefOf<RemoteModule, TableName>>>[],
     ctx: EventContextInterface<RemoteModule>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
@@ -289,17 +282,11 @@ export class TableCacheImpl<
     if (this.hasPrimaryKey) {
       const insertMap = new Map<
         ComparablePrimitive,
-        [
-          Operation<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-          number,
-        ]
+        [Operation<RowType<TableDefOf<RemoteModule, TableName>>>, number]
       >();
       const deleteMap = new Map<
         ComparablePrimitive,
-        [
-          Operation<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-          number,
-        ]
+        [Operation<RowType<TableDefOf<RemoteModule, TableName>>>, number]
       >();
       for (const op of operations) {
         if (op.type === 'insert') {
@@ -362,7 +349,7 @@ export class TableCacheImpl<
   update = (
     ctx: EventContextInterface<RemoteModule>,
     rowId: ComparablePrimitive,
-    newRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
+    newRow: RowType<TableDefOf<RemoteModule, TableName>>,
     refCountDelta: number = 0
   ): PendingCallback | undefined => {
     const existingEntry = this.rows.get(rowId);
@@ -409,9 +396,7 @@ export class TableCacheImpl<
 
   insert = (
     ctx: EventContextInterface<RemoteModule>,
-    operation: Operation<
-      RowType<TableDefForTableName<RemoteModule, TableName>>
-    >,
+    operation: Operation<RowType<TableDefOf<RemoteModule, TableName>>>,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -434,9 +419,7 @@ export class TableCacheImpl<
 
   delete = (
     ctx: EventContextInterface<RemoteModule>,
-    operation: Operation<
-      RowType<TableDefForTableName<RemoteModule, TableName>>
-    >,
+    operation: Operation<RowType<TableDefOf<RemoteModule, TableName>>>,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -482,7 +465,7 @@ export class TableCacheImpl<
   onInsert = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.on('insert', cb);
@@ -506,7 +489,7 @@ export class TableCacheImpl<
   onDelete = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.on('delete', cb);
@@ -530,8 +513,8 @@ export class TableCacheImpl<
   onUpdate = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      oldRow: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.on('update', cb);
@@ -545,7 +528,7 @@ export class TableCacheImpl<
   removeOnInsert = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.off('insert', cb);
@@ -559,7 +542,7 @@ export class TableCacheImpl<
   removeOnDelete = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.off('delete', cb);
@@ -573,8 +556,8 @@ export class TableCacheImpl<
   removeOnUpdate = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+      oldRow: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>,
+      row: Prettify<RowType<TableDefOf<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.off('update', cb);
