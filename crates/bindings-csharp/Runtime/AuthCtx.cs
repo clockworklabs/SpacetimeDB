@@ -6,25 +6,18 @@ public sealed class AuthCtx
 {
     private static byte[] jwtBuffer = new byte[0x10_000];
 
-    private readonly bool _isInternal;
+    // Computed on first use, since it needs a host call to read the database's Identity.
+    private readonly Lazy<bool> _isInternal;
     private readonly Lazy<JwtClaims?> _jwtLazy;
 
-    private AuthCtx(bool isInternal, Func<JwtClaims?> jwtFactory)
+    private AuthCtx(Func<bool> isInternal, Func<JwtClaims?> jwtFactory)
     {
-        _isInternal = isInternal;
+        _isInternal = new Lazy<bool>(isInternal);
         _jwtLazy = new Lazy<JwtClaims?>(() => jwtFactory?.Invoke());
     }
 
     internal static readonly AuthCtx Anonymous =
-        new(isInternal: false, jwtFactory: static () => null);
-
-    /// <summary>
-    /// Create an AuthCtx for an internal call, with no JWT.
-    /// </summary>
-    private static AuthCtx Internal()
-    {
-        return new AuthCtx(isInternal: true, jwtFactory: () => null);
-    }
+        new(isInternal: static () => false, jwtFactory: static () => null);
 
     /// <summary>
     /// Create an AuthCtx by looking up the credentials for a connection id in system tables.
@@ -34,20 +27,26 @@ public sealed class AuthCtx
     /// </summary>
     public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity)
     {
+        // The invocation is internal when its sender is this database.
+        bool isInternal() => identity == SpacetimeDB.Internal.IReducerContext.GetDatabaseIdentity();
         if (connectionId == null)
         {
-            return Internal();
+            return new AuthCtx(isInternal, jwtFactory: static () => null);
         }
-        return FromConnectionId(connectionId.Value, identity);
+        return FromConnectionId(connectionId.Value, identity, isInternal);
     }
 
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.
     /// </summary>
-    private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
+    private static AuthCtx FromConnectionId(
+        ConnectionId connectionId,
+        Identity identity,
+        Func<bool> isInternal
+    )
     {
         return new AuthCtx(
-            isInternal: false,
+            isInternal,
             jwtFactory: () =>
             {
                 var result = SpacetimeDB.Internal.FFI.get_jwt(ref connectionId, out var source);
@@ -68,30 +67,23 @@ public sealed class AuthCtx
     }
 
     /// <summary>
-    /// True if this reducer was spawned from inside the database.
+    /// True if the sender of this invocation is this database,
+    /// for example in a scheduled reducer or procedure.
+    /// False for every other sender, including the database's owner in <c>init</c>.
+    /// Equivalent to <c>ctx.Sender == ctx.DatabaseIdentity</c>.
     /// </summary>
-    public bool IsInternal => _isInternal;
+    public bool IsInternal => _isInternal.Value;
 
     /// <summary>
     /// Check if there is a JWT present.
     /// If IsInternal is true, this will be false.
     /// </summary>
-    public bool HasJwt
-    {
-        get
-        {
-            if (_isInternal)
-            {
-                return false;
-            }
-
-            // At this point we do load the bytes.
-            return _jwtLazy.Value != null;
-        }
-    }
+    public bool HasJwt => Jwt != null;
 
     /// <summary>
     /// Load and get the JwtClaims.
+    /// Internal invocations have no JWT, even when their sender presented one,
+    /// so this is null whenever IsInternal is true.
     /// </summary>
-    public JwtClaims? Jwt => _jwtLazy.Value;
+    public JwtClaims? Jwt => IsInternal ? null : _jwtLazy.Value;
 }

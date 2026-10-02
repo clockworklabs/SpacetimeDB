@@ -258,7 +258,15 @@ The connection ID identifies the specific client connection that invoked the red
 
 :::note
 The connection ID is present only when the reducer invocation is associated with a client connection. Reducers invoked by `init`, scheduled reducers, and some CLI or internal calls may not have one. Client-connected and client-disconnected reducers receive the connection ID for the connection being opened or closed.
+
+A connection ID never tells you who the sender is, and a missing connection ID doesn't mean the invocation is internal.
 :::
+
+### Internal Invocations
+
+The authorization context tells you whether the invocation is internal, meaning that its sender is the database itself. This is equivalent to comparing the sender with the database's identity. The database's scheduled reducers and procedures are internal. Every other invocation, including `init`, whose sender is the database's owner, is not. Internal invocations never have a JWT.
+
+See [Authorization](../../00500-authentication/00600-authorization.md#internal-invocations) for who the sender is in each kind of invocation, and when you should check this.
 
 ### Timestamp
 
@@ -316,7 +324,7 @@ int32_t roll = rng.gen_range(1, 6);  // inclusive
 
 The context provides access to the module's own identity, which is useful when a reducer needs to refer to the database itself.
 
-Scheduled reducers and procedures are private by default in SpacetimeDB 2.x, so you do not need to compare the sender against the module identity to prevent ordinary clients from calling them directly. If you need both a scheduled function and a client-callable entry point, keep the scheduled function private and define a separate public reducer that wraps the shared logic.
+Scheduled reducers and procedures are private by default in SpacetimeDB 2.x, so you do not need to compare the sender against the module identity to prevent ordinary clients from calling them directly. If you need both a scheduled function and a client-callable entry point, keep the scheduled function private and define a separate public reducer that wraps the shared logic. If the database's owner must not be able to run a scheduled function by hand either, check whether the invocation is [internal](#internal-invocations).
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -429,7 +437,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 | -------------- | -------------------------- | ----------------------------------------------- |
 | `db`           | `DbView`                   | Access to the module's database tables          |
 | `sender`       | `Identity`                 | Identity of the caller                          |
-| `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
+| `senderAuth`   | `AuthCtx`                  | Authorization context for the caller: JWT claims, and whether the sender is the database itself |
 | `connectionId` | `ConnectionId \| null`     | Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
 | `random`       | `Random`                   | Random number generator (deterministic, seeded by SpacetimeDB) |
@@ -440,7 +448,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 | -------------- | --------------------- | ----------------------------------------------- |
 | `Db`           | `DbView`              | Access to the module's database tables          |
 | `Sender`       | `Identity`            | Identity of the caller                          |
-| `SenderAuth`   | `AuthCtx`             | Authorization context for the caller (includes JWT claims and internal call detection) |
+| `SenderAuth`   | `AuthCtx`             | Authorization context for the caller: JWT claims, and whether the sender is the database itself |
 | `ConnectionId` | `ConnectionId?`       | Connection ID of the caller, if available       |
 | `Timestamp`    | `Timestamp`           | Time when the reducer was invoked               |
 | `Rng`          | `Random`              | Random number generator                         |
@@ -460,7 +468,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 - `database_identity() -> Identity` - Get the module's identity
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
-- `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
+- `sender_auth() -> &AuthCtx` - Get authorization context for the caller: JWT claims, and whether the sender is the database itself
 </TabItem>
 <TabItem value="cpp" label="C++">
 
@@ -475,7 +483,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 
 - `database_identity() -> Identity` - Get the module's identity
 - `rng() -> StdbRng&` - Get the random number generator (deterministic and reproducible)
-- `sender_auth() -> const AuthCtx&` - Get authorization context for the caller (includes JWT claims and internal call detection)
+- `sender_auth() -> const AuthCtx&` - Get authorization context for the caller: JWT claims, and whether the sender is the database itself
 
 :::note
 C++ uses the `std::optional` type for the `connection_id` to represent values that may not be present. The `rng()` method returns a deterministic random number generator that is seeded consistently across all nodes.

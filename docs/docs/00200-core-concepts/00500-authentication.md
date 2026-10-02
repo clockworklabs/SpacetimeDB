@@ -89,4 +89,6 @@ validates the client's OIDC token and extracts the identity claims. These claims
 are then made available to your module's reducers, views and procedures via the context.
 
 [Check out the usage guide](./00500-authentication/00500-usage.md) for more
-information on how to access and use authentication claims in your module:
+information on how to access and use authentication claims in your module, and
+read [Authorization](./00500-authentication/00600-authorization.md) for how
+SpacetimeDB and your module decide what each caller may do.

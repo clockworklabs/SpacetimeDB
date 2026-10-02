@@ -64,12 +64,7 @@ public:
     template<typename Func>
     auto with_tx(Func&& body) -> decltype(body(std::declval<TxContext&>())) {
         auto make_reducer_ctx = [](Timestamp tx_timestamp) {
-            return ReducerContext(
-                Identity{},
-                std::nullopt,
-                tx_timestamp,
-                AuthCtx(false, [] { return std::nullopt; })
-            );
+            return ReducerContext(Identity{}, std::nullopt, tx_timestamp);
         };
         return Internal::with_tx(make_reducer_ctx, body);
     }
@@ -77,12 +72,7 @@ public:
     template<typename Func>
     auto try_with_tx(Func&& body) -> decltype(body(std::declval<TxContext&>())) {
         auto make_reducer_ctx = [](Timestamp tx_timestamp) {
-            return ReducerContext(
-                Identity{},
-                std::nullopt,
-                tx_timestamp,
-                AuthCtx(false, [] { return std::nullopt; })
-            );
+            return ReducerContext(Identity{}, std::nullopt, tx_timestamp);
         };
         return Internal::try_with_tx(make_reducer_ctx, body);
     }
