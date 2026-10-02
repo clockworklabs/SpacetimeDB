@@ -1066,7 +1066,7 @@ jobs:
             --archive-file "${RUST_TEST_ARCHIVE}" \
             --workspace-remap "${GITHUB_WORKSPACE}" \
             --partition hash:${{ matrix.partition }}/${RUST_TEST_PARTITIONS} \
-            -E 'not binary(=spacetimedb_bench) & not binary(=codegen) & not binary(=ensure_same_schema) & not binary(=standalone_integration_test) & not test(/unreal/) & not test(/csharp/)' \
+            -E 'not binary(=spacetimedb_bench) & not binary(=codegen) & not binary(=ensure_same_schema) & not binary(=standalone_integration_test) & not binary_id(spacetimedb-testing::environment) & not test(/unreal/) & not test(/csharp/)' \
             --no-fail-fast \
             --no-tests pass \
             -j 2
@@ -1151,7 +1151,7 @@ jobs:
           cargo nextest run \
             --archive-file "${RUST_TEST_ARCHIVE}" \
             --workspace-remap "${GITHUB_WORKSPACE}" \
-            -E 'binary(=spacetimedb_bench) | binary(=codegen) | binary(=ensure_same_schema) | binary(=standalone_integration_test)' \
+            -E '(binary(=spacetimedb_bench) | binary(=codegen) | binary(=ensure_same_schema) | binary(=standalone_integration_test) | binary_id(spacetimedb-testing::environment)) & not test(/csharp/)' \
             --no-fail-fast \
             --no-tests fail \
             -j 1
