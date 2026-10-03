@@ -1,11 +1,12 @@
 import { activateHosted } from '../src/stacks/hosted-lifecycle.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { runBounded } from '../src/runtime/bounded-process.js';
 import {
@@ -20,10 +21,10 @@ import {
   updateBackendLease,
   writeBackendLease,
   GRADING_WAIT_RECEIPT_ENV,
-  gradingWaitMs,
+  acquireGradingSlot,
   readGradingWaits,
+  recordedGradingWaitMs,
   releaseResourceLocks,
-  withGradingSlot,
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
 import { ATTEMPT_CREATION_LABEL } from '../src/runtime/container-identity.js';
@@ -509,33 +510,47 @@ test('teardown removes platform services before their namespace anchor, includin
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a grading run waits for a free slot, holds it in its lease, and reports the wait', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, () => {
+test('grading slots go to waiters in arrival order, skip a dead waiter, and report each wait', { skip: process.platform !== 'linux' ? 'Kernel flock requires the Linux appliance' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grading-slot-'));
-  const holder = createBackendLease({ runId: 'holder', backend: 'convex', track: 'ecommerce', runIndex: 0,
-    serverUri: 'http://127.0.0.1:14310' });
-  const waiter = createBackendLease({ runId: 'waiter', backend: 'convex', track: 'ecommerce', runIndex: 1,
-    serverUri: 'http://127.0.0.1:14311' });
-  const path = join(root, 'waiter.json');
-  const receipt = join(root, 'grading-waits.json');
-  const env = { STACK_BENCH_RESOURCE_LOCK_DIR: root, STACK_BENCH_GRADING_CAPACITY: '1',
-    STACK_BENCH_LEASE: path, STACK_BENCH_LEASE_TOKEN: waiter.ownershipToken, [GRADING_WAIT_RECEIPT_ENV]: receipt };
+  const run = (runId: string, runIndex: number) => {
+    const lease = createBackendLease({ runId, backend: 'convex', track: 'ecommerce', runIndex,
+      serverUri: `http://127.0.0.1:${14310 + runIndex}` });
+    const path = join(root, `${runId}.json`);
+    writeBackendLease(path, lease);
+    return { lease, path, receipt: join(root, `${runId}-waits.json`), env: { STACK_BENCH_RESOURCE_LOCK_DIR: root,
+      STACK_BENCH_GRADING_CAPACITY: '1', STACK_BENCH_LEASE: path, STACK_BENCH_LEASE_TOKEN: lease.ownershipToken,
+      [GRADING_WAIT_RECEIPT_ENV]: join(root, `${runId}-waits.json`) } };
+  };
+  const tick = () => delay(10);
   try {
-    holder.resources.locks.push(...acquireResourceLocks({ root, keys: ['grading:0'], lease: holder }));
-    writeBackendLease(path, waiter);
-    let sleeps = 0;
-    const { result, waitedMs } = withGradingSlot(() => {
-      assert.deepEqual(readBackendLease(path).resources.locks.map(lock => lock.key), ['grading:0']);
-      return 'graded';
-    }, env, () => {
-      sleeps++;
-      assert.equal(readGradingWaits(receipt).at(-1)?.resumedAt, null, 'an open wait pauses the clock');
-      releaseResourceLocks(holder);
-    });
-    assert.equal(result, 'graded');
-    assert.equal(sleeps, 1);
-    assert.deepEqual(readBackendLease(path).resources.locks, []);
-    assert.equal(gradingWaitMs(receipt), waitedMs);
-    assert.equal(withGradingSlot(() => 'free', env, () => assert.fail('a free slot never waits')).waitedMs, 0);
-    assert.equal(readGradingWaits(receipt).length, 1);
+    const holder = run('holder', 0), first = run('first', 1), second = run('second', 2);
+    holder.lease.resources.locks.push(...acquireResourceLocks({ root, keys: ['grading:0'], lease: holder.lease }));
+    // A waiter that died before these leaves an old ticket at the head of the queue.
+    mkdirSync(join(root, 'grading-queue'));
+    writeFileSync(join(root, 'grading-queue', '000000000000001-dead'), '');
+    utimesSync(join(root, 'grading-queue', '000000000000001-dead'), new Date(0), new Date(0));
+    const order: string[] = [];
+    const firstSlot = acquireGradingSlot(first.env, tick).then(slot => { order.push('first'); return slot; });
+    while (!readGradingWaits(first.receipt).length) await tick();
+    const secondSlot = acquireGradingSlot(second.env, tick).then(slot => { order.push('second'); return slot; });
+    while (!readGradingWaits(second.receipt).length) await tick();
+    releaseResourceLocks(holder.lease);
+    const granted = await firstSlot;
+    await delay(100);
+    assert.deepEqual(order, ['first'], 'the earlier waiter is served first');
+    assert.deepEqual(readBackendLease(first.path).resources.locks.map(lock => lock.key), ['grading:0']);
+    granted.release();
+    granted.release();
+    (await secondSlot).release();
+    assert.deepEqual(order, ['first', 'second']);
+    for (const waiter of [first, second]) {
+      assert.deepEqual(readBackendLease(waiter.path).resources.locks, []);
+      const [wait] = readGradingWaits(waiter.receipt);
+      assert.equal(recordedGradingWaitMs(waiter.receipt), wait!.resumedAt! - wait!.startedAt);
+    }
+    assert.deepEqual(readdirSync(join(root, 'grading-queue')), []);
+    const free = await acquireGradingSlot(first.env, () => assert.fail('a free slot never waits'));
+    free.release();
+    assert.equal(readGradingWaits(first.receipt).length, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

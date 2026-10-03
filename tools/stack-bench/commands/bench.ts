@@ -21,7 +21,8 @@ import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinu
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
-  claimBackendResourcesWhenAvailable, backendResourceLockKeys, resourceLockScope, loopbackHttpUri, withGradingSlot } from '../src/runtime/backend-lease.js';
+  claimBackendResourcesWhenAvailable, backendResourceLockKeys, resourceLockScope, loopbackHttpUri,
+  GRADING_WAIT_RECEIPT_ENV, GRADING_WAIT_RECEIPT_FILE, readGradingWaits, recordedGradingWaitMs } from '../src/runtime/backend-lease.js';
 import { borrowCampaignReservation }
   from '../src/campaigns/campaign-admission.js';
 import { captureApplicationDiagnostics } from '../src/runtime/backend-control.js';
@@ -535,7 +536,7 @@ const sh = (cmd: string, args: readonly string[],
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: COMMAND_TIMEOUT_MS, ...opts,
   });
 
-let activeAgentCancellation: AbortController | null = null;
+let activeProcessCancellation: AbortController | null = null;
 // Set once a run owns resources. The top-level rejection handler invokes this
 // directly; relying only on process 'exit' made cleanup best-effort precisely
 // when an awaited build rejected unexpectedly.
@@ -603,7 +604,7 @@ export async function runAgent(
   const supervised = campaignProviderContinuationContext(env) !== null;
   const capture = mkdtempSync(join(dirname(appDir), '.agent-output-'));
   const cancellation = new AbortController();
-  activeAgentCancellation = cancellation;
+  activeProcessCancellation = cancellation;
   try {
     const processResult = await runBounded(process.execPath, argv, {
       env, stdio: 'ignore', timeoutMs: supervised ? null : adapter.deadlineMs,
@@ -622,7 +623,7 @@ export async function runAgent(
     args.spentBudgetUsd = addCostUsd(args.spentBudgetUsd, result.costUsd);
     return result;
   } finally {
-    if (activeAgentCancellation === cancellation) activeAgentCancellation = null;
+    if (activeProcessCancellation === cancellation) activeProcessCancellation = null;
     rmSync(capture, { recursive: true, force: true });
   }
 }
@@ -715,10 +716,7 @@ export function archiveCandidateGrade(appDir: string, outputDir: string, label: 
   });
 }
 
-// Time this process waited for host grading slots; persisted with every run snapshot.
-let gradingWaitMs = 0;
-
-function grade(
+async function grade(
   args: BenchArgs,
   appDir: string,
   url: string,
@@ -727,7 +725,7 @@ function grade(
   track: Track,
   parentAttemptId: string,
   options: GradeOptions = {},
-): GradeBundlePayload | null {
+): Promise<GradeBundlePayload | null> {
   const out = privateGradingDirectory(appDir, options.out);
   const source = hashAppSource(appDir);
   const argv = gradeArgv(args, appDir, url, label, level, track, parentAttemptId, {
@@ -745,15 +743,20 @@ function grade(
   const sourceCount = task
     ? selectedGradingSourceCount(currentChecks, regressionChecks)
     : suitesFor(track, level).length;
-  const run = () => {
-    try {
-      sh('node', argv, { stdio: 'inherit', timeout: gradingRunTimeoutMs(sourceCount,
-        args.recipeBindings.get(level)?.plan.packs ?? [], [...currentChecks, ...regressionChecks]) });
-    } catch { /* a current bundle may still explain a scored failure */ }
-  };
-  // The stub backend holds no host resources; every real grading takes one of the host's grading slots.
-  if (args.backend === 'stub') run();
-  else gradingWaitMs += withGradingSlot(run).waitedMs;
+  // A current bundle may still explain a scored failure, so the process result is not consulted.
+  // Suites wait for host grading slots inside the grader; those waits do not count against its time.
+  const receipt = process.env[GRADING_WAIT_RECEIPT_ENV];
+  const startedAt = Date.now();
+  const cancellation = new AbortController();
+  activeProcessCancellation = cancellation;
+  try {
+    await runBounded(process.execPath, argv, { stdio: 'inherit', startedAt, signal: cancellation.signal,
+      timeoutMs: gradingRunTimeoutMs(sourceCount, args.recipeBindings.get(level)?.plan.packs ?? [],
+        [...currentChecks, ...regressionChecks]),
+      ...(receipt ? { pauseIntervals: () => readGradingWaits(receipt).filter(wait => wait.startedAt >= startedAt) } : {}) });
+  } finally {
+    if (activeProcessCancellation === cancellation) activeProcessCancellation = null;
+  }
   return existsSync(bundle)
     ? readArtifactPayload<GradeBundlePayload>(bundle, { expectedKind: 'grade_bundle' }) : null;
 }
@@ -942,6 +945,8 @@ async function main() {
   let sessionInFlight = false;
   let runCostComplete = true;
   const persistRun = (path: string, value: unknown) => {
+    const receipt = process.env[GRADING_WAIT_RECEIPT_ENV];
+    const gradingWaitMs = receipt ? recordedGradingWaitMs(receipt) : 0;
     if (gradingWaitMs > 0) recordGradingWait(value as BenchmarkRunRecord, gradingWaitMs);
     if (pendingLevel || sessionInFlight) {
       return writeRunJson(path, pendingRunSnapshot(value as BenchmarkRunRecord,
@@ -1332,6 +1337,8 @@ async function main() {
   }
   process.env.STACK_BENCH_LEASE = leasePath;
   process.env.STACK_BENCH_LEASE_TOKEN = initialLease.ownershipToken;
+  // Each suite grading takes a host grading slot and records any wait here; a supervisor may name the file.
+  process.env[GRADING_WAIT_RECEIPT_ENV] ??= join(resolve(args.out), GRADING_WAIT_RECEIPT_FILE);
   const auditNetwork = () => auditsTranscripts ? runAuditNetworkContext(track, { backend: stackAdapter.id, runIndex: args.runIndex },
     readBackendLease(leasePath, { token: initialLease.ownershipToken, backend: args.backend, runId }))
     : { ownEndpoints: [], isolatedLoopback: false };
@@ -1366,8 +1373,8 @@ async function main() {
   const teardown = ({ reason = null, retainBackend = args.retainBackend }:
     { reason?: string | null; retainBackend?: boolean } = {}) => {
     if (tornDown) return;
-    activeAgentCancellation?.abort();
-    activeAgentCancellation = null;
+    activeProcessCancellation?.abort();
+    activeProcessCancellation = null;
     // Preserve restart failures before removing the only filesystem that holds
     // their stderr. A 500 after restart is otherwise impossible to distinguish
     // from an application defect, a dead dependency, or host pressure.
@@ -1480,7 +1487,7 @@ async function main() {
         throw new Error('regrade source changed during preparation');
       }
       await materializeAcceptedSource(regrade.sourcePath, appDir, restartSpecFor(args, appDir, track));
-      bundle = grade(args, appDir, url, `${args.backend}-regrade`, regrade.declared.level,
+      bundle = await grade(args, appDir, url, `${args.backend}-regrade`, regrade.declared.level,
         track, runId, { out: join(outputDir, 'grading'), sourceSha256: regrade.source.sha256 });
       if (!bundle || bundle.source?.sha256 !== regrade.source.sha256) {
         throw new Error('regrade produced no matching source-bound grade bundle');
@@ -1821,7 +1828,7 @@ async function main() {
       && !featureActionNeedsCoding(progressionSelection,
         requireProgressionState(progressionExecution?.state ?? null))) {
       await restoreFeatureAcceptedSource(false);
-      const bundle = grade(args, appDir, url,
+      const bundle = await grade(args, appDir, url,
         `${args.backend}-l${level}${featureActionSuffix}-regrade`, level, track, runId);
       const outcome = classifyBundle(bundle);
       const repair = { status: levelGradeIsUsable(outcome) ? 'not-needed' as const : 'ungraded' as const,
@@ -1899,7 +1906,7 @@ async function main() {
       } else {
         resetAppToSource(args.seedFrom, appDir);
       }
-      const bundle = grade(args, appDir, url, `${args.backend}-extension-l${level}`,
+      const bundle = await grade(args, appDir, url, `${args.backend}-extension-l${level}`,
         level, track, runId, { applicationFailure });
       const outcome = applicationFailure ?? classifyBundle(bundle);
       const next = recordProgressionGrade({ selected: progressionSelection, bundle, level });
@@ -2259,7 +2266,7 @@ async function main() {
     }
     const firstBuildLabel = `${args.backend}-l${level}${featureActionSuffix}`;
     let bundle = firstBuildSource
-      ? grade(args, appDir, url, firstBuildLabel, level, track, runId,
+      ? await grade(args, appDir, url, firstBuildLabel, level, track, runId,
         { applicationFailure: materializationOutcome }) : null;
     let reusableRepairEvidence: {
       bundle: GradeBundlePayload;
@@ -2334,7 +2341,7 @@ async function main() {
         observationOutcome = { kind: 'ungraded', phase: 'first-build-observation',
           reason: 'scored first-build grading did not establish a usable environment' };
       } else {
-        observationBundle = grade(args, appDir, url, `${args.backend}-l${level}-observed`, level,
+        observationBundle = await grade(args, appDir, url, `${args.backend}-l${level}-observed`, level,
           track, runId, { observation: 'observed', out: observationOut,
             sourceSha256: firstBuildSource.sha256 });
         observationOutcome = classifyBundle(observationBundle);
@@ -2479,15 +2486,15 @@ async function main() {
       const prior = run.levels.find(record => record.level === failedLevel);
       if (prior) prior.outcome = failure;
     };
-    const restoreProgressionGrade = (accepted: GradeBundlePayload | null,
-      label: string): boolean => {
+    const restoreProgressionGrade = async (accepted: GradeBundlePayload | null,
+      label: string): Promise<boolean> => {
       const expected = progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
         ? progressionSelection.grader.selectionSha256 : null;
       if (!expected || accepted?.selection?.sha256 === expected) {
         bundle = accepted;
         return true;
       }
-      bundle = grade(args, appDir, url, label, level, track, runId);
+      bundle = await grade(args, appDir, url, label, level, track, runId);
       const outcome = classifyBundle(bundle);
       if (levelGradeIsUsable(outcome)) return true;
       recordRepairHarnessFailure('repair-restore-grading',
@@ -2561,7 +2568,7 @@ async function main() {
               requireProgressionState(progressionExecution?.state ?? null));
             repairResults = join(outputDir, 'repair-grades',
               `l${level}${featureActionSuffix}-round-${repairs + 1}`);
-            repairBaselineBundle = grade(args, appDir, url,
+            repairBaselineBundle = await grade(args, appDir, url,
               `${args.backend}-l${level}-repair-target${sequence}`,
               level, track, runId, { out: repairResults, recipeTask: targetTask });
           }
@@ -2579,7 +2586,7 @@ async function main() {
             break;
           }
           if (refreshReport.status === 3) {
-            bundle = grade(args, appDir, url,
+            bundle = await grade(args, appDir, url,
               `${args.backend}-l${level}-repair-refresh${sequence}`,
               level, track, runId);
             if (!levelGradeIsUsable(classifyBundle(bundle))) {
@@ -2703,7 +2710,7 @@ async function main() {
           : 'pausing before another paid round'}`);
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, beforeBundle, reason));
         if (args.progression) {
-          if (!restoreProgressionGrade(acceptedBundle,
+          if (!await restoreProgressionGrade(acceptedBundle,
             `${args.backend}-l${level}-unchanged${repairs}`)) break;
           if (!recordRepairProgression({ completedRepair: true })) break;
           continue;
@@ -2754,7 +2761,7 @@ async function main() {
           [...(build && !resumedRepair ? [runSessionRecord(build)] : []), ...repairSessions], false);
         archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
         if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
-        if (!restoreProgressionGrade(acceptedBundle,
+        if (!await restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`)) break;
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, rejectedBundle,
           'rolled back because the feature still failed or earlier behavior regressed'));
@@ -2790,7 +2797,7 @@ async function main() {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
         archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-rejected${repairs}`);
         if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
-        if (!restoreProgressionGrade(acceptedBundle,
+        if (!await restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}-rollback${repairs}`)) break;
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, repairedBundle,
           'rolled back because the result could not be compared'));
@@ -2840,7 +2847,7 @@ async function main() {
             null, true);
           break;
         }
-        if (!restoreProgressionGrade(acceptedBundle,
+        if (!await restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}-rollback${repairs}`)) break;
         regressed = true;
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, repairedBundle,

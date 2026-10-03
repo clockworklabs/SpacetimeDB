@@ -24,7 +24,7 @@ import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { repairBudgetLimit } from '../progression/repair-plan.js';
 import { validateDepthPauseEvidence } from './campaign-depth-pause.js';
-import { GRADING_WAIT_RECEIPT_FILE, readGradingWaits } from '../runtime/backend-lease.js';
+import { GRADING_WAIT_RECEIPT_FILE, recordedGradingWaitMs } from '../runtime/backend-lease.js';
 import type { RepairPlan } from '../progression/repair-plan.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -378,9 +378,7 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
       throw new Error('run grading wait requires a positive duration and evidence directory');
     }
     // A run killed after waiting may record less than its receipt, never more.
-    const receipted = readGradingWaits(join(resultDir, GRADING_WAIT_RECEIPT_FILE))
-      .reduce((total, wait) => total + (wait.resumedAt === null ? 0 : wait.resumedAt - wait.startedAt), 0);
-    if (run.gradingWaitMs > receipted) throw new Error('run grading wait exceeds its receipt');
+    if (run.gradingWaitMs > recordedGradingWaitMs(join(resultDir, GRADING_WAIT_RECEIPT_FILE))) throw new Error('run grading wait exceeds its receipt');
     if (run.totals?.gradingWaitSec !== run.gradingWaitMs / 1000) {
       throw new Error('run grading wait total does not match its record');
     }

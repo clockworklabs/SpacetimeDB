@@ -35,7 +35,7 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
-import { readBackendLease } from '../src/runtime/backend-lease.js';
+import { acquireGradingSlot, readBackendLease } from '../src/runtime/backend-lease.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
@@ -1046,7 +1046,12 @@ async function main() {
     process.exit(1);
   }
 
+  // Leased runs share the host's grading slots, taken per suite so a short grading need not wait out a
+  // long one. The stub backend holds no host resources.
+  const gradingSlot = () => args.backend === 'stub' || !process.env.STACK_BENCH_LEASE
+    ? Promise.resolve({ release() {} }) : acquireGradingSlot();
   if (args.observation === 'scored') {
+    const setupSlot = await gradingSlot();
     if (!(await freshen())) {
       bundle.error = freshenFailureMessage();
       bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
@@ -1136,12 +1141,14 @@ async function main() {
       console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);
     }
+    setupSlot.release();
   }
 
   // Keep current-level score separate from earlier guarantee regressions.
   let total = 0, max = 0, regTotal = 0, regMax = 0;
   const dirty = false;
   let browserServer: BrowserServer | null = null;
+  let suiteSlot: { release(): void } | null = null;
   try {
     if (declaredSuites.some(suite => !selection
       || selection.checks.some(check => check.executionId === suite.id))) {
@@ -1155,6 +1162,7 @@ async function main() {
         console.log(`  ${suite.id.padEnd(10)} ... not selected`);
         continue;
       }
+      suiteSlot = await gradingSlot();
       if (!(await freshen())) {
         bundle.error = freshenFailureMessage();
         console.log(`  ${suite.id}: SKIPPED (${bundle.error})`);
@@ -1203,6 +1211,8 @@ async function main() {
         console.log(`\nABORTED: ${bundle.error}`);
         throw error;
       }
+      suiteSlot.release();
+      suiteSlot = null;
       bundle.suites[suite.id] = r;
       if (isGradePayload(r) && r.features.some(feature => feature.cleanupEvidence?.failures
         .some(failure => failure.stage === 'application-restore'))) {
@@ -1227,6 +1237,7 @@ async function main() {
       else { total += r.total; max += r.max; }
     }
   } finally {
+    suiteSlot?.release();
     args.browserWsEndpoint = undefined;
     await closeSuiteBrowser(browserServer, bundle, writeBundle);
   }

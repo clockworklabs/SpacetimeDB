@@ -5,14 +5,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { isIPv4 } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chmodSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, writeFileSync, renameSync,
-  linkSync, mkdirSync, rmSync } from 'node:fs';
+  linkSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { validateStackLeaseResources } from '../stacks/stack-lease-capabilities.js';
 import { resourceLockDescriptors } from './resource-lock-worker.js';
 import type { ResourceLockTransaction } from './resource-lock-worker.js';
 import { GRADING_CAPACITY, RESTRICTED_PORTS } from '../composition/product-config.js';
-import { sleepSync } from './platform.js';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',
@@ -634,6 +633,11 @@ export function readGradingWaits(path: string): CapacityWait[] {
   return waits as CapacityWait[];
 }
 
+/** Grading-slot waits that have ended, as a run records them. */
+export function recordedGradingWaitMs(path: string): number {
+  return readGradingWaits(path).reduce((total, wait) => total + (wait.resumedAt === null ? 0 : wait.resumedAt - wait.startedAt), 0);
+}
+
 /** Total grading-slot wait in a receipt, counting an open wait up to `now`. */
 export function gradingWaitMs(path: string, now = Date.now()): number {
   return readGradingWaits(path).reduce((total, wait) => total + (wait.resumedAt ?? now) - wait.startedAt, 0);
@@ -646,51 +650,84 @@ function writeGradingWaits(path: string, waits: readonly CapacityWait[]): void {
   renameSync(temporary, path);
 }
 
+// A waiter rewrites its ticket every second; one untouched this long belongs to a waiter that died.
+const GRADING_TICKET_STALE_MS = 30_000;
+
+function firstLiveTicket(queue: string, now = Date.now()): string | undefined {
+  for (const name of readdirSync(queue).sort()) {
+    try {
+      if (now - statSync(join(queue, name)).mtimeMs <= GRADING_TICKET_STALE_MS) return name;
+      rmSync(join(queue, name), { force: true });
+    } catch { /* its owner removed it meanwhile */ }
+  }
+  return undefined;
+}
+
+export interface GradingSlot { release(): void }
+
 /**
- * Run `grade` while holding one of the host's grading slots (`grading:0`..`grading:N-1`), recorded in
- * this run's lease so teardown and recovery release it like any other claim. Waiting for a slot is
- * reported to the supervisor so it does not consume the run's working time; returns the wait.
+ * Claim one of the host's grading slots (`grading:0`..`grading:N-1`) in this run's lease, so teardown and
+ * recovery release it like any other claim. Waiters are served in arrival order: each keeps a ticket fresh
+ * and only the oldest live ticket may take a free slot. Every wait goes to the receipt named by
+ * GRADING_WAIT_RECEIPT_ENV, which supervisors and run totals subtract from working time.
  */
-export function withGradingSlot<T>(grade: () => T, env: NodeJS.ProcessEnv = process.env,
-  sleep: (ms: number) => void = sleepSync): { result: T; waitedMs: number } {
+export async function acquireGradingSlot(env: NodeJS.ProcessEnv = process.env,
+  sleep: (ms: number) => Promise<unknown> = delay): Promise<GradingSlot> {
   const { path, lease } = leaseFromEnv(env);
   const { root } = resourceLockScope(env);
   const capacity = gradingCapacity(env);
   const receipt = env[GRADING_WAIT_RECEIPT_ENV];
+  const queue = join(root, 'grading-queue');
+  mkdirSync(queue, { recursive: true });
+  const ticket = join(queue, `${String(Date.now()).padStart(15, '0')}-${randomUUID()}`);
   let waitStartedAt: number | null = null;
   let slot: BackendResourceLock | undefined;
-  while (!slot) {
-    for (let index = 0; index < capacity && !slot; index++) {
-      try { [slot] = acquireResourceLocks({ root, keys: [`grading:${index}`], lease }); }
-      catch (error) {
-        // A held slot is busy; a crashed holder's slot stays busy until recovery releases it.
-        if (!(error instanceof Error) || !/is already leased by|remains leased by/.test(error.message)) throw error;
+  try {
+    for (;;) {
+      // Rewriting keeps the ticket fresh, and restores it if a stalled poll let another waiter drop it.
+      writeFileSync(ticket, '');
+      if (firstLiveTicket(queue) === basename(ticket)) {
+        for (let index = 0; index < capacity && !slot; index++) {
+          try { [slot] = acquireResourceLocks({ root, keys: [`grading:${index}`], lease }); }
+          catch (error) {
+            // A held slot is busy; a crashed holder's slot stays busy until recovery releases it.
+            if (!(error instanceof Error) || !/is already leased by|remains leased by/.test(error.message)) throw error;
+          }
+        }
       }
+      if (slot) break;
+      if (waitStartedAt === null) {
+        waitStartedAt = Date.now();
+        console.error(`Waiting for one of ${capacity} grading slots`);
+        if (receipt) writeGradingWaits(receipt, [...readGradingWaits(receipt), { startedAt: waitStartedAt, resumedAt: null }]);
+      }
+      await sleep(1000);
     }
-    if (slot) break;
-    if (waitStartedAt === null) {
-      waitStartedAt = Date.now();
-      console.error(`Waiting for one of ${capacity} grading slots`);
-      if (receipt) writeGradingWaits(receipt, [...readGradingWaits(receipt), { startedAt: waitStartedAt, resumedAt: null }]);
-    }
-    sleep(1000);
-  }
-  const resumedAt = Date.now();
-  const waitedMs = waitStartedAt === null ? 0 : resumedAt - waitStartedAt;
+  } finally { rmSync(ticket, { force: true }); }
   if (receipt && waitStartedAt !== null) {
     const waits = readGradingWaits(receipt);
-    waits[waits.length - 1] = { startedAt: waitStartedAt, resumedAt };
+    waits[waits.length - 1] = { startedAt: waitStartedAt, resumedAt: Date.now() };
     writeGradingWaits(receipt, waits);
   }
-  lease.resources.locks.push(slot);
-  writeBackendLease(path, lease);
-  try { return { result: grade(), waitedMs }; }
-  finally {
-    lockedResources({ root, lease, operation: 'release', keys: [slot.key] });
-    const current = leaseFromEnv(env).lease;
-    current.resources.locks = current.resources.locks.filter(lock => lock.key !== slot!.key);
-    writeBackendLease(path, current);
-  }
+  const held = slot;
+  updateBackendLease(path, { token: lease.ownershipToken }, next => {
+    next.resources.locks.push(held);
+    return next;
+  });
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    process.off('exit', release);
+    lockedResources({ root, lease, operation: 'release', keys: [held.key] });
+    updateBackendLease(path, { token: lease.ownershipToken }, next => {
+      next.resources.locks = next.resources.locks.filter(lock => lock.key !== held.key);
+      return next;
+    });
+  };
+  // process.exit skips finally blocks; a slot must not outlive the process that graded with it.
+  process.on('exit', release);
+  return { release };
 }
 
 /** Dynamic admission uses measured host pressure; numeric overrides are optional quotas. */
