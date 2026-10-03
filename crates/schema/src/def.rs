@@ -31,6 +31,7 @@ use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
+use spacetimedb_lib::db::raw_def::v10::CaseConversionPolicy;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
     RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
@@ -181,6 +182,11 @@ pub struct ModuleDef {
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
 
+    /// The case conversion policy the module's names were derived under: the one a V10 module
+    /// declares, `SnakeCase` if it declares none, or `None` for modules authored under
+    /// [`RawModuleDefV9`] and earlier, whose names are never converted.
+    case_conversion_policy: CaseConversionPolicy,
+
     /// Submodules, keyed by the canonical namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
 
@@ -208,6 +214,11 @@ impl ModuleDef {
     /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
+    }
+
+    /// The case conversion policy the module's names were derived under. See the field's docs.
+    pub fn case_conversion_policy(&self) -> CaseConversionPolicy {
+        self.case_conversion_policy
     }
 
     /// The submodules of the module definition, keyed by canonical namespace.
@@ -1040,6 +1051,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_handlers: _,
             http_routes: _,
             raw_module_def_version: _,
+            case_conversion_policy: _,
             submodules: _,
             accessor_path: _,
             environment: _,
@@ -1102,6 +1114,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_handlers,
             http_routes,
             raw_module_def_version: _,
+            case_conversion_policy,
             submodules,
             accessor_path: _,
             environment,
@@ -1273,6 +1286,12 @@ impl From<ModuleDef> for RawModuleDefV10 {
             .collect();
         if !submodules.is_empty() {
             sections.push(RawModuleDefV10Section::Submodules(submodules));
+        }
+
+        // Keep a policy other than the default, so that validating this def again derives the
+        // same names, such as those of columns, which have no explicit names here.
+        if !matches!(case_conversion_policy, CaseConversionPolicy::SnakeCase) {
+            sections.push(RawModuleDefV10Section::CaseConversionPolicy(case_conversion_policy));
         }
 
         // Always emit ExplicitNames so canonical names survive the round-trip.
