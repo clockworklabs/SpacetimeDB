@@ -76,8 +76,12 @@ fn qualify(code: String) -> String {
 
 fn parse_code(code: String) -> syn::Result<TokenStream> {
     let code = qualify(code);
-    code.parse::<TokenStream>()
-        .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), format!("spike template did not lex: {e}")))
+    code.parse::<TokenStream>().map_err(|e| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("spike template did not lex: {e}"),
+        )
+    })
 }
 
 fn tokens_to_string(t: &impl ToTokens) -> String {
@@ -127,7 +131,10 @@ pub(crate) fn client_table(args: TokenStream, item: TokenStream) -> syn::Result<
         ..
     }) = &mut item.data
     else {
-        return Err(syn::Error::new_spanned(&item, "spacetimedb table must be a struct with named fields"));
+        return Err(syn::Error::new_spanned(
+            &item,
+            "spacetimedb table must be a struct with named fields",
+        ));
     };
 
     let mut columns = vec![];
@@ -183,7 +190,11 @@ pub(crate) fn client_table(args: TokenStream, item: TokenStream) -> syn::Result<
 
     let accessor = args.accessor.unraw().to_string();
     let model = TableModel {
-        table_name: args.name.as_ref().map(|n| n.value()).unwrap_or_else(|| canonical(&accessor)),
+        table_name: args
+            .name
+            .as_ref()
+            .map(|n| n.value())
+            .unwrap_or_else(|| canonical(&accessor)),
         accessor,
         row_type: item.ident.to_string(),
         is_event: args.event.is_some(),
@@ -242,7 +253,11 @@ fn existing_derives(attrs: &[syn::Attribute]) -> syn::Result<Vec<String>> {
     let mut out = vec![];
     for attr in attrs.iter().filter(|a| a.path().is_ident("derive")) {
         let paths = attr.parse_args_with(Punctuated::<syn::Path, Token![,]>::parse_terminated)?;
-        out.extend(paths.iter().filter_map(|p| p.segments.last().map(|s| s.ident.to_string())));
+        out.extend(
+            paths
+                .iter()
+                .filter_map(|p| p.segments.last().map(|s| s.ident.to_string())),
+        );
     }
     Ok(out)
 }
@@ -352,8 +367,9 @@ fn generate_table(out: &mut String, t: &TableModel) {
     let accessor_method = &t.accessor;
 
     // codegen writes `super::RemoteTables`, `super::EventContext` and `super::RemoteModule`.
-    let super_remote_tables = super_assoc(row_type, "DbView");
-    let super_event_context = super_assoc(row_type, "EventContext");
+    // `client_module!` implements `InModule` for the accessor marker, so it is the anchor for the projections.
+    let super_remote_tables = super_assoc(&table_accessor, "DbView");
+    let super_event_context = super_assoc(&table_accessor, "EventContext");
 
     write!(
         out,
@@ -374,6 +390,13 @@ pub struct {table_handle}<'ctx> {{
 
 /// Lifetime-aware accessor marker for the table `{table_name}`.
 pub struct {table_accessor};
+
+// `client_module!` links the marker to the module. The row's own `InModule` impl delegates to it,
+// so that every `InModule` impl has a concrete self type. (Implementing `InModule` for a projection
+// like `<{table_accessor} as ClientTableDef>::Row` compiles, but makes type checking much slower.)
+impl __sdk::InModule for {row_type} {{
+    type Module = <{table_accessor} as __sdk::InModule>::Module;
+}}
 
 impl __sdk::TableAccessor<{super_remote_tables}> for {table_accessor} {{
     type Row = {row_type};
@@ -762,14 +785,21 @@ pub(crate) fn client_reducer(args: TokenStream, item: TokenStream) -> syn::Resul
             return Err(syn::Error::new_spanned(arg, "expected typed argument"));
         };
         let syn::Pat::Ident(pat) = &*pat_ty.pat else {
-            return Err(syn::Error::new_spanned(&pat_ty.pat, "reducer parameters must be identifiers"));
+            return Err(syn::Error::new_spanned(
+                &pat_ty.pat,
+                "reducer parameters must be identifiers",
+            ));
         };
         params.push((pat.ident.unraw().to_string(), tokens_to_string(&pat_ty.ty)));
     }
 
     let func_name = sig.ident.unraw().to_string();
     let model = ReducerModel {
-        reducer_name: args.name.as_ref().map(|n| n.value()).unwrap_or_else(|| canonical(&func_name)),
+        reducer_name: args
+            .name
+            .as_ref()
+            .map(|n| n.value())
+            .unwrap_or_else(|| canonical(&func_name)),
         args_type: args_type_name(&func_name),
         enum_variant_name: pascal(&func_name),
         func_name,
@@ -796,13 +826,11 @@ fn generate_reducer(out: &mut String, r: &ReducerModel) {
     let mut fields = String::new();
     let mut arglist_no_delimiters = String::new();
     let mut arg_names = String::new();
-    let mut variant_fields = String::new();
     let mut aliases = String::new();
     for (name, ty) in &r.params {
         writeln!(fields, "pub {name}: {ty},").unwrap();
         writeln!(arglist_no_delimiters, "{name}: {ty},").unwrap();
         write!(arg_names, "{name}, ").unwrap();
-        writeln!(variant_fields, "{name}: args.{name},").unwrap();
         let alias = param_alias_name(args_type, name);
         writeln!(
             aliases,
@@ -810,11 +838,6 @@ fn generate_reducer(out: &mut String, r: &ReducerModel) {
         )
         .unwrap();
     }
-    let variant_ctor = if r.params.is_empty() {
-        format!("Self::{enum_variant_name}")
-    } else {
-        format!("Self::{enum_variant_name} {{ {variant_fields} }}")
-    };
     let variant_pattern = if r.params.is_empty() {
         format!("R::{enum_variant_name}")
     } else {
@@ -833,13 +856,6 @@ pub(crate) struct {args_type} {{
 }}
 
 {aliases}
-
-impl From<{args_type}> for {super_reducer} {{
-    #[allow(unused_variables)]
-    fn from(args: {args_type}) -> Self {{
-        {variant_ctor}
-    }}
-}}
 
 #[doc(hidden)]
 impl __sdk::ClientReducerDef for {args_type} {{
@@ -973,6 +989,8 @@ fn split_path(path: &syn::Path) -> (String, String) {
 
 struct ModTable {
     accessor: String,
+    /// `prefix::FooTableAccessor`
+    marker: String,
     /// `<prefix::FooTableAccessor as __sdk::ClientTableDef>`
     def: String,
 }
@@ -992,11 +1010,9 @@ pub(crate) fn client_module(input: TokenStream) -> syn::Result<TokenStream> {
         .iter()
         .map(|p| {
             let (prefix, accessor) = split_path(p);
-            let def = format!(
-                "<{prefix}{} as __sdk::ClientTableDef>",
-                table_accessor_marker(&accessor)
-            );
-            ModTable { accessor, def }
+            let marker = format!("{prefix}{}", table_accessor_marker(&accessor));
+            let def = format!("<{marker} as __sdk::ClientTableDef>");
+            ModTable { accessor, marker, def }
         })
         .collect();
     let reducers: Vec<ModReducer> = input
@@ -1035,14 +1051,31 @@ fn print_item_links(out: &mut String, tables: &[ModTable], reducers: &[ModReduce
     for t in tables {
         writeln!(
             out,
-            "impl __sdk::InModule for {}::Row {{ type Module = RemoteModule; }}",
-            t.def
+            "impl __sdk::InModule for {} {{ type Module = RemoteModule; }}",
+            t.marker
         )
         .unwrap();
     }
     for r in reducers {
         let args = &r.args_path;
         let fields: String = r.params.iter().map(|(n, _)| format!("{n}: _, ")).collect();
+        // codegen writes this `From` impl in the reducer's file. Here it has a concrete self type,
+        // which keeps type checking fast (see the comment on `ClientTableDef` in the SDK).
+        let variant = &r.variant;
+        let ctor = if r.params.is_empty() {
+            format!("Reducer::{variant}")
+        } else {
+            let f: String = r.params.iter().map(|(n, _)| format!("{n}: args.{n}, ")).collect();
+            format!("Reducer::{variant} {{ {f} }}")
+        };
+        writeln!(
+            out,
+            "impl From<{args}> for Reducer {{
+    #[allow(unused_variables)]
+    fn from(args: {args}) -> Self {{ {ctor} }}
+}}"
+        )
+        .unwrap();
         writeln!(
             out,
             "impl __sdk::InModule for {args} {{ type Module = RemoteModule; }}

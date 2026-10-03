@@ -329,15 +329,16 @@ pub fn transaction_update_iter_table_updates(
 //
 // The client expansion of `#[spacetimedb::table]` and `#[spacetimedb::reducer]` runs at the declaration's location,
 // which may be any module. It cannot name the module-wide types (`RemoteModule`, `RemoteTables`, `Reducer`, ...),
-// so it reaches them through `<Row as InModule>::Module` projections.
+// so it reaches them through `<Anchor as InModule>::Module` projections.
 // `spacetimedb::client_module!` generates the module-wide types and links each item to them:
-// it implements `InModule` for each table's row type and each reducer's args type,
-// and reaches the per-item helpers below through the conventionally named `{Table}TableAccessor` and `{Reducer}Args`.
+// it implements `InModule` for each table's `{Table}TableAccessor` marker and each reducer's `{Reducer}Args` type,
+// and reaches the per-item helpers below through those conventionally named types.
+// Every `InModule` impl has a concrete self type; impls on projections made type checking several times slower.
 // ---------------------------------------------------------------------------------------------------------------------
 
 /// Implemented by the client expansion of `#[spacetimedb::table]` for the table's `{Table}TableAccessor` marker.
 ///
-/// `Row` is deliberately unbounded, so that `client_module!` can implement `InModule` for `<X as ClientTableDef>::Row`.
+/// `client_module!` implements `InModule` for the marker, and the row's `InModule` impl delegates to the marker's.
 pub trait ClientTableDef {
     /// The table's row type.
     type Row;
