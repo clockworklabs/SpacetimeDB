@@ -7,7 +7,11 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
-{/* TODO: Scope (what this guide teaches), goal (what you build) and prerequisites. */}
+:::note Prerequisites
+{/* TODO: What the reader needs first, with a link to the quickstart. */}
+:::
+
+{/* TODO: Scope (what this guide teaches) and goal (what you build). */}
 
 ## Define the tables
 
