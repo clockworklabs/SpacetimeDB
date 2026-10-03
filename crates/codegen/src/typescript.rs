@@ -12,6 +12,7 @@ use std::iter;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::db::raw_def::v10::CaseConversionPolicy;
 use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::{AlgebraicTypeRef, AlgebraicValue};
@@ -923,6 +924,9 @@ impl Lang for TypeScript {
 ///
 /// export const add = spacetimedb.reducer({ name: "add" }, AddReducer);
 /// ```
+///
+/// A module whose case conversion policy is not the default passes it to `__schema`, e.g.
+/// `__schema({ ... }, { CASE_CONVERSION_POLICY: { tag: "None" } })`.
 fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -987,7 +991,16 @@ fn generate_module_file(module: &ModuleDef, options: &CodegenOptions) -> OutputF
         writeln!(out, "}}, {}Row),", table_name_pascalcase);
     }
     out.dedent(1);
-    writeln!(out, "}});");
+    // A client derives canonical names under the module's policy, as the host does. The SDK's
+    // root does not export `CaseConversionPolicy`, so this writes the policy's value, whose tag
+    // is the variant's name.
+    let policy = module.case_conversion_policy();
+    if matches!(policy, CaseConversionPolicy::SnakeCase) {
+        writeln!(out, "}});");
+    } else {
+        let tag = ts_string_literal(&format!("{policy:?}"));
+        writeln!(out, "}}, {{ CASE_CONVERSION_POLICY: {{ tag: {tag} }} }});");
+    }
     writeln!(out, "export default spacetimedb;");
 
     writeln!(out);
@@ -1045,8 +1058,8 @@ struct Functions<'a> {
 
 impl<'a> Functions<'a> {
     /// Splits the module's functions into those that `module.ts` declares and exports, and the
-    /// fallback ones, whose accessors are not export names, which `index.ts` declares with the
-    /// client schema that bindings used before.
+    /// fallback ones, whose accessors are not export names, or whose names a procedure declaration
+    /// cannot give, which `index.ts` declares with the client schema that bindings used before.
     fn partition(module: &'a ModuleDef, options: &CodegenOptions) -> (Self, Self) {
         let (reducers, fallback_reducers): (Vec<_>, Vec<_>) = iter_reducers(module, options.visibility)
             .filter(|reducer| is_reducer_invokable(reducer))
@@ -1060,8 +1073,11 @@ impl<'a> Functions<'a> {
             .chain(views.iter().map(|view| view.accessor_name.deref()))
             .map(|accessor_name| accessor_name.to_case(Case::Camel))
             .collect();
-        let (procedures, fallback_procedures) = iter_procedures(module, options.visibility)
-            .partition(|procedure| is_export_name(&procedure.accessor_name) && !exports.contains(&*procedure.name));
+        let (procedures, fallback_procedures) = iter_procedures(module, options.visibility).partition(|procedure| {
+            is_export_name(&procedure.accessor_name)
+                && is_procedure_declaration_name(module, &procedure.name)
+                && !exports.contains(&*procedure.name)
+        });
         let exported = Self {
             reducers,
             procedures,
@@ -1085,6 +1101,19 @@ impl<'a> Functions<'a> {
 fn is_export_name(accessor_name: &str) -> bool {
     let name = accessor_name.to_case(Case::Camel);
     is_identifier_name(&name) && name != "default"
+}
+
+/// Whether a procedure declaration in `module.ts` can give the procedure the canonical name `name`.
+/// The TypeScript host converts a procedure's explicit name under the module's case conversion
+/// policy (see the SDK's `makeProcedureExport`), so a client that reads `module.ts` as the host
+/// reads module source converts it too. Only a name that the policy keeps is the same either way.
+fn is_procedure_declaration_name(module: &ModuleDef, name: &str) -> bool {
+    match module.case_conversion_policy() {
+        CaseConversionPolicy::None => true,
+        CaseConversionPolicy::SnakeCase => name.to_case(Case::Snake) == name,
+        // A policy this code does not know may convert the name.
+        _ => false,
+    }
 }
 
 /// Whether `name` is an ASCII identifier name, which an object literal takes as a key unquoted.
@@ -2345,7 +2374,7 @@ const RESERVED_KEYWORDS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spacetimedb_lib::db::raw_def::v10::{ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{ExplicitNames, RawModuleDefV10, RawModuleDefV10Builder};
     use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
     use spacetimedb_lib::sats::algebraic_value::ser::value_serialize;
     use spacetimedb_lib::sats::{i256, u256, AlgebraicType, ProductType, ProductValue, SumValue};
@@ -2633,6 +2662,51 @@ mod tests {
         ] {
             assert_eq!(ts_object_key(key), written);
         }
+    }
+
+    #[test]
+    fn module_file_declares_a_policy_other_than_the_default() {
+        let module_file = |policy| {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.set_case_conversion_policy(policy);
+            let module: ModuleDef = builder.finish().try_into().unwrap();
+            // The CLI's schema extractor converts the module def back to a raw def to validate.
+            let module = RawModuleDefV10::from(module).try_into().unwrap();
+            generate_module_file(&module, &CodegenOptions::default()).code
+        };
+        assert!(!module_file(CaseConversionPolicy::SnakeCase).contains("CASE_CONVERSION_POLICY"));
+        assert!(module_file(CaseConversionPolicy::None).contains("}, { CASE_CONVERSION_POLICY: { tag: \"None\" } });"));
+    }
+
+    #[test]
+    fn procedures_whose_names_the_policy_converts_fall_back() {
+        let partition = |policy| {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.set_case_conversion_policy(policy);
+            builder.add_procedure("count_players", ProductType::unit(), AlgebraicType::U32);
+            builder.add_procedure("count_teams", ProductType::unit(), AlgebraicType::U32);
+            let mut names = ExplicitNames::default();
+            names.insert_function("count_teams", "CountTeams");
+            builder.add_explicit_names(names);
+            let module: ModuleDef = builder.finish().try_into().unwrap();
+            let (exported, fallback) = Functions::partition(&module, &CodegenOptions::default());
+            let names = |functions: Functions| {
+                functions
+                    .procedures
+                    .iter()
+                    .map(|p| p.name.to_string())
+                    .collect::<Vec<_>>()
+            };
+            (names(exported), names(fallback))
+        };
+        assert_eq!(
+            partition(CaseConversionPolicy::SnakeCase),
+            (vec!["count_players".to_owned()], vec!["CountTeams".to_owned()])
+        );
+        assert_eq!(
+            partition(CaseConversionPolicy::None),
+            (vec!["CountTeams".to_owned(), "count_players".to_owned()], vec![])
+        );
     }
 
     #[test]
