@@ -128,3 +128,21 @@ const _row4: {
   bar: t.i32().primaryKey(),
   idx: t.i64().unique().index('btree'),
 };
+
+// Test that enum and object columns keep their earlier metadata, as the other columns do
+const color = t.enum('Color', { Red: t.unit(), Blue: t.unit() });
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _enumAndObjectMetadata: [
+  { isPrimaryKey: true; name: 'color' },
+  { indexType: 'btree'; isPrimaryKey: true },
+  { defaultValue: any; indexType: 'btree' },
+  { defaultValue: any; name: 'pos' },
+] = [
+  color.primaryKey().name('color').columnMetadata,
+  color.index().primaryKey().columnMetadata,
+  t
+    .enum('Shape', { Circle: t.u32() })
+    .default({ tag: 'Circle', value: 1 })
+    .index().columnMetadata,
+  t.object('Pos', { x: t.i32() }).default({ x: 0 }).name('pos').columnMetadata,
+];
