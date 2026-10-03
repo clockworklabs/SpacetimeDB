@@ -44,9 +44,10 @@ export const ATTEMPT_CONTAINER_LIMIT_TOTALS = Object.freeze({
 export const ATTEMPT_STARTUP_MEMORY_BYTES = 2.5 * 1024 ** 3;
 
 // Gradings restart the app per suite and drive several browsers against fixed time budgets.
-// On 2026-10-02 (32-CPU Docker VM), seven at once failed those budgets in apps that pass when
-// three run at once, so at most three grade together; coding work keeps the runner capacity.
-export const GRADING_CAPACITY = 3;
+// On a 32-CPU Docker VM, seven whole-level gradings at once failed those budgets (2026-10-02).
+// With a slot per suite, seven full Convex and SpacetimeDB regrades on six slots matched their
+// grades exactly (2026-10-03), no worse than on three; coding work keeps the runner capacity.
+export const GRADING_CAPACITY = 6;
 
 export const BUILD_OUTBOUND_DESTINATIONS = Object.freeze([
   'https://registry.npmjs.org',
