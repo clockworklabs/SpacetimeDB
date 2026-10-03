@@ -69,6 +69,13 @@
     },
     "./server": {
       "types": "./dist/server/index.d.ts",
+      "spacetimedb": "./dist/server/index.mjs",
+      "spacetimedb-client": {
+        "browser": "./dist/server/client.browser.mjs",
+        "import": "./dist/server/client.mjs",
+        "require": "./dist/server/client.cjs",
+        "default": "./dist/server/client.mjs"
+      },
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"

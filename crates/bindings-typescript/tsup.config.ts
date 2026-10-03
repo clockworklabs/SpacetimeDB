@@ -1,4 +1,5 @@
 // tsup.config.ts
+import path from 'node:path';
 import { defineConfig, type Options } from 'tsup';
 
 function commonEsbuildTweaks(): NonNullable<Options['esbuildOptions']> {
@@ -12,6 +13,33 @@ function commonEsbuildTweaks(): NonNullable<Options['esbuildOptions']> {
 const outExtension = (ctx: { format: string }) => ({
   js: ctx.format === 'cjs' ? '.cjs' : ctx.format === 'esm' ? '.mjs' : '.js',
 });
+
+/**
+ * Imports the root build `dist/<root>.{mjs,cjs}` in place of the root entry
+ * point and of the modules that it re-exports in full, rather than bundle
+ * them, so that the client build of `spacetimedb/server` shares the root's
+ * classes and symbols.
+ */
+function importRootBuild(
+  root: string
+): NonNullable<Options['esbuildPlugins']>[number] {
+  const shared = ['index', 'lib/type_builders', 'lib/errors'].map(file =>
+    path.resolve('src', file)
+  );
+  return {
+    name: 'import-root-build',
+    setup(build) {
+      const ext = build.initialOptions.format === 'cjs' ? '.cjs' : '.mjs';
+      build.onResolve({ filter: /^\./ }, args =>
+        shared.includes(
+          path.resolve(args.resolveDir, args.path).replace(/\.ts$/, '')
+        )
+          ? { path: `../${root}${ext}`, external: true }
+          : undefined
+      );
+    },
+  };
+}
 
 export default defineConfig([
   // Root wrapper (SSR-friendly): dist/index.{mjs,cjs}
@@ -267,6 +295,37 @@ export default defineConfig([
       options.alias = { util: './src/util-stub.ts' };
       commonEsbuildTweaks()(options, ctx);
     },
+  },
+
+  // Server subpath for a client that imports module source, which the
+  // `spacetimedb-client` condition selects: dist/server/client.{mjs,cjs}
+  {
+    entry: { client: 'src/server/client.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/server',
+    dts: false,
+    sourcemap: true,
+    platform: 'neutral',
+    external: ['undici'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+    esbuildPlugins: [importRootBuild('index')],
+  },
+
+  // Its browser ESM: dist/server/client.browser.mjs
+  {
+    entry: { 'client.browser': 'src/server/client.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/server',
+    dts: false,
+    sourcemap: true,
+    platform: 'browser',
+    external: ['undici'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+    esbuildPlugins: [importRootBuild('index.browser')],
   },
 
   // TanStack subpath (SSR-friendly): dist/tanstack/index.{mjs,cjs}
