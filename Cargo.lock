@@ -8027,6 +8027,7 @@ dependencies = [
 name = "spacetimedb-bindings-macro"
 version = "2.11.0"
 dependencies = [
+ "convert_case 0.6.0",
  "heck 0.4.1",
  "humantime",
  "proc-macro2",

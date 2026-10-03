@@ -98,6 +98,65 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 mod util;
 mod view;
 
+// Client expansions of the module macros (proposal 0040).
+// `spacetimedb-sdk` enables the `client` feature and re-exports them as `table`, `reducer`, `procedure`, `view`,
+// `SpacetimeType` and `client_module`. Module builds leave the feature off, so they don't see these entry points.
+#[cfg(feature = "client")]
+mod client;
+
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn client_table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_table(args.into(), item.into()))
+}
+
+/// The row-level half of the client `#[table]`, with the column attributes as helper attributes.
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro_derive(
+    __ClientTableHelper,
+    attributes(sats, unique, auto_inc, primary_key, index, default, name)
+)]
+pub fn client_table_helper(input: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_table_helper(syn::parse(input)?))
+}
+
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn client_reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_reducer(args.into(), item.into()))
+}
+
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn client_procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_procedure(args.into(), item.into()))
+}
+
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn client_view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_view(args.into(), item.into()))
+}
+
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro_derive(ClientSpacetimeType, attributes(sats, name))]
+pub fn client_spacetime_type(input: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_spacetime_type(syn::parse(input)?))
+}
+
+#[cfg(feature = "client")]
+#[doc(hidden)]
+#[proc_macro]
+pub fn client_module(input: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| client::client_module(input.into()))
+}
+
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     let item_ts: TokenStream = item.into();

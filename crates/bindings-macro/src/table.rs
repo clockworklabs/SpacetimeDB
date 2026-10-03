@@ -17,11 +17,11 @@ use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
-    name: Option<LitStr>,
+    pub(crate) name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
-    accessor: Ident,
-    indices: Vec<IndexArg>,
-    event: Option<Span>,
+    pub(crate) accessor: Ident,
+    pub(crate) indices: Vec<IndexArg>,
+    pub(crate) event: Option<Span>,
 }
 
 enum TableAccess {
@@ -47,7 +47,7 @@ struct ScheduledArg {
     at: Option<Ident>,
 }
 
-struct IndexArg {
+pub(crate) struct IndexArg {
     accessor: Ident,
     canonical_name: Option<LitStr>,
     is_unique: bool,
@@ -398,7 +398,7 @@ Did you mean to specify an `accessor` instead? Do so with `accessor = my_index`,
         Ok(IndexArg::new(accessor, kind, None))
     }
 
-    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
+    pub(crate) fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
         let (kind, kind_str) = match &self.kind {
             IndexType::BTree { columns } => {
@@ -493,15 +493,15 @@ impl AccessorType {
     }
 }
 
-struct ValidatedIndex<'a> {
+pub(crate) struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
     is_unique: bool,
-    kind: ValidatedIndexType<'a>,
+    pub(crate) kind: ValidatedIndexType<'a>,
     canonical_name: Option<String>,
 }
 
-enum ValidatedIndexType<'a> {
+pub(crate) enum ValidatedIndexType<'a> {
     BTree { cols: Vec<&'a Column<'a>> },
     Hash { cols: Vec<&'a Column<'a>> },
     Direct { col: &'a Column<'a> },
@@ -515,7 +515,7 @@ impl ValidatedIndexType<'_> {
         }
     }
 
-    fn one_col(&self) -> Option<&Column<'_>> {
+    pub(crate) fn one_col(&self) -> Option<&Column<'_>> {
         match self.columns() {
             [col] => Some(col),
             _ => None,
@@ -733,11 +733,11 @@ fn superize_vis(vis: &syn::Visibility) -> Cow<'_, syn::Visibility> {
 }
 
 #[derive(Clone)]
-struct Column<'a> {
-    index: u16,
+pub(crate) struct Column<'a> {
+    pub(crate) index: u16,
     vis: &'a syn::Visibility,
-    ident: &'a syn::Ident,
-    ty: &'a syn::Type,
+    pub(crate) ident: &'a syn::Ident,
+    pub(crate) ty: &'a syn::Type,
     default_value: Option<syn::Expr>,
 }
 
@@ -822,6 +822,128 @@ fn is_first_appearance(struct_name: &str) -> bool {
     set.insert(struct_name.to_string())
 }
 
+/// The columns of a table, with the constraints declared by their attributes.
+pub(crate) struct TableColumns<'a> {
+    pub(crate) columns: Vec<Column<'a>>,
+    pub(crate) unique_columns: Vec<Column<'a>>,
+    pub(crate) sequenced_columns: Vec<Column<'a>>,
+    pub(crate) primary_key_column: Option<Column<'a>>,
+}
+
+/// Read the column attributes of `fields`, and add to `indices` the indexes they declare,
+/// including the btree index the server creates for each unique column that no other index covers.
+///
+/// Shared by the server expansion of `#[table]` and its client expansion in `client.rs`.
+pub(crate) fn analyze_columns<'a>(
+    indices: &mut Vec<IndexArg>,
+    fields: &'a [sats::SatsField<'a>],
+) -> syn::Result<TableColumns<'a>> {
+    let mut columns = vec![];
+    let mut unique_columns = vec![];
+    let mut sequenced_columns = vec![];
+    let mut primary_key_column = None;
+
+    for (i, field) in fields.iter().enumerate() {
+        let col_num = i as u16;
+        let field_ident = field.ident.unwrap();
+
+        let mut unique = None;
+        let mut auto_inc = None;
+        let mut primary_key = None;
+        let mut default_value = None;
+        for attr in field.original_attrs {
+            let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
+                continue;
+            };
+            match attr {
+                ColumnAttr::Unique(span) => {
+                    check_duplicate(&unique, span)?;
+                    unique = Some(span);
+                }
+                ColumnAttr::AutoInc(span) => {
+                    check_duplicate(&auto_inc, span)?;
+                    auto_inc = Some(span);
+                }
+                ColumnAttr::PrimaryKey(span) => {
+                    check_duplicate(&primary_key, span)?;
+                    primary_key = Some(span);
+                }
+                ColumnAttr::Index(index_arg) => indices.push(index_arg),
+                ColumnAttr::Default(expr, span) => {
+                    check_duplicate(&default_value, span)?;
+                    default_value = Some(expr);
+                }
+            }
+        }
+
+        if let Some(default_value) = &default_value
+            && (auto_inc.is_some() || primary_key.is_some() || unique.is_some())
+        {
+            return Err(syn::Error::new(
+                default_value.span(),
+                "invalid combination: auto_inc, unique index or primary key cannot have a default value",
+            ));
+        };
+
+        let column = Column {
+            index: col_num,
+            ident: field_ident,
+            vis: field.vis,
+            ty: field.ty,
+            default_value,
+        };
+
+        if unique.is_some() || primary_key.is_some() {
+            unique_columns.push(column.clone());
+        }
+        if auto_inc.is_some() {
+            sequenced_columns.push(column.clone());
+        }
+        if let Some(span) = primary_key {
+            check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
+            primary_key_column = Some(column.clone());
+        }
+
+        columns.push(column.clone());
+    }
+
+    // Mark all indices with a single column matching a unique constraint as unique.
+    // For all the unpaired unique columns, create a unique index.
+    for unique_col in &unique_columns {
+        if indices.iter_mut().any(|index| {
+            let covered_by_index = match &index.kind {
+                IndexType::BTree { columns } | IndexType::Hash { columns } => {
+                    &**columns == slice::from_ref(unique_col.ident)
+                }
+                IndexType::Direct { column } => column == unique_col.ident,
+            };
+            index.is_unique |= covered_by_index;
+            covered_by_index
+        }) {
+            continue;
+        }
+        // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
+        // as it's the safest choice of index for the general case,
+        // even if isn't optimal in specific cases.
+        let accessor = unique_col.ident.clone();
+        let columns = vec![accessor.clone()];
+        indices.push(IndexArg {
+            accessor,
+            //name: None,
+            is_unique: true,
+            kind: IndexType::BTree { columns },
+            canonical_name: None,
+        })
+    }
+
+    Ok(TableColumns {
+        columns,
+        unique_columns,
+        sequenced_columns,
+        primary_key_column,
+    })
+}
+
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let vis = &item.vis;
     let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
@@ -863,105 +985,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         ));
     }
 
-    let mut columns = vec![];
-    let mut unique_columns = vec![];
-    let mut sequenced_columns = vec![];
-    let mut primary_key_column = None;
-
-    for (i, field) in fields.iter().enumerate() {
-        let col_num = i as u16;
-        let field_ident = field.ident.unwrap();
-
-        let mut unique = None;
-        let mut auto_inc = None;
-        let mut primary_key = None;
-        let mut default_value = None;
-        for attr in field.original_attrs {
-            let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
-                continue;
-            };
-            match attr {
-                ColumnAttr::Unique(span) => {
-                    check_duplicate(&unique, span)?;
-                    unique = Some(span);
-                }
-                ColumnAttr::AutoInc(span) => {
-                    check_duplicate(&auto_inc, span)?;
-                    auto_inc = Some(span);
-                }
-                ColumnAttr::PrimaryKey(span) => {
-                    check_duplicate(&primary_key, span)?;
-                    primary_key = Some(span);
-                }
-                ColumnAttr::Index(index_arg) => args.indices.push(index_arg),
-                ColumnAttr::Default(expr, span) => {
-                    check_duplicate(&default_value, span)?;
-                    default_value = Some(expr);
-                }
-            }
-        }
-
-        if let Some(default_value) = &default_value
-            && (auto_inc.is_some() || primary_key.is_some() || unique.is_some())
-        {
-            return Err(syn::Error::new(
-                default_value.span(),
-                "invalid combination: auto_inc, unique index or primary key cannot have a default value",
-            ));
-        };
-
-        let column = Column {
-            index: col_num,
-            ident: field_ident,
-            vis: field.vis,
-            ty: field.ty,
-            default_value,
-        };
-
-        if unique.is_some() || primary_key.is_some() {
-            unique_columns.push(column.clone());
-        }
-        if auto_inc.is_some() {
-            sequenced_columns.push(column.clone());
-        }
-        if let Some(span) = primary_key {
-            check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
-            primary_key_column = Some(column.clone());
-        }
-
-        columns.push(column.clone());
-    }
+    let TableColumns {
+        columns,
+        unique_columns,
+        sequenced_columns,
+        primary_key_column,
+    } = analyze_columns(&mut args.indices, fields)?;
 
     let row_type = quote!(#original_struct_ident);
-
-    // Mark all indices with a single column matching a unique constraint as unique.
-    // For all the unpaired unique columns, create a unique index.
-    for unique_col in &unique_columns {
-        if args.indices.iter_mut().any(|index| {
-            let covered_by_index = match &index.kind {
-                IndexType::BTree { columns } | IndexType::Hash { columns } => {
-                    &**columns == slice::from_ref(unique_col.ident)
-                }
-                IndexType::Direct { column } => column == unique_col.ident,
-            };
-            index.is_unique |= covered_by_index;
-            covered_by_index
-        }) {
-            continue;
-        }
-        // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
-        // as it's the safest choice of index for the general case,
-        // even if isn't optimal in specific cases.
-        let accessor = unique_col.ident.clone();
-        let columns = vec![accessor.clone()];
-        args.indices.push(IndexArg {
-            accessor,
-            //name: None,
-            is_unique: true,
-            kind: IndexType::BTree { columns },
-            canonical_name: None,
-        })
-    }
 
     let mut indices = args
         .indices
