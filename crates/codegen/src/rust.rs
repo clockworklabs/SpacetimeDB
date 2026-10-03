@@ -1,1017 +1,925 @@
+//! The Rust backend. It emits the module's declarations in Rust module syntax (proposal 0040):
+//! `#[spacetimedb::table]` structs, `#[derive(spacetimedb::SpacetimeType)]` types,
+//! and bodiless `#[spacetimedb::reducer]`, `#[spacetimedb::procedure]` and `#[spacetimedb::view]` functions,
+//! plus a `mod.rs` that lists them in `spacetimedb::client_module!`.
+//! Each file starts with `use spacetimedb_sdk as spacetimedb;`, so the client SDK's macros expand them.
+//!
+//! The client API is defined by those expansions, in `crates/bindings-macro/src/client.rs`.
+//! This backend only has to write declarations that are complete and produce the module's canonical names.
+
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, CodegenVisibility,
+    iter_indexes, iter_procedures, iter_tables, iter_types, iter_views, print_auto_generated_file_comment,
+    print_auto_generated_version_comment, CodegenVisibility,
 };
 use crate::CodegenOptions;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
+use itertools::Itertools;
+use spacetimedb_lib::db::raw_def::v9::{Lifecycle, TableAccess};
 use spacetimedb_lib::sats::layout::PrimitiveType;
-use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_lib::sats::{AlgebraicTypeRef, AlgebraicValue, ArrayValue};
+use spacetimedb_primitives::ColId;
+use spacetimedb_schema::def::{
+    ConstraintData, IndexAlgorithm, ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef, ViewDef,
+};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};
 use std::ops::Deref;
 
-/// Pairs of (module_name, TypeName).
-type Imports = BTreeSet<AlgebraicTypeRef>;
-
 const INDENT: &str = "    ";
+
+/// The arguments of one table's `#[spacetimedb::table(...)]`, and that table's attributes for each column.
+type TableArgs = (Vec<String>, BTreeMap<ColId, Vec<String>>);
 
 pub struct Rust;
 
 impl Lang for Rust {
-    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
+    fn generate_module(&self, module: &ModuleDef, options: &CodegenOptions) -> Option<Vec<OutputFile>> {
+        Some(Declarations::new(module, options.visibility).generate())
+    }
 
-        let mut output = CodeIndenter::new(String::new(), INDENT);
-        let out = &mut output;
+    // The per-item methods are unused, because `generate_module` generates every file.
+    // A row type is declared together with all of its tables, so its file depends on which tables are emitted.
 
-        print_file_header(out, false);
-        out.newline();
+    fn generate_table_file_from_schema(&self, _: &ModuleDef, _: &TableDef, _: TableSchema) -> OutputFile {
+        unreachable!("the Rust backend generates every file in `generate_module`")
+    }
+    fn generate_type_files(&self, _: &ModuleDef, _: &TypeDef) -> Vec<OutputFile> {
+        unreachable!("the Rust backend generates every file in `generate_module`")
+    }
+    fn generate_reducer_file(&self, _: &ModuleDef, _: &ReducerDef) -> OutputFile {
+        unreachable!("the Rust backend generates every file in `generate_module`")
+    }
+    fn generate_procedure_file(&self, _: &ModuleDef, _: &ProcedureDef) -> OutputFile {
+        unreachable!("the Rust backend generates every file in `generate_module`")
+    }
+    fn generate_global_files(&self, _: &ModuleDef, _: &CodegenOptions) -> Vec<OutputFile> {
+        unreachable!("the Rust backend generates every file in `generate_module`")
+    }
+}
 
-        match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Product(product) => {
-                gen_and_print_imports(module, out, &product.elements, &[typ.ty]);
-                out.newline();
-                define_struct_for_product(module, out, &type_name, &product.elements, "pub");
-            }
-            AlgebraicTypeDef::Sum(sum) => {
-                gen_and_print_imports(module, out, &sum.variants, &[typ.ty]);
-                out.newline();
-                define_enum_for_sum(module, out, &type_name, &sum.variants, false);
-            }
-            AlgebraicTypeDef::PlainEnum(plain_enum) => {
-                let variants = plain_enum
-                    .variants
-                    .iter()
-                    .cloned()
-                    .map(|var| (var, AlgebraicTypeUse::Unit))
-                    .collect::<Vec<_>>();
-                define_enum_for_sum(module, out, &type_name, &variants, true);
+/// The declarations of a module, and the file that declares each type.
+struct Declarations<'a> {
+    module: &'a ModuleDef,
+    visibility: CodegenVisibility,
+    /// The emitted tables of each row type, in order of table name.
+    tables_by_row: BTreeMap<AlgebraicTypeRef, Vec<&'a TableDef>>,
+    /// The omitted tables of each row type, such as private tables without `--include-private`, in order of table name.
+    /// A row type's declaration still carries their `#[table]` attributes, marked `omitted`.
+    omitted_tables_by_row: BTreeMap<AlgebraicTypeRef, Vec<&'a TableDef>>,
+    /// The Rust module that declares each type.
+    type_modules: BTreeMap<AlgebraicTypeRef, String>,
+}
+
+impl<'a> Declarations<'a> {
+    fn new(module: &'a ModuleDef, visibility: CodegenVisibility) -> Self {
+        let mut tables_by_row = BTreeMap::<_, Vec<_>>::new();
+        for table in iter_tables(module, visibility) {
+            tables_by_row.entry(table.product_type_ref).or_default().push(table);
+        }
+        let mut omitted_tables_by_row = BTreeMap::<_, Vec<_>>::new();
+        for table in iter_tables(module, CodegenVisibility::IncludePrivate) {
+            let emitted = tables_by_row.get(&table.product_type_ref);
+            if !emitted.is_some_and(|tables| tables.iter().any(|t| std::ptr::eq(*t, table))) {
+                omitted_tables_by_row
+                    .entry(table.product_type_ref)
+                    .or_default()
+                    .push(table);
             }
         }
-        out.newline();
+        let mut type_modules = BTreeMap::new();
+        for typ in iter_types(module) {
+            let module_name = match tables_by_row.get(&typ.ty) {
+                Some(tables) => table_module_name(&row_owner(module, typ.ty, tables).accessor_name),
+                None => type_module_name(&typ.accessor_name),
+            };
+            type_modules.insert(typ.ty, module_name);
+        }
+        Self {
+            module,
+            visibility,
+            tables_by_row,
+            omitted_tables_by_row,
+            type_modules,
+        }
+    }
 
-        writeln!(
-            out,
-            "
-impl __sdk::InModule for {type_name} {{
-    type Module = super::RemoteModule;
-}}
-",
-        );
+    /// The omitted tables of the row type `row`.
+    fn omitted_tables(&self, row: AlgebraicTypeRef) -> &[&'a TableDef] {
+        self.omitted_tables_by_row.get(&row).map_or(&[], |tables| &tables[..])
+    }
 
-        // Do not implement query col types for nested types.
-        // as querying is only supported on top-level table row types.
-        let name = type_ref_name(module, typ.ty);
-        let implemented = match module
-            .tables()
-            .find(|t| type_ref_name(module, t.product_type_ref) == name)
-        {
-            Some(table) => {
-                implement_query_col_types_for_table_struct(module, out, table)
-                    .expect("failed to implement query col types");
-                out.newline();
-                true
-            }
-            _ => false,
-        };
+    /// The types that are not the row type of an emitted table.
+    fn plain_types(&self) -> impl Iterator<Item = &'a TypeDef> + '_ {
+        iter_types(self.module).filter(|typ| !self.tables_by_row.contains_key(&typ.ty))
+    }
 
-        if !implemented
-            && let Some(type_ref) = module
-                .views()
-                .map(|v| v.product_type_ref)
-                .find(|type_ref| type_ref_name(module, *type_ref) == name)
-        {
-            implement_query_col_types_for_struct(module, out, type_ref).expect("failed to implement query col types");
+    /// The tables that declare a row type, with all of the row type's emitted tables, in order of file name.
+    fn table_declarations(&self) -> impl Iterator<Item = (&'a TableDef, &[&'a TableDef])> + '_ {
+        self.tables_by_row
+            .iter()
+            .map(|(&row, tables)| (row_owner(self.module, row, tables), &tables[..]))
+            .sorted_by_key(|(owner, _)| &owner.name)
+    }
+
+    fn generate(&self) -> Vec<OutputFile> {
+        let mut files = vec![];
+        for typ in self.plain_types() {
+            files.push(OutputFile {
+                filename: type_module_name(&typ.accessor_name) + ".rs",
+                code: self.type_file(typ),
+            });
+        }
+        for (owner, tables) in self.table_declarations() {
+            let module_name = table_module_name(&owner.accessor_name);
+            files.push(OutputFile {
+                code: self.table_file(&module_name, tables, self.omitted_tables(owner.product_type_ref)),
+                filename: module_name + ".rs",
+            });
+        }
+        for view in iter_views(self.module) {
+            files.push(OutputFile {
+                filename: table_module_name(&view.accessor_name) + ".rs",
+                code: self.view_file(view),
+            });
+        }
+        for reducer in iter_reducers(self.module, self.visibility) {
+            files.push(OutputFile {
+                filename: reducer_module_name(reducer) + ".rs",
+                code: self.reducer_file(reducer),
+            });
+        }
+        for procedure in iter_procedures(self.module, self.visibility) {
+            files.push(OutputFile {
+                filename: procedure_module_name(procedure) + ".rs",
+                code: self.procedure_file(procedure),
+            });
+        }
+        files.push(OutputFile {
+            filename: "mod.rs".to_string(),
+            code: self.mod_file(),
+        });
+        files
+    }
+
+    /// Start the file of the Rust module `this_module`: the header,
+    /// and a `use` item for each type in `roots` that another file declares.
+    fn file_header<'t>(
+        &self,
+        out: &mut Indenter,
+        this_module: &str,
+        roots: impl IntoIterator<Item = &'t AlgebraicTypeUse>,
+    ) {
+        print_file_header(out, false);
+        let mut imports = BTreeSet::new();
+        for root in roots {
+            root.for_each_ref(|r| {
+                imports.insert(r);
+            });
+        }
+        let imports = imports
+            .into_iter()
+            .map(|r| (&self.type_modules[&r], type_ref_name(self.module, r)))
+            .filter(|(module_name, _)| *module_name != this_module)
+            .collect::<BTreeSet<_>>();
+        if !imports.is_empty() {
             out.newline();
         }
-
-        vec![OutputFile {
-            filename: type_module_name(&typ.accessor_name) + ".rs",
-            code: output.into_inner(),
-        }]
+        for (module_name, type_name) in imports {
+            writeln!(out, "use super::{module_name}::{type_name};");
+        }
+        out.newline();
     }
-    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
-        let type_ref = table.product_type_ref;
 
+    fn type_file(&self, typ: &TypeDef) -> String {
+        // The row type of omitted tables only, which is declared with their `#[table]` attributes.
+        let omitted = self.omitted_tables(typ.ty);
+        if !omitted.is_empty() {
+            return self.table_file(&type_module_name(&typ.accessor_name), &[], omitted);
+        }
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
-
-        print_file_header(out, false);
-
-        let row_type = type_ref_name(module, type_ref);
-        let row_type_module = type_ref_module_name(module, type_ref);
-
-        writeln!(out, "use super::{row_type_module}::{row_type};");
-
-        let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
-
-        // Import the types of all fields.
-        // We only need to import fields which have indices or unique constraints,
-        // but it's easier to just import all of 'em, since we have `#![allow(unused)]` anyway.
-        gen_and_print_imports(
-            module,
-            out,
-            &product_def.elements,
-            &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
-        );
-
-        let table_name = table.name.deref();
-        let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
-        let table_handle = table_name_pascalcase.clone() + "TableHandle";
-        let table_accessor = table_name_pascalcase.clone() + "TableAccessor";
-        let insert_callback_id = table_name_pascalcase.clone() + "InsertCallbackId";
-        let delete_callback_id = table_name_pascalcase.clone() + "DeleteCallbackId";
-        let accessor_trait = table_access_trait_name(&table.accessor_name);
-        let accessor_method = table_method_name(&table.accessor_name);
-
-        write!(
-            out,
-            "
-/// Table handle for the table `{table_name}`.
-///
-/// Obtain a handle from the [`{accessor_trait}::{accessor_method}`] method on [`super::RemoteTables`],
-/// like `ctx.db.{accessor_method}()`.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.{accessor_method}().on_insert(...)`.
-pub struct {table_handle}<'ctx> {{
-    imp: __sdk::TableHandle<{row_type}>,
-    ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}}
-
-/// Lifetime-aware accessor marker for the table `{table_name}`.
-pub struct {table_accessor};
-
-impl __sdk::TableAccessor<super::RemoteTables> for {table_accessor} {{
-    type Row = {row_type};
-    type Handle<'db> = {table_handle}<'db>;
-
-    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {{
-        db.{accessor_method}()
-    }}
-}}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the table `{table_name}`.
-///
-/// Implemented for [`super::RemoteTables`].
-pub trait {accessor_trait} {{
-    #[allow(non_snake_case)]
-    /// Obtain a [`{table_handle}`], which mediates access to the table `{table_name}`.
-    fn {accessor_method}(&self) -> {table_handle}<'_>;
-}}
-
-impl {accessor_trait} for super::RemoteTables {{
-    fn {accessor_method}(&self) -> {table_handle}<'_> {{
-        {table_handle} {{
-            imp: self.imp.get_table::<{row_type}>({table_name:?}),
-            ctx: std::marker::PhantomData,
-        }}
-    }}
-}}
-
-pub struct {insert_callback_id}(__sdk::CallbackId);
-"
-        );
-
-        if table.is_event {
-            // Event tables: implement the `EventTable` trait, which exposes only on-insert callbacks,
-            // not on-delete or on-update.
-            // on-update callbacks aren't meaningful for event tables,
-            // as they never have resident rows, so they can never update an existing row.
-            // on-delete callbacks are meaningful, but exactly equivalent to the on-insert callbacks,
-            // so not particularly useful.
-            // Also, don't emit unique index accessors: no resident rows means these would always be empty,
-            // so no reason to have them.
-            write!(
-                out,
-                "
-impl<'ctx> __sdk::TableLike for {table_handle}<'ctx> {{
-    type Row = {row_type};
-    type EventContext = super::EventContext;
-
-    fn count(&self) -> u64 {{ self.imp.count() }}
-    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
-}}
-
-impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
-    type Row = {row_type};
-    type EventContext = super::EventContext;
-
-    fn count(&self) -> u64 {{ self.imp.count() }}
-    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
-
-    type InsertCallbackId = {insert_callback_id};
-
-    fn on_insert(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> {insert_callback_id} {{
-        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
-    }}
-
-    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
-        self.imp.remove_on_insert(callback.0)
-    }}
-}}
-
-impl<'ctx> __sdk::WithInsert for {table_handle}<'ctx> {{
-    type InsertCallbackId = {insert_callback_id};
-
-    fn on_insert(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> {insert_callback_id} {{
-        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
-    }}
-
-    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
-        self.imp.remove_on_insert(callback.0)
-    }}
-}}
-"
-            );
-        } else {
-            // Non-event tables: implement the `Table` trait, which exposes on-insert and on-delete callbacks.
-            // Also possibly implement `TableWithPrimrayKey`, which exposes on-update callbacks,
-            // and emit accessors for unique columns.
-            write!(
-                out,
-                "pub struct {delete_callback_id}(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableLike for {table_handle}<'ctx> {{
-    type Row = {row_type};
-    type EventContext = super::EventContext;
-
-    fn count(&self) -> u64 {{ self.imp.count() }}
-    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
-}}
-
-impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
-    type Row = {row_type};
-    type EventContext = super::EventContext;
-
-    fn count(&self) -> u64 {{ self.imp.count() }}
-    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
-
-    type InsertCallbackId = {insert_callback_id};
-
-    fn on_insert(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> {insert_callback_id} {{
-        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
-    }}
-
-    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
-        self.imp.remove_on_insert(callback.0)
-    }}
-
-    type DeleteCallbackId = {delete_callback_id};
-
-    fn on_delete(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> {delete_callback_id} {{
-        {delete_callback_id}(self.imp.on_delete(Box::new(callback)))
-    }}
-
-    fn remove_on_delete(&self, callback: {delete_callback_id}) {{
-        self.imp.remove_on_delete(callback.0)
-    }}
-}}
-
-impl<'ctx> __sdk::WithInsert for {table_handle}<'ctx> {{
-    type InsertCallbackId = {insert_callback_id};
-
-    fn on_insert(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> {insert_callback_id} {{
-        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
-    }}
-
-    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
-        self.imp.remove_on_insert(callback.0)
-    }}
-}}
-
-impl<'ctx> __sdk::WithDelete for {table_handle}<'ctx> {{
-    type DeleteCallbackId = {delete_callback_id};
-
-    fn on_delete(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> {delete_callback_id} {{
-        {delete_callback_id}(self.imp.on_delete(Box::new(callback)))
-    }}
-
-    fn remove_on_delete(&self, callback: {delete_callback_id}) {{
-        self.imp.remove_on_delete(callback.0)
-    }}
-}}
-"
-            );
-
-            if table.primary_key.is_some() {
-                // If the table has a primary key, implement the `TableWithPrimaryKey` trait
-                // to expose on-update callbacks.
-                let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
-                write!(
-                    out,
-                    "
-pub struct {update_callback_id}(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
-    type UpdateCallbackId = {update_callback_id};
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> {update_callback_id} {{
-        {update_callback_id}(self.imp.on_update(Box::new(callback)))
-    }}
-
-    fn remove_on_update(&self, callback: {update_callback_id}) {{
-        self.imp.remove_on_update(callback.0)
-    }}
-}}
-
-impl<'ctx> __sdk::WithUpdate for {table_handle}<'ctx> {{
-    type UpdateCallbackId = {update_callback_id};
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> {update_callback_id} {{
-        {update_callback_id}(self.imp.on_update(Box::new(callback)))
-    }}
-
-    fn remove_on_update(&self, callback: {update_callback_id}) {{
-        self.imp.remove_on_update(callback.0)
-    }}
-}}
-"
-                );
-            }
-
-            // Emit unique index accessors for all of the table's unique fields.
-            for (unique_field_ident, unique_field_type_use) in
-                iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
-            {
-                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
-
-                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-                let unique_field_type = type_name(module, unique_field_type_use);
-
-                write!(
-                    out,
-                    "
-        /// Access to the `{unique_field_name}` unique index on the table `{table_name}`,
-        /// which allows point queries on the field of the same name
-        /// via the [`{unique_constraint}::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.{accessor_method}().{unique_field_name}().find(...)`.
-        pub struct {unique_constraint}<'ctx> {{
-            imp: __sdk::UniqueConstraintHandle<{row_type}, {unique_field_type}>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }}
-
-        impl<'ctx> {table_handle}<'ctx> {{
-            /// Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
-            pub fn {unique_field_name}(&self) -> {unique_constraint}<'ctx> {{
-                {unique_constraint} {{
-                    imp: self.imp.get_unique_constraint::<{unique_field_type}>({unique_field_name:?}),
-                    phantom: std::marker::PhantomData,
-                }}
-            }}
-        }}
-
-        impl<'ctx> {unique_constraint}<'ctx> {{
-            /// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &{unique_field_type}) -> Option<{row_type}> {{
-                self.imp.find(col_val)
-            }}
-        }}
-        "
-                );
-            }
-
-            // TODO: expose non-unique indices.
-        }
-
-        // Regardless of event-ness, emit `register_table` and `parse_table_update`.
-        out.delimited_block(
-            "
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-",
-            |out| {
-                writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
-                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(module.typespace_for_generate(), &schema, product_def) {
-                    let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                    let unique_field_type = type_name(module, unique_field_type_use);
-                    writeln!(
-                        out,
-                        "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name});",
-                    );
-                }
-            },
-            "}",
-        );
-
-        out.newline();
-
-        write!(
-            out,
-            "
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {{
-        __sdk::InternalError::failed_parse(
-            \"TableUpdate<{row_type}>\",
-            \"TableUpdate\",
-        ).with_cause(e).into()
-    }})
-}}
-"
-        );
-
-        implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor");
-
-        OutputFile {
-            filename: table_module_name(&table.accessor_name) + ".rs",
-            code: output.into_inner(),
-        }
-    }
-    fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
-        let mut output = CodeIndenter::new(String::new(), INDENT);
-        let out = &mut output;
-
-        print_file_header(out, false);
-
-        out.newline();
-
-        gen_and_print_imports(
-            module,
-            out,
-            &reducer.params_for_generate.elements,
-            // No need to skip any imports; we're not emitting a type that other modules can import.
-            &[],
-        );
-
-        out.newline();
-
-        let reducer_name = reducer.name.deref();
-        let func_name = reducer_function_name(reducer);
-        let args_type = function_args_type_name(&reducer.accessor_name);
-        let enum_variant_name = reducer_variant_name(&reducer.accessor_name);
-
-        // Define an "args struct" for the reducer.
-        // This is not user-facing (note the `pub(super)` visibility);
-        // it is an internal helper for serialization and deserialization.
-        // We actually want to ser/de instances of `enum Reducer`, but:
-        // - `Reducer` will have struct-like variants, which SATS ser/de does not support.
-        // - The WS format does not contain a BSATN-serialized `Reducer` instance;
-        //   it holds the reducer name or ID separately from the argument bytes.
-        //   We could work up some magic with `DeserializeSeed`
-        //   and/or custom `Serializer` and `Deserializer` types
-        //   to account for this, but it's much easier to just use an intermediate struct per reducer.
-        define_struct_for_product(
-            module,
-            out,
-            &args_type,
-            &reducer.params_for_generate.elements,
-            "pub(super)",
-        );
-
-        out.newline();
-
-        let FormattedArglist {
-            arglist_no_delimiters,
-            arg_names,
-        } = FormattedArglist::for_arguments(module, &reducer.params_for_generate.elements);
-
-        write!(out, "impl From<{args_type}> for super::Reducer ");
-        out.delimited_block(
-            "{",
-            |out| {
-                write!(out, "fn from(args: {args_type}) -> Self ");
+        let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
+        let ty = &self.module.typespace_for_generate()[typ.ty];
+        let roots: Vec<&AlgebraicTypeUse> = match ty {
+            AlgebraicTypeDef::Product(product) => product.elements.iter().map(|(_, ty)| ty).collect(),
+            AlgebraicTypeDef::Sum(sum) => sum.variants.iter().map(|(_, ty)| ty).collect(),
+            AlgebraicTypeDef::PlainEnum(_) => vec![],
+        };
+        self.file_header(out, &type_module_name(&typ.accessor_name), roots);
+
+        match ty {
+            AlgebraicTypeDef::Product(product) => {
+                writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+                print_type_name_attr(out, &typ.accessor_name, &type_name);
+                write!(out, "pub struct {type_name} ");
+                // The canonical field names, which the typespace has after case conversion.
+                let canonical_names: Vec<Option<&str>> = self.module.typespace()[typ.ty]
+                    .as_product()
+                    .map(|product| product.elements.iter().map(|e| e.name().map(|n| &**n)).collect())
+                    .unwrap_or_default();
                 out.delimited_block(
                     "{",
                     |out| {
-                        write!(out, "Self::{enum_variant_name}");
-                        if !reducer.params_for_generate.elements.is_empty() {
-                            // We generate "struct variants" for reducers with arguments,
-                            // but "unit variants" for reducers of no arguments.
-                            // These use different constructor syntax.
-                            out.delimited_block(
-                                " {",
-                                |out| {
-                                    for (arg_ident, _ty) in &reducer.params_for_generate.elements[..] {
-                                        let arg_name = arg_ident.deref().to_case(Case::Snake);
-                                        writeln!(out, "{arg_name}: args.{arg_name},");
-                                    }
-                                },
-                                "}",
-                            );
+                        for (i, (ident, ty)) in product.elements.iter().enumerate() {
+                            let field = field_name(ident);
+                            if let Some(Some(name)) = canonical_names.get(i)
+                                && let Some(attr) = column_name_attr(&field, name)
+                            {
+                                writeln!(out, "#[{attr}]");
+                            }
+                            writeln!(out, "pub {field}: {},", self.type_name(ty));
                         }
-                        out.newline();
                     },
                     "}\n",
                 );
+            }
+            AlgebraicTypeDef::Sum(sum) => {
+                writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+                print_type_name_attr(out, &typ.accessor_name, &type_name);
+                write!(out, "pub enum {type_name} ");
+                out.delimited_block(
+                    "{",
+                    |out| {
+                        for (ident, ty) in &sum.variants {
+                            match ty {
+                                AlgebraicTypeUse::Unit => writeln!(out, "{},", variant_name(ident)),
+                                ty => writeln!(out, "{}({}),", variant_name(ident), self.type_name(ty)),
+                            }
+                        }
+                    },
+                    "}\n",
+                );
+            }
+            AlgebraicTypeDef::PlainEnum(plain) => {
+                writeln!(
+                    out,
+                    "#[derive(spacetimedb::SpacetimeType, Clone, Copy, PartialEq, Eq, Hash, Debug)]"
+                );
+                print_type_name_attr(out, &typ.accessor_name, &type_name);
+                write!(out, "pub enum {type_name} ");
+                out.delimited_block(
+                    "{",
+                    |out| {
+                        for ident in &plain.variants {
+                            writeln!(out, "{},", variant_name(ident));
+                        }
+                    },
+                    "}\n",
+                );
+            }
+        }
+        output.into_inner()
+    }
+
+    /// A row type with all of its tables: `#[spacetimedb::table(...)]` for each table, then the struct.
+    /// The attributes of the `omitted` tables come last, marked `omitted`.
+    fn table_file(&self, this_module: &str, emitted: &[&TableDef], omitted: &[&TableDef]) -> String {
+        let tables: Vec<&TableDef> = emitted.iter().chain(omitted).copied().collect();
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+        // Tables that share a row type have the same columns, but may differ in their column attributes.
+        let first = tables[0];
+        self.file_header(out, this_module, first.columns.iter().map(|c| &c.ty_for_generate));
+
+        // The first `#[table]` determines the row's `Cols` and `IxCols`.
+        // It is the first emitted table by name, or the first omitted one if every table is omitted.
+        let tables_args: Vec<_> = tables.iter().map(|table| self.table_args(table)).collect();
+        for (i, (args, _)) in tables_args.iter().enumerate() {
+            let omitted = if i < emitted.len() { "" } else { ", omitted" };
+            writeln!(out, "#[spacetimedb::table({}{omitted})]", args.join(", "));
+        }
+        let (type_name, typ) = self.type_def(first.product_type_ref);
+        print_type_name_attr(out, &typ.accessor_name, &type_name);
+        write!(out, "pub struct {type_name} ");
+        out.delimited_block(
+            "{",
+            |out| {
+                for column in &first.columns {
+                    for attr in row_column_attrs(&tables, &tables_args, column.col_id) {
+                        writeln!(out, "#[{attr}]");
+                    }
+                    writeln!(
+                        out,
+                        "pub {}: {},",
+                        field_name(&column.accessor_name),
+                        self.type_name(&column.ty_for_generate)
+                    );
+                }
             },
             "}\n",
         );
-
-        // TODO: check for lifecycle reducers and do not generate the invoke method.
-
-        writeln!(
-            out,
-            "
-impl __sdk::InModule for {args_type} {{
-    type Module = super::RemoteModule;
-}}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `{reducer_name}`.
-///
-/// Implemented for [`super::RemoteReducers`].
-pub trait {func_name} {{
-    /// Request that the remote module invoke the reducer `{reducer_name}` to run as soon as possible.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`{func_name}:{func_name}_then`] to run a callback after the reducer completes.
-    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()> {{
-        self.{func_name}_then({arg_names} |_, _| {{}})
-    }}
-
-    /// Request that the remote module invoke the reducer `{reducer_name}` to run as soon as possible,
-    /// registering `callback` to run when we are notified that the reducer completed.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed with the `callback`.
-    fn {func_name}_then(
-        &self,
-        {arglist_no_delimiters}
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()>;
-}}
-
-impl {func_name} for super::RemoteReducers {{
-    fn {func_name}_then(
-        &self,
-        {arglist_no_delimiters}
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()> {{
-        self.imp.invoke_reducer_with_callback({args_type} {{ {arg_names} }}, callback)
-    }}
-}}
-"
-        );
-
-        OutputFile {
-            filename: reducer_module_name(&reducer.accessor_name) + ".rs",
-            code: output.into_inner(),
-        }
+        output.into_inner()
     }
 
-    fn generate_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
+    /// The arguments of `#[spacetimedb::table(...)]` for `table`,
+    /// and the column attributes of `table`, such as `primary_key`, for each column.
+    fn table_args(&self, table: &TableDef) -> TableArgs {
+        let mut args = vec![];
+        let accessor = table_method_name(&table.accessor_name);
+        args.push(format!("accessor = {accessor}"));
+        if canonical(&accessor) != *table.name {
+            args.push(format!("name = {:?}", table.name.deref()));
+        }
+        if table.table_access == TableAccess::Public {
+            args.push("public".to_string());
+        }
+        if table.is_event {
+            args.push("event".to_string());
+        }
+        if let Some(schedule) = &table.schedule {
+            let function = self
+                .module
+                .reducers()
+                .find(|r| r.name.deref() == schedule.function_name.deref())
+                .map(|r| r.accessor_name.deref().to_case(Case::Snake))
+                .or_else(|| {
+                    self.module
+                        .procedures()
+                        .find(|p| p.name == schedule.function_name)
+                        .map(|p| p.accessor_name.deref().to_case(Case::Snake))
+                })
+                .unwrap_or_else(|| schedule.function_name.deref().to_case(Case::Snake));
+            let at = self.column_field_name(table, schedule.at_column);
+            if at == "scheduled_at" {
+                args.push(format!("scheduled({function})"));
+            } else {
+                args.push(format!("scheduled({function}, at = {at})"));
+            }
+        }
+
+        let unique_cols: BTreeSet<ColId> = table
+            .constraints
+            .values()
+            .filter_map(|c| match &c.data {
+                ConstraintData::Unique(unique) => unique.columns.as_singleton(),
+                _ => None,
+            })
+            .collect();
+        let mut column_attrs: BTreeMap<ColId, Vec<String>> = BTreeMap::new();
+        // An index without an accessor can repeat another index's attribute on the same field.
+        let mut push_attr = |col: ColId, attr: String| {
+            let attrs = column_attrs.entry(col).or_default();
+            if !attrs.contains(&attr) {
+                attrs.push(attr);
+            }
+        };
+        for column in &table.columns {
+            if let Some(attr) = column_name_attr(&field_name(&column.accessor_name), &column.name) {
+                push_attr(column.col_id, attr);
+            }
+        }
+        for col in table.columns.iter().map(|c| c.col_id) {
+            if table.primary_key == Some(col) {
+                push_attr(col, "primary_key".to_string());
+            } else if unique_cols.contains(&col) {
+                push_attr(col, "unique".to_string());
+            }
+        }
+        for sequence in table.sequences.values().sorted_by_key(|s| s.column) {
+            push_attr(sequence.column, "auto_inc".to_string());
+        }
+        for index in iter_indexes(table) {
+            let index_accessor = index.accessor_name.as_ref().map(|a| a.deref().to_case(Case::Snake));
+            let (kind, columns) = match &index.algorithm {
+                IndexAlgorithm::BTree(btree) => ("btree", btree.columns.iter().collect::<Vec<_>>()),
+                IndexAlgorithm::Hash(hash) => ("hash", hash.columns.iter().collect()),
+                IndexAlgorithm::Direct(direct) => ("direct", vec![direct.column]),
+                _ => continue,
+            };
+            let default_name = format!(
+                "{}_{}_idx_{kind}",
+                table.name.deref(),
+                columns
+                    .iter()
+                    .map(|&col| table.get_column(col).unwrap().name.deref())
+                    .join("_")
+            );
+            let explicit_name = (*index.name != *default_name).then_some(&index.name);
+            if let [col] = &columns[..]
+                && match &index_accessor {
+                    Some(accessor) => explicit_name.is_none() && self.column_field_name(table, *col) == *accessor,
+                    None => true,
+                }
+            {
+                // An index on one column, named after it, is declared on the field.
+                // So is one without an accessor, which the client uses only for the query builder's `IxCols`.
+                // A unique column's btree index is implied by `#[unique]` or `#[primary_key]`.
+                let implied = kind == "btree" && (table.primary_key == Some(*col) || unique_cols.contains(col));
+                if !implied {
+                    push_attr(*col, format!("index({kind})"));
+                }
+                continue;
+            }
+            // `IxCols` lists only indexes on one column, so an index on several columns without an accessor is left out.
+            let Some(index_accessor) = index_accessor else {
+                continue;
+            };
+            let field_names = columns.iter().map(|&col| self.column_field_name(table, col)).join(", ");
+            let algorithm = match kind {
+                "direct" => format!("direct(column = [{field_names}])"),
+                kind => format!("{kind}(columns = [{field_names}])"),
+            };
+            let name = explicit_name
+                .map(|name| format!("name = {:?}, ", name.deref()))
+                .unwrap_or_default();
+            args.push(format!("index(accessor = {index_accessor}, {name}{algorithm})"));
+        }
+        for column in &table.columns {
+            // Module syntax doesn't allow a default on a primary key, unique or auto-increment column,
+            // so it is left out there; the client does not use defaults.
+            let col = column.col_id;
+            if table.primary_key == Some(col)
+                || unique_cols.contains(&col)
+                || table.sequences.values().any(|s| s.column == col)
+            {
+                continue;
+            }
+            if let Some(default) = &column.default_value {
+                // A default value that has no Rust expression here is left out. See `value_expr`.
+                if let Some(expr) = self.value_expr(&column.ty_for_generate, default) {
+                    push_attr(column.col_id, format!("default({expr})"));
+                }
+            }
+        }
+        (args, column_attrs)
+    }
+
+    fn view_file(&self, view: &ViewDef) -> String {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
+        let row = AlgebraicTypeUse::Ref(view.product_type_ref);
+        self.file_header(out, &table_module_name(&view.accessor_name), [&row]);
 
-        print_file_header(out, false);
+        let accessor = table_method_name(&view.accessor_name);
+        let mut args = vec![format!("accessor = {accessor}")];
+        if canonical(&accessor) != *view.name {
+            args.push(format!("name = {:?}", view.name.deref()));
+        }
+        if view.is_public {
+            args.push("public".to_string());
+        }
+        if let Some(pk) = view.primary_key {
+            args.push(format!(
+                "primary_key = {}",
+                field_name(&view.return_columns[pk.idx()].accessor_name)
+            ));
+        }
+        let ctx = if view.is_anonymous {
+            "spacetimedb::AnonymousViewContext"
+        } else {
+            "spacetimedb::ViewContext"
+        };
+        let ret = if view.is_procedural() {
+            self.type_name(&view.return_type_for_generate)
+        } else {
+            format!("impl spacetimedb::Query<{}>", self.type_name(&row))
+        };
+        writeln!(out, "#[spacetimedb::view({})]", args.join(", "));
+        writeln!(out, "pub fn {accessor}(ctx: &{ctx}) -> {ret};");
+        output.into_inner()
+    }
 
-        out.newline();
+    fn reducer_file(&self, reducer: &ReducerDef) -> String {
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+        let params = &reducer.params_for_generate.elements;
+        self.file_header(out, &reducer_module_name(reducer), params.iter().map(|(_, ty)| ty));
 
-        let mut imports = Imports::new();
-        gen_imports(&mut imports, &procedure.params_for_generate.elements);
-        add_one_import(&mut imports, &procedure.return_type_for_generate);
-        print_imports(module, out, imports);
+        let func_name = reducer_function_name(reducer);
+        let mut args = vec![];
+        match reducer.lifecycle {
+            Some(Lifecycle::Init) => args.push("init".to_string()),
+            Some(Lifecycle::OnConnect) => args.push("client_connected".to_string()),
+            Some(Lifecycle::OnDisconnect) => args.push("client_disconnected".to_string()),
+            _ => {}
+        }
+        if canonical(&func_name) != *reducer.name.deref() {
+            args.push(format!("name = {:?}", reducer.name.deref()));
+        }
+        print_function_attr(out, "reducer", &args);
+        let ctx = context_param_name(params);
+        writeln!(
+            out,
+            "pub fn {func_name}({ctx}: &spacetimedb::ReducerContext{});",
+            self.params(params)
+        );
+        output.into_inner()
+    }
 
-        out.newline();
+    fn procedure_file(&self, procedure: &ProcedureDef) -> String {
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+        let params = &procedure.params_for_generate.elements;
+        self.file_header(
+            out,
+            &procedure_module_name(procedure),
+            params
+                .iter()
+                .map(|(_, ty)| ty)
+                .chain([&procedure.return_type_for_generate]),
+        );
 
-        let procedure_name = procedure.name.deref();
         let func_name = procedure_function_name(procedure);
-        let func_name_with_callback = procedure_function_with_callback_name(procedure);
-        let args_type = function_args_type_name(&procedure.accessor_name);
-        let res_ty_name = type_name(module, &procedure.return_type_for_generate);
-
-        // Define an "args struct" as a serialization helper.
-        // This is not user-facing, it's not used outside this file.
-        // Unlike with reducers, we don't have to deserialize procedure args to build events,
-        // as we don't broadcast procedure args.
-        define_struct_for_product(
-            module,
-            out,
-            &args_type,
-            &procedure.params_for_generate.elements,
-            // non-pub visibility.
-            "",
-        );
-
-        out.newline();
-
-        let FormattedArglist {
-            arglist_no_delimiters,
-            arg_names,
-            ..
-        } = FormattedArglist::for_arguments(module, &procedure.params_for_generate.elements);
-
+        let mut args = vec![];
+        if canonical(&func_name) != *procedure.name {
+            args.push(format!("name = {:?}", procedure.name.deref()));
+        }
+        print_function_attr(out, "procedure", &args);
+        let ret = match &procedure.return_type_for_generate {
+            AlgebraicTypeUse::Unit => String::new(),
+            ty => format!(" -> {}", self.type_name(ty)),
+        };
+        let ctx = context_param_name(params);
         writeln!(
             out,
-            "
-impl __sdk::InModule for {args_type} {{
-    type Module = super::RemoteModule;
-}}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the procedure `{procedure_name}`.
-///
-/// Implemented for [`super::RemoteProcedures`].
-pub trait {func_name} {{
-    fn {func_name}(&self, {arglist_no_delimiters}) {{
-        self.{func_name_with_callback}({arg_names} |_, _| {{}});
-    }}
-
-    fn {func_name_with_callback}(
-        &self,
-        {arglist_no_delimiters}
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
-    );
-}}
-
-impl {func_name} for super::RemoteProcedures {{
-    fn {func_name_with_callback}(
-        &self,
-        {arglist_no_delimiters}
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
-    ) {{
-        self.imp.invoke_procedure_with_callback::<_, {res_ty_name}>(
-            {procedure_name:?},
-            {args_type} {{ {arg_names} }},
-            __callback,
+            "pub fn {func_name}({ctx}: &mut spacetimedb::ProcedureContext{}){ret};",
+            self.params(params)
         );
-    }}
-}}
-"
-        );
-
-        OutputFile {
-            filename: procedure_module_name(&procedure.accessor_name) + ".rs",
-            code: output.into_inner(),
-        }
+        output.into_inner()
     }
 
-    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
+    fn mod_file(&self) -> String {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
-
         print_file_header(out, true);
-
         out.newline();
+
+        let types: Vec<_> = self.plain_types().collect();
+        let tables: Vec<_> = self.table_declarations().collect();
+        let views: Vec<_> = iter_views(self.module).collect();
+        let reducers: Vec<_> = iter_reducers(self.module, self.visibility).collect();
+        let procedures: Vec<_> = iter_procedures(self.module, self.visibility).collect();
 
         // Declare `pub mod` for each of the files generated.
-        print_module_decls(module, options.visibility, out);
-
-        out.newline();
-
-        // Re-export all the modules for the generated files.
-        print_module_reexports(module, options.visibility, out);
-
-        out.newline();
-
-        // Define `enum Reducer`.
-        print_reducer_enum_defn(module, options.visibility, out);
-
-        out.newline();
-
-        // Define `DbUpdate`.
-        print_db_update_defn(module, options.visibility, out);
-
-        out.newline();
-
-        // Define `AppliedDiff`.
-        print_applied_diff_defn(module, options.visibility, out);
-
-        out.newline();
-
-        // Define `RemoteModule`, `DbConnection`, `EventContext`, `RemoteTables`,
-        // `RemoteReducers`, `RemoteProcedures` and `SubscriptionHandle`.
-        // Note that these do not change based on the module.
-        print_const_db_context_types(out);
-
-        out.newline();
-
-        // Implement `SpacetimeModule` for `RemoteModule`.
-        // This includes a method for initializing the tables in the client cache.
-        print_impl_spacetime_module(module, options.visibility, out);
-
-        vec![OutputFile {
-            filename: "mod.rs".to_string(),
-            code: output.into_inner(),
-        }]
-    }
-}
-
-/// Implements `HasCols` for the given `AlgebraicTypeRef` struct type.
-fn implement_query_col_types_for_struct(
-    module: &ModuleDef,
-    out: &mut impl Write,
-    type_ref: AlgebraicTypeRef,
-) -> fmt::Result {
-    let struct_name = type_ref_name(module, type_ref);
-    let cols_struct = struct_name.clone() + "Cols";
-    let product_def = module.typespace_for_generate()[type_ref]
-        .as_product()
-        .expect("expected product type");
-
-    writeln!(
-        out,
-        "
-/// Column accessor struct for the table `{struct_name}`.
-///
-/// Provides typed access to columns for query building.
-pub struct {cols_struct} {{"
-    )?;
-
-    for element in &product_def.elements {
-        let field_name = &element.0.deref().to_case(Case::Snake);
-        let field_type = type_name(module, &element.1);
-        writeln!(
-            out,
-            "    pub {field_name}: __sdk::__query_builder::Col<{struct_name}, {field_type}>,"
-        )?;
-    }
-
-    writeln!(out, "}}")?;
-
-    writeln!(
-        out,
-        "
-impl __sdk::__query_builder::HasCols for {struct_name} {{
-    type Cols = {cols_struct};
-    fn cols(table_name: &'static str) -> Self::Cols {{
-        {cols_struct} {{"
-    )?;
-    for element in &product_def.elements {
-        let field_name = &element.0.deref().to_case(Case::Snake);
-        writeln!(
-            out,
-            "            {field_name}: __sdk::__query_builder::Col::new(table_name, {field_name:?}),"
-        )?;
-    }
-
-    writeln!(
-        out,
-        r#"
-        }}
-    }}
-}}"#
-    )
-}
-
-/// Implements `HasCols` and `HasIxCols` for the given table's row struct type.
-fn implement_query_col_types_for_table_struct(
-    module: &ModuleDef,
-    out: &mut impl Write,
-    table: &TableDef,
-) -> fmt::Result {
-    let type_ref = table.product_type_ref;
-    let struct_name = type_ref_name(module, type_ref);
-
-    implement_query_col_types_for_struct(module, out, type_ref)?;
-    let cols_ix = struct_name.clone() + "IxCols";
-    writeln!(
-        out,
-        "
-/// Indexed column accessor struct for the table `{struct_name}`.
-///
-/// Provides typed access to indexed columns for query building.
-pub struct {cols_ix} {{"
-    )?;
-    for index in iter_indexes(table) {
-        let cols = index.algorithm.columns();
-        if cols.len() != 1 {
-            continue;
+        let module_names = itertools::chain!(
+            types.iter().map(|typ| type_module_name(&typ.accessor_name)),
+            tables.iter().map(|(owner, _)| table_module_name(&owner.accessor_name)),
+            views.iter().map(|view| table_module_name(&view.accessor_name)),
+            reducers.iter().map(|r| reducer_module_name(r)),
+            procedures.iter().map(|p| procedure_module_name(p)),
+        );
+        for module_name in module_names {
+            writeln!(out, "pub mod {module_name};");
         }
-        let column = table
-            .columns
+        out.newline();
+
+        // Re-export the declarations and the client API they expand to.
+        for typ in &types {
+            let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
+            writeln!(out, "pub use {}::{type_name};", type_module_name(&typ.accessor_name));
+        }
+        for (owner, _) in &tables {
+            writeln!(out, "pub use {}::*;", table_module_name(&owner.accessor_name));
+        }
+        for view in &views {
+            writeln!(out, "pub use {}::*;", table_module_name(&view.accessor_name));
+        }
+        for reducer in &reducers {
+            writeln!(
+                out,
+                "pub use {}::{};",
+                reducer_module_name(reducer),
+                reducer_function_name(reducer)
+            );
+        }
+        for procedure in &procedures {
+            writeln!(
+                out,
+                "pub use {}::{};",
+                procedure_module_name(procedure),
+                procedure_function_name(procedure)
+            );
+        }
+        out.newline();
+
+        // Generate the module-wide items, such as `DbConnection`, `RemoteTables` and the `Reducer` enum.
+        let mut sections: Vec<(&str, Vec<String>)> = vec![];
+        sections.push((
+            "types",
+            types
+                .iter()
+                .map(|typ| {
+                    let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
+                    format!("{}::{type_name}", type_module_name(&typ.accessor_name))
+                })
+                .collect(),
+        ));
+        // A view is a table to the client. `client_module!` invokes row callbacks and lists `ALL_TABLE_NAMES`
+        // in the order of its tables, so the tables and views are listed together, in order of accessor name.
+        let table_entries = tables.iter().flat_map(|(owner, tables)| {
+            let module_name = table_module_name(&owner.accessor_name);
+            tables.iter().map(move |t| (&t.accessor_name, module_name.clone()))
+        });
+        let view_entries = views
             .iter()
-            .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
-            .unwrap();
-        let field_name = column.accessor_name.deref().to_case(Case::Snake);
-        let field_type = type_name(module, &column.ty_for_generate);
-
-        writeln!(
-            out,
-            "    pub {field_name}: __sdk::__query_builder::IxCol<{struct_name}, {field_type}>,",
-        )?;
-    }
-    writeln!(out, "}}")?;
-
-    writeln!(
-        out,
-        "
-impl __sdk::__query_builder::HasIxCols for {struct_name} {{
-    type IxCols = {cols_ix};
-    fn ix_cols(table_name: &'static str) -> Self::IxCols {{
-        {cols_ix} {{"
-    )?;
-    for index in iter_indexes(table) {
-        let cols = index.algorithm.columns();
-        if cols.len() != 1 {
-            continue;
+            .map(|view| (&view.accessor_name, table_module_name(&view.accessor_name)));
+        sections.push((
+            "tables",
+            table_entries
+                .chain(view_entries)
+                .sorted_by_key(|(accessor, _)| *accessor)
+                .map(|(accessor, module_name)| format!("{module_name}::{}", table_method_name(accessor)))
+                .collect(),
+        ));
+        sections.push((
+            "reducers",
+            reducers
+                .iter()
+                .map(|reducer| {
+                    let params = &reducer.params_for_generate.elements;
+                    let params = if params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("({})", params.iter().map(|(ident, _)| field_name(ident)).join(", "))
+                    };
+                    format!(
+                        "{}::{}{params}",
+                        reducer_module_name(reducer),
+                        reducer_function_name(reducer)
+                    )
+                })
+                .collect(),
+        ));
+        sections.push((
+            "procedures",
+            procedures
+                .iter()
+                .map(|p| format!("{}::{}", procedure_module_name(p), procedure_function_name(p)))
+                .collect(),
+        ));
+        // `delimited_block` does not indent nested blocks, and rustfmt does not format macro invocations.
+        writeln!(out, "spacetimedb::client_module! {{");
+        for (section, entries) in &sections {
+            if entries.is_empty() {
+                continue;
+            }
+            writeln!(out, "{INDENT}{section}: [");
+            for entry in entries {
+                writeln!(out, "{INDENT}{INDENT}{entry},");
+            }
+            writeln!(out, "{INDENT}],");
         }
-        let column = table
-            .columns
+        writeln!(out, "}}");
+        output.into_inner()
+    }
+
+    fn type_def(&self, r: AlgebraicTypeRef) -> (String, &'a TypeDef) {
+        let typ = self
+            .module
+            .types()
+            .find(|t| t.ty == r)
+            .expect("row type should be declared");
+        (type_ref_name(self.module, r), typ)
+    }
+
+    fn column_field_name(&self, table: &TableDef, col: ColId) -> String {
+        field_name(&table.get_column(col).unwrap().accessor_name)
+    }
+
+    /// `, name: ty, name: ty` for function parameters after the context.
+    fn params(&self, params: &[(Identifier, AlgebraicTypeUse)]) -> String {
+        params
             .iter()
-            .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
-            .expect("singleton column");
-        let field_name = column.accessor_name.deref().to_case(Case::Snake);
-        let col_name = column.name.deref();
-
-        writeln!(
-            out,
-            "            {field_name}: __sdk::__query_builder::IxCol::new(table_name, {col_name:?}),",
-        )?;
-    }
-    writeln!(
-        out,
-        r#"
-        }}
-    }}
-}}"#
-    )?;
-
-    // Event tables cannot be used as lookup tables in semijoins.
-    if !table.is_event {
-        writeln!(
-            out,
-            "\nimpl __sdk::__query_builder::CanBeLookupTable for {struct_name} {{}}"
-        )?;
+            .map(|(ident, ty)| format!(", {}: {}", field_name(ident), self.type_name(ty)))
+            .collect()
     }
 
-    Ok(())
+    fn type_name(&self, ty: &AlgebraicTypeUse) -> String {
+        let mut s = String::new();
+        self.write_type(&mut s, ty).unwrap();
+        s
+    }
+
+    fn write_type(&self, out: &mut impl Write, ty: &AlgebraicTypeUse) -> fmt::Result {
+        match ty {
+            AlgebraicTypeUse::Unit => write!(out, "()")?,
+            AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
+            AlgebraicTypeUse::Identity => write!(out, "spacetimedb::Identity")?,
+            AlgebraicTypeUse::ConnectionId => write!(out, "spacetimedb::ConnectionId")?,
+            AlgebraicTypeUse::Timestamp => write!(out, "spacetimedb::Timestamp")?,
+            AlgebraicTypeUse::TimeDuration => write!(out, "spacetimedb::TimeDuration")?,
+            AlgebraicTypeUse::Uuid => write!(out, "spacetimedb::Uuid")?,
+            AlgebraicTypeUse::ScheduleAt => write!(out, "spacetimedb::ScheduleAt")?,
+            AlgebraicTypeUse::Option(inner_ty) => {
+                write!(out, "Option<")?;
+                self.write_type(out, inner_ty)?;
+                write!(out, ">")?;
+            }
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                write!(out, "Result<")?;
+                self.write_type(out, ok_ty)?;
+                write!(out, ", ")?;
+                self.write_type(out, err_ty)?;
+                write!(out, ">")?;
+            }
+            AlgebraicTypeUse::Primitive(prim) => match prim {
+                PrimitiveType::Bool => write!(out, "bool")?,
+                PrimitiveType::I8 => write!(out, "i8")?,
+                PrimitiveType::U8 => write!(out, "u8")?,
+                PrimitiveType::I16 => write!(out, "i16")?,
+                PrimitiveType::U16 => write!(out, "u16")?,
+                PrimitiveType::I32 => write!(out, "i32")?,
+                PrimitiveType::U32 => write!(out, "u32")?,
+                PrimitiveType::I64 => write!(out, "i64")?,
+                PrimitiveType::U64 => write!(out, "u64")?,
+                PrimitiveType::I128 => write!(out, "i128")?,
+                PrimitiveType::U128 => write!(out, "u128")?,
+                PrimitiveType::I256 => write!(out, "spacetimedb::i256")?,
+                PrimitiveType::U256 => write!(out, "spacetimedb::u256")?,
+                PrimitiveType::F32 => write!(out, "f32")?,
+                PrimitiveType::F64 => write!(out, "f64")?,
+            },
+            AlgebraicTypeUse::String => write!(out, "String")?,
+            AlgebraicTypeUse::Array(elem_ty) => {
+                write!(out, "Vec<")?;
+                self.write_type(out, elem_ty)?;
+                write!(out, ">")?;
+            }
+            AlgebraicTypeUse::Ref(r) => {
+                let name = type_ref_name(self.module, *r);
+                // The client's `#[table]` takes these names for the SDK's types, unless the path starts with `self`.
+                // See `is_filterable_type` in `crates/bindings-macro/src/client.rs`.
+                if ["Uuid", "Timestamp", "TimeDuration", "ScheduleAt"].contains(&&*name) {
+                    write!(out, "self::")?;
+                }
+                write!(out, "{name}")?
+            }
+        }
+        Ok(())
+    }
+
+    /// A Rust expression for `value`, for `#[default(...)]`.
+    /// Returns `None` for a value that has no simple expression, such as an `Identity` or an `i256`.
+    fn value_expr(&self, ty: &AlgebraicTypeUse, value: &AlgebraicValue) -> Option<String> {
+        Some(match (ty, value) {
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::Bool(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::I8(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::U8(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::I16(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::U16(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::I32(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::U32(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::I64(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::U64(v)) => v.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::I128(v)) => { v.0 }.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::U128(v)) => { v.0 }.to_string(),
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::F32(v)) if v.into_inner().is_finite() => {
+                format!("{:?}", v.into_inner())
+            }
+            (AlgebraicTypeUse::Primitive(_), AlgebraicValue::F64(v)) if v.into_inner().is_finite() => {
+                format!("{:?}", v.into_inner())
+            }
+            (AlgebraicTypeUse::String, AlgebraicValue::String(v)) => format!("{v:?}"),
+            (AlgebraicTypeUse::Option(inner), AlgebraicValue::Sum(sum)) => match sum.tag {
+                0 => format!("Some({})", self.value_expr(inner, &sum.value)?),
+                _ => "None".to_string(),
+            },
+            (AlgebraicTypeUse::Array(elem), AlgebraicValue::Array(array)) => format!(
+                "vec![{}]",
+                array_elements(array)
+                    .iter()
+                    .map(|v| self.value_expr(elem, v))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ")
+            ),
+            (AlgebraicTypeUse::Ref(r), value) => {
+                let type_name = type_ref_name(self.module, *r);
+                match (&self.module.typespace_for_generate()[*r], value) {
+                    (AlgebraicTypeDef::PlainEnum(plain), AlgebraicValue::Sum(sum)) => {
+                        format!("{type_name}::{}", variant_name(plain.variants.get(sum.tag as usize)?))
+                    }
+                    (AlgebraicTypeDef::Sum(def), AlgebraicValue::Sum(sum)) => {
+                        let (ident, ty) = def.variants.get(sum.tag as usize)?;
+                        match ty {
+                            AlgebraicTypeUse::Unit => format!("{type_name}::{}", variant_name(ident)),
+                            ty => format!(
+                                "{type_name}::{}({})",
+                                variant_name(ident),
+                                self.value_expr(ty, &sum.value)?
+                            ),
+                        }
+                    }
+                    (AlgebraicTypeDef::Product(def), AlgebraicValue::Product(product)) => format!(
+                        "{type_name} {{ {} }}",
+                        def.elements
+                            .iter()
+                            .zip(&product.elements)
+                            .map(|((ident, ty), v)| Some(format!("{}: {}", field_name(ident), self.value_expr(ty, v)?)))
+                            .collect::<Option<Vec<_>>>()?
+                            .join(", ")
+                    ),
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        })
+    }
 }
 
-pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {
-    // NEW: Generate query table accessor trait and implementation
-    let accessor_method = table_method_name(&table.accessor_name);
-    let table_name = table.name.deref();
-    let query_accessor_trait = accessor_method.to_string() + "QueryTableAccess";
-
-    writeln!(
-        out,
-        "
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `{struct_name}`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait {query_accessor_trait} {{
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `{struct_name}`.
-            fn {accessor_method}(&self) -> __sdk::__query_builder::Table<{struct_name}>;
-        }}
-
-        impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
-            fn {accessor_method}(&self) -> __sdk::__query_builder::Table<{struct_name}> {{
-                __sdk::__query_builder::Table::new({table_name:?})
-            }}
-        }}
-"
-    )
+fn array_elements(array: &ArrayValue) -> Vec<AlgebraicValue> {
+    array.iter_cloned().collect()
 }
 
-pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
-    match ty {
-        AlgebraicTypeUse::Unit => write!(out, "()")?,
-        AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
-        AlgebraicTypeUse::Identity => write!(out, "__sdk::Identity")?,
-        AlgebraicTypeUse::ConnectionId => write!(out, "__sdk::ConnectionId")?,
-        AlgebraicTypeUse::Timestamp => write!(out, "__sdk::Timestamp")?,
-        AlgebraicTypeUse::TimeDuration => write!(out, "__sdk::TimeDuration")?,
-        AlgebraicTypeUse::Uuid => write!(out, "__sdk::Uuid")?,
-        AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
-        AlgebraicTypeUse::Option(inner_ty) => {
-            write!(out, "Option::<")?;
-            write_type(module, out, inner_ty)?;
-            write!(out, ">")?;
-        }
-        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            write!(out, "Result::<")?;
-            write_type(module, out, ok_ty)?;
-            write!(out, ", ")?;
-            write_type(module, out, err_ty)?;
-            write!(out, ">")?;
-        }
-        AlgebraicTypeUse::Primitive(prim) => match prim {
-            PrimitiveType::Bool => write!(out, "bool")?,
-            PrimitiveType::I8 => write!(out, "i8")?,
-            PrimitiveType::U8 => write!(out, "u8")?,
-            PrimitiveType::I16 => write!(out, "i16")?,
-            PrimitiveType::U16 => write!(out, "u16")?,
-            PrimitiveType::I32 => write!(out, "i32")?,
-            PrimitiveType::U32 => write!(out, "u32")?,
-            PrimitiveType::I64 => write!(out, "i64")?,
-            PrimitiveType::U64 => write!(out, "u64")?,
-            PrimitiveType::I128 => write!(out, "i128")?,
-            PrimitiveType::U128 => write!(out, "u128")?,
-            PrimitiveType::I256 => write!(out, "__sats::i256")?,
-            PrimitiveType::U256 => write!(out, "__sats::u256")?,
-            PrimitiveType::F32 => write!(out, "f32")?,
-            PrimitiveType::F64 => write!(out, "f64")?,
-        },
-        AlgebraicTypeUse::String => write!(out, "String")?,
-        AlgebraicTypeUse::Array(elem_ty) => {
-            write!(out, "Vec::<")?;
-            write_type(module, out, elem_ty)?;
-            write!(out, ">")?;
-        }
-        AlgebraicTypeUse::Ref(r) => {
-            write!(out, "{}", type_ref_name(module, *r))?;
+/// The table whose file declares a row type: the table named after the type, or else the first by name.
+fn row_owner<'a>(module: &ModuleDef, row: AlgebraicTypeRef, tables: &[&'a TableDef]) -> &'a TableDef {
+    let type_name = type_ref_name(module, row);
+    tables
+        .iter()
+        .find(|t| t.accessor_name.deref().to_case(Case::Pascal) == type_name)
+        .unwrap_or(&tables[0])
+}
+
+/// The canonical name the client expansions derive from an accessor name.
+/// Must match `canonical` in `crates/bindings-macro/src/client.rs`.
+/// A declaration whose canonical name differs states it with `name = "..."`.
+fn canonical(accessor: &str) -> String {
+    accessor.to_case(Case::Snake)
+}
+
+/// `name("...")` for the field `field`, if the column's canonical name differs from the one the client derives,
+/// as under `CaseConversionPolicy::None`. Module syntax has no column name yet:
+/// this is proposal 0032's form, which only the client expansions accept.
+fn column_name_attr(field: &str, canonical_name: &str) -> Option<String> {
+    (canonical(field) != canonical_name).then(|| format!("name({canonical_name:?})"))
+}
+
+/// The attributes of the column `col` of a row type, merged from the column attributes of each of its tables.
+///
+/// Tables that share a row type can differ in their column attributes: C# and C++ modules declare
+/// primary keys, unique constraints, sequences and indexes per table. An attribute that only some of the tables have
+/// gets proposal 0022's `table = ...` modifier, such as `#[primary_key(table = player)]`,
+/// which only the client expansions accept. A default cannot be declared per table, so it is left out
+/// unless every table has it; the client does not use defaults.
+fn row_column_attrs(tables: &[&TableDef], tables_args: &[TableArgs], col: ColId) -> Vec<String> {
+    // Each attribute, with the accessors of the tables that have it, in order of first appearance.
+    let mut attrs: Vec<(&String, Vec<String>)> = vec![];
+    for (table, (_, column_attrs)) in tables.iter().zip(tables_args) {
+        for attr in column_attrs.get(&col).into_iter().flatten() {
+            let accessor = table_method_name(&table.accessor_name);
+            match attrs.iter_mut().find(|(a, _)| *a == attr) {
+                Some((_, accessors)) => accessors.push(accessor),
+                None => attrs.push((attr, vec![accessor])),
+            }
         }
     }
-    Ok(())
+    attrs
+        .into_iter()
+        .filter_map(|(attr, accessors)| {
+            if accessors.len() == tables.len() {
+                return Some(attr.clone());
+            }
+            if attr.starts_with("default(") {
+                return None;
+            }
+            let active = match &accessors[..] {
+                [accessor] => accessor.clone(),
+                accessors => format!("[{}]", accessors.join(", ")),
+            };
+            // `index(btree)` becomes `index(btree, table = ...)`, and `unique` becomes `unique(table = ...)`.
+            Some(match attr.strip_suffix(')') {
+                Some(args) => format!("{args}, table = {active})"),
+                None => format!("{attr}(table = {active})"),
+            })
+        })
+        .collect()
 }
 
-pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
-    let mut s = String::new();
-    write_type(module, &mut s, ty).unwrap();
-    s
+/// `#[sats(name = "...")]`, when the type's name in the module is not its Rust name,
+/// such as for a type in a namespace.
+fn print_type_name_attr(out: &mut Indenter, name: &ScopedTypeName, rust_name: &str) {
+    let full_name = name.name_segments().join(".");
+    if full_name != rust_name {
+        writeln!(out, "#[sats(name = {full_name:?})]");
+    }
 }
 
-/// Arguments to a reducer or procedure pretty-printed in various ways that are convenient to compute together.
-struct FormattedArglist {
-    /// The arguments as `ident: ty, ident: ty, ident: ty,`,
-    /// like an argument list.
-    ///
-    /// Always carries a trailing comma, unless it's zero elements.
-    arglist_no_delimiters: String,
-    /// The argument names as `ident, ident, ident,`,
-    /// for passing to function call and struct literal expressions.
-    ///
-    /// Always carries a trailing comma, unless it's zero elements.
-    arg_names: String,
+fn print_function_attr(out: &mut Indenter, kind: &str, args: &[String]) {
+    if args.is_empty() {
+        writeln!(out, "#[spacetimedb::{kind}]");
+    } else {
+        writeln!(out, "#[spacetimedb::{kind}({})]", args.join(", "));
+    }
 }
 
-impl FormattedArglist {
-    fn for_arguments(module: &ModuleDef, params: &[(Identifier, AlgebraicTypeUse)]) -> Self {
-        let mut arglist_no_delimiters = String::new();
-        write_arglist_no_delimiters(module, &mut arglist_no_delimiters, params, None)
-            .expect("Writing to a String failed... huh?");
-
-        let mut arg_names = String::new();
-        for (arg_ident, _) in params {
-            let arg_name = arg_ident.deref().to_case(Case::Snake);
-            arg_names += &arg_name;
-            arg_names += ", ";
-        }
-
-        Self {
-            arglist_no_delimiters,
-            arg_names,
-        }
+/// The context parameter's name, which must differ from the other parameters' names.
+fn context_param_name(params: &[(Identifier, AlgebraicTypeUse)]) -> &'static str {
+    if params.iter().any(|(ident, _)| field_name(ident) == "ctx") {
+        "_ctx"
+    } else {
+        "ctx"
     }
 }
 
 const ALLOW_LINTS: &str = "#![allow(unused, clippy::all)]";
 
-const SPACETIMEDB_IMPORTS: &[&str] = &[
-    "use spacetimedb_sdk::__codegen::{",
-    "\tself as __sdk,",
-    "\t__lib,",
-    "\t__sats,",
-    "\t__ws,",
-    "};",
-];
-
-fn print_spacetimedb_imports(output: &mut Indenter) {
-    print_lines(output, SPACETIMEDB_IMPORTS);
-}
+const SPACETIMEDB_IMPORTS: &[&str] = &["use spacetimedb_sdk as spacetimedb;"];
 
 fn print_file_header(output: &mut Indenter, include_version: bool) {
     print_auto_generated_file_comment(output);
@@ -1019,159 +927,15 @@ fn print_file_header(output: &mut Indenter, include_version: bool) {
         print_auto_generated_version_comment(output);
     }
     writeln!(output, "{ALLOW_LINTS}");
-    print_spacetimedb_imports(output);
+    print_lines(output, SPACETIMEDB_IMPORTS);
 }
 
-// TODO: figure out if/when sum types should derive:
-// - Clone
-// - Debug
-// - Copy
-// - PartialEq, Eq
-// - Hash
-//    - Complicated because `HashMap` is not `Hash`.
-// - others?
-
-const ENUM_DERIVES: &[&str] = &[
-    "#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]",
-    "#[sats(crate = __lib)]",
-];
-
-fn print_enum_derives(output: &mut Indenter) {
-    print_lines(output, ENUM_DERIVES);
+fn field_name(ident: &Identifier) -> String {
+    ident.deref().to_case(Case::Snake)
 }
 
-const PLAIN_ENUM_EXTRA_DERIVES: &[&str] = &["#[derive(Copy, Eq, Hash)]"];
-
-fn print_plain_enum_extra_derives(output: &mut Indenter) {
-    print_lines(output, PLAIN_ENUM_EXTRA_DERIVES);
-}
-
-/// Generate a file which defines an `enum` corresponding to the `sum_type`.
-pub fn define_enum_for_sum(
-    module: &ModuleDef,
-    out: &mut Indenter,
-    name: &str,
-    variants: &[(Identifier, AlgebraicTypeUse)],
-    is_plain: bool,
-) {
-    print_enum_derives(out);
-    if is_plain {
-        print_plain_enum_extra_derives(out);
-    }
-    write!(out, "pub enum {name} ");
-
-    out.delimited_block(
-        "{",
-        |out| {
-            for (ident, ty) in variants {
-                write_enum_variant(module, out, ident, ty);
-                out.newline();
-            }
-        },
-        "}\n",
-    );
-
-    out.newline()
-}
-
-fn write_enum_variant(module: &ModuleDef, out: &mut Indenter, ident: &Identifier, ty: &AlgebraicTypeUse) {
-    let name = ident.deref().to_case(Case::Pascal);
-    write!(out, "{name}");
-
-    // If the contained type is the unit type, i.e. this variant has no members,
-    // write it without parens or braces, like
-    // ```
-    // Foo,
-    // ```
-    if !matches!(ty, AlgebraicTypeUse::Unit) {
-        // If the contained type is not a product, i.e. this variant has a single
-        // member, write it tuple-style, with parens.
-        write!(out, "(");
-        write_type(module, out, ty).unwrap();
-        write!(out, ")");
-    }
-    writeln!(out, ",");
-}
-
-fn write_struct_type_fields_in_braces(
-    module: &ModuleDef,
-    out: &mut Indenter,
-    elements: &[(Identifier, AlgebraicTypeUse)],
-
-    // Whether to print a `pub` qualifier on the fields. Necessary for `struct` defns,
-    // disallowed for `enum` defns.
-    pub_qualifier: bool,
-) {
-    out.delimited_block(
-        "{",
-        |out| write_arglist_no_delimiters(module, out, elements, pub_qualifier.then_some("pub")).unwrap(),
-        "}",
-    );
-}
-
-fn write_arglist_no_delimiters(
-    module: &ModuleDef,
-    out: &mut impl Write,
-    elements: &[(Identifier, AlgebraicTypeUse)],
-
-    // Written before each line. Useful for `pub`.
-    prefix: Option<&str>,
-) -> anyhow::Result<()> {
-    for (ident, ty) in elements {
-        if let Some(prefix) = prefix {
-            write!(out, "{prefix} ")?;
-        }
-
-        let name = ident.deref().to_case(Case::Snake);
-
-        write!(out, "{name}: ")?;
-        write_type(module, out, ty)?;
-        writeln!(out, ",")?;
-    }
-
-    Ok(())
-}
-
-// TODO: figure out if/when product types should derive:
-// - Clone
-// - Debug
-// - Copy
-// - PartialEq, Eq
-// - Hash
-//    - Complicated because `HashMap` is not `Hash`.
-// - others?
-
-const STRUCT_DERIVES: &[&str] = &[
-    "#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]",
-    "#[sats(crate = __lib)]",
-];
-
-fn print_struct_derives(output: &mut Indenter) {
-    print_lines(output, STRUCT_DERIVES);
-}
-
-fn define_struct_for_product(
-    module: &ModuleDef,
-    out: &mut Indenter,
-    name: &str,
-    elements: &[(Identifier, AlgebraicTypeUse)],
-    vis: &str,
-) {
-    print_struct_derives(out);
-
-    write!(out, "{vis} struct {name} ");
-
-    // TODO: if elements is empty, define a unit struct with no brace-delimited list of fields.
-    write_struct_type_fields_in_braces(
-        module, out, elements, true, // `pub`-qualify fields.
-    );
-
-    out.newline();
-}
-
-fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {
-    let (name, _) = module.type_def_from_ref(type_ref).unwrap();
-    type_module_name(name)
+fn variant_name(ident: &Identifier) -> String {
+    ident.deref().to_case(Case::Pascal)
 }
 
 fn type_module_name(type_name: &ScopedTypeName) -> String {
@@ -1186,1010 +950,18 @@ fn table_method_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake)
 }
 
-fn table_access_trait_name(table_name: &Identifier) -> String {
-    table_name.deref().to_case(Case::Pascal) + "TableAccess"
-}
-
-fn function_args_type_name(function_name: &str) -> String {
-    function_name.to_case(Case::Pascal) + "Args"
-}
-
-fn reducer_variant_name(reducer_name: &ReducerName) -> String {
-    reducer_name.deref().to_case(Case::Pascal)
-}
-
-fn reducer_module_name(reducer_name: &ReducerName) -> String {
-    reducer_name.deref().to_case(Case::Snake) + "_reducer"
+fn reducer_module_name(reducer: &ReducerDef) -> String {
+    reducer.accessor_name.deref().to_case(Case::Snake) + "_reducer"
 }
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.accessor_name.deref().to_case(Case::Snake)
 }
 
-fn procedure_module_name(procedure_name: &Identifier) -> String {
-    procedure_name.deref().to_case(Case::Snake) + "_procedure"
+fn procedure_module_name(procedure: &ProcedureDef) -> String {
+    procedure.accessor_name.deref().to_case(Case::Snake) + "_procedure"
 }
 
 fn procedure_function_name(procedure: &ProcedureDef) -> String {
     procedure.accessor_name.deref().to_case(Case::Snake)
-}
-
-fn procedure_function_with_callback_name(procedure: &ProcedureDef) -> String {
-    procedure_function_name(procedure) + "_then"
-}
-
-/// Iterate over all of the Rust `mod`s for types, reducers, views, and tables in the `module`.
-fn iter_module_names(module: &ModuleDef, visibility: CodegenVisibility) -> impl Iterator<Item = String> + '_ {
-    itertools::chain!(
-        iter_types(module).map(|ty| type_module_name(&ty.accessor_name)),
-        iter_reducers(module, visibility).map(|r| reducer_module_name(&r.accessor_name)),
-        iter_tables(module, visibility).map(|tbl| table_module_name(&tbl.accessor_name)),
-        iter_views(module).map(|view| table_module_name(&view.accessor_name)),
-        iter_procedures(module, visibility).map(|proc| procedure_module_name(&proc.accessor_name)),
-    )
-}
-
-/// Print `pub mod` declarations for all the files that will be generated for `items`.
-fn print_module_decls(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    for module_name in iter_module_names(module, visibility) {
-        writeln!(out, "pub mod {module_name};");
-    }
-}
-
-/// Print appropriate reexports for all the files that will be generated for `items`.
-fn print_module_reexports(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    for ty in iter_types(module) {
-        let mod_name = type_module_name(&ty.accessor_name);
-        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
-        writeln!(out, "pub use {mod_name}::{type_name};")
-    }
-    for (_, accessor_name, _) in iter_table_names_and_types(module, visibility) {
-        let mod_name = table_module_name(accessor_name);
-        // TODO: More precise reexport: we want:
-        // - The trait name.
-        // - The insert, delete and possibly update callback ids.
-        // We do not want:
-        // - The table handle.
-        writeln!(out, "pub use {mod_name}::*;");
-    }
-    for reducer in iter_reducers(module, visibility) {
-        let mod_name = reducer_module_name(&reducer.accessor_name);
-        let reducer_trait_name = reducer_function_name(reducer);
-        writeln!(out, "pub use {mod_name}::{reducer_trait_name};");
-    }
-    for procedure in iter_procedures(module, visibility) {
-        let mod_name = procedure_module_name(&procedure.accessor_name);
-        let trait_name = procedure_function_name(procedure);
-        writeln!(out, "pub use {mod_name}::{trait_name};");
-    }
-}
-
-fn print_reducer_enum_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    // Don't derive ser/de on this enum;
-    // it's not a proper SATS enum and the derive will fail.
-    writeln!(out, "#[derive(Clone, PartialEq, Debug)]");
-    writeln!(
-        out,
-        "
-/// One of the reducers defined by this module.
-///
-/// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
-/// to indicate which reducer caused the event.
-",
-    );
-    out.delimited_block(
-        "pub enum Reducer {",
-        |out| {
-            for reducer in iter_reducers(module, visibility) {
-                write!(out, "{} ", reducer_variant_name(&reducer.accessor_name));
-                if !reducer.params_for_generate.elements.is_empty() {
-                    // If the reducer has any arguments, generate a "struct variant,"
-                    // like `Foo { bar: Baz, }`.
-                    // If it doesn't, generate a "unit variant" instead,
-                    // like `Foo,`.
-                    write_struct_type_fields_in_braces(module, out, &reducer.params_for_generate.elements, false);
-                }
-                writeln!(out, ",");
-            }
-        },
-        "}\n",
-    );
-    out.newline();
-    writeln!(
-        out,
-        "
-impl __sdk::InModule for Reducer {{
-    type Module = RemoteModule;
-}}
-",
-    );
-
-    out.delimited_block(
-        "impl __sdk::Reducer for Reducer {",
-        |out| {
-            out.delimited_block(
-                "fn reducer_name(&self) -> &'static str {",
-                |out| {
-                    out.delimited_block(
-                        "match self {",
-                        |out| {
-                            for reducer in iter_reducers(module, visibility) {
-                                write!(out, "Reducer::{}", reducer_variant_name(&reducer.accessor_name));
-                                if !reducer.params_for_generate.elements.is_empty() {
-                                    // Because we're emitting unit variants when the payload is empty,
-                                    // we will emit different patterns for empty vs non-empty variants.
-                                    // This is not strictly required;
-                                    // Rust allows matching a struct-like pattern
-                                    // against a unit-like enum variant,
-                                    // but we prefer the clarity of not including the braces for unit variants.
-                                    write!(out, " {{ .. }}");
-                                }
-                                writeln!(out, " => {:?},", reducer.name.deref());
-                            }
-                            // Write a catch-all pattern to handle the case where the module defines zero reducers,
-                            // 'cause references are always considered inhabited,
-                            // even references to uninhabited types.
-                            writeln!(out, "_ => unreachable!(),");
-                        },
-                        "}\n",
-                    );
-                },
-                "}\n",
-            );
-            writeln!(out, "#[allow(clippy::clone_on_copy)]");
-            out.delimited_block(
-                "fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {",
-                |out| {
-                    out.delimited_block(
-                        "match self {",
-                        |out| {
-                            for reducer in iter_reducers(module, visibility) {
-                                write!(out, "Reducer::{}", reducer_variant_name(&reducer.accessor_name));
-                                if !reducer.params_for_generate.elements.is_empty() {
-                                    // Because we're emitting unit variants when the payload is empty,
-                                    // we will emit different patterns for empty vs non-empty variants.
-                                    // This is not strictly required;
-                                    // Rust allows matching a struct-like pattern
-                                    // against a unit-like enum variant,
-                                    // but we prefer the clarity of not including the braces for unit variants.
-
-                                    out.delimited_block(
-                                        "{",
-                                        |out| {
-                                            for (ident, _) in &reducer.params_for_generate.elements {
-                                                writeln!(out, "{},", ident.deref().to_case(Case::Snake));
-                                            }
-                                        },
-                                        "}",
-                                    );
-                                }
-
-                                write!(
-                                    out,
-                                    " => __sats::bsatn::to_vec(&{}::{}",
-                                    reducer_module_name(&reducer.accessor_name),
-                                    function_args_type_name(&reducer.accessor_name)
-                                );
-                                out.delimited_block(
-                                    " {",
-                                    |out| {
-                                        for (ident, _) in &reducer.params_for_generate.elements {
-                                            let field = ident.deref().to_case(Case::Snake);
-                                            writeln!(out, "{field}: {field}.clone(),");
-                                        }
-                                    },
-                                    "}),\n",
-                                );
-                            }
-                            // Write a catch-all pattern to handle the case where the module defines zero reducers,
-                            // 'cause references are always considered inhabited,
-                            // even references to uninhabited types.
-                            writeln!(out, "_ => unreachable!(),");
-                        },
-                        "}\n",
-                    );
-                },
-                "}\n",
-            );
-        },
-        "}\n",
-    );
-}
-
-fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    writeln!(out, "#[derive(Default, Debug)]");
-    writeln!(out, "#[allow(non_snake_case)]");
-    writeln!(out, "#[doc(hidden)]");
-    out.delimited_block(
-        "pub struct DbUpdate {",
-        |out| {
-            for (_, accessor_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
-                writeln!(
-                    out,
-                    "{}: __sdk::TableUpdate<{}>,",
-                    table_method_name(accessor_name),
-                    type_ref_name(module, product_type_ref),
-                );
-            }
-        },
-        "}\n",
-    );
-
-    out.newline();
-
-    out.delimited_block(
-        "
-impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
-    type Error = __sdk::Error;
-    fn try_from(raw: __ws::v2::TransactionUpdate) -> Result<Self, Self::Error> {
-        let mut db_update = DbUpdate::default();
-        for table_update in __sdk::transaction_update_iter_table_updates(raw) {
-            match &table_update.table_name[..] {
-",
-        |out| {
-            for (name, accessor_name, _) in iter_table_names_and_types(module, visibility) {
-                writeln!(
-                    out,
-                    "{:?} => db_update.{}.append({}::parse_table_update(table_update)?),",
-                    name.deref(),
-                    table_method_name(accessor_name),
-                    table_module_name(accessor_name),
-                );
-            }
-        },
-        "
-                unknown => {
-                    return Err(__sdk::InternalError::unknown_name(
-                        \"table\",
-                        unknown,
-                        \"DatabaseUpdate\",
-                    ).into());
-                }
-            }
-        }
-        Ok(db_update)
-    }
-}",
-    );
-
-    out.newline();
-
-    writeln!(
-        out,
-        "
-impl __sdk::InModule for DbUpdate {{
-    type Module = RemoteModule;
-}}
-",
-    );
-
-    out.delimited_block(
-        "impl __sdk::DbUpdate for DbUpdate {",
-        |out| {
-            out.delimited_block(
-                "fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
-                    let mut diff = AppliedDiff::default();
-                ",
-                |out| {
-                    for table in iter_tables(module, visibility) {
-                        let field_name = table_method_name(&table.accessor_name);
-                        if table.is_event {
-                            // Event tables bypass the client cache entirely.
-                            // We construct an applied diff directly from the inserts,
-                            // which will fire on_insert callbacks without storing rows.
-                            writeln!(
-                                out,
-                                "diff.{field_name} = self.{field_name}.into_event_diff();",
-                            );
-                        } else {
-                            let with_updates = table
-                                .primary_key
-                                .map(|col| {
-                                    let pk_field = table.get_column(col).unwrap().accessor_name.deref().to_case(Case::Snake);
-                                    format!(".with_updates_by_pk(|row| &row.{pk_field})")
-                                })
-                                .unwrap_or_default();
-
-                            writeln!(
-                                out,
-                                "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
-                                type_ref_name(module, table.product_type_ref),
-                                table.name.deref(),
-                            );
-                        }
-                    }
-                    for view in iter_views(module) {
-                        let field_name = table_method_name(&view.accessor_name);
-                        let with_updates = view
-                            .primary_key
-                            .map(|col| {
-                                let pk_field = view.return_columns[col.idx()]
-                                    .accessor_name
-                                    .deref()
-                                    .to_case(Case::Snake);
-                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
-                            })
-                            .unwrap_or_default();
-                        writeln!(
-                            out,
-                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
-                            type_ref_name(module, view.product_type_ref),
-                            view.name.deref(),
-                        );
-                    }
-                },
-                "
-                    diff
-                }\n",
-            );
-
-            out.delimited_block(
-                "fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {",
-                |out| {
-                    writeln!(out, "let mut db_update = DbUpdate::default();");
-                    out.delimited_block(
-                        "for table_rows in raw.tables {",
-                        |out| {
-                            out.delimited_block(
-                                "match &table_rows.table[..] {",
-                                |out| {
-                                    for (name, accessor_name, _) in iter_table_names_and_types(module, visibility) {
-                                        writeln!(
-                                            out,
-                                            "{:?} => db_update.{}.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),",
-                                            name.deref(),
-                                            table_method_name(accessor_name),
-                                        );
-                                    }
-                                    writeln!(
-                                        out,
-                                        "unknown => {{ return Err(__sdk::InternalError::unknown_name(\"table\", unknown, \"QueryRows\").into()); }}"
-                                    );
-                                },
-                                "}",
-                            );
-                        },
-                        "}",
-                    );
-                    writeln!(out, "Ok(db_update)");
-                },
-                "}\n",
-            );
-
-            out.delimited_block(
-                "fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {",
-                |out| {
-                    writeln!(out, "let mut db_update = DbUpdate::default();");
-                    out.delimited_block(
-                        "for table_rows in raw.tables {",
-                        |out| {
-                            out.delimited_block(
-                                "match &table_rows.table[..] {",
-                                |out| {
-                                    for (name, accessor_name, _) in iter_table_names_and_types(module, visibility) {
-                                        writeln!(
-                                            out,
-                                            "{:?} => db_update.{}.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),",
-                                            name.deref(),
-                                            table_method_name(accessor_name),
-                                        );
-                                    }
-                                    writeln!(
-                                        out,
-                                        "unknown => {{ return Err(__sdk::InternalError::unknown_name(\"table\", unknown, \"QueryRows\").into()); }}"
-                                    );
-                                },
-                                "}",
-                            );
-                        },
-                        "}",
-                    );
-                    writeln!(out, "Ok(db_update)");
-                },
-                "}\n",
-            );
-        },
-        "}\n",
-    );
-}
-
-fn print_applied_diff_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    writeln!(out, "#[derive(Default)]");
-    writeln!(out, "#[allow(non_snake_case)]");
-    writeln!(out, "#[doc(hidden)]");
-    out.delimited_block(
-        "pub struct AppliedDiff<'r> {",
-        |out| {
-            for (_, accessor_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
-                writeln!(
-                    out,
-                    "{}: __sdk::TableAppliedDiff<'r, {}>,",
-                    table_method_name(accessor_name),
-                    type_ref_name(module, product_type_ref),
-                );
-            }
-            // Also write a `PhantomData` field which uses the lifetime `r`,
-            // in case the module defines zero tables,
-            // as unused lifetime params are an error.
-            writeln!(out, "__unused: std::marker::PhantomData<&'r ()>,",);
-        },
-        "}\n",
-    );
-
-    out.newline();
-
-    writeln!(
-        out,
-        "
-impl __sdk::InModule for AppliedDiff<'_> {{
-    type Module = RemoteModule;
-}}
-",
-    );
-
-    out.delimited_block(
-        "impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {",
-        |out| {
-            out.delimited_block(
-                "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {",
-                |out| {
-                    for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, visibility) {
-                        writeln!(
-                            out,
-                            "callbacks.invoke_table_row_callbacks::<{}>({:?}, &self.{}, event);",
-                            type_ref_name(module, product_type_ref),
-                            name.deref(),
-                            table_method_name(accessor_name),
-                        );
-                    }
-                },
-                "}\n",
-            );
-        },
-        "}\n",
-    );
-}
-
-fn print_impl_spacetime_module(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    out.delimited_block(
-        "impl __sdk::SpacetimeModule for RemoteModule {",
-        |out| {
-            writeln!(
-                out,
-                "
-type DbConnection = DbConnection;
-type EventContext = EventContext;
-type ReducerEventContext = ReducerEventContext;
-type ProcedureEventContext = ProcedureEventContext;
-type SubscriptionEventContext = SubscriptionEventContext;
-type ErrorContext = ErrorContext;
-type Reducer = Reducer;
-type DbView = RemoteTables;
-type Reducers = RemoteReducers;
-type Procedures = RemoteProcedures;
-type DbUpdate = DbUpdate;
-type AppliedDiff<'r> = AppliedDiff<'r>;
-type SubscriptionHandle = SubscriptionHandle;
-type QueryBuilder = __sdk::QueryBuilder;
-"
-            );
-            out.delimited_block(
-                "fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {",
-                |out| {
-                    for (_, accessor_name, _) in iter_table_names_and_types(module, visibility) {
-                        writeln!(
-                            out,
-                            "{}::register_table(client_cache);",
-                            table_module_name(accessor_name)
-                        );
-                    }
-                },
-                "}\n",
-            );
-            out.delimited_block(
-                "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
-                |out| {
-                    for (name, _, _) in iter_table_names_and_types(module, visibility) {
-                        writeln!(out, "\"{name}\",");
-                    }
-                },
-                "];\n",
-            );
-        },
-        "}\n",
-    );
-}
-
-fn print_const_db_context_types(out: &mut Indenter) {
-    writeln!(
-        out,
-        "
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct RemoteModule;
-
-impl __sdk::InModule for RemoteModule {{
-    type Module = Self;
-}}
-
-/// The `reducers` field of [`EventContext`] and [`DbConnection`],
-/// with methods provided by extension traits for each reducer defined by the module.
-pub struct RemoteReducers {{
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::InModule for RemoteReducers {{
-    type Module = RemoteModule;
-}}
-
-/// The `procedures` field of [`DbConnection`] and other [`DbContext`] types,
-/// with methods provided by extension traits for each procedure defined by the module.
-pub struct RemoteProcedures {{
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::InModule for RemoteProcedures {{
-    type Module = RemoteModule;
-}}
-
-/// The `db` field of [`EventContext`] and [`DbConnection`],
-/// with methods provided by extension traits for each table defined by the module.
-pub struct RemoteTables {{
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::InModule for RemoteTables {{
-    type Module = RemoteModule;
-}}
-
-/// A connection to a remote module, including a materialized view of a subset of the database.
-///
-/// Connect to a remote module by calling [`DbConnection::builder`]
-/// and using the [`__sdk::DbConnectionBuilder`] builder-pattern constructor.
-///
-/// You must explicitly advance the connection by calling any one of:
-///
-/// - [`DbConnection::frame_tick`].
-#[cfg_attr(not(target_arch = \"wasm32\"), doc = \"- [`DbConnection::run_threaded`].\")]
-#[cfg_attr(target_arch = \"wasm32\", doc = \"- [`DbConnection::run_background_task`].\")]
-/// - [`DbConnection::run_async`].
-/// - [`DbConnection::advance_one_message`].
-#[cfg_attr(not(target_arch =  \"wasm32\"), doc = \"- [`DbConnection::advance_one_message_blocking`].\")]
-/// - [`DbConnection::advance_one_message_async`].
-///
-/// Which of these methods you should call depends on the specific needs of your application,
-/// but you must call one of them, or else the connection will never progress.
-pub struct DbConnection {{
-    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
-    pub db: RemoteTables,
-    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
-    pub reducers: RemoteReducers,
-    #[doc(hidden)]
-
-    /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
-    pub procedures: RemoteProcedures,
-
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::InModule for DbConnection {{
-    type Module = RemoteModule;
-}}
-
-impl __sdk::DbContext for DbConnection {{
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type Procedures = RemoteProcedures;
-
-    fn db(&self) -> &Self::DbView {{
-        &self.db
-    }}
-    fn reducers(&self) -> &Self::Reducers {{
-        &self.reducers
-    }}
-    fn procedures(&self) -> &Self::Procedures {{
-        &self.procedures
-    }}
-
-    fn is_active(&self) -> bool {{
-        self.imp.is_active()
-    }}
-
-    fn disconnect(&self) -> __sdk::Result<()> {{
-        self.imp.disconnect()
-    }}
-
-    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
-
-    fn subscription_builder(&self) -> Self::SubscriptionBuilder {{
-        __sdk::SubscriptionBuilder::new(&self.imp)
-    }}
-
-    fn try_identity(&self) -> Option<__sdk::Identity> {{
-        self.imp.try_identity()
-    }}
-    fn connection_id(&self) -> __sdk::ConnectionId {{
-        self.imp.connection_id()
-    }}
-    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {{
-        self.imp.try_connection_id()
-    }}
-}}
-
-impl DbConnection {{
-    /// Builder-pattern constructor for a connection to a remote module.
-    ///
-    /// See [`__sdk::DbConnectionBuilder`] for required and optional configuration for the new connection.
-    pub fn builder() -> __sdk::DbConnectionBuilder<RemoteModule> {{
-        __sdk::DbConnectionBuilder::new()
-    }}
-
-    /// If any WebSocket messages are waiting, process one of them.
-    ///
-    /// Returns `true` if a message was processed, or `false` if the queue is empty.
-    /// Callers should invoke this message in a loop until it returns `false`
-    /// or for as much time is available to process messages.
-    ///
-    /// Returns an error if the connection is disconnected.
-    /// If the disconnection in question was normal,
-    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
-    ///
-    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
-    /// Most applications should call [`Self::frame_tick`] each frame
-    /// to fully exhaust the queue whenever time is available.
-    pub fn advance_one_message(&self) -> __sdk::Result<bool> {{
-        self.imp.advance_one_message()
-    }}
-
-    /// Process one WebSocket message, potentially blocking the current thread until one is received.
-    ///
-    /// Returns an error if the connection is disconnected.
-    /// If the disconnection in question was normal,
-    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
-    ///
-    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
-    /// Most applications should call [`Self::run_threaded`] to spawn a thread
-    /// which advances the connection automatically.
-    #[cfg(not(target_arch = \"wasm32\"))]
-    pub fn advance_one_message_blocking(&self) -> __sdk::Result<()> {{
-        self.imp.advance_one_message_blocking()
-    }}
-
-    /// Process one WebSocket message, `await`ing until one is received.
-    ///
-    /// Returns an error if the connection is disconnected.
-    /// If the disconnection in question was normal,
-    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
-    ///
-    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
-    /// Most applications should call [`Self::run_async`] to run an `async` loop
-    /// which advances the connection when polled.
-    pub async fn advance_one_message_async(&self) -> __sdk::Result<()> {{
-        self.imp.advance_one_message_async().await
-    }}
-
-    /// Process all WebSocket messages waiting in the queue,
-    /// then return without `await`ing or blocking the current thread.
-    pub fn frame_tick(&self) -> __sdk::Result<()> {{
-        self.imp.frame_tick()
-    }}
-
-    /// Spawn a thread which processes WebSocket messages as they are received.
-    #[cfg(not(target_arch = \"wasm32\"))]
-    pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {{
-        self.imp.run_threaded()
-    }}
-
-    /// Spawn a background task which processes WebSocket messages as they are received.
-    #[cfg(target_arch = \"wasm32\")]
-    pub fn run_background_task(&self) {{
-        self.imp.run_background_task()
-    }}
-
-    /// Run an `async` loop which processes WebSocket messages when polled.
-    pub async fn run_async(&self) -> __sdk::Result<()> {{
-        self.imp.run_async().await
-    }}
-}}
-
-impl __sdk::DbConnection for DbConnection {{
-    fn new(imp: __sdk::DbContextImpl<RemoteModule>) -> Self {{
-        Self {{
-            db: RemoteTables {{ imp: imp.clone() }},
-            reducers: RemoteReducers {{ imp: imp.clone() }},
-            procedures: RemoteProcedures {{ imp: imp.clone() }},
-            imp,
-        }}
-    }}
-}}
-
-/// A handle on a subscribed query.
-// TODO: Document this better after implementing the new subscription API.
-#[derive(Clone)]
-pub struct SubscriptionHandle {{
-    imp: __sdk::SubscriptionHandleImpl<RemoteModule>,
-}}
-
-impl __sdk::InModule for SubscriptionHandle {{
-    type Module = RemoteModule;
-}}
-
-impl __sdk::SubscriptionHandle for SubscriptionHandle {{
-    fn new(imp: __sdk::SubscriptionHandleImpl<RemoteModule>) -> Self {{
-        Self {{ imp }}
-    }}
-
-    /// Returns true if this subscription has been terminated due to an unsubscribe call or an error.
-    fn is_ended(&self) -> bool {{
-        self.imp.is_ended()
-    }}
-
-    /// Returns true if this subscription has been applied and has not yet been unsubscribed.
-    fn is_active(&self) -> bool {{
-        self.imp.is_active()
-    }}
-
-    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
-    /// then run `on_end` when its rows are removed from the client cache.
-    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __sdk::Result<()> {{
-        self.imp.unsubscribe_then(Some(on_end))
-    }}
-
-    fn unsubscribe(self) -> __sdk::Result<()> {{
-        self.imp.unsubscribe_then(None)
-    }}
-
-}}
-
-/// Alias trait for a [`__sdk::DbContext`] connected to this module,
-/// with that trait's associated types bounded to this module's concrete types.
-///
-/// Users can use this trait as a boundary on definitions which should accept
-/// either a [`DbConnection`] or an [`EventContext`] and operate on either.
-pub trait RemoteDbContext: __sdk::DbContext<
-    DbView = RemoteTables,
-    Reducers = RemoteReducers,
-    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-> {{}}
-impl<Ctx: __sdk::DbContext<
-    DbView = RemoteTables,
-    Reducers = RemoteReducers,
-    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
->> RemoteDbContext for Ctx {{}}
-",
-    );
-
-    define_event_context(
-        out,
-        "EventContext",
-        Some("__sdk::Event<Reducer>"),
-        "[`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks",
-        Some("[`__sdk::Event`]"),
-    );
-
-    define_event_context(
-        out,
-        "ReducerEventContext",
-        Some("__sdk::ReducerEvent<Reducer>"),
-        "on-reducer callbacks", // There's no single trait or method for reducer callbacks, so we can't usefully link to them.
-        Some("[`__sdk::ReducerEvent`]"),
-    );
-
-    define_event_context(
-        out,
-        "ProcedureEventContext",
-        None, // ProcedureEventContexts  have no additional `event` info, so they don't even get that field.
-        "procedure callbacks", // There's no single trait or method for procedure callbacks, so we can't usefully link to them.
-        None,
-    );
-
-    define_event_context(
-        out,
-        "SubscriptionEventContext",
-        None, // SubscriptionEventContexts have no additional `event` info, so they don't even get that field.
-        "[`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks",
-        None,
-    );
-
-    define_event_context(
-        out,
-        "ErrorContext",
-        Some("Option<__sdk::Error>"),
-        "[`__sdk::DbConnectionBuilder::on_disconnect`], [`__sdk::DbConnectionBuilder::on_connect_error`] and [`__sdk::SubscriptionBuilder::on_error`] callbacks",
-        Some("[`__sdk::Error`]"),
-    );
-}
-
-/// Define a type that implements `AbstractEventContext` and one of its concrete subtraits.
-///
-/// `struct_and_trait_name` should be the name of an event context trait,
-/// and will also be used as the new struct's name.
-///
-/// `event_type`, if `Some`, should be a Rust type which will be the type of the new struct's `event` field.
-/// If `None`, the new struct will not have such a field.
-/// The `SubscriptionEventContext` will pass `None`, since there is no useful information to add.
-///
-/// `passed_to_callbacks_doc_link` should be a rustdoc-formatted phrase
-/// which links to the callback-registering functions for the callbacks which accept this event context type.
-/// It should be of the form "foo callbacks" or "foo, bar and baz callbacks",
-/// with link formatting where appropriate, and no trailing punctuation.
-///
-/// If `event_type` is `Some`, `event_type_doc_link` should be as well.
-/// It should be a rustdoc-formatted link (including square brackets and all) to the `event_type`.
-/// This may differ (in the `strcmp` sense) from `event_type` because it should not include generic parameters.
-fn define_event_context(
-    out: &mut Indenter,
-    struct_and_trait_name: &str,
-    event_type: Option<&str>,
-    passed_to_callbacks_doc_link: &str,
-    event_type_doc_link: Option<&str>,
-) {
-    if let (Some(event_type), Some(event_type_doc_link)) = (event_type, event_type_doc_link) {
-        write!(
-            out,
-            "
-/// An [`__sdk::DbContext`] augmented with a {event_type_doc_link},
-/// passed to {passed_to_callbacks_doc_link}.
-pub struct {struct_and_trait_name} {{
-    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
-    pub db: RemoteTables,
-    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
-    pub reducers: RemoteReducers,
-    /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
-    pub procedures: RemoteProcedures,
-    /// The event which caused these callbacks to run.
-    pub event: {event_type},
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::AbstractEventContext for {struct_and_trait_name} {{
-    type Event = {event_type};
-    fn event(&self) -> &Self::Event {{
-        &self.event
-    }}
-    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {{
-        Self {{
-            db: RemoteTables {{ imp: imp.clone() }},
-            reducers: RemoteReducers {{ imp: imp.clone() }},
-            procedures: RemoteProcedures {{ imp: imp.clone() }},
-            event,
-            imp,
-        }}
-    }}
-}}
-",
-        );
-    } else {
-        debug_assert!(event_type.is_none() && event_type_doc_link.is_none());
-        write!(
-            out,
-            "
-/// An [`__sdk::DbContext`] passed to {passed_to_callbacks_doc_link}.
-pub struct {struct_and_trait_name} {{
-    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
-    pub db: RemoteTables,
-    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
-    pub reducers: RemoteReducers,
-    /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
-    pub procedures: RemoteProcedures,
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}}
-
-impl __sdk::AbstractEventContext for {struct_and_trait_name} {{
-    type Event = ();
-    fn event(&self) -> &Self::Event {{
-        &()
-    }}
-    fn new(imp: __sdk::DbContextImpl<RemoteModule>, _event: Self::Event) -> Self {{
-        Self {{
-            db: RemoteTables {{ imp: imp.clone() }},
-            reducers: RemoteReducers {{ imp: imp.clone() }},
-            procedures: RemoteProcedures {{ imp: imp.clone() }},
-            imp,
-        }}
-    }}
-}}
-",
-        );
-    }
-
-    write!(
-        out,
-        "
-impl __sdk::InModule for {struct_and_trait_name} {{
-    type Module = RemoteModule;
-}}
-
-impl __sdk::DbContext for {struct_and_trait_name} {{
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type Procedures = RemoteProcedures;
-
-    fn db(&self) -> &Self::DbView {{
-        &self.db
-    }}
-    fn reducers(&self) -> &Self::Reducers {{
-        &self.reducers
-    }}
-    fn procedures(&self) -> &Self::Procedures {{
-        &self.procedures
-    }}
-
-    fn is_active(&self) -> bool {{
-        self.imp.is_active()
-    }}
-
-    fn disconnect(&self) -> __sdk::Result<()> {{
-        self.imp.disconnect()
-    }}
-
-    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
-
-    fn subscription_builder(&self) -> Self::SubscriptionBuilder {{
-        __sdk::SubscriptionBuilder::new(&self.imp)
-    }}
-
-    fn try_identity(&self) -> Option<__sdk::Identity> {{
-        self.imp.try_identity()
-    }}
-    fn connection_id(&self) -> __sdk::ConnectionId {{
-        self.imp.connection_id()
-    }}
-    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {{
-        self.imp.try_connection_id()
-    }}
-}}
-
-impl __sdk::{struct_and_trait_name} for {struct_and_trait_name} {{}}
-"
-    );
-}
-
-/// Print `use super::` imports for each of the `imports`.
-fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
-    for typeref in imports {
-        let module_name = type_ref_module_name(module, typeref);
-        let type_name = type_ref_name(module, typeref);
-        writeln!(out, "use super::{module_name}::{type_name};");
-    }
-}
-
-fn add_one_import(imports: &mut Imports, import: &AlgebraicTypeUse) {
-    import.for_each_ref(|r| {
-        imports.insert(r);
-    })
-}
-
-fn gen_imports(imports: &mut Imports, roots: &[(Identifier, AlgebraicTypeUse)]) {
-    for (_, ty) in roots {
-        add_one_import(imports, ty);
-    }
-}
-
-fn remove_skipped_imports(imports: &mut Imports, dont_import: &[AlgebraicTypeRef]) {
-    for skip in dont_import {
-        imports.remove(skip);
-    }
-}
-
-/// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.
-///
-/// `this_file` is passed and excluded for the case of recursive types:
-/// without it, the definition for a type like `struct Foo { foos: Vec<Foo> }`
-/// would attempt to include `import super::foo::Foo`, which fails to compile.
-fn gen_and_print_imports(
-    module: &ModuleDef,
-    out: &mut Indenter,
-    roots: &[(Identifier, AlgebraicTypeUse)],
-    dont_import: &[AlgebraicTypeRef],
-) {
-    let mut imports = BTreeSet::new();
-
-    gen_imports(&mut imports, roots);
-    remove_skipped_imports(&mut imports, dont_import);
-
-    print_imports(module, out, imports);
 }
