@@ -2,45 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
 use super::return_enum_type::ReturnEnum;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-struct ReturnEnumAArgs {
-    pub a: u32,
-}
-
-impl __sdk::InModule for ReturnEnumAArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the procedure `return_enum_a`.
-///
-/// Implemented for [`super::RemoteProcedures`].
-pub trait return_enum_a {
-    fn return_enum_a(&self, a: u32) {
-        self.return_enum_a_then(a, |_, _| {});
-    }
-
-    fn return_enum_a_then(
-        &self,
-        a: u32,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<ReturnEnum, __sdk::InternalError>) + Send + 'static,
-    );
-}
-
-impl return_enum_a for super::RemoteProcedures {
-    fn return_enum_a_then(
-        &self,
-        a: u32,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<ReturnEnum, __sdk::InternalError>) + Send + 'static,
-    ) {
-        self.imp
-            .invoke_procedure_with_callback::<_, ReturnEnum>("return_enum_a", ReturnEnumAArgs { a }, __callback);
-    }
-}
+#[spacetimedb::procedure]
+pub fn return_enum_a(ctx: &mut spacetimedb::ProcedureContext, a: u32) -> ReturnEnum;

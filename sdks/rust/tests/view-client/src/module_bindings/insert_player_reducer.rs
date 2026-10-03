@@ -2,71 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-pub(super) struct InsertPlayerArgs {
-    pub identity: __sdk::Identity,
-    pub level: u64,
-}
-
-impl From<InsertPlayerArgs> for super::Reducer {
-    fn from(args: InsertPlayerArgs) -> Self {
-        Self::InsertPlayer {
-            identity: args.identity,
-            level: args.level,
-        }
-    }
-}
-
-impl __sdk::InModule for InsertPlayerArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_player`.
-///
-/// Implemented for [`super::RemoteReducers`].
-pub trait insert_player {
-    /// Request that the remote module invoke the reducer `insert_player` to run as soon as possible.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`insert_player:insert_player_then`] to run a callback after the reducer completes.
-    fn insert_player(&self, identity: __sdk::Identity, level: u64) -> __sdk::Result<()> {
-        self.insert_player_then(identity, level, |_, _| {})
-    }
-
-    /// Request that the remote module invoke the reducer `insert_player` to run as soon as possible,
-    /// registering `callback` to run when we are notified that the reducer completed.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed with the `callback`.
-    fn insert_player_then(
-        &self,
-        identity: __sdk::Identity,
-        level: u64,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()>;
-}
-
-impl insert_player for super::RemoteReducers {
-    fn insert_player_then(
-        &self,
-        identity: __sdk::Identity,
-        level: u64,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertPlayerArgs { identity, level }, callback)
-    }
-}
+#[spacetimedb::reducer]
+pub fn insert_player(ctx: &spacetimedb::ReducerContext, identity: spacetimedb::Identity, level: u64);
