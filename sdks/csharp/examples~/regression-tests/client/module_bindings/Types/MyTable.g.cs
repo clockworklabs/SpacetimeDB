@@ -9,7 +9,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "MyTable", Name = "my_table", Public = true)]
     [DataContract]
     public sealed partial class MyTable
     {

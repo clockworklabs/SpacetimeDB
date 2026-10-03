@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void PlayerSplitHandler(ReducerEventContext ctx);
-        public event PlayerSplitHandler? OnPlayerSplit;
-
-        public void PlayerSplit()
-        {
-            conn.InternalCallReducer(new Reducer.PlayerSplit());
-        }
-
-        public bool InvokePlayerSplit(ReducerEventContext ctx, Reducer.PlayerSplit args)
-        {
-            if (OnPlayerSplit == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnPlayerSplit(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class PlayerSplit : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "player_split";
-        }
+        [SpacetimeDB.Reducer(Name = "player_split")]
+        public static partial void PlayerSplit(SpacetimeDB.ReducerContext ctx);
     }
 }

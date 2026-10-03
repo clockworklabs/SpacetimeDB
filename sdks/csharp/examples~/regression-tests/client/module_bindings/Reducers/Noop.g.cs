@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void NoopHandler(ReducerEventContext ctx);
-        public event NoopHandler? OnNoop;
-
-        public void Noop()
-        {
-            conn.InternalCallReducer(new Reducer.Noop());
-        }
-
-        public bool InvokeNoop(ReducerEventContext ctx, Reducer.Noop args)
-        {
-            if (OnNoop == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnNoop(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class Noop : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "noop";
-        }
+        [SpacetimeDB.Reducer(Name = "noop")]
+        public static partial void Noop(SpacetimeDB.ReducerContext ctx);
     }
 }

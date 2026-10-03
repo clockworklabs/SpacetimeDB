@@ -9,13 +9,15 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "ViewPkMembershipSecondary", Name = "view_pk_membership_secondary", Public = true)]
     [DataContract]
     public sealed partial class ViewPkMembershipSecondary
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public ulong Id;
         [DataMember(Name = "player_id")]
+        [SpacetimeDB.Index.BTree(Name = "view_pk_membership_secondary_player_id_idx_btree")]
         public ulong PlayerId;
 
         public ViewPkMembershipSecondary(

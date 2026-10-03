@@ -9,11 +9,12 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "PlayerAction", Name = "player_action", Public = true)]
     [DataContract]
     public sealed partial class PlayerAction
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public uint Id;
         [DataMember(Name = "action")]
         public GameAction Action;

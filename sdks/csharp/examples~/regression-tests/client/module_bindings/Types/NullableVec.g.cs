@@ -9,11 +9,12 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "NullableVec", Name = "nullable_vec", Public = true)]
     [DataContract]
     public sealed partial class NullableVec
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public uint Id;
         [DataMember(Name = "pos")]
         public DbVector2? Pos;

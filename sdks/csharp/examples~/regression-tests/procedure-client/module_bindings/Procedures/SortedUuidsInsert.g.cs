@@ -4,61 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void SortedUuidsInsert(ProcedureCallback<SpacetimeDB.Unit> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalSortedUuidsInsert((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalSortedUuidsInsert(ProcedureCallback<Procedure.SortedUuidsInsert> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.SortedUuidsInsertArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SortedUuidsInsert
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Unit Value;
-
-            public SortedUuidsInsert(SpacetimeDB.Unit Value)
-            {
-                this.Value = Value;
-            }
-
-            public SortedUuidsInsert()
-            {
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SortedUuidsInsertArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "sorted_uuids_insert";
-        }
-
+        [SpacetimeDB.Procedure(Name = "sorted_uuids_insert")]
+        public static partial SpacetimeDB.Unit SortedUuidsInsert(SpacetimeDB.ProcedureContext ctx);
     }
 }

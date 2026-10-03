@@ -4,62 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void SubscriptionEventOffset(ProcedureCallback<SpacetimeDB.Types.ReturnStruct> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalSubscriptionEventOffset((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalSubscriptionEventOffset(ProcedureCallback<Procedure.SubscriptionEventOffset> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.SubscriptionEventOffsetArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SubscriptionEventOffset
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Types.ReturnStruct Value;
-
-            public SubscriptionEventOffset(SpacetimeDB.Types.ReturnStruct Value)
-            {
-                this.Value = Value;
-            }
-
-            public SubscriptionEventOffset()
-            {
-                this.Value = new();
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SubscriptionEventOffsetArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "subscription_event_offset";
-        }
-
+        [SpacetimeDB.Procedure(Name = "subscription_event_offset")]
+        public static partial SpacetimeDB.Types.ReturnStruct SubscriptionEventOffset(SpacetimeDB.ProcedureContext ctx);
     }
 }

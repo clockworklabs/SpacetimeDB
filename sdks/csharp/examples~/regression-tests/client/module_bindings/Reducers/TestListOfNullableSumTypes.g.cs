@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void TestListOfNullableSumTypesHandler(ReducerEventContext ctx);
-        public event TestListOfNullableSumTypesHandler? OnTestListOfNullableSumTypes;
-
-        public void TestListOfNullableSumTypes()
-        {
-            conn.InternalCallReducer(new Reducer.TestListOfNullableSumTypes());
-        }
-
-        public bool InvokeTestListOfNullableSumTypes(ReducerEventContext ctx, Reducer.TestListOfNullableSumTypes args)
-        {
-            if (OnTestListOfNullableSumTypes == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnTestListOfNullableSumTypes(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class TestListOfNullableSumTypes : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "test_list_of_nullable_sum_types";
-        }
+        [SpacetimeDB.Reducer(Name = "test_list_of_nullable_sum_types")]
+        public static partial void TestListOfNullableSumTypes(SpacetimeDB.ReducerContext ctx);
     }
 }
