@@ -10,9 +10,9 @@ use crate::sym;
 use crate::util::{check_duplicate_msg, match_meta};
 
 pub(crate) struct ViewArgs {
-    name: Option<LitStr>,
-    accessor: Ident,
-    primary_key: Option<ViewPrimaryKeyArg>,
+    pub(crate) name: Option<LitStr>,
+    pub(crate) accessor: Ident,
+    pub(crate) primary_key: Option<ViewPrimaryKeyArg>,
     #[allow(unused)]
     public: bool,
 }
@@ -20,7 +20,7 @@ pub(crate) struct ViewArgs {
 /// Argument accepted by `#[view(primary_key = ...)]`.
 ///
 /// Both identifier and string literal syntax is supported.
-enum ViewPrimaryKeyArg {
+pub(crate) enum ViewPrimaryKeyArg {
     Ident(Ident),
     Literal(LitStr),
 }
@@ -34,7 +34,7 @@ impl ViewPrimaryKeyArg {
         }
     }
 
-    fn name(&self) -> String {
+    pub(crate) fn name(&self) -> String {
         match self {
             Self::Ident(ident) => ident.unraw().to_string(),
             Self::Literal(lit) => lit.value(),
@@ -114,7 +114,7 @@ fn extract_impl_query_inner(ty: &syn::Type) -> Option<&syn::Type> {
 }
 
 /// If `ty` is a supported view return type, returns the row type `T`.
-fn extract_view_return_row_type(ty: &syn::Type) -> Option<&syn::Type> {
+pub(crate) fn extract_view_return_row_type(ty: &syn::Type) -> Option<&syn::Type> {
     if let Some(inner) = extract_impl_query_inner(ty) {
         return Some(inner);
     }

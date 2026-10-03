@@ -31,6 +31,9 @@ impl Default for CodegenOptions {
 }
 
 pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -> Vec<OutputFile> {
+    if let Some(files) = lang.generate_module(module, options) {
+        return files;
+    }
     itertools::chain!(
         util::iter_tables(module, options.visibility).map(|tbl| lang.generate_table_file(module, tbl)),
         module.views().map(|view| lang.generate_view_file(module, view)),
@@ -73,6 +76,12 @@ pub struct OutputFile {
 }
 
 pub trait Lang {
+    /// Generate every file at once, for a backend whose files do not correspond one-to-one to the module's items.
+    /// Returns `None` to generate a file per item with the methods below.
+    fn generate_module(&self, _module: &ModuleDef, _options: &CodegenOptions) -> Option<Vec<OutputFile>> {
+        None
+    }
+
     fn generate_table_file_from_schema(&self, module: &ModuleDef, tbl: &TableDef, schema: TableSchema) -> OutputFile;
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile>;
     fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile;

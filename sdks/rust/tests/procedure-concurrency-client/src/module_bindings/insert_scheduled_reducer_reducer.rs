@@ -2,69 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-use super::scheduled_reducer_row_type::ScheduledReducerRow;
+use super::scheduled_reducer_row_table::ScheduledReducerRow;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-pub(super) struct InsertScheduledReducerArgs {
-    pub schedule: ScheduledReducerRow,
-}
-
-impl From<InsertScheduledReducerArgs> for super::Reducer {
-    fn from(args: InsertScheduledReducerArgs) -> Self {
-        Self::InsertScheduledReducer {
-            schedule: args.schedule,
-        }
-    }
-}
-
-impl __sdk::InModule for InsertScheduledReducerArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_scheduled_reducer`.
-///
-/// Implemented for [`super::RemoteReducers`].
-pub trait insert_scheduled_reducer {
-    /// Request that the remote module invoke the reducer `insert_scheduled_reducer` to run as soon as possible.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`insert_scheduled_reducer:insert_scheduled_reducer_then`] to run a callback after the reducer completes.
-    fn insert_scheduled_reducer(&self, schedule: ScheduledReducerRow) -> __sdk::Result<()> {
-        self.insert_scheduled_reducer_then(schedule, |_, _| {})
-    }
-
-    /// Request that the remote module invoke the reducer `insert_scheduled_reducer` to run as soon as possible,
-    /// registering `callback` to run when we are notified that the reducer completed.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed with the `callback`.
-    fn insert_scheduled_reducer_then(
-        &self,
-        schedule: ScheduledReducerRow,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()>;
-}
-
-impl insert_scheduled_reducer for super::RemoteReducers {
-    fn insert_scheduled_reducer_then(
-        &self,
-        schedule: ScheduledReducerRow,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertScheduledReducerArgs { schedule }, callback)
-    }
-}
+#[spacetimedb::reducer]
+pub fn insert_scheduled_reducer(ctx: &spacetimedb::ReducerContext, schedule: ScheduledReducerRow);

@@ -2,45 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-use super::scheduled_proc_table_type::ScheduledProcTable;
+use super::scheduled_proc_table_table::ScheduledProcTable;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-struct ScheduledProcArgs {
-    pub data: ScheduledProcTable,
-}
-
-impl __sdk::InModule for ScheduledProcArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the procedure `scheduled_proc`.
-///
-/// Implemented for [`super::RemoteProcedures`].
-pub trait scheduled_proc {
-    fn scheduled_proc(&self, data: ScheduledProcTable) {
-        self.scheduled_proc_then(data, |_, _| {});
-    }
-
-    fn scheduled_proc_then(
-        &self,
-        data: ScheduledProcTable,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<(), __sdk::InternalError>) + Send + 'static,
-    );
-}
-
-impl scheduled_proc for super::RemoteProcedures {
-    fn scheduled_proc_then(
-        &self,
-        data: ScheduledProcTable,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<(), __sdk::InternalError>) + Send + 'static,
-    ) {
-        self.imp
-            .invoke_procedure_with_callback::<_, ()>("scheduled_proc", ScheduledProcArgs { data }, __callback);
-    }
-}
+#[spacetimedb::procedure]
+pub fn scheduled_proc(ctx: &mut spacetimedb::ProcedureContext, data: ScheduledProcTable);

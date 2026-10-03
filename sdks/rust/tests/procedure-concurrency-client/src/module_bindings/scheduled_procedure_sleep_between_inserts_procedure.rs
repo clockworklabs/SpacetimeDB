@@ -2,48 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-use super::scheduled_procedure_row_type::ScheduledProcedureRow;
+use super::scheduled_procedure_row_table::ScheduledProcedureRow;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-struct ScheduledProcedureSleepBetweenInsertsArgs {
-    pub schedule: ScheduledProcedureRow,
-}
-
-impl __sdk::InModule for ScheduledProcedureSleepBetweenInsertsArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the procedure `scheduled_procedure_sleep_between_inserts`.
-///
-/// Implemented for [`super::RemoteProcedures`].
-pub trait scheduled_procedure_sleep_between_inserts {
-    fn scheduled_procedure_sleep_between_inserts(&self, schedule: ScheduledProcedureRow) {
-        self.scheduled_procedure_sleep_between_inserts_then(schedule, |_, _| {});
-    }
-
-    fn scheduled_procedure_sleep_between_inserts_then(
-        &self,
-        schedule: ScheduledProcedureRow,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<(), __sdk::InternalError>) + Send + 'static,
-    );
-}
-
-impl scheduled_procedure_sleep_between_inserts for super::RemoteProcedures {
-    fn scheduled_procedure_sleep_between_inserts_then(
-        &self,
-        schedule: ScheduledProcedureRow,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<(), __sdk::InternalError>) + Send + 'static,
-    ) {
-        self.imp.invoke_procedure_with_callback::<_, ()>(
-            "scheduled_procedure_sleep_between_inserts",
-            ScheduledProcedureSleepBetweenInsertsArgs { schedule },
-            __callback,
-        );
-    }
-}
+#[spacetimedb::procedure]
+pub fn scheduled_procedure_sleep_between_inserts(
+    ctx: &mut spacetimedb::ProcedureContext,
+    schedule: ScheduledProcedureRow,
+);

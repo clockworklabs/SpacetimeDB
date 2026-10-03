@@ -2,46 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-struct ReadMySchemaArgs {
-    pub server_url: String,
-}
-
-impl __sdk::InModule for ReadMySchemaArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the procedure `read_my_schema`.
-///
-/// Implemented for [`super::RemoteProcedures`].
-pub trait read_my_schema {
-    fn read_my_schema(&self, server_url: String) {
-        self.read_my_schema_then(server_url, |_, _| {});
-    }
-
-    fn read_my_schema_then(
-        &self,
-        server_url: String,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<String, __sdk::InternalError>) + Send + 'static,
-    );
-}
-
-impl read_my_schema for super::RemoteProcedures {
-    fn read_my_schema_then(
-        &self,
-        server_url: String,
-
-        __callback: impl FnOnce(&super::ProcedureEventContext, Result<String, __sdk::InternalError>) + Send + 'static,
-    ) {
-        self.imp.invoke_procedure_with_callback::<_, String>(
-            "read_my_schema",
-            ReadMySchemaArgs { server_url },
-            __callback,
-        );
-    }
-}
+#[spacetimedb::procedure]
+pub fn read_my_schema(ctx: &mut spacetimedb::ProcedureContext, server_url: String) -> String;
