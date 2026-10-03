@@ -12,6 +12,7 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
+#include "FieldNameMapping.g.h"
 #include "NameMapping.g.h"
 
 namespace SpacetimeDB::Internal {
@@ -37,5 +38,5 @@ SPACETIMEDB_INTERNAL_PRODUCT_TYPE(ExplicitNameEntry_Namespace_Wrapper) {
     }
     SPACETIMEDB_PRODUCT_TYPE_EQUALITY(value)
 };
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(ExplicitNameEntry, SpacetimeDB::Internal::NameMapping, ExplicitNameEntry_Function_Wrapper, ExplicitNameEntry_Index_Wrapper, ExplicitNameEntry_Namespace_Wrapper)
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(ExplicitNameEntry, SpacetimeDB::Internal::NameMapping, ExplicitNameEntry_Function_Wrapper, ExplicitNameEntry_Index_Wrapper, ExplicitNameEntry_Namespace_Wrapper, SpacetimeDB::Internal::FieldNameMapping)
 } // namespace SpacetimeDB::Internal
