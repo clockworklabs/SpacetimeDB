@@ -2,65 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-pub(super) struct InsertOptionI32Args {
-    pub n: Option<i32>,
-}
-
-impl From<InsertOptionI32Args> for super::Reducer {
-    fn from(args: InsertOptionI32Args) -> Self {
-        Self::InsertOptionI32 { n: args.n }
-    }
-}
-
-impl __sdk::InModule for InsertOptionI32Args {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_option_i_32`.
-///
-/// Implemented for [`super::RemoteReducers`].
-pub trait insert_option_i_32 {
-    /// Request that the remote module invoke the reducer `insert_option_i_32` to run as soon as possible.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`insert_option_i_32:insert_option_i_32_then`] to run a callback after the reducer completes.
-    fn insert_option_i_32(&self, n: Option<i32>) -> __sdk::Result<()> {
-        self.insert_option_i_32_then(n, |_, _| {})
-    }
-
-    /// Request that the remote module invoke the reducer `insert_option_i_32` to run as soon as possible,
-    /// registering `callback` to run when we are notified that the reducer completed.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed with the `callback`.
-    fn insert_option_i_32_then(
-        &self,
-        n: Option<i32>,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()>;
-}
-
-impl insert_option_i_32 for super::RemoteReducers {
-    fn insert_option_i_32_then(
-        &self,
-        n: Option<i32>,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertOptionI32Args { n }, callback)
-    }
-}
+#[spacetimedb::reducer]
+pub fn insert_option_i_32(ctx: &spacetimedb::ReducerContext, n: Option<i32>);
