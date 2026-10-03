@@ -216,7 +216,7 @@ export function registerView<
   fn: ViewFn<S, Params, Ret> | undefined
 ) {
   const described = describeView(ctx, opts, exportName, false, params, ret);
-  ctx.requireBody('view', exportName, fn);
+  ctx.recordMissingBody('view', exportName, fn);
   // `ctx.views` is schema-erased. `ViewCtx<S>` and `ViewCtx<any>` describe the same
   // shape, but TypeScript cannot relate two instantiations of the mapped type
   // `ReadonlyDbView` while the schema is still a type parameter, so erasing `S` here
@@ -238,7 +238,7 @@ export function registerAnonymousView<
   fn: AnonymousViewFn<S, Params, Ret> | undefined
 ) {
   const described = describeView(ctx, opts, exportName, true, params, ret);
-  ctx.requireBody('view', exportName, fn);
+  ctx.recordMissingBody('view', exportName, fn);
   // Schema-erased for the same reason as `registerView` above.
   ctx.anonViews.push(buildViewInfo(ctx, described, fn as AnyAnonymousViewFn));
 }

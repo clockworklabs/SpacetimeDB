@@ -85,7 +85,7 @@ export function registerReducer(
   lifecycle?: Lifecycle
 ): void {
   ctx.defineFunction(exportName);
-  ctx.requireBody('reducer', exportName, fn);
+  ctx.recordMissingBody('reducer', exportName, fn);
 
   if (!(params instanceof RowBuilder)) {
     params = new RowBuilder(params);

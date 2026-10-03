@@ -10,7 +10,7 @@ import {
   table,
 } from '../src/sdk';
 import { ModuleContext, tablesToSchema } from '../src/lib/schema';
-import { schema as moduleSchema } from '../src/server/schema';
+import { schema as moduleSchema, type Schema } from '../src/server/schema';
 
 // A table declaration holds a `buildRawDef` closure, so two declarations of the
 // same table are equal when their closures have the same source.
@@ -107,6 +107,19 @@ describe('moduleDefFromExports', () => {
     // @ts-expect-error A module's reducer needs a body.
     const addPerson = spacetimedb.reducer({ name: t.string(), age: t.u8() });
     expect(() => spacetimedb.buildRawModuleDefV10({ addPerson })).toThrow(
+      "The reducer 'addPerson' has no function body."
+    );
+  });
+
+  it('rejects a declaration without a body for the host after a client registered it', () => {
+    const spacetimedb = schema({ person });
+    const module = {
+      default: spacetimedb,
+      addPerson: spacetimedb.reducer({ name: t.string(), age: t.u8() }),
+    };
+    moduleDefFromExports(module);
+    const host = spacetimedb as unknown as Schema<any>;
+    expect(() => host.buildRawModuleDefV10(module)).toThrow(
       "The reducer 'addPerson' has no function body."
     );
   });

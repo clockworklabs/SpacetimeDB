@@ -144,7 +144,7 @@ function registerProcedure<
   opts?: ProcedureOptsWithOptionalName<any, any>
 ) {
   ctx.defineFunction(exportName);
-  ctx.requireBody('procedure', exportName, fn);
+  ctx.recordMissingBody('procedure', exportName, fn);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
