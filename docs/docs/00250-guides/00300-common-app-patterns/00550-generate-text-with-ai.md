@@ -1,31 +1,31 @@
 ---
-title: Generate text with an LLM from your module
-slug: /guides/app-patterns/generate-text-with-llm
+title: Generate text with AI
+slug: /guides/app-patterns/generate-text-with-ai
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
-You need a module and a client connected to it, and an API key from the LLM provider you want to use. If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+You need a module and a client connected to it, and an API key from the provider of the AI model you want to use. If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
 :::
 
-In this guide, you'll let clients ask a large language model (LLM) to generate text, for example a reply from a character in your game. The request goes through your module, so your provider API key never reaches the client. You'll use a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) to make the HTTP request, an [environment variable](../../00200-core-concepts/00100-databases/00700-environment-variables.md) to store the API key, and a private table to limit how often each player can call the model.
+In this guide, you'll let clients ask an AI model, such as a large language model (LLM), to generate text, for example a reply from a character in your game. The request goes through your module, so your provider API key never reaches the client. You'll use a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) to make the HTTP request, and private tables to store the API key and to limit how often each player can call the model.
 
 The examples cover Anthropic, OpenAI and Google. Other providers work the same way: only the request and the way you read the reply change.
 
 ## How it works
 
-- An `LLM_API_KEY` environment variable stores your provider API key on the database.
-- A `call_llm` function sends the prompt to your provider and returns the generated text. It's the only provider-specific code.
-- A `generate_text` procedure checks the prompt and the caller's cooldown, calls `call_llm`, and returns the text, or an error message, to the client.
-- A private `llm_usage` table records when each player last called the model.
+- A private `ai_config` table stores your provider API key on the database.
+- A `call_model` function sends the prompt to your provider and returns the generated text. It's the only provider-specific code.
+- A `generate_text` procedure checks the prompt and the caller's cooldown, calls `call_model`, and returns the text, or an error message, to the client.
+- A private `model_usage` table records when each player last called the model.
 
 The model is called from a procedure, not a reducer. Reducers can't make HTTP requests, because they run inside a transaction. A procedure can, and it doesn't hold a transaction open while it waits for the model, which can take several seconds.
 
 ## Store the API key
 
-Declare the `LLM_API_KEY` environment variable in your module.
+Add a private `ai_config` table with a single row that holds your API key. The code below also defines the private `model_usage` table, which you'll use to limit requests. Clients can't read private tables.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -34,22 +34,23 @@ Declare the `LLM_API_KEY` environment variable in your module.
 import { TimeDuration } from 'spacetimedb';
 import { schema, table, t, type InferSchema, type ProcedureCtx } from 'spacetimedb/server';
 
-const llmUsage = table(
-  { name: 'llm_usage' },
+const aiConfig = table(
+  { name: 'ai_config' },
+  {
+    id: t.u8().primaryKey(),
+    apiKey: t.string(),
+  }
+);
+
+const modelUsage = table(
+  { name: 'model_usage' },
   {
     identity: t.identity().primaryKey(),
     lastRequest: t.timestamp(),
   }
 );
 
-const spacetimedb = schema(
-  { llmUsage },
-  {
-    env: {
-      LLM_API_KEY: t.string(),
-    },
-  }
-);
+const spacetimedb = schema({ aiConfig, modelUsage });
 export default spacetimedb;
 
 type Ctx = ProcedureCtx<InferSchema<typeof spacetimedb>>;
@@ -63,16 +64,18 @@ type Ctx = ProcedureCtx<InferSchema<typeof spacetimedb>>;
 using System.Text.Json.Nodes;
 using SpacetimeDB;
 
-[SpacetimeDB.Env]
-public partial struct EnvironmentSchema
-{
-    public string LLM_API_KEY;
-}
-
 public static partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "LlmUsage")]
-    public partial struct LlmUsage
+    [SpacetimeDB.Table(Accessor = "AiConfig")]
+    public partial struct AiConfig
+    {
+        [SpacetimeDB.PrimaryKey]
+        public byte Id;
+        public string ApiKey;
+    }
+
+    [SpacetimeDB.Table(Accessor = "ModelUsage")]
+    public partial struct ModelUsage
     {
         [SpacetimeDB.PrimaryKey]
         public Identity Identity;
@@ -89,13 +92,15 @@ use spacetimedb::http::{Request, Timeout};
 use spacetimedb::{procedure, table, Identity, ProcedureContext, Table, Timestamp};
 use std::time::Duration;
 
-#[spacetimedb::env]
-pub struct Env {
-    pub LLM_API_KEY: String,
+#[table(accessor = ai_config)]
+pub struct AiConfig {
+    #[primary_key]
+    id: u8,
+    api_key: String,
 }
 
-#[table(accessor = llm_usage)]
-pub struct LlmUsage {
+#[table(accessor = model_usage)]
+pub struct ModelUsage {
     #[primary_key]
     identity: Identity,
     last_request: Timestamp,
@@ -112,21 +117,31 @@ serde_json = "1"
 </TabItem>
 </Tabs>
 
-The code above also defines the `llm_usage` table, which you'll use to limit requests. Then supply the key when you publish:
+After you publish your module, insert the key with SQL. Only the database owner and collaborators can write to a table this way:
 
 ```bash
-LLM_API_KEY='your-api-key' spacetime publish my-game
+spacetime sql my-game "INSERT INTO ai_config (id, api_key) VALUES (0, 'your-api-key')"
 ```
 
-Publishing stores the key on the database, and later publishes keep it, so you only need to supply it again to change it. Don't put the key in a file you commit. See [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md) for the other ways to supply it.
+To replace the key later, update the row:
+
+```bash
+spacetime sql my-game "UPDATE ai_config SET api_key = 'your-new-api-key' WHERE id = 0"
+```
+
+The key stays in the database across publishes, but publishing with `--delete-data` erases it along with your other data.
+
+:::warning
+Keep the key away from anything clients can read: don't make `ai_config` public, and don't return the key from a procedure or a view, or write it to the logs.
+:::
 
 ## Call the model
 
-Add a `call_llm` function for your provider. It builds the request, sends it with `http.send` (or `http.fetch` in TypeScript), and returns the generated text. Each provider puts the text in a different place in its reply, and a reply can contain parts that aren't text, so the function keeps only the text.
+Add a `call_model` function for your provider. It builds the request, sends it with `http.send` (or `http.fetch` in TypeScript), and returns the generated text. Each provider puts the text in a different place in its reply, and a reply can contain parts that aren't text, so the function keeps only the text.
 
 The model names below are examples. Providers release new models often, so check your provider's documentation for the model you want.
 
-<Tabs groupId="llm-provider" queryString>
+<Tabs groupId="ai-provider" queryString>
 <TabItem value="anthropic" label="Anthropic">
 
 This calls Anthropic's [Messages API](https://platform.claude.com/docs/en/api/messages). `fallbacks` asks Anthropic to retry on another model if the model declines the request; a request that is still declined comes back with a `refusal` stop reason.
@@ -135,7 +150,7 @@ This calls Anthropic's [Messages API](https://platform.claude.com/docs/en/api/me
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-function callLlm(ctx: Ctx, apiKey: string, prompt: string): string {
+function callModel(ctx: Ctx, apiKey: string, prompt: string): string {
   const response = ctx.http.fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -175,7 +190,7 @@ function callLlm(ctx: Ctx, apiKey: string, prompt: string): string {
 ```csharp
 public static partial class Module
 {
-    static string CallLlm(ProcedureContext ctx, string apiKey, string prompt)
+    static string CallModel(ProcedureContext ctx, string apiKey, string prompt)
     {
         var body = new JsonObject
         {
@@ -221,7 +236,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-fn call_llm(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
+fn call_model(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
     let body = serde_json::json!({
         "model": "claude-opus-5-5",
         "max_tokens": 1024,
@@ -272,7 +287,7 @@ This calls OpenAI's [Responses API](https://developers.openai.com/api/docs/guide
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-function callLlm(ctx: Ctx, apiKey: string, prompt: string): string {
+function callModel(ctx: Ctx, apiKey: string, prompt: string): string {
   const response = ctx.http.fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -307,7 +322,7 @@ function callLlm(ctx: Ctx, apiKey: string, prompt: string): string {
 ```csharp
 public static partial class Module
 {
-    static string CallLlm(ProcedureContext ctx, string apiKey, string prompt)
+    static string CallModel(ProcedureContext ctx, string apiKey, string prompt)
     {
         var body = new JsonObject
         {
@@ -347,7 +362,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-fn call_llm(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
+fn call_model(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
     let body = serde_json::json!({
         "model": "gpt-6-astra",
         "input": prompt,
@@ -393,7 +408,7 @@ This calls the Gemini API's [`generateContent` method](https://ai.google.dev/api
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-function callLlm(ctx: Ctx, apiKey: string, prompt: string): string {
+function callModel(ctx: Ctx, apiKey: string, prompt: string): string {
   const model = 'gemini-3.8-flash';
   const response = ctx.http.fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -426,7 +441,7 @@ function callLlm(ctx: Ctx, apiKey: string, prompt: string): string {
 ```csharp
 public static partial class Module
 {
-    static string CallLlm(ProcedureContext ctx, string apiKey, string prompt)
+    static string CallModel(ProcedureContext ctx, string apiKey, string prompt)
     {
         var model = "gemini-3.8-flash";
         var body = new JsonObject
@@ -466,7 +481,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-fn call_llm(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
+fn call_model(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
     let model = "gemini-3.8-flash";
     let body = serde_json::json!({
         "contents": [{ "parts": [{ "text": prompt }] }],
@@ -505,7 +520,7 @@ fn call_llm(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<S
 
 ## Generate text for a client
 
-Add a `generate_text` procedure that clients call with their prompt. Every call costs you money, so the procedure first rejects prompts that are empty or too long, and players who called it less than 5 seconds ago. It checks and records the cooldown in a short transaction, then calls `call_llm` outside of it.
+Add a `generate_text` procedure that clients call with their prompt. Every call costs you money, so the procedure first rejects prompts that are empty or too long, and players who called it less than 5 seconds ago. It reads the API key and checks the cooldown in short transactions, then calls `call_model` outside of them.
 
 The procedure returns a `GeneratedText` value with two fields: `text` holds the generated text, and `error` explains what went wrong, or is empty on success. Returning errors this way, instead of throwing, means clients get the same kind of result whichever language your module is written in.
 
@@ -538,16 +553,22 @@ function tryGenerateText(ctx: Ctx, prompt: string): string {
     throw new Error(`The prompt must be 1 to ${MAX_PROMPT_LENGTH} characters long`);
   }
 
+  // Read the API key from its private table.
+  const apiKey = ctx.withTx(tx => tx.db.aiConfig.id.find(0)?.apiKey);
+  if (!apiKey) {
+    throw new Error('The AI API key is not set');
+  }
+
   // Check and record the caller's cooldown in a short transaction.
   const allowed = ctx.withTx(tx => {
-    const usage = tx.db.llmUsage.identity.find(tx.sender);
+    const usage = tx.db.modelUsage.identity.find(tx.sender);
     if (usage && tx.timestamp.since(usage.lastRequest).micros < COOLDOWN_MICROS) {
       return false;
     }
     if (usage) {
-      tx.db.llmUsage.identity.update({ ...usage, lastRequest: tx.timestamp });
+      tx.db.modelUsage.identity.update({ ...usage, lastRequest: tx.timestamp });
     } else {
-      tx.db.llmUsage.insert({ identity: tx.sender, lastRequest: tx.timestamp });
+      tx.db.modelUsage.insert({ identity: tx.sender, lastRequest: tx.timestamp });
     }
     return true;
   });
@@ -556,7 +577,7 @@ function tryGenerateText(ctx: Ctx, prompt: string): string {
   }
 
   // Call the model outside the transaction.
-  const text = callLlm(ctx, ctx.env.LLM_API_KEY, prompt);
+  const text = callModel(ctx, apiKey, prompt);
   if (text.length === 0) {
     throw new Error('The model returned no text');
   }
@@ -600,21 +621,28 @@ public static partial class Module
             throw new Exception($"The prompt must be 1 to {MaxPromptLength} characters long");
         }
 
+        // Read the API key from its private table.
+        var apiKey = ctx.WithTx(tx => tx.Db.AiConfig.Id.Find(0)?.ApiKey);
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            throw new Exception("The AI API key is not set");
+        }
+
         // Check and record the caller's cooldown in a short transaction.
         var allowed = ctx.WithTx(tx =>
         {
-            if (tx.Db.LlmUsage.Identity.Find(tx.Sender) is LlmUsage usage)
+            if (tx.Db.ModelUsage.Identity.Find(tx.Sender) is ModelUsage usage)
             {
                 if ((TimeSpan)tx.Timestamp.TimeDurationSince(usage.LastRequest) < Cooldown)
                 {
                     return false;
                 }
                 usage.LastRequest = tx.Timestamp;
-                tx.Db.LlmUsage.Identity.Update(usage);
+                tx.Db.ModelUsage.Identity.Update(usage);
             }
             else
             {
-                tx.Db.LlmUsage.Insert(new LlmUsage { Identity = tx.Sender, LastRequest = tx.Timestamp });
+                tx.Db.ModelUsage.Insert(new ModelUsage { Identity = tx.Sender, LastRequest = tx.Timestamp });
             }
             return true;
         });
@@ -624,7 +652,7 @@ public static partial class Module
         }
 
         // Call the model outside the transaction.
-        var text = CallLlm(ctx, ctx.Env.LLM_API_KEY, prompt);
+        var text = CallModel(ctx, apiKey, prompt);
         if (text.Length == 0)
         {
             throw new Exception("The model returned no text");
@@ -660,20 +688,25 @@ fn try_generate_text(ctx: &mut ProcedureContext, prompt: &str) -> Result<String,
         return Err(format!("The prompt must be 1 to {MAX_PROMPT_LENGTH} characters long"));
     }
 
+    // Read the API key from its private table.
+    let api_key = ctx
+        .with_tx(|tx| tx.db.ai_config().id().find(0).map(|config| config.api_key))
+        .ok_or("The AI API key is not set")?;
+
     // Check and record the caller's cooldown in a short transaction.
     let allowed = ctx.with_tx(|tx| {
-        let usage = tx.db.llm_usage().identity().find(tx.sender());
+        let usage = tx.db.model_usage().identity().find(tx.sender());
         if let Some(usage) = usage {
             let elapsed = tx.timestamp.duration_since(usage.last_request).unwrap_or_default();
             if elapsed < COOLDOWN {
                 return false;
             }
-            tx.db.llm_usage().identity().update(LlmUsage {
+            tx.db.model_usage().identity().update(ModelUsage {
                 last_request: tx.timestamp,
                 ..usage
             });
         } else {
-            tx.db.llm_usage().insert(LlmUsage {
+            tx.db.model_usage().insert(ModelUsage {
                 identity: tx.sender(),
                 last_request: tx.timestamp,
             });
@@ -685,8 +718,7 @@ fn try_generate_text(ctx: &mut ProcedureContext, prompt: &str) -> Result<String,
     }
 
     // Call the model outside the transaction.
-    let api_key = ctx.env.LLM_API_KEY();
-    let text = call_llm(ctx, &api_key, prompt)?;
+    let text = call_model(ctx, &api_key, prompt)?;
     if text.is_empty() {
         return Err("The model returned no text".to_string());
     }
@@ -795,12 +827,12 @@ fn ask_model(conn: &DbConnection, prompt: String) {
 
 ## What's next?
 
-You now have a module that generates text with an LLM on behalf of its clients:
+You now have a module that generates text with an AI model on behalf of its clients:
 
-- A `call_llm` function holds the only provider-specific code, so switching providers means replacing one function.
-- The API key lives in an environment variable on the database, never on the client.
+- A `call_model` function holds the only provider-specific code, so switching providers means replacing one function.
+- The API key lives in a private table on the database, never on the client.
 - The `generate_text` procedure rejects oversized prompts and players who call it too often, calls the model outside any transaction, and returns errors as values that every client can read.
 
-To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) and [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
+To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) and [Access Permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
 
 To call other web services the same way, see [Call an external API from your module](./00500-call-external-api.md).
