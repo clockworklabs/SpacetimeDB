@@ -27,6 +27,8 @@ pub struct ExplicitNamesLookup {
     pub functions: HashMap<RawIdentifier, RawIdentifier>,
     pub indexes: HashMap<RawIdentifier, RawIdentifier>,
     pub namespaces: HashMap<RawIdentifier, RawIdentifier>,
+    /// Keyed by the product type and the field's source name.
+    pub fields: HashMap<(AlgebraicTypeRef, RawIdentifier), RawIdentifier>,
 }
 
 impl ExplicitNamesLookup {
@@ -35,6 +37,7 @@ impl ExplicitNamesLookup {
         let mut functions = HashMap::default();
         let mut indexes = HashMap::default();
         let mut namespaces = HashMap::default();
+        let mut fields = HashMap::default();
 
         for entry in ex.into_entries() {
             match entry {
@@ -50,6 +53,9 @@ impl ExplicitNamesLookup {
                 ExplicitNameEntry::Namespace(m) => {
                     namespaces.insert(m.source_name, m.canonical_name);
                 }
+                ExplicitNameEntry::Field(m) => {
+                    fields.insert((m.ty, m.source_name), m.canonical_name);
+                }
                 _ => {}
             }
         }
@@ -59,6 +65,7 @@ impl ExplicitNamesLookup {
             functions,
             indexes,
             namespaces,
+            fields,
         }
     }
 }
@@ -105,7 +112,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
     // Apply case conversion to `typespace`.
-    CoreValidator::typespace_case_conversion(case_policy, &mut typespace);
+    CoreValidator::typespace_case_conversion(case_policy, &explicit_names, &mut typespace);
+    let explicit_field_names =
+        validate_explicit_field_names(&explicit_names, &typespace_with_accessor_names, &typespace);
 
     let mut validator = ModuleValidatorV10 {
         core: CoreValidator {
@@ -310,10 +319,19 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules, environment) =
-        (tables_types_reducers_procedures_views, submodules, environment)
-            .combine_errors()
-            .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+    let (
+        (tables, types, reducers, procedures, views, (http_handlers, http_routes)),
+        submodules,
+        environment,
+        explicit_field_names,
+    ) = (
+        tables_types_reducers_procedures_views,
+        submodules,
+        environment,
+        explicit_field_names,
+    )
+        .combine_errors()
+        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -337,6 +355,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
         environment,
+        explicit_field_names,
     };
 
     // Submodules were validated in isolation, so their defs carry root-relative names.
@@ -347,6 +366,69 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     module_def.assert_namespaces_applied(&NamespacePath::root());
 
     Ok(module_def)
+}
+
+/// Check that each explicit field name names a field of a product type in the typespace,
+/// and that it is a valid identifier that no other field of that type has as its canonical or source name.
+/// The field's source name may not be another field's canonical name either.
+/// Returns the explicit names, for `From<ModuleDef> for RawModuleDefV10`.
+fn validate_explicit_field_names(
+    explicit_names: &ExplicitNamesLookup,
+    typespace_with_accessor_names: &Typespace,
+    typespace: &Typespace,
+) -> Result<BTreeMap<(AlgebraicTypeRef, RawIdentifier), RawIdentifier>> {
+    fn field_names(typespace: &Typespace, ty: AlgebraicTypeRef) -> impl Iterator<Item = &RawIdentifier> {
+        let product = typespace.get(ty).and_then(AlgebraicType::as_product);
+        product
+            .into_iter()
+            .flat_map(|product| product.elements.iter().filter_map(|element| element.name()))
+    }
+
+    explicit_names
+        .fields
+        .iter()
+        .map(|((ty, field), canonical_name)| {
+            if !field_names(typespace_with_accessor_names, *ty).any(|name| name == field) {
+                return Err(ValidationError::ExplicitNameFieldNotFound {
+                    ty: *ty,
+                    field: field.clone(),
+                }
+                .into());
+            }
+            identifier(canonical_name.clone())?;
+            // `typespace` has the canonical names, so the field itself has this name.
+            if field_names(typespace, *ty)
+                .filter(|name| *name == canonical_name)
+                .count()
+                > 1
+            {
+                return Err(ValidationError::DuplicateName {
+                    name: canonical_name.clone(),
+                }
+                .into());
+            }
+            // SQL resolves a column's source name before its canonical name, and the round trip through the raw def
+            // matches fields by name, so a canonical name may not be another field's source name, nor the reverse.
+            // Without explicit names this can't happen without a duplicate canonical name,
+            // because case conversion is idempotent.
+            let collision = field_names(typespace_with_accessor_names, *ty)
+                .zip(field_names(typespace, *ty))
+                .filter(|(source, _)| *source != field)
+                .find_map(|(source, canonical)| {
+                    if source == canonical_name {
+                        Some(canonical_name)
+                    } else if canonical == field {
+                        Some(field)
+                    } else {
+                        None
+                    }
+                });
+            if let Some(name) = collision {
+                return Err(ValidationError::DuplicateName { name: name.clone() }.into());
+            }
+            Ok(((*ty, field.clone()), canonical_name.clone()))
+        })
+        .collect_all_errors()
 }
 
 fn validate_environment(def: &RawModuleDefV10) -> Result<Option<spacetimedb_lib::environment::EnvironmentSchema>> {
@@ -1857,6 +1939,139 @@ mod tests {
         assert!(def
             .reducer_by_name("my_outer.my_inner.clean_expired_sessions")
             .is_some());
+    }
+
+    /// A module with an explicit name for the column `player_ref` and for the field `ageValue` of another type.
+    fn explicit_field_names_module(
+        explicit: impl FnOnce(AlgebraicTypeRef, AlgebraicTypeRef) -> ExplicitNames,
+    ) -> RawModuleDefV10 {
+        let mut builder = RawModuleDefV10Builder::new();
+        let info = builder.add_algebraic_type(
+            [],
+            "Info",
+            AlgebraicType::product([("ageValue", AlgebraicType::U8)]),
+            true,
+        );
+        let person = builder.add_algebraic_type(
+            [],
+            "Person",
+            AlgebraicType::product([
+                ("id", AlgebraicType::U64),
+                ("player_ref", AlgebraicType::U32),
+                ("info", AlgebraicType::Ref(info)),
+            ]),
+            true,
+        );
+        builder
+            .build_table("person", person)
+            .with_index(btree(1), "person_player_ref_idx_btree", "player_ref")
+            .finish();
+        builder.add_view(
+            "people",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(person)),
+        );
+        builder.add_view_primary_key("people", ["player_ref"]);
+        builder.add_explicit_names(explicit(person, info));
+        builder.finish()
+    }
+
+    /// An explicit field name replaces the case conversion policy in the typespace, in the column
+    /// and in the names derived from the column, and survives the round trip through a raw def
+    /// that the CLI makes for `describe` and `generate`.
+    #[test]
+    fn explicit_field_names_round_trip_through_raw_def() {
+        let mut refs = None;
+        let raw = explicit_field_names_module(|person, info| {
+            refs = Some((person, info));
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_field(person, "player_ref", "playerRef");
+            explicit.insert_field(info, "ageValue", "AGE");
+            explicit
+        });
+        let (person, info) = refs.unwrap();
+        let check = |def: &ModuleDef| {
+            let field_names = |ty: AlgebraicTypeRef| {
+                def.typespace()[ty]
+                    .as_product()
+                    .unwrap()
+                    .elements
+                    .iter()
+                    .map(|e| e.name().unwrap().to_string())
+                    .collect_vec()
+            };
+            assert_eq!(field_names(person), ["id", "playerRef", "info"]);
+            assert_eq!(field_names(info), ["AGE"]);
+
+            let table = def.table("person").expect("table");
+            assert_eq!(&*table.columns[1].name, "playerRef");
+            assert_eq!(&*table.columns[1].accessor_name, "player_ref");
+            let index_names = table.indexes.values().map(|index| index.name.to_string()).collect_vec();
+            assert_eq!(index_names, ["person_playerRef_idx_btree"]);
+            assert_eq!(def.view("people").expect("view").primary_key, Some(ColId(1)));
+        };
+
+        let def: ModuleDef = raw.try_into().expect("module should validate");
+        check(&def);
+        let def: ModuleDef = RawModuleDefV10::from(def)
+            .try_into()
+            .expect("round-tripped def should validate");
+        check(&def);
+    }
+
+    #[test]
+    fn invalid_explicit_field_names() {
+        let result: Result<ModuleDef> = explicit_field_names_module(|person, _| {
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_field(person, "playerRef", "player");
+            explicit
+        })
+        .try_into();
+        expect_error_matching!(result, ValidationError::ExplicitNameFieldNotFound { field, .. } => &**field == "playerRef");
+
+        let result: Result<ModuleDef> = explicit_field_names_module(|_, _| {
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_field(AlgebraicTypeRef(9), "id", "key");
+            explicit
+        })
+        .try_into();
+        expect_error_matching!(result, ValidationError::ExplicitNameFieldNotFound { ty, .. } => *ty == AlgebraicTypeRef(9));
+
+        let result: Result<ModuleDef> = explicit_field_names_module(|person, _| {
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_field(person, "player_ref", "id");
+            explicit
+        })
+        .try_into();
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => &**name == "id");
+
+        // Swapping two fields' names.
+        let result: Result<ModuleDef> = explicit_field_names_module(|person, _| {
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_field(person, "id", "player_ref");
+            explicit.insert_field(person, "player_ref", "id");
+            explicit
+        })
+        .try_into();
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => &**name == "player_ref");
+
+        // `#[name("z")] a` next to `A`, whose canonical name is `a`.
+        let mut builder = RawModuleDefV10Builder::new();
+        let row = builder.add_algebraic_type(
+            [],
+            "Row",
+            AlgebraicType::product([("a", AlgebraicType::U32), ("A", AlgebraicType::U32)]),
+            true,
+        );
+        builder.build_table("row", row).finish();
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_field(row, "a", "z");
+        builder.add_explicit_names(explicit);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => &**name == "a");
     }
 
     /// Converting a `ModuleDef` back to a raw def and validating it again must preserve
