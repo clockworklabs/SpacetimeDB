@@ -11,7 +11,7 @@ Each guide will also get a short-format video (done later, once the written guid
 ## Games
 
 - [x] How to make a top 100 leaderboard
-- [ ] Run a fixed-rate game tick
+- [x] Run a fixed-rate game tick
 - [ ] Build a matchmaking queue
 - [ ] Make a turn-based game with turn timeouts
 - [ ] Only sync what's near the player
