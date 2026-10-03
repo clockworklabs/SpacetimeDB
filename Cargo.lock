@@ -4332,6 +4332,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-source-client"
+version = "2.11.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+ "tokio",
+]
+
+[[package]]
 name = "module-test"
 version = "0.0.0"
 dependencies = [
