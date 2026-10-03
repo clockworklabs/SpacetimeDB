@@ -8,6 +8,7 @@
   },
   "files": [
     "src",
+    "!src/server/test-utils/portable-datastore-wasm",
     "dist",
     "README.md",
     "LICENSE.txt"
@@ -23,7 +24,7 @@
     "./src/server/polyfills.ts"
   ],
   "scripts": {
-    "build:js": "tsup",
+    "build:js": "tsup && node scripts/copy-test-utils-wasm.mjs",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm -s build:js && pnpm -s build:types",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
@@ -35,6 +36,8 @@
     "size": "pnpm -s build && size-limit",
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
     "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
+    "generate:test-utils-wasm": "node scripts/generate-test-utils-wasm.mjs",
+    "check:test-utils-wasm": "node scripts/generate-test-utils-wasm.mjs --check",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
     "generate:examples:chat-react-ts": "pnpm --filter @clockworklabs/chat-react-ts generate",
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
@@ -71,6 +74,21 @@
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"
+    },
+    "./server/test-utils": {
+      "types": "./dist/server/test-utils/index.d.ts",
+      "import": "./dist/server/test-utils/index.mjs",
+      "default": "./dist/server/test-utils/index.mjs"
+    },
+    "./server/test-utils/vitest": {
+      "types": "./dist/server/test-utils/vitest.d.ts",
+      "import": "./dist/server/test-utils/vitest.mjs",
+      "default": "./dist/server/test-utils/vitest.mjs"
+    },
+    "./server/test-utils/wasm": {
+      "types": "./dist/server/test-utils/wasm.d.ts",
+      "import": "./dist/server/test-utils/wasm.mjs",
+      "default": "./dist/server/test-utils/wasm.mjs"
     },
     "./vue": {
       "types": "./dist/vue/index.d.ts",
@@ -242,6 +260,7 @@
     "globals": "^15.14.0",
     "size-limit": "^11.2.0",
     "svelte": "^5.0.0",
+    "terser": "^5.43.1",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
     "typescript": "^5.9.3",
