@@ -8778,6 +8778,7 @@ dependencies = [
  "once_cell",
  "prometheus",
  "shlex",
+ "spacetimedb-bindings-macro",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
  "spacetimedb-lib",

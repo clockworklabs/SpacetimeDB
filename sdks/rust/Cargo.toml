@@ -25,6 +25,7 @@ browser = [
 ]
 
 [dependencies]
+spacetimedb-bindings-macro = { workspace = true, features = ["client"] }
 spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"]}
