@@ -11,8 +11,14 @@ proc-macro = true
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
+[features]
+# The client expansions of the module macros, which `spacetimedb-sdk` re-exports (proposal 0040).
+# Module builds leave it off, so they neither compile the client expansions nor depend on `convert_case`.
+client = ["dep:convert_case"]
+
 [dependencies]
 
+convert_case = { workspace = true, optional = true }
 humantime.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
