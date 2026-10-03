@@ -14,10 +14,10 @@ import {
 } from "./types";
 
 
-export default __t.row({
-  entityId: __t.i32().primaryKey().name("entity_id"),
+export default __t.row("Entity", {
+  entityId: __t.i32().primaryKey().autoInc().name("entity_id"),
   get position() {
-    return DbVector2;
+    return DbVector2.name("position");
   },
-  mass: __t.i32(),
+  mass: __t.i32().name("mass"),
 });

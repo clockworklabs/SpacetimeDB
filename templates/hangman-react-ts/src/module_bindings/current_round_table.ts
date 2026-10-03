@@ -11,15 +11,15 @@ import {
 } from 'spacetimedb';
 import { RoundPhase } from './types';
 
-export default __t.row({
-  id: __t.u8().primaryKey(),
+export default __t.row('CurrentRound', {
+  id: __t.u8().primaryKey().name('id'),
   roundNumber: __t.u64().name('round_number'),
   get phase() {
-    return RoundPhase;
+    return RoundPhase.name('phase');
   },
-  difficulty: __t.string(),
+  difficulty: __t.string().name('difficulty'),
   wordLength: __t.u32().name('word_length'),
   startedAt: __t.timestamp().name('started_at'),
   phaseEndsAt: __t.timestamp().name('phase_ends_at'),
-  answer: __t.option(__t.string()),
+  answer: __t.option(__t.string()).name('answer'),
 });

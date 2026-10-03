@@ -11,11 +11,11 @@ import {
 } from '../../../src/index';
 import { Point } from './types';
 
-export default __t.row({
-  id: __t.u32().primaryKey(),
+export default __t.row('UnindexedPlayer', {
+  id: __t.u32().primaryKey().autoInc().name('id'),
   ownerId: __t.identity().name('owner_id'),
-  name: __t.string(),
+  name: __t.string().name('name'),
   get location() {
-    return Point;
+    return Point.name('location');
   },
 });

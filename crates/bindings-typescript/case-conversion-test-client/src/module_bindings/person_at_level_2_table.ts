@@ -11,7 +11,7 @@ import {
 } from 'spacetimedb';
 import { Person3Info } from './types';
 
-export default __t.row({
+export default __t.row('Person2', {
   person2Id: __t.u32().primaryKey().name('person_2_id'),
   firstName: __t.string().name('first_name'),
   playerRef: __t.u32().name('player_ref'),

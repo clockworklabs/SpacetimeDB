@@ -10,11 +10,11 @@ import {
   type Infer as __Infer,
 } from 'spacetimedb';
 
-export default __t.row({
-  identity: __t.identity().primaryKey(),
-  name: __t.string(),
-  rank: __t.u32(),
-  solved: __t.bool(),
+export default __t.row('RoundResult', {
+  identity: __t.identity().primaryKey().name('identity'),
+  name: __t.string().name('name'),
+  rank: __t.u32().name('rank'),
+  solved: __t.bool().name('solved'),
   solveTimeMicros: __t.option(__t.u64()).name('solve_time_micros'),
   incorrectGuesses: __t.u8().name('incorrect_guesses'),
   revealedLetters: __t.u32().name('revealed_letters'),

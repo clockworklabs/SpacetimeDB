@@ -14,12 +14,12 @@ import {
 } from "./types";
 
 
-export default __t.row({
+export default __t.row("Circle", {
   entityId: __t.i32().primaryKey().name("entity_id"),
   playerId: __t.i32().name("player_id"),
   get direction() {
-    return DbVector2;
+    return DbVector2.name("direction");
   },
-  speed: __t.f32(),
+  speed: __t.f32().name("speed"),
   lastSplitTime: __t.timestamp().name("last_split_time"),
 });

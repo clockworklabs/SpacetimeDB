@@ -10,7 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
+export default __t.row("ConsumeEntityEvent", {
   consumedEntityId: __t.i32().name("consumed_entity_id"),
   consumerEntityId: __t.i32().name("consumer_entity_id"),
 });
