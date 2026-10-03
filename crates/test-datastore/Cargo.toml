@@ -25,7 +25,7 @@ scopeguard.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-spacetimedb-lib = { workspace = true, features = ["test"] }
+spacetimedb-lib = { path = "../lib", features = ["test"] }
 
 [lints]
 workspace = true
