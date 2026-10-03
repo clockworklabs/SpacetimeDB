@@ -22,7 +22,7 @@ impl PooledObject for Box<Page> {
 }
 
 /// A page pool of currently unused pages available for use in [`Pages`](super::pages::Pages).
-#[derive(Clone, Deref)]
+#[derive(Clone, Debug, Deref)]
 pub struct PagePool {
     pool: Pool<Box<Page>>,
 }

@@ -60,17 +60,17 @@ impl ParamResolver for ExecutionParams {
 
 pub trait Datastore {
     /// Iterator type for table scans
-    type TableIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    type TableIter<'a>: Iterator<Item = Result<RowRef<'a>>> + 'a
     where
         Self: 'a;
 
     /// Iterator type for ranged index scans.
-    type RangeIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    type RangeIndexIter<'a>: Iterator<Item = Result<RowRef<'a>>> + 'a
     where
         Self: 'a;
 
     /// Iterator type for point index scans.
-    type PointIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    type PointIndexIter<'a>: Iterator<Item = Result<RowRef<'a>>> + 'a
     where
         Self: 'a;
 
@@ -282,7 +282,7 @@ impl ToBsatn for RelValue<'_> {
 impl ProjectField for Row<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
         match self {
-            Self::Ptr(ptr) => ptr.project(field),
+            Self::Ptr(ptr) => ProjectField::project(ptr, field),
             Self::Ref(val) => val.project(field),
         }
     }
@@ -297,7 +297,7 @@ pub enum Tuple<'a> {
     Join(Vec<Row<'a>>),
 }
 
-static_assert_size!(Tuple, 40);
+static_assert_size!(Tuple, 48);
 
 impl ProjectField for Tuple<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
