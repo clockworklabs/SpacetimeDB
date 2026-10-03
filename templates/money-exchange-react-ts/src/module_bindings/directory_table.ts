@@ -10,8 +10,8 @@ import {
   type Infer as __Infer,
 } from 'spacetimedb';
 
-export default __t.row({
-  identity: __t.identity().primaryKey(),
-  name: __t.string(),
-  nameKey: __t.string().name('name_key'),
+export default __t.row('Directory', {
+  identity: __t.identity().primaryKey().name('identity'),
+  name: __t.string().name('name'),
+  nameKey: __t.string().unique().name('name_key'),
 });

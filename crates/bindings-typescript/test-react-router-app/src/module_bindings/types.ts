@@ -10,4 +10,14 @@ import {
   type Infer as __Infer,
 } from '../../../src/index';
 
-export default {};
+export const Counter = __t.object('Counter', {
+  id: __t.u32(),
+  count: __t.u32(),
+});
+export type Counter = __Infer<typeof Counter>;
+
+export const User = __t.object('User', {
+  identity: __t.identity(),
+  hasIncrementedCount: __t.u32(),
+});
+export type User = __Infer<typeof User>;

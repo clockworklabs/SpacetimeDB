@@ -10,7 +10,7 @@ import {
   type Infer as __Infer,
 } from '../../../src/index';
 
-export default __t.row({
-  id: __t.u32().primaryKey(),
-  count: __t.u32(),
+export default __t.row('Counter', {
+  id: __t.u32().primaryKey().name('id'),
+  count: __t.u32().name('count'),
 });

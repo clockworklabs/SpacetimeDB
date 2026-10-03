@@ -1478,27 +1478,25 @@ export class ResultBuilder<
     this.err = err;
   }
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    value: ResultValue<Ok, Err>
   ): ResultColumnBuilder<
     Ok,
     Err,
-    SetField<
-      DefaultMetadata,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
+    SetField<DefaultMetadata, 'defaultValue', any>
   > {
     return new ResultColumnBuilder<
       Ok,
       Err,
-      SetField<
-        DefaultMetadata,
-        'defaultValue',
-        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-      >
+      SetField<DefaultMetadata, 'defaultValue', any>
     >(this, set(defaultMetadata, { defaultValue: value }));
   }
 }
+
+/** A result's value as it is serialized, which is the form a default takes. */
+type ResultValue<
+  Ok extends TypeBuilder<any, any>,
+  Err extends TypeBuilder<any, any>,
+> = { ok: InferTypeOfTypeBuilder<Ok> } | { err: InferTypeOfTypeBuilder<Err> };
 
 class UnitBuilder extends TypeBuilder<
   {},
@@ -3242,20 +3240,12 @@ export class ResultColumnBuilder<
   }
 
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-  ): ResultColumnBuilder<
-    Ok,
-    Err,
-    SetField<
-      M,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
-  > {
+    value: ResultValue<Ok, Err>
+  ): ResultColumnBuilder<Ok, Err, SetField<M, 'defaultValue', any>> {
     return new ResultColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, {
-        defaultValue: value,
+        defaultValue: value as any,
       })
     );
   }
@@ -3276,10 +3266,7 @@ export class ProductColumnBuilder<
 {
   default(
     value: ObjectType<Elements>
-  ): ProductColumnBuilder<
-    Elements,
-    SetField<DefaultMetadata, 'defaultValue', any>
-  > {
+  ): ProductColumnBuilder<Elements, SetField<M, 'defaultValue', any>> {
     return new ProductColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { defaultValue: value })
@@ -3287,7 +3274,7 @@ export class ProductColumnBuilder<
   }
   name<const Name extends string>(
     name: Name
-  ): ProductColumnBuilder<Elements, SetField<DefaultMetadata, 'name', Name>> {
+  ): ProductColumnBuilder<Elements, SetField<M, 'name', Name>> {
     return new ProductColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { name })
@@ -3308,10 +3295,7 @@ export class SumColumnBuilder<
 {
   default(
     value: EnumType<Variants>
-  ): SumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'defaultValue', any>
-  > {
+  ): SumColumnBuilder<Variants, SetField<M, 'defaultValue', any>> {
     return new SumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { defaultValue: value })
@@ -3319,34 +3303,25 @@ export class SumColumnBuilder<
   }
   name<const Name extends string>(
     name: Name
-  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'name', Name>> {
+  ): SumColumnBuilder<Variants, SetField<M, 'name', Name>> {
     return new SumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { name })
     );
   }
-  index(): SumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'indexType', 'btree'>
-  >;
+  index(): SumColumnBuilder<Variants, SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
-  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'indexType', N>>;
+  ): SumColumnBuilder<Variants, SetField<M, 'indexType', N>>;
   index(
     algorithm: IndexTypes = 'btree'
-  ): SumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'indexType', IndexTypes>
-  > {
+  ): SumColumnBuilder<Variants, SetField<M, 'indexType', IndexTypes>> {
     return new SumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
-  primaryKey(): SumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'isPrimaryKey', true>
-  > {
+  primaryKey(): SumColumnBuilder<Variants, SetField<M, 'isPrimaryKey', true>> {
     return new SumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
@@ -3363,22 +3338,13 @@ export class SimpleSumColumnBuilder<
     Indexable<EnumType<Variants>, AlgebraicTypeVariants.Sum>,
     PrimaryKeyable<EnumType<Variants>, AlgebraicTypeVariants.Sum>
 {
-  index(): SimpleSumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'indexType', 'btree'>
-  >;
+  index(): SimpleSumColumnBuilder<Variants, SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
-  ): SimpleSumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'indexType', N>
-  >;
+  ): SimpleSumColumnBuilder<Variants, SetField<M, 'indexType', N>>;
   index(
     algorithm: IndexTypes = 'btree'
-  ): SimpleSumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'indexType', IndexTypes>
-  > {
+  ): SimpleSumColumnBuilder<Variants, SetField<M, 'indexType', IndexTypes>> {
     return new SimpleSumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { indexType: algorithm })
@@ -3386,7 +3352,7 @@ export class SimpleSumColumnBuilder<
   }
   primaryKey(): SimpleSumColumnBuilder<
     Variants,
-    SetField<DefaultMetadata, 'isPrimaryKey', true>
+    SetField<M, 'isPrimaryKey', true>
   > {
     return new SimpleSumColumnBuilder(
       this.typeBuilder,

@@ -10,11 +10,11 @@ import {
   type Infer as __Infer,
 } from 'spacetimedb';
 
-export default __t.row({
+export default __t.row('PlayerBoard', {
   roundNumber: __t.u64().name('round_number'),
   maskedWord: __t.string().name('masked_word'),
   guessedLetters: __t.string().name('guessed_letters'),
   incorrectGuesses: __t.u8().name('incorrect_guesses'),
-  solved: __t.bool(),
-  failed: __t.bool(),
+  solved: __t.bool().name('solved'),
+  failed: __t.bool().name('failed'),
 });
